@@ -1,6 +1,6 @@
 // Non-modal anchored panel. Positioning is CSS-only (a relatively positioned
-// anchor plus logical insets), so there is no measure/reflow loop and the panel
-// flips sides automatically under `dir="rtl"`.
+// anchor plus logical insets and auto-margin centring), so there is no measure/reflow
+// loop and the panel mirrors under `dir="rtl"` — `rtl-sheets.test.ts` holds that.
 
 import type { JSX } from 'solid-js';
 import { createFocusTrap, useId } from '../a11y';
@@ -13,11 +13,14 @@ export type Placement = 'block-end' | 'block-start' | 'inline-end' | 'inline-sta
 export interface PopoverProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The anchor. Wire its onClick to `onOpenChange` in the caller. */
+  /**
+   * The anchor. Wire its onClick to `onOpenChange` in the caller. `aria-controls` is present only
+   * while the panel is mounted: an IDREF to an element not in the document names nothing.
+   */
   trigger: (control: {
     id: string;
     'aria-expanded': boolean;
-    'aria-controls': string;
+    'aria-controls': string | undefined;
   }) => JSX.Element;
   children: JSX.Element;
   /** Already-translated accessible name for the panel. */
@@ -63,7 +66,11 @@ export function Popover(props: PopoverProps): JSX.Element {
         root = el;
       }}
     >
-      {props.trigger({ id: triggerId, 'aria-expanded': props.open, 'aria-controls': panelId })}
+      {props.trigger({
+        id: triggerId,
+        'aria-expanded': props.open,
+        'aria-controls': props.open ? panelId : undefined,
+      })}
       {props.open ? (
         <div
           ref={(el: HTMLDivElement) => {

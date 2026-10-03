@@ -50,13 +50,17 @@ export function gridY(step: number): number {
 /** One rect per point, oldest first. At least 2px tall so a zero still draws a visible bar. */
 export function barRects(points: readonly ChartPoint[]): readonly BarRect[] {
   const count = Math.max(points.length, 1);
-  const width = (BAR_CHART.width - BAR_CHART.gap * (count - 1)) / count;
+  // The gap gives way before the bars do: at most half of each bar's slot, so past the 201 points
+  // where 3px gaps alone fill the width, every bar is still a positive rect and the row still ends
+  // at the right edge.
+  const gap = Math.min(BAR_CHART.gap, BAR_CHART.width / count / 2);
+  const width = (BAR_CHART.width - gap * (count - 1)) / count;
   const max = maxOf(points);
   return points.map((point, index) => {
     const value = Number.isFinite(point.value) ? Math.max(0, point.value) : 0;
     const height = Math.max(2, (value / max) * BAR_CHART.plot);
     return {
-      x: index * (width + BAR_CHART.gap),
+      x: index * (width + gap),
       y: BAR_CHART.top + BAR_CHART.plot - height,
       width,
       height,

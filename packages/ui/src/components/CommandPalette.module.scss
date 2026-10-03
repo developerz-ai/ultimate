@@ -3,10 +3,14 @@
 .palette {
   position: fixed;
   inset-block-start: 12vh;
-  inset-inline-start: 50%;
+  // Centred by auto margins between two zero insets, never by a 50% inset and a -50% translate:
+  // the inset is logical and the translate physical, so under `dir="rtl"` that pair puts the
+  // palette a whole width off-centre (`rtl-sheets.test.ts`).
+  inset-inline: 0;
   inline-size: min(32rem, calc(100vw - #{t.space(8)}));
   max-block-size: 60vh;
-  margin: 0;
+  margin-block: 0;
+  margin-inline: auto;
   padding: 0;
   border: 1px solid t.role('line');
   border-radius: t.radius(lg);
@@ -20,8 +24,7 @@
   overflow: hidden;
   z-index: t.z(dialog);
 
-  // Transform-only translate keeps the 50% inline offset from fighting `margin-inline`.
-  transform: translateX(-50%) translateY(calc(-1 * #{t.space(1)})) scale(0.98);
+  transform: translateY(calc(-1 * #{t.space(1)})) scale(0.98);
   opacity: 0;
   visibility: hidden;
   transition:
@@ -30,7 +33,7 @@
     visibility t.duration(fast) t.easing(out);
 
   &[open] {
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateY(0) scale(1);
     opacity: 1;
     visibility: visible;
     transition-duration: t.duration(base);

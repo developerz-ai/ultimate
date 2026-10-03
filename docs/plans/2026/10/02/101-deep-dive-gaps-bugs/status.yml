@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 59
-current_focus: "PR 9b — ui (09-render-pwa-ui.md, second half)"
+percent: 64
+current_focus: "PR 10 — ai, mcp, mail, notify, manifest (10-ai-mcp-mail-notify-manifest.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -49,9 +49,9 @@ slices:
     evidence: "PR 8 (fix/101-08-realtime), one PR of about 190 files: the three halves (replication pipeline, sync node and channels, browser client) depend on each other in both directions and no cut builds alone. CodeRabbit refuses above 150 files, so three independent read-only reviewers (correctness, concurrency, security) audited the tree before the PR; they found about twenty defects in a green suite, all fixed here except one designed and recorded (a replayed offline write is not bound to its principal on the server - wiki/Known-Gaps.md). Every plan row fixed, none dropped. Also here: the sync role's health disclosure (rule moved to core), carried from PR 4b; the outbox re-send traced in PR 5 is at-least-once by design. The websocket origin rule ended as: a declared origin is the whole allow-list; undeclared, the origin the node was reached on (and its https spelling over plain http); x dev adds its own. Not run locally: the logical-replication and Redis live suites. Code: X_OFFLINE_QUEUE_ABANDONED."
   - file: 09-render-pwa-ui.md
     tier: 4
-    status: in_progress
-    percent: 60
-    evidence: "PR 9a (http, render, pwa, core): every render and pwa row fixed, none dropped. ISR regeneration through createSingleFlight with a 30 s deadline; most-specific fallback. Found beyond the plan: the live http router 404ed a catch-all's bare prefix that static-path writes, and both 404ed (and Bun.serve refused to start over) a static route outside ASCII; both fixed. Route order unified into core's routeRank (render and pwa each carried a copy, pwa's ranked against the router). Known gaps carried: server-side useId is a process-wide counter (ISR bytes vary between regenerations); cmd-dev-orphan.live.test.ts timed out once under the full gate's load (3/3 alone) - scripts PR. 9b is ui."
+    status: done
+    percent: 100
+    evidence: "PR 9b (ui): every ui row fixed, none dropped. QR codes now scan (four placement defects; an independent test reader plus whole matrices from a second encoder for versions 1-3). Theme: ThemeEnv gains current() and appDefault(); the boot stamps data-theme-default so a fixed defaultMode is kept by clearTheme and watchOsTheme; the x new template's bootedEnv workaround deleted. RTL centring with a sheet-wide guard and a 390 px Chrome e2e; useId scoped per bundle copy; the removed-in-21 inline-script exports deleted. PR 9a (http, render, pwa, core): every render and pwa row fixed, none dropped. ISR regeneration through createSingleFlight with a 30 s deadline; most-specific fallback. Found beyond the plan: the live http router 404ed a catch-all's bare prefix that static-path writes, and both 404ed (and Bun.serve refused to start over) a static route outside ASCII; both fixed. Route order unified into core's routeRank (render and pwa each carried a copy, pwa's ranked against the router). Known gaps carried: server-side useId is a process-wide counter (ISR bytes vary between regenerations); cmd-dev-orphan.live.test.ts timed out once under the full gate's load (3/3 alone) - scripts PR. 9b is ui."
   - file: 10-ai-mcp-mail-notify-manifest.md
     tier: 4
     status: not_started

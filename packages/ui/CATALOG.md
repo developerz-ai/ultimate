@@ -659,13 +659,13 @@ Cursor-first pagination — the only shape a Postgres-backed list should use. Nu
 
 ### Popover
 
-Non-modal anchored panel. Positioning is CSS-only (a relatively positioned anchor plus logical insets), so there is no measure/reflow loop and the panel flips sides automatically under `dir="rtl"`.
+Non-modal anchored panel. Positioning is CSS-only (a relatively positioned anchor plus logical insets and auto-margin centring), so there is no measure/reflow loop and the panel mirrors under `dir="rtl"` — `rtl-sheets.test.ts` holds that.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `open` | `boolean` | yes |  |
 | `onOpenChange` | `(open: boolean) => void` | yes |  |
-| `trigger` | `(control: { id: string; 'aria-expanded': boolean; 'aria-controls': string; }) => JSX.Element` | yes | The anchor. Wire its onClick to `onOpenChange` in the caller. |
+| `trigger` | `(control: { id: string; 'aria-expanded': boolean; 'aria-controls': string \| undefined; }) => JSX.Element` | yes | The anchor. Wire its onClick to `onOpenChange` in the caller. `aria-controls` is present only while the panel is mounted: an IDREF to an element not in the document names nothing. |
 | `children` | `JSX.Element` | yes |  |
 | `label` | `string` | yes | Already-translated accessible name for the panel. |
 | `placement` | `Placement` | — |  |

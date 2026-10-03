@@ -28,11 +28,13 @@ export interface TextareaProps {
 /**
  * `<textarea>` has NO `value` attribute — its value is its text content, and the parser drops the
  * attribute silently, so `value={…}` rendered every admin edit box empty whatever the row held.
- * The leading newline is the serializer's, not the value's: the HTML parser strips exactly one
- * newline after `<textarea>`, so emitting it unconditionally is what makes a value that itself
- * starts with a newline survive the round trip.
+ * On the SERVER the leading newline is the serializer's, not the value's: the HTML parser strips
+ * exactly one newline after `<textarea>`, so emitting it unconditionally is what makes a value that
+ * itself starts with a newline survive the round trip. In a BROWSER no parser runs — an island
+ * builds the element — so the value is the `.value` property, and the newline would be data.
  */
 export function Textarea(props: TextareaProps): JSX.Element {
+  const onServer = typeof document === 'undefined';
   return (
     <textarea
       class={cx(styles['textarea'], props.autoGrow === true && styles['autoGrow'], props.class)}
@@ -49,8 +51,9 @@ export function Textarea(props: TextareaProps): JSX.Element {
       aria-invalid={ariaBool(props['aria-invalid'])}
       onInput={props.onInput}
       onBlur={props.onBlur}
+      value={onServer ? undefined : (props.value ?? '')}
     >
-      {`\n${props.value ?? ''}`}
+      {onServer ? `\n${props.value ?? ''}` : undefined}
     </textarea>
   );
 }

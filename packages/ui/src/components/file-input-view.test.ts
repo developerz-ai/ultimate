@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   acceptMatches,
-  adoptDroppedFiles,
+  adoptAcceptedFiles,
   type FileCandidate,
   type FileTarget,
   formatBytes,
@@ -98,42 +98,61 @@ describe('formatBytes', () => {
 
 // The half a component test could never reach: a `<Dropzone name="avatar" required>` showed the
 // file it accepted and then refused to submit, because `onSelect` fired and `input.files` stayed
-// empty. `FileList` is a host type with no constructor, so the doubles below are structural — the
-// only field this rule reads is `length`.
-describe('adoptDroppedFiles', () => {
-  const fileList = (length: number): FileList => ({ length }) as unknown as FileList;
+// empty — and once it did adopt the drop, it adopted the REFUSED files too, so a file `accept` or
+// `maxBytes` turned away was posted anyway. `FileList` is a host type with no constructor, so the
+// list factory is injected and the doubles are structural.
+describe('adoptAcceptedFiles', () => {
+  const listed: (readonly FileCandidate[])[] = [];
+  const listOf = (files: readonly FileCandidate[]): FileList => {
+    listed.push(files);
+    return { length: files.length, files } as unknown as FileList;
+  };
   const target = (files: FileList | null = null): FileTarget => ({ files });
+  const picked = { length: 2 } as unknown as FileList;
+  const png = file('a.png', 'image/png');
+  const exe = file('b.exe', 'application/x-msdownload');
+  const limits = { accept: 'image/*' };
 
-  test('a dropped file becomes the input’s own, so the form posts it', () => {
+  test('a drop hands the input exactly the accepted files — a refused one is never posted', () => {
     const input = target();
-    const dropped = fileList(1);
-    adoptDroppedFiles(input, dropped);
-    // Identity, not a copy: `files` takes the DataTransfer's own FileList, which is the supported
-    // way to make a drop participate in the form.
-    expect(input.files).toBe(dropped);
+    adoptAcceptedFiles(input, null, selectFiles([png, exe], limits), 'drop', listOf);
+    expect(listed.at(-1)).toEqual([png]);
+    expect(input.files?.length).toBe(1);
   });
 
-  test('an empty drop leaves an earlier pick alone, exactly as the browser does', () => {
-    const picked = fileList(2);
+  test('a drop with nothing accepted leaves an earlier pick alone, as a refused drop should', () => {
     const input = target(picked);
-    adoptDroppedFiles(input, fileList(0));
+    adoptAcceptedFiles(input, null, selectFiles([exe], limits), 'drop', listOf);
+    adoptAcceptedFiles(input, null, selectFiles([], limits), 'drop', listOf);
     expect(input.files).toBe(picked);
   });
 
-  test('no dataTransfer at all — undefined or null — clears nothing', () => {
-    const picked = fileList(2);
-    const undefinedDrop = target(picked);
-    adoptDroppedFiles(undefinedDrop, undefined);
-    expect(undefinedDrop.files).toBe(picked);
+  test('a pick that refused a file is narrowed to what was accepted — to nothing, if need be', () => {
+    const input = target(picked);
+    adoptAcceptedFiles(input, picked, selectFiles([png, exe], limits), 'pick', listOf);
+    expect(listed.at(-1)).toEqual([png]);
+    adoptAcceptedFiles(input, picked, selectFiles([exe], limits), 'pick', listOf);
+    expect(input.files?.length).toBe(0);
+  });
 
-    const nullDrop = target(picked);
-    adoptDroppedFiles(nullDrop, null);
-    expect(nullDrop.files).toBe(picked);
+  test('a drop that refused nothing hands over its own list, untouched', () => {
+    const input = target();
+    const dropped = { length: 1 } as unknown as FileList;
+    const before = listed.length;
+    adoptAcceptedFiles(input, dropped, selectFiles([png], limits), 'drop', listOf);
+    expect(input.files).toBe(dropped);
+    expect(listed.length).toBe(before);
+  });
+
+  test('a pick that refused nothing is left exactly as the browser set it', () => {
+    const input = target(picked);
+    adoptAcceptedFiles(input, picked, selectFiles([png], limits), 'pick', listOf);
+    expect(input.files).toBe(picked);
   });
 
   test('an unmounted input is not an error: the ref is undefined before the effect runs', () => {
     expect(() => {
-      adoptDroppedFiles(undefined, fileList(1));
+      adoptAcceptedFiles(undefined, null, selectFiles([png], limits), 'drop', listOf);
     }).not.toThrow();
   });
 });

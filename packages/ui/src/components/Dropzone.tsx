@@ -12,7 +12,7 @@ import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './Dropzone.module.scss';
 import type { FileSelection } from './file-input-view';
-import { adoptDroppedFiles, progressPercent, selectFiles } from './file-input-view';
+import { adoptAcceptedFiles, progressPercent, selectFiles } from './file-input-view';
 
 export interface DropzoneProps {
   /** Already-translated instruction. Required — it is the control's accessible name. */
@@ -49,8 +49,12 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
   const inputId = (): string => props.id ?? fallbackId;
   const percent = (): number => progressPercent(props.progress ?? 0);
 
-  const offer = (files: FileList | null | undefined): void => {
-    props.onSelect(selectFiles([...(files ?? [])], props));
+  // The input first, then the callback: a drop that only reaches `onSelect` leaves the real
+  // control empty, and a refused file left in it is posted by the form anyway.
+  const offer = (files: FileList | null | undefined, origin: 'drop' | 'pick'): void => {
+    const selection = selectFiles([...(files ?? [])], props);
+    adoptAcceptedFiles(input, files, selection, origin);
+    props.onSelect(selection);
   };
 
   // `dragover` must be cancelled on every tick or the browser refuses the drop and navigates to
@@ -74,10 +78,7 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
         event.preventDefault();
         setOver(false);
         if (props.disabled === true) return;
-        // The input first, then the callback: a drop that only reaches `onSelect` leaves the real
-        // control empty, and the form the label sits in submits nothing.
-        adoptDroppedFiles(input, event.dataTransfer?.files);
-        offer(event.dataTransfer?.files);
+        offer(event.dataTransfer?.files, 'drop');
       }}
     >
       <span class={styles['label']}>{props.label}</span>
@@ -96,7 +97,7 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
         disabled={props.disabled === true}
         aria-describedby={props['aria-describedby']}
         aria-invalid={ariaBool(props['aria-invalid'])}
-        onChange={(event) => offer(event.currentTarget.files)}
+        onChange={(event) => offer(event.currentTarget.files, 'pick')}
       />
       {props.progress === undefined ? null : (
         <span

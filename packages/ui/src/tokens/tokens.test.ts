@@ -213,7 +213,7 @@ describe('token helpers', () => {
   test('an unknown role throws X_TOKEN_UNKNOWN with a fix', () => {
     try {
       assertColorRole('brand-blue-500');
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; fix?: string };
       expect(err.code).toBe(UI_ERROR_CODES.tokenUnknown);

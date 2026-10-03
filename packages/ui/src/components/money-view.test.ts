@@ -48,7 +48,7 @@ describe('moneyText', () => {
   test('a float is rejected — money is never a float', () => {
     try {
       toMoney(19.99, 'USD');
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string };
       expect(err.code).toBe(UI_ERROR_CODES.invalidValue);

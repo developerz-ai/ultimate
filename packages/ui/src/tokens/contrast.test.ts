@@ -51,7 +51,7 @@ describe('contrast helpers', () => {
     for (const bad of ['#1e6eb2', '31,110,178', '31 110', '31 110 300', '']) {
       try {
         parseChannels(bad);
-        throw new Error(`expected a throw for ${JSON.stringify(bad)}`);
+        expect.unreachable(`expected a throw for ${JSON.stringify(bad)}`);
       } catch (error) {
         const err = error as { code?: string };
         expect(err.code).toBe(UI_ERROR_CODES.invalidValue);

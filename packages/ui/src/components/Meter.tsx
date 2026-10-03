@@ -9,7 +9,7 @@
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import styles from './Meter.module.scss';
-import { meterShare, meterWidth } from './meter-view';
+import { meterAria, meterShare, meterWidth } from './meter-view';
 import type { Tone } from './variants';
 
 export interface MeterProps {
@@ -49,8 +49,8 @@ export function Meter(props: MeterProps): JSX.Element {
       role="meter"
       aria-label={props.label}
       aria-valuemin={0}
-      aria-valuemax={props.max}
-      aria-valuenow={props.value}
+      aria-valuemax={meterAria(props.value, props.max).max}
+      aria-valuenow={meterAria(props.value, props.max).now}
     >
       {bars()}
     </svg>

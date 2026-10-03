@@ -272,17 +272,11 @@ const toggleIsland =
 // browser downloads. Named by SPECIFIER from the page, never by import:
 //   const ThemeSwitch = island({ src: '../../shared/theme-toggle.island.tsx', props: ['locale'] });
 //
-// The control itself is the catalog's \`ThemeToggle\`; this file is the runtime it needs and the
-// one decision the framework cannot make for it — see \`bootedEnv\` below.
+// The control itself is the catalog's \`ThemeToggle\`; this file is only the runtime it needs. It
+// reads the browser on its own: the theme the boot stamped on \`<html>\`, then \`theme.defaultMode\`
+// (stamped beside it), then the OS.
 
-import {
-  browserThemeEnv,
-  setSolidRuntime,
-  THEME_ATTRIBUTE,
-  type ThemeEnv,
-  ThemeToggle,
-  UiProvider,
-} from '@ultimat3/ui';
+import { setSolidRuntime, ThemeToggle, UiProvider } from '@ultimat3/ui';
 import {
   createContext,
   createEffect,
@@ -299,17 +293,6 @@ export interface ThemeToggleIslandProps {
 }
 
 /**
- * With no stored choice the catalog's \`resolveTheme\` asks the OS — but the document already wears
- * the theme the framework's boot script stamped from \`theme.defaultMode\` (dark, in this app), so
- * a toggle that asked the OS would show one theme while the page wore another. The boot's verdict
- * is on \`<html>\` before this runs: read it once, and let a stored choice win as it does there.
- */
-export const bootedEnv = (): ThemeEnv => {
-  const booted = document.documentElement.getAttribute(THEME_ATTRIBUTE) === 'dark';
-  return { ...browserThemeEnv(), prefersDark: () => booted };
-};
-
-/**
  * The one export the hydration runtime calls. \`setSolidRuntime\` comes FIRST and is not optional:
  * \`@ultimat3/ui\` imports types from solid-js and never a runtime, so the reactive graph a
  * component reaches is the one an entry registers. Six NAMED imports, never a namespace: a
@@ -318,12 +301,11 @@ export const bootedEnv = (): ThemeEnv => {
  */
 export function mount(el: HTMLElement, props: ThemeToggleIslandProps): void {
   setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup });
-  const env = bootedEnv();
   el.textContent = '';
   render(
     () => (
       <UiProvider locale={props.locale}>
-        <ThemeToggle mode="toggle" env={env} />
+        <ThemeToggle mode="toggle" />
       </UiProvider>
     ),
     el,
@@ -353,15 +335,13 @@ export const themeToggleStates = defineIslandStates({
 
 const toggleTest =
   (): string => `// The toggle the browser actually runs: built with the same \`buildIslands\` as \`x build\`, mounted
-// against a DOM small enough to read, and clicked. What it pins is the one decision this island
-// makes — the boot's verdict on \`<html>\` is what the control starts from, and a click writes the
-// key the boot script reads back on the next load.
+// against a DOM small enough to read, and clicked. What it pins: the boot's verdict on \`<html>\` is
+// what the control starts from, and a click writes the key the boot script reads back next load.
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import { describeIslandState, expect, test } from '@ultimat3/testing';
-import { THEME_ATTRIBUTE, THEME_STORAGE_KEY } from '@ultimat3/ui';
-import { bootedEnv } from './theme-toggle.island';
+import { THEME_ATTRIBUTE, THEME_DEFAULT_ATTRIBUTE, THEME_STORAGE_KEY } from '@ultimat3/ui';
 import { themeToggleStates } from './theme-toggle.island.states';
 
 /** What the island reads through \`browserThemeEnv\`: storage and the OS query, both fakes. */
@@ -371,11 +351,19 @@ const localStorage = {
   setItem: (key: string, value: string): void => void stored.set(key, value),
   removeItem: (key: string): void => void stored.delete(key),
 };
+/** One OS query, shared by every \`matchMedia\` call: \`flipOs\` changes it and tells the listeners. */
+const os = { dark: false, listeners: new Set<() => void>() };
 const matchMedia = (): Record<string, unknown> => ({
-  matches: false,
-  addEventListener: () => {},
-  removeEventListener: () => {},
+  get matches(): boolean {
+    return os.dark;
+  },
+  addEventListener: (_type: string, listener: () => void) => void os.listeners.add(listener),
+  removeEventListener: (_type: string, listener: () => void) => void os.listeners.delete(listener),
 });
+const flipOs = (dark: boolean): void => {
+  os.dark = dark;
+  for (const listener of os.listeners) listener();
+};
 
 // The state \`x shot --island theme-toggle\` photographs is the state this mounts: one manifest,
 // so the picture and the assertion cannot be of two different components.
@@ -404,12 +392,27 @@ describeIslandState(themeToggleStates, 'default', island, (mounted) => {
     expect(mounted().documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('dark');
   });
 
-  test('the env the island builds starts from the theme stamped on <html>', () => {
-    // The fake document is still installed here, so this reads exactly what \`mount\` read.
+  test('with nothing stored, a click flips the theme the boot stamped — not the OS', () => {
+    // The OS fake says light. The boot stamped this app's \`defaultMode\`, dark, so the visible
+    // theme is dark and the first click must go light; a toggle that asked the OS would write the
+    // dark already on screen and look dead.
+    stored.clear();
+    mounted().documentElement.setAttribute(THEME_DEFAULT_ATTRIBUTE, 'dark');
     mounted().documentElement.setAttribute(THEME_ATTRIBUTE, 'dark');
-    expect(bootedEnv().prefersDark()).toBe(true);
-    mounted().documentElement.setAttribute(THEME_ATTRIBUTE, 'light');
-    expect(bootedEnv().prefersDark()).toBe(false);
+    expect(mounted().fire('button', 'click')).toBe(true);
+    expect(stored.get(THEME_STORAGE_KEY)).toBe('light');
+    expect(mounted().documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('light');
+  });
+
+  test("an OS flip is followed while nothing is stored and the app's default is 'system'", () => {
+    stored.clear();
+    mounted().documentElement.setAttribute(THEME_DEFAULT_ATTRIBUTE, 'system');
+    flipOs(true);
+    expect(mounted().documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('dark');
+    // A fixed default is the app's own opinion: the OS does not override it.
+    mounted().documentElement.setAttribute(THEME_DEFAULT_ATTRIBUTE, 'dark');
+    flipOs(false);
+    expect(mounted().documentElement.getAttribute(THEME_ATTRIBUTE)).toBe('dark');
   });
 });
 `;

@@ -226,12 +226,14 @@ Order: **explicit `localStorage` choice → `theme.defaultMode`**, where `'syste
 
 **The boot writes the script; the app writes nothing** (`As of 20.2.0`). `x dev`, the container and `x build`'s static export all inline `themeScript({ fallback })` from `@ultimat3/render` with `theme.defaultMode` from `app.config.ts` as the fallback, and the served processes admit its `sha256` to `script-src` from the same string — `packages/cli/src/theme-boot.ts`. An app that wants to open dark sets `theme: { defaultMode: 'dark' }` and is done. The storage key is `ultimate.theme` on both sides: the boot reads it, `ThemeToggle` writes it, and a test pins the two literals equal. Before this release neither of the framework's two theme scripts was inlined by anything, both fell back to light, and they disagreed on the key.
 
-[`packages/ui/src/theme/inline-script.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/src/theme/inline-script.ts) is deprecated and removed in 21 — an app that inlined it by hand keeps building and should delete that code.
+`@ultimat3/ui`'s own inline script (`THEME_INLINE_SCRIPT`, `themeInlineScriptTag`, `themeInlineScriptHash`, `themeInlineScriptCspSource`) is **gone**: an app that still inlined it by hand deletes that code — the boot's script already runs first.
+
+On the client, `resolveTheme()` reads the same order back: stored choice, then the `data-theme` the boot stamped (`ThemeEnv.current()`), then `defaultTheme(env)` — the app's own `defaultMode` as the boot stamped it in `data-theme-default` (`ThemeEnv.appDefault()`), and the OS only when that is `'system'` or absent — so with `defaultMode: 'dark'` on a light-OS machine the first toggle flips to light instead of writing the dark already on screen.
 
 | Concern | Rule |
 |---|---|
-| Persist | only when the user explicitly picks. `clearTheme()` removes the key and returns to OS-following |
-| OS flip | a `matchMedia` change listener re-applies **only** when no explicit choice is stored |
+| Persist | only when the user explicitly picks. `clearTheme()` removes the key and returns to the app default — `theme.defaultMode` when it is `'light'` or `'dark'`, the OS for `'system'` |
+| OS flip | a `matchMedia` change listener re-applies **only** when no explicit choice is stored **and** `theme.defaultMode` is `'system'`. The boot stamps the mode itself as `data-theme-default` (`ThemeEnv.appDefault()`), so a fixed `'dark'` is never flipped light by the OS |
 | Determinism | `data-theme` beating the media query is what makes Playwright screenshots reproducible — set the attribute, don't emulate |
 | SSR | the server never guesses a theme; it emits the boot script and neutral markup |
 | No flash | the script is blocking and inline. An async or deferred theme script is a regression, not an optimization |

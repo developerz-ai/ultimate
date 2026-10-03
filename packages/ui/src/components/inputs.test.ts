@@ -4,6 +4,7 @@
 // than an attribute.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { FakeElement, installFakeDom } from '../fake-dom';
 import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { Input } from './Input';
 import { Radio } from './Radio';
@@ -161,6 +162,21 @@ describe('the form controls', () => {
 
     test('an unset value is still text content, so the control is never undefined', () => {
       expect(byTag(renderNodes(Textarea, {}), 'textarea')[0]?.props['children']).toBe('\n');
+    });
+
+    test('in a browser the value is the .value PROPERTY, with no serializer newline in it', () => {
+      // The newline is for the HTML parser, which strips it; an island never goes through one,
+      // so a client render that kept it held — and submitted — "\nabc" for "abc".
+      const dom = installFakeDom(new FakeElement('div'));
+      try {
+        const node = one(byTag(renderNodes(Textarea, { value: 'abc' }), 'textarea'), 'textarea');
+        expect(node.props['value']).toBe('abc');
+        expect(node.props['children']).toBeUndefined();
+        const empty = one(byTag(renderNodes(Textarea, {}), 'textarea'), 'textarea');
+        expect(empty.props['value']).toBe('');
+      } finally {
+        dom.restore();
+      }
     });
 
     test('rows is the floor for the natively growing box', () => {

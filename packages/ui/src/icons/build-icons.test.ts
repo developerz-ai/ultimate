@@ -15,6 +15,7 @@ import {
   parseIconNodes,
   SAFE_ATTR_VALUE,
   SAFE_ICON_NAME,
+  withPin,
 } from './build-icons';
 
 /** `expect(fn).toThrow(Class)` passes in Bun 1.4.0 when `fn` merely RETURNS an error, so the
@@ -25,7 +26,7 @@ function caught(run: () => unknown): { code?: unknown; cause?: unknown; fix?: un
   } catch (error) {
     return error as { code?: unknown };
   }
-  throw new Error('expected the call to throw, and it returned');
+  return expect.unreachable('expected the call to throw, and it returned');
 }
 
 const NODES = JSON.stringify({
@@ -59,6 +60,30 @@ describe('parseIconNodes', () => {
   test('bad upstream data is an invalid VALUE, not a missing runtime', () => {
     expect(caught(() => parseIconNodes('[]')).code).toBe(UI_ERROR_CODES.invalidValue);
     expect(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).code).toBe(
+      UI_ERROR_CODES.invalidValue,
+    );
+  });
+
+  test('a body that is not JSON at all is the same invalid VALUE, naming the URL', () => {
+    // A CDN error page, a captive portal, a truncated download: `JSON.parse` threw a bare
+    // `SyntaxError` here, which no fix line accompanies.
+    for (const body of ['<html>502</html>', '{"search": [', '']) {
+      const error = caught(() => parseIconNodes(body));
+      expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+      expect(String(error.cause)).toContain(LUCIDE_ICON_NODES_URL);
+      expect(String(error.fix)).toContain('bun run --filter @ultimat3/ui icons');
+    }
+  });
+
+  test('a node that is not a [tag, attrs] pair is refused, never skipped into a partial glyph', () => {
+    for (const node of ['path', 7, null, [], [3, {}], ['path', 'd'], ['path', ['d']]]) {
+      const table = JSON.stringify({ search: [['path', { d: 'm21 21-4.34-4.34' }], node] });
+      const error = caught(() => parseIconNodes(table));
+      expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+      expect(String(error.cause)).toContain('"search"');
+    }
+    // An icon whose value is not a list of nodes at all is refused the same way.
+    expect(caught(() => parseIconNodes(JSON.stringify({ search: 'path' }))).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
   });
@@ -173,20 +198,54 @@ describe('the committed glyph set', () => {
 // Axiom 4: a `fix:` is what its reader RUNS. Everything that decides whether running it helps —
 // which URL served the file, which pinned version published the glyph — is the CAUSE's job, so
 // these assert the two halves separately rather than that the sentence reads well.
+describe('withPin', () => {
+  const FILE = "// x\nexport const LUCIDE_VERSION = '1.31.0';\nconst y = 1;\n";
+
+  test('rewrites exactly the pin line, and nothing else', () => {
+    expect(withPin(FILE, '1.50.0')).toBe(FILE.replace('1.31.0', '1.50.0'));
+  });
+
+  test('a version that is not plain semver never reaches the source', () => {
+    for (const bad of ["1.0.0'; evil()", '', 'latest', '1.0']) {
+      expect(caught(() => withPin(FILE, bad)).code).toBe(UI_ERROR_CODES.invalidValue);
+    }
+  });
+
+  test('a file with no pin line is refused rather than left untouched and reported bumped', () => {
+    expect(caught(() => withPin('const y = 1;\n', '1.50.0')).code).toBe(
+      UI_ERROR_CODES.invalidValue,
+    );
+  });
+});
+
 describe('the generator’s errors are instructions', () => {
-  /** What a shell would execute: the line up to the `#` that opens a comment. */
-  const runnable = (fix: unknown): string => String(fix).split('#')[0]?.trim() ?? '';
-
   const ICONS = 'bun run --filter @ultimat3/ui icons';
+  const BUMP = `${ICONS} --bump`;
 
-  test('every fix line is the generator’s command, with nothing in front of it to read past', () => {
+  test('a file that was served wrong is fixed by re-running the generator, exactly', () => {
+    for (const bad of ['[]', '<html>502</html>']) {
+      expect(caught(() => parseIconNodes(bad)).fix).toBe(ICONS);
+    }
+  });
+
+  test('data the PIN published is fixed by moving the pin — one command, no comment to obey', () => {
     for (const bad of [
-      '[]',
       JSON.stringify({ empty: [] }),
       JSON.stringify({ evil: [['path', { d: "M0 0');x" }]] }),
+      JSON.stringify({ search: ['path'] }),
+      JSON.stringify({ 'Bad Name': [['path', { d: 'M0 0' }]] }),
     ]) {
-      expect(runnable(caught(() => parseIconNodes(bad)).fix)).toBe(ICONS);
+      expect(caught(() => parseIconNodes(bad)).fix).toBe(BUMP);
     }
+  });
+
+  test('no fix in the generator carries a shell comment or a prose prefix', async () => {
+    const source = await Bun.file(new URL('./build-icons.ts', import.meta.url)).text();
+    const fixes = [...source.matchAll(/^\s*(?:'|`)((?:bun|bunx|curl) [^'`]*)(?:'|`),?$/gm)].map(
+      (match) => match[1] ?? '',
+    );
+    expect(fixes.length).toBeGreaterThanOrEqual(5);
+    expect(fixes.filter((fix) => fix.includes('#') || /\bthen\b|^run:/.test(fix))).toEqual([]);
   });
 
   test('the URL that served the wrong file is named in the cause, not the fix', () => {
@@ -201,7 +260,7 @@ describe('the generator’s errors are instructions', () => {
     );
     // Re-running against the same pin repeats this error, so the cause has to name the pin.
     expect(String(error.cause)).toContain(LUCIDE_VERSION);
-    expect(String(error.fix)).toContain('LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts');
+    expect(String(error.cause)).toContain('LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts');
     expect(String(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).cause)).toContain(
       LUCIDE_VERSION,
     );
@@ -219,8 +278,8 @@ describe('the icon NAME is validated before it reaches a sink', () => {
     const hostile = JSON.stringify({ '../../index': [['path', { d: 'M0 0' }]] });
     const error = caught(() => parseIconNodes(hostile));
     expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
-    // The `fix:` is a line its reader RUNS: the command first, the rest behind a `#`.
-    expect(String(error.fix).split('#')[0]?.trim()).toBe('bun run --filter @ultimat3/ui icons');
+    // The pin published the name, so the line its reader RUNS is the one that moves the pin.
+    expect(error.fix).toBe('bun run --filter @ultimat3/ui icons --bump');
     expect(String(error.cause)).toContain(LUCIDE_VERSION);
   });
 

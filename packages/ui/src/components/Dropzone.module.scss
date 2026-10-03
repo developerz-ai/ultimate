@@ -25,8 +25,10 @@
     background: t.role('bg-soft');
   }
 
+  // Dimmed directly: `@include t.disabled` appends `:disabled`, which a `<label>` carrying a data
+  // flag can never be, so the rule it compiled to matched nothing (`disabled-dim.test.ts`).
   &[data-disabled='true'] {
-    @include t.disabled;
+    opacity: 0.55;
     background: t.role('bg-soft');
     cursor: not-allowed;
   }

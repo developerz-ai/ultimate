@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   announce,
   ariaBool,
@@ -7,22 +7,9 @@ import {
   FOCUSABLE_SELECTOR,
   focusableWithin,
   nextRovingIndex,
-  resetIdCounter,
-  useId,
 } from './a11y';
 import { FakeElement, installFakeDom, keydown } from './fake-dom';
 import { MENU_ITEM_SELECTOR } from './roving';
-
-describe('useId', () => {
-  beforeEach(resetIdCounter);
-
-  test('is unique and prefixed for label wiring', () => {
-    const a = useId('field');
-    const b = useId('field');
-    expect(a).not.toBe(b);
-    expect(a.startsWith('field-')).toBe(true);
-  });
-});
 
 describe('nextRovingIndex', () => {
   test('moves and wraps along the inline axis', () => {

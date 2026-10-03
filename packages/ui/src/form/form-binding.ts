@@ -148,15 +148,16 @@ export function createFormBinding<TValues, TResult>(
     // has already changed, on the one screen where the user is watching for exactly that.
     publish({ status: 'submitting', ...NO_FORM_ERRORS, result: undefined, issues: [] });
 
-    const schema = options.schema;
-    if (schema !== undefined) {
-      // The result's `value` is read by nothing. Deliberately: the parse below is the browser's
-      // opinion, and the only thing this file wants from it is which paths to complain about.
-      const local = issuesFromValidation(await schema['~standard'].validate(values));
-      if (local.length > 0) return failed(local);
-    }
-
     try {
+      // Inside the `try`: a validate that throws or rejects is a failed submit, never a `submit()`
+      // that rejects with the state left at `submitting` and the control refusing every retry.
+      const schema = options.schema;
+      if (schema !== undefined) {
+        // The result's `value` is read by nothing. Deliberately: the parse below is the browser's
+        // opinion, and the only thing this file wants from it is which paths to complain about.
+        const local = issuesFromValidation(await schema['~standard'].validate(values));
+        if (local.length > 0) return failed(local);
+      }
       const result = await options.submit(values);
       // The server accepted what the form held, so there is nothing left to lose. `touched` stays:
       // the user has still visited those fields, and a hint that vanishes on save is a flicker.

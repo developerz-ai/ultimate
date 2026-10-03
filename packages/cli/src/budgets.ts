@@ -67,8 +67,9 @@ export interface BuildStats {
  * `examples/dummy` was charged 250 B for `/x-sw-register.js` by a file written before
  * `FRAMEWORK_SCRIPTS` exempted it. `2`: that exemption and the page-boot decision (ledger #28).
  * `3`: an island entry's imported chunks are charged, each once per document (shared chunks).
+ * `4`: the exempt theme script's bytes moved — it also stamps `data-theme-default` (plan 101, 09).
  */
-export const BUILD_STATS_RULES = 3;
+export const BUILD_STATS_RULES = 4;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');

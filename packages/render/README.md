@@ -502,7 +502,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `emitIslandAttributes`, `hydrateRuntime`, `HYDRATE_RUNTIME_BODIES` | the four hydration strategies, and every body the runtime script can hold — a host hashes that list into `script-src`, because the runtime is emitted inline and no `render: 'static'` file can receive a nonce |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
-| `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |
+| `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
 ## Notes

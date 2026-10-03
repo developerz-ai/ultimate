@@ -66,6 +66,19 @@ describe('Meter', () => {
     expect(svg.props['aria-valuemax']).toBe(4);
     expect(svg.props['aria-hidden']).toBeUndefined();
   });
+
+  test('the spoken value is the one the bar draws — clamped, never past its own maximum', () => {
+    const spoken = (value: number, max: number): readonly unknown[] => {
+      const svg = one(byTag(renderNodes(Meter, { value, max, label: 'Quota' }), 'svg'), 'meter');
+      return [svg.props['aria-valuenow'], svg.props['aria-valuemax']];
+    };
+    expect(spoken(7, 4)).toEqual([4, 4]);
+    expect(spoken(-2, 4)).toEqual([0, 4]);
+    expect(spoken(Number.NaN, 4)).toEqual([0, 4]);
+    // An empty meter (no usable maximum) says so with a range that is still a range.
+    expect(spoken(3, 0)).toEqual([0, 1]);
+    expect(spoken(3, Number.POSITIVE_INFINITY)).toEqual([0, 1]);
+  });
 });
 
 describe('Kbd', () => {

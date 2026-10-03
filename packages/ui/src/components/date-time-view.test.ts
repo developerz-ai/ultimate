@@ -65,7 +65,7 @@ describe('dateTimeView', () => {
   test('an unparseable value throws X_UI_INVALID_VALUE with a fix', () => {
     try {
       toIsoInstant('not-a-date');
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; fix?: string };
       expect(err.code).toBe(UI_ERROR_CODES.invalidValue);

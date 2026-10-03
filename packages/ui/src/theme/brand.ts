@@ -72,10 +72,11 @@ export function defineTheme(input: BrandInput): Brand {
   // `html[data-theme]`. A brand that only wrote `:root` would lose to those attribute rules on
   // specificity, so every level it emits is answered here, in the same order.
   if (light.length > 0) blocks.push(rule("html[data-theme='light']", light));
-  if (dark.length > 0) {
-    blocks.push(`@media (prefers-color-scheme: dark) {\n${indent(rule(':root', dark))}\n}`);
-    blocks.push(rule("html[data-theme='dark']", dark));
+  const media = darkMediaDeclarations(input.colors);
+  if (media.length > 0) {
+    blocks.push(`@media (prefers-color-scheme: dark) {\n${indent(rule(':root', media))}\n}`);
   }
+  if (dark.length > 0) blocks.push(rule("html[data-theme='dark']", dark));
 
   return Object.freeze({ css: blocks.join('\n\n') });
 }
@@ -109,6 +110,24 @@ function indent(block: string): string {
     .split('\n')
     .map((line) => `  ${line}`)
     .join('\n');
+}
+
+/**
+ * The dark media `:root` must answer every role the brand's own `:root` touched. That `:root`
+ * (light) comes after `theme.scss`'s dark media `:root` at equal specificity, so a role overridden
+ * in light only would otherwise reach an OS-dark document with no `data-theme` — scripting off, or
+ * storage throwing in the boot script — on the dark palette it was never measured against. Such a
+ * role is answered with the SHIPPED dark channels. Called after both scopes were validated.
+ */
+function darkMediaDeclarations(colors: BrandInput['colors']): string[] {
+  const out: string[] = [];
+  for (const role of COLOR_ROLES) {
+    const value =
+      colors?.dark?.[role] ??
+      (colors?.light?.[role] === undefined ? undefined : colorTokens.dark[role]);
+    if (value !== undefined) out.push(`--color-${role}: ${value};`);
+  }
+  return out;
 }
 
 /**

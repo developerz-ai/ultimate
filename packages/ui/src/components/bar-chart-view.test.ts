@@ -40,6 +40,16 @@ describe('barRects', () => {
     expect(rects[1]?.height).toBe(2);
   });
 
+  test('more points than the gaps leave room for still tile the width with positive bars', () => {
+    // At 3px a gap, 201 gaps already fill 600px: past that every bar used to be a negative rect.
+    for (const count of [201, 202, 300, 1000]) {
+      const rects = barRects(points(...Array.from({ length: count }, () => 1)));
+      expect(rects.every((rect) => rect.width > 0)).toBe(true);
+      const last = rects[count - 1] as { x: number; width: number };
+      expect(last.x + last.width).toBeCloseTo(BAR_CHART.width);
+    }
+  });
+
   test('no points is no bars', () => {
     expect(barRects([])).toEqual([]);
   });

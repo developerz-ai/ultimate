@@ -137,23 +137,6 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     ));
   };
 
-  const decided = branch();
-  if (decided.kind === 'failed') {
-    return <ErrorState error={decided.error} onRetry={props.onRetry} class={props.class} />;
-  }
-
-  // Unreachable while pending, by the shape of `AsyncBranch` rather than by the order of two ifs:
-  // "No results" under a first page in flight is the bug that ordering used to be all that stopped.
-  if (decided.kind === 'empty') {
-    return (
-      <EmptyState
-        title={props.emptyTitle}
-        description={props.emptyDescription}
-        class={props.class}
-      />
-    );
-  }
-
   /** One mode per use, exactly as `Pagination` declares it — the table only hands it through. */
   const pager = (): JSX.Element =>
     props.hrefFor === undefined ? (
@@ -216,35 +199,55 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     );
   };
 
-  return (
-    <div class={cx(styles['wrap'], props.class)}>
-      <Table
-        caption={props.caption}
-        stickyHeader={props.stickyHeader !== false}
-        density={props.density ?? 'comfortable'}
+  // An array, not a fragment: this package's `.tsx` compiles to two factories (Solid's and render's
+  // `h`), and only an array means the same sibling list to both.
+  const table = (decided: AsyncBranch<readonly Row[]>): JSX.Element => [
+    <Table
+      caption={props.caption}
+      stickyHeader={props.stickyHeader !== false}
+      density={props.density ?? 'comfortable'}
+    >
+      <thead>
+        <tr>
+          {props.columns.map((column) => (
+            <th
+              scope="col"
+              style={column.width === undefined ? undefined : { 'inline-size': column.width }}
+              aria-sort={ariaSortFor(props.sort, column.key)}
+              class={column.numeric === true ? styles['numeric'] : undefined}
+            >
+              {sortControl(column)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody
+        class={decided.kind === 'ready' && decided.busy ? styles['stale'] : undefined}
+        aria-busy={ariaBool(isBusyBranch(decided))}
       >
-        <thead>
-          <tr>
-            {props.columns.map((column) => (
-              <th
-                scope="col"
-                style={column.width === undefined ? undefined : { 'inline-size': column.width }}
-                aria-sort={ariaSortFor(props.sort, column.key)}
-                class={column.numeric === true ? styles['numeric'] : undefined}
-              >
-                {sortControl(column)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody
-          class={decided.kind === 'ready' && decided.busy ? styles['stale'] : undefined}
-          aria-busy={ariaBool(isBusyBranch(decided))}
-        >
-          {body()}
-        </tbody>
-      </Table>
-      {props.nextCursor === undefined && props.prevCursor === undefined ? null : pager()}
-    </div>
-  );
+        {body()}
+      </tbody>
+    </Table>,
+    props.nextCursor === undefined && props.prevCursor === undefined ? null : pager(),
+  ];
+
+  /**
+   * The branch is decided INSIDE the returned JSX, as `AsyncRegion` does: a component body runs
+   * once, so a decision taken there is the decision for the island's whole life — a table that
+   * first rendered its error state kept it after the query recovered.
+   */
+  const content = (): JSX.Element => {
+    const decided = branch();
+    if (decided.kind === 'failed') {
+      return <ErrorState error={decided.error} onRetry={props.onRetry} />;
+    }
+    // Unreachable while pending, by the shape of `AsyncBranch` rather than by the order of two
+    // ifs: "No results" under a first page in flight is the bug that ordering used to stop.
+    if (decided.kind === 'empty') {
+      return <EmptyState title={props.emptyTitle} description={props.emptyDescription} />;
+    }
+    return table(decided);
+  };
+
+  return <div class={cx(styles['wrap'], props.class)}>{content()}</div>;
 }

@@ -44,7 +44,7 @@ A rung is `sm md lg xl 2xl`, quoted or bare. Prefer a container query (`t.contai
 | No raw colours | a hex or `rgb()` literal in a component stylesheet fails review; `tokens.test.ts` asserts the shared SCSS is hex-free |
 | No Tailwind | not a dependency, not a config, not an escape hatch |
 | No CSS-in-JS | styles are `Foo.module.scss` next to `Foo.tsx`, compiled at build |
-| No physical directions | `margin-inline`, `inset-inline-start`, `text-align: start` — RTL needs no second stylesheet |
+| No physical directions | `margin-inline`, `inset-inline-start`, `text-align: start` — RTL needs no second stylesheet. Centring is `inset-inline` + `margin-inline: auto`, never a 50% logical inset beside a physical −50% translate, and an edge shadow's physical x offset gets a `[dir='rtl']` mirror (`components/rtl-sheets.test.ts`) |
 | No hardcoded strings | labels are props, or `t()` through `UI_KEYS` |
 | One token source | `src/tokens/*.scss` is canonical; `tokens.ts` mirrors it and `x verify` fails on drift |
 | AA contrast, both themes | `contrast.test.ts` measures every pairing a component renders — text, status fills, soft tints, focus rings, borders |
@@ -496,14 +496,15 @@ one politeness — `politeness="assertive"` for a region that carries errors alo
 
 ## Theme resolution
 
-`explicit choice in localStorage` → `OS preference`. `setTheme()` persists,
-`clearTheme()` forgets and follows the OS again, and the OS listener only applies
-while nothing is stored. `themeInlineScriptTag()` goes in `<head>` and applies the
-result before first paint, so there is no flash and screenshots are deterministic:
-
-```
-Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCspSource()
-```
+`explicit choice in localStorage` → `the theme already on <html>` → `defaultTheme(env)`: the
+app's `theme.defaultMode` (`data-theme-default`), and the OS only when that is `'system'` or
+absent. The framework's boot inlines `themeScript({ fallback })` from
+`@ultimat3/render` and stamps `data-theme` before first paint, and `resolveTheme()` reads it back
+through `ThemeEnv.current()` — so with `defaultMode: 'dark'` on a light-OS machine the first toggle
+flips to light rather than writing the dark already on screen. `setTheme()` persists,
+`clearTheme()` forgets and returns to the app default (`data-theme-default`, which the boot stamps
+from `theme.defaultMode`; the OS for `'system'`), and the OS listener applies only while nothing is
+stored and that default is `'system'`.
 
 ## Forms bound to an action's input schema
 

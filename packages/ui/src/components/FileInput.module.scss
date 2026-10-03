@@ -51,8 +51,10 @@
     border-color: t.role('accent');
   }
 
+  // Dimmed directly: a pseudo-element is never itself `:disabled`, so `@include t.disabled` here
+  // compiled to a selector nothing matches (`disabled-dim.test.ts`).
   &:disabled::file-selector-button {
-    @include t.disabled;
+    opacity: 0.55;
     cursor: not-allowed;
   }
 }

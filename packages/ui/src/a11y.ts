@@ -20,27 +20,41 @@ export const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 let idCounter = 0;
+let islandScope: string | undefined;
 
 /**
- * Unique id for label/description wiring, from a PROCESS-wide counter. Prefixed so a mismatch is
- * obvious in the DOM rather than silent.
+ * The part of an id that tells two copies of this module apart. Each island is its own bundle by
+ * default (`islands.sharedChunks` off — measured: every island chunk inlines this counter; with it
+ * on, one shared chunk holds it), so each island counts from zero and two of them both minted
+ * `field-1`. In a browser every copy draws its own scope once; a server render has one copy and no
+ * scope, so a document's ids carry no random part.
+ */
+function scope(): string {
+  if (typeof document === 'undefined') return '';
+  if (islandScope === undefined) {
+    const [draw = 0] = crypto.getRandomValues(new Uint32Array(1));
+    islandScope = draw.toString(36);
+  }
+  return `${islandScope}-`;
+}
+
+/**
+ * Unique id for label/description wiring. Prefixed so a mismatch is obvious in the DOM.
  *
- * Correct for the only render path that exists: a server render walks a tree once, so every id in
- * one document is distinct, which is all `for`/`aria-describedby` need. It is NOT stable across two
- * renders of the same tree — a second process, or a client re-render, starts its own count — so it
- * cannot survive hydration. That is latent rather than broken: this package has no client runtime
- * (see CLAUDE.md), so nothing re-renders a server tree yet. Making it survive needs a
- * RENDER-SCOPED counter, which means a seam in `@ultimat3/render` (or a `SolidRuntime` member);
- * resetting this one per request would only move the collision. Do not paper over it here.
+ * On the server it comes from a PROCESS-wide counter: every id in one document is distinct, which
+ * is all `for`/`aria-describedby` need, but two renders of one page mint different numbers — a
+ * render-scoped counter needs a seam in `@ultimat3/render`. An island never reuses a server id: it
+ * replaces its shell rather than hydrating it, and its own ids carry its scope (above).
  */
 export function useId(prefix = 'u'): string {
   idCounter += 1;
-  return `${prefix}-${idCounter.toString(36)}`;
+  return `${prefix}-${scope()}${idCounter.toString(36)}`;
 }
 
 /** Test-only: make id assertions deterministic. */
 export function resetIdCounter(): void {
   idCounter = 0;
+  islandScope = undefined;
 }
 
 /**

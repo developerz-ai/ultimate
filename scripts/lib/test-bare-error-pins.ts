@@ -49,5 +49,5 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   seo: 8,
   testing: 19,
   time: 1,
-  ui: 13,
+  ui: 6,
 };

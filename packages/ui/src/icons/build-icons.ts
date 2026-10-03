@@ -11,7 +11,17 @@ import { invalidIconDataError, runtimeMissingError } from '../errors';
 /** Pinned: a floating version would silently redraw icons under an app that never asked. */
 export const LUCIDE_VERSION = '1.31.0';
 
-export const LUCIDE_ICON_NODES_URL = `https://cdn.jsdelivr.net/npm/lucide-static@${LUCIDE_VERSION}/icon-nodes.json`;
+/** Where one pinned version's node table lives. */
+export const iconNodesUrl = (version: string): string =>
+  `https://cdn.jsdelivr.net/npm/lucide-static@${version}/icon-nodes.json`;
+
+export const LUCIDE_ICON_NODES_URL = iconNodesUrl(LUCIDE_VERSION);
+
+/** The registry's answer for the newest published `lucide-static` — what `--bump` pins to. */
+export const LUCIDE_LATEST_URL = 'https://registry.npmjs.org/lucide-static/latest';
+
+/** The tail of every cause about data the PIN published: why re-running alone cannot help. */
+const PIN_REPEATS = `lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this; \`--bump\` raises LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts to the latest release and regenerates`;
 
 export const GLYPHS_DIR = new URL('./glyphs/', import.meta.url).pathname;
 
@@ -27,7 +37,7 @@ export function identifierFor(name: string): string {
  * the network, so its shape is an assumption until it is checked.
  */
 export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
-  const parsed: unknown = JSON.parse(text);
+  const parsed = parseJson(text);
   // `typeof [] === 'object'`, and an array of icons is a different upstream format, not this one.
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw invalidIconDataError(
@@ -42,14 +52,37 @@ export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
     // writes, so `../../index` is a delete plus an overwrite of a hand-written module.
     if (!SAFE_ICON_NAME.test(name)) {
       throw invalidIconDataError(
-        `carries ${renderCauseValue(name)} as an icon name, which is not the kebab-case shape every Lucide icon uses; the name becomes a file path and an exported identifier, so it cannot be escaped. lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
-        'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
+        `carries ${renderCauseValue(name)} as an icon name, which is not the kebab-case shape every Lucide icon uses; the name becomes a file path and an exported identifier, so it cannot be escaped. ${PIN_REPEATS}`,
+        'bun run --filter @ultimat3/ui icons --bump',
       );
     }
     out.set(name, toGlyph(name, value));
   }
   return out;
 }
+
+/** The body as JSON, or the same coded refusal a wrong shape gets — never a bare `SyntaxError`. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw invalidIconDataError(
+      `is not JSON (${renderCauseValue(text.slice(0, 80))}…); ${LUCIDE_ICON_NODES_URL} served an error page or a truncated body`,
+      'bun run --filter @ultimat3/ui icons',
+    );
+  }
+}
+
+/** A node that is not `[tag, attrs?]` with an object for attrs — refused, never skipped. */
+function malformedNode(name: string, node: unknown): ReturnType<typeof invalidIconDataError> {
+  return invalidIconDataError(
+    `for the icon "${name}" carries ${renderCauseValue(node)} where a [tag, attributes] node belongs; skipping it would write a partial glyph. ${PIN_REPEATS}`,
+    'bun run --filter @ultimat3/ui icons --bump',
+  );
+}
+
+const isAttrs = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * An icon name, as characters: lowercase kebab-case, no leading, trailing or doubled hyphen. The
@@ -68,10 +101,13 @@ export const SAFE_ATTR_VALUE = /^[\w\s.,+-]*$/;
 
 function toGlyph(name: string, value: unknown): IconGlyph {
   const glyph: (readonly [string, Readonly<Record<string, string>>])[] = [];
-  for (const node of Array.isArray(value) ? (value as unknown[]) : []) {
-    if (!Array.isArray(node) || typeof node[0] !== 'string') continue;
+  if (!Array.isArray(value)) throw malformedNode(name, value);
+  for (const node of value as unknown[]) {
+    if (!Array.isArray(node) || typeof node[0] !== 'string') throw malformedNode(name, node);
+    const rawAttrs: unknown = node[1] ?? {};
+    if (!isAttrs(rawAttrs)) throw malformedNode(name, node);
     const attrs: Record<string, string> = {};
-    for (const [key, item] of Object.entries((node[1] ?? {}) as Record<string, unknown>)) {
+    for (const [key, item] of Object.entries(rawAttrs)) {
       // Upstream keys an element for its diff tooling; it is not an SVG attribute.
       if (key === 'key') continue;
       const text = String(item);
@@ -82,8 +118,8 @@ function toGlyph(name: string, value: unknown): IconGlyph {
       // no legitimate Lucide artwork.
       if (!SAFE_ATTR_VALUE.test(text)) {
         throw invalidIconDataError(
-          `for the icon "${name}" carries ${renderCauseValue(text)} as "${key}", which is not glyph geometry; lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
-          'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
+          `for the icon "${name}" carries ${renderCauseValue(text)} as "${key}", which is not glyph geometry; ${PIN_REPEATS}`,
+          'bun run --filter @ultimat3/ui icons --bump',
         );
       }
       attrs[key] = text;
@@ -95,8 +131,8 @@ function toGlyph(name: string, value: unknown): IconGlyph {
   iconElements(glyph);
   if (glyph.length === 0) {
     throw invalidIconDataError(
-      `for the icon "${name}" carries no renderable node data; lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
-      'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
+      `for the icon "${name}" carries no renderable node data; ${PIN_REPEATS}`,
+      'bun run --filter @ultimat3/ui icons --bump',
     );
   }
   return glyph;
@@ -136,23 +172,23 @@ export function moduleSource(name: string, glyph: IconGlyph): string {
 async function format(): Promise<void> {
   const biome = new URL('../../../../node_modules/.bin/biome', import.meta.url).pathname;
   if (!(await Bun.file(biome).exists())) {
-    throw runtimeMissingError('the biome binary', 'bun install, then re-run this generator');
+    throw runtimeMissingError('the biome binary', 'bun install');
   }
   const result = Bun.spawnSync([biome, 'format', '--write', GLYPHS_DIR]);
   if (result.exitCode !== 0) {
     throw runtimeMissingError(
       'a successful `biome format` over the generated glyphs',
-      `run: ${biome} format --write ${GLYPHS_DIR}`,
+      'bunx biome format --write packages/ui/src/icons/glyphs',
     );
   }
 }
 
-export async function buildIcons(): Promise<number> {
-  const response = await fetch(LUCIDE_ICON_NODES_URL);
+export async function buildIcons(version: string = LUCIDE_VERSION): Promise<number> {
+  const response = await fetch(iconNodesUrl(version));
   if (!response.ok) {
     throw runtimeMissingError(
-      `lucide-static@${LUCIDE_VERSION} icon data (HTTP ${response.status})`,
-      `check network access to ${LUCIDE_ICON_NODES_URL}, then re-run: bun run --filter @ultimat3/ui icons`,
+      `lucide-static@${version} icon data (HTTP ${response.status} from ${iconNodesUrl(version)})`,
+      'bun run --filter @ultimat3/ui icons',
     );
   }
   const glyphs = parseIconNodes(await response.text());
@@ -165,8 +201,47 @@ export async function buildIcons(): Promise<number> {
   return glyphs.size;
 }
 
+/** A plain `major.minor.patch` — the only shape allowed into a TypeScript string literal here. */
+const SEMVER = /^\d+\.\d+\.\d+$/;
+
+/** `source` with its `LUCIDE_VERSION` line moved to `version`. Pure; refuses rather than guesses. */
+export function withPin(source: string, version: string): string {
+  if (!SEMVER.test(version)) {
+    throw invalidIconDataError(
+      `answered ${renderCauseValue(version)} as the latest lucide-static version, which is not plain semver; ${LUCIDE_LATEST_URL} served something else`,
+      'bun run --filter @ultimat3/ui icons --bump',
+    );
+  }
+  const pin = /^export const LUCIDE_VERSION = '[^']*';$/m;
+  if (!pin.test(source)) {
+    throw invalidIconDataError(
+      'has no `export const LUCIDE_VERSION = …` line in packages/ui/src/icons/build-icons.ts to move',
+      'git checkout -- packages/ui/src/icons/build-icons.ts',
+    );
+  }
+  return source.replace(pin, `export const LUCIDE_VERSION = '${version}';`);
+}
+
+/** Moves the pin to the registry's latest release, in this very file, and answers the version. */
+async function bumpPin(): Promise<string> {
+  const response = await fetch(LUCIDE_LATEST_URL);
+  if (!response.ok) {
+    throw runtimeMissingError(
+      `the latest lucide-static version (HTTP ${response.status} from ${LUCIDE_LATEST_URL})`,
+      'bun run --filter @ultimat3/ui icons --bump',
+    );
+  }
+  const body: unknown = await response.json();
+  const version =
+    typeof body === 'object' && body !== null && 'version' in body ? String(body.version) : '';
+  const file = new URL(import.meta.url).pathname;
+  await Bun.write(file, withPin(await Bun.file(file).text(), version));
+  return version;
+}
+
 if (import.meta.main) {
-  const count = await buildIcons();
-  const json = { ok: true, icons: count, lucide: LUCIDE_VERSION, dir: GLYPHS_DIR };
+  const version = Bun.argv.includes('--bump') ? await bumpPin() : LUCIDE_VERSION;
+  const count = await buildIcons(version);
+  const json = { ok: true, icons: count, lucide: version, dir: GLYPHS_DIR };
   console.log(Bun.argv.includes('--json') ? JSON.stringify(json) : `${count} icon modules written`);
 }
