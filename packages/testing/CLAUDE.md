@@ -72,19 +72,20 @@ is its own entry point and not part of the barrel.
 | Teardown restores, never uninstalls | `describeApp`/`testApp` capture the seal and the determinism snapshot before booting and put those back |
 | Teardown is a `finally` | an `app.close()` that rejects still reaches `db.drop()` and still restores the process state; the first failure is what the caller sees. |
 | A boot that rejects is its own teardown | `acquireWorkerDatabase`, `seed` or `boot` throwing returns no `BootedHarness`, so no caller can ever reach `close()` |
-| A found template is not a migrated one | `template-db.ts` tolerates "already exists" for the `CREATE DATABASE` alone. `config.migrate` runs unconditionally and un-swallowed |
+| A found template is not a migrated one | `template-db.ts` tolerates "already exists" for the `CREATE DATABASE` alone. `config.migrate` runs unconditionally; drop + clone hold the same lock |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there |
 | Building one by hand | `createRunJobs()` outside a fixture body is not disposed for you — dispose it in `afterEach`, or the next file inherits your queue and your event bus |
 | Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
 | One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
 | Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
 | Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
+| A port's contract is shared examples | `jobDriverConformance`, `budgetStoreConformance` — `behavesLike(…, () => yours)` |
 | An island needs a BUILDER, not an import | `buildIslands` is `@ultimat3/cli`'s and both packages are tier 5; the one declared edge is `cli → testing`, so the reverse is a `bun run boundaries` failure. |
 | `mountIsland` AWAITS `mount` | `IslandEntry['mount']` returns `unknown`, not `void`, and the call is awaited |
 | Dispose STOPS the island, then restores the globals | when `mount` resolved to a function, `[Symbol.dispose]` calls it BEFORE `restore()` |
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom.ts` is a second one for keyboard code, and `ui -> testing` is upward, so it is not a copy to collapse. `bun test` has no DOM and no DOM library may be added |
 | `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
-| `classList` is the class attribute | not a list of its own, so `classList.toggle` — what the compiler emits INLINE for `classList={{ … }}`, with no runtime helper in front of it — and `className` can never answer one element two ways. |
+| `classList` is the class attribute | not a list of its own, so `classList.toggle` — which the compiler emits INLINE for `classList={{ … }}`, no runtime helper between — and `className` can never answer one element two ways. |
 | A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. One handler per type, last wins |
 | `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
 | The selector grammar is SMALL and REFUSES | `island-selector.ts`: compounds of tag, `#id`, `.class`, `[attr]`, `[attr="value"]`, joined by space or `>`. Anything else is `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` with the offset, never an empty answer |
@@ -102,12 +103,10 @@ is its own entry point and not part of the barrel.
 | Loose in, strict out | `findIslandStates` resolves `Settings`, `settings`, `settings.island.tsx` and the full path to one manifest, and refuses a name nothing answers to by listing EVERY valid one |
 | The disk check is not in `defineIslandStates` | a declaration evaluates wherever it is imported from, so a rule that reads the filesystem at import time fails on the cwd rather than on the path. |
 | The island EXTENSION is not restated here | `.island.tsx` is `@ultimat3/render`'s `ISLAND_EXTENSION` and `render` is not a dependency of this package. |
-| The chunk is imported from a temp FILE | named by its SHA-256, so an edit is a new module and nothing is left in the app. Never a `data:` URL: `bun test --coverage` panics importing one past ~4 kB (Bun 1.4.0); `fixture-island.test.ts` pins it |
-| The scratch directory is lazy and removed | made on the first mount, deleted on `exit`; never at module scope — this module is on the `.` barrel |
+| A mount imports from its own temp DIRECTORY | `island-scratch.ts`: per mount (identical chunks stay two modules); removed on dispose, at the file boundary and in the run's `afterAll` — `exit` never fires under `bun test`. Never a `data:` URL (coverage panics past ~4 kB) |
 | Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |
 | Globals install all-or-nothing | `installGlobals` saves DESCRIPTORS, not values — a saved value cannot tell "no such global" from "a global holding `undefined`", and the teardown deleted both |
-| Which command shards | `bun test` is one process on one database, and that is still what a scaffolded app's `test` script runs. |
-
+| Which command shards | `bun test` is one process on one database — what a scaffolded app's `test` script runs |
 
 ## The frozen instant and the seed are screened
 

@@ -167,8 +167,29 @@ export interface CdpFrameLike {
   select(selector: string, ...values: string[]): Promise<string[]>;
 }
 
+/**
+ * A raw session on the BROWSER target — `browser.target().createCDPSession()` under puppeteer —
+ * with the event half `CdpSessionLike` does not need: `Fetch.requestPaused` arrives as an event.
+ * `event` stays a bare `string` for `CdpPageLike.on`'s reason.
+ */
+export interface CdpBrowserSessionLike extends CdpSessionLike {
+  on(event: string, handler: (payload: unknown) => void): unknown;
+}
+
+/** The browser's own target — `browser.target()` under puppeteer. */
+export interface CdpBrowserTargetLike {
+  createCDPSession(): Promise<CdpBrowserSessionLike>;
+}
+
 export interface CdpBrowserLike {
   newPage(): Promise<CdpPageLike>;
+  /**
+   * REQUIRED, unlike the page's optional verbs: it is how `allowHosts` reaches every target the
+   * browser opens — a popup, a `target=_blank` link — and not only the one page this package
+   * created. Page-level interception never sees those, and a rule that holds on one tab of a
+   * browser a scraped site controls is advisory. A launcher without it does not compile.
+   */
+  target(): CdpBrowserTargetLike;
   /** Present on a browser that owns a cookie jar. Absent ones answer `X_NOT_IMPLEMENTED`. */
   cookies?(): Promise<unknown>;
   setCookie?(...cookies: readonly unknown[]): Promise<void>;

@@ -132,7 +132,7 @@ what survived eviction and not what happened.
 
 ## Two transports, one session
 
-Drive the browser through login and navigation, then pull the bulk off the site's own JSON endpoints. `http.request()` carries the browser's cookies (scoped per RFC 6265 §5.1.3/§5.1.4), its headers, its proxy, the same `allowHosts`, the same robots gate, the same pacing and the same cancellation. A redirect is followed one hop at a time under the same gates — each `Location` is screened against `allowHosts` and robots, recorded in `page.network()` under the URL actually requested, and re-scoped for cookies — so a scraped endpoint cannot 302 the worker onto a host the allow list never named. A hop to another origin carries no credential you set (`authorization`, `proxy-authorization`, a hand-written `cookie`), and it stays dropped for the rest of the chain; a same-origin hop keeps them. A `301`/`302` re-asks a `POST` as a `GET` and leaves every other method — a `PUT` or a `DELETE` — intact with its body, `303` re-asks everything but `GET`/`HEAD`, and `307`/`308` carry both. `res.url` is the final URL, a chain past `MAX_REDIRECT_HOPS` (10) is `X_SCRAPE_REDIRECT_LOOP`, and a `javascript:` URL is refused outright rather than read as a hostless scheme.
+Drive the browser through login and navigation, then pull the bulk off the site's own JSON endpoints. `http.request()` carries the browser's cookies (scoped per RFC 6265 §5.1.3/§5.1.4), its headers, its proxy, the same `allowHosts`, the same robots gate, the same pacing and the same cancellation. A redirect is followed one hop at a time under the same gates — each `Location` is screened against `allowHosts` and robots, recorded in `page.network()` under the URL actually requested, and re-scoped for cookies — so a scraped endpoint cannot 302 the worker onto a host the allow list never named. A hop to another origin carries no credential you set (`authorization`, `proxy-authorization`, a hand-written `cookie`), and it stays dropped for the rest of the chain; a same-origin hop keeps them. A `301`/`302` re-asks a `POST` as a `GET` and leaves every other method — a `PUT` or a `DELETE` — intact with its body, `303` re-asks everything but `GET`/`HEAD`, and `307`/`308` carry both. `res.url` is the final URL, a chain past `MAX_REDIRECT_HOPS` (10) is `X_SCRAPE_REDIRECT_LOOP`, and a `javascript:` URL is refused outright rather than read as a hostless scheme. Header names are case-insensitive, so a header you declare **replaces** the session's in any spelling — `{ 'User-Agent': 'Mine', Cookie: '…' }` wins over the browser's agent and the jar instead of being joined to them.
 
 Two hundred paginated pages clicked through is minutes and two hundred chances to break; the same data off the endpoint behind them is seconds, and a JSON endpoint changes far less often than a DOM.
 
@@ -147,7 +147,7 @@ Response bodies are counted **as they arrive**, capped at `DEFAULT_HTTP_MAX_BYTE
 | `fixtureBrowser(dir)` | committed page recordings | none |
 | `fakeBrowser(pages)` | inline pages, for a unit test | none |
 
-**The launcher is passed in, never imported.** `CdpLauncherLike` is two methods — `launch` and `connect` — so `puppeteer`, `puppeteer-core` or anything with the same shape satisfies it, and this package declares no browser dependency at all. A launcher with no `launch` is `X_SCRAPE_REMOTE_REQUIRED`, not a crash.
+**The launcher is passed in, never imported.** `CdpLauncherLike` is two methods — `launch` and `connect` — so `puppeteer`, `puppeteer-core` or anything with the same shape satisfies it, and this package declares no browser dependency at all. A launcher with no `launch` is `X_SCRAPE_REMOTE_REQUIRED`, not a crash. The browser it hands back must expose `target().createCDPSession()` — puppeteer's does — because `allowHosts` is enforced at the browser too, on every tab a scraped page opens; a session needs `cookies()` (and `setCookie()` to restore one), refused by name as `X_NOT_IMPLEMENTED` when absent rather than read as an empty jar.
 
 `driver-parity.test.ts` runs one suite against all three and pins the single honest divergence: the offline drivers have no layout engine, so `ElementSnapshot.box` and `hitTarget` are absent rather than faked.
 
@@ -165,7 +165,7 @@ history: yourYieldHistory,
 | `minRows` | no | the run returned fewer rows than the floor |
 | `maxDrop` | **yes** | the run fell more than this fraction below the trailing median |
 
-`minRows` is an absolute floor, checked **before** the history gate, so it is legal on its own. `maxDrop` is a fraction of a trailing median and only a `history:` store can supply one — declaring it alone is refused at declaration with `X_SCRAPE_YIELD_HISTORY_MISSING`, because with no store the baseline is `[]` forever and the alarm could never fire.
+`minRows` is an absolute floor, checked **before** the history gate, so it is legal on its own. `maxDrop` is a fraction in `[0, 1)` — `50` or `1` would make the alarm unable to fire, and a negative one fires on a run that matched its baseline, so each is refused (`X_INVARIANT`) where the scrape is declared. It is a fraction of a trailing median and only a `history:` store can supply one — declaring it alone is refused at declaration with `X_SCRAPE_YIELD_HISTORY_MISSING`, because with no store the baseline is `[]` forever and the alarm could never fire.
 
 A collapsed run is **not recorded**. Three broken runs at 2 rows would make the median 2, and the fourth broken run would be within `maxDrop` of it — a scraper that re-baselines onto its own failure has silenced the alarm exactly when it was working. `maxDrop` needs `MIN_BASELINE_RUNS` (3) runs after it is declared before it can fire: a delay, not a hole.
 
@@ -173,13 +173,15 @@ A collapsed run is **not recorded**. Three broken runs at 2 rows would make the 
 
 | Gate | Default | Refusal |
 |---|---|---|
-| `allowHosts` | required, no default | `X_SCRAPE_HOST_BLOCKED`, before a byte leaves |
+| `allowHosts` | required, no default | `X_SCRAPE_HOST_BLOCKED`, before a byte leaves — on the page, on every other tab the page opens, on the HTTP leg and on the robots read |
 | `robots` | `'obey'` | `X_SCRAPE_ROBOTS_DISALLOWED` |
 | `rate` | 1 navigation/second | none — it paces, across both legs |
 
+**A wildcard admits names, then checks where they lead.** On the two legs this package dials itself — the HTTP leg and the robots read — a host admitted only by `'*'` or `'*.example.com'` is resolved, and an answer that is loopback, private, link-local or the metadata address is `X_SCRAPE_HOST_BLOCKED`; the request is then pinned to the approved address. An exact rule (`'intranet.example'`) is the decision to reach that host and is not resolved. Through a proxy the proxy resolves, so nothing is checked locally. The browser resolves its own names, and a WebSocket opened by a page is not intercepted at all — both are open → [Known gaps](Known-Gaps).
+
 Ignoring robots takes a written reason: `robots: { ignore: 'contract with the operator, ticket OPS-441' }`. A bare `false` is a decision with no author.
 
-The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. An unreadable robots.txt reads as **no restrictions**, which is the standard's own answer and the reason the deadline matters.
+The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. A redirect is followed one hop at a time, at most `MAX_ROBOTS_REDIRECTS` (5, RFC 9309's floor), each hop asked of `allowHosts` first — a hop off the list is never requested. (`robotsFetcher` / `createRobotsGate` called with no `allowHosts` follow only a hop on the starting hostname — `http:` → `https:`, a moved path.) An unreadable robots.txt, or one behind a redirect off the list, reads as **no restrictions**, which is the standard's own answer and the reason the deadline matters.
 
 Robots patterns are **walked**, not compiled — a wildcard-dense rule from a scraped site is linear rather than catastrophic backtracking on the worker's only thread.
 
@@ -197,7 +199,16 @@ run: async ({ page, secrets }) => {
 **Redaction is by VALUE, on four surfaces**: `page.html()`, `page.console()`, `page.network()` URLs
 and `page.pageErrors()` — plus the HTTP leg's response body, which reaches an error `cause` and
 from there a dead-letter row that `x jobs show` prints. Three of those were unredacted until
-2026-08-25 while this package's own header promised all of them.
+2026-08-25 while this package's own header promised all of them. **Every spelling of a value is
+redacted**: raw, percent-encoded (hex escapes in either case), form-encoded (`+` for a space) and HTML-escaped as text, as an
+attribute or by a template (`&#39;`) — a password in a query string is never the raw string.
+
+A credential-bearing URL — a proxy exit, a provider's connect URL — hands the redaction set the
+whole URL, its password, its query, and only those query values and path segments that are
+credential-shaped (a key whose words — split on `_`, `-`, `.` and camelCase — include `token`, `key`,
+`secret`, `auth`, `sig`, `session` and the like, so `apiKey` counts and `keyboard` does not; a long
+letters-and-digits run; or the id after `/devtools/browser/` or `/devtools/page/`). `stealth=true&proxy=residential` does not blank every
+`true` and `residential` in the artifact.
 
 **One stated limit**: a secret shorter than 4 characters is not redacted. A 3-character token would
 match too much ordinary page text to be safe to blank; declare a longer one.
@@ -212,7 +223,7 @@ Reuse is both the fast path and the safe path — logging in on every run is slo
 |---|---|
 | `restorableSession(plan)` | the stored session this run may restore, or `undefined` |
 | `ensureAuthenticated(plan)` | log in when there is nothing to restore |
-| `burnSession(plan)` | delete it — a flagged profile stays flagged, so a retry that reloads it re-trips the block |
+| `burnSession(plan, seen)` | delete it — a flagged profile stays flagged, so a retry that reloads it re-trips the block. `seen` is the `version` of the record this run found — restorable or not — or saved (`recordVersion(restored)`; a record from before versions shipped reads its `savedAt`). A record another run on the same key saved since is left in place; the refusal tombstone a failed login writes follows the same rule. The compare narrows the race and does not close it: neither the store nor `StorageDriver` has a conditional write |
 | `memorySessionStore()` / `storageSessionStore(() => disk('sessions'))` | where it lives. The disk is a THUNK, read per call: a scrape is declared when its module loads, and the app's disks exist only after boot ran `defineStorage()` |
 
 **A stored session is sealed.** `storageSessionStore` writes `{ "sealed": "x1.…" }` — core's
@@ -295,7 +306,7 @@ export const syncAccounts = scrape({
 
 | Field | Rule |
 |---|---|
-| `egress` | the run's exit, resolved in the WORKER: `(input, ctx)`, sync or async, under the job's tenant. The input names a row; the row holds the exit. An exit whose password is also in the input rode the queue payload — `x_jobs` holds it in the clear, and `redactInput` hides a key by name for display only — so it is refused before the browser opens: `X_SCRAPE_EGRESS_IN_PAYLOAD`, terminal. Both legs dial it and the robots read leaves through it. Credentials in the URL never reach the process arguments — a launched browser answers the proxy through `page.authenticate()` — and are redacted by value everywhere |
+| `egress` | the run's exit, resolved in the WORKER: `(input, ctx)`, sync or async, under the job's tenant. The input names a row; the row holds the exit. An exit whose password is also in the input rode the queue payload — `x_jobs` holds it in the clear, and `redactInput` hides a key by name for display only — so it is refused before the browser opens: `X_SCRAPE_EGRESS_IN_PAYLOAD`, terminal. Both legs dial it and the robots read leaves through it. `localBrowser({ options: { args } })` keeps the caller's args and appends `--proxy-server` after them; a proxy switch of the caller's own (`--proxy-server`, `--proxy-bypass-list`, `--proxy-pac-url`, `--proxy-auto-detect`, `--no-proxy-server`) or args that are not a list of strings are `X_SCRAPE_LAUNCH_ARGS_INVALID`, terminal, before anything launches. Credentials in the URL never reach the process arguments — a launched browser answers the proxy through `page.authenticate()` — and are redacted by value everywhere |
 | `cdpUrl: resolver` | called once per `open()` with `{ scrape, runId, egress, signal }`. `release()` runs **exactly once**: in the session's `close()` after the browser is quit — on success, failure and cancellation — and straight away when the attach itself fails. The framework ships no vendor |
 | `cdpUrl: 'ws://…'` + `egress` | `X_SCRAPE_EGRESS_UNSUPPORTED` when the exits differ: a fixed URL is a browser already bound to one |
 | `concurrency: { key, limit, whenBusy }` | the job's field. `whenBusy: 'fail'` settles a second run of one connection `failed` with `X_JOB_KEY_BUSY`, body never run |
@@ -392,16 +403,16 @@ recover: async ({ page, failure, attempt }) => { /* return true to re-run the bo
 
 ## Error codes
 
-32 owned codes, split by whether the same request can succeed unchanged. `x errors explain <CODE> --json` prints the cause, a runnable fix and the docs URL for any of them ([Error codes](Error-Codes)).
+Every owned code is split by whether the same request can succeed unchanged. `x errors explain <CODE> --json` prints the cause, a runnable fix and the docs URL for any of them ([Error codes](Error-Codes)).
 
 | Retryable | Why |
 |---|---|
-| `X_SCRAPE_CDP_ATTACH_FAILED`, `X_SCRAPE_BROWSER_UNREACHABLE`, `X_SCRAPE_BROWSER_MISSING` | the browser, not the page |
+| `X_SCRAPE_CDP_ATTACH_FAILED`, `X_SCRAPE_BROWSER_UNREACHABLE` | the browser, not the page |
 | `X_SCRAPE_TIMEOUT`, `X_SCRAPE_WEDGED`, `X_SCRAPE_DOWNLOAD_TIMEOUT` | a moment, not a property of the site |
 | `X_SCRAPE_HTTP_FAILED` | 408, 409, 425, 429, any 5xx, a deploy — transient far more often than not. **Which 4xx are permanent is `@ultimat3/core`'s `isRetryableStatus`, not this package's**, `As of 2026-08-23`: a private copy here called 408 and 425 terminal while the rest of the framework called them retryable, and a terminal classification dead-letters the run on the attempt that failed rather than spending its declared `attempts` |
 | `X_SCRAPE_BLOCKED` | retryable **and it burns the session first**: retrying a block on the same flagged cookies re-trips it every time |
 
-Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup changed), `X_SCRAPE_OUTPUT_INVALID` (the rows are the wrong shape), `X_SCRAPE_YIELD_COLLAPSED`, `X_SCRAPE_SECRET_EXPOSED`, `X_SCRAPE_KEY_INVALID` (the chord is the caller's own literal), `X_SCRAPE_PROMPT_UNANSWERED` and `X_SCRAPE_EGRESS_UNSUPPORTED` (the exit is the run's input and the driver is the deploy's constant).
+Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup changed), `X_SCRAPE_OUTPUT_INVALID` (the rows are the wrong shape), `X_SCRAPE_YIELD_COLLAPSED`, `X_SCRAPE_SECRET_EXPOSED`, `X_SCRAPE_KEY_INVALID` (the chord is the caller's own literal), `X_SCRAPE_PROMPT_UNANSWERED`, `X_SCRAPE_BROWSER_MISSING` (there is no browser binary to launch), `X_SCRAPE_EGRESS_UNSUPPORTED` (the exit is the run's input and the driver is the deploy's constant) and `X_SCRAPE_LAUNCH_ARGS_INVALID` (the args are the deploy's literal).
 
 ## Testing offline
 

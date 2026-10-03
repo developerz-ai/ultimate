@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake';
+import { fakeBrowserTarget } from './cdp-fake-target';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
 import { testClock } from './clock';
 import type { SessionInit } from './driver';
@@ -39,6 +40,7 @@ const brokenLauncher = (broken: Broken): CdpLauncherLike & { readonly closes: ()
   const browser: CdpBrowserLike = {
     newPage: () =>
       broken.newPage === true ? Promise.reject(new Error('tab limit')) : Promise.resolve(page),
+    target: () => fakeBrowserTarget().target,
     setCookie: () =>
       broken.setCookie === true ? Promise.reject(new Error('bad cookie')) : Promise.resolve(),
     close: () => {

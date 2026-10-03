@@ -20,6 +20,8 @@ import type { RedirectHop } from './http-redirect';
 import { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
+import type { DialTarget, HostResolve } from './pinned-host';
+import { dialTarget, resolveHost } from './pinned-host';
 import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
@@ -43,6 +45,11 @@ export type ScrapeFetch = (input: string, init: ScrapeFetchInit) => Promise<Resp
 export interface ScrapeFetchInit extends RequestInit {
   /** The session's exit. A different exit IP mid-session is a different client to an anti-bot. */
   readonly proxy?: string | undefined;
+  /**
+   * The NAME a pinned connection proves (`pinned-host.ts`): the url names the approved address,
+   * and Bun's `fetch` verifies the certificate against this instead.
+   */
+  readonly tls?: { readonly serverName?: string | undefined } | undefined;
 }
 
 export interface HttpRequestInit {
@@ -114,6 +121,8 @@ export interface HttpTransportInit {
   /** The run's meter: one `httpRequest` per hop on the wire, with the body bytes read for it. */
   readonly usage?: UsageMeter | undefined;
   readonly fetch?: ScrapeFetch | undefined;
+  /** The resolver a wildcard-admitted name is checked and pinned with. Defaults to `Bun.dns`. */
+  readonly resolve?: HostResolve | undefined;
 }
 
 /**
@@ -196,6 +205,22 @@ const withoutCredentials = (headers: Readonly<Record<string, string>>): Record<s
     Object.entries(headers).filter(([name]) => !CROSS_ORIGIN_STRIPPED.has(name.toLowerCase())),
   );
 
+/**
+ * The request's headers from every source, LATER sources winning, keyed by the lower-cased name.
+ * HTTP names are case-insensitive and `Headers` APPENDS two spellings of one name: a caller's
+ * `User-Agent: Mine` beside the session's `user-agent` went out as `BrowserUA, Mine`, and a
+ * declared `Cookie` was joined to the jar's instead of replacing it.
+ */
+const composeHeaders = (
+  ...sources: readonly Readonly<Record<string, string>>[]
+): Record<string, string> => {
+  const out = new Map<string, string>();
+  for (const source of sources) {
+    for (const [name, value] of Object.entries(source)) out.set(name.toLowerCase(), value);
+  }
+  return Object.fromEntries(out);
+};
+
 /** Unparseable is not same-origin: a URL this package cannot read is one it cannot vouch for. */
 const sameOrigin = (left: string, right: string): boolean => {
   try {
@@ -251,12 +276,21 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
    * The three gates, in one place, so the initial URL and hop seven are screened by the same code
    * in the same order. A second copy for redirects is how the two drift.
    */
-  const screen = async (target: string): Promise<void> => {
+  const resolve = init.resolve ?? resolveHost;
+  const screen = async (target: string): Promise<DialTarget> => {
     if (interceptVerdict(target, 'fetch', init.rules) !== 'allow') {
       throw hostBlocked(target, init.rules.allowHosts);
     }
+    // Through a proxy the PROXY resolves the name, from its own network, so an answer from this
+    // box's resolver says nothing about where the request lands — and pinning would hand the
+    // proxy an address where it expects the name.
+    const dial =
+      init.proxy === undefined
+        ? await dialTarget(target, init.rules.allowHosts, resolve)
+        : { url: target };
     await init.robots?.assertAllowed(target);
     await init.pace?.(init.signal);
+    return dial;
   };
   return {
     async request(url: string, request: HttpRequestInit = {}): Promise<ScrapeResponse> {
@@ -284,7 +318,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
         1,
       );
       init.onActivity?.();
-      await screen(url);
+      let dial = await screen(url);
       const session = await init.session();
       // `AbortSignal.timeout` and NOT `clock.sleep`: this is a deadline handed to the platform's
       // own fetch, not a wait this package performs — and under a test clock a slept deadline
@@ -319,14 +353,17 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           const declared = credentialsInScope
             ? request.headers
             : withoutCredentials(request.headers ?? {});
-          const response = await call(hop.url, {
+          const response = await call(dial.url, {
             method: hop.method,
-            headers: {
-              ...carried,
-              ...(session.userAgent === '' ? {} : { 'user-agent': session.userAgent }),
-              ...(cookies === undefined ? {} : { cookie: cookies }),
-              ...declared,
-            },
+            headers: composeHeaders(
+              carried,
+              session.userAgent === '' ? {} : { 'user-agent': session.userAgent },
+              cookies === undefined ? {} : { cookie: cookies },
+              declared ?? {},
+              // Last: a pinned request is reached AS the name that was screened, whatever was declared.
+              dial.host === undefined ? {} : { host: dial.host },
+            ),
+            ...(dial.serverName === undefined ? {} : { tls: { serverName: dial.serverName } }),
             ...(hop.body === undefined ? {} : { body: hop.body }),
             signal: AbortSignal.any(signals),
             // The whole point: the platform's own `follow` is what made the four lines above
@@ -360,7 +397,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           await discardHopBody(response);
           if (followed >= MAX_REDIRECT_HOPS) throw redirectLoop(url, next.url, followed + 1);
           init.onActivity?.();
-          await screen(next.url);
+          dial = await screen(next.url);
           if (!sameOrigin(hop.url, next.url)) credentialsInScope = false;
           hop = next;
         }

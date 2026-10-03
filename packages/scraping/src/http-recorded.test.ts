@@ -116,3 +116,39 @@ describe('unit · the recorded leg redacts the same body the live leg does', () 
     }
   });
 });
+
+describe('unit · a recording whose age cannot be read is stale, never fresh', () => {
+  const aged = (recordedAt: string) =>
+    recordedHttp({
+      lookup: () =>
+        Promise.resolve({
+          url: 'https://shop.test/api/public/orders',
+          method: 'GET',
+          status: 200,
+          body: '{}',
+          recordedAt,
+        }),
+      rules: { allowHosts: ['shop.test'] },
+      network: createRing<NetworkEntry>(),
+      clock: testClock(),
+      source: 'test',
+      maxAgeMs: 86_400_000,
+    });
+
+  test('an unparseable recordedAt is X_SCRAPE_FIXTURE_STALE, with no NaN in the cause', async () => {
+    let cause = '';
+    try {
+      await aged('last tuesday').request('https://shop.test/api/public/orders');
+    } catch (thrown) {
+      expect((thrown as { code?: string }).code).toBe('X_SCRAPE_FIXTURE_STALE');
+      cause = String((thrown as { cause?: unknown }).cause);
+    }
+    expect(cause).not.toContain('NaN');
+    expect(cause).toContain('recordedAt');
+  });
+
+  test('a fresh, parseable recordedAt still replays', async () => {
+    const now = testClock().now().toISOString();
+    expect((await aged(now).request('https://shop.test/api/public/orders')).status).toBe(200);
+  });
+});

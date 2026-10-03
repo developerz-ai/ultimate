@@ -10,7 +10,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { guardYield, memoryYieldHistory, yieldProblem } from './expect';
+import { scrape } from './scrape';
 
 const NOT_A_BOUND: readonly number[] = [
   Number.NaN,
@@ -100,5 +102,63 @@ describe('unit · the yield alarm, bounded', () => {
       history: memoryYieldHistory({ orders: [10, 10, 10] }),
     });
     expect(true).toBe(true);
+  });
+});
+
+// `maxDrop` is a FRACTION. `50` — the percent habit — makes `baseline * (1 - 50)` negative, so the
+// alarm never fires; `1` is the same silence spelled exactly. A negative one fires on a run that
+// matched its baseline. `[0, 1)` is the whole legal range, refused at the rule AND where it is written.
+describe('unit · maxDrop is a fraction in [0, 1)', () => {
+  for (const value of [1, 50, -0.1]) {
+    test(`a maxDrop of ${String(value)} is refused by the rule`, async () => {
+      const error = await refusal(() =>
+        yieldProblem({
+          scrape: 'orders',
+          rows: 0,
+          expect: { maxDrop: value },
+          history: [10, 10, 10],
+        }),
+      );
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('maxDrop');
+    });
+
+    test(`a maxDrop of ${String(value)} is refused where scrape() is declared`, async () => {
+      const error = await refusal(() =>
+        scrape({
+          name: 'orders.bounds',
+          input: t.object({}),
+          extract: t.object({}),
+          idempotencyKey: () => 'k',
+          tenant: 'none',
+          allowHosts: ['shop.test'],
+          expect: { maxDrop: value },
+          history: memoryYieldHistory({}),
+          run: () => Promise.resolve([]),
+        }),
+      );
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('maxDrop');
+    });
+  }
+
+  test('the refusal fixes with one runnable command, naming no value from the declaration', () => {
+    let fix: unknown;
+    try {
+      yieldProblem({ scrape: 'orders', rows: 0, expect: { maxDrop: 50 }, history: [10, 10, 10] });
+    } catch (thrown) {
+      fix = (thrown as { fix?: unknown }).fix;
+    }
+    expect(fix).toBe("grep -rnE --include='*.ts' 'maxDrop: *(-|[1-9]|1\\.)' .");
+  });
+
+  test('0 and 0.99 are accepted, and 0 fires on any drop at all', () => {
+    expect(
+      yieldProblem({ scrape: 'orders', rows: 9, expect: { maxDrop: 0 }, history: [10, 10, 10] })
+        ?.code,
+    ).toBe('X_SCRAPE_YIELD_COLLAPSED');
+    expect(
+      yieldProblem({ scrape: 'orders', rows: 1, expect: { maxDrop: 0.99 }, history: [10, 10, 10] }),
+    ).toBeUndefined();
   });
 });

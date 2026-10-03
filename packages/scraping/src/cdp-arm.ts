@@ -4,7 +4,7 @@
 // three verbs `press`/`focus`/`accessibility` did not fit under it. The extraction is VERBATIM —
 // the request, console, `pageerror` and `error` handlers are the same code, one file over.
 
-import type { CdpPageLike, CdpRequestLike } from './cdp-port';
+import type { CdpBrowserLike, CdpPageLike, CdpRequestLike } from './cdp-port';
 import type { ScrapeClock } from './clock';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
@@ -173,4 +173,68 @@ export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
   init.page.on('error', (payload) => {
     crashed.value = readStringFrom(payload, 'message') ?? 'renderer crashed';
   });
+}
+
+/** A `Fetch.requestPaused` payload, read structurally — the fields the verdict needs, or nothing. */
+interface PausedRequest {
+  readonly requestId: string;
+  readonly resourceType: string;
+  readonly url: string;
+  readonly method: string;
+}
+
+const asPaused = (payload: unknown): PausedRequest | undefined => {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const event = payload as Record<string, unknown>;
+  const request = event['request'];
+  if (typeof request !== 'object' || request === null) return undefined;
+  const { url, method } = request as Record<string, unknown>;
+  const { requestId, resourceType } = event;
+  if (typeof requestId !== 'string' || typeof url !== 'string') return undefined;
+  return {
+    requestId,
+    url,
+    resourceType: typeof resourceType === 'string' ? resourceType : 'Other',
+    method: typeof method === 'string' ? method : 'GET',
+  };
+};
+
+/**
+ * `allowHosts` and `block` on EVERY target the browser opens. Page-level interception (`arm`)
+ * covers the one page this package created; a popup — `window.open`, a `target=_blank` link — is
+ * a new target it never sees, and on Chrome 150 a scraped page's `window.open` to an off-list host
+ * reached that host. Browser-level `Fetch` pauses those requests too, and the same
+ * `interceptVerdict` decides them. The page's own requests are decided at the page first, so an
+ * allowed one is continued here as well and a refused one never arrives: one ring entry each.
+ *
+ * Enabled BEFORE the first navigation; a browser that refuses `Fetch.enable` rejects here, and
+ * `driver-cdp.ts`'s `opened()` closes it — a session whose rule would hold on one tab is refused.
+ */
+export async function armBrowser(
+  init: {
+    readonly browser: CdpBrowserLike;
+    readonly rules: InterceptRules;
+    readonly clock: ScrapeClock;
+  },
+  network: NetworkRing,
+): Promise<void> {
+  const session = await init.browser.target().createCDPSession();
+  session.on('Fetch.requestPaused', (payload) => {
+    const paused = asPaused(payload);
+    if (paused === undefined) return;
+    const type = asResourceType(paused.resourceType.toLowerCase());
+    const verdict = interceptVerdict(paused.url, type, init.rules);
+    const requestId = { requestId: paused.requestId };
+    // Caught, never floated, for `arm`'s reason: the target may be gone by the time this answers.
+    if (verdict === 'allow') {
+      session.send('Fetch.continueRequest', requestId).catch(() => undefined);
+      return;
+    }
+    const at = init.clock.now().getTime();
+    network.push(refusalEntry(paused.url, type, verdict, at, paused.method));
+    session
+      .send('Fetch.failRequest', { ...requestId, errorReason: 'BlockedByClient' })
+      .catch(() => undefined);
+  });
+  await session.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
 }

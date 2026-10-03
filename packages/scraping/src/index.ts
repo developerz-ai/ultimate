@@ -22,6 +22,8 @@ export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
 export type {
   CdpBrowserLike,
+  CdpBrowserSessionLike,
+  CdpBrowserTargetLike,
   CdpFrameLike,
   CdpKeyboardLike,
   CdpLauncherLike,
@@ -213,6 +215,7 @@ export type {
 export {
   memorySessionStore,
   parseSessionState,
+  recordVersion,
   SESSION_SEAL_PURPOSE,
   sessionDigest,
   sessionKeyFor,

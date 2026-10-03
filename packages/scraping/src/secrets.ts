@@ -95,6 +95,58 @@ export const SECRET_PLACEHOLDER = '[redacted]';
  */
 export const MIN_REDACTABLE_LENGTH = 4;
 
+const HTML_TEXT: Readonly<Record<string, string>> = Object.freeze<Record<string, string>>({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+});
+
+const escapeWith = (value: string, pattern: RegExp, table: Readonly<Record<string, string>>) =>
+  value.replace(pattern, (char) => table[char] ?? char);
+
+/**
+ * Every spelling a page or a URL writes one value in. The raw value alone missed the case
+ * `safeNetwork` exists for: a password in a query string arrives percent-encoded, or form-encoded
+ * (`+` for a space, `'` and `(` escaped), and a server-rendered page writes it HTML-escaped — as
+ * text (`&amp; &lt; &gt;`, what a browser's serialiser emits), as an attribute (`&amp; &quot;`),
+ * or through a template that escapes all five (`&#39;` or `&#x27;` for the apostrophe).
+ * Each spelling is at least as long as the value, so the length floor is decided on the value.
+ */
+function spellingsOf(value: string): readonly string[] {
+  const text = escapeWith(value, /[&<>]/g, HTML_TEXT);
+  const attribute = escapeWith(value, /[&"]/g, { '&': '&amp;', '"': '&quot;' });
+  const full = escapeWith(value, /[&<>"]/g, { ...HTML_TEXT, '"': '&quot;' });
+  return [
+    value,
+    encodeURIComponent(value),
+    new URLSearchParams([['', value]]).toString().slice(1),
+    text,
+    attribute,
+    full.replaceAll("'", '&#39;'),
+    full.replaceAll("'", '&#x27;'),
+  ];
+}
+
+const REGEX_SPECIAL = /[.*+?^${}()|[\]\\/]/g;
+
+/**
+ * One spelling as a pattern: literal throughout, except that the hex digits of a `%XX` escape
+ * match in either case — `%2F` and `%2f` are the same byte, and clients emit both. The value's own
+ * letters stay case-sensitive: `Hunter2` is not `hunter2`.
+ */
+const spellingPattern = (spelling: string): RegExp =>
+  new RegExp(
+    spelling
+      .split(/(%[0-9A-Fa-f]{2})/)
+      .map((part, index) =>
+        index % 2 === 1
+          ? part.replace(/[A-Fa-f]/g, (digit) => `[${digit.toUpperCase()}${digit.toLowerCase()}]`)
+          : part.replace(REGEX_SPECIAL, '\\$&'),
+      )
+      .join(''),
+    'g',
+  );
+
 /**
  * Redaction BY VALUE, over the text this package hands back or persists. Name-based redaction only
  * catches a secret travelling under a name somebody remembered to list, and a password pasted into
@@ -111,20 +163,22 @@ export const MIN_REDACTABLE_LENGTH = 4;
  * `MIN_REDACTABLE_LENGTH`, and pixels — which is why a secret TAINTS the page and captures are
  * refused outright.
  *
- * Longest first, so a secret that contains another one does not leave its tail behind.
+ * Every spelling of every value (`spellingsOf`), longest first, so a secret that contains another
+ * one does not leave its tail behind.
  */
 export function redactSecrets(text: string, secrets: ScrapeSecrets | undefined): string {
   if (secrets === undefined) return text;
   const learned = concealed.get(secrets);
   if (secrets.names.length === 0 && (learned === undefined || learned.size === 0)) return text;
   const values = [
-    ...secrets.names.map((name) => revealSecret(secrets.get(name))),
-    ...(learned ?? []),
-  ]
-    .filter((value) => value.length >= MIN_REDACTABLE_LENGTH)
-    .sort((a, b) => b.length - a.length);
+    ...new Set(
+      [...secrets.names.map((name) => revealSecret(secrets.get(name))), ...(learned ?? [])]
+        .filter((value) => value.length >= MIN_REDACTABLE_LENGTH)
+        .flatMap(spellingsOf),
+    ),
+  ].sort((a, b) => b.length - a.length);
   let out = text;
-  for (const value of values) out = out.split(value).join(SECRET_PLACEHOLDER);
+  for (const value of values) out = out.replace(spellingPattern(value), SECRET_PLACEHOLDER);
   return out;
 }
 

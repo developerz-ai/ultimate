@@ -313,8 +313,9 @@ bound threw away, so a count taken from one is never quietly a floor.
 All three are **redacted by value** on the way out, the same pass `page.html()` makes: a login
 endpoint fetched with the password in its query string, or a site that logs the credential it
 rejected, would otherwise put the value in `page.network()`/`page.console()` verbatim and from
-there into the stored failure artifact. The HTTP leg's `X_SCRAPE_HTTP_FAILED` cause is redacted
-too, at its throw site. Values shorter than `MIN_REDACTABLE_LENGTH` are not — a 3-character PIN is
+there into the stored failure artifact — percent-encoded, form-encoded or HTML-escaped as much as
+raw, since a password in a query string is never the raw string. The HTTP leg's
+`X_SCRAPE_HTTP_FAILED` cause is redacted too, at its throw site. Values shorter than `MIN_REDACTABLE_LENGTH` are not — a 3-character PIN is
 a substring of ordinary prose — and pixels never can be, which is why a typed secret TAINTS the
 page and `screenshot()`/`pdf()` are refused outright.
 
@@ -362,7 +363,7 @@ on a machine with no browser — the case CI is.
 | `driver-cdp.ts` / `cdp-*.ts` | the real browser, over a structural CDP port |
 | `driver-fake.ts` / `driver-recorded.ts` / `html-*.ts` | the offline drivers, on Bun's `HTMLRewriter` |
 | `http.ts` / `http-recorded.ts` | the second transport, live and replayed |
-| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions. A stored session is sealed |
+| `auth.ts` / `session-state.ts` | acquire → persist → reuse → validate → burn. The session key encodes each part (`<sanitised>.<digest>`), so two account names that differ only outside `[a-zA-Z0-9._-]` are two sessions. A stored session is sealed. `burnSession(plan, seen)` takes `recordVersion(record)` of the record the run used, so a record another run saved since is not burned |
 | `event-prompt.ts` | `eventPrompt()` and `answerPrompt()`: a prompt answered from another process, over the job event bus, with the browser open |
 | `cdp-resolver.ts` | a browser rented per session: acquired once, released once |
 | `usage.ts` | what one run used, counted where the work happens |

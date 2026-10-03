@@ -3,7 +3,7 @@
 // where the data went. `expect` turns that into a red run: a yield under `minRows`, or under
 // `maxDrop` of what this scrape normally returns, throws.
 
-import { finiteCount, finiteOption } from '@ultimat3/core';
+import { assert, finiteCount, finiteOption } from '@ultimat3/core';
 import { yieldCollapsed } from './error-throws';
 import type { ScrapeError } from './errors';
 
@@ -58,6 +58,23 @@ export interface YieldCheck {
 }
 
 /**
+ * `maxDrop`, screened: finite, then a FRACTION in `[0, 1)`. `1` and anything above it — `50`, the
+ * percent habit — make `baseline * (1 - maxDrop)` zero or negative, so no yield is ever under it
+ * and the alarm is silent forever; a negative one fires on a run that matched its baseline. Asked
+ * by the rule and by `scrape()`, where the number is written.
+ */
+export function maxDropFraction(scrape: string, value: number): number {
+  const fraction = finiteOption('the scrape expect', 'maxDrop', value);
+  assert(
+    fraction >= 0 && fraction < 1,
+    `scrape "${scrape}" declares expect.maxDrop: ${String(fraction)}, and maxDrop is a fraction of the trailing median from 0 up to but not including 1 — at 1 or above no yield is ever under the line and the alarm can never fire; write it as a fraction, expect: { maxDrop: 0.5 } allows half`,
+    // Lists every declaration outside [0, 1) — static, so no declared value reaches a shell.
+    "grep -rnE --include='*.ts' 'maxDrop: *(-|[1-9]|1\\.)' .",
+  );
+  return fraction;
+}
+
+/**
  * The whole rule, pure: the error this yield earns, or `undefined`. Pure so a test can hand it
  * fifty histories without a queue, a browser or a clock.
  */
@@ -69,8 +86,8 @@ export function yieldProblem(check: YieldCheck): ScrapeError | undefined {
   // instead, and an alarm that always fires is an alarm somebody turns off.
   //
   // `minRows: 0` is legal and stays legal: this file asks an author whose answer is legitimately
-  // sometimes zero to declare exactly that. `maxDrop` is a FRACTION of a median, so `finiteOption`
-  // and not `finiteCount` — `0.5` is the documented value.
+  // sometimes zero to declare exactly that. `maxDrop` is a FRACTION of a median, so not
+  // `finiteCount` — `0.5` is the documented value (`maxDropFraction`).
   const minRows =
     check.expect.minRows === undefined
       ? undefined
@@ -78,7 +95,7 @@ export function yieldProblem(check: YieldCheck): ScrapeError | undefined {
   const maxDrop =
     check.expect.maxDrop === undefined
       ? undefined
-      : finiteOption('the scrape expect', 'maxDrop', check.expect.maxDrop);
+      : maxDropFraction(check.scrape, check.expect.maxDrop);
   if (minRows !== undefined && check.rows < minRows) {
     return yieldCollapsed({ scrape: check.scrape, rows: check.rows, reason: 'min-rows', minRows });
   }

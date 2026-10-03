@@ -36,7 +36,11 @@ const state: SealState = {
 };
 
 const matches = (route: MockRoute, url: string): boolean => {
-  if (route.match instanceof RegExp) return route.match.test(url);
+  if (route.match instanceof RegExp) {
+    // A `g`/`y` pattern's `test` resumes at `lastIndex`: without the reset, every other call missed.
+    route.match.lastIndex = 0;
+    return route.match.test(url);
+  }
   if (route.match.endsWith('*')) return url.startsWith(route.match.slice(0, -1));
   return route.match === url;
 };

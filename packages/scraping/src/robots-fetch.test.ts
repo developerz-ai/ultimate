@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScrapeFetch } from './http';
 import { createRobotsGate } from './robots';
-import { DEFAULT_ROBOTS_MAX_BYTES, robotsFetcher } from './robots-fetch';
+import { DEFAULT_ROBOTS_MAX_BYTES, MAX_ROBOTS_REDIRECTS, robotsFetcher } from './robots-fetch';
 
 const streamOf = (chunks: readonly Uint8Array[]): ReadableStream<Uint8Array> =>
   new ReadableStream<Uint8Array>({
@@ -112,5 +112,114 @@ describe('unit · the gate takes the deadline without a fetchText injected', () 
     await gate.assertAllowed('https://slow.test/one');
     await gate.assertAllowed('https://slow.test/two');
     expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
+
+// The robots read was the one request on the HTTP leg the platform followed on its own: an
+// allow-listed origin answering `/robots.txt` with `302 -> http://169.254.169.254/…` made the worker
+// GET an address `allowHosts` never listed. Each hop is now screened by the same host rule.
+describe('unit · a robots redirect is followed hop by hop, inside allowHosts', () => {
+  interface Seen {
+    readonly url: string;
+    readonly redirect: unknown;
+    readonly proxy: unknown;
+  }
+  const chain = (answers: Readonly<Record<string, Response>>) => {
+    const seen: Seen[] = [];
+    const call: ScrapeFetch = (url, init) => {
+      seen.push({ url, redirect: init.redirect, proxy: init.proxy });
+      return Promise.resolve(answers[url] ?? new Response('', { status: 404 }));
+    };
+    return { seen, call };
+  };
+  const to = (location: string, status = 302): Response =>
+    new Response(null, { status, headers: { location } });
+  const RULES = 'User-agent: *\nDisallow: /private';
+
+  test('a redirect off the list is never requested, and reads as "no robots"', async () => {
+    const { seen, call } = chain({
+      'https://shop.test/robots.txt': to('http://169.254.169.254/latest/meta-data/'),
+    });
+    const read = robotsFetcher({ allowHosts: ['shop.test'], fetch: call });
+    expect(await read('https://shop.test/robots.txt')).toBeUndefined();
+    expect(seen.map((hop) => hop.url)).toEqual(['https://shop.test/robots.txt']);
+    expect(seen[0]?.redirect).toBe('manual');
+  });
+
+  test('a redirect on the list is followed, every hop manual and through the same exit', async () => {
+    const { seen, call } = chain({
+      'http://shop.test/robots.txt': to('https://shop.test/robots.txt', 301),
+      'https://shop.test/robots.txt': to('/static/robots.txt', 307),
+      'https://shop.test/static/robots.txt': new Response(RULES),
+    });
+    const read = robotsFetcher({
+      allowHosts: ['shop.test'],
+      proxy: () => 'http://exit.test:1',
+      fetch: call,
+    });
+    expect(await read('http://shop.test/robots.txt')).toBe(RULES);
+    expect(seen.map((hop) => hop.redirect)).toEqual(['manual', 'manual', 'manual']);
+    expect(seen.map((hop) => hop.proxy)).toEqual([
+      'http://exit.test:1',
+      'http://exit.test:1',
+      'http://exit.test:1',
+    ]);
+  });
+
+  test('the first URL is screened too: an origin off the list is never read', async () => {
+    const { seen, call } = chain({ 'https://other.test/robots.txt': new Response(RULES) });
+    const read = robotsFetcher({ allowHosts: ['shop.test'], fetch: call });
+    expect(await read('https://other.test/robots.txt')).toBeUndefined();
+    expect(seen).toEqual([]);
+  });
+
+  test('with no allowHosts a same-host redirect is followed: scheme upgrade, then path move', async () => {
+    const { seen, call } = chain({
+      'http://shop.test/robots.txt': to('https://shop.test/robots.txt', 301),
+      'https://shop.test/robots.txt': to('/static/robots.txt'),
+      'https://shop.test/static/robots.txt': new Response(RULES),
+    });
+    expect(await robotsFetcher({ fetch: call })('http://shop.test/robots.txt')).toBe(RULES);
+    expect(seen.map((hop) => hop.redirect)).toEqual(['manual', 'manual', 'manual']);
+  });
+
+  test('with no allowHosts a redirect to ANOTHER host is never requested', async () => {
+    const { seen, call } = chain({
+      'https://shop.test/robots.txt': to('https://cdn.shop.test/robots.txt'),
+      'https://cdn.shop.test/robots.txt': new Response(RULES),
+    });
+    expect(await robotsFetcher({ fetch: call })('https://shop.test/robots.txt')).toBeUndefined();
+    expect(seen).toHaveLength(1);
+  });
+
+  test(`with no allowHosts a same-host chain past ${String(MAX_ROBOTS_REDIRECTS)} hops is abandoned`, async () => {
+    const answers: Record<string, Response> = {};
+    for (let hop = 0; hop < 20; hop += 1) {
+      answers[`https://shop.test/r${String(hop)}`] = to(`https://shop.test/r${String(hop + 1)}`);
+    }
+    const { seen, call } = chain(answers);
+    expect(await robotsFetcher({ fetch: call })('https://shop.test/r0')).toBeUndefined();
+    expect(seen).toHaveLength(MAX_ROBOTS_REDIRECTS + 1);
+  });
+
+  test(`a chain past ${String(MAX_ROBOTS_REDIRECTS)} hops is abandoned`, async () => {
+    const answers: Record<string, Response> = {};
+    for (let hop = 0; hop < 20; hop += 1) {
+      answers[`https://shop.test/r${String(hop)}`] = to(`https://shop.test/r${String(hop + 1)}`);
+    }
+    const { seen, call } = chain(answers);
+    const read = robotsFetcher({ allowHosts: ['shop.test'], fetch: call });
+    expect(await read('https://shop.test/r0')).toBeUndefined();
+    expect(seen).toHaveLength(MAX_ROBOTS_REDIRECTS + 1);
+  });
+
+  test('the gate scrape-run builds hands the run allowHosts to the read', async () => {
+    const { seen, call } = chain({
+      'https://shop.test/robots.txt': to('https://evil.test/robots.txt'),
+      'https://evil.test/robots.txt': new Response('User-agent: *\nDisallow: /'),
+    });
+    const gate = createRobotsGate({ policy: 'obey', allowHosts: ['shop.test'], fetch: call });
+    await gate.assertAllowed('https://shop.test/orders');
+    expect(seen.map((hop) => hop.url)).toEqual(['https://shop.test/robots.txt']);
   });
 });

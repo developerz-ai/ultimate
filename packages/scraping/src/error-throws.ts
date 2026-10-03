@@ -303,7 +303,11 @@ export const fixtureMissing = (url: string, dir: string): ScrapeError =>
 export const fixtureStale = (url: string, ageMs: number, maxAgeMs: number): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_FIXTURE_STALE',
-    cause: `the recording of ${url} is ${String(Math.round(ageMs / 86_400_000))} days old and fixtureBrowser declares maxAge ${String(Math.round(maxAgeMs / 86_400_000))} days`,
+    cause: `the recording of ${url} ${
+      Number.isFinite(ageMs)
+        ? `is ${String(Math.round(ageMs / 86_400_000))} days old`
+        : 'has a recordedAt that is not a date'
+    } and fixtureBrowser declares maxAge ${String(Math.round(maxAgeMs / 86_400_000))} days`,
     fix: 're-record the fixture directory, or raise maxAge on fixtureBrowser({ maxAge }) with the reason an old recording still proves something',
     meta: { url, ageMs, maxAgeMs },
   });

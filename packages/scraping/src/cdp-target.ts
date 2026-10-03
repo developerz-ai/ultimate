@@ -7,7 +7,7 @@ import { parse, t } from '@ultimat3/schema';
 import { browserRecord } from './browser-record';
 import { axNodesFor } from './cdp-a11y';
 import type { CdpArmInit } from './cdp-arm';
-import { arm } from './cdp-arm';
+import { arm, armBrowser } from './cdp-arm';
 import type { CdpBrowserLike, CdpFrameLike } from './cdp-port';
 import {
   clearExpression,
@@ -99,6 +99,7 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
   const pageErrors = createRing<PageError>();
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, { network, console: console_, pageErrors, crashed });
+  await armBrowser(init, network);
   let pendingStorage: SessionSnapshot | undefined;
 
   const originOf = (url: string): string => {
@@ -378,10 +379,18 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         } catch {
           origin = '';
         }
-        const source = init.browser as { cookies?: () => Promise<unknown> };
+        // Refused, never `[]`: the HTTP leg reads its cookies from here on every request and
+        // `persistSession` stores what this answers, so an empty jar went out logged-out and was
+        // saved as the session — both silently, while every other missing port method refuses.
+        if (typeof init.browser.cookies !== 'function') {
+          throw scrapeNotImplemented(
+            'session() on a CDP browser with no cookies() method',
+            'upgrade the launcher to a puppeteer-core that exposes browser.cookies() — the HTTP leg and a persisted session both read the jar through it',
+          );
+        }
+        const jar = parse(cookieSchema, await init.browser.cookies());
         return {
-          cookies:
-            typeof source.cookies === 'function' ? parse(cookieSchema, await source.cookies()) : [],
+          cookies: jar,
           headers: {},
           // `browserRecord` and not `t.record()`: a page may legitimately hold a key called
           // `constructor`, and the schema refuses that name outright — see `browser-record.ts`.
@@ -394,11 +403,16 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('restore', async () => {
         // Two halves, because they belong to two different moments: cookies are the browser's and
         // can be put back now, storage is an ORIGIN's and cannot exist until one is loaded.
-        const source = init.browser as {
-          setCookie?: (...cookies: readonly unknown[]) => Promise<void>;
-        };
-        if (typeof source.setCookie === 'function' && session.cookies.length > 0) {
-          await source.setCookie(...session.cookies);
+        if (session.cookies.length > 0) {
+          // Refused rather than skipped: a restore that dropped the cookies opened the session
+          // logged-out while the run believed it restored one.
+          if (typeof init.browser.setCookie !== 'function') {
+            throw scrapeNotImplemented(
+              'restore() of cookies on a CDP browser with no setCookie() method',
+              'upgrade the launcher to a puppeteer-core that exposes browser.setCookie(), or set auth: { reuse: false } on the scrape() definition so no session is restored',
+            );
+          }
+          await init.browser.setCookie(...session.cookies);
         }
         pendingStorage = Object.keys(session.storage).length > 0 ? session : undefined;
         await applyPendingStorage();

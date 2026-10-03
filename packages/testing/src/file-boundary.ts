@@ -119,13 +119,8 @@ export function restoreGlobals(snapshot: Baseline, host: object = globalThis): r
   return touched;
 }
 
-/** Called by the leak guard as each test file loads. The first call only takes the baseline. */
-export function runFileBoundary(): void {
-  if (baseline === undefined) {
-    baseline = captureGlobals();
-    envBaseline = { ...process.env };
-    return;
-  }
+/** Every `onFileBoundary` hook, in order — also run once after the run's last file. */
+export function runBoundaryHooks(): void {
   for (const hook of hooks) {
     try {
       hook();
@@ -133,6 +128,16 @@ export function runFileBoundary(): void {
       // A hook that throws (an island's own disposer) must not stop the rest of the reset.
     }
   }
+}
+
+/** Called by the leak guard as each test file loads. The first call only takes the baseline. */
+export function runFileBoundary(): void {
+  if (baseline === undefined) {
+    baseline = captureGlobals();
+    envBaseline = { ...process.env };
+    return;
+  }
+  runBoundaryHooks();
   restoreGlobals(baseline);
   if (envBaseline !== undefined) restoreEnv(envBaseline);
 }

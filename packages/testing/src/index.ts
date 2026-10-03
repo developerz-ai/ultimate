@@ -27,6 +27,8 @@ export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bu
 // `@ultimat3/http` is imported inside the function.
 export type { AuthRequestInit } from './auth-request';
 export { authRequest } from './auth-request';
+export type { BudgetStoreLike } from './budget-store-conformance';
+export { budgetStoreConformance } from './budget-store-conformance';
 // The browser-backed e2e driver and the raw-CDP browser under it — moved here from
 // `@ultimat3/cli` in 22.0.0. `installE2eDriver` is the ONE entry point an app's test preload calls;
 // `openE2eBrowserIfAvailable()` answers `undefined` on a machine with no Chrome, so a
@@ -129,6 +131,7 @@ export {
 } from './e2e-selection';
 export type { TestingErrorCode } from './errors';
 export {
+  AppNotBootedError,
   FixtureUnavailableError,
   NetworkOfflineError,
   NetworkSealedError,
@@ -279,6 +282,7 @@ export {
   normalizeIslandName,
 } from './island-states-resolve';
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+export { jobDriverConformance } from './job-driver-conformance';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
 // The store a mutator's `local()` half writes into under test — the Map every app hand-rolled.

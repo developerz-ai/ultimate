@@ -18,7 +18,7 @@ export interface TemplateDbConfig {
   /** Connection URL with rights to CREATE DATABASE. Absent means "fall back to PGlite". */
   readonly adminUrl?: string | undefined;
   readonly templateName?: string;
-  /** Applied once, into the template, under an advisory lock. */
+  /** Applied into the template under an advisory lock, which every worker's clone also holds. */
   readonly migrate?: (url: string) => Promise<void>;
 }
 
@@ -144,11 +144,14 @@ export async function acquireWorkerDatabase(
       // serialises them, so a failure here is a real failure and `alreadyExists` (a substring match
       // on the message) would read `relation "x_jobs" already exists` as success.
       if (config.migrate !== undefined) await config.migrate(urlFor(adminUrl, template));
+      // INSIDE the lock: `CREATE DATABASE … TEMPLATE` waits 5 s for every session on the template
+      // to leave, then refuses — and the next worker's migration opens one the moment the lock is
+      // free. Measured: a clone outside it failed whenever that migration ran past 5 s.
+      await admin.exec(dropSql(database));
+      await admin.exec(cloneSql(template, database));
     } finally {
       await admin.exec(unlockSql(template));
     }
-    await admin.exec(dropSql(database));
-    await admin.exec(cloneSql(template, database));
   } catch (error) {
     await admin.close();
     throw new TestDatabaseUnavailableError({

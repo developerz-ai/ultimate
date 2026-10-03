@@ -23,7 +23,12 @@ import type { ScrapeClock } from './clock';
 import { authFailed, promptUnanswered, sessionExpired } from './error-throws';
 import type { ScrapePage } from './page';
 import type { ScrapeSecrets } from './secrets';
-import { type ScrapeSessionStore, type SessionState, sessionDigest } from './session-state';
+import {
+  recordVersion,
+  type ScrapeSessionStore,
+  type SessionState,
+  sessionDigest,
+} from './session-state';
 
 export interface PromptRequest<I = unknown> {
   /**
@@ -167,10 +172,30 @@ export interface AuthPlanInput<I> {
 export async function restorableSession<I>(
   plan: AuthPlanInput<I>,
 ): Promise<SessionState | undefined> {
+  return (await observeSession(plan)).restorable;
+}
+
+/** What `observeSession` answers: the session to restore, and the version of what was found. */
+export interface ObservedSession {
+  readonly restorable: SessionState | undefined;
+  /**
+   * `recordVersion` of the record found — restorable or NOT. A `reuse: false` run, or one whose
+   * record is past `maxAge`, still saw that record: a refused login must tombstone over it, and a
+   * run that compared against "nothing" let the rejected credential through again.
+   */
+  readonly seen: string | undefined;
+}
+
+/** `restorableSession`, plus the version of the record found, for the run's later writes. */
+export async function observeSession<I>(plan: AuthPlanInput<I>): Promise<ObservedSession> {
   const store = plan.auth?.store;
-  if (store === undefined) return undefined;
+  if (store === undefined) return { restorable: undefined, seen: undefined };
   const found = await store.load(plan.key);
-  if (found === undefined) return undefined;
+  if (found === undefined) return { restorable: undefined, seen: undefined };
+  return { restorable: restorableFrom(plan, found), seen: recordVersion(found) };
+}
+
+function restorableFrom<I>(plan: AuthPlanInput<I>, found: SessionState): SessionState | undefined {
   // The tombstone is read BEFORE `reuse` is honoured. `reuse: false` says "do not restore this
   // session"; it does not say "present the rejected credential again", and reading it first meant
   // a `reuse: false` scrape walked a refused password back to the login form on every requeue.
@@ -194,13 +219,42 @@ export async function restorableSession<I>(
   return found;
 }
 
-/** Written down so the next attempt cannot reach the login form with the same credentials. */
-export async function markRefused<I>(plan: AuthPlanInput<I>): Promise<void> {
+/**
+ * True when the stored record is still the one this run last saw — `seen` is the `recordVersion`
+ * it found or persisted, `undefined` when it found none. The store has no compare-and-set (nor has
+ * `StorageDriver` a conditional write to build one from), so a
+ * burn or a tombstone is a blind write: two runs on one key, and the one that failed destroyed the
+ * session the other had just persisted. Compared before the write, which narrows the race to the
+ * gap between this read and that write rather than the whole run. A record moved on is left alone.
+ */
+async function stillSeen<I>(
+  plan: AuthPlanInput<I>,
+  store: ScrapeSessionStore,
+  seen: string | undefined,
+  step: 'session.burn' | 'session.refuse',
+): Promise<boolean> {
+  const current = await store.load(plan.key);
+  if (current === undefined || recordVersion(current) === seen) return true;
+  plan.logger.warn('scrape.session.superseded', { step });
+  return false;
+}
+
+/**
+ * Written down so the next attempt cannot reach the login form with the same credentials — unless
+ * another run saved a session after this one read the record: that login SUCCEEDED, so this
+ * refusal is older news than the record it would overwrite.
+ */
+export async function markRefused<I>(
+  plan: AuthPlanInput<I>,
+  seen: string | undefined,
+): Promise<void> {
   const store = plan.auth?.store;
   if (store === undefined) return;
+  if (!(await stillSeen(plan, store, seen, 'session.refuse'))) return;
   await store.save({
     key: plan.key,
     savedAt: plan.clock.now().toISOString(),
+    version: crypto.randomUUID(),
     refusedAt: plan.clock.now().toISOString(),
     cookies: [],
     headers: {},
@@ -210,10 +264,19 @@ export async function markRefused<I>(plan: AuthPlanInput<I>): Promise<void> {
   });
 }
 
-/** New identity, from scratch. One call, because a flagged profile is unusable and must go. */
-export async function burnSession<I>(plan: AuthPlanInput<I>): Promise<void> {
-  if (plan.auth?.store === undefined) return;
-  await plan.auth.store.burn(plan.key);
+/**
+ * New identity, from scratch. One call, because a flagged profile is unusable and must go — the
+ * profile THIS run used: `seen` is that record's `recordVersion` (`observeSession`'s, or the one
+ * `persistSession` answered), and a record another run saved since is not burned.
+ */
+export async function burnSession<I>(
+  plan: AuthPlanInput<I>,
+  seen: string | undefined,
+): Promise<void> {
+  const store = plan.auth?.store;
+  if (store === undefined) return;
+  if (!(await stillSeen(plan, store, seen, 'session.burn'))) return;
+  await store.burn(plan.key);
   plan.logger.warn('scrape.session.burned', { burned: true });
 }
 
@@ -251,18 +314,31 @@ export async function ensureAuthenticated<I>(args: EnsureAuthInput<I>): Promise<
       return false;
     }
     args.logger.info('scrape.session.expired', { reused: false });
-    await burnSession(args);
+    await burnSession(args, recordVersion(args.restored));
   }
   if (auth.login === undefined) throw sessionExpired(args.scrape, args.key);
   await auth.login(context);
   return true;
 }
 
-/** After a login: keep what it produced. A 2FA code somebody typed is worth exactly this. */
-export async function persistSession<I>(plan: AuthPlanInput<I>, page: ScrapePage): Promise<void> {
+/**
+ * After a login: keep what it produced. A 2FA code somebody typed is worth exactly this. Answers
+ * the `version` it wrote — the record this run now owns, for a later burn to compare against.
+ */
+export async function persistSession<I>(
+  plan: AuthPlanInput<I>,
+  page: ScrapePage,
+): Promise<string | undefined> {
   const store = plan.auth?.store;
-  if (store === undefined) return;
+  if (store === undefined) return undefined;
   const snapshot = await page.session();
-  await store.save({ ...snapshot, key: plan.key, savedAt: plan.clock.now().toISOString() });
+  const version = crypto.randomUUID();
+  await store.save({
+    ...snapshot,
+    key: plan.key,
+    savedAt: plan.clock.now().toISOString(),
+    version,
+  });
   plan.logger.info('scrape.session.saved', sessionDigest(snapshot));
+  return version;
 }

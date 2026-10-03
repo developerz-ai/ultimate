@@ -3,13 +3,13 @@
 // packages are tier 5, so importing it here would be the reverse of the one declared `cli → testing`
 // edge. A structural seam keeps the direction honest and survives the bundler changing underneath.
 
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
+import { onFileBoundary } from './file-boundary';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
 import type { ResizeInput } from './island-observers';
 import { deliverResize } from './island-observers';
+import { createScratchDir, removeScratchDir } from './island-scratch';
 
 /** The two fields a mounted island needs from a chunk. Anything else a bundler grows — a CSS
  *  artifact, a source map, a dev/production flag — is invisible here on purpose. */
@@ -139,49 +139,13 @@ function entryOf(module: unknown, file: string): IslandEntry {
   return { mount: mount as IslandEntry['mount'] };
 }
 
-let moduleDir: string | undefined;
-
 /**
- * One directory per process, outside the app under test — so no test leaves a `.mjs` behind. Two
- * properties the module-scope `mkdtempSync` it replaces had neither of:
- *
- * LAZY. This module is on the `.` barrel, so importing `@ultimat3/testing` for `expect` alone
- * created a directory — in every test process in the repo, whether or not it ever mounts anything.
- *
- * REMOVED. `exit` and `rmSync`, because an exit handler runs synchronously and nothing else covers
- * every path: `mountIsland` restores and rethrows on a failed mount, so that run never reaches the
- * `Disposable`, and the directory is per PROCESS while the disposable is per mount.
+ * A temp FILE named by the chunk's own hash, NOT a `data:` URL: `bun test --coverage` panics on
+ * `import()` of a `data:` module past ~4 kB (Bun 1.4.0) and an island chunk is 12-55 kB. The file
+ * sits in the mount's OWN directory (`island-scratch.ts`), so a mount is a fresh module instance.
  */
-function moduleDirPath(): string {
-  const existing = moduleDir;
-  if (existing !== undefined) return existing;
-  const created = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
-  process.on('exit', () => {
-    rmSync(created, { recursive: true, force: true });
-  });
-  moduleDir = created;
-  return created;
-}
-
-/**
- * The scratch root, or `undefined` when nothing has been mounted. Read by the leak test, which
- * asserts both halves of the above from a CHILD process — the only place where "this process
- * created no directory" and "the directory is gone afterwards" are both observable.
- */
-export const islandModuleDir = (): string | undefined => moduleDir;
-
-/**
- * A temp file named by the chunk's own hash, NOT a `data:` URL. The URL form read better and
- * crashed the coverage reporter: `bun test --coverage` panics with `range end index N out of range
- * for slice of length 4096` on `import()` of any `data:` module whose URL exceeds ~4 kB, and an
- * island chunk is 12-55 kB. Measured on Bun 1.4.0, threshold at a URL length of 4032; without
- * `--coverage` the same import is fine, which is why only the per-package CI job ever saw it.
- *
- * The property the URL form was chosen for survives: the name is derived from the bytes, so an
- * edited island is a different module rather than a cache hit on the same path.
- */
-const modulePathFor = (code: string): string =>
-  join(moduleDirPath(), `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
+const modulePathFor = (dir: string, code: string): string =>
+  join(dir, `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
 
 /**
  * DESCRIPTORS, not values, and all-or-nothing.
@@ -249,6 +213,10 @@ export function disposeLiveIslands(): number {
   return pending.length;
 }
 
+// Registered here, not by each preload: the repo's own preload and an app's both install the leak
+// guard that runs the boundary, and a mount a file forgot is one only this module can see.
+onFileBoundary(disposeLiveIslands);
+
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
   // `only`, because this fixture has always KNOWN which island it wants and asked for all of them
   // anyway — `island-bundle.ts` added the option for exactly this caller ("a test that mounts a
@@ -275,14 +243,17 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
 
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
+  let dir: string | undefined;
   try {
+    dir = createScratchDir();
+    const scratch = dir;
     // Beside the entry, under the name its bytes import them by: the same relative resolution a
     // browser does under `/islands/`. Named by their content-addressed URL, so a rewrite is the same
     // bytes at the same name.
     for (const shared of bundle.shared ?? []) {
-      await Bun.write(join(moduleDirPath(), basename(shared.url)), shared.code);
+      await Bun.write(join(scratch, basename(shared.url)), shared.code);
     }
-    const path = modulePathFor(chunk.code);
+    const path = modulePathFor(scratch, chunk.code);
     await Bun.write(path, chunk.code);
     const entry = entryOf(await import(path), chunk.file);
     const el = new FakeElement('div');
@@ -310,6 +281,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
         // Whatever the disposer did — including throw, which is the test's to see — the process
         // gets its globals back, or the fake `document` reaches every later file in the run.
         restore();
+        removeScratchDir(scratch);
       }
     };
     liveMounts.add(dispose);
@@ -349,6 +321,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     // A mount that throws restores the process before it rethrows: the alternative leaves every
     // later file in the run holding a fake `document`, which fails somewhere with no thread back.
     restore();
+    if (dir !== undefined) removeScratchDir(dir);
     throw error;
   }
 }

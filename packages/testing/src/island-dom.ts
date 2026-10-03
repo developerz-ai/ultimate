@@ -6,6 +6,7 @@
 // Two neighbours at the 500-line ceiling: `island-selector.ts` is the selector grammar `find`
 // and `all` read, and `island-observers.ts` is the `ResizeObserver` an island measures with.
 
+import { decodeEntities } from './island-html-entities';
 import type { FakeResizeObserver } from './island-observers';
 import { createResizeObservers, rectOf } from './island-observers';
 import { matchesSelector, parseSelector } from './island-selector';
@@ -350,8 +351,10 @@ const VOID_TAGS = new Set([
   'track',
   'wbr',
 ]);
+// Group 6 is a comment: Solid compiles `<!>` as the marker its `nextSibling` walk counts, so it must
+// be a node — read as text it merged into its neighbours and the walk landed one node short.
 const TOKEN =
-  /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s=/>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*(\/?)>|([^<]+)/g;
+  /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s=/>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*(\/?)>|([^<]+)|(<!(?:--[\s\S]*?--|[^>]*)>)/g;
 const ATTRIBUTE = /([^\s=/>]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
 
 /** Only what `babel-preset-solid` emits into a template: tags, static attributes and text. */
@@ -360,8 +363,8 @@ export function parseHtml(html: string): FakeNode {
   const open: FakeNode[] = [root];
   for (const match of html.matchAll(TOKEN)) {
     const parent = open[open.length - 1] as FakeNode;
-    if (match[5] !== undefined) {
-      parent.appendChild(new FakeText(match[5]));
+    if (match[5] !== undefined || match[6] !== undefined) {
+      parent.appendChild(new FakeText(decodeEntities(match[5] ?? '')));
       continue;
     }
     if (match[1] === '/') {
@@ -370,7 +373,8 @@ export function parseHtml(html: string): FakeNode {
     }
     const element = new FakeElement(match[2] as string);
     for (const attr of (match[3] ?? '').matchAll(ATTRIBUTE)) {
-      if (attr[1] !== undefined) element.setAttribute(attr[1], attr[2] ?? attr[3] ?? attr[4] ?? '');
+      if (attr[1] !== undefined)
+        element.setAttribute(attr[1], decodeEntities(attr[2] ?? attr[3] ?? attr[4] ?? ''));
     }
     parent.appendChild(element);
     if (match[4] !== '/' && !VOID_TAGS.has(element.tagName)) open.push(element);

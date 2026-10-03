@@ -118,28 +118,36 @@ afterAll(() => {
 const HELPER = join(import.meta.dir, 'island-state-mount.ts');
 const STATES = join(import.meta.dir, 'define-island-states.ts');
 
-/** One slow build under two deadlines: the suite form's `timeoutMs` is the build's own. */
+/**
+ * One slow build under two deadlines: the suite form's `timeoutMs` is the build's own. Ordered by
+ * SIGNALS, never by sleeps — the short block's build resolves only when the last test releases
+ * it, and that test waits for the late mount itself, so a loaded runner changes no outcome.
+ */
 const CHILD = `
 import { test } from 'bun:test';
 import { describeIslandState } from ${JSON.stringify(HELPER)};
 import { defineIslandStates } from ${JSON.stringify(STATES)};
 const FILE = 'apps/web/site/slow.island.tsx';
 const states = defineIslandStates({ island: FILE, states: [{ id: 'idle', title: 'idle', props: {} }] });
-const build = (name) => async () => {
-  await Bun.sleep(150);
-  return { chunks: [{ file: FILE, code: 'export function mount(el) { el.textContent = ' + JSON.stringify(name) + '; }' }] };
-};
-describeIslandState(states, 'idle', { build: build('short'), root: '/a', timeoutMs: 20 }, (mounted) => {
+let release;
+const gate = new Promise((resolve) => { release = resolve; });
+const chunk = (name) => ({ chunks: [{ file: FILE, code: 'export function mount(el) { globalThis.__onMounted?.(); el.textContent = ' + JSON.stringify(name) + '; }' }] });
+describeIslandState(states, 'idle', { build: () => gate.then(() => chunk('short')), root: '/a', timeoutMs: 20 }, (mounted) => {
   test('short', () => { mounted(); });
 });
-describeIslandState(states, 'idle', { build: build('long'), root: '/b', timeoutMs: 2000 }, (mounted) => {
+describeIslandState(states, 'idle', { build: async () => chunk('long'), root: '/b', timeoutMs: 30000 }, (mounted) => {
   test('long', () => { if (mounted().el.textContent !== 'long') process.exit(3); });
 });
 // The short block's mount resolves AFTER its deadline and its afterAll: it must not stay installed.
 test('nothing is left installed', async () => {
-  await Bun.sleep(250);
+  // The island signals its own mount; a mount that never comes fails on this test's deadline.
+  const mounted = new Promise((resolve) => { globalThis.__onMounted = resolve; });
+  release();
+  await mounted;
+  // The late mount's own continuation disposes it: every microtask drains before a macrotask.
+  await new Promise((resolve) => setImmediate(resolve));
   if ('document' in globalThis) process.exit(4);
-});
+}, 5000);
 `;
 
 test('timeoutMs is the deadline of the mount, build included', async () => {

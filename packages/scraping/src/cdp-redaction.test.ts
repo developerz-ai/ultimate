@@ -236,7 +236,7 @@ describe('unit · what a credential-bearing URL may say, and what it hands the s
     expect(endpointLabel('not a url')).toBe('an endpoint that is not a URL');
   });
 
-  test('urlSecretValues covers the whole URL, the path with its query, each query value and the password', () => {
+  test('urlSecretValues covers the whole URL, the path with its query, the token and the password', () => {
     const values = urlSecretValues(CDP_URL);
     expect(values).toContain(CDP_URL);
     expect(values).toContain(`/chrome?token=${TOKEN}&region=eu`);

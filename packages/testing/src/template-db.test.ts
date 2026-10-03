@@ -91,6 +91,23 @@ describe('unit · template-db', () => {
     expect(statements.some((sql) => sql.startsWith('SELECT pg_advisory_unlock'))).toBe(true);
   });
 
+  test('the drop and the clone run INSIDE the lock, the unlock last', async () => {
+    // The next worker's migration opens a session on the template the moment the lock is free,
+    // and a clone waits 5 s for it to leave, then refuses (`template-db.live.test.ts`).
+    const { statements, connect } = recorder();
+    const db = await acquireWorkerDatabase(
+      { adminUrl: ADMIN },
+      { connect, env: { BUN_TEST_WORKER_ID: '0' } },
+    );
+    expect(statements).toEqual([
+      lockSql(DEFAULT_TEMPLATE),
+      createTemplateSql(DEFAULT_TEMPLATE),
+      dropSql(db.database),
+      cloneSql(DEFAULT_TEMPLATE, db.database),
+      unlockSql(DEFAULT_TEMPLATE),
+    ]);
+  });
+
   // On any Postgres that outlives one run — a laptop, a self-hosted runner — the template is
   // created once and found again on every later run. Tolerating "already exists" for the CREATE
   // must not also skip the migrations, or every worker database is a clone of the first run's
