@@ -58,6 +58,9 @@ function x(bin: string, args: readonly string[], root: string, env: Record<strin
     env: { ...inherited(), ...env },
     stdout: 'pipe',
     stderr: 'pipe',
+    // Synchronous inside a test, where the test's own timeout cannot interrupt it: a hung reset is
+    // killed here and refused below with what it printed, never a suite that waits forever.
+    timeout: DEFAULT_READY_TIMEOUT_MS,
   });
   if (run.exitCode !== 0) {
     throw refuse(`x ${args.join(' ')}`, `${run.stdout.toString()}${run.stderr.toString()}`);

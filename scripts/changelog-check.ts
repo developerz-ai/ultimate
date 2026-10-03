@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Enforce, as a gate rule, that CHANGELOG.md's sections are well-formed and that every migration
-// count in wiki/Upgrading.md is read out of that major's OWN section.
+// Enforce, as a gate rule, that CHANGELOG.md's sections are well-formed, that every migration
+// count in wiki/Upgrading.md is read out of that major's OWN section, and that each `BREAKING —`
+// line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`).
 //
 // The gap this closes is at commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`. That is
 // `release: 6.0.0`, the release script's OWN output: seven `BREAKING —` entries still under
@@ -21,6 +22,7 @@
 //   bun run scripts/changelog-check.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
+import { checkPairing, pairingFinding } from './lib/changelog-pairing';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -451,11 +453,20 @@ export async function changelogGaps(root: string): Promise<readonly ChangelogGap
   });
 }
 
-/** Every finding this rule contributes, for a caller that folds it into a gate step. */
-export const changelogFindings = async (root: string): Promise<readonly Finding[]> => [
-  ...(await changelogGaps(root)).map(changelogFinding),
-  ...claimGaps(await treeClaims(root, await Bun.file(`${root}/${CHANGELOG_PATH}`).text())),
-];
+/**
+ * Every finding this rule contributes, for a caller that folds it into a gate step. The count rule
+ * above, the one-to-one pairing of each line with its row (`lib/changelog-pairing.ts`), and the
+ * unreleased-claim rule.
+ */
+export const changelogFindings = async (root: string): Promise<readonly Finding[]> => {
+  const changelog = await Bun.file(`${root}/${CHANGELOG_PATH}`).text();
+  const upgrading = await Bun.file(`${root}/${UPGRADING_PATH}`).text();
+  return [
+    ...(await changelogGaps(root)).map(changelogFinding),
+    ...checkPairing(changelog, upgrading).map(pairingFinding),
+    ...claimGaps(await treeClaims(root, changelog)),
+  ];
+};
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));

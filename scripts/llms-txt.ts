@@ -7,7 +7,7 @@
 //
 //   bun run llms-txt [--write] [--json]
 
-import { parseScriptArgs } from './lib/args';
+import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -153,7 +153,7 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const rendered = await renderLlmsTxt(root);
-  const write = args.flags.get('write') === true && rendered.missing.length === 0;
+  const write = flagBool(args, 'write') && rendered.missing.length === 0;
   if (write) await Bun.write(`${root}/${LLMS_TXT}`, rendered.text);
   const findings = write ? [] : rendered.findings;
   report(

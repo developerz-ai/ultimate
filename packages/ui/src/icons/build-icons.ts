@@ -174,7 +174,8 @@ async function format(): Promise<void> {
   if (!(await Bun.file(biome).exists())) {
     throw runtimeMissingError('the biome binary', 'bun install');
   }
-  const result = Bun.spawnSync([biome, 'format', '--write', GLYPHS_DIR]);
+  // A formatter over one directory of generated files; a wedged one is the refusal below.
+  const result = Bun.spawnSync([biome, 'format', '--write', GLYPHS_DIR], { timeout: 60_000 });
   if (result.exitCode !== 0) {
     throw runtimeMissingError(
       'a successful `biome format` over the generated glyphs',

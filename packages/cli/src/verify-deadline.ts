@@ -223,6 +223,9 @@ async function procfsProcesses(): Promise<readonly ProcessEnviron[] | undefined>
   return out;
 }
 
+/** One `ps` listing; past this the sweep answers what it has rather than outliving the step. */
+const PS_TIMEOUT_MS = 10_000;
+
 /**
  * Elsewhere (macOS, BSD): `ps` in its BSD spelling — `e` prints each process's environment after
  * its command, `ww` never truncates it. The same spelling answers on Linux, which is where it is
@@ -233,6 +236,8 @@ export async function psProcesses(): Promise<readonly ProcessEnviron[]> {
     const ps = Bun.spawn(['ps', 'axeww', '-o', 'pid=,command='], {
       stdout: 'pipe',
       stderr: 'ignore',
+      // The deadline's own sweep: a `ps` that hangs would hang the step it exists to end.
+      timeout: PS_TIMEOUT_MS,
     });
     const text = await new Response(ps.stdout).text();
     await ps.exited;
@@ -262,6 +267,7 @@ async function commandOf(pid: number): Promise<string> {
       const ps = Bun.spawn(['ps', '-ww', '-o', 'command=', '-p', String(pid)], {
         stdout: 'pipe',
         stderr: 'ignore',
+        timeout: PS_TIMEOUT_MS,
       });
       text = await new Response(ps.stdout).text();
       await ps.exited;

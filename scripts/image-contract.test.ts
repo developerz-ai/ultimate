@@ -129,18 +129,45 @@ describe('unit · what the rules refuse to guess', () => {
     expect(findings(text)).toEqual([]);
   });
 
-  test('a COPY from an image rather than a stage is not a build stage', () => {
-    const text = [
-      'FROM gcr.io/distroless/cc-debian13 AS runtime',
-      'COPY --from=alpine:3 /bin/busybox /app/x',
-      'RUN ["/app/x", "--version"]',
-      'ENTRYPOINT ["/app/x"]',
-      '',
-    ].join('\n');
-    // `alpine:3` names no stage in this file, so there is no build stage to compare — and guessing
-    // that an unresolved `--from` is an image whose libc must match would report a correct
-    // multi-stage borrow as a defect.
-    expect(findings(text)).toEqual([]);
+  // An artifact borrowed from an IMAGE is linked against that image's libc exactly as one built in
+  // a stage is. This read "not a stage, so nothing to compare", and `--from=alpine:3` onto a
+  // distroless runtime shipped a binary asking for a musl loader the runtime does not have.
+  test('a COPY from an external image is held to the runtime libc like a stage', () => {
+    const borrow = (image: string) =>
+      [
+        'FROM gcr.io/distroless/cc-debian13 AS runtime',
+        `COPY --from=${image} /bin/busybox /app/x`,
+        'RUN ["/app/x", "--version"]',
+        'ENTRYPOINT ["/app/x"]',
+        '',
+      ].join('\n');
+    const found = findings(borrow('alpine:3'));
+    expect(found.map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+    expect(found[0]?.cause).toContain('alpine:3 (musl)');
+    expect(findings(borrow('debian:bookworm-slim'))).toEqual([]);
+    // Unknown is still not broken.
+    expect(findings(borrow('busybox:1'))).toEqual([]);
+  });
+
+  // `--from=0` is the first stage by position. It was looked up by NAME, found nothing, and the
+  // musl build stage it names went unchecked.
+  test('a COPY from a stage index resolves to that stage', () => {
+    const indexed = (from: string) =>
+      [
+        'FROM oven/bun:1.3-alpine',
+        'RUN bun build --compile --outfile /out/app ./x.ts',
+        'FROM oven/bun:1.3-slim',
+        'RUN bun build --compile --outfile /out/app ./x.ts',
+        'FROM gcr.io/distroless/cc-debian13 AS runtime',
+        `COPY --from=${from} /out/app /app/x`,
+        'RUN ["/app/x", "--version"]',
+        'ENTRYPOINT ["/app/x"]',
+        '',
+      ].join('\n');
+    const found = findings(indexed('0'));
+    expect(found.map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+    expect(found[0]?.cause).toContain('0 on oven/bun:1.3-alpine (musl)');
+    expect(findings(indexed('1'))).toEqual([]);
   });
 });
 

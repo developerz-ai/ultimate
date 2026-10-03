@@ -62,7 +62,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `schema-drift.ts` / `drift.ts` / `drift-replica-identity.ts` / `db-destructive.ts` / `db-ungeneratable.ts` | `drift`: snapshot vs declarations (`REPLICA IDENTITY FULL` a params channel or `subscribes:` needs included), the source hash (core's `canonicalJson`), the header markers |
 | `schema-dump-drift.ts` | `drift`'s fourth rail, the only one that boots a database: committed `packages/db/schema/` vs a scratch replay, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`) |
 | `i18n-registration.ts` / `i18n-audit.ts` / `admin-catalog-keys.ts` | `i18n`; a mounted admin's keys are `AdminApp.catalogKeys()`, asked of every app catalog — never re-derived here (`X_CATALOG_MISSING_KEYS`) |
-| `error-unthrown.ts` | host check: a registered code nothing throws must say so |
+| `error-unthrown.ts` / `unthrown-codes.ts` | host check: a registered code nothing throws is listed in `UNTHROWN_CODES` (a row's wording waives nothing); a listed code thrown again is `X_ERROR_CODE_UNTHROWN_STALE` |
 
 ### Generators (`x g`, `x new`)
 

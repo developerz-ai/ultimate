@@ -61,6 +61,7 @@ import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
+import { fixProseFindings } from './fix-prose';
 import { gateStepFindings } from './gate-steps';
 import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
@@ -243,6 +244,8 @@ export const errorCodeDocs: HostCheck = async (root) => {
  * than throwing one, and this repo exports 196 functions that return one. `bareErrorFindings` is the rule itself in
  * that file set: `CLAUDE.md` says never throw a bare `Error` and the enforced check skips tests, so
  * 422 sites sat under a green gate — a convention that is not a build error does not exist.
+ * `fixProseFindings` holds the same `fix:` lines to OPENING with a command or a code shape, on a
+ * per-package ratchet: the rule says a fix is a command, and 987 lines were sentences.
  *
  * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
  * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
@@ -256,6 +259,7 @@ export const errorContract: HostCheck = async (root) => [
   ...(await testFixFindings(root)),
   ...(await bareErrorFindings(root)),
   ...(await throwFindings(root)),
+  ...(await fixProseFindings(root)),
 ];
 
 /**

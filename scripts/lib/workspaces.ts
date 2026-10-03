@@ -6,6 +6,7 @@ import { join } from 'node:path';
 // The leaf, not core's barrel: `bun run lockfile` reaches this module and must run while a package
 // is mid-edit (DX ledger #10).
 import { renderThrowable } from '../../packages/core/src/error-render';
+import type { Finding } from './log';
 import { ScriptError } from './script-error';
 import { tierOf } from './tiers';
 
@@ -17,6 +18,8 @@ export interface Workspace {
   readonly private: boolean;
   readonly path: string;
   readonly tier: number;
+  /** Its `@ultimat3/*` `dependencies` — the edges a consumer's install resolves, so publish's too. */
+  readonly dependsOn: readonly string[];
 }
 
 export interface PackageJson {
@@ -119,6 +122,45 @@ export async function requireWorkspaceManifest(
   });
 }
 
+/** What ordering needs of a workspace: where it sits, and which workspaces it installs. */
+export interface SequenceNode {
+  readonly dir: string;
+  readonly name: string;
+  readonly tier: number;
+  /** Its `dependencies` — the edges a consumer's install resolves, so the edges publish must honour. */
+  readonly dependsOn: readonly string[];
+}
+
+const byTierThenDir = (a: SequenceNode, b: SequenceNode): number =>
+  a.tier - b.tier || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0);
+
+/**
+ * Tier first, then dependencies before dependants, then the alphabet. Tier and alphabet alone put
+ * `core` before `schema` and `cli` before `testing` — declared sideways edges — and v22.4.0 died
+ * between the first pair, leaving an immutable `core@X` whose `schema@X` did not exist. A cycle
+ * cannot be ordered at all: its members keep the alphabet rather than leaving the list, and the
+ * real-tree test in `workspaces.test.ts` is what turns one into a red build.
+ */
+export function publishSequence<T extends SequenceNode>(nodes: readonly T[]): readonly T[] {
+  const pending = [...nodes].sort(byTierThenDir);
+  const names = new Set(pending.map((node) => node.name));
+  const placed = new Set<string>();
+  const out: T[] = [];
+  while (pending.length > 0) {
+    const ready = pending.findIndex((node) =>
+      node.dependsOn.every((dep) => !names.has(dep) || placed.has(dep) || dep === node.name),
+    );
+    const [next] = pending.splice(ready === -1 ? 0 : ready, 1);
+    if (next === undefined) break;
+    placed.add(next.name);
+    out.push(next);
+  }
+  return out;
+}
+
+const internalDeps = (manifest: PackageJson): readonly string[] =>
+  Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith('@ultimat3/'));
+
 export async function listWorkspaces(root: string): Promise<readonly Workspace[]> {
   const glob = new Bun.Glob(WORKSPACE_GLOB);
   const out: Workspace[] = [];
@@ -136,15 +178,38 @@ export async function listWorkspaces(root: string): Promise<readonly Workspace[]
       private: manifest.private === true,
       path: join(root, 'packages', dir),
       tier: tierOf(dir),
+      dependsOn: internalDeps(manifest),
     });
   }
+  // Tier then directory: the stable reading order `framework.manifest.json` and `llms.txt` record.
+  // Publishing is the one reader that owes the dependency order, and `publishOrder` applies it.
   out.sort((a, b) => a.tier - b.tier || a.dir.localeCompare(b.dir));
   return out;
 }
 
-/** Publish order: tier 0 first, so a dependency is always on the registry before its dependants. */
+/**
+ * Publish order: `publishSequence` over the public workspaces, so a dependency is always on the
+ * registry before its dependants — the sideways edges within a tier included.
+ */
 export const publishOrder = (workspaces: readonly Workspace[]): readonly Workspace[] =>
-  workspaces.filter((workspace) => !workspace.private);
+  publishSequence(workspaces.filter((workspace) => !workspace.private));
+
+/**
+ * The floor every release tool answers to: a tree that enumerates no publishable workspace is a
+ * tree read from the wrong place, never a release with nothing to do. `registry-audit` answered
+ * "0/0 … every one attested" and `release --check` "0 packages are stamped", both `ok: true`.
+ */
+export const publishFloorFindings = (workspaces: readonly Workspace[]): readonly Finding[] =>
+  publishOrder(workspaces).length > 0
+    ? []
+    : [
+        {
+          code: 'X_CORPUS_UNSCANNED',
+          cause: `${WORKSPACE_GLOB} matched ${workspaces.length} workspace(s) and none is publishable, so every release tool over it would report on a set it never read`,
+          fix: 'cd "$(git rev-parse --show-toplevel)" && bun run scripts/list-workspaces.ts --json',
+          at: WORKSPACE_GLOB,
+        },
+      ];
 
 /**
  * What the root `package.json` answered — THREE facts, because a caller has to be able to tell

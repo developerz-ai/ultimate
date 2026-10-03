@@ -72,6 +72,27 @@ describe('a raise must state its number and its reason', () => {
     expect(raises(route("{ js: '16kb' }"), route("{ js: '20kb' }", blank))).toHaveLength(1);
   });
 
+  test('a raise under the comment the base already had is unstated — it measured the old number', () => {
+    const old = '  // measured: 20000 B — why: the settings form\n';
+    // 30kb -> 900kb under the very sentence that justified 30kb.
+    expect(raises(route("{ js: '30kb' }", old), route("{ js: '900kb' }", old))).toEqual([
+      'js:30kb->900kb',
+    ]);
+    const restated = '  // measured: 880000 B — why: the chart library the dashboard now ships\n';
+    expect(raises(route("{ js: '30kb' }", old), route("{ js: '900kb' }", restated))).toEqual([]);
+  });
+
+  test('a measured number above the new budget states nothing — the budget would already fail', () => {
+    const over = '  // measured: 25000 B — why: the settings form\n';
+    expect(raises(route("{ js: '16kb' }"), route("{ js: '20kb' }", over))).toEqual([
+      'js:16kb->20kb',
+    ]);
+    const lcpOver = '  // measured: 2500 ms — why: a hero image\n';
+    expect(raises(route('{ lcp: 1800 }'), route('{ lcp: 2200 }', lcpOver))).toEqual([
+      'lcp:1800->2200',
+    ]);
+  });
+
   test('an lcp raise is stated in milliseconds, not bytes', () => {
     const inBytes = '  // measured: 2100 B — why: a hero image\n';
     const inMs = '  // measured: 2100 ms — why: a hero image\n';

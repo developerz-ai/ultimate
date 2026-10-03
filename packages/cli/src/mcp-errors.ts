@@ -118,8 +118,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x errors list --json   # register the code in its package src/errors.ts, or move its row under "Reserved codes"',
   X_ERROR_CODE_UNRESOLVED:
     'x verify --json   # the finding names the file, the line and the name it could not resolve',
-  X_ERROR_CODE_UNTHROWN:
-    'x errors explain X_ERROR_CODE_UNTHROWN --json   # then mark the row "registered, thrown by nothing since <version>"',
+  X_ERROR_CODE_UNTHROWN: 'x errors explain X_ERROR_CODE_UNTHROWN --json',
   X_CLI_UNEXPECTED: 'x doctor --json',
   // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
   X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
@@ -291,6 +290,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_DEV_HOST_REFUSED: "curl -sS -H 'accept: application/json' http://localhost:3000/_x",
   X_TRUSTED_PROXY_HOPS_INVALID: 'TRUSTED_PROXY_HOPS=1 ROLE=web bun apps/web/server.ts',
   X_PERMISSION_BORROWED: 'x verify --only policy --json',
+  X_ERROR_CODE_UNTHROWN_STALE: 'x errors explain X_ERROR_CODE_UNTHROWN_STALE --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

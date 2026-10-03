@@ -16,7 +16,7 @@ ws://localhost:3000/_mcp
 | `llm` calls with `mcp: { expose: true }` | 1 | `summarize`, with its prompt version and cost budget attached |
 | Tools declared here | 3 | app-specific reads that are not actions: a digest preview, a seat report, a plan quote |
 
-14 tools total; `x mcp ls --json` prints the current list, and `x.manifest.json` records it per build.
+14 tools total; `x mcp tools --json` prints the current list, and `x.manifest.json` records it per build.
 
 Adding a feature adds a capability. Deleting one removes it. Nobody maintains a tool list.
 

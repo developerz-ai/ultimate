@@ -227,6 +227,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DEV_HOST_REFUSED',
   'X_TRUSTED_PROXY_HOPS_INVALID',
   'X_PERMISSION_BORROWED',
+  'X_ERROR_CODE_UNTHROWN_STALE',
 ] as const;
 
 /**
@@ -292,7 +293,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
   X_ERROR_CODE_UNRESOLVED: 'an error code is written as a name this repository cannot resolve',
   X_ERROR_CODE_UNTHROWN:
-    'a registered error code is constructed by nothing and its reference row does not say so',
+    'a registered error code is constructed by nothing and UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts does not list it',
   X_FRAMEWORK_SCHEMA_FAILED: 'a framework table could not be created at boot',
   X_STORAGE_UNWRITABLE: 'the storage disk this process needs cannot be written to',
   X_STORAGE_SECRET_DEV: 'upload grants would be signed with the shipped development key',
@@ -409,6 +410,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_TRUSTED_PROXY_HOPS_INVALID:
     'TRUSTED_PROXY_HOPS is not a whole number of proxies the boot accepts',
   X_PERMISSION_BORROWED: 'an app rule requires a permission only an imported package declared',
+  X_ERROR_CODE_UNTHROWN_STALE:
+    'a code UNTHROWN_CODES lists as thrown by nothing is thrown again — delete it from UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

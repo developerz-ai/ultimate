@@ -19,6 +19,7 @@
 //   bun run scripts/to-throw-returns.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
+import { balancedClose, topLevelArguments } from './lib/balanced-paren';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -35,8 +36,8 @@ export const SOURCE_GLOBS: readonly string[] = ['packages/*/src/**/*.ts', 'scrip
  * be the convention this file exists to stop relying on.
  */
 const RETURNS_ERROR = [
-  /export (?:function|const) (\w+)[^\n=]*?[):]\s*[A-Z]\w*(?:Error|Fault)\b/g,
-  /export const (\w+)\s*=\s*\([^)]*\):\s*[A-Z]\w*(?:Error|Fault)\b/g,
+  /export (?:function|const) (\w+)[^\n=]*?[):]\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/g,
+  /export const (\w+)\s*=\s*\([^)]*\):\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/g,
 ];
 
 export function errorFactoriesIn(source: string): readonly string[] {
@@ -45,13 +46,34 @@ export function errorFactoriesIn(source: string): readonly string[] {
   ).filter((name) => name !== '');
 }
 
+const EXPECT = /\bexpect\(/g;
+/** Directly after `expect(…)`: synchronous only — `rejects.toThrow` is not vulnerable. */
+const SYNC_TO_THROW = /^\s*\.toThrow\w*\(/;
+const ARROW = /^(?:async\s*)?\(\s*\)\s*=>\s*([\s\S]*)$/;
+/** `{ return <value>; }` — the one block whose value text can be certain about. */
+const RETURN_ONLY = /^\{\s*return\s+([^;]*?);?\s*\}$/;
 /**
- * `expect(() => <body>).toThrow…(` — synchronous only. `rejects.toThrow` is excluded because it is
- * not vulnerable, and including it would report a finding on a correct assertion.
+ * `new Error(…)`, `new MailError(…)`, and the `new`-less `Error(…)` / `TypeError(…)`, which construct
+ * one too. The name prefix is optional: `[A-Z]\w*Error` alone missed the plain `Error`.
  */
-const SYNC_TO_THROW = /expect\(\s*(?:async\s*)?\(\s*\)\s*=>\s*([^\n]*?)\)\s*\.(toThrow\w*)\(/g;
-const CONSTRUCTS_ERROR = /^\s*new\s+[A-Z]\w*(?:Error|Fault)\w*\s*\(/;
+const CONSTRUCTS_ERROR =
+  /^\s*(?:new\s+(?:[A-Z]\w*)?(?:Error|Fault)\w*|(?:[A-Z]\w*)?(?:Error|Fault))\s*\(/;
 const CALLS = /^\s*([A-Za-z_$][\w$]*)\s*\(/;
+
+/**
+ * The value an `expect(() => …)` callback hands back, or `undefined` when its argument is not a
+ * zero-argument arrow or its body is a block doing more than one `return`. Read through
+ * `balancedClose`, never a one-line regex: Biome wraps a long callback onto its own line, and a
+ * pattern stopping at `\n` saw none of those.
+ */
+function callbackValue(text: string, open: number): string | undefined {
+  const close = balancedClose(text, open);
+  if (close < 0 || !SYNC_TO_THROW.test(text.slice(close + 1))) return undefined;
+  const args = topLevelArguments(text.slice(open + 1, close)).filter((arg) => arg !== '');
+  const body = args.length === 1 ? ARROW.exec(args[0] as string)?.[1]?.trim() : undefined;
+  if (body === undefined || !body.startsWith('{')) return body;
+  return RETURN_ONLY.exec(body)?.[1]?.trim();
+}
 
 export interface ThrowGap {
   readonly at: string;
@@ -72,9 +94,10 @@ export function checkToThrowReturns(input: ThrowGapInput): readonly ThrowGap[] {
     // below. That is a fixture, not an assertion this file makes — the same exemption
     // `test-fix-citations.ts` rests on, and the same tokenizer.
     const literals = sourceStrings(file.text);
-    for (const match of file.text.matchAll(SYNC_TO_THROW)) {
-      if (insideString(literals, match.index ?? 0)) continue;
-      const body = (match[1] ?? '').trim();
+    for (const match of file.text.matchAll(EXPECT)) {
+      if (insideString(literals, match.index)) continue;
+      const body = callbackValue(file.text, match.index + match[0].length - 1);
+      if (body === undefined) continue;
       const called = CALLS.exec(body)?.[1];
       const reason = CONSTRUCTS_ERROR.test(body)
         ? 'constructs an error and hands it back'

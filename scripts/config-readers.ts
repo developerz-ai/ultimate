@@ -26,14 +26,16 @@
 // own package and none spelling the qualified `<section>.<key>`, the reader set is not evidence and
 // says so — `X_CONFIG_KEY_READER_AMBIGUOUS`. Nineteen readers should always have been the alarm.
 //
-// WHAT IT CANNOT SEE: a key whose only legitimate reader is APP code (`config.defaultCurrency` in a
-// price view). Those are pinned with the sentence saying so, which is the difference between a
-// waiver and a decision.
+// A key whose only legitimate reader is APP code (`config.defaultCurrency` in a price view) is pinned
+// with the sentence saying so — and that sentence is CHECKED against both tracked apps
+// (`lib/config-app-readers.ts`), because a claim nobody reads is a waiver, not a decision.
 //
 //   bun run scripts/config-readers.ts [--json]
 //   bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]   # shrink either ratchet
 
 import { flagList, parseScriptArgs } from './lib/args';
+import type { AppSource } from './lib/config-app-readers';
+import { appClaimGaps, configAppSources } from './lib/config-app-readers';
 import {
   applyConfigReaderUnpin,
   CONFIG_AMBIGUOUS_PINS,
@@ -227,7 +229,13 @@ export interface ConfigSource {
   readonly text: string;
 }
 
-export type ConfigReaderGapKind = 'unread' | 'ambiguous' | 'stale' | 'unscanned' | 'unexplained';
+export type ConfigReaderGapKind =
+  | 'unread'
+  | 'ambiguous'
+  | 'stale'
+  | 'unscanned'
+  | 'unexplained'
+  | 'app-unread';
 
 /**
  * The two ways a pin stops holding. One kind and one code, because the repair is the same edit
@@ -253,6 +261,8 @@ export interface ConfigReaderInput {
   readonly pins: Readonly<Record<string, string>>;
   /** The second table: leaves whose bare-name evidence is known to be worthless, each with why. */
   readonly ambiguousPins?: Readonly<Record<string, string>>;
+  /** Both tracked apps' source — what a pin naming APP code as the reader is held to. */
+  readonly appFiles?: readonly AppSource[];
 }
 
 /**
@@ -346,6 +356,8 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
     if (read.has(leaf)) gaps.push({ kind: 'stale', leaf, reason, stale: 'now-read' });
     else if (!declared.has(leaf)) gaps.push({ kind: 'stale', leaf, reason, stale: 'key-deleted' });
   }
+  if (input.appFiles !== undefined)
+    gaps.push(...appClaimGaps(input.pins, input.appFiles, readPattern));
   return gaps;
 }
 
@@ -392,6 +404,13 @@ const unexplainedFinding = (gap: ConfigReaderGap): Finding => ({
   at: CONFIG_PINS_FILE,
 });
 
+const appUnreadFinding = (gap: ConfigReaderGap): Finding => ({
+  code: 'X_CONFIG_READER_APP_UNREAD',
+  cause: `${CONFIG_PINS_FILE} pins ${gap.leaf} as read by app code ("${gap.reason ?? ''}") and no file of either tracked app (examples/dummy, dummy/social-media-clone) reads it outside app.config.ts — the reader the pin names does not exist. Delete it from ${CONFIG_FILE} and defaults(), read it from an app module, or rewrite its row so it names no app reader`,
+  fix: 'bun run scripts/config-readers.ts --json',
+  at: CONFIG_PINS_FILE,
+});
+
 const unscannedFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READERS_UNSCANNED',
   cause: `nothing was read for ${gap.leaf}, so every key reports a reader and the ratchet enforces nothing — a glob or an interface name that matches nothing reads exactly like a wired config`,
@@ -405,6 +424,7 @@ const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => F
   stale: staleFinding,
   unscanned: unscannedFinding,
   unexplained: unexplainedFinding,
+  'app-unread': appUnreadFinding,
 };
 
 export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDINGS[gap.kind](gap);
@@ -423,6 +443,7 @@ export async function configReaderInput(root: string): Promise<ConfigReaderInput
     files,
     pins: CONFIG_READER_PINS,
     ambiguousPins: CONFIG_AMBIGUOUS_PINS,
+    appFiles: await configAppSources(root),
   };
 }
 

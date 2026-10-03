@@ -8,8 +8,17 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import { ScriptError } from './script-error';
-import { listWorkspaces, readWorkspaceManifest, WORKSPACE_GLOB } from './workspaces';
+import type { Workspace } from './workspaces';
+import {
+  listWorkspaces,
+  publishFloorFindings,
+  publishOrder,
+  publishSequence,
+  readWorkspaceManifest,
+  WORKSPACE_GLOB,
+} from './workspaces';
 
 const roots: string[] = [];
 
@@ -90,5 +99,83 @@ describe('listWorkspaces', () => {
 
   test('the glob is exported, so the refusal can name what it scanned', () => {
     expect(WORKSPACE_GLOB).toBe('packages/*/package.json');
+  });
+
+  // v22.4.0 published `core` and died before `schema`: alphabetical within a tier put a package
+  // on npm ahead of the sibling it depends on, and npm versions are immutable.
+  test('within a tier, a dependency publishes before its dependant whatever the alphabet says', async () => {
+    const root = await tree({
+      'packages/core/package.json':
+        '{"name":"@ultimat3/core","version":"9.0.0","dependencies":{"@ultimat3/schema":"9.0.0"}}',
+      'packages/schema/package.json': '{"name":"@ultimat3/schema","version":"9.0.0"}',
+      'packages/cli/package.json':
+        '{"name":"@ultimat3/cli","version":"9.0.0","dependencies":{"@ultimat3/testing":"9.0.0","@ultimat3/admin":"9.0.0"}}',
+      'packages/testing/package.json': '{"name":"@ultimat3/testing","version":"9.0.0"}',
+      'packages/admin/package.json': '{"name":"@ultimat3/admin","version":"9.0.0"}',
+    });
+    expect(publishOrder(await listWorkspaces(root)).map((one) => one.dir)).toEqual([
+      'schema',
+      'core',
+      'admin',
+      'testing',
+      'cli',
+    ]);
+  });
+
+  test(
+    'this tree: every @ultimat3/* dependency publishes before the package naming it',
+    async () => {
+      const listed = publishOrder(await listWorkspaces(repoRoot()));
+      const position = new Map(listed.map((one, index) => [one.name, index]));
+      const late: string[] = [];
+      for (const [index, one] of listed.entries()) {
+        const manifest = (await Bun.file(join(one.path, 'package.json')).json()) as {
+          readonly dependencies?: Readonly<Record<string, string>>;
+        };
+        for (const dep of Object.keys(manifest.dependencies ?? {})) {
+          const at = position.get(dep);
+          if (at !== undefined && at > index) late.push(`${one.name} before ${dep}`);
+        }
+      }
+      // Vacuity guard: the two declared sideways edges this exists for are both in the tree.
+      expect(listed.length).toBeGreaterThan(20);
+      expect(late).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
+
+  test('a cycle cannot be ordered, so it keeps the alphabet rather than dropping a package', () => {
+    const order = publishSequence([
+      { dir: 'b', name: '@ultimat3/b', tier: 1, dependsOn: ['@ultimat3/a'] },
+      { dir: 'a', name: '@ultimat3/a', tier: 1, dependsOn: ['@ultimat3/b'] },
+      { dir: 'c', name: '@ultimat3/c', tier: 0, dependsOn: [] },
+    ]);
+    expect(order.map((one) => one.dir)).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('publishFloorFindings', () => {
+  const one = (isPrivate: boolean): Workspace => ({
+    dir: 'core',
+    name: '@ultimat3/core',
+    version: '9.0.0',
+    private: isPrivate,
+    path: '/nowhere/packages/core',
+    tier: 0,
+    dependsOn: [],
+  });
+
+  // `registry-audit` answered "0/0 … every one attested" and `release --check` "0 packages are
+  // stamped" — ok: true — on a tree that enumerated nothing.
+  test('zero publishable workspaces is a refusal, private-only included', () => {
+    for (const workspaces of [[], [one(true)]]) {
+      const findings = publishFloorFindings(workspaces);
+      expect(findings.map((finding) => finding.code)).toEqual(['X_CORPUS_UNSCANNED']);
+      expect(findings[0]?.cause).toContain(WORKSPACE_GLOB);
+    }
+  });
+
+  test('one publishable workspace clears the floor', () => {
+    expect(publishFloorFindings([one(false)])).toEqual([]);
   });
 });

@@ -34,8 +34,9 @@ slices:
     percent: 0
   - file: 07-release-ci.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
+    evidence: "closed 2026-10-03 by plan 2026/10/02/101 slice 13, uncommitted: publish order — publishSequence/publishOrder in scripts/lib/workspaces.ts, list-workspaces.ts emits it, release.yml's group_by keeps it (scripts/release-workflow.test.ts 'every dependency publishes before its dependant across the whole plan', scripts/lib/workspaces.test.ts); corpus.ts `tests` scope reads packages/*/e2e (scripts/lib/corpus.test.ts); verify-args --workers through parseIntFlag 1..64 (scripts/lib/verify-args.test.ts; positionals were already refused in scripts/verify.ts). wiki.yml and the setup action's actions/cache are SHA-pinned in the tree. OPEN: release.yml check waits on the verify job only; deploy-social-demo retags :latest every run and a dispatch can build an off-main commit; skip-if-cleanup.ts TEST_GLOBS still misses packages/*/e2e"
   - file: 08-architecture-dedup.md
     tier: 0
     status: not_started

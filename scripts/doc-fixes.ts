@@ -8,7 +8,9 @@
 // the page an agent is sent to when it hits an error could print `x db query "select id …"` — and
 // `x db` has no `query`.
 //
-// Same resolver as the source rule, same banned-phrase rule, one file set further on.
+// Same resolver as the source rule, same banned-phrase rule, one file set further on — plus the
+// positional count the resolver does not make: a bare word the command's usage line has no slot
+// for (`x routes list --json`) is unrunnable too (`scripts/lib/citation-arity.ts`).
 //
 //   bun run scripts/doc-fixes.ts [--json]
 
@@ -16,6 +18,7 @@ import type { CommandCatalog } from '@ultimat3/cli';
 import { citationFault, fixCitations, fixProblem, loadCommandCatalog } from '@ultimat3/cli';
 import { docConfigKeyFindings } from './doc-config-keys';
 import { parseScriptArgs } from './lib/args';
+import { arityFault } from './lib/citation-arity';
 import { sameSentence } from './lib/error-code-plan';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -162,17 +165,17 @@ export function checkDocFixes(input: DocFixInput): readonly DocFixGap[] {
       gaps.push({ kind: 'advice', line: cell.line, code: cell.code, problem: advice });
       continue;
     }
-    for (const citation of fixCitations(cell.fix)) {
-      const fault = citationFault(citation, input.catalog);
-      if (fault === undefined) continue;
-      gaps.push({
-        kind: 'unrunnable',
-        line: cell.line,
-        code: cell.code,
-        problem: `cites "${fault.subject}", ${fault.reason}`,
-      });
-      break;
-    }
+    const fault =
+      fixCitations(cell.fix)
+        .map((citation) => citationFault(citation, input.catalog))
+        .find((one) => one !== undefined) ?? arityFault(cell.fix, input.catalog);
+    if (fault === undefined) continue;
+    gaps.push({
+      kind: 'unrunnable',
+      line: cell.line,
+      code: cell.code,
+      problem: `cites "${fault.subject}", ${fault.reason}`,
+    });
   }
   return [...gaps, ...causeEchoes(input.markdown)];
 }

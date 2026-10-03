@@ -237,7 +237,7 @@ describe('a suite that fails alone', () => {
     expect(failure?.code).toBe('X_TEST_FAILED');
     expect(failure?.cause).toContain('(fail) money > probe');
     expect(failure?.cause).not.toContain('(pass)');
-    expect(failure?.fix).toContain('bun test packages/money');
+    expect(failure?.fix).toContain('bun test ./packages/money');
   });
 
   test('a zero exit is no failure, whatever stderr says', () => {
@@ -390,6 +390,13 @@ describe('the flags the gate reads', () => {
     expect(unitsFor(root, flags({ all: true, shard: '2/2', jobs: '2' }))).toEqual(
       shardUnits(unitsToGate(root), '2/2'),
     );
+  });
+
+  test('--all given a value is refused, never read as off', () => {
+    const refused = refusal({ all: 'false' }) as { code: string; cause: string; fix: string };
+    expect(refused.code).toBe('X_CLI_BAD_FLAG');
+    expect(refused.cause).toContain('--all takes no value');
+    expect(refused.fix).toBe('bun run scripts/coverage-gate.ts --all');
   });
 
   test('an unknown flag is refused, never dropped', () => {

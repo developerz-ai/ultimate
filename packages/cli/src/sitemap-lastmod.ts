@@ -14,6 +14,9 @@ let builtAt: string | undefined;
 
 const cache = new Map<string, string | undefined>();
 
+/** One `git log -1` over one path; a synchronous wait past this blocks the request serving it. */
+const GIT_DATE_TIMEOUT_MS = 5_000;
+
 /**
  * The `<lastmod>` for one route file, W3C Datetime (ISO 8601, UTC), or `undefined` when the source
  * yields none — a sitemap entry without `<lastmod>` is valid, a wrong one misleads a crawler.
@@ -46,6 +49,8 @@ function gitDate(file: string, root: string): string | undefined {
       cwd: root,
       stdout: 'pipe',
       stderr: 'ignore',
+      // A wedged `git` (a lock, a credential prompt) answers no date: the mtime fallback below.
+      timeout: GIT_DATE_TIMEOUT_MS,
     });
     if (run.exitCode !== 0) return undefined;
     return isoOf(run.stdout.toString().trim());

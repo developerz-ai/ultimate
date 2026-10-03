@@ -51,7 +51,7 @@
 // twice. Blanking whole-line comments keeps the line count, so a reported position stays true.
 import { stripComments } from '../packages/core/src/source-mask';
 import { collectSourceFiles, type SourceFile } from './boundaries';
-import { parseScriptArgs } from './lib/args';
+import { flagBool, parseScriptArgs } from './lib/args';
 // The paren walker is `scripts/lib/`'s and not this file's, for this file's OWN reason: the copy
 // that lived here counted every `(` including the ones inside a string literal, so
 // `.replace(new RegExp("(", 'g'), "''")` miscounted the depth and the site was dropped unread.
@@ -185,7 +185,7 @@ if (import.meta.main) {
             ? 'this rule read nothing, so no copy of the escape was checked'
             : `${String(findings.length)} site(s) building a SQL string literal outside ${OWNER}`,
       findings,
-      data: { owner: OWNER, copies: args.flags.get('explain') === true ? copies : copies.length },
+      data: { owner: OWNER, copies: flagBool(args, 'explain') ? copies : copies.length },
     },
     args.json,
   );

@@ -3,6 +3,8 @@
 // version. Each is a file the gate reads at the tag, so a bump that skips one leaves a tree
 // `--check` calls stamped and `verify` then refuses — which is what v19.3.0 was.
 
+// why: Bun exposes no path-relative primitive, and a finding names a repo-relative path.
+import { relative } from 'node:path';
 import { checkPackageShape } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
 // Upward, and the only file under `scripts/lib/` that reaches out of it: the three writes have to
@@ -15,6 +17,7 @@ import { versionStampFindings } from '../version-stamps';
 import { frameworkManifestJson } from './framework-manifest';
 import type { Finding } from './log';
 import { readStampPages, readStamps, rewriteStamps, STAMP_PAGE } from './version-stamp-scan';
+import { listWorkspaces, publishFloorFindings } from './workspaces';
 
 export type ReleaseWriteKind = 'manifest' | 'lockfile' | 'stamps';
 
@@ -126,73 +129,142 @@ export async function performReleaseWrites(
 ): Promise<{ readonly writes: readonly ReleaseWrite[]; readonly findings: readonly Finding[] }> {
   const writes: ReleaseWrite[] = [];
   const findings: Finding[] = [];
-  try {
-    const drift = await frameworkManifestDrift(root);
-    await Bun.write(`${root}/${DEFAULT_OUT}`, frameworkManifestJson(await buildManifest(root)));
-    writes.push({
-      kind: 'manifest',
-      at: MANIFEST_WRITE.at,
-      facts: drift.length,
-      detail:
-        drift.length === 0
-          ? `${DEFAULT_OUT} already described this tree`
-          : `${DEFAULT_OUT} regenerated: ${drift.join(', ')}`,
-    });
-  } catch (error) {
-    // `renderThrowable`, never `${error}`: the one branch left with nothing to report with may not
-    // be the branch that throws while describing a throw.
-    findings.push(
-      releaseWriteFinding(
-        MANIFEST_WRITE,
-        `${DEFAULT_OUT} could not be regenerated: ${renderThrowable(error)}`,
-      ),
-    );
+  // Each step in its own `try`, not the first alone: a throw in the lockfile or footer step left a
+  // half-bumped tree and a stack trace. Every step runs whatever the one before it did, so the
+  // report names each file that moved and each that did not — the partial bump, spelled out.
+  for (const step of RELEASE_STEPS) {
+    try {
+      const outcome = await step.run(root, version);
+      if ('kind' in outcome) writes.push(outcome);
+      else findings.push(outcome.finding);
+    } catch (error) {
+      // `renderThrowable`, never `${error}`: the one branch left with nothing to report with may
+      // not be the branch that throws while describing a throw.
+      const cause = `${step.spec.at} could not be ${step.failed}: ${renderThrowable(error)}`;
+      findings.push(releaseWriteFinding(step.spec, cause));
+    }
   }
+  return { writes, findings };
+}
+
+/** A step's answer: the write it made, or the refusal it reached without throwing. */
+type StepOutcome = ReleaseWrite | { readonly finding: Finding };
+
+async function writeManifest(root: string): Promise<StepOutcome> {
+  const drift = await frameworkManifestDrift(root);
+  await Bun.write(`${root}/${DEFAULT_OUT}`, frameworkManifestJson(await buildManifest(root)));
+  return {
+    kind: 'manifest',
+    at: MANIFEST_WRITE.at,
+    facts: drift.length,
+    detail:
+      drift.length === 0
+        ? `${DEFAULT_OUT} already described this tree`
+        : `${DEFAULT_OUT} regenerated: ${drift.join(', ')}`,
+  };
+}
+
+async function writeLockfile(root: string): Promise<StepOutcome> {
   const lock = Bun.file(`${root}/bun.lock`);
-  if (await lock.exists()) {
-    const { text, edits } = correctLockfile(await lock.text(), await declaredFacts(root));
-    if (edits.length > 0) await Bun.write(`${root}/bun.lock`, text);
-    writes.push({
-      kind: 'lockfile',
-      at: LOCKFILE_WRITE.at,
-      facts: edits.length,
-      detail:
-        edits.length === 0
-          ? 'bun.lock already agreed with every package.json'
-          : `bun.lock corrected ${edits.length} recorded fact(s)`,
-    });
-  } else {
-    findings.push(
-      releaseWriteFinding(
+  if (!(await lock.exists())) {
+    return {
+      finding: releaseWriteFinding(
         LOCKFILE_WRITE,
         'bun.lock is not there, so no recorded workspace pin could be moved — every install of this release would resolve the previous version',
         'bun install && bun run lockfile:fix',
       ),
-    );
+    };
   }
+  const { text, edits } = correctLockfile(await lock.text(), await declaredFacts(root));
+  if (edits.length > 0) await Bun.write(`${root}/bun.lock`, text);
+  return {
+    kind: 'lockfile',
+    at: LOCKFILE_WRITE.at,
+    facts: edits.length,
+    detail:
+      edits.length === 0
+        ? 'bun.lock already agreed with every package.json'
+        : `bun.lock corrected ${edits.length} recorded fact(s)`,
+  };
+}
+
+async function writeFooter(root: string, version: string): Promise<StepOutcome> {
   const footer = (await readStampPages(root)).find((page) => page.path === STAMP_PAGE);
   if (footer === undefined || readStamps(footer).length === 0) {
-    findings.push(
-      releaseWriteFinding(
+    return {
+      finding: releaseWriteFinding(
         STAMP_WRITE,
         `${STAMP_PAGE} stamps no version, so this release had nothing to move and the wiki now claims nothing about which version shipped`,
         'git checkout -- wiki/_Footer.md   # restore the footer, then: bun run scripts/version-stamps.ts --json',
       ),
-    );
-  } else {
-    const { text, moved } = rewriteStamps(footer, version);
-    if (moved > 0) await Bun.write(`${root}/${STAMP_PAGE}`, text);
-    writes.push({
-      kind: 'stamps',
-      at: STAMP_PAGE,
-      facts: moved,
-      detail:
-        moved === 0
-          ? `${STAMP_PAGE} already stamped v${version}`
-          : `${STAMP_PAGE} moved ${moved} stamp(s) to v${version}`,
-    });
+    };
   }
-  return { writes, findings };
+  const { text, moved } = rewriteStamps(footer, version);
+  if (moved > 0) await Bun.write(`${root}/${STAMP_PAGE}`, text);
+  return {
+    kind: 'stamps',
+    at: STAMP_PAGE,
+    facts: moved,
+    detail:
+      moved === 0
+        ? `${STAMP_PAGE} already stamped v${version}`
+        : `${STAMP_PAGE} moved ${moved} stamp(s) to v${version}`,
+  };
+}
+
+/** `RELEASE_WRITES`' order; a throwing step is reported under its own row, so its `fix:` is ITS write. */
+const RELEASE_STEPS: readonly {
+  readonly spec: ReleaseWriteSpec;
+  readonly failed: string;
+  readonly run: (root: string, version: string) => Promise<StepOutcome>;
+}[] = [
+  { spec: MANIFEST_WRITE, failed: 'regenerated', run: writeManifest },
+  { spec: LOCKFILE_WRITE, failed: 'corrected', run: writeLockfile },
+  { spec: STAMP_WRITE, failed: 'stamped', run: writeFooter },
+];
+
+/** One file a bump rewrites: its path, and the text it becomes. `optional` may be absent. */
+export interface StampEdit {
+  readonly path: string;
+  readonly rewrite: (raw: string) => string;
+  readonly optional?: boolean;
+}
+
+/**
+ * The files a bump rewrites ITSELF — every manifest, the chart, the changelog — in order, STOPPING
+ * at the first that throws. These had no `try` at all: a throw on the twentieth manifest left
+ * nineteen bumped and a stack trace. The finding names every file already written, and the `fix:`
+ * is safe because `release.ts` refused a dirty tree before the first write, so every change in it
+ * is this run's.
+ */
+export async function stampReleaseFiles(
+  root: string,
+  edits: readonly StampEdit[],
+): Promise<{ readonly written: readonly string[]; readonly findings: readonly Finding[] }> {
+  const written: string[] = [];
+  for (const edit of edits) {
+    const at = relative(root, edit.path);
+    try {
+      const file = Bun.file(edit.path);
+      if (edit.optional === true && !(await file.exists())) continue;
+      await Bun.write(edit.path, edit.rewrite(await file.text()));
+      written.push(at);
+    } catch (error) {
+      const list = written.length === 0 ? 'nothing' : written.join(', ');
+      return {
+        written,
+        findings: [
+          {
+            code: 'X_RELEASE_VERSION_SKEW',
+            cause: `the bump stopped at ${at} (${renderThrowable(error)}) after writing ${written.length} file(s): ${list} — the tree is half at the new version`,
+            fix: 'git checkout -- . && bun run scripts/release.ts --bump patch --dry-run --json',
+            at,
+          },
+        ],
+      };
+    }
+  }
+  return { written, findings: [] };
 }
 
 /**
@@ -243,6 +315,8 @@ export const releaseCheckFindings = async (
   root: string,
   version: string,
 ): Promise<readonly Finding[]> => [
+  // The floor first: "0 packages are stamped at X" was an `ok` over a tree that enumerated nothing.
+  ...publishFloorFindings(await listWorkspaces(root)),
   ...(await checkPackageShape(root, { release: version })),
   ...(await releaseWriteFindings(root)),
 ];

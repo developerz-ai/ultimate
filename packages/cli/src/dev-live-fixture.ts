@@ -37,7 +37,8 @@ export function alive(pid: number): boolean {
 
 /** Every descendant of `pid`, depth first — asked while `pid` lives, or its children are init's. */
 export function descendantsOf(pid: number): readonly number[] {
-  const out = Bun.spawnSync(['pgrep', '-P', String(pid)]).stdout.toString();
+  // Synchronous inside a test's `finally`, where the test timeout cannot interrupt it.
+  const out = Bun.spawnSync(['pgrep', '-P', String(pid)], { timeout: 5_000 }).stdout.toString();
   const children = out
     .split('\n')
     .map((line) => Number(line.trim()))
