@@ -277,27 +277,20 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
  * neighbouring port, and reversing the order would answer a second `x dev` on this checkout with
  * "port 3001 is in use" when the fact worth printing is that 3000 is.
  *
- * Port 0 is NOT passed through to the kernel. It cannot be incremented (`+ 1` would ask for port
- * 1), but the web role has bound by the time this runs and `appUrl` carries the port it got — and
- * `PORT + 1` is the contract every scaffolded `sync-url.ts` computes from and the wiki states. A
- * scratch server (`x shot`, `ui.shot`) always asks for 0, so before this every one of its
- * pictures carried `WebSocket … ERR_CONNECTION_REFUSED` for every live island, on the framework's
- * own account. With no web role to follow, 0 still goes to the kernel. The reported url is the
- * listener's own bound address either way, never a string built from the port that was requested.
+ * Port 0 IS passed through to the kernel, web role or not. A scratch server (`x shot`, `ui.shot`,
+ * a test) asks for 0, and its pages dial `/_x/sync` on their OWN origin — the web role's mount
+ * (`sync-url.ts`) — so nothing computes this listener's port from the web port's. Deriving
+ * `PORT + 1` from the kernel's answer asked for one specific port nobody had checked, and under
+ * load another socket held it: the boot died `X_PORT_IN_USE` (role-realtime.test.ts, 6 of 20 with
+ * 12,000 loopback connections held). The reported url is the listener's own bound address.
  */
-function syncPortFrom(requested: number, appUrl: string | null): number {
-  if (requested !== 0 || appUrl === null) return syncPortFor(requested);
-  const bound = Number(new URL(appUrl).port);
-  return Number.isInteger(bound) && bound > 0 ? syncPortFor(bound) : 0;
-}
-
 async function listen(
   options: StartRolesOptions,
   node: SyncNode,
   feeds: Pick<RunningSync, 'registry' | 'hub'>,
   appUrl: string | null,
 ): Promise<RunningSync> {
-  const port = syncPortFrom(options.port, appUrl);
+  const port = syncPortFor(options.port);
   try {
     // The SAME interface the web role binds, resolved from the same option and the same default.
     // Without this the sync node took Bun's `0.0.0.0` while `x dev`'s web role took `localhost`,

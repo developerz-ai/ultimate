@@ -67,6 +67,27 @@ so the sealed Secret must be named `ultimate-secrets` in the release namespace, 
 be changed to match. The controller decrypts the `SealedSecret` into a plain `Secret` of that name;
 the pod never knows the difference.
 
+### One Secret per role
+
+`existingSecret` is every role's DEFAULT, not its only option. One Secret `envFrom`'d into every pod
+hands the migrate Job's schema-owning `DATABASE_URL` to the web role and the signing secrets to a
+worker that signs nothing, so a compromised pod leaks what every role holds. Name a narrower one
+per role; a role that names none reads the release-wide Secret, and with neither the chart refuses
+to render:
+
+```yaml
+existingSecret: app-secrets          # the default: what the roles below do not override
+migrate:
+  existingSecret: app-migrate-secrets   # the schema owner's DATABASE_URL
+roles:
+  web:
+    existingSecret: app-web-secrets     # AUTH_SECRET, ULTIMATE_CURSOR_SECRET, a DML-only DATABASE_URL
+  worker:
+    existingSecret: app-worker-secrets
+```
+
+Seal each one as above, under the name its role reads.
+
 ## Footguns
 
 | Footgun | Symptom | Fix |

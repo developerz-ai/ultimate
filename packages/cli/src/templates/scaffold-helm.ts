@@ -43,6 +43,29 @@ env:
 
 existingSecret: ${app.kebab}-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, ULTIMATE_CURSOR_SECRET
 
+# The release-wide Secret above is every role's DEFAULT: \`existingSecret\` under a role
+# (roles.web.existingSecret, migrate.existingSecret) names that role's own, so the migrate Job's
+# schema-owning DATABASE_URL need not sit on a web pod.
+
+# The /tmp every pod mounts (the root filesystem is read-only), bounded: past this the kubelet
+# evicts the pod that filled it, never its neighbours for node disk pressure.
+tmp:
+  sizeLimit: 512Mi
+
+# One NetworkPolicy per serving role (templates/networkpolicy.yaml): \`http\` from httpFrom,
+# \`metrics\` from metricsFrom, nothing else. Inert on a CNI that does not enforce NetworkPolicy.
+#   httpFrom     empty = any source; narrow it to your ingress controller's namespace, e.g.
+#                [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
+#   metricsFrom  default: any pod in the cluster and no address outside it
+#   egress       OFF while empty; a list turns on egress filtering with exactly those rules —
+#                the database, NATS, the object store and DNS are your addresses, so list all of them
+networkPolicy:
+  enabled: true
+  httpFrom: []
+  metricsFrom:
+    - namespaceSelector: {}
+  egress: []
+
 # The scrape listener every serving role opens, on its own port and never the app's: the ingress
 # routes / to web, so /metrics beside /healthz on 3000 is /metrics on the internet. This is
 # METRICS_PORT in the container; move one and the other follows.
@@ -160,7 +183,7 @@ ingress:
 `;
 
 /**
- * The chart for a new app: five kinds of object, all of them core Kubernetes. A ServiceMonitor and
+ * The chart for a new app: six kinds of object, all of them core Kubernetes. A ServiceMonitor and
  * a PodDisruptionBudget are deliberately absent — the first needs a CRD `helm install` fails on
  * where no Prometheus operator is installed, and both are cluster policy rather than app topology.
  */

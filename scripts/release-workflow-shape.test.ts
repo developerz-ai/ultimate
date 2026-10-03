@@ -68,9 +68,15 @@ describe('unit · release.yml reads the gate rather than re-running it', () => {
     expect(every).not.toMatch(/scripts\/verify\.ts|\bx verify\b|run verify\b/);
   });
 
-  test('the check job requires ci.yml verify to have passed on the tagged commit', () => {
-    expect(runs('check')).toContain('actions/workflows/ci.yml/runs');
-    expect(runs('check')).toContain('"verify"');
+  // The RUN's conclusion, never one job's: `verify` is the framework gate alone, and a tag whose
+  // tracked apps, scaffolds or container build were red on the same run published anyway.
+  test('the check job requires the whole ci.yml run to have passed on the tagged commit', () => {
+    expect(runs('check')).toContain('actions/workflows/ci.yml/runs?head_sha=');
+    expect(runs('check')).toContain('&event=push&per_page=1');
+    expect(runs('check')).toContain('\\(.status // "") \\(.conclusion // "")');
+    // A run still going has no conclusion yet, and is no verdict.
+    expect(runs('check')).toContain('[ "$status" = completed ] || conclusion=""');
+    expect(runs('check')).not.toContain('/jobs?');
   });
 });
 
@@ -85,7 +91,7 @@ describe('unit · release.yml is resumable and pinned', () => {
   const SHA_PINNED = /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/;
 
   // The job holding `id-token: write` takes no action by a tag a third party can move, and no
-  // local composite whose own `uses:` are tag-pinned.
+  // local composite — whose cache a previous run wrote. Every workflow's pins: workflow-pins.test.ts.
   test('every action in the publish job is pinned by commit SHA', () => {
     expect(usesOf('publish').length).toBeGreaterThan(0);
     for (const ref of usesOf('publish')) expect(ref).toMatch(SHA_PINNED);

@@ -51,7 +51,7 @@ jobs:
   # and no `id-token`, so a refusal costs nothing and asks nobody.
   check:
     runs-on: ubuntu-latest
-    # ≤20 of it is the wait for ci.yml's verdict below; the rest is install and `--check`.
+    # ≤20 of it is the wait for ci.yml's run below; the rest is install and `--check`.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -77,9 +77,8 @@ jobs:
               ;;
           esac
 
-      # SHA-pinned in this file, `actions/` included, which is stricter than the repo rule in
-      # .github/actions/setup/action.yml: this workflow ends in an irreversible publish. A moved
-      # tag is not a risk it takes.
+      # SHA-pinned, `actions/` included — the repo rule in .github/actions/setup/action.yml, and
+      # this workflow is the one it matters most for: it ends in an irreversible publish.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -113,20 +112,29 @@ jobs:
       # pass it while the tag says v1.10.1 — and every publish then dies EPUBLISHCONFLICT on a
       # version already on the registry. `As of 2026-08` this tree was in that state. It is also
       # what refuses a Release cut before the bump, which is why it lives in this job.
+      # Through `env:`, as every other value in this file: the version is the tag's text, and an
+      # expression spliced into `run:` is shell source, not a string.
       - name: the repo is stamped at the version this tag claims
-        run: bun run scripts/release.ts --check "${{ steps.release.outputs.version }}" --json
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: bun run scripts/release.ts --check "$VERSION" --json
 
       # The gate's verdict on THIS commit, read — never re-run. This job used to run
       # `scripts/verify.ts` itself, on a runner with no Postgres, NATS or Redis and no
       # `E2E_BROWSER_REQUIRED`: the 21.0.0 run executed 10 of 342 live tests where ci.yml's
       # gate ran 278, and still called the tag verified. ci.yml runs on every push to main, so the
-      # release commit already has the real answer. Since 2026-10-01 that gate runs in parts, one
-      # per runner, and `verify` is the job that MERGES them — its conclusion is the gate's, and it
-      # is red for a step no part ran, so reading this one name still reads the whole gate. Polled
-      # because a Release published the minute its commit lands races that run (a part times out
-      # at 10 min and the merge at 5; the window is 20). Fails closed: no run, no verdict, or any
-      # conclusion but `success` — `skipped` on a cancelled run included — does not publish.
-      - name: require ci.yml's verify job to have passed on the tagged commit
+      # release commit already has the real answer.
+      #
+      # The RUN's conclusion, not the `verify` job's. `verify` is the framework gate alone; a tag
+      # whose tracked apps, scaffolds, per-package coverage or container build were red on the same
+      # run still published, because none of those jobs is the merge. The run concludes `success`
+      # only when every job did — a `skipped` one (`deploy-proof` off main) counts as passing, as
+      # GitHub reports it: run 37101705560 (a pull request) skipped it and concluded `success`.
+      # Polled because a Release published the minute its commit lands races that run
+      # (`deploy-proof`, the longest job on main, times out at 15 min; the window is 20). Fails
+      # closed: no run, a run not yet `completed`, or any conclusion but `success` — `cancelled`
+      # included — does not publish.
+      - name: require ci.yml's run to have passed on the tagged commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -134,32 +142,27 @@ jobs:
           sha="$(git rev-parse HEAD)"
           for attempt in $(seq 1 40); do
             # `|| true`: a transient API failure is "no verdict yet", not a publish and not a red.
-            run_id="$(gh api \
+            read -r run_id status conclusion <<<"$(gh api \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=1" \
-              --jq '.workflow_runs[0].id // ""' || true)"
-            conclusion=""
-            if [ -n "$run_id" ]; then
-              conclusion="$(gh api \
-                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?filter=latest&per_page=100" \
-                --jq '[.jobs[] | select(.name == "verify" and .status == "completed")]
-                        | first | .conclusion // ""' || true)"
-            fi
+              --jq '.workflow_runs[0] | "\(.id // "") \(.status // "") \(.conclusion // "")"' || true)"
+            # A run still going reports a conclusion of null; one that has none yet is not a verdict.
+            [ "$status" = completed ] || conclusion=""
             case "$conclusion" in
               success)
-                echo "ok: ci.yml verify passed for ${sha} (run ${run_id})"
+                echo "ok: ci.yml run ${run_id} passed for ${sha}"
                 exit 0
                 ;;
               '')
-                echo "attempt ${attempt}/40: ci.yml verify has no verdict yet for ${sha}"
+                echo "attempt ${attempt}/40: ci.yml has no completed run yet for ${sha}"
                 sleep 30
                 ;;
               *)
-                echo "::error::ci.yml verify concluded '${conclusion}' for ${sha} (run ${run_id}) — not publishing. Re-run it (gh run rerun ${run_id} --failed), then re-run this workflow."
+                echo "::error::ci.yml run ${run_id} concluded '${conclusion}' for ${sha} — not publishing. Re-run its failed jobs (gh run rerun ${run_id} --failed), then re-run this workflow."
                 exit 1
                 ;;
             esac
           done
-          echo "::error::ci.yml verify reported no verdict for ${sha} within 20 minutes — not publishing. A tag on a commit that was never pushed to main has no ci.yml run at all."
+          echo "::error::ci.yml reported no completed run for ${sha} within 20 minutes — not publishing. A tag on a commit that was never pushed to main has no ci.yml run at all."
           exit 1
 
   publish:

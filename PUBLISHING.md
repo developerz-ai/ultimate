@@ -261,7 +261,7 @@ version history is the shape a bootstrap leaves behind, and it is two versions l
 
 Repo → **Settings** → **Environments** → **New environment** → name it `npm-publish`. **No
 required reviewers**, by the owner's decision on 2026-09-05: a release is cut by the gate
-(`bun run verify` on the release commit, then ci.yml's `verify` job on that commit, whose verdict
+(`bun run verify` on the release commit, then ci.yml's whole run on that commit, whose verdict
 `release.yml`'s `check` job requires) and by the `v*` tag
 rule below, and a human click between "green on a tag" and "published" was one more thing to
 wait for at 9am. The environment's value is the tag rule (step 3) and the trusted-publisher
@@ -299,20 +299,23 @@ noticing.
 
 ## Publish order (dependency tiers)
 
-Lowest tier first, because a package must be on the registry before anything that imports it. The
-workflow **derives** this from `bun run scripts/list-workspaces.ts --json` and groups by `tier`.
-That derivation is the rule. The table below is a reader's snapshot of what it answered
-`As of 2026-08` — never a source, and a new package appears in the real list by existing on disk,
-whether or not anyone updates this table.
+Lowest tier first, because a package must be on the registry before anything that imports it —
+and **within a tier, dependencies first**: the declared sideways edges (`core → schema`,
+`realtime → query`, `cli → admin`, `cli → testing`) put a dependant in the same tier as what it
+imports. The workflow **derives** the order from `bun run scripts/list-workspaces.ts --json`, which
+lists the public workspaces through `publishSequence` (`scripts/lib/workspaces.ts`), and publishes
+them tier by tier in the order listed. That derivation is the rule. The table below is a reader's
+snapshot of what it answered `As of 2026-10`, in publish order — never a source, and a new package
+appears in the real list by existing on disk, whether or not anyone updates this table.
 
-| Tier | Packages |
+| Tier | Packages, in publish order |
 |---|---|
-| 0 | `core` `schema` |
+| 0 | `schema` `core` |
 | 1 | `cache` `db` `flags` `i18n` `money` `seo` `storage` `time` |
 | 2 | `auth` `entity` `http` `policy` |
 | 3 | `action` `jobs` `query` `realtime` |
-| 4 | `ai` `mail` `manifest` `mcp` `pwa` `render` |
-| 5 | `admin` `cli` `scraping` `testing` `ui` |
+| 4 | `ai` `mail` `manifest` `mcp` `notify` `pwa` `render` `ui` |
+| 5 | `admin` `scraping` `testing` `cli` |
 | 6 | `create-ultimate` (depends on `@ultimat3/cli`) |
 
 ## Ongoing releases (automated)
@@ -365,9 +368,9 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    any ref that is not `refs/tags/v*`.
 4. The workflow's **`check` job** runs first, with no environment and no `id-token`: the ref must
    be `refs/tags/v*`, the tree must be stamped at the tag's version (`release.ts --check`), and
-   ci.yml's `verify` job — the one that merges every part of the gate — must have concluded
-   `success` on the tagged commit: read, never re-run, waiting up to 20 minutes for a run still
-   in flight. A Release cut before the bump (the
+   ci.yml's whole run — the merged gate and every app, scaffold, package and container job beside
+   it — must have concluded `success` on the tagged commit: read, never re-run, waiting up to 20
+   minutes for a run still in flight. A Release cut before the bump (the
    `developerz-ai[bot]` shape) fails here, before any `npm-publish` deployment is requested.
 5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
    anything today, the environment has no reviewers (step 2 above) — and publish each tier over
@@ -434,12 +437,12 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | ref must be `refs/tags/v*` | the first step, before checkout — a dispatch off a branch cannot publish |
 | npm CLI `>= 11.5.1` | the workflow upgrades npm; Node 22 ships an older one |
 | npm pinned to `11.5.2` | 11.6.x regressed provenance (`Cannot find module 'sigstore'`) |
-| every action pinned by commit SHA, `actions/*` included | stricter than the repo rule in `.github/actions/setup/action.yml`, because this workflow ends in an irreversible publish |
+| every action pinned by commit SHA, `actions/*` included | the repo rule in `.github/actions/setup/action.yml`, held in every workflow by `scripts/workflow-pins.test.ts` — and this workflow ends in an irreversible publish |
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version — see below |
-| ci.yml's `verify` job `success` on the tagged commit | nothing reaches the registry unverified. `verify` is the merge of every `gate` part (`x verify merge`, red for a step no part ran), and the `live` part is the one with Postgres, NATS, Redis and S3. The workflow used to re-run `verify` itself with none of them: the 21.0.0 run executed 10 of 342 live tests |
+| ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |
 | a package already on npm at the version is skipped | a failed publish is resumable (`gh run rerun <run-id> --failed`) |
 
 ### Why `--check` is a separate gate from `verify`

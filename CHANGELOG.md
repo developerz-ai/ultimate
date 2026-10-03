@@ -38,7 +38,9 @@ the `drift` step a `REPLICA IDENTITY FULL` no migration recorded.** Slice 12b is
 and command half, with what it changed in `http` and the chart: **an operator step — a serving role
 no longer applies the framework schema, so `ROLE=migrate` runs before it, the first `cli (slice
 12b)` entry under Changed.** Slice 13a is the repository's own guards and release scripts, with
-what they changed in `cli`, `action`, `testing` and `ui`.
+what they changed in `cli`, `action`, `testing` and `ui`. Slice 13b is CI, the release workflow and
+the Helm chart: **a chart upgrade renders a NetworkPolicy per role, a bounded `/tmp` and a Secret
+every role must have — read the values before it.**
 
 ### Added
 
@@ -1376,12 +1378,12 @@ Tier 5 — cli (slice 12b).
 - **BREAKING — (#178) `worker`, `scheduler` and `replicator` get no readiness grace.** On SIGTERM they stop
   claiming at once; the grace that keeps a listener answering applied to every role. `web` and
   `sync` keep `drain.readinessGraceMs`.
-- **BREAKING — (#179) the replicator is ready only while its replication stream runs.** The chart gives
-  it a `readinessProbe` on `/readyz` of the metrics port, and its headless metrics Services set
-  `publishNotReadyAddresses: true`, so a not-ready replicator is still scraped. While the stream is
-  down the pod reads 0/1. An alert that treats a not-ready replicator as an outage now fires then —
-  the signal intended. `docker/helm` carries it; a chart `x new` wrote before this release copies
-  both edits from `docker/helm/templates/_helpers.tpl` and `service.yaml`.
+- **BREAKING — (#179) the replicator is ready only while its replication stream runs.** The chart
+  gives it a `readinessProbe` on `/readyz?deep=1` of the metrics port, and its headless metrics
+  Services set `publishNotReadyAddresses: true`, so a not-ready replicator is still scraped. While
+  the stream is down the pod reads 0/1. An alert that treats a not-ready replicator as an outage now
+  fires then — the signal intended. `docker/helm` carries it; a chart `x new` wrote before this
+  release copies both edits from `docker/helm/templates/_helpers.tpl` and `service.yaml`.
 - **BREAKING — (#180) `x help <name>` for a name no command has is `X_CLI_UNKNOWN_COMMAND`, exit 1**, with
   the nearest name as the fix. It printed the whole catalogue and exited 0.
 - **BREAKING — (#181) `x i18n add`, `x i18n sync`, `x db seed` and `x db backfill` (`--pending`, `--all`,
@@ -1458,6 +1460,50 @@ Repository scripts (slice 13a).
   or a stage index included — and refuses one with no ignore file (`X_IMAGE_SECRET_UNIGNORED`).
 - **biome.json:** `noFloatingPromises` is no longer switched off for tests and for paths outside
   `packages/*/src`.
+
+Deploy — `docker/helm` and the chart `x new` writes. Tier 5 — cli (slice 13b).
+
+- **BREAKING — (#192) the chart renders a NetworkPolicy per role, on by default.** On a CNI that
+  enforces policies a pod accepts its `http` port from `networkPolicy.httpFrom` — any source by
+  default, the ingress controller's namespace being unknown to the chart — and its `metrics` port
+  from `networkPolicy.metricsFrom`, any pod in the cluster and no address outside it; nothing else.
+  Egress is filtered only when rules are given; the migrate hook Job is not covered. A scraper
+  outside the cluster is refused: list it in `networkPolicy.metricsFrom`, or set
+  `networkPolicy.enabled: false`.
+- **BREAKING — (#193) `/tmp` is bounded by `tmp.sizeLimit`, `512Mi` by default.** Every role's and
+  the migrate Job's `emptyDir` carries it; a pod that fills it is evicted, where it filled the
+  node's disk. A values file with no `tmp.sizeLimit` does not render. Raise it for a role that
+  writes more. A chart `x new` wrote before this release copies `templates/_volumes.tpl` and
+  `templates/networkpolicy.yaml` from a fresh scaffold, with the `tmp` and `networkPolicy` values
+  blocks.
+- **BREAKING — (#194) a role with no Secret does not render.** Each role reads
+  `roles.<role>.existingSecret` (the migrate Job `migrate.existingSecret`), else the release-wide
+  `existingSecret`; with neither, `helm template` fails naming the role, where a pod booted with no
+  configuration. Per-role Secrets are opt-in: one Secret with every role's keys is still the
+  default.
+- **BREAKING — (#195) at port 0 the sync node's listener takes its own kernel-chosen port, not the
+  web port + 1.** `x dev --port 0`, `startRoles({ port: 0 })` and a scratch server bound web's
+  free port + 1, which another socket could already hold — `X_PORT_IN_USE` for a port nobody
+  listened on. Pages dial `/_x/sync` on their own origin and are unaffected. A test or tool that
+  computed web + 1 reads `syncUrl` from the boot's answer.
+- **cli:** the Dockerfile `x new` writes pins `oven/bun:1.4-alpine` by digest, as
+  `docker/Dockerfile` pins its `oven/bun` and `distroless/cc` bases: a rebuild no longer takes a new
+  Bun 1.4.x patch on its own. Dependabot moves the digest with the tag. Not breaking.
+
+Repository (slice 13b).
+
+- **ci:** every `uses:` in every workflow and in `.github/actions/setup` is pinned by commit SHA
+  with its `# vX.Y.Z`, and no `run:` interpolates `${{ }}` but `runner.temp` —
+  `scripts/workflow-pins.test.ts`. `release.yml` passes the version through `env:`. Dependabot
+  watches `.github/actions/*` and each Dockerfile's directory; `scripts/bun-pin.test.ts` requires
+  every base image pinned by digest.
+- **ci:** `release.yml` publishes only when the whole `ci.yml` run on the tagged commit concluded
+  `success`, not its `verify` job alone; re-run a red job with `gh run rerun <id> --failed`.
+- **ci:** `deploy-social-demo.yml` refuses a commit that is not on `main`, and tags `:latest` only
+  for main's tip.
+- **ci:** the `contract` and `job` steps run in the `e2e` part, test services start before setup,
+  and a red part's step table names its failing tests on the job summary.
+
 
 Tier 5 — cli.
 
@@ -1965,6 +2011,13 @@ Tier 4 — ui. Tier 5 — cli, testing (slice 13a).
   than a wait nothing interrupts: a sitemap `lastmod`'s `git log` (5 s, then the file's mtime), the
   step deadline's `ps` sweep (10 s), the e2e harness's database reset and seed (90 s), `ui`'s icon
   build `biome format` (60 s).
+
+Tier 5 — cli (slice 13b).
+
+- **cli:** island transforms that overlap in one process restore `Error.prepareStackTrace` when the
+  last of them ends. Babel installs its own on the first transform, and a second transform that
+  started meanwhile saved Babel's and put it back, so a later error in that process — in `x dev`,
+  or a test run that bundles islands — printed `Error:` for its own class.
 
 ## 23.0.0 - 2026-10-02
 

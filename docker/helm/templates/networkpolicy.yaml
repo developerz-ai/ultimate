@@ -1,0 +1,55 @@
+{{/*
+One NetworkPolicy per enabled role: the ports a role opens, and from whom. Without one every pod in
+the cluster could reach every port of every role — a worker's metrics listener from any tenant's
+pod, a web pod from outside the cluster through a node port nobody declared.
+
+`http` (web, sync) from `networkPolicy.httpFrom`, `metrics` (every role) from
+`networkPolicy.metricsFrom`, nothing else. A `from` that renders empty is omitted, which Kubernetes
+reads as "any source" — the documented meaning of `httpFrom: []`. Egress is filtered only when
+`networkPolicy.egress` lists rules, because the addresses a role dials are the operator's.
+
+Serving roles only. The migrate Job is a pre-install hook: it runs before any ordinary resource of
+the release exists, so a policy here could not cover its first run, and it opens no port.
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+{{- range $role, $cfg := .Values.roles }}
+{{- if $cfg.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "ultimate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $role }}
+  policyTypes:
+    - Ingress
+    {{- if $.Values.networkPolicy.egress }}
+    - Egress
+    {{- end }}
+  ingress:
+    {{- if $cfg.port }}
+    - ports:
+        - port: http
+          protocol: TCP
+      {{- with $.Values.networkPolicy.httpFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    - ports:
+        - port: metrics
+          protocol: TCP
+      {{- with $.Values.networkPolicy.metricsFrom }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- with $.Values.networkPolicy.egress }}
+  egress: {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

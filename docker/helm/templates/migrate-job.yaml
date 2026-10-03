@@ -61,6 +61,5 @@ spec:
       containers:
         {{- include "ultimate.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}
       volumes:
-        - name: tmp
-          emptyDir: {}
+        {{- include "ultimate.tmpVolume" . | nindent 8 }}
 {{- end }}
