@@ -21,6 +21,7 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
 import type { AdminRouteResponse } from './screen-frame';
 
 const { renderComponent } = await import('@ultimat3/render/server');
@@ -66,20 +67,23 @@ const tickets = entity('admin_rel_tickets', {
 
 const db = database({ owners, teams, tickets }, { driver: counting(memoryDriver()) });
 
-const admin = defineAdmin({
-  entities: [owners, teams, tickets],
-  db,
-  resources: {
-    admin_rel_tickets: {
-      pageSize: 50,
-      listFields: ['title', 'ownerId', 'teamId', 'status'],
-      scopes: {
-        open: { where: [{ field: 'status', op: 'eq', value: 'open' }], count: true },
-        closed: { where: [{ field: 'status', op: 'eq', value: 'closed' }] },
-        mine: { where: (actor) => [{ field: 'title', op: 'contains', value: actor.id }] },
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    entities: [owners, teams, tickets],
+    db,
+    resources: {
+      admin_rel_tickets: {
+        pageSize: 50,
+        listFields: ['title', 'ownerId', 'teamId', 'status'],
+        scopes: {
+          open: { where: [{ field: 'status', op: 'eq', value: 'open' }], count: true },
+          closed: { where: [{ field: 'status', op: 'eq', value: 'closed' }] },
+          mine: { where: (actor) => [{ field: 'title', op: 'contains', value: actor.id }] },
+        },
       },
     },
-  },
+  });
 });
 
 registerCatalog('en', {

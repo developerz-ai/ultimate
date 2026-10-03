@@ -25,6 +25,8 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
+import { rowVersion, VERSION_FIELD } from './row-version';
 import type { AdminRouteResponse } from './screen-frame';
 
 const { renderComponent } = await import('@ultimat3/render/server');
@@ -58,48 +60,51 @@ const db = database({ vendors, invoices }, { driver: memoryDriver() });
 
 const ran: string[] = [];
 
-const admin = defineAdmin({
-  entities: [vendors, invoices],
-  db,
-  actions: [
-    {
-      name: 'invoice.send',
-      permission: 'admin_served_invoices:write',
-      entity: 'admin_served_invoices',
-      handle: async ({ input }) => {
-        ran.push(String(input['id']));
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    entities: [vendors, invoices],
+    db,
+    actions: [
+      {
+        name: 'invoice.send',
+        permission: 'admin_served_invoices:write',
+        entity: 'admin_served_invoices',
+        handle: async ({ input }) => {
+          ran.push(String(input['id']));
+        },
+      },
+    ],
+    resources: {
+      admin_served_invoices: {
+        labelField: 'number',
+        listFields: ['number', 'vendorId', 'status', 'issuedAt'],
+        fields: { issuedAt: { filterable: true }, total: { currency: 'EUR' } },
+        columns: {
+          gross: { value: (row) => row['total'], render: 'money' },
+          state: {
+            value: (row) => ({
+              label: String(row['status']).toUpperCase(),
+              tone: row['status'] === 'paid' ? 'success' : 'warning',
+            }),
+            render: 'badge',
+          },
+          age: { value: (row) => row['issuedAt'], render: 'relative-time' },
+          memo: { value: (row) => `${String(row['number'])} `.repeat(30), render: 'truncate' },
+          vendor: {
+            value: (row) => ({ href: `/vendors/${String(row['vendorId'])}`, label: 'Open vendor' }),
+            render: 'link',
+          },
+          raw: { value: (row) => ({ lines: row['lines'] }), render: 'json' },
+          custom: { value: (row) => row['lines'], render: (props) => `×${String(props.value)}` },
+        },
+        scopes: {
+          unpaid: { where: [{ field: 'status', op: 'neq', value: 'paid' }], default: true },
+          all: { where: [] },
+        },
       },
     },
-  ],
-  resources: {
-    admin_served_invoices: {
-      labelField: 'number',
-      listFields: ['number', 'vendorId', 'status', 'issuedAt'],
-      fields: { issuedAt: { filterable: true }, total: { currency: 'EUR' } },
-      columns: {
-        gross: { value: (row) => row['total'], render: 'money' },
-        state: {
-          value: (row) => ({
-            label: String(row['status']).toUpperCase(),
-            tone: row['status'] === 'paid' ? 'success' : 'warning',
-          }),
-          render: 'badge',
-        },
-        age: { value: (row) => row['issuedAt'], render: 'relative-time' },
-        memo: { value: (row) => `${String(row['number'])} `.repeat(30), render: 'truncate' },
-        vendor: {
-          value: (row) => ({ href: `/vendors/${String(row['vendorId'])}`, label: 'Open vendor' }),
-          render: 'link',
-        },
-        raw: { value: (row) => ({ lines: row['lines'] }), render: 'json' },
-        custom: { value: (row) => row['lines'], render: (props) => `×${String(props.value)}` },
-      },
-      scopes: {
-        unpaid: { where: [{ field: 'status', op: 'neq', value: 'paid' }], default: true },
-        all: { where: [] },
-      },
-    },
-  },
+  });
 });
 
 registerCatalog('en', {
@@ -321,6 +326,7 @@ describe('unit · the tenant column is the handle’s, never an input', () => {
     const edited = await ask(`/admin/admin_served_vendors/${String(made?.id)}/edit`, {
       name: 'Initech II',
       orgId: OTHER,
+      [VERSION_FIELD]: rowVersion(made ?? {}),
     });
     expect(statusOf(edited)).toBe(`/admin/admin_served_vendors/${String(made?.id)}`);
     const [stored] = await asOrg(() => db.vendors.where({ id: String(made?.id) }).all());

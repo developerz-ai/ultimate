@@ -2,10 +2,11 @@
 // form's field labels and the branding's name included — the keys the `i18n` step audits, so a
 // label only a renderer spelled could not be asked of a catalog.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { actionLabelKey } from './action-label';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { clearAdminMounts } from './mounts';
 
@@ -18,33 +19,36 @@ afterAll(() => {
   clearRegistry();
 });
 
-const admin = defineAdmin({
-  basePath: '/catalog-keys',
-  entities: [shelf],
-  db: database({ shelf }, { driver: memoryDriver() }),
-  branding: { nameKey: 'admin.keys.brand' },
-  resources: {
-    admin_keys_shelf: {
-      sections: [{ titleKey: 'admin.admin_keys_shelf.section.billing', fields: ['plan'] }],
-      scopes: { paying: { where: [{ field: 'plan', op: 'eq', value: 'pro' }] } },
-      columns: { size: { value: () => 'x', render: 'truncate' } },
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/catalog-keys',
+    entities: [shelf],
+    db: database({ shelf }, { driver: memoryDriver() }),
+    branding: { nameKey: 'admin.keys.brand' },
+    resources: {
+      admin_keys_shelf: {
+        sections: [{ titleKey: 'admin.admin_keys_shelf.section.billing', fields: ['plan'] }],
+        scopes: { paying: { where: [{ field: 'plan', op: 'eq', value: 'pro' }] } },
+        columns: { size: { value: () => 'x', render: 'truncate' } },
+      },
     },
-  },
-  actions: [
-    {
-      name: 'shelf.restock',
-      entity: 'admin_keys_shelf',
-      permission: 'admin_keys_shelf:update',
-      input: t.object({ count: t.number }),
-      handle: async () => null,
-    },
-    {
-      name: 'shelf.audit',
-      permission: 'admin:read',
-      labelKey: 'admin.keys.audit-everything',
-      handle: async () => null,
-    },
-  ],
+    actions: [
+      {
+        name: 'shelf.restock',
+        entity: 'admin_keys_shelf',
+        permission: 'admin_keys_shelf:update',
+        input: t.object({ count: t.number }),
+        handle: async () => null,
+      },
+      {
+        name: 'shelf.audit',
+        permission: 'admin:read',
+        labelKey: 'admin.keys.audit-everything',
+        handle: async () => null,
+      },
+    ],
+  });
 });
 
 describe('unit · the keys an admin renders, derived once', () => {

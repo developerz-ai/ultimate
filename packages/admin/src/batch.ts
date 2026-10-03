@@ -6,9 +6,9 @@ import { finiteCount } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { decideAction } from './action-gate';
 import { invokeRowAction } from './action-row';
-import type { AuditEntry } from './audit';
 import type { AdminDecision } from './authz';
 import { runMatching } from './batch-matching';
+import { queueBatch } from './batch-queue';
 import { type CrudCtx, decideOperation } from './crud';
 import { type AdminListRequest, listWhere } from './list-scope';
 import {
@@ -34,9 +34,6 @@ export const MAX_BATCH_ROWS = 200;
  * that constant bounds a different statement.
  */
 export const MAX_BATCH_QUEUED_ROWS = 1_000;
-
-/** The reason a queued batch's one entry carries. */
-export const BATCH_QUEUED_REASON = 'admin.batch.queued';
 
 /** The reason an action that is not a batch action is refused the batch bar with. */
 export const BATCH_NOT_OFFERED_REASON = 'admin.error.batch-not-offered';
@@ -185,29 +182,6 @@ async function select(
   return { ids, remaining };
 }
 
-const queuedEntry = (
-  input: AdminBatchInput,
-  decision: AdminDecision,
-  rows: number,
-  jobs: readonly string[],
-): Promise<AuditEntry> =>
-  input.ctx.audit.append({
-    requestId: input.ctx.requestId,
-    actor: input.ctx.actor,
-    operation: input.action.name,
-    kind: 'action',
-    entity: input.resource.name,
-    entityId: null,
-    permission: decision.permission,
-    outcome: 'allowed',
-    reason: BATCH_QUEUED_REASON,
-    // Which job runs handle the chunks: each row's own entry is written when its job reaches it.
-    diff: [
-      { field: 'rows', before: null, after: rows },
-      { field: 'jobs', before: null, after: jobs },
-    ],
-  });
-
 /**
  * Run `action` over a selection of `resource`'s rows.
  *
@@ -285,22 +259,13 @@ export async function runAdminBatch(input: AdminBatchInput): Promise<AdminBatchA
   };
 
   if (plan !== null && selected.ids.length > plan.threshold && input.enqueue !== undefined) {
-    const batchId = crypto.randomUUID();
-    const jobs: string[] = [];
-    for (let at = 0; at < selected.ids.length; at += plan.chunk) {
-      jobs.push(
-        await input.enqueue({
-          resource,
-          action,
-          ids: selected.ids.slice(at, at + plan.chunk),
-          input: own,
-          ctx,
-          batchId,
-          index: at / plan.chunk,
-        }),
-      );
-    }
-    await queuedEntry(input, decision, selected.ids.length, jobs);
+    const jobs = await queueBatch(
+      { ...input, enqueue: input.enqueue },
+      decision,
+      plan.chunk,
+      selected.ids,
+      own,
+    );
     return {
       ok: true,
       done: 0,

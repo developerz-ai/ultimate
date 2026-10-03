@@ -24,6 +24,8 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
+import { rowVersion, VERSION_FIELD } from './row-version';
 import type { AdminRouteResponse } from './screen-frame';
 
 // Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
@@ -51,48 +53,54 @@ const gadgets = entity('admin_mount_gadgets', {
 const db = database({ gadgets }, { driver: memoryDriver() });
 
 // The whole declaration. No repo, no page, no auth: the handle and the role map are the app's.
-const admin = defineAdmin({ entities: [gadgets], db });
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({ entities: [gadgets], db });
+});
 
 /** The same entity with the three seams used once each: a row action, an app-wide one, a page. */
 const ran: string[] = [];
-const acting = defineAdmin({
-  entities: [gadgets],
-  db,
-  actions: [
-    {
-      name: 'gadget.activate',
-      permission: 'admin_mount_gadgets:write',
-      entity: 'admin_mount_gadgets',
-      handle: async ({ input }) => {
-        ran.push(`activate:${String(input['id'])}`);
+let acting: AdminApp;
+beforeAll(() => {
+  acting = defineAdmin({
+    entities: [gadgets],
+    db,
+    actions: [
+      {
+        name: 'gadget.activate',
+        permission: 'admin_mount_gadgets:write',
+        entity: 'admin_mount_gadgets',
+        handle: async ({ input }) => {
+          ran.push(`activate:${String(input['id'])}`);
+        },
       },
-    },
-    {
-      name: 'gadget.scrap',
-      permission: 'admin_mount_gadgets:delete',
-      entity: 'admin_mount_gadgets',
-      destructive: true,
-      handle: async ({ input }) => {
-        ran.push(`scrap:${String(input['id'])}`);
+      {
+        name: 'gadget.scrap',
+        permission: 'admin_mount_gadgets:delete',
+        entity: 'admin_mount_gadgets',
+        destructive: true,
+        handle: async ({ input }) => {
+          ran.push(`scrap:${String(input['id'])}`);
+        },
       },
-    },
-    {
-      name: 'gadgets.reindex',
-      permission: 'admin_mount_gadgets:write',
-      handle: async () => {
-        ran.push('reindex');
+      {
+        name: 'gadgets.reindex',
+        permission: 'admin_mount_gadgets:write',
+        handle: async () => {
+          ran.push('reindex');
+        },
       },
-    },
-  ],
-  pages: [
-    {
-      path: '/ops',
-      titleKey: 'admin.admin_mount_gadgets.title',
-      navGroup: 'admin.group.data',
-      permissions: ['job:read'],
-      component: () => 'the ops board',
-    },
-  ],
+    ],
+    pages: [
+      {
+        path: '/ops',
+        titleKey: 'admin.admin_mount_gadgets.title',
+        navGroup: 'admin.group.data',
+        permissions: ['job:read'],
+        component: () => 'the ops board',
+      },
+    ],
+  });
 });
 
 // The refusals below assert the framework's own wording (`admin.actor.anonymous`), and a file that
@@ -297,10 +305,13 @@ describe('unit · defineAdmin({ entities, db }) serves its screens', () => {
   });
 
   test('a posted edit patches the row; an empty sealed box leaves the stored secret alone', async () => {
+    // The version the edit form carries: the row as it was when the form was drawn.
+    const [shown] = await db.gadgets.where({ id: rowId }).all();
     const answer = await ask('operator', `${BASE}/${rowId}/edit`, {
       title: 'Sprocket II',
       stock: '9',
       apiKey: '',
+      [VERSION_FIELD]: rowVersion(shown ?? {}),
     });
     expect(statusOf(answer)).toBe(`${BASE}/${rowId}`);
     const [stored] = await db.gadgets.where({ id: rowId }).all();

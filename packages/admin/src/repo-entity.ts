@@ -5,6 +5,7 @@
 import { isUltimateError } from '@ultimat3/core';
 import { getEntity, invariantViolated } from '@ultimat3/entity';
 import { adminColumnsOf } from './entity-columns';
+import { seekPage } from './keyset-seek';
 import type {
   AdminDb,
   AdminEntity,
@@ -41,18 +42,21 @@ const literal = (text: string): string => text.replace(/[\\%_]/g, (wild) => `\\$
  * A comparison value, in the shape the column holds. An instant travels as ISO text — in a URL, in
  * a cursor — and the handle is given the `Date`: Postgres would cast the text, the memory driver
  * compares a `Date` to a string by its characters, and a keyset over `createdAt` (the admin's
- * default sort) then answers page one for every page.
+ * default sort) then answers page one for every page. An `integer` travels as text in a cursor
+ * too, and the memory driver's `eq` holds `'7'` and `7` to be two values where Postgres binds one.
  */
 type Typed = (field: string, value: unknown) => unknown;
 
 const typedBy = (entity: AdminEntity): Typed => {
-  const instants = new Set(
-    adminColumnsOf(entity)
-      .filter((column) => column.kind === 'timestamptz')
-      .map((column) => column.name),
-  );
+  const kinds = new Map(adminColumnsOf(entity).map((column) => [column.name, column.kind]));
   return (field, value) => {
-    if (typeof value !== 'string' || !instants.has(field)) return value;
+    if (typeof value !== 'string') return value;
+    const kind = kinds.get(field);
+    if (kind === 'integer') {
+      const count = Number(value);
+      return value.trim() !== '' && Number.isSafeInteger(count) ? count : value;
+    }
+    if (kind !== 'timestamptz') return value;
     const at = new Date(value);
     return Number.isNaN(at.getTime()) ? value : at;
   };
@@ -82,37 +86,6 @@ const filtered = (
 ): AdminTableRead => where.reduce(predicate(typed), read);
 
 /**
- * `after`+asc and `before`+desc walk forward; the other two walk back. Written as one XOR rather
- * than a four-branch table, because the four branches are the same fact said twice.
- *
- * `gte`/`lte`, not `gt`/`lt`: rows sharing the boundary's sort value are still on the far side of
- * it, and `dropThroughTie` below is what removes the ones already served.
- */
-const sought = (read: AdminTableRead, query: AdminListQuery, typed: Typed): AdminTableRead => {
-  const bound = query.after ?? query.before;
-  if (bound === undefined) return read;
-  const forward = (query.after !== undefined) !== (query.sort.direction === 'desc');
-  // The bound is the STRING the cursor carried (`pagination.ts` writes a Date as ISO).
-  return read.andWhere(bound.field, forward ? 'gte' : 'lte', typed(bound.field, bound.value));
-};
-
-/**
- * Drop everything up to and including the cursor row. A typed chain cannot express the row-value
- * comparison `(sort, id) > (value, id)` a keyset needs, and the alternative — a strict `gt` on the
- * sort column alone — silently skips every row that ties with the boundary.
- */
-const dropThroughTie = (
-  rows: readonly AdminRow[],
-  query: AdminListQuery,
-  idField: string,
-): readonly AdminRow[] => {
-  const bound = query.after ?? query.before;
-  if (bound === undefined) return rows;
-  const at = rows.findIndex((row) => String(row[idField]) === bound.id);
-  return at === -1 ? rows : rows.slice(at + 1);
-};
-
-/**
  * One entity + its table → one `AdminRepo`.
  *
  * A row is never spread and never re-parsed here. The handle parses an insert against the entity
@@ -124,6 +97,7 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
   const idField = entity.$primaryKey[0] ?? 'id';
   const idColumn = Object.hasOwn(entity.$columns, idField) ? entity.$columns[idField] : undefined;
   const typed = typedBy(entity);
+  const columns = adminColumnsOf(entity);
   /**
    * `AdminRepo` carries `id: string` — a URL param, untyped by nature. The primary key column's
    * OWN `$parse` is what earns the crossing: `/posts/nope` is judged here, at the door, instead
@@ -152,14 +126,31 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
 
   return {
     async list(query: AdminListQuery): Promise<readonly AdminRow[]> {
-      const rows = await sought(filtered(table, query.where ?? [], typed), query, typed)
-        .orderBy(query.sort.field, query.sort.direction)
-        // The tie-break, always: a page boundary on a partial order repeats or drops a row.
-        .orderBy(idField, query.sort.direction)
-        // One over the requested page so the tie-drop cannot hand back a short page.
-        .limit(query.limit + 1)
-        .all();
-      return dropThroughTie(rows, query, idField).slice(0, query.limit);
+      const base = filtered(table, query.where ?? [], typed);
+      const sortField = query.sort.field;
+      const facts = columns.find((column) => column.name === sortField);
+      return seekPage(
+        query,
+        {
+          field: sortField,
+          idField,
+          nullable: facts?.nullable ?? true,
+          instant: facts?.kind === 'timestamptz',
+          typed: (value) => typed(sortField, value),
+        },
+        async (where, order, limit) => {
+          const read = where.reduce(
+            (chain, term) =>
+              term.value === undefined
+                ? chain.andWhere(term.field, term.op)
+                : chain.andWhere(term.field, term.op, term.value),
+            base,
+          );
+          // The tie-break, always: a page boundary on a partial order repeats or drops a row.
+          const sorted = order.by === 'pair' ? read.orderBy(sortField, order.direction) : read;
+          return [...(await sorted.orderBy(idField, order.direction).limit(limit).all())];
+        },
+      );
     },
     // `async`, so a refused id arrives as a rejection: these return promises, and a caller that
     // chains `.catch()` instead of `await`ing would never see a synchronous throw.

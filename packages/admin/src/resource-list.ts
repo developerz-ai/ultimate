@@ -94,6 +94,12 @@ interface Declared {
   readonly entity: AdminEntity;
 }
 
+/**
+ * The list URL's spelling of "no scope, not even the default" — `?scope=*`, what a related card's
+ * "all" link opens. Reserved: a scope declared under it is refused, so the word means one thing.
+ */
+export const NO_SCOPE = '*';
+
 /** The declared scopes, in declaration order — which is the order the tabs are drawn in. */
 export function scopesOf(
   resource: Declared,
@@ -105,6 +111,9 @@ export function scopesOf(
   const refuse = (asked: string, cause: string): never => {
     throw new AdminFilterInvalidError({ entity: resource.name, asked, cause, known: names });
   };
+  if (Object.hasOwn(scopes ?? {}, NO_SCOPE)) {
+    refuse(`scopes.${NO_SCOPE}`, `is the list URL's word for "no scope" and cannot name one`);
+  }
   const defaults = entries.filter(([, scope]) => scope.default === true).map(([name]) => name);
   if (defaults.length > 1) {
     refuse(

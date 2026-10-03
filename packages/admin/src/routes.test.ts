@@ -2,10 +2,11 @@
 // its own page file, and these assertions are what stop that host from typing the permission a
 // second time — the shape the deployed demo shipped on five pages until 1.2.0.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { clearRoutes, describeRoutes, routeEntries } from '@ultimat3/render';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
 import type { AdminCustomPage } from './pages';
@@ -39,12 +40,15 @@ const ops: AdminCustomPage = {
   component: () => 'ops-body',
 };
 
-const app = defineAdmin({
-  entities: [post],
-  db: database({ post }, { driver: memoryDriver() }),
-  resources: { admin_routes_post: { path: '/posts' } },
-  pages: [ops],
-  auth,
+let app: AdminApp;
+beforeAll(() => {
+  app = defineAdmin({
+    entities: [post],
+    db: database({ post }, { driver: memoryDriver() }),
+    resources: { admin_routes_post: { path: '/posts' } },
+    pages: [ops],
+    auth,
+  });
 });
 
 describe('adminRouteFor — the gate a mount reads instead of restating', () => {

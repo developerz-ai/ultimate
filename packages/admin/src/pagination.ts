@@ -10,7 +10,8 @@ import { type AdminResource, repoOf } from './resource';
 
 export interface AdminCursor {
   readonly field: string;
-  readonly value: string;
+  /** The boundary row's sort value as text, or `null` when it holds none — a position too. */
+  readonly value: string | null;
   readonly id: string;
   readonly direction: 'after' | 'before';
 }
@@ -50,7 +51,7 @@ export function decodeAdminCursor(
     if (payload.key.length !== 3) return null;
     const [direction, field, value] = payload.key;
     if (direction !== 'after' && direction !== 'before') return null;
-    if (typeof field !== 'string' || typeof value !== 'string') return null;
+    if (typeof field !== 'string' || (typeof value !== 'string' && value !== null)) return null;
     return { direction, field, value, id: payload.id };
   } catch (error) {
     if (isUltimateError(error) && error.code === 'X_CURSOR_INVALID') return null;
@@ -98,10 +99,15 @@ export function listQuery<Row extends AdminRow>(
   };
 }
 
-const cursorValue = (row: AdminRow, field: string): string => {
+/**
+ * The boundary's sort value as the cursor carries it. A NULL stays `null` — JSON holds one — and
+ * is never `''`: an empty string is a text value of its own, and the seek past a NULL boundary
+ * reads the NULL rows, which a seek past `''` never reaches.
+ */
+const cursorValue = (row: AdminRow, field: string): string | null => {
   const value = row[field];
   if (value instanceof Date) return value.toISOString();
-  return value === null || value === undefined ? '' : String(value);
+  return value === null || value === undefined ? null : String(value);
 };
 
 /**

@@ -5,7 +5,7 @@
 import type { AuditEntry, AuditLog } from './audit';
 import { type AdminActor, type AdminAuthz, type AdminDecision, decideAll } from './authz';
 import { onlyFor, rowDiff, splitSecrets, withoutTenant, withTenant } from './crud-input';
-import { auditedWrite, deniedEntry, invalid, missingRow, refuse } from './crud-outcome';
+import { auditedWrite, deniedEntry, invalid, missingRow, refuse, staleRow } from './crud-outcome';
 import { type AdminListRequest, findRow, listWhere } from './list-scope';
 import { type AdminPage, fetchPage } from './pagination';
 import {
@@ -20,6 +20,7 @@ import type { AdminRow } from './registry';
 import { type AdminResource, repoOf } from './resource';
 import type { AdminScope } from './resource-list';
 import { outOfScopeDecision, writeOutsideScope } from './row-scope-write';
+import { rowVersion } from './row-version';
 import { type ValidationIssue, validateInput } from './validate';
 
 export interface CrudCtx {
@@ -49,7 +50,28 @@ export type CrudResult<Row extends AdminRow> =
    * actor's row scope, which are one answer on purpose. Nothing was written; the attempt is on
    * the log as `failed`, like every other write that did not happen.
    */
-  | { readonly ok: false; readonly kind: 'missing'; readonly audit: AuditEntry };
+  | { readonly ok: false; readonly kind: 'missing'; readonly audit: AuditEntry }
+  /**
+   * An update against a `version` the row no longer has: somebody wrote it after the form was
+   * rendered. Nothing was written; the attempt is on the log as `failed`
+   * (`admin.error.row-changed`), and `row` is the row as it is NOW — what a re-render shows.
+   */
+  | {
+      readonly ok: false;
+      readonly kind: 'stale';
+      readonly row: Row;
+      readonly version: string;
+      readonly audit: AuditEntry;
+    };
+
+export interface AdminUpdateOptions {
+  /**
+   * `rowVersion()` of the row the caller was shown — the edit form posts it as `_version`. Given,
+   * a row that has changed since is refused (`kind: 'stale'`) instead of overwritten with the
+   * stale copy. Omitted (an MCP call, a script), the write is against the row as it is now.
+   */
+  readonly version?: string;
+}
 
 export type ListResult<Row extends AdminRow> =
   | {
@@ -89,6 +111,12 @@ export function decideOperation(
    * pair was the only gate on a single row.
    */
   row?: AdminRow | null,
+  /**
+   * The validated values a create or an update WRITES — the row as the write leaves it. A rule
+   * over what is written ("nobody files an invoice as paid") reads it as `input`; absent on every
+   * surface that writes nothing.
+   */
+  input?: Readonly<Record<string, unknown>>,
 ): AdminDecision {
   // First, before any grant is consulted: an operation the resource does not OFFER is refused for
   // everyone. `canOperate` checked this for the nav, the buttons and the MCP tools, and the three
@@ -106,6 +134,7 @@ export function decideOperation(
     entity: resource.name,
     ...(id === undefined ? {} : { id }),
     ...(row === undefined ? {} : { row }),
+    ...(input === undefined ? {} : { input }),
   });
 }
 
@@ -231,13 +260,17 @@ export async function adminCreate<Row extends AdminRow>(
     const permission = entityPermissionFor(resource.permission, 'create');
     return refuse(resource, 'create', ctx, outOfScopeDecision(permission, outside), null);
   }
+  // Decided again on what is WRITTEN: the first decision had no values to read, and a rule over
+  // them is the one an ownership or a state rule on a create is.
+  const written = decideOperation(resource, 'create', ctx, undefined, undefined, parsed.value);
+  if (!written.allowed) return refuse(resource, 'create', ctx, written, null);
 
   const { value: row, audit } = await auditedWrite(
     resource,
     'create',
     ctx,
     null,
-    decision,
+    written,
     () => repoOf(resource).create({ ...parsed.value, ...secrets }),
     (made) => ({
       entityId: String(made[resource.idField] ?? ''),
@@ -252,6 +285,7 @@ export async function adminUpdate<Row extends AdminRow>(
   ctx: CrudCtx,
   id: string,
   patch: Readonly<Record<string, unknown>>,
+  options: AdminUpdateOptions = {},
 ): Promise<CrudResult<Row>> {
   // `before` was already loaded here, just after the guard rather than before it — so the rule
   // that decides whether this actor may touch THIS row never saw the row.
@@ -260,6 +294,12 @@ export async function adminUpdate<Row extends AdminRow>(
   const decision = decideOperation(resource, 'update', ctx, id, before);
   if (!decision.allowed) return refuse(resource, 'update', ctx, decision, id);
   if (before === null) return missingRow(resource, 'update', ctx, id, decision);
+  // Optimistic concurrency: the patch was composed against what the caller was SHOWN, and a merge
+  // onto a row that has moved on writes their stale copy of every field they posted.
+  const now = rowVersion(before);
+  if (options.version !== undefined && options.version !== now) {
+    return staleRow(resource, ctx, id, decision, before, now);
+  }
 
   // `{ ...before }` carries no sealed value — a row's sealed properties are non-enumerable — and
   // `$schema` has no member for one, so the merged object is exactly what the schema describes.
@@ -286,6 +326,10 @@ export async function adminUpdate<Row extends AdminRow>(
     const permission = entityPermissionFor(resource.permission, 'update');
     return refuse(resource, 'update', ctx, outOfScopeDecision(permission, outside), id);
   }
+  // Decided again with the row before AND the row the write leaves — a rule over the values an
+  // operator is about to write ("not to paid", "not to another owner") reads `input`.
+  const written = decideOperation(resource, 'update', ctx, id, before, parsed.value);
+  if (!written.allowed) return refuse(resource, 'update', ctx, written, id);
   const validatedPatch: Readonly<Record<string, unknown>> = {
     ...Object.fromEntries(
       submittedKeys
@@ -299,7 +343,7 @@ export async function adminUpdate<Row extends AdminRow>(
     'update',
     ctx,
     id,
-    decision,
+    written,
     () => repo.update(id, validatedPatch),
     (changed) => ({ entityId: id, diff: rowDiff(resource, before, changed, secrets) }),
   );

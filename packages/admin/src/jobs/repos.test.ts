@@ -3,7 +3,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { type JobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import {
+  createMemoryDriver,
+  type JobDriver,
+  MAX_JOB_PAGE,
+  resetJobDriver,
+  setJobDriver,
+} from '@ultimat3/jobs';
 import type { AdminRow } from '../registry';
 import { fleetRepo, queueRepo, taskRepo, workerRepo } from './fleet-repo';
 import { jobRepo } from './job-repo';
@@ -34,9 +40,13 @@ describe('fleetRepo', () => {
     expect(names(await repo.list({ sort: { field: 'name', direction: 'asc' }, limit: 9 }))).toEqual(
       ['a', 'b', 'c', 'd'],
     );
+    // NULL is the largest value, as the database orders it: first descending, last ascending.
     expect(
       names(await repo.list({ sort: { field: 'depth', direction: 'desc' }, limit: 2 })),
-    ).toEqual(['a', 'b']);
+    ).toEqual(['d', 'a']);
+    expect(
+      names(await repo.list({ sort: { field: 'depth', direction: 'asc' }, limit: 9 })),
+    ).toEqual(['c', 'b', 'a', 'd']);
     expect(
       names(await repo.list({ sort: { field: 'paused', direction: 'asc' }, limit: 9 })),
     ).toEqual(['a', 'c', 'b', 'd']);
@@ -62,6 +72,36 @@ describe('fleetRepo', () => {
       after: { field: 'paused', value: 'false', id: 'c' },
     });
     expect(names(flags)).toEqual(['b', 'd']);
+  });
+
+  test('a bound on a NULL sort value is a position — never NaN, never the first page again', async () => {
+    const seen = fleetRepo('name', () =>
+      Promise.resolve([
+        { name: 'w1', seenAt: new Date(5) },
+        { name: 'w2', seenAt: null },
+        { name: 'w3', seenAt: new Date(1) },
+        { name: 'w4', seenAt: null },
+      ]),
+    );
+    const desc = { field: 'seenAt', direction: 'desc' } as const;
+    const asc = { field: 'seenAt', direction: 'asc' } as const;
+    const nullBound = { field: 'seenAt', value: null, id: 'w2' };
+    // Descending, the NULLs come first and the id breaks their tie downward: w4, w2, w1, w3.
+    expect(names(await seen.list({ sort: desc, limit: 9, after: nullBound }))).toEqual([
+      'w1',
+      'w3',
+    ]);
+    expect(names(await seen.list({ sort: asc, limit: 9, after: nullBound }))).toEqual(['w4']);
+    expect(names(await seen.list({ sort: asc, limit: 9, before: nullBound }))).toEqual([
+      'w3',
+      'w1',
+    ]);
+    const dated = { field: 'seenAt', value: new Date(1).toISOString(), id: 'w3' };
+    expect(names(await seen.list({ sort: asc, limit: 9, after: dated }))).toEqual([
+      'w1',
+      'w2',
+      'w4',
+    ]);
   });
 
   test('filters through the package’s one evaluator, counts, and finds by key', async () => {
@@ -154,6 +194,57 @@ describe('the queue, the tasks, the workers and the runs as rows', () => {
       where: [{ field: 'id', op: 'eq', value: 'j-1' }],
     });
     expect(one.map((row) => row['id'])).toEqual(['j-1']);
+  });
+});
+
+describe('a job page at the store’s own ceiling', () => {
+  test('a page of MAX_JOB_PAGE still learns whether a next page exists — both ways', async () => {
+    // A fresh queue of 205 runs: the admin asks one past a 200-row page, the store answers 200 at
+    // most, and a full store page read as "no more" left five rows on no page.
+    const many = createMemoryDriver();
+    setJobDriver(many);
+    try {
+      for (let at = 0; at < MAX_JOB_PAGE + 5; at += 1) {
+        await many.enqueue({
+          name: 'admin-jobs-ceiling',
+          queue: 'default',
+          input: { at },
+          idempotencyKey: `ceiling-${at}`,
+          maxAttempts: 1,
+        });
+      }
+      const sort = { field: 'createdAt', direction: 'desc' } as const;
+      const first = await jobRepo.list({ sort, limit: MAX_JOB_PAGE + 1 });
+      expect(first).toHaveLength(MAX_JOB_PAGE + 1);
+      const last = first[MAX_JOB_PAGE - 1] ?? expect.unreachable('a full page has a last row');
+      const bound = {
+        field: 'createdAt',
+        value: (last['createdAt'] as Date).toISOString(),
+        id: String(last['id']),
+      };
+      const rest = await jobRepo.list({ sort, limit: MAX_JOB_PAGE + 1, after: bound });
+      expect(rest).toHaveLength(5);
+      // From the last row back: the 200 rows before it, and the one past them that says
+      // a previous page exists — furthest back first, as every `before` page answers.
+      const tail = rest[4] ?? expect.unreachable('five rows remain');
+      const back = await jobRepo.list({
+        sort,
+        limit: MAX_JOB_PAGE + 1,
+        before: {
+          field: 'createdAt',
+          value: (tail['createdAt'] as Date).toISOString(),
+          id: String(tail['id']),
+        },
+      });
+      expect(back).toHaveLength(MAX_JOB_PAGE + 1);
+      // Rows 3 to 203 of 0 to 204, newest first: `first` holds 0 to 200, `rest` 200 to 204.
+      expect(back.map((row) => row['id'])).toEqual([
+        ...first.slice(3, MAX_JOB_PAGE).map((row) => row['id']),
+        ...rest.slice(0, 4).map((row) => row['id']),
+      ]);
+    } finally {
+      setJobDriver(seeded.driver);
+    }
   });
 });
 

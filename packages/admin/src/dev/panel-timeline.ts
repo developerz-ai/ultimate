@@ -3,6 +3,7 @@
 // calls, and policy decisions on one axis, with the N+1 already counted for you — counted by
 // `x dev`'s statement ledger and read here through `statementLoops()`, never re-derived.
 
+import { DevSourceUnavailableError } from '../errors';
 import type { RequestTrace, SpanKind, StatementLoopFact, TimelineSpan } from './facts';
 import type { DevPanel } from './panel';
 
@@ -68,8 +69,12 @@ export const timelinePanel: DevPanel<TimelinePanelData> = {
       (wanted === null ? traces[0] : traces.find((trace) => trace.requestId === wanted)) ?? null;
     // Degrade rather than reject, as `panel-live.ts` does for `subscribers`: a host with traces
     // but no detector installed must still get its flamegraph. `null` carries that difference —
-    // "nobody counted" is not "counted, and this request was clean".
-    const loops = await sources.statementLoops().catch((): null => null);
+    // "nobody counted" is not "counted, and this request was clean". Only for the error that MEANS
+    // unwired: a detector that ran and failed is a diagnostic, never "no detector".
+    const loops = await sources.statementLoops().catch((error: unknown): null => {
+      if (!(error instanceof DevSourceUnavailableError)) throw error;
+      return null;
+    });
 
     const totalsByKind: Record<string, number> = {};
     const sqlCounts = new Map<string, number>();

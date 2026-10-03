@@ -14,8 +14,14 @@ import { adminSearch } from './search';
 const AUDIT_PAGE = 100;
 
 export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
-  return guardedScreen(app, route, async () => {
-    const entries = await app.audit.entries({ limit: AUDIT_PAGE });
+  return guardedScreen(app, route, async (request) => {
+    // The actor's tenant's trail: `audit:read` held in org A is not a read of org B's operators,
+    // their ids or what they touched. An actor with no org — the platform — reads every tenant's.
+    const orgId = request.ctx.actor.orgId;
+    const entries = await app.audit.entries({
+      limit: AUDIT_PAGE,
+      ...(orgId === undefined ? {} : { orgId }),
+    });
     return (
       <Card>
         {entries.length === 0 ? (

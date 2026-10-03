@@ -6,7 +6,7 @@
 //
 //   ?cursor=<signed>            keyset position (pagination.ts)
 //   ?sort=<field>:<asc|desc>    a sortable field; the direction defaults to desc
-//   ?scope=<name>               a declared scope; absent is the resource's default
+//   ?scope=<name>               a declared scope; absent is the resource's default, `*` is none
 //   ?f.<field>=<value>          a filter, by the field's default operator
 //   ?f.<field>.<op>=<value>     a filter, by a named operator; repeat the parameter for `in`
 //
@@ -18,6 +18,7 @@ import type { AdminListRequest } from './list-scope';
 import { scopeNamed } from './list-scope';
 import type { AdminFilter, AdminSort } from './registry';
 import type { AdminResource } from './resource';
+import { NO_SCOPE } from './resource-list';
 
 export const CURSOR_PARAM = 'cursor';
 export const SORT_PARAM = 'sort';
@@ -61,7 +62,7 @@ export function pageRequestOf(resource: AdminResource, url: URL): AdminListReque
   const filters: AdminFilter[] = [];
   let cursor: string | undefined;
   let sort: AdminSort | undefined;
-  let scope: string | undefined;
+  let scope: string | null | undefined;
 
   for (const key of new Set(url.searchParams.keys())) {
     const values = url.searchParams.getAll(key).filter((value) => value !== '');
@@ -70,7 +71,8 @@ export function pageRequestOf(resource: AdminResource, url: URL): AdminListReque
     if (key === CURSOR_PARAM) cursor = last;
     else if (key === SORT_PARAM) sort = sortOf(resource, last);
     // Resolved here for its refusal alone: the name is what travels, the actor decides its rows.
-    else if (key === SCOPE_PARAM) scope = scopeNamed(resource, last)?.name;
+    else if (key === SCOPE_PARAM)
+      scope = last === NO_SCOPE ? null : scopeNamed(resource, last)?.name;
     else if (key.startsWith(FILTER_PREFIX)) {
       filters.push(checkedFilter(resource, { ...filterKey(key), value: values }));
     } else {
@@ -108,9 +110,9 @@ export function listHref(
   location: ListLocation = {},
 ): string {
   const query = new URLSearchParams();
-  if (location.scope !== undefined && location.scope !== null) {
-    query.set(SCOPE_PARAM, location.scope);
-  }
+  // `null` is "no scope, not even the default" — the request's own meaning of it — so it is
+  // written, as `*`; only an absent scope is left to the resource's default.
+  if (location.scope !== undefined) query.set(SCOPE_PARAM, location.scope ?? NO_SCOPE);
   for (const filter of location.filters ?? []) {
     const field = resource.filters.find((known) => known.name === filter.field);
     if (field === undefined) continue;

@@ -4,6 +4,7 @@
 // page, never one per row and never one per cell.
 
 import { finiteCount } from '@ultimat3/core';
+import { expectedQueryLoop } from '@ultimat3/db';
 import type { AuditEntry } from './audit';
 import type { AdminDecision } from './authz';
 import { type CrudCtx, decideOperation } from './crud';
@@ -26,7 +27,11 @@ export interface AdminOption {
  */
 export const LOOKUP_SELECT_MAX = 50;
 
-/** The most ids one label read names — the list's own page-size ceiling. */
+/**
+ * The most ids one label read names — the list's own page-size ceiling. A page naming more is read
+ * in chunks of this many, never cut at it: a 200-row list with two columns on one target names up
+ * to 400 ids, and the ids past the cut were drawn as raw ids with no error anywhere.
+ */
 const MAX_LABEL_IDS = 200;
 
 /** The row's label-field value when it is text, else its id — never a blank cell. */
@@ -140,7 +145,7 @@ async function relationOf(
   const visible = rowWhere(resource, ctx.actor);
   const labels = new Map<string, string>();
   let options: readonly AdminOption[] | null = null;
-  let wanted = [...need.ids].slice(0, MAX_LABEL_IDS);
+  let wanted = [...need.ids];
 
   if (need.pick) {
     // One over the ceiling: the extra row is how "small enough for a select" is learned without
@@ -162,14 +167,25 @@ async function relationOf(
     }
   }
 
-  if (wanted.length > 0) {
-    const rows = await repo.list({
-      where: [...visible, { field: resource.idField, op: 'in', value: wanted }],
-      sort: resource.defaultSort,
-      limit: wanted.length,
-    });
-    for (const row of rows) labels.set(rowId(row, resource.idField), labelOf(row, resource));
+  const chunks: string[][] = [];
+  for (let at = 0; at < wanted.length; at += MAX_LABEL_IDS) {
+    chunks.push(wanted.slice(at, at + MAX_LABEL_IDS));
   }
+  // One statement per chunk, and only past the ceiling: a page's ids are known up front, so this
+  // is a bounded batch, not a read per row — and declared as one.
+  await expectedQueryLoop(
+    'admin labels read a page’s referenced ids in chunks under the `in` ceiling',
+    async () => {
+      for (const chunk of chunks) {
+        const rows = await repo.list({
+          where: [...visible, { field: resource.idField, op: 'in', value: chunk }],
+          sort: resource.defaultSort,
+          limit: chunk.length,
+        });
+        for (const row of rows) labels.set(rowId(row, resource.idField), labelOf(row, resource));
+      }
+    },
+  );
 
   await readEntry(resource, ctx, decision);
   return { labels, options };

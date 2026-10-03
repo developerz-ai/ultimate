@@ -2,10 +2,12 @@
 // row scope, scope and filters — answering `{ affected, remaining }`, gated once, audited once, and
 // never reached by a checked selection, which still runs row by row through the button's gate.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
+import type { AdminApp } from './admin';
 import { staticAuthz } from './authz';
 import type { AdminAction, AdminFilter } from './registry';
+import type { AdminResource } from './resource';
 
 const { defineAdmin } = await import('./admin');
 const { runAdminBatch } = await import('./batch');
@@ -41,28 +43,32 @@ const drop: AdminAction = {
   matching: async () => ({ affected: 2, remaining: 0 }),
 };
 
-const admin = defineAdmin({
-  basePath: '/match',
-  entities: [parcels],
-  db,
-  actions: [ship, drop],
-  resources: {
-    admin_match_parcels: {
-      scopes: { open: { where: [{ field: 'state', op: 'eq', value: 'open' }] } },
-      rows: (actor) =>
-        actor.orgId === undefined ? [] : [{ field: 'title', op: 'eq', value: actor.orgId }],
+let admin: AdminApp;
+let resource: AdminResource;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/match',
+    entities: [parcels],
+    db,
+    actions: [ship, drop],
+    resources: {
+      admin_match_parcels: {
+        scopes: { open: { where: [{ field: 'state', op: 'eq', value: 'open' }] } },
+        rows: (actor) =>
+          actor.orgId === undefined ? [] : [{ field: 'title', op: 'eq', value: actor.orgId }],
+      },
     },
-  },
-  auth: {
-    authz: staticAuthz([
-      'admin:destroy',
-      'admin_match_parcels:read',
-      'admin_match_parcels:ship',
-      'admin_match_parcels:drop',
-    ]),
-  },
+    auth: {
+      authz: staticAuthz([
+        'admin:destroy',
+        'admin_match_parcels:read',
+        'admin_match_parcels:ship',
+        'admin_match_parcels:drop',
+      ]),
+    },
+  });
+  resource = admin.resource('admin_match_parcels');
 });
-const resource = admin.resource('admin_match_parcels');
 const ctx = (orgId?: string) =>
   admin.ctx({ actor: { id: 'u', ...(orgId === undefined ? {} : { orgId }) }, requestId: 'm' });
 

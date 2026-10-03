@@ -30,7 +30,8 @@ failed-credential gate, then `mcp`, `mail`, `notify` and `manifest`, with what t
 commits `packages/db/schema/` runs `x db gen`, once** — the `manifest`, `contract-diff` and `drift`
 steps are red until it does. Then `ai`, with its status row in `http`: **a gateway's `actor` and
 `org` ceilings now count every `llm()`, `agent()` and `hive()` call — size them before the
-deploy.** Slice 11 is in progress: `testing` and `scraping`.
+deploy.** Slice 11 is complete: `testing`, `scraping` and `admin` — **an admin edit form posts
+`_version`, and an edit with none, or with a stale one, is a 409 that writes nothing.**
 
 ### Added
 
@@ -228,6 +229,16 @@ Tier 5 — testing, scraping (slice 11).
 - **testing:** `X_TEST_APP_NOT_BOOTED` — see Changed.
 - **scraping:** `X_SCRAPE_LAUNCH_ARGS_INVALID` (terminal) and the `CdpBrowserTargetLike` /
   `CdpBrowserSessionLike` types — see Changed.
+
+Tier 5 — admin (slice 11).
+
+- **admin:** `rowVersion(row)`, `VERSION_FIELD` (`'_version'`), `ROW_CHANGED_REASON`
+  (`'admin.error.row-changed'`) and the `AdminUpdateOptions` type (`{ version? }`, `adminUpdate`'s
+  fifth argument) — see Changed.
+- **admin:** `readOnlySql(client)` and `DEV_SQL_MAX_ROWS` (500) from `@ultimat3/admin/dev` — the
+  `/_x` DB panel's SQL runner, inside `@ultimat3/db`'s `readOnlyQuery`: its own `BEGIN READ ONLY`
+  transaction, a statement timeout, a row ceiling. A host wires `runSql: readOnlySql(client)`;
+  `x dev` does not yet.
 
 Tier 5 — cli.
 
@@ -1127,6 +1138,53 @@ Tier 5 — scraping (slice 11).
 - **BREAKING — a recording whose `recordedAt` is not a date is `X_SCRAPE_FIXTURE_STALE`.** Its age
   read `NaN`, and `NaN > maxAgeMs` is false, so it passed as fresh. Re-record the fixture.
 
+Tier 5 — admin (slice 11).
+
+- **BREAKING — `KeysetBound.value` and `AdminCursor.value` are `string | null`.** A row whose sort
+  column is NULL is bounded by `null`, was `''`, and sorts as the largest value — last ascending,
+  first descending — as entity and query order a nullable key. A custom `AdminRepo#list` that
+  reads `keyset.value` handles `null` (TS2345 / TS18047 where it is used as a string); the fleet
+  repos (queues, tasks, workers) order NULL the same way.
+- **BREAKING — an admin edit form posts `_version`, and an edit whose row changed since the form
+  was drawn, or that posts none, is a 409 that writes nothing.** `_version` is `rowVersion(row)`, a
+  keyed fingerprint of the row as read, sealed values excluded. The form is redrawn with what the
+  operator typed over the row as it is now, under the current version, so a second save overwrites
+  on purpose. It merged the stale copy of every posted field over a concurrent edit. A script or
+  test that posts the edit form by hand posts the `_version` the form rendered. `adminUpdate` with
+  no `version` — an MCP call, a script — writes against the row as it is.
+- **BREAKING — `AdminFormProps.version: string | null` is required.** TS2741 where `AdminForm` is
+  rendered by hand: pass `rowVersion(row)` for an edit, `null` for a create.
+- **BREAKING — `CrudResult` gains the failure kind `'stale'`, with `row` (as it is now), `version`
+  and `audit`.** `adminUpdate(resource, ctx, id, patch, { version })` answers it when `version` is
+  given and no longer matches; nothing is written and the log holds a `failed` entry. An exhaustive
+  `switch` over `kind` does not compile until it handles `'stale'`.
+- **BREAKING — a create and an update are decided again on what they write.** After validation the
+  operation is decided a second time with the validated values as the subject's `input` — on an
+  update beside `row`, the row before. Create and update decisions never carried `input`, so a rule
+  over written values ("never filed as paid", "never moved to another owner") could not fire on
+  the admin. A policy whose rule reads `input` now refuses there; a write it refuses is the usual
+  denied result and audit entry.
+- **BREAKING — `/admin/audit` and a row's history card show the actor's tenant only.** An actor with
+  an `orgId` reads entries of that org; an actor with none — the platform — reads every tenant's.
+  `audit:read` in one org read every org's operators and what they touched.
+- **BREAKING — an action's handler, a set-based `matching` call and a queued batch's enqueues commit
+  with their audit entry.** They run inside `AuditLog#atomic` with the `allowed` entry; on
+  `postgresAuditLog` an entry that cannot be written rolls the work back, and the log holds one
+  `failed` entry. The write committed while its entry was lost. A queued batch's id is derived from
+  its content, so a retry after a failed enqueue dedupes onto the chunks the queue still holds —
+  while they are live.
+- **BREAKING — `?scope=*` is "no scope, not even the default".** `listHref({ scope: null })` writes
+  it, so a related card's "all" link opens every row; it wrote nothing and opened the default scope.
+  A scope declared under the name `*` is `X_ADMIN_FILTER_INVALID` where the resource is declared:
+  rename it.
+- **BREAKING — admin list filters refuse what an operator did not type.** A number filter takes
+  decimal digits, a sign and a point — a blank, `0x10`, `1e3` and `Infinity` are
+  `X_ADMIN_FILTER_INVALID`, were read as `0`, `16`, `1000` and an unbounded list. A date filter
+  refuses a day the calendar does not have (`2026-02-30`), which `Date` rolled into March. Correct
+  the link or bookmark that sends one.
+- **admin:** `BATCH_QUEUED_REASON` is declared in `batch-queue.ts`; `@ultimat3/admin` still exports
+  it. No edit.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1582,6 +1640,26 @@ Tier 5 — testing, scraping (slice 11).
 - **scraping:** a session save that fails after a successful login is logged
   `scrape.session.write_failed` with `step: 'session.save'` and the attempt goes on; it failed the
   run that had already signed in.
+
+Tier 5 — admin (slice 11).
+
+- **admin:** an entity-backed list pages on the (sort, id) pair. Rows sharing a sort value were
+  skipped or repeated across a page boundary, and a backward page answered nothing. A timestamp's
+  tie is its millisecond — a `Date` holds no finer, Postgres stores microseconds — ordered by id
+  inside it, and the last millisecond on a page is re-read whole.
+- **admin:** an edit that leaves a datetime field untouched leaves it out of the patch, so the
+  stored value keeps its seconds and sub-seconds; the form posted it back at minute precision
+  (`…45.123Z` became `…00.000Z`).
+- **admin:** the jobs screen reads a page of `MAX_JOB_PAGE` rows and still learns whether more
+  follow, with a second store read for the overflow.
+- **admin:** a list's relation labels read every referenced id, in chunks of the `in` ceiling; ids
+  past it were drawn as raw ids. A fleet repo's page after a NULL sort value is the right one —
+  `new Date(null)` read it as the epoch.
+- **admin:** a search over a repo that throws lists that resource under `skipped`
+  (`admin.search.skipped.failed`); it failed the whole search.
+- **admin:** the timeline and cache dev panels show "unavailable" for `DevSourceUnavailableError`
+  only, as the db and live panels do; any other error from a source is thrown, no longer drawn as
+  unavailable.
 
 ## 23.0.0 - 2026-10-02
 

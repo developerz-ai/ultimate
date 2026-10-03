@@ -12,8 +12,10 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
 import type { AdminRow } from './registry';
+import type { AdminResource } from './resource';
 import type { AdminRouteResponse } from './screen-frame';
 
 const { renderComponent } = await import('@ultimat3/render/server');
@@ -38,16 +40,21 @@ const cases = entity('admin_scope_cases', {
 
 const db = database({ cases }, { driver: memoryDriver() });
 
-const admin = defineAdmin({
-  entities: [cases],
-  db,
-  resources: {
-    admin_scope_cases: {
-      // The second audience, declared once: a regional operator sees their region's rows, and
-      // an actor with no region sees none — never all.
-      rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+let admin: AdminApp;
+let resource: AdminResource;
+beforeAll(() => {
+  admin = defineAdmin({
+    entities: [cases],
+    db,
+    resources: {
+      admin_scope_cases: {
+        // The second audience, declared once: a regional operator sees their region's rows, and
+        // an actor with no region sees none — never all.
+        rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+      },
     },
-  },
+  });
+  resource = admin.resource('admin_scope_cases');
 });
 
 registerCatalog('en', {
@@ -59,7 +66,6 @@ registerCatalog('en', {
 const EU: AdminActor = { id: 'u-eu', roles: ['regional'], locale: 'eu' };
 const US: AdminActor = { id: 'u-us', roles: ['regional'], locale: 'us' };
 const ctxOf = (actor: AdminActor) => admin.ctx({ actor, requestId: 'row-scope' });
-const resource = admin.resource('admin_scope_cases');
 
 const ids = { eu: '', us: '' };
 

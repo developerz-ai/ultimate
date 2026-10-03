@@ -4,13 +4,20 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { resetJobDriver } from '@ultimat3/jobs';
+import type { AdminApp } from '../admin';
 import { jobsAdmin, MANAGER, READER, type Seeded, seedQueue } from './jobs-fixture';
 
 const { adminMcpTools, adminToolCatalog } = await import('../mcp-tools');
 const { callAdminTool } = await import('../mcp');
 
-const manager = jobsAdmin('/mcp-manage', MANAGER);
-const reader = jobsAdmin('/mcp-read', READER);
+let manager: AdminApp;
+beforeAll(() => {
+  manager = jobsAdmin('/mcp-manage', MANAGER);
+});
+let reader: AdminApp;
+beforeAll(() => {
+  reader = jobsAdmin('/mcp-read', READER);
+});
 const actor = { id: 'agent-ops' };
 let seeded: Seeded;
 

@@ -36,6 +36,7 @@ import type { AdminRow } from './registry';
 import { relatedLists, relatedOf } from './related';
 import { type RelationNeed, relationNeeds, relationsFor } from './relations';
 import type { AdminResource } from './resource';
+import { ROW_CHANGED_REASON, rowVersion, VERSION_FIELD } from './row-version';
 import { batchWrite, rowActionFormScreen, rowActionWrite } from './screen-action';
 import {
   type AdminRouteRequest,
@@ -250,6 +251,9 @@ export function detailScreen(app: AdminApp, resource: AdminResource): AdminScree
         entityId: id,
         changes: true,
         limit: HISTORY_PAGE,
+        // The actor's tenant's entries only, as on the audit screen — a row two orgs may open
+        // does not show one org who in the other changed it.
+        ...(request.ctx.actor.orgId === undefined ? {} : { orgId: request.ctx.actor.orgId }),
         ...(before === undefined ? {} : { before }),
       }),
     ]);
@@ -310,6 +314,7 @@ async function form(
   mode: 'create' | 'edit',
   values: Readonly<Record<string, unknown>>,
   issues: readonly ValidationIssue[],
+  version: string | null,
 ): Promise<JSX.Element> {
   const list = listHref(app.basePath, resource);
   return (
@@ -323,9 +328,17 @@ async function form(
       ctx={await relationsOf(app, resource, request, values, true)}
       action={new URL(request.url).pathname}
       cancelHref={mode === 'create' ? list : rowHref(app, resource, idOf(request))}
+      version={version}
     />
   );
 }
+
+/** The form-level issue a write against a stale version is re-rendered with. */
+const ROW_CHANGED_ISSUE: ValidationIssue = {
+  path: VERSION_FIELD,
+  message: 'the row was changed after this form was opened',
+  messageKey: ROW_CHANGED_REASON,
+};
 
 export function createScreen(
   app: AdminApp,
@@ -340,7 +353,7 @@ export function createScreen(
         app,
         request,
         resource.titleKey,
-        await form(app, resource, request, 'create', {}, []),
+        await form(app, resource, request, 'create', {}, [], null),
       );
     }
     const input = decodeForm(resource, request.form ?? {});
@@ -350,13 +363,14 @@ export function createScreen(
       return { kind: 'redirect', location: rowHref(app, resource, id) };
     }
     if (result.kind === 'denied') return refused(app, request, resource.titleKey, result.decision);
-    if (result.kind === 'missing') return notFound(app, resource, request);
+    // A create has no row to have gone missing or stale: neither is an answer it can give.
+    if (result.kind !== 'invalid') return notFound(app, resource, request);
     // 422, with what was typed: a refused form that came back empty is a form filled in twice.
     return framed(
       app,
       request,
       resource.titleKey,
-      await form(app, resource, request, 'create', input, result.issues),
+      await form(app, resource, request, 'create', input, result.issues, null),
       422,
     );
   };
@@ -365,8 +379,8 @@ export function createScreen(
 export function editScreen(app: AdminApp, route: AdminRoute, resource: AdminResource): AdminScreen {
   return async (request) => {
     const id = idOf(request);
+    const row = await findRow(resource, request.ctx.actor, id);
     if (request.method === 'GET') {
-      const row = await findRow(resource, request.ctx.actor, id);
       const decision = decideOperation(resource, 'update', request.ctx, id, row);
       if (!decision.allowed) return refusedPage(app, request, route, decision);
       if (row === null) return notFound(app, resource, request);
@@ -374,19 +388,53 @@ export function editScreen(app: AdminApp, route: AdminRoute, resource: AdminReso
         app,
         request,
         resource.titleKey,
-        await form(app, resource, request, 'edit', row, []),
+        await form(app, resource, request, 'edit', row, [], rowVersion(row)),
       );
     }
-    const input = decodeForm(resource, request.form ?? {});
-    const result = await adminUpdate<AdminRow>(resource, request.ctx, id, input);
+    const submitted = request.form ?? {};
+    // Decoded against the row as it is: an instant posted back as the minute it was drawn at is
+    // left out, not rewritten to that minute. A row that moved on since the form was rendered is
+    // refused below on its version, so "as it is" and "as it was drawn" are the same row here.
+    const input = decodeForm(resource, submitted, row ?? undefined);
+    // A post with no version is not a form this admin rendered: it is refused as stale, never run
+    // as an unversioned write — the version is how the form says which row it was looking at.
+    const version = posted(submitted, VERSION_FIELD) ?? '';
+    const result = await adminUpdate<AdminRow>(resource, request.ctx, id, input, { version });
     if (result.ok) return { kind: 'redirect', location: rowHref(app, resource, id) };
     if (result.kind === 'denied') return refused(app, request, resource.titleKey, result.decision);
     if (result.kind === 'missing') return notFound(app, resource, request);
+    if (result.kind === 'stale') {
+      // What they typed, over the row as it is NOW, under its current version: saving again is a
+      // decision taken with the other edit on screen, not an accident.
+      return framed(
+        app,
+        request,
+        resource.titleKey,
+        await form(
+          app,
+          resource,
+          request,
+          'edit',
+          { ...result.row, ...input },
+          [ROW_CHANGED_ISSUE],
+          result.version,
+        ),
+        409,
+      );
+    }
     return framed(
       app,
       request,
       resource.titleKey,
-      await form(app, resource, request, 'edit', input, result.issues),
+      await form(
+        app,
+        resource,
+        request,
+        'edit',
+        { ...(row ?? {}), ...input },
+        result.issues,
+        version,
+      ),
       422,
     );
   };

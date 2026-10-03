@@ -6,12 +6,46 @@
 // that was typed, so the schema refuses it in its own words against the field that carried it.
 
 import type { AdminField } from './fields';
+import type { AdminRow } from './registry';
 import type { AdminResource } from './resource';
 
 /** The posted name of a money field's currency, beside the minor-unit amount under the field's own. */
 export const currencyFieldOf = (field: string): string => `${field}.currency`;
 
 type Posted = Readonly<Record<string, unknown>>;
+
+/**
+ * What a date control is RENDERED with: `<input type="date">` wants `YYYY-MM-DD`, `datetime-local`
+ * wants `YYYY-MM-DDTHH:mm`. One function for the widget that draws the box and for the decode that
+ * reads it back, so "the operator left it as it was" is a comparison of one text with itself.
+ */
+export const datetimeInputValue = (iso: string, precision: 'date' | 'instant'): string =>
+  iso.slice(0, precision === 'date' ? 10 : 16);
+
+const isoOf = (value: unknown): string | undefined =>
+  value instanceof Date
+    ? Number.isNaN(value.getTime())
+      ? undefined
+      : value.toISOString()
+    : typeof value === 'string'
+      ? value
+      : undefined;
+
+/**
+ * An instant posted back as the box rendered it. `datetime-local` holds minutes, so writing what
+ * came back turned `10:20:45.123` into `10:20:00.000` on every edit of ANY field — a change nobody
+ * made, recorded in the audit diff as theirs. Such a field is left out of the patch and the stored
+ * instant stands. A calendar date carries every digit it has and is never in this position.
+ */
+const untouchedInstant = (
+  field: AdminField,
+  raw: string | undefined,
+  before: AdminRow,
+): boolean => {
+  if (field.widget !== 'datetime' || field.type === 'date' || raw === undefined) return false;
+  const stored = isoOf(before[field.name]);
+  return stored !== undefined && raw === datetimeInputValue(stored, 'instant');
+};
 
 /** The last value a posted name carried, as text. A repeated name arrives as a list. */
 export const posted = (form: Posted, name: string): string | undefined => {
@@ -79,13 +113,20 @@ function decodeField(field: AdminField, form: Posted): unknown {
 /**
  * Every field the form rendered, decoded. A sealed column rides along as the string that was
  * typed — `crud.ts` drops an empty one, which is what makes an untouched box mean "unchanged".
+ *
+ * `before` is the row an EDIT form was rendered from: an instant that comes back exactly as it was
+ * drawn is left out rather than rewritten at the control's precision. A create has none.
  */
 export function decodeForm(
   resource: AdminResource,
   form: Posted,
+  before?: AdminRow,
 ): Readonly<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
-  for (const field of resource.formFields) out[field.name] = decodeField(field, form);
+  for (const field of resource.formFields) {
+    if (before !== undefined && untouchedInstant(field, posted(form, field.name), before)) continue;
+    out[field.name] = decodeField(field, form);
+  }
   for (const field of resource.secretFields) out[field.name] = posted(form, field.name) ?? '';
   return out;
 }

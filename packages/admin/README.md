@@ -21,7 +21,7 @@ One panel per file. Each kills one question, and each is available as `--json` �
 | `timeline` | where did the time go? — flamegraph of SQL, cache, action, policy spans + the N+1 count |
 | `live` | what does each subscriber receive, and **why** — the matcher's decision trace |
 | `jobs` | the admin's own jobs overview (`/admin/jobs`'s component) over this process's queue; the payload — queue depth, step traces, retry-from-step target, dead letter — folded under it |
-| `db` | psql in a tab (read-only; `assertReadOnly` refuses DML), schema + drift (`null` unless a host wires the check) |
+| `db` | psql in a tab (read-only twice: `assertReadOnly` refuses DML, and `readOnlySql(client)` — what a host wires as `runSql` — runs it in a `BEGIN READ ONLY` transaction with a timeout and `DEV_SQL_MAX_ROWS`), schema + drift (`null` unless a host wires the check) |
 | `mail` | caught mail, rendered, per locale, with the locale gaps listed |
 | `cache` | the tag graph — what invalidated what, and which tags are orphans |
 | `policy` | the permission matrix per actor, every cell carrying its trace |
@@ -91,11 +91,11 @@ The list's whole state is its URL — one parser and one builder (`pageRequestOf
 
 | Parameter | Means | Refused when |
 |---|---|---|
-| `?cursor=<signed>` | keyset position | never — an unreadable cursor is page one |
+| `?cursor=<signed>` | keyset position on `(sort, id)` — any number of tied values, and NULLs (last ascending, first descending), are reached | never — an unreadable cursor is page one |
 | `?sort=<field>:<asc\|desc>` | order; a bare field is `desc` | the field is not sortable, or the direction is neither |
-| `?scope=<name>` | a declared scope; absent is the default one | no scope has that name |
+| `?scope=<name>` | a declared scope; absent is the default one; `*` is NO scope, not even the default (a related card's "all" link) | no scope has that name; `*` cannot be declared |
 | `?f.<field>=<value>` | a filter, by the field's default operator | the field is not a filter of the resource |
-| `?f.<field>.<op>=<value>` | a named operator; repeat the parameter for `in` | the field's shape does not answer `<op>`, or the value is not the column's type |
+| `?f.<field>.<op>=<value>` | a named operator; repeat the parameter for `in` | the field's shape does not answer `<op>`, or the value is not the column's type — a number is decimal digits (no blank, hex or exponent), a date is one the calendar has |
 | anything else | — | always |
 
 A refusal is `X_ADMIN_FILTER_INVALID`, a 400 naming what the list does answer — never the
@@ -179,8 +179,9 @@ export const resources: Readonly<Record<string, AdminResourceOptions>> = {
 | `on` | the field is an input on one side only, and a write from the other side drops it |
 | `hintKey` | the line under the control, through `t()` |
 
-The detail page's history card is `audit.entries({ entity, entityId, changes: true })`, newest
-first, 20 per page, older pages by keyset (`?history=`). Statements a detail page issues: 1 for
+The detail page's history card is `audit.entries({ entity, entityId, changes: true })` — and
+`orgId` when the actor has one, as on `/admin/audit` — newest first, 20 per page, older pages by
+keyset (`?history=`). Statements a detail page issues: 1 for
 the row (2 with `rows`), 1 per related list, 1 per referenced target for the whole page, 1 for
 the history with `postgresAuditLog`.
 
@@ -249,7 +250,9 @@ admin's own projection. `/_x/jobs` draws the same overview component over the de
 ### The audit log
 
 `postgresAuditLog()` writes one row per audited write to `x_admin_audit`, in the same
-transaction as the write (`AuditLog.atomic`), and reads it back by keyset. An allowed READ is not
+transaction as the write (`AuditLog.atomic`) — a CRUD write, an action's handler, a `matching`
+set and a queued batch's enqueues alike, so an entry that cannot be written rolls the work back
+and the log holds one `failed` entry — and reads it back by keyset. An allowed READ is not
 written unless `reads: true` — a refused one always is. Sealed and `sensitive` values reach the
 table only as `[redacted]`. `memoryAuditLog()` is a ring that forgets at every restart. The
 table is applied at boot with every other framework table (`@ultimat3/cli`'s `FRAMEWORK_SCHEMA`),
@@ -406,6 +409,7 @@ shape already is, written down once so two apps do not invent two layouts. `x g 
 | A button an actor cannot press is never rendered, and the call is refused by the same decision | `action-gate.ts` |
 | Destructive operations re-confirm (`<entity>:<id>`) and are always audited | `permissions.ts`, `crud.ts` |
 | Every mutation and every denial is on the audit log, with a before/after diff | `audit.ts` |
+| An edit carries the row's version (`_version`); a row changed since the form was drawn is a 409, never overwritten. An instant posted back as drawn is left out of the patch | `row-version.ts`, `form-decode.ts` |
 | Branding aliases tokens only — `accent: '#7c3aed'` is a compile error | `theme.ts` |
 
 Reads are audited too, and on both branches: `adminDetail` keys its entry on the row,

@@ -14,18 +14,30 @@ const comparable = (value: unknown): string | number => {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;
   if (typeof value === 'boolean') return value ? 1 : 0;
-  return value === null || value === undefined ? '' : String(value);
+  return String(value);
 };
 
-/** Code-unit order, never a collation: the same set reads the same way on every machine. */
+const absent = (value: unknown): boolean => value === null || value === undefined;
+
+/**
+ * Code-unit order, never a collation: the same set reads the same way on every machine. NULL is
+ * the LARGEST value — last ascending, first descending — as the database orders a nullable sort
+ * key and as `repo-entity.ts` seeks one; it read as `''` here, which sorted it as a zero.
+ */
 const order = (a: unknown, b: unknown): number => {
+  if (absent(a) || absent(b)) return absent(a) && absent(b) ? 0 : absent(a) ? 1 : -1;
   const x = comparable(a);
   const y = comparable(b);
   return x < y ? -1 : x > y ? 1 : 0;
 };
 
-/** A cursor carries its value as text (`pagination.ts`); read back as the column's own type. */
+/**
+ * A cursor carries its value as text (`pagination.ts`), or `null` for a row that held none; read
+ * back as the type of the row it is compared with. A `null` bound stays `null` — `new Date(null)`
+ * is the epoch and `new Date('')` is NaN, and either made the page after a NULL row the wrong one.
+ */
 const boundValue = (row: AdminRow, bound: KeysetBound, field: string): unknown => {
+  if (bound.value === null) return null;
   const held = row[field];
   if (held instanceof Date) return new Date(bound.value);
   if (typeof held === 'number') return Number(bound.value);

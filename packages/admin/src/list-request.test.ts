@@ -7,6 +7,7 @@ import { isUltimateError } from '@ultimat3/core';
 import {
   boolean,
   clearRegistry,
+  date,
   entity,
   enumerated,
   integer,
@@ -17,6 +18,7 @@ import {
 import { checkedFilter } from './list-filters';
 import { CURSOR_PARAM, listHref, pageRequestOf, SCOPE_PARAM, SORT_PARAM } from './list-request';
 import { adminResource } from './resource';
+import { NO_SCOPE } from './resource-list';
 
 const owners = entity('admin_url_owners', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
@@ -215,10 +217,62 @@ describe('unit · checkedFilter, for a caller that sends typed values', () => {
   });
 });
 
+describe('unit · a typed filter value is a value of its type, strictly', () => {
+  const due = entity('admin_url_due', {
+    columns: { id: uuid().primaryKey(), dueOn: date(), at: timestamp() },
+  });
+  const dated = adminResource(due, {
+    fields: { dueOn: { filterable: true }, at: { filterable: true } },
+  });
+  const causeOf = (target: typeof resource, search: string): string => {
+    try {
+      pageRequestOf(target, new URL(`http://localhost/admin/x${search}`));
+    } catch (error) {
+      if (isUltimateError(error) && error.code === 'X_ADMIN_FILTER_INVALID') return error.cause;
+      throw error;
+    }
+    return expect.unreachable(`${search} was accepted`);
+  };
+
+  test('a number is decimal digits — not a blank, not hex, not an exponent', () => {
+    for (const typed of ['%20', '0x10', '1e3', '0b1', '1_000', 'Infinity']) {
+      expect(causeOf(resource, `?f.weight=${typed}`)).toContain('takes a number');
+    }
+    expect(ask('?f.weight=-2.5').filters).toEqual([{ field: 'weight', op: 'eq', value: -2.5 }]);
+  });
+
+  test('a date that is not on the calendar never reaches the driver', () => {
+    expect(causeOf(dated, '?f.dueOn=2026-02-30')).toContain('YYYY-MM-DD');
+    expect(causeOf(dated, '?f.dueOn=2026-13-01')).toContain('YYYY-MM-DD');
+    expect(causeOf(dated, '?f.at.gte=2026-02-30')).toContain('UTC instant');
+    expect(causeOf(dated, '?f.at.gte=2026-02-29T10:00')).toContain('UTC instant');
+    expect(causeOf(dated, '?f.at.gte=2026-04-31T10:00:00Z')).toContain('UTC instant');
+    expect(pageRequestOf(dated, url('?f.dueOn=2028-02-29')).filters).toEqual([
+      { field: 'dueOn', op: 'eq', value: '2028-02-29' },
+    ]);
+  });
+});
+
 describe('unit · listHref', () => {
   test('the bare list is base path + resource path, with no dangling `?`', () => {
     expect(listHref('/admin', resource)).toBe('/admin/tickets');
-    expect(listHref('/admin', resource, { cursor: null, scope: null })).toBe('/admin/tickets');
+    expect(listHref('/admin', resource, { cursor: null })).toBe('/admin/tickets');
+  });
+
+  test('`scope: null` is NO scope — not even the default — and the URL says so and reads back', () => {
+    // A related card reads the related list unscoped; its "all" link has to open THAT list, not
+    // the target's default tab with fewer rows than the card it came from.
+    const href = listHref('/admin', resource, { scope: null });
+    expect(href).toBe(`/admin/tickets?${SCOPE_PARAM}=${NO_SCOPE}`);
+    expect(pageRequestOf(resource, new URL(`http://localhost${href}`))).toEqual({ scope: null });
+    // Absent stays the default scope.
+    expect(pageRequestOf(resource, new URL('http://localhost/admin/tickets'))).toEqual({});
+  });
+
+  test('a scope may not be DECLARED under the reserved no-scope name', () => {
+    expect(() => adminResource(tickets, { scopes: { [NO_SCOPE]: { where: [] } } })).toThrow(
+      'X_ADMIN_FILTER_INVALID',
+    );
   });
 
   test('round trip: the URL it builds is the request that built it', () => {

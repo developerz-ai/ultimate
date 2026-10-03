@@ -2,8 +2,9 @@
 // be mounted without its guard. Every assertion here failed before `pages.ts` existed — the
 // route table had no slot for a page, and `adminRoutes()` threw on the first route it built.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
@@ -34,12 +35,15 @@ const ops: AdminCustomPage = {
   component: () => 'ops-body',
 };
 
-const app = defineAdmin({
-  entities: [post],
-  db: database({ post }, { driver: memoryDriver() }),
-  resources: { admin_page_post: { path: '/posts' } },
-  pages: [ops],
-  auth,
+let app: AdminApp;
+beforeAll(() => {
+  app = defineAdmin({
+    entities: [post],
+    db: database({ post }, { driver: memoryDriver() }),
+    resources: { admin_page_post: { path: '/posts' } },
+    pages: [ops],
+    auth,
+  });
 });
 
 const ctxFor = (granted: readonly string[]): CrudCtx =>

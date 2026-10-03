@@ -14,9 +14,11 @@ import {
   resetJobDriver,
   setJobDriver,
 } from '@ultimat3/jobs';
+import type { AdminApp } from './admin';
 import { type AdminAuthz, allowed, denied } from './authz';
 import type { BatchEnqueue } from './batch';
 import type { AdminAction, AdminRow } from './registry';
+import type { AdminResource } from './resource';
 
 const { defineAdmin } = await import('./admin');
 const { MAX_BATCH_ROWS, batchConfirmationToken, runAdminBatch } = await import('./batch');
@@ -84,22 +86,25 @@ const archive: AdminAction = {
   },
 };
 
-const admin = defineAdmin({
-  basePath: '/batch',
-  entities: [items],
-  db,
-  actions: [activate, purge, archive],
-  auth: { authz: rowRule },
+let admin: AdminApp;
+let jobs: JobDriver;
+let resource: AdminResource;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/batch',
+    entities: [items],
+    db,
+    actions: [activate, purge, archive],
+    auth: { authz: rowRule },
+  });
+  resource = admin.resource('admin_batch_items');
 });
 
 registerCatalog('en', { 'admin.admin_batch_items.title': 'Items' });
 
-const resource = admin.resource('admin_batch_items');
 const ctx = () => admin.ctx({ actor: { id: 'u-op', roles: ['ops'] }, requestId: 'batch' });
 const insert = async (title: string, state = 'idle'): Promise<string> =>
   String((await db.items.insert({ title, state })).id);
-
-let jobs: JobDriver;
 
 beforeAll(() => {
   jobs = createMemoryDriver();

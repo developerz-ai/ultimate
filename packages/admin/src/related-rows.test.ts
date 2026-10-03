@@ -20,6 +20,7 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
 import type { AdminRouteResponse } from './screen-frame';
 
@@ -68,18 +69,21 @@ const notes = entity('admin_relr_notes', {
 
 const db = database({ authors, posts, notes }, { driver: counting(memoryDriver()) });
 
-const admin = defineAdmin({
-  basePath: '/relr',
-  entities: [authors, posts, notes],
-  db,
-  resources: {
-    admin_relr_authors: { related: ['admin_relr_posts', 'admin_relr_notes'] },
-    admin_relr_posts: {
-      listFields: ['title', 'authorId', 'region'],
-      // The related list is THIS list: an EU operator sees the EU posts of an author, never all.
-      rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+let admin: AdminApp;
+beforeAll(() => {
+  admin = defineAdmin({
+    basePath: '/relr',
+    entities: [authors, posts, notes],
+    db,
+    resources: {
+      admin_relr_authors: { related: ['admin_relr_posts', 'admin_relr_notes'] },
+      admin_relr_posts: {
+        listFields: ['title', 'authorId', 'region'],
+        // The related list is THIS list: an EU operator sees the EU posts of an author, never all.
+        rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
+      },
     },
-  },
+  });
 });
 
 registerCatalog('en', {

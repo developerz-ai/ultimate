@@ -205,7 +205,8 @@
       "secret-required": "A value is required: this column is sealed and has no default.",
       "action-not-applicable": "This action does not apply to the row as it is now.",
       "row-out-of-scope": "The row this write would leave is outside the rows this account may see.",
-      "batch-not-offered": "This action does not run over a selection of rows."
+      "batch-not-offered": "This action does not run over a selection of rows.",
+      "row-changed": "Someone changed this row after you opened it. Your values are kept over the row as it is now: review them and save again."
     },
     "filter": {
       "any": "Any",
@@ -326,7 +327,8 @@
       "skipped": {
         "forbidden": "this account may not search that entity",
         "no-text-fields": "that entity has no text field to search",
-        "no-repo": "that entity has no repo bound"
+        "no-repo": "that entity has no repo bound",
+        "failed": "that entity's repo failed while searching"
       }
     },
     "value": {

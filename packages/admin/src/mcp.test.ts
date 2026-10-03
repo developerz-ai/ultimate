@@ -3,7 +3,7 @@
 // confirm the tool exists and hand an agent the whole entity list by probing. Driven through
 // the real `McpServer`, because the filter lives in the registry, not in this package.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
 import {
   clearRegistry,
@@ -15,6 +15,7 @@ import {
   uuid,
 } from '@ultimat3/entity';
 import { type JsonRpcResponse, type McpCaller, METHOD_NOT_FOUND } from '@ultimat3/mcp';
+import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
 import { adminMcp, callAdminTool } from './mcp';
@@ -56,20 +57,24 @@ const perActorAuthz: AdminAuthz = {
   },
 };
 
-const app = defineAdmin({
-  entities: [post],
-  db: database({ post }, { driver: memoryDriver() }),
-  actions: [publish],
-  auth: { actor: (): AdminActor | null => null, authz: perActorAuthz },
+let app: AdminApp;
+let mcp: ReturnType<typeof adminMcp>;
+beforeAll(() => {
+  app = defineAdmin({
+    entities: [post],
+    db: database({ post }, { driver: memoryDriver() }),
+    actions: [publish],
+    auth: { actor: (): AdminActor | null => null, authz: perActorAuthz },
+  });
+  mcp = adminMcp({
+    app,
+    actor: (): AdminActor | null => null,
+    requestId: (): string => 'req_test',
+  });
 });
 
 // ONE server for the whole file. Every "different caller, different catalog" assertion below
 // is against this same object, which is what makes it a per-connection proof.
-const mcp = adminMcp({
-  app,
-  actor: (): AdminActor | null => null,
-  requestId: (): string => 'req_test',
-});
 
 /**
  * One `McpCaller` object = one HTTP request, exactly as `transport-http.ts` builds it. Over

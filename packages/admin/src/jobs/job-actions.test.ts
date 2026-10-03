@@ -2,19 +2,25 @@
 // the queue, and "all matching" as the store's own bounded bulk verb — refused when the list it is
 // asked over is not one that verb can say.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobDriver } from '@ultimat3/jobs';
 import { actionInputFields } from '../action-input';
 import { invokeRowAction } from '../action-row';
+import type { AdminApp } from '../admin';
 import { runAdminBatch } from '../batch';
+import type { AdminResource } from '../resource';
 import { JOB_ENTITY } from './job-entities';
 import { RETRY_STEP_LABEL } from './job-labels';
 import { jobsAdmin, type Seeded, seedQueue } from './jobs-fixture';
 
-const admin = jobsAdmin('/acts');
-const runs = admin.resource(JOB_ENTITY.jobs);
-const ctx = () => admin.ctx({ actor: { id: 'u-op' }, requestId: 'acts' });
+let admin: AdminApp;
 let seeded: Seeded;
+let runs: AdminResource;
+beforeAll(() => {
+  admin = jobsAdmin('/acts');
+  runs = admin.resource(JOB_ENTITY.jobs);
+});
+const ctx = () => admin.ctx({ actor: { id: 'u-op' }, requestId: 'acts' });
 
 beforeEach(async () => {
   seeded = await seedQueue();
@@ -38,7 +44,6 @@ const run = (resource: string, name: string, id: string, input = {}) =>
     input,
     confirmation: `${resource}:${id}`,
   });
-
 describe('one row', () => {
   test('run-now makes a delayed job due; cancel stops a live one; remove deletes a finished one', async () => {
     expect((await run(JOB_ENTITY.jobs, 'job.run-now', seeded.ids.delayed)).ok).toBe(true);

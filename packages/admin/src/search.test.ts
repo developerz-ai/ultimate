@@ -4,6 +4,7 @@
 // tell this loop from an N+1 nobody argued for.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { expectedQueryLoopReason } from '@ultimat3/db';
 import { clearRegistry, entity, enumerated, newId, text, uuid } from '@ultimat3/entity';
 import { defineAdmin } from './admin';
@@ -302,5 +303,36 @@ describe('adminSearch · a per-resource limit that is not a number is not a limi
     });
     expect(found.hits.length).toBe(1);
     expect(seen).toEqual([1]);
+  });
+});
+
+describe('adminSearch when one resource’s repo throws', () => {
+  test('that resource is listed under skipped, and every other one still answers', async () => {
+    const broken: AdminRepo<AdminRow> = {
+      ...repoOver(new Map()),
+      list: async () => {
+        // A foreign failure handed to the code under test is input, not a verdict.
+        throw new UltimateError({ code: 'X_ADMIN_INVALID', cause: 'repo down', fix: 'x doctor' });
+      },
+    };
+    const notes = entity('admin_search_note', {
+      columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
+    });
+    const found = await adminSearch({
+      term: 'First',
+      resources: [
+        adminResource(posts, { repo: broken }),
+        adminResource(notes, { repo: repoOver(new Map([[POST_ID, row()]])) }),
+      ],
+      ctx: {
+        ...ctx(),
+        authz: staticAuthz([...GRANTS, 'admin_search_note:read']),
+      },
+    });
+    expect(found.skipped).toEqual([
+      { entity: 'admin_search_post', reason: 'admin.search.skipped.failed' },
+    ]);
+    expect(found.searched).toEqual(['admin_search_note']);
+    expect(found.hits.map((hit) => hit.entity)).toEqual(['admin_search_note']);
   });
 });

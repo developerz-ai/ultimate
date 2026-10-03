@@ -104,7 +104,6 @@ export {
   type AdminBatchInput,
   type AdminBatchResult,
   BATCH_NOT_OFFERED_REASON,
-  BATCH_QUEUED_REASON,
   type BatchEnqueue,
   type BatchRow,
   type BatchRowOutcome,
@@ -124,7 +123,9 @@ export {
   batchEnqueue,
 } from './batch-job';
 export { BATCH_MATCHING_REASON, matchingConfirmationToken } from './batch-matching';
+export { BATCH_QUEUED_REASON } from './batch-queue';
 export {
+  type AdminUpdateOptions,
   adminCreate,
   adminDestroy,
   adminDetail,
@@ -381,6 +382,7 @@ export {
   adminRoutes,
 } from './routes';
 export { ROW_OUT_OF_SCOPE_REASON } from './row-scope-write';
+export { ROW_CHANGED_REASON, rowVersion, VERSION_FIELD } from './row-version';
 export {
   type AdminRouteRequest,
   type AdminRouteResponse,

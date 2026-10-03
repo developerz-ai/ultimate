@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AdminField } from './fields';
-import { currencyFieldOf, decodeForm, posted } from './form-decode';
+import { currencyFieldOf, datetimeInputValue, decodeForm, posted } from './form-decode';
 import type { AdminResource } from './resource';
 
 const field = (over: Partial<AdminField>): AdminField => ({
@@ -128,5 +128,46 @@ describe('unit · decodeForm, per widget', () => {
     const token = field({ name: 'token', widget: 'secret-input', type: 'secret' });
     expect(decodeForm(resourceOf([], [token]), { token: 's3cret' })).toEqual({ token: 's3cret' });
     expect(decodeForm(resourceOf([], [token]), {})).toEqual({ token: '' });
+  });
+});
+
+describe('unit · decodeForm against the row the edit form rendered', () => {
+  const published = field({
+    name: 'publishedAt',
+    type: 'timestamptz',
+    widget: 'datetime',
+    required: false,
+  });
+  const resource = resourceOf([field({}), published]);
+  const before = { title: 'Old', publishedAt: new Date('2026-03-01T10:20:45.123Z') };
+
+  test('a datetime posted back as it was RENDERED is left out — its seconds are not lost', () => {
+    // `datetime-local` carries minutes; the stored instant has seconds and milliseconds.
+    const rendered = datetimeInputValue('2026-03-01T10:20:45.123Z', 'instant');
+    expect(rendered).toBe('2026-03-01T10:20');
+    const input = decodeForm(resource, { title: 'New', publishedAt: rendered }, before);
+    expect(input).toEqual({ title: 'New' });
+    expect(Object.hasOwn(input, 'publishedAt')).toBe(false);
+  });
+
+  test('a datetime the operator CHANGED is written, at the minute they typed', () => {
+    const input = decodeForm(resource, { title: 'Old', publishedAt: '2026-03-01T11:00' }, before);
+    expect(input['publishedAt']).toEqual(new Date('2026-03-01T11:00:00.000Z'));
+  });
+
+  test('a cleared datetime is null, and a datetime the row never held is decoded as typed', () => {
+    expect(
+      decodeForm(resource, { title: 'Old', publishedAt: '' }, before)['publishedAt'],
+    ).toBeNull();
+    const empty = { title: 'Old', publishedAt: null };
+    expect(
+      decodeForm(resource, { title: 'Old', publishedAt: '2026-03-01T10:20' }, empty)['publishedAt'],
+    ).toEqual(new Date('2026-03-01T10:20:00.000Z'));
+  });
+
+  test('a calendar date carries every digit it has, so it is never left out', () => {
+    const due = field({ name: 'due', type: 'date', widget: 'datetime', required: false });
+    const input = decodeForm(resourceOf([due]), { due: '2026-03-01' }, { due: '2026-03-01' });
+    expect(input['due']).toBe('2026-03-01');
   });
 });

@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 70
-current_focus: "PR 11 — admin, scraping, testing (11-admin-scraping-testing.md)"
+percent: 76
+current_focus: "PR 12 — cli (12-cli.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -59,8 +59,9 @@ slices:
     evidence: "PR 10b (ai): every ai row fixed, none dropped. Tool results hide a 5xx cause by the same verdict as MCP and the problem document; gateway budgets hold for hive members, per actor and per org, under concurrency (BudgetStore.take required, the root turnstile deleted; counters written only for a declared ceiling). fnv1a replaced by core fingerprint; non-object outputs wrapped; parseJsonish linear; unscoped vector reads in an org request refused (X_VECTOR_UNSCOPED). Carried: a BudgetStore conformance helper in @ultimat3/testing (testing PR). PR 10a (schema, http, mcp, mail, notify, manifest): every row fixed, none dropped. Found beyond the plan: the http pipeline let a correct credential through from an address that had spent its failed-credential allowance (now refused before authenticate, through a new read-only RateLimitStore.peek so a signed-in request writes nothing); the MCP mounts never passed the client address to the meter. Mail rides the caller's transaction; notify digests gain a Postgres store and an x.purge sweep. Carried to the scripts PR: a guard that refuses a prose fix: (X_MANIFEST_FACT_INVALID and siblings in manifest/errors.ts); an Upgrading-row vs CHANGELOG one-to-one check; the one-enqueue guard (slice 13). 10b is ai."
   - file: 11-admin-scraping-testing.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 11b (admin): every admin row fixed, none dropped. Keyset paging seeks on (sort, id) with NULLs ordered and millisecond ties re-read, proven on memory and Postgres; an untouched datetime is left out of the patch; edits carry a _version and a stale one answers 409; an action, a set-based matching call and a queued batch commit with their audit entry; audit screens tenant-scoped; batchId derived from content; create/update decided on the written values; dev panels catch only DevSourceUnavailableError; readOnlySql runner over readOnlyQuery. Module-scope defineAdmin moved into beforeAll, so bun test ./packages/admin ./packages/query passes in one process (165 failures before). Two missing catalog keys (admin.error.row-changed, admin.search.skipped.failed) found by the docs pass and added. PR 11a (testing, scraping, #634): every row fixed; one half-row dropped (pooled advisory unlock does not reproduce). Testing: per-mount island scratch dirs, entity decoding, template drop+clone inside the lock (reproduced live), jobDriverConformance and budgetStoreConformance, island-state-mount ordered by signals. Scraping: caller args cannot displace the proxy, new targets screened at browser level (reproduced on Chrome 150), robots redirects screened per hop, wildcard hosts resolved and pinned, encoded-spelling redaction, versioned sessions. Carried: x dev wiring readOnlySql and the can()-literal provenance check (cli, slice 12); a guard that every admin t() key resolves in the catalog (scripts); WebSocket handshakes and browser-side DNS uninterceptable over CDP (Known-Gaps row)."
   - file: 12-cli.md
     tier: 5
     status: not_started

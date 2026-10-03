@@ -166,7 +166,8 @@ export interface AdminSort {
 
 export interface KeysetBound {
   readonly field: string;
-  readonly value: string;
+  /** The boundary row's sort value as text; `null` when it holds none, which sorts LAST. */
+  readonly value: string | null;
   readonly id: string;
 }
 

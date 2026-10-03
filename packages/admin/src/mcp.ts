@@ -234,6 +234,10 @@ function crudResult(result: CrudResult<AdminRow>): AdminToolResult {
   if (result.kind === 'missing') {
     return { ok: false, error: 'X_ADMIN_INVALID', reason: 'no row has that id' };
   }
+  // Reached only by a caller that sent a version; the update tool sends none.
+  if (result.kind === 'stale') {
+    return { ok: false, error: 'X_ADMIN_INVALID', reason: 'the row changed since it was read' };
+  }
   return invalidIssues(result.issues);
 }
 
