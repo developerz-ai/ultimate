@@ -37,10 +37,9 @@ import { declareDevEnvironment } from './dev-environment';
 import { loadCodeFixes } from './error-fixes';
 import { BadFlagError, CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
-import { execOutput } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
-import { parseBunTest } from './mcp-test-output';
+import { testRunOf } from './mcp-test-run';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
@@ -271,7 +270,8 @@ function capabilities(
         cwd: root,
         ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
       });
-      return parseBunTest(execOutput(result), result.durationMs);
+      // The whole result, exit code included: `0 fail` beside `1 error` is a red run.
+      return testRunOf(result);
     },
 
     async tailLogs(lines: number, role: string | undefined) {

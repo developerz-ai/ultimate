@@ -178,7 +178,7 @@ describe('unit · x mcp serve --transport http', () => {
     // socket and the host's lazy services back, and only the stop handle can.
     const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
     // Port 0: the kernel picks one, so this never collides with a running `x mcp serve`.
-    server = startMcpHttp(host, 0);
+    server = await startMcpHttp(host, 0);
     data = server.result.data as unknown as ServeData;
   });
 
@@ -268,7 +268,7 @@ describe('unit · x mcp serve --transport stdio leaves stdout to the protocol', 
 
   test('the http transport keeps stdout: its url and token ARE the answer', async () => {
     const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
-    const served = startMcpHttp(host, 0);
+    const served = await startMcpHttp(host, 0);
     try {
       expect(served.result.stream).toBeUndefined();
     } finally {
@@ -283,7 +283,7 @@ describe('unit · x mcp serve --transport stdio leaves stdout to the protocol', 
 describe('unit · x mcp serve --transport http meters failed tokens per address', () => {
   test('past MCP_UNAUTHENTICATED_LIMIT the minted token from that address is 429', async () => {
     const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
-    const served = startMcpHttp(host, 0);
+    const served = await startMcpHttp(host, 0);
     const { url, token } = served.result.data as unknown as ServeData;
     const rpc = (bearer: string): Promise<Response> =>
       fetch(url, {
@@ -300,6 +300,40 @@ describe('unit · x mcp serve --transport http meters failed tokens per address'
       expect(((await refused.json()) as { code: string }).code).toBe('X_MCP_RATE_LIMITED');
     } finally {
       await served.stop();
+    }
+  }, 180_000);
+});
+
+// A taken port surfaced as `X_CLI_UNEXPECTED` with `fix: x doctor --json`, and left the host's
+// lazily booted services open. The default 9229 is also the Node/Bun inspector's port, so this is
+// the collision an agent meets first.
+describe('unit · x mcp serve --transport http on a taken port', () => {
+  test('is X_PORT_IN_USE with a port to try, and the host is closed', async () => {
+    // `localhost` is two addresses: a holder on one family left the other free, so the host bound
+    // it and nothing was refused (CI, 2026-10-03). `::` holds the port on both on Linux.
+    const holder = Bun.serve({ port: 0, hostname: '::', fetch: () => new Response('') });
+    const taken = holder.port ?? expect.unreachable('Bun.serve bound no port');
+    const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
+    let closed = false;
+    const spied = {
+      ...host,
+      close: async (): Promise<void> => {
+        closed = true;
+        await host.close();
+      },
+    };
+    try {
+      const thrown: unknown = await startMcpHttp(spied, taken).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeUltimateError('X_PORT_IN_USE');
+      expect((thrown as UltimateError).fix).toStartWith('x mcp serve --transport http --port ');
+      expect((thrown as UltimateError).fix).not.toContain(`--port ${String(taken)} `);
+      expect(closed).toBe(true);
+    } finally {
+      await holder.stop(true);
+      if (!closed) await host.close();
     }
   }, 180_000);
 });

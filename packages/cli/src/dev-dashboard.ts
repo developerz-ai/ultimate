@@ -1,6 +1,6 @@
 // Mounting `@ultimat3/admin`'s `/_x` dashboard in the `x dev` process. The CLI contributes only
-// what no registry holds — a SQL runner on the live dev database, the caught outbox, the committed
-// manifest, and two panels of process facts — and projects the dashboard onto HTTP routes.
+// what no registry holds — the live dev database, the caught outbox, the committed manifest, and
+// two panels of process facts — and projects the dashboard onto HTTP routes behind a Host check.
 // A panel implemented here instead of in `admin` would be the second copy this seam exists to ban.
 
 import type {
@@ -14,7 +14,13 @@ import type {
   SqlResult,
   StatementLoopFact,
 } from '@ultimat3/admin/dev';
-import { DEV_BASE_PATH, DEV_PANELS, defaultDevSources, devDashboard } from '@ultimat3/admin/dev';
+import {
+  DEV_BASE_PATH,
+  DEV_PANELS,
+  defaultDevSources,
+  devDashboard,
+  readOnlySql,
+} from '@ultimat3/admin/dev';
 import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
@@ -24,6 +30,7 @@ import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';
 import { appManifest, readAppManifest } from './app-manifest';
 import { appBoundaryFindings } from './boundary-findings';
+import { assertSameOrigin, hostRefusal, SQL_BODY, sqlOnGet } from './dev-dashboard-guard';
 import type { StatementLedger } from './dev-n-plus-one';
 import { devPolicyMatrix } from './dev-policy';
 import type { TraceRecorder } from './dev-traces';
@@ -51,24 +58,6 @@ export interface DevDashboardInput {
   readonly traces?: TraceRecorder | undefined;
   /** The statement shapes this process counted. Absent when `x dev` did not install the observer. */
   readonly statements?: StatementLedger | undefined;
-}
-
-/**
- * Read-only is already enforced by `assertReadOnly` inside `dbPanel`, before `runSql` is ever
- * reached. A second gate here would be a second authz: two places to update when what the panel
- * allows changes, and one of them would eventually disagree.
- */
-async function runSql(input: DevDashboardInput, sql: string): Promise<SqlResult> {
-  const started = performance.now();
-  const rows = await input.runtime.db.query<Readonly<Record<string, unknown>>>({
-    text: sql,
-    values: [],
-  });
-  const elapsedMs = Math.round(performance.now() - started);
-  // Columns come from the first row because the driver returns objects, not a described result
-  // set; no rows means no columns to name, which the panel renders as an empty grid.
-  const columns = Object.keys(rows[0] ?? {});
-  return { columns, rows: rows.map((row) => columns.map((column) => row[column])), elapsedMs };
 }
 
 /** `MailMessage.locale` is non-optional in `@ultimat3/mail`, so the panel never has to guess. */
@@ -137,9 +126,13 @@ export function devSources(input: DevDashboardInput): DevSources {
   // the messages are at the provider, so the hook is omitted rather than answered with `[]` —
   // an empty outbox claims nobody was mailed, which is a different and unearned answer.
   const outbox = isMemoryDriver(input.runtime.mail) ? input.runtime.mail : undefined;
+  // `dbPanel`'s `assertReadOnly` is the parse guard; `readOnlySql` is the server saying no — its own
+  // `BEGIN READ ONLY` that always rolls back, a statement timeout and a row ceiling. The plain
+  // `db.query` it replaces ran whatever the guard let through with the app's own credentials.
+  const runSql = readOnlySql(input.runtime.db);
   return defaultDevSources({
     hooks: {
-      runSql: (sql: string): Promise<SqlResult> => runSql(input, sql),
+      runSql: (sql: string): Promise<SqlResult> => runSql(sql),
       ...(outbox === undefined
         ? {}
         : { mail: (): Promise<readonly MailFact[]> => Promise.resolve(mailFacts(outbox)) }),
@@ -222,8 +215,13 @@ const notClaimed = (path: string): Response =>
     { status: 404 },
   );
 
-const devRoute = (path: string, name: string, handler: Route['handler']): Route => ({
-  method: 'GET',
+const devRoute = (
+  path: string,
+  name: string,
+  handler: Route['handler'],
+  method: 'GET' | 'POST' = 'GET',
+): Route => ({
+  method,
   path,
   // Public: /_x exists to be read without credentials by whatever drives the dev loop, and
   // `devDashboard` refuses to construct at all outside development.
@@ -232,9 +230,10 @@ const devRoute = (path: string, name: string, handler: Route['handler']): Route 
 });
 
 /**
- * One route for the base path plus one per panel, because the router matches exact paths. The
- * dashboard is built once — its sources close over this process, and rebuilding per request would
- * re-run `assertDevOnly` on every hit for no new answer.
+ * One route for the base path plus one per panel, because the router matches exact paths, and a
+ * `POST` for the SQL panel — the only `/_x` read that runs something. The dashboard is built once
+ * — its sources close over this process, and rebuilding per request would re-run `assertDevOnly`
+ * on every hit for no new answer. Every route answers this machine's Host only.
  */
 export function devDashboardRoutes(input: DevDashboardInput): readonly Route[] {
   const panels = devPanels(input);
@@ -245,13 +244,36 @@ export function devDashboardRoutes(input: DevDashboardInput): readonly Route[] {
     ...(input.env === undefined ? {} : { env: input.env }),
   });
 
-  const handler = async (request: UltimateRequest): Promise<Response> =>
-    (await dashboard.handle(request.raw)) ?? notClaimed(request.pathname);
+  const sqlPath = `${DEV_BASE_PATH}/db`;
+  const handler = async (request: UltimateRequest): Promise<Response> => {
+    const devUrl = input.status().url;
+    const refused = hostRefusal(request, devUrl);
+    if (refused !== undefined) return refused;
+    if (request.pathname === sqlPath && request.url.searchParams.has('sql')) throw sqlOnGet(devUrl);
+    return (await dashboard.handle(request.raw)) ?? notClaimed(request.pathname);
+  };
+  // The statement moves from the body onto the panel's own parameter, server side: `dbPanel`
+  // reads `sql` off the query, and this is the one caller allowed to put it there.
+  const runStatement = async (request: UltimateRequest): Promise<Response> => {
+    const refused = hostRefusal(request, input.status().url);
+    if (refused !== undefined) return refused;
+    assertSameOrigin(request);
+    const { sql } = await request.body(SQL_BODY);
+    const target = new URL(request.url);
+    target.searchParams.set('sql', sql);
+    // A GET carries no body, so the body's own headers stay behind; `accept` and the rest ride.
+    const headers = new Headers(request.headers);
+    headers.delete('content-type');
+    headers.delete('content-length');
+    const forwarded = new Request(target, { headers });
+    return (await dashboard.handle(forwarded)) ?? notClaimed(request.pathname);
+  };
 
   return [
     devRoute(DEV_BASE_PATH, 'dev._x', handler),
     ...panels.map((panel) =>
       devRoute(`${DEV_BASE_PATH}/${panel.key}`, `dev._x.${panel.key}`, handler),
     ),
+    devRoute(sqlPath, 'dev._x.db.run', runStatement, 'POST'),
   ];
 }

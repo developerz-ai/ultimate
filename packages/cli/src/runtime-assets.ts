@@ -29,6 +29,7 @@ import {
 } from './runtime-storage';
 import { siteAssetRoutes } from './site-asset-routes';
 import { siteAssetTable } from './site-assets';
+import { storedObjectHeaders } from './stored-object-headers';
 
 /**
  * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.
@@ -73,7 +74,9 @@ const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint)
     // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
     // `SharedArrayBuffer`, which `Response` does not accept, and copying is what makes that true
     // by construction rather than by a cast that would only silence it.
-    new Response(new Uint8Array(bytes), { headers: { 'content-type': contentType } }),
+    new Response(new Uint8Array(bytes), {
+      headers: { 'content-type': contentType, ...storedObjectHeaders(contentType) },
+    }),
     cache,
   );
 

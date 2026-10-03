@@ -44,7 +44,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 |---|---|
 | `verify-checks.ts` / `verify-step.ts` / `verify-run.ts` | the step list, the outcome shape, the run order (`BESIDE_SERIAL_SUITES`) |
 | `verify-floor.ts` | `x.verify.json`: a floor step that ran zero tests is `X_VERIFY_SUITE_VANISHED` |
-| `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree. The suite runs as fixed slices, one plain `bun test` each — never `--parallel --coverage`, whose merge moves with the core count. `coverage-lcov.ts` is the ONE lcov reader; `scripts/coverage-gate.ts` reads through it. A shard defers to `verify-merge.ts` (`coverageRiders`); `doctor-coverage.ts` lists the excludes |
+| `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree. The suite runs as fixed slices, one plain `bun test` each — never `--parallel --coverage`, whose merge moves with the core count. `coverage-lcov.ts` is the ONE lcov reader; `scripts/coverage-gate.ts` reads through it. A shard defers to `verify-merge.ts` (`coverageRiders`), which also holds the shards' `files` to a partition of the corpus they hashed and reads each part step through `verify-part-step.ts`; `doctor-coverage.ts` lists the excludes |
 | `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`: its children carry `ULTIMATE_VERIFY_STEP` and are killed by that tag; the finding names the test file `bun test` had not finished (`at`, `meta.inFlight`) and its `fix:` runs that file; `--json` streams a line per finished step to stderr. A `fix:` names `ctx.command` — `bun run verify` at the framework root |
 | `load-findings.ts` | module-load failures are reported once, by `manifest`; other steps point there |
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` | surface + layer rules; a finding's `fix:` is the concrete cut |
@@ -89,11 +89,15 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `cmd-dev.ts` / `dev-route-table.ts` | `x dev`: every role in one process, `/_x`, the watcher |
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `realtime.transport` / `urlEnv` |
 | `runtime-queue.ts` / `runtime-services.ts` | the db + queue pair; everything else and every ambient accessor |
+| `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables: `ROLE=migrate`, `x dev` and every CLI command APPLY them in one transaction behind `MIGRATION_LOCK_KEY` (`pg_advisory_xact_lock`) with a bounded `lock_timeout`, then stamp the build on `x_jobs`' table comment; a serving role on an external database runs no DDL and VERIFIES the stamp (`X_FRAMEWORK_SCHEMA_UNAPPLIED`, a major skew is a warning). A comment, never a table: a new framework table moves every app's schema dump |
+| `runtime-isr.ts` | the ISR controller both boots serve through, ATTACHED to `invalidateTags` and released on stop (`attachedIsr`); `appRoutes` without one builds and attaches its own |
+| `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings an operator can act on: unsealed MFA secrets (web role, `x auth seal-mfa`), a per-process idempotency store after the app loaded |
 | `runtime-jobs.ts` / `runtime-realtime.ts` / `runtime-notify-retention.ts` / `runtime-cache.ts` / `runtime-purge.ts` / `runtime-replica.ts` | `app.config.ts` sections the boot obeys, and what each wires |
 | `role-start.ts` / `role-start-types.ts` / `role-realtime.ts` | `--role` selection and start/stop for `web`, `sync`, `worker`, `scheduler`; `realtime.enabled: false` drops `sync` and `replicator` |
 | `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
 | `runtime-render.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages, `/icons` + `/media`, `/_storage`, authz, the app's API — plus its bearer mounts (`apiMountRoutes`) and pages' bound `POST`s (`pagePostRoutes`), mounted by BOTH boots |
+| `stored-object-headers.ts` | how `/_storage` and `/media` present a stored object: inline only for raster images, audio and video; every other type (`text/html`, SVG, XML, PDF) is `content-disposition: attachment` with a `sandbox` CSP, which http's security stage keeps beside the app's |
 | `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint) |
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
@@ -103,6 +107,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `island-bundle.ts` / `island-store.ts` / `island-realtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; the image build writes a verified store the container loads |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store (`node_modules/.cache/ultimate`, never `.x/` — state, tmpfs): every role adopts its compiled stylesheets before importing the app; a boot that built an island or ran Sass logs `X_IMAGE_NOT_PREBUILT` once |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
+| `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql`. Checked in the route, never left to the app's `csrf` config |
 
 ### Build and data
 
@@ -120,7 +125,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: the one-shot that seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` (compare-and-set per row; `{ sealed, alreadySealed, skipped }`), over `startQueue`'s client, `open` injectable. `doctor-auth.ts` is the deploy-time half: unsealed secrets and retired framework tables (`RETIRED_TABLE_FIXES`, a `Map` holding a whole literal per table), asked of an external `DATABASE_URL` only |
-| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 18 tools, two transports |
+| `cmd-mcp.ts` / `mcp-host.ts` / `mcp-errors.ts` / `mcp-db-target.ts` | `x mcp serve`: 18 tools, two transports; a taken port is `X_PORT_IN_USE`. `mcp-test-run.ts` folds `bun test`'s `N errors` line and exit code into `tests.run` |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-pr.ts` / `cmd-ci.ts` | GitHub through `gh`, parsed against a schema. Not gate steps |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |

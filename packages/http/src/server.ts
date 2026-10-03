@@ -41,7 +41,7 @@ const websocketPathTaken = (path: string, answered: string): HttpError =>
   new HttpError({
     code: 'X_ROUTE_CONFLICT',
     cause: `the websocket mount claims ${path}, and ${answered} already answers it — Bun matches its native route table before \`fetch\`, so the upgrade would never reach the mount`,
-    fix: `x routes list --json   # then move the mount's path, or the declaration at ${path}`,
+    fix: `x routes --json   # then move the mount's path, or the declaration at ${path}`,
   });
 
 /** Core owns the state machine; this alias exists so callers need one import. */

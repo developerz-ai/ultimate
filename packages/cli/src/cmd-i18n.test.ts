@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 // why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and
 // none for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the
 // joined path, but only `node:path` can build one.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -32,9 +32,16 @@ let root = '';
  * Both catalogs nest a `nav` branch, `es` with only one of its two leaves: a catalog whose leaves
  * were all top-level would pass every assertion below even if the merge went shallow.
  */
-async function seedApp(): Promise<string> {
+async function seedApp(options: { readonly linked?: boolean } = {}): Promise<string> {
   root = mkdtempSync(join(tmpdir(), 'x-i18n-cmd-'));
   await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  // The one dependency the app's i18n module imports, linked to this checkout's own copy (one
+  // realpath, so one registry): without it the module cannot load, and `add`/`sync` answer with
+  // that load finding — which is a failure, and is the subject of exactly one test below.
+  if (options.linked !== false) {
+    mkdirSync(join(root, 'node_modules/@ultimat3'), { recursive: true });
+    symlinkSync(join(import.meta.dir, '../../i18n'), join(root, 'node_modules/@ultimat3/i18n'));
+  }
   await Bun.write(join(root, 'app/page.ts'), "t('greeting'); t('farewell');\n");
   await Bun.write(
     join(root, 'packages/i18n/catalogs/en.json'),
@@ -185,7 +192,7 @@ describe('unit · x i18n check', () => {
   });
 
   test('a complete catalog that no module registered fails, where both guards were green', async () => {
-    const appRoot = await seedApp();
+    const appRoot = await seedApp({ linked: false });
     await Bun.write(
       join(appRoot, 'packages/i18n/catalogs/es.json'),
       `${JSON.stringify({ greeting: 'Hola', farewell: 'Adios' }, null, 2)}\n`,
@@ -402,6 +409,11 @@ describe('unit · x i18n add', () => {
   test('an app with no catalogs directory yet gets one — open() creates no parent', async () => {
     const appRoot = await seedApp();
     rmSync(join(appRoot, 'packages/i18n/catalogs'), { recursive: true, force: true });
+    // An app with no catalogs has an index importing none: the seeded one names `en.json` and
+    // `es.json`, and an index importing files that are not there is a load failure of its own.
+    rmSync(join(appRoot, 'packages/i18n/src/index.ts'));
+    // And one module for the scan to import, or the app reads as `X_APP_EMPTY`.
+    await Bun.write(join(appRoot, 'apps/web/shared/app-name.ts'), "export const NAME = 'i18n';\n");
 
     const result = await i18nCommand.run(contextFor(appRoot, ['add', 'fr']));
 
@@ -412,16 +424,20 @@ describe('unit · x i18n add', () => {
     expect(await Bun.file(join(appRoot, 'packages/i18n/catalogs/fr.json')).text()).toBe('{}\n');
   });
 
-  test('an i18n module that will not import is surfaced as a finding, not a silent fallback', async () => {
-    const appRoot = await seedApp();
-    const result = await i18nCommand.run(contextFor(appRoot, ['add', 'fr']));
+  test('an i18n module that will not import fails add and sync, the file written all the same', async () => {
+    const appRoot = await seedApp({ linked: false });
+    const added = await i18nCommand.run(contextFor(appRoot, ['add', 'fr']));
 
-    // The fixture lives in /tmp, where `@ultimat3/i18n` does not resolve — so the app's own
-    // `defineCatalogs({ default: 'en' })` never runs and `from` above is the framework's own `en`
-    // standing in for it. The write succeeded, so `ok` stays true; the finding is what says why the
-    // seed locale came from the framework rather than from the app.
-    expect(result.ok).toBe(true);
-    expect(result.findings?.map((finding) => finding.at)).toContain('packages/i18n/src/index.ts');
+    // `@ultimat3/i18n` does not resolve here, so the app's own `defineCatalogs({ default: 'en' })`
+    // never runs and `from` is the framework's `en` standing in for it. The catalog is on disk,
+    // and the run is still red: a green exit over a finding is a gate nobody can read.
+    expect(added.ok).toBe(false);
+    expect(added.findings?.map((finding) => finding.at)).toContain('packages/i18n/src/index.ts');
+    expect(await Bun.file(join(appRoot, 'packages/i18n/catalogs/fr.json')).exists()).toBe(true);
+
+    const synced = await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
+    expect(synced.ok).toBe(false);
+    expect(synced.findings?.map((finding) => finding.at)).toContain('packages/i18n/src/index.ts');
   });
 
   // Same code as a bad flag, so the cause is what separates them: `--locale on "x i18n"` is what

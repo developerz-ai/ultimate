@@ -5,6 +5,8 @@
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { parseBunTest } from './mcp-test-output';
+// One reader of bun's `N errors` line, shared with MCP `tests.run` — never a second regex.
+import { errorsIn } from './mcp-test-run';
 
 export interface TestCounts {
   /** Tests that executed — passed plus failed. A failed test is a test that ran. */
@@ -19,12 +21,6 @@ export interface TestCounts {
    */
   readonly errors?: number;
 }
-
-/** Bun's own `N error` / `N errors` summary line: the last one, as `parseBunTest` reads the rest. */
-const errorsIn = (output: string): number => {
-  const last = [...output.matchAll(/^\s*(\d+)\s+errors?\s*$/gm)].at(-1);
-  return last === undefined ? 0 : Number.parseInt(last[1] ?? '0', 10);
-};
 
 /**
  * Summed across every process the step spawned, because a step is one line in the gate whether it

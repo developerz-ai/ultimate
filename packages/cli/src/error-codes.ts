@@ -222,6 +222,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ADMIN_UNSCANNED',
   'X_FRAMEWORK_TABLE_ORPHANED',
   'X_BUILD_OUT_UNSAFE',
+  'X_FRAMEWORK_SCHEMA_UNAPPLIED',
+  'X_APP_URL_PORT_MISMATCH',
+  'X_DEV_HOST_REFUSED',
+  'X_TRUSTED_PROXY_HOPS_INVALID',
   'X_PERMISSION_BORROWED',
 ] as const;
 
@@ -398,6 +402,12 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_FRAMEWORK_TABLE_ORPHANED:
     'a framework table no release reads any more is still in the database',
   X_BUILD_OUT_UNSAFE: 'the static export directory is not one a build may empty',
+  X_FRAMEWORK_SCHEMA_UNAPPLIED:
+    'a serving role booted over a database whose framework schema this build never applied',
+  X_APP_URL_PORT_MISMATCH: 'APP_URL names a loopback port x dev does not serve',
+  X_DEV_HOST_REFUSED: 'a /_x request named a host that is not this machine',
+  X_TRUSTED_PROXY_HOPS_INVALID:
+    'TRUSTED_PROXY_HOPS is not a whole number of proxies the boot accepts',
   X_PERMISSION_BORROWED: 'an app rule requires a permission only an imported package declared',
 };
 

@@ -42,22 +42,25 @@ export const containerBinding = (env: Env, hostname?: string): WebBinding => ({
 /**
  * `ROLE` is the one knob one image exposes. Validated rather than defaulted: a typo that fell back
  * to `web` would start a process that serves nothing the operator asked for and reports healthy.
+ * Empty or blank is unset, read the way `PORT` and `HOST` are — not a role name nobody typed.
  */
 export function roleFromEnv(env: Env): Role {
-  const raw = env['ROLE'] ?? 'web';
-  if (!isRole(raw)) throw new RoleUnknownError({ role: raw, known: ROLES });
-  return raw;
+  const raw = env['ROLE']?.trim();
+  const role = raw === undefined || raw.length === 0 ? 'web' : raw;
+  if (!isRole(role)) throw new RoleUnknownError({ role, known: ROLES });
+  return role;
 }
 
 /**
- * `Number.parseInt` would read `80abc` as 80, so the whole string has to be a port — a
- * partially-parsed port is a deploy that binds somewhere nobody asked for.
+ * `Number.parseInt` would read `80abc` as 80, and `Number` reads `0x1F90` as 8080 and `8e3` as
+ * 8000, so the whole string has to be decimal digits — a port spelled any other way is a deploy
+ * that binds somewhere nobody wrote down.
  */
 function portValue(env: Env, name: string, fallback: number): number {
   const raw = env[name];
   if (raw === undefined || raw.trim().length === 0) return fallback;
   const port = Number(raw.trim());
-  if (!Number.isInteger(port) || port < 0 || port > 65_535)
+  if (!/^\d+$/.test(raw.trim()) || !Number.isInteger(port) || port < 0 || port > 65_535)
     throw new PortInvalidError({ value: raw, name });
   return port;
 }

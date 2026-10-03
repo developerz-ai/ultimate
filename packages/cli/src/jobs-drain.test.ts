@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
 import { createMemoryDriver, createRedisDriver } from '@ultimat3/jobs';
+import { CliNotImplementedError } from './errors';
 import { drainJobs } from './jobs-drain';
 import { listJobs } from './jobs-report';
 
@@ -224,5 +225,55 @@ describe('unit · drainJobs step transfer', () => {
     expect(await target.steps.list(runId)).toEqual([]);
     expect((await source.introspect?.job(id))?.state).toBe('done');
     expect((await listJobs(target)).rows[0]?.runId).toBe(runId);
+  });
+});
+
+// The list behind the drain answered one default page (100 rows) per state: 350 ready jobs moved
+// 100, the summary said "100 left", and 250 stayed on a source the operator was retiring.
+describe('unit · the drain walks every page', () => {
+  test('350 ready jobs on the source are 350 candidates, 350 moved, none left', async () => {
+    const source = createMemoryDriver();
+    const target = createMemoryDriver();
+    for (let index = 0; index < 350; index += 1) await enqueue(source, `bulk-${index}`);
+
+    const planned = await drainJobs(source, target, true);
+    expect(planned.candidates).toHaveLength(350);
+    expect(new Set(planned.candidates.map((record) => record.id)).size).toBe(350);
+
+    const outcome = await drainJobs(source, target, false);
+    expect(outcome.moved).toHaveLength(350);
+    expect(outcome.skipped).toEqual([]);
+    expect((await listJobs(source, { state: 'ready' })).rows).toEqual([]);
+    expect((await target.stats()).reduce((sum, row) => sum + row.ready, 0)).toBe(350);
+  }, 30_000);
+});
+
+// A batch that moved SOME rows released the ones the target refused, and the next batch could
+// lease them again: the refused id landed in `failures` twice and spent budget a real candidate
+// was owed. A refused id is tried once per drain.
+describe('unit · a refused row is tried once', () => {
+  test('a partly refused batch never re-leases the refused id', async () => {
+    const source = createMemoryDriver();
+    const inner = createMemoryDriver();
+    const target: JobDriver = {
+      ...inner,
+      enqueue: (request) =>
+        request.name === 'bad'
+          ? Promise.reject(
+              new CliNotImplementedError({ feature: 'the bad job', fix: 'x jobs ls --json' }),
+            )
+          : inner.enqueue(request),
+    };
+    // Unclaimable, so the budget outlives the claimable rows — the shape that re-leased.
+    await enqueue(source, 'later', Date.now() + 3_600_000);
+    const bad = await enqueue(source, 'bad');
+    await enqueue(source, 'good');
+
+    const outcome = await drainJobs(source, target, false);
+
+    expect(outcome.failures.map((failure) => failure.id)).toEqual([bad]);
+    expect(outcome.moved.map((record) => record.name)).toEqual(['good']);
+    expect(outcome.skipped.map((skip) => skip.name)).toEqual(['later']);
+    expect((await source.introspect?.job(bad))?.state).toBe('ready');
   });
 });

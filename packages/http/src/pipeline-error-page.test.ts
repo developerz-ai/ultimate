@@ -54,7 +54,7 @@ describe('a browser, in production', () => {
     expect(body).toContain('https://www.developerz.ai');
     expect(body).toContain('X_ROUTE_NOT_FOUND');
     // The fix line is an instruction for the author, and it names the app's own route table.
-    expect(body).not.toContain('x routes list');
+    expect(body).not.toContain('x routes --json');
   });
 
   test('gets a page for a 500 that leaks nothing off the throwable', async () => {
@@ -124,7 +124,7 @@ describe('an agent, in production', () => {
     expect(response.headers.get('content-type')).toContain('application/problem+json');
     expect(await response.json()).toMatchObject({
       code: 'X_ROUTE_NOT_FOUND',
-      fix: expect.stringContaining('x routes list'),
+      fix: expect.stringContaining('x routes --json'),
     });
   });
 });

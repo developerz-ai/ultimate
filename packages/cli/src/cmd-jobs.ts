@@ -66,7 +66,18 @@ function refuseMemoryTarget(): never {
   });
 }
 
-function requireIdPositional(ctx: CommandContext, sub: string): string {
+/**
+ * A uuid in any spelling Postgres' `uuid` input accepts: canonical, upper-case, unhyphenated,
+ * braced. Every driver mints its ids with core's `uuid()`, and `x_jobs.id` is a `uuid` column.
+ */
+const JOB_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
+
+/**
+ * The id, parsed at the door — admin's `readableId` rule: an id no driver could hold is a job that
+ * does not exist, answered before a statement is sent. `x jobs show nosuch` reached Postgres and
+ * came back a raw `X_DB_STATEMENT_FAILED [22P02]` whose fix was a psql session.
+ */
+function requireIdPositional(ctx: CommandContext, sub: string, driver: JobDriver): string {
   const id = ctx.args.positionals[0];
   if (id === undefined) {
     // `--id on "x jobs"` is a flag `x jobs` does not declare; the id is a positional and says so.
@@ -76,6 +87,7 @@ function requireIdPositional(ctx: CommandContext, sub: string): string {
       example: 'x jobs ls --json',
     });
   }
+  if (!JOB_ID.test(id)) throw new JobUnknownError({ id, driver: driver.name });
   return id;
 }
 
@@ -211,7 +223,7 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
 }
 
 async function runShow(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const trace = await showJob(driver, requireIdPositional(ctx, 'show'));
+  const trace = await showJob(driver, requireIdPositional(ctx, 'show', driver));
   return {
     ok: true,
     command: 'jobs',
@@ -226,7 +238,7 @@ async function runShow(driver: JobDriver, ctx: CommandContext): Promise<CommandR
 }
 
 async function runRetry(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const id = requireIdPositional(ctx, 'retry');
+  const id = requireIdPositional(ctx, 'retry', driver);
   const trace = await retryJob(driver, id, flagString(ctx.args, 'from-step'));
   return {
     ok: true,
@@ -243,7 +255,7 @@ async function runRetry(driver: JobDriver, ctx: CommandContext): Promise<Command
  * The trace is rendered by the same projection `show` and `retry` use — one shape for one job.
  */
 async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const id = requireIdPositional(ctx, 'cancel');
+  const id = requireIdPositional(ctx, 'cancel', driver);
   const trace = await cancelJob(driver, id, flagString(ctx.args, 'reason'));
   // `cancelJob` re-reads the job after cancelling, so `undefined` would mean the row vanished
   // between the two — reported as the same refusal rather than rendered as a success with no job.
@@ -258,7 +270,7 @@ async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<Comman
 
 /** Exit 0 means the row is gone. An id nobody queued is `X_JOB_UNKNOWN`; a running one refuses. */
 async function runRm(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const id = requireIdPositional(ctx, 'rm');
+  const id = requireIdPositional(ctx, 'rm', driver);
   const removed = await removeJob(driver, id);
   if (removed === undefined) throw new JobUnknownError({ id, driver: driver.name });
   return {
@@ -270,7 +282,7 @@ async function runRm(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
 }
 
 async function runPromote(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const promoted = await promoteJob(driver, requireIdPositional(ctx, 'promote'));
+  const promoted = await promoteJob(driver, requireIdPositional(ctx, 'promote', driver));
   return {
     ok: true,
     command: 'jobs',

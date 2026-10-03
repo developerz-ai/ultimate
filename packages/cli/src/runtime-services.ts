@@ -4,7 +4,6 @@
 // boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { configureAuthLimiters, postgresAuthLimiter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
@@ -39,7 +38,7 @@ import { loadWorkerConfig, type WorkerConfig } from './runtime-jobs';
 import { loadInboxRetention } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
-import type { DevDbClient } from './runtime-queue';
+import type { DevDbClient, SchemaMode } from './runtime-queue';
 import { pgExecutorFor, startQueue } from './runtime-queue';
 import { loadRealtimeConfig } from './runtime-realtime';
 
@@ -305,6 +304,8 @@ export async function startServices(
   services: DevServices,
   env: Env,
   overrides?: RuntimeOverrides,
+  /** `'verify'` for a serving role on an external database — `runtime-queue.ts`'s `SchemaMode`. */
+  schema: SchemaMode = 'apply',
 ): Promise<RunningServices> {
   // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
   // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
@@ -318,14 +319,15 @@ export async function startServices(
   // service starts, rather than quietly keeping the in-process bus. Which transport, which KV
   // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
-  // container it stands in for. The root is `dirname(stateDir)`, as `loadCacheTiers` reads it.
-  const realtime = await loadRealtimeConfig(dirname(services.stateDir));
-  const workerConfig = await loadWorkerConfig(dirname(services.stateDir));
+  // container it stands in for. `services.root`, never `dirname(stateDir)`: `ULTIMATE_STATE_DIR`
+  // moves `.x/` (a read-only root filesystem), and its parent is then not the app.
+  const realtime = await loadRealtimeConfig(services.root);
+  const workerConfig = await loadWorkerConfig(services.root);
   const bus: TransportSelection = selectTransport(env, realtime);
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
   // reader here already uses it, so a queue that asked `process.env` would decide the standby from
   // a different answer than the middleware that routes to it.
-  const queue = await startQueue(services, overrides, env);
+  const queue = await startQueue(services, overrides, env, schema);
   const { db, jobs, outbox, events } = queue;
   // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
   // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
@@ -410,10 +412,8 @@ export async function startServices(
     // process that has stopped.
     // The ladder is the app's declaration, never the environment's. `cache.tiers` was declared,
     // validated and documented while NOTHING read it — so an app asking for one rung got four,
-    // and one asking for a shared tier got whatever `REDIS_URL` happened to say. `.x` is
-    // `resolveServices`' own join, so its parent is the app root: the one fact this function needs
-    // and does not already carry.
-    const tiers = await loadCacheTiers(dirname(services.stateDir));
+    // and one asking for a shared tier got whatever `REDIS_URL` happened to say.
+    const tiers = await loadCacheTiers(services.root);
     started.push(startCacheTiers({ env, purge, transport, tiers }));
 
     return {

@@ -92,10 +92,23 @@ describe('unit · x help --json carries what the page renders', () => {
     expect(await jsonNames('g')).toEqual(['g']);
   });
 
-  test('an unknown topic answers the whole catalogue, exactly as the page does', async () => {
-    expect(renderHelp(SPECS, 'nosuch')).toEqual(renderHelp(SPECS, undefined));
-    expect(await jsonNames('nosuch')).toEqual(await jsonNames());
-    expect((await jsonNames('nosuch')).length).toBe(SPECS.length);
+  // It answered the whole catalogue with exit 0 — `x help nosuch --json` read as "here is
+  // nosuch's usage" to an agent that never compared the names. The command it asked about does
+  // not exist, and saying so is the answer `x nosuch` itself gives.
+  test('an unknown topic is X_CLI_UNKNOWN_COMMAND, naming the nearest command', async () => {
+    const refusal = async (topic: string) =>
+      helpCommand.run(contextFor(['help', topic, '--json'])).then(
+        () => expect.unreachable(`x help ${topic} answered`),
+        (error: unknown) => error as { code?: string; fix?: string; cause?: string },
+      );
+    const unknown = await refusal('nosuch');
+    expect(unknown.code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(unknown.fix).toBe('x help');
+    expect((await refusal('doctr')).fix).toBe('x help doctor');
+    // The page refuses the same topic: two renderers, one resolution.
+    expect(() => renderHelp(SPECS, 'nosuch')).toThrow(
+      expect.objectContaining({ code: 'X_CLI_UNKNOWN_COMMAND' }),
+    );
   });
 });
 

@@ -34,7 +34,10 @@ deploy.** Slice 11 is complete: `testing`, `scraping` and `admin` — **an admin
 `_version`, and an edit with none, or with a stale one, is a 409 that writes nothing.** Slice 12a
 is `cli`'s build, generator, test-selection and policy half, with what it changed in `seo`,
 `policy` and `testing`: **the `policy` step refuses a permission only `defineAdmin()` declared, and
-the `drift` step a `REPLICA IDENTITY FULL` no migration recorded.**
+the `drift` step a `REPLICA IDENTITY FULL` no migration recorded.** Slice 12b is `cli`'s runtime
+and command half, with what it changed in `http` and the chart: **an operator step — a serving role
+no longer applies the framework schema, so `ROLE=migrate` runs before it, the first `cli (slice
+12b)` entry under Changed.**
 
 ### Added
 
@@ -251,6 +254,22 @@ Tier 1 — seo. Tier 2 — policy. Tier 5 — cli (slice 12a).
   `definePermissions()` call that declared it, as `roleDeclarationSites()` answers for roles.
   `restorePermissions(names, declaredAt)` takes it back — see Changed.
 - **cli:** `X_BUILD_OUT_UNSAFE` and `X_PERMISSION_BORROWED` — see Changed.
+
+Tier 5 — cli (slice 12b).
+
+- **cli:** `X_FRAMEWORK_SCHEMA_UNAPPLIED`, `X_TRUSTED_PROXY_HOPS_INVALID`,
+  `X_APP_URL_PORT_MISMATCH` and `X_DEV_HOST_REFUSED` — see Changed.
+- **cli:** the web role warns `X_MFA_SECRET_UNSEALED` at boot, with `fix: x auth seal-mfa --json`,
+  when any second-factor secret is still plaintext.
+- **cli:** a boot whose idempotency store is per-process warns `X_CONFIG_INVALID` with
+  `fix: configureIdempotency({ scope: 'shared' })` — one replica is correct, more each keep their
+  own record.
+- **cli:** a serving role whose build is a different major from the newest build that applied the
+  framework schema warns `ultimate framework major skew` and serves — a fleet mid-rollout or half
+  rolled back. `fix: kubectl rollout status deployment --selector app.kubernetes.io/component=web`.
+- **cli:** the metrics port answers `/healthz` and `/readyz` (`?deep=1` too) beside `/metrics` —
+  the verdict only, `{ state, ready, role }`, never a check's name. A worker, scheduler or
+  replicator process is marked ready once its roles start; nothing marked it.
 
 Tier 5 — cli.
 
@@ -1293,6 +1312,84 @@ Tier 5 — testing (slice 12a).
   test's restore keeps every permission's provenance. A hand-built snapshot is TS2741: add
   `permissionSites: permissionDeclarationSites()`, or `{}` for none.
 
+Tier 2 — http (slice 12b).
+
+- **BREAKING — a handler's own `content-security-policy` is kept, and the app's policy is added
+  beside it.** The security stage overwrote it. Both policies are sent, comma-joined, and the
+  browser enforces both, so a handler can only narrow what a page may do — a `sandbox` on an
+  uploaded file now reaches the browser. The report-only header follows the same rule; every other
+  security header is still overwritten. A handler that meant to loosen the app's policy widens it
+  through `security.csp.extend` instead.
+- **BREAKING — the `fix:` of `X_ROUTE_NOT_FOUND` and of the duplicate-route and mount-conflict
+  errors reads `x routes --json`, was `x routes list --json`.** Codes unchanged; a monitor or
+  script that matches the fix string updates it. `x routes list` is refused — see `cli`.
+
+Tier 5 — cli (slice 12b).
+
+- **BREAKING — OPERATOR ACTION: a serving role no longer applies the framework schema;
+  `ROLE=migrate` does, before it.** On an external `DATABASE_URL`, `web`, `sync`, `worker`,
+  `scheduler` and `replicator` verify that their build was applied and refuse to boot with
+  `X_FRAMEWORK_SCHEMA_UNAPPLIED` (`fix: x db migrate`) until it was; every serving pod ran the
+  framework DDL at boot. `ROLE=migrate` and `x db migrate` apply it in one transaction behind the
+  migration advisory lock, with a bounded `lock_timeout`, and stamp the build in `x_jobs`' table
+  comment; the last 16 builds are kept, so an old pod restarting mid-rollout still boots. An
+  embedded database applies its own. The shipped chart's pre-install/pre-upgrade migrate hook and
+  `docker-compose.prod.yml`'s `service_completed_successfully` already order it; a deploy that
+  starts serving pods first, or skips migrate, runs `ROLE=migrate` first.
+- **BREAKING — a malformed `TRUSTED_PROXY_HOPS` is `X_TRUSTED_PROXY_HOPS_INVALID`, was
+  `X_PORT_INVALID`.** It must be decimal digits, 1 to 64. An alert or script matching the old code
+  updates it.
+- **BREAKING — `PORT` and `METRICS_PORT` are decimal digits only.** `0x1F90`, `8e3` and `+80` are
+  `X_PORT_INVALID`; `Number` read them as 8080, 8000 and 80. A blank `ROLE` is the default `web`;
+  it was refused as a role nobody declared.
+- **BREAKING — a stored object that is not a raster image, audio or video is served as a sandboxed
+  download.** `/_storage` and `/media` add `content-disposition: attachment` and
+  `content-security-policy: sandbox` to everything but PNG, JPEG, GIF, WebP, AVIF, MP3, Ogg, WAV,
+  WebM and MP4 — an SVG, HTML, XML or PDF opened from the app's origin ran with its cookies. A link
+  that opened an uploaded PDF or SVG in a tab now downloads it; `<img>`, `<audio>` and `<video>`
+  are unaffected.
+- **BREAKING — `worker`, `scheduler` and `replicator` get no readiness grace.** On SIGTERM they stop
+  claiming at once; the grace that keeps a listener answering applied to every role. `web` and
+  `sync` keep `drain.readinessGraceMs`.
+- **BREAKING — the replicator is ready only while its replication stream runs.** The chart gives
+  it a `readinessProbe` on `/readyz` of the metrics port, and its headless metrics Services set
+  `publishNotReadyAddresses: true`, so a not-ready replicator is still scraped. While the stream is
+  down the pod reads 0/1. An alert that treats a not-ready replicator as an outage now fires then —
+  the signal intended. `docker/helm` carries it; a chart `x new` wrote before this release copies
+  both edits from `docker/helm/templates/_helpers.tpl` and `service.yaml`.
+- **BREAKING — `x help <name>` for a name no command has is `X_CLI_UNKNOWN_COMMAND`, exit 1**, with
+  the nearest name as the fix. It printed the whole catalogue and exited 0.
+- **BREAKING — `x i18n add`, `x i18n sync`, `x db seed` and `x db backfill` (`--pending`, `--all`,
+  `<name>`) exit 1 on any finding**, an app module that will not import included. Each answered
+  `ok: true` beside the findings. Fix the module the finding names.
+- **BREAKING — `x doctor` probes `PORT` when `--port` is absent, and checks `APP_URL`.** It probed
+  3000 whatever `PORT` said. A loopback `APP_URL` on another port is `X_APP_URL_PORT_MISMATCH`, one
+  that is not an http(s) origin `X_CONFIG_INVALID`; an unset or public one is not judged. The
+  exported `DoctorProbe` gains a required `appUrl: string | undefined` — TS2741 in a hand-built
+  probe.
+- **BREAKING — the `/_x` SQL panel runs a statement only on a same-origin `POST /_x/db`, and every
+  `/_x` route answers a loopback `Host` only.** `GET /_x/db?sql=` is `405 X_METHOD_NOT_ALLOWED`; a
+  cross-site POST is `X_CSRF_BLOCKED`; another `Host` is `421 X_DEV_HOST_REFUSED`. The statement
+  runs through `readOnlySql`. From a shell: `curl -sS -H 'accept: application/json' --data-urlencode
+  'sql=select 1' http://localhost:3000/_x/db`.
+- **BREAKING — `x jobs show|retry|cancel|rm|promote <id>` refuses an id that is not a uuid:
+  `X_JOB_UNKNOWN`**, before any driver call. On Postgres it was `X_DB_STATEMENT_FAILED` (`22P02`).
+- **BREAKING — `x shot --out <relative path>` resolves against the cwd**, as `x build --out` does;
+  it resolved against the app root.
+- **BREAKING — `x dev`'s `X_PORT_IN_USE` fix suggests `--port N+2`**, was `N+1`: `x dev` binds a
+  pair, and `N+1` is most often the sync role of the `x dev` already running.
+- **BREAKING — `x verify merge` reads each part's steps against their shape, and requires sharded
+  `files` to partition the corpus.** A step without a numeric `durationMs` or well-formed findings
+  is `X_VERIFY_MERGE_INPUT`; shards whose `files` repeat a file, or whose union does not hash to
+  `corpusHash`, are red. Shard every job by one rule — all with `--timings`, or none.
+- **BREAKING — MCP `tests.run` counts an error outside any test, and a non-zero exit, as a
+  failure.** A run that printed `0 fail` and `1 error` and exited 1 answered `failed: 0`.
+- **BREAKING — `x mcp serve --transport http` on a taken port is `X_PORT_IN_USE`**, with the run on
+  a neighbouring port as the fix and the host closed first; it was `X_CLI_UNEXPECTED`.
+- **BREAKING — `x routes` refuses any positional: `X_CLI_UNKNOWN_COMMAND`, fix `x routes --json`.**
+  `x routes list --json` ran with the word ignored. Use `x routes --json`, `--surface <s>` to
+  filter.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1775,6 +1872,23 @@ Reference app (slice 12a).
   each workspace's is `tsc --noEmit -p ../../tsconfig.json`; it reported 351 errors the gate never
   saw. Each workspace `tsconfig.json` drops `rootDir`, sets `composite: false` and includes the
   type extensions the app relies on, for editors.
+
+Tier 5 — cli (slice 12b).
+
+- **cli:** an ISR page served by the container's web role, by `appRoutes()` and by `x dev` is
+  marked stale by a tag bust. Each boot built its own ISR controller and never attached it as the
+  framework's revalidator, so `invalidateTags` reached no page outside the one path that did.
+- **cli:** a role's realtime, worker and cache config is read from `services.root`, not the parent
+  of the state directory — `ULTIMATE_STATE_DIR` moved `.x/` off the app for a read-only root
+  filesystem, and the config was then read from the wrong directory.
+- **cli:** a released job driver resets the event bus with it.
+- **cli:** a cache-bust subscription that fails is retried with backoff (1 s to 30 s); it stayed
+  down for the life of the process.
+- **cli:** concurrent requests for one static page share one `load`; five ran it five times.
+- **cli:** `x jobs drain` walks every page, leasing in batches of `MAX_JOB_PAGE`, and stops on a
+  batch that moved nothing; it moved the first 100 of 350.
+- **cli:** `x pr` with no `--pr` finds the branch's pull request with `gh pr view --json number`;
+  gh refused the `--repo` form it ran before any network call, so the lookup always failed.
 
 ## 23.0.0 - 2026-10-02
 

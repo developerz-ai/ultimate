@@ -14,7 +14,7 @@ import { SPECS } from './registry';
 import { thrownBy } from './thrown-by';
 import type { VerifyPart } from './verify-merge';
 import { mergeParts, parsePart } from './verify-merge';
-import { shardFiles } from './verify-shard';
+import { corpusHash, shardFiles } from './verify-shard';
 
 const DECLARED = ['lint', 'unit', 'live'];
 const FILES = ['a.test.ts', 'b.test.ts', 'c.test.ts'];
@@ -247,5 +247,71 @@ describe('unit · reading a part', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('unit · the shards partition the corpus they hashed', () => {
+  const CORPUS = ['a.test.ts', 'b.test.ts', 'c.test.ts', 'd.test.ts'];
+  /** A shard that hashed the whole corpus and ran `files` — what two shard modes can disagree on. */
+  const sliced = (index: number, files: readonly string[]) => ({
+    name: 'unit',
+    ok: true,
+    durationMs: 1,
+    skipped: false,
+    findings: [],
+    tests: { ran: Math.max(files.length, 1), skipped: 0 },
+    shard: { index, total: 2, corpusHash: corpusHash(CORPUS), files },
+  });
+  const merge = (one: readonly string[], two: readonly string[]) =>
+    mergeParts([part('u1', [sliced(1, one)]), part('u2', [sliced(2, two)])], undefined, ['unit']);
+
+  // Shard 1/2 round-robin and 2/2 with `--timings` agree on the corpus and not on the split: one
+  // file ran twice and another ran nowhere, and every per-shard check was green.
+  test('a file in no shard, or in two, is a named gap', () => {
+    const overlap = merge(['a.test.ts', 'c.test.ts'], ['a.test.ts', 'c.test.ts']);
+    expect(overlap.ok).toBe(false);
+    const causes = overlap.steps?.[0]?.findings.map((finding) => finding.cause).join('\n') ?? '';
+    // The doubled files by name; the missing ones only by count — a part carries the corpus's
+    // hash, not the corpus.
+    expect(causes).toContain('ran a.test.ts, c.test.ts in more than one shard');
+    expect(causes).toContain('ran in no shard');
+    expect(merge(['a.test.ts', 'c.test.ts'], ['b.test.ts', 'c.test.ts', 'd.test.ts']).ok).toBe(
+      false,
+    );
+  });
+
+  test('shards that ran no files at all cannot add up to a corpus', () => {
+    expect(merge([], []).ok).toBe(false);
+  });
+
+  test('an exact partition is green', () => {
+    expect(merge(['a.test.ts', 'c.test.ts'], ['b.test.ts', 'd.test.ts']).ok).toBe(true);
+  });
+});
+
+describe('unit · a part step is read against its shape, not cast', () => {
+  const doc = (step: Record<string, unknown>): string =>
+    JSON.stringify({ command: 'verify', steps: [{ name: 'lint', ok: true, ...step }], data: {} });
+
+  test('findings that are not findings, or a durationMs that is not a number, are refused', () => {
+    for (const step of [
+      { durationMs: 1, findings: [null] },
+      { durationMs: 1, findings: [{ code: 'X_LINT' }] },
+      { durationMs: 1 },
+      { durationMs: '1', findings: [] },
+      { findings: [] },
+      { durationMs: 1, findings: [], shard: { index: 1, total: 2, corpusHash: 'h' } },
+    ]) {
+      const refusal = thrownBy(() => parsePart('p.json', doc(step)));
+      expect([JSON.stringify(step), refusal.code]).toEqual([
+        JSON.stringify(step),
+        'X_VERIFY_MERGE_INPUT',
+      ]);
+    }
+  });
+
+  test('a well-formed step still reads', () => {
+    const read = parsePart('p.json', doc({ durationMs: 2, findings: [] }));
+    expect(read.steps.map((step) => step.durationMs)).toEqual([2]);
   });
 });

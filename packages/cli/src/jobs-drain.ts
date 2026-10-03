@@ -4,7 +4,7 @@
 
 import { logger, uuid } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver, JobRecord, JobState } from '@ultimat3/jobs';
-import { claimOf, inspectJobList } from '@ultimat3/jobs';
+import { claimOf, inspectJobList, jobCursor, MAX_JOB_PAGE } from '@ultimat3/jobs';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -12,10 +12,10 @@ import { findingFrom } from './output';
 const PENDING_STATES: readonly JobState[] = ['ready', 'delayed', 'suspended'];
 
 /**
- * The lease has to outlive the WHOLE transfer loop, not one record: the batch is claimed up
- * front, and a lease expiring mid-drain would hand a half-transferred job back to a source
- * worker. The snapshot is bounded by the drivers' own 100-row-per-state list cap, so this is a
- * ceiling over a few hundred sequential enqueues rather than a guess about one.
+ * The lease has to outlive the transfer of the whole BATCH it covers: a batch is claimed up front,
+ * and a lease expiring mid-batch would hand a half-transferred job back to a source worker. A
+ * batch is at most `MAX_JOB_PAGE` rows, so this is a ceiling over a couple of hundred sequential
+ * enqueues rather than a guess about however many the queue holds.
  */
 const DRAIN_LEASE_MS = 300_000;
 
@@ -54,14 +54,15 @@ export interface DrainOutcome {
  * left alone. `queues` is always explicit because the pg driver reads an empty list as
  * `['default']` rather than as "every queue".
  */
-function leaseCandidates(
+function leaseBatch(
   source: JobDriver,
   candidates: readonly JobRecord[],
+  limit: number,
 ): Promise<readonly ClaimedJob[]> {
-  if (candidates.length === 0) return Promise.resolve([]);
+  if (candidates.length === 0 || limit <= 0) return Promise.resolve([]);
   return source.claim({
     queues: [...new Set(candidates.map((record) => record.queue))],
-    limit: candidates.length,
+    limit,
     visibilityTimeoutMs: DRAIN_LEASE_MS,
     workerId: `x-jobs-drain:${uuid()}`,
     // A claim BURIES a row whose lease lapsed on its final attempt, whoever makes it — this one
@@ -81,6 +82,26 @@ function leaseCandidates(
       }
     },
   });
+}
+
+/**
+ * Every row in `state`, page by page on the keyset cursor until a short page: one page was the
+ * drivers' default 100, so a drain of 350 ready jobs moved 100 and left 250 on the source.
+ */
+async function everyRow(source: JobDriver, state: JobState): Promise<readonly JobRecord[]> {
+  const rows: JobRecord[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await inspectJobList(source, {
+      state,
+      limit: MAX_JOB_PAGE,
+      ...(after === undefined ? {} : { after }),
+    });
+    rows.push(...page);
+    const last = page.at(-1);
+    if (page.length < MAX_JOB_PAGE || last === undefined) return rows;
+    after = jobCursor(last);
+  }
 }
 
 /** Steps carry their own `runId`, so a copy lands under the same key the target job resumes on. */
@@ -130,18 +151,49 @@ export async function drainJobs(
   target: JobDriver,
   dryRun: boolean,
 ): Promise<DrainOutcome> {
-  const lists = await Promise.all(PENDING_STATES.map((state) => inspectJobList(source, { state })));
+  const lists = await Promise.all(PENDING_STATES.map((state) => everyRow(source, state)));
   const candidates = lists.flat();
   const base = { from: source.name, to: target.name, candidates };
   if (dryRun) return { ...base, dryRun: true, moved: [], skipped: [], failures: [] };
 
-  const leased = await leaseCandidates(source, candidates);
-  const held = new Set(leased.map((record) => record.id));
   const found = new Map(candidates.map((record) => [record.id, record]));
-  const skipped = candidates.filter((record) => !held.has(record.id)).map(toSkip);
-
+  const held = new Set<string>();
   const moved: JobRecord[] = [];
   const failures: DrainFailure[] = [];
+  // Batch by batch, each under its own lease, until the claims stop or the snapshot's count is
+  // spent — a claim may lease a row enqueued after the snapshot, and that row spends the budget
+  // too, so a queue that keeps filling cannot keep the drain running.
+  let budget = candidates.length;
+  while (budget > 0) {
+    const leased = await leaseBatch(source, candidates, Math.min(budget, MAX_JOB_PAGE));
+    if (leased.length === 0) break;
+    // A row the target already refused is tried once per drain: handed straight back, spending
+    // no budget and adding no second failure for the same id.
+    const refused = new Set(failures.map((failure) => failure.id));
+    const fresh = leased.filter((record) => !refused.has(record.id));
+    for (const record of leased) if (refused.has(record.id)) await releaseLease(source, record);
+    if (fresh.length === 0) break;
+    budget -= fresh.length;
+    for (const record of fresh) held.add(record.id);
+    const before = moved.length;
+    await transfer(source, target, fresh, found, moved, failures);
+    // A batch that moved nothing handed its leases back, and the next claim would take the same
+    // rows to the same refusing target: stop, and let the failures already counted say why.
+    if (moved.length === before) break;
+  }
+  const skipped = candidates.filter((record) => !held.has(record.id)).map(toSkip);
+  return { ...base, dryRun: false, moved, skipped, failures };
+}
+
+/** One leased batch onto the target: steps, then the job, then the ack — per record. */
+async function transfer(
+  source: JobDriver,
+  target: JobDriver,
+  leased: readonly ClaimedJob[],
+  found: ReadonlyMap<string, JobRecord>,
+  moved: JobRecord[],
+  failures: DrainFailure[],
+): Promise<void> {
   for (const record of leased) {
     let enqueued = false;
     try {
@@ -175,5 +227,4 @@ export async function drainJobs(
       failures.push({ id: record.id, name: record.name, finding: findingFrom(error) });
     }
   }
-  return { ...base, dryRun: false, moved, skipped, failures };
 }

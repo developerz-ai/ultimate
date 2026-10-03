@@ -5,13 +5,15 @@
 // (`serve-web.ts`) and the manifest projection are behind `await import()` in turn, so a worker's
 // module graph holds neither.
 
-import type { Role } from '@ultimat3/core';
+import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger } from '@ultimat3/core';
 import type { MetricsEndpoint } from './metrics-endpoint';
 import { startOtlpExport } from './otlp-export';
 import { loadAppForRole, roleLoadFor } from './role-load';
 import { startRoles } from './role-start';
 import { resolveServices } from './runtime-bindings';
+import { warnIfIdempotencyProcessScoped } from './runtime-idempotency-scope';
+import { warnUnsealedMfaSecrets } from './runtime-mfa-warning';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
@@ -42,6 +44,23 @@ async function buildIdFor(options: ServeOptions, role: Role): Promise<string> {
   return (await appManifest(options.root)).manifest.buildId;
 }
 
+/** The roles that open an HTTP listener something routes to — the only ones a readiness grace serves. */
+const LISTENING_ROLES: readonly Role[] = ['web', 'sync'];
+
+/**
+ * `app.config.ts`'s `drain`, applied to the WHOLE process rather than only to the web server that
+ * `createServer` hands it to. A role nothing routes to gets no readiness grace at all: the grace
+ * holds `/readyz` at 503 with the listener open so the endpoints catch up, and a worker has neither
+ * — it only went on claiming jobs for those seconds, then aborted them at the drain (s1-con #7).
+ */
+export function lifecycleForRole(
+  role: Role,
+  drain: Partial<DrainConfig> | undefined,
+): LifecycleOptions {
+  if (!LISTENING_ROLES.includes(role)) return { readinessGraceMs: 0 };
+  return drain?.readinessGraceMs === undefined ? {} : { readinessGraceMs: drain.readinessGraceMs };
+}
+
 /**
  * Everything `serveApp` does after the scrape listener is open: the services, then the roles over
  * them. One export, so `serve.ts` reaches the whole serving graph through ONE `await import()`.
@@ -53,11 +72,12 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
-  const runtime = await startServices(
-    resolveServices(options.root, options.env),
-    options.env,
-    options.runtime,
-  );
+  const services = resolveServices(options.root, options.env);
+  // A serving role on a real database runs no DDL: `ROLE=migrate` applied this build's framework
+  // tables first, and this boot only verifies the stamp it left (`framework-schema-apply.ts`).
+  // The embedded database has no migrate step to have run, so it applies its own.
+  const schema = services.db.mode === 'external' ? 'verify' : 'apply';
+  const runtime = await startServices(services, options.env, options.runtime, schema);
   boot.acquired.push(() => runtime.stop());
   return bootRoles({ ...boot, runtime });
 }
@@ -84,6 +104,8 @@ async function bootRoles(boot: {
   for (const finding of loaded.findings) {
     logger.error('ultimate app module failed to load', { role, ...finding });
   }
+  // After the app's modules: an app swaps the store at import time, after `startServices`.
+  warnIfIdempotencyProcessScoped();
   const buildId = await buildIdFor(options, role);
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
@@ -102,6 +124,9 @@ async function bootRoles(boot: {
     role === 'web'
       ? await (await import('./serve-web')).webSurface(options, runtime, buildId)
       : undefined;
+  if (web !== undefined) acquired.push(web.release);
+  // The web role alone — it is where a second factor is asked for — and once per pod boot.
+  if (role === 'web') await warnUnsealedMfaSecrets(runtime.db);
   // Islands and stylesheets are the image build's to make (`x build --target prebuilt`). A role
   // that made either here served correctly and paid for it — seconds of CPU and a compiler's
   // memory, on every start of every replica — so it says so once, with the Dockerfile line.
@@ -112,6 +137,7 @@ async function bootRoles(boot: {
   // still wins — that is the deploy talking.
   const metricsPort = metricsPortFor(options.env, port, options.metricsPort);
   const drain = await loadDrainConfig(options.root);
+  configureLifecycle(lifecycleForRole(role, drain));
   // Process-wide, so every role's `/readyz` — web, sync, worker — answers in the declared mode.
   const health = await loadHealthConfig(options.root);
   if (health?.readiness !== undefined) configureLifecycle({ readiness: health.readiness });
@@ -156,6 +182,8 @@ async function bootRoles(boot: {
     runtime,
     async stop() {
       await running.stop();
+      // After the server drained: a bust landing mid-drain still marks the pages it is serving.
+      web?.release();
       await runtime.stop();
       // Last: the exporters outlive the roles they were recording, so the drain's own spans and
       // the final counter snapshot still have somewhere to go.

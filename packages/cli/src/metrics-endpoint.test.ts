@@ -92,9 +92,9 @@ describe('the scrape endpoint', () => {
     expect(resident?.points[0]?.value).toBe(0);
   });
 
-  test('answers only its own path — it is not a second router', async () => {
+  test('answers only its own paths — it is not a second router', async () => {
     expect((await scrape('/')).status).toBe(404);
-    expect((await scrape('/healthz')).status).toBe(404);
+    expect((await scrape('/livez')).status).toBe(404);
   });
 
   // The bug this guards: a second `x dev` died on `Bun.serve`'s own bare `Error` — no `X_*` code,

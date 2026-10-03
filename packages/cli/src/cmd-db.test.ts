@@ -445,3 +445,24 @@ describe('unit · x db flags belong to the subcommand that reads them', () => {
   // drifts silently, `subcommands` is read by the parser, and the rule that keeps them one fact
   // has to hold for `x jobs` and `x pr` too or it is a rule about one file.
 });
+
+describe('unit · x db seed never answers ok beside a failure', () => {
+  // The seed file that would not import may be the very seed asked for, so "no seed to run" over
+  // it is a vacuous green — the shape `seedPassResult` already refuses one branch over.
+  test('a seed module that will not import fails the run, even with nothing left to seed', async () => {
+    const root = await appRoot();
+    try {
+      await Bun.write(
+        join(root, 'packages/db/seeds/01_orgs.ts'),
+        "import './nobody-wrote-this';\n",
+      );
+      const result = await dbCommand.run(ctxFor(['db', 'seed'], root));
+      expect(result.ok).toBe(false);
+      expect(result.findings?.map((finding) => finding.at)).toEqual([
+        'packages/db/seeds/01_orgs.ts',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

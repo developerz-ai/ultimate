@@ -47,23 +47,24 @@ there is one environment, and it hides the object a reviewer needs to see.
 | `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, `:9090` — **no readiness** |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
-| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, `:9090` |
+| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |
 
 **Probes follow the role, because the roles do not agree on what they open.** `web` and `sync`
 construct a server and get `/readyz` + `/healthz` on it. `worker`, `scheduler` and `replicator`
 construct none — their only socket is the metrics listener
 ([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
-`METRICS_PATH` and 404s everything else — so they get a liveness probe on `/metrics` and no readiness
-probe at all. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
+`METRICS_PATH`, `/healthz` and `/readyz` (the verdict only, never the check names) — so they get a
+liveness probe on `/metrics`, and the replicator alone a readiness probe on `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
 
 **The replicator restarts its own stream, and says when it is not replicating** (`As of 2026-10-02`).
 A stream that ends — a failover, `wal_sender_timeout`, a rejected publish — or an advisory-lock
 session that dies clears `replicator.running`, releases the lock and redials on a jittered backoff;
-no pod restart is needed. The role registers a `replicator` readiness check over `running`, read by
-`/readyz` wherever the process also runs a server (`x dev`, a combined-role process). A dedicated
-`replicator` container still binds only the metrics listener, so the chart gives it no readiness
-probe: alert on the `replicator.stream_ended` and `replicator.restart_failed` log events instead.
+no pod restart is needed. The role registers a `replicator` readiness check over `running`, and a
+dedicated `replicator` container answers it on the metrics port's `/readyz`: the chart's readiness
+probe shows the pod 0/1 while no stream is up. Its headless Service publishes not-ready addresses,
+so the pod is still scraped then. Alert on the `replicator.stream_ended` and
+`replicator.restart_failed` log events as well — readiness says it is down, the log says why.
 
 A non-leader `scheduler` stands by: it holds no lease, dispatches nothing, and reports the same
 liveness as the leader — there is no readiness signal to distinguish them. A second replica is
@@ -122,7 +123,22 @@ can:
 ## Migrations
 
 Run them as a **pre-deploy Job**, gated before any serving role starts. The shipped chart already
-does this (`helm.sh/hook: pre-install,pre-upgrade`, `hook-weight: -5`).
+does this (`helm.sh/hook: pre-install,pre-upgrade`, `hook-weight: -5`), and
+[`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) gates every role on
+`migrate: { condition: service_completed_successfully }`.
+
+**Since 24.0.0 the order is enforced, not advised.** Only `ROLE=migrate` (and `x db migrate`)
+applies the framework's own tables — `x_jobs`, `x_outbox`, `x_users` and the rest — in one
+transaction behind the migration advisory lock, with `lock_timeout` bounded at the migrate pool's
+3 s, and stamps the build on `x_jobs`' table comment. A `web`, `sync`, `worker`, `scheduler` or
+`replicator` pod on an external `DATABASE_URL` runs **no DDL**: it reads the stamp and refuses to
+boot with `X_FRAMEWORK_SCHEMA_UNAPPLIED` (`fix: x db migrate`) when its build is not there. Every
+pod used to run the DDL itself, so a pod start queued an `ACCESS EXCLUSIVE` `alter table` behind any
+open transaction and every enqueue in the fleet queued behind that. An old pod restarting mid-roll
+still boots — its build is further down the stamp — and one whose MAJOR differs from the newest
+applied build logs `ultimate framework major skew` and serves. A migrate that meets an open
+transaction fails in seconds with `X_FRAMEWORK_SCHEMA_FAILED` wrapping `X_DB_LOCK_TIMEOUT`; the
+Job's `backoffLimit` retries it.
 
 Two failure modes worth inheriting rather than rediscovering:
 

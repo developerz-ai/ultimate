@@ -196,7 +196,7 @@ describe('startServices', () => {
     // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
     // read. The state dir is never created — the refusal is ahead of every service.
     const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
-    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, {
       SMTP_URL: 'smtps://user:pass@mail.test:465',
       RESEND_API_KEY: 're_test_key',
@@ -381,7 +381,7 @@ describe('startServices', () => {
     // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
     // read. The state dir is never created — the refusal is ahead of every service.
     const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
-    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, {
       NATS_URL: 'nats://bus.test:4222',
       NATS_KV_BUCKET: 'x.presence',
@@ -398,7 +398,7 @@ describe('startServices', () => {
   // refuses before any service starts, where it used to boot the in-process bus and reach nobody.
   test('a config saying nats with no bus url refuses before any service starts', async () => {
     const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'BUS_URL' }");
-    const unbooted = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const unbooted = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unbooted, DEV_ENV).then(
       () => undefined,
       (error: unknown) => error as { code?: string; cause?: string },
@@ -410,7 +410,10 @@ describe('startServices', () => {
 
   test('a config saying memory with NATS_URL set refuses before any service starts', async () => {
     const memoryRoot = rootWithRealtime("{ enabled: true, transport: 'memory' }");
-    const unbooted = { stateDir: join(memoryRoot, '.x-never-read') } as DevServices;
+    const unbooted = {
+      root: memoryRoot,
+      stateDir: join(memoryRoot, '.x-never-read'),
+    } as DevServices;
     const failure = await startServices(unbooted, {
       ...DEV_ENV,
       NATS_URL: 'nats://bus.test:4222',
@@ -470,7 +473,7 @@ describe('startServices', () => {
     // The config has to SAY nats: under `memory` a set NATS_URL is refused before the bucket is
     // read. The state dir is never created — the refusal is ahead of every service.
     const natsRoot = rootWithRealtime("{ transport: 'nats', urlEnv: 'NATS_URL' }");
-    const unusable = { stateDir: join(natsRoot, '.x-never-read') } as DevServices;
+    const unusable = { root: natsRoot, stateDir: join(natsRoot, '.x-never-read') } as DevServices;
     const failure = await startServices(unusable, { FASTLY_API_TOKEN: 'fastly-token' }).then(
       () => undefined,
       (error: unknown) => error as { code?: string; cause?: string },

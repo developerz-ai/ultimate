@@ -23,7 +23,7 @@ import { BadFlagError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { backfillToJson } from './jobs-json';
 import { msg } from './messages';
-import type { CommandResult } from './output';
+import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
@@ -171,15 +171,22 @@ async function runBackfillList(ctx: CommandContext, root: string): Promise<Comma
  * The alarm the framework did not have. Non-zero when anything is unswept, so a cron or a deploy
  * check can read the exit code — a `--json` nobody has to parse to know something is wrong.
  * `loadApp` first: importing the app's modules IS the declaration, and a diff run without it
- * would report a clean database against an empty declaration list.
+ * would report a clean database against an empty declaration list. Its findings fail the run for
+ * the same reason: a module that would not import may be the one declaring the unswept backfill.
  */
 async function runBackfillPending(ctx: CommandContext, root: string): Promise<CommandResult> {
-  await loadApp(root);
+  const { findings: loadFindings } = await loadApp(root);
   const environment = resolveEnvironment({ env: ctx.env });
   return withJobDriver(root, ctx, async (driver) => {
     const report = await pendingReport(driver, environment);
+    const findings = [
+      ...report.pending.map((row) =>
+        findingFrom(new BackfillPendingError({ backfill: row.name, environment })),
+      ),
+      ...loadFindings,
+    ];
     return {
-      ok: report.pending.length === 0,
+      ok: findings.length === 0,
       command: 'db',
       summary:
         report.pending.length === 0
@@ -188,9 +195,7 @@ async function runBackfillPending(ctx: CommandContext, root: string): Promise<Co
               count: report.pending.length,
               declared: report.rows.length,
             }),
-      findings: report.pending.map((row) =>
-        findingFrom(new BackfillPendingError({ backfill: row.name, environment })),
-      ),
+      findings,
       lines: report.rows.length === 0 ? [] : renderPendingTable(report).map((line) => `  ${line}`),
       data: pendingToJson(report),
     };
@@ -208,7 +213,7 @@ async function runBackfillPass(
   root: string,
   names: readonly string[] | 'all',
 ): Promise<CommandResult> {
-  await loadApp(root);
+  const { findings: loadFindings } = await loadApp(root);
   const environment = resolveEnvironment({ env: ctx.env });
   const write = flagBool(ctx.args, 'write');
   return withJobDriver(root, ctx, async (driver) => {
@@ -220,16 +225,24 @@ async function runBackfillPass(
       environment,
       appliedMigrations: await readAppliedMigrations(),
     });
-    return backfillPassResult(rows, write);
+    return backfillPassResult(rows, write, loadFindings);
   });
 }
 
 /**
  * A blocked or deduped name is a finding and a non-zero exit, and every OTHER name still ran —
- * that isolation is what stops one wedged cleanup blocking every later one forever.
+ * that isolation is what stops one wedged cleanup blocking every later one forever. A module that
+ * would not import fails the pass too: `--all` over it plans every backfill but the unloaded ones.
  */
-function backfillPassResult(rows: readonly BackfillPlanRow[], write: boolean): CommandResult {
-  const findings = rows.flatMap((row) => (row.finding === null ? [] : [row.finding]));
+function backfillPassResult(
+  rows: readonly BackfillPlanRow[],
+  write: boolean,
+  loadFindings: readonly Finding[],
+): CommandResult {
+  const findings = [
+    ...rows.flatMap((row) => (row.finding === null ? [] : [row.finding])),
+    ...loadFindings,
+  ];
   // Counted per action, never derived from the total: a deduped pass is neither enqueued nor
   // blocked, and `rows.length - enqueued` reported it as blocked while `--json` reported it as
   // deduped. `planToJson` is the same list, so the two renders now add up to the same run.

@@ -339,6 +339,14 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
   }
 }
 
+/**
+ * Where the artifacts land. A relative `--out` is a path the caller typed from where they stand,
+ * so it resolves against the cwd — `x build --out`'s rule. Against the app root it landed
+ * somewhere else whenever `x shot` ran from `apps/web`.
+ */
+export const shotOutDir = (cwd: string, out: string | undefined, fallback: string): string =>
+  out === undefined ? fallback : resolve(cwd, out);
+
 export const shotResult = (artifacts: ShotArtifacts): CommandResult => ({
   ok: artifacts.verdict.ok,
   command: 'shot',
@@ -426,7 +434,8 @@ export const shotCommand: CliCommand = {
     const boot = (): Promise<ShotServer> => devServerFor(root, ctx.env, port);
     const shared = {
       root,
-      ...(out === undefined ? {} : { out }),
+      // Absolute here, so the island sweep's own `resolve(root, out)` keeps the caller's path.
+      ...(out === undefined ? {} : { out: shotOutDir(ctx.cwd, out, root) }),
       settleMs,
       timeoutMs,
       ...(executablePath === undefined ? {} : { executablePath }),
@@ -465,7 +474,7 @@ export const shotCommand: CliCommand = {
         defaultLocale: app.defaultLocale,
         ...(theme === undefined ? {} : { themes: [theme] }),
       });
-      const outDir = out === undefined ? join(root, MATRIX_DIR) : resolve(root, out);
+      const outDir = shotOutDir(ctx.cwd, out, join(root, MATRIX_DIR));
       return runShotMatrix({ cells, outDir, boot, shoot: runShot, base });
     }
     const shown = locale ?? app.defaultLocale;
@@ -474,7 +483,7 @@ export const shotCommand: CliCommand = {
       await runShot({
         ...base,
         route: path,
-        outDir: out === undefined ? join(root, SHOT_DIR, shotSlug(path)) : resolve(root, out),
+        outDir: shotOutDir(ctx.cwd, out, join(root, SHOT_DIR, shotSlug(path))),
         boot,
         // Pinned whether or not `--locale` was given: the default locale, never the box's own.
         acceptLanguage: shown,

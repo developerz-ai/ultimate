@@ -166,7 +166,7 @@ export const routeNotFound = (method: string, pathname: string): HttpError =>
     code: 'X_ROUTE_NOT_FOUND',
     // The value itself still travels, in the field that is read rather than run.
     cause: `no route registered for ${method} ${pathname}`,
-    fix: `x routes list --json   # then: x g route ${renderFixShellArg(pathname, '<the path the cause names>')}`,
+    fix: `x routes --json   # then: x g route ${renderFixShellArg(pathname, '<the path the cause names>')}`,
   });
 
 export const methodNotAllowed = (
@@ -361,7 +361,7 @@ export const routeConflict = (path: string, detail: string): HttpError =>
   new HttpError({
     code: 'X_ROUTE_CONFLICT',
     cause: `${path} conflicts with an already registered route: ${detail}`,
-    fix: `x routes list --json   # remove or rename one of the two routes at ${path}`,
+    fix: `x routes --json   # remove or rename one of the two routes at ${path}`,
   });
 
 /**

@@ -19,9 +19,10 @@ import {
 } from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
-import { DEFAULT_DOCTOR_PORT, doctorSpec } from './cmd-doctor-spec';
+import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
+import { appUrlFindings } from './doctor-app-url';
 import { type AuthStorageFact, authStorageFindings, authStorageProbe } from './doctor-auth';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
@@ -29,7 +30,7 @@ import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
-import { intFlagOr, PORT_RANGE, portPairAfter } from './flag-number';
+import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -38,6 +39,7 @@ import type { ParsedArgs } from './parse';
 import { portFree } from './port-probe';
 import { syncPortFor } from './role-sync';
 import { checkMigrationDrift } from './schema-drift';
+import { portFromEnv } from './serve-env';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -50,6 +52,8 @@ export interface DoctorProbe {
   /** App root, or undefined when the command runs outside an app. */
   readonly root: string | undefined;
   readonly port: number;
+  /** `APP_URL` as this environment declares it; `undefined` when unset. */
+  readonly appUrl: string | undefined;
   /** True while cursors are signed with the key shipped in the published package. */
   readonly devCursorSecret: boolean;
   /**
@@ -263,6 +267,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     );
   }
   findings.push(...(await portFindings(probe)));
+  findings.push(...appUrlFindings(probe.appUrl, probe.port));
   // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
   // `X_PWA_NO_FALLBACK` used to be declared here for the same two conditions the package already
   // names — two codes for one condition, one of them registered by nobody, so `x errors explain`
@@ -304,16 +309,23 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
 }
 
 /**
- * The port to TEST, and the one place `x doctor` reads it. `PORT_RANGE.min` is 0 because `x dev
- * --port 0` means "let the kernel pick"; here 0 means nothing, and `Bun.serve({ port: 0 })` always
- * succeeds — so the port check could not fail, which is worse than not running it.
+ * The port to TEST, and the one place `x doctor` reads it: `devPortFor`'s order — `--port`, then
+ * `PORT` (`portFromEnv`, the one reader of it), then 3000 — so the probe answers about the port
+ * `x dev` will bind. It probed 3000 under `PORT=4000` while dev bound 4000 and 4001. `PORT_RANGE.min`
+ * is 0 because `x dev --port 0` means "let the kernel pick"; here 0 means nothing, and
+ * `Bun.serve({ port: 0 })` always succeeds — so the port check could not fail.
  */
-export const doctorPort = (args: ParsedArgs): number =>
-  intFlagOr(
-    args,
-    { name: 'port', command: 'doctor', ...PORT_RANGE, min: 1, example: 'x doctor --port 3000' },
-    DEFAULT_DOCTOR_PORT,
-  );
+export const doctorPort = (
+  args: ParsedArgs,
+  env: Readonly<Record<string, string | undefined>>,
+): number =>
+  readIntFlag(args, {
+    name: 'port',
+    command: 'doctor',
+    ...PORT_RANGE,
+    min: 1,
+    example: 'x doctor --port 3000',
+  }) ?? portFromEnv(env);
 
 /**
  * `DATABASE_URL` as BOTH halves of the database question read it: unset and blank are one case.
@@ -382,12 +394,19 @@ async function probeDatabase(url: string | undefined): Promise<Finding | null> {
   }
 }
 
-export function probeFor(cwd: string, bunVersion: string, port: number): DoctorProbe {
+export function probeFor(
+  cwd: string,
+  bunVersion: string,
+  port: number,
+  // The environment `doctorPort` read `PORT` from, so `APP_URL` is judged against the same one.
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): DoctorProbe {
   const root = findAppRoot(cwd)?.dir;
   return {
     bunVersion,
     root,
     port,
+    appUrl: env['APP_URL'],
     devCursorSecret: usesDevCursorSecret(),
     devStorageSecret: usesDevStorageSecret(),
     // `ULTIMATE_ENV`, through core — the one key that says which deploy this is, with `NODE_ENV`
@@ -422,8 +441,8 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
 export const doctorCommand: CliCommand = {
   spec: doctorSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const port = doctorPort(ctx.args);
-    const probe = probeFor(ctx.cwd, ctx.bunVersion, port);
+    const port = doctorPort(ctx.args, ctx.env);
+    const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
     const findings = await runDoctor(probe);
     const listed = withGuardListing(
       {

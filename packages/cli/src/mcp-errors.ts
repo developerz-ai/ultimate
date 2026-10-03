@@ -286,6 +286,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts   # then repoint its relative imports and x verify --only manifest --json',
   X_FRAMEWORK_TABLE_ORPHANED: 'x doctor --json',
   X_BUILD_OUT_UNSAFE: 'x build --target static --out .x/static --json',
+  X_FRAMEWORK_SCHEMA_UNAPPLIED: 'x db migrate --json',
+  X_APP_URL_PORT_MISMATCH: 'export APP_URL=http://localhost:3000',
+  X_DEV_HOST_REFUSED: "curl -sS -H 'accept: application/json' http://localhost:3000/_x",
+  X_TRUSTED_PROXY_HOPS_INVALID: 'TRUSTED_PROXY_HOPS=1 ROLE=web bun apps/web/server.ts',
   X_PERMISSION_BORROWED: 'x verify --only policy --json',
 };
 

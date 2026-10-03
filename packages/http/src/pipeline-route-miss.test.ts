@@ -32,7 +32,7 @@ const explained = (): UltimateError =>
   new UltimateError({
     code: 'X_BUILD_SKEW',
     cause: 'the caller derived this path under another rule',
-    fix: 'x routes list --json',
+    fix: 'x routes --json',
   });
 
 const answer = async (

@@ -87,8 +87,17 @@ const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
       fix: 'x dev --role web',
     });
   }
-  return handle.fetch(new Request(`http://dev.test${path}`, init));
+  // `localhost`: `/_x` refuses any Host that is not this machine (`X_DEV_HOST_REFUSED`, 421).
+  return handle.fetch(new Request(`http://localhost${path}`, init));
 };
+
+/** A statement for `/_x/db`: POSTed in the body — a GET naming `sql` is refused (a cross-site `<img>`). */
+const runSql = (sql: string): Promise<Response> =>
+  fetchDev('/_x/db?json=1', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  });
 
 describe('unit · x dev boots the app', () => {
   test('every selected role is running, and the unselected ones are not', () => {
@@ -162,7 +171,7 @@ describe('unit · x dev boots the app', () => {
   });
 
   test('/_x/db reads the embedded Postgres and refuses a write statement', async () => {
-    const read = (await (await fetchDev('/_x/db?json=1&sql=select%201%20as%20n')).json()) as {
+    const read = (await (await runSql('select 1 as n')).json()) as {
       ok: boolean;
       data: { result: { columns: string[]; rows: unknown[][] } | null; refused: string | null };
     };
@@ -171,7 +180,7 @@ describe('unit · x dev boots the app', () => {
     expect(read.data.result?.columns).toEqual(['n']);
     expect(read.data.result?.rows).toEqual([[1]]);
 
-    const write = (await (await fetchDev('/_x/db?json=1&sql=delete%20from%20x_jobs')).json()) as {
+    const write = (await (await runSql('delete from x_jobs')).json()) as {
       data: { result: unknown; refused: string | null };
     };
     // Asserts the two halves an operator needs, not the prose around them: WHICH word made it a
@@ -246,7 +255,7 @@ describe('unit · x dev boots the app', () => {
   // what made an N+1 invisible in the one panel built to show it.
   test('x dev installs the statement ledger, so the timeline has SQL children', async () => {
     expect(statementObserver()).toBeDefined();
-    await fetchDev('/_x/db?json=1&sql=select%201%20as%20n');
+    await runSql('select 1 as n');
 
     const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
       data: { requests: { requestId: string; path: string }[] };

@@ -150,8 +150,9 @@ export const readOnlySteps = (args: ParsedArgs): readonly VerifyStepName[] | und
   if (unknown.length === 0) {
     return VERIFY_STEP_NAMES.filter((name) => items.includes(name));
   }
+  // An empty item corrects to nothing — never to whichever step is nearest to ''.
   const corrected = items.map((item) =>
-    isStepName(item) ? item : nearestName(item, VERIFY_STEP_NAMES),
+    isStepName(item) ? item : item === '' ? undefined : nearestName(item, VERIFY_STEP_NAMES),
   );
   const fix = corrected.every((item) => item !== undefined)
     ? `x verify --only ${renderFixShellArg([...new Set(corrected)].join(','), '<step,step>')} --json`

@@ -18,6 +18,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
 import { exec, type Runner } from './exec';
+import { portPairAfter } from './flag-number';
 import { quoteArg } from './shell-quote';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
@@ -221,12 +222,6 @@ export class DevPortInUseError extends UltimateError {
 }
 
 /**
- * The next port to suggest. Never `port + 1` at the top of the range — 65536 is not a port, and a
- * `fix:` that cannot run is the failure this whole module exists to end.
- */
-export const suggestPort = (port: number): number => (port >= 65535 ? port - 1 : port + 1);
-
-/**
  * Is anything listening? A successful bind-then-close is the only answer that does not lie.
  *
  * PROBE THE ADDRESS THE SERVER WILL BIND, which is why the hostname is a parameter and why the
@@ -379,7 +374,9 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
     release();
     throw new DevPortInUseError({
       port: input.port,
-      suggestion: suggestPort(input.port),
+      // `portPairAfter`, never `port + 1`: `x dev` binds a PAIR, so the holder is most often
+      // another `x dev` whose sync role already sits on `port + 1`.
+      suggestion: portPairAfter(input.port),
       holder: await (input.holder ?? portHolder)(input.port),
     });
   }

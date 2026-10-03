@@ -117,9 +117,11 @@ in values.yaml, where the two numbers would drift.
   them would have been the mirror-image bug: a port the role never opens, which is exactly what made
   sync's readiness probe meaningless.
 
-  Liveness only for those three, never readiness: nothing routes to them, and a readiness flap would
-  drop the pod out of the Service's Endpoints and so out of the Prometheus scrape — losing the
-  `queue_depth` series precisely when the worker is busiest.
+  Liveness for all three on `/metrics`. Readiness for `replicator` alone, on `/readyz` of the same
+  listener (packages/cli/src/metrics-endpoint.ts): it is 503 while the replication stream is down
+  (`watchReplicatorReadiness`), so `kubectl get pods` shows 0/1 instead of a healthy pod feeding
+  nothing. A not-ready pod still gets scraped: their headless Service publishes not-ready addresses
+  (service.yaml). `worker` and `scheduler` have nothing a readiness flap would say.
 
   A `startupProbe` on every role, because NO listener is up early. This comment said `startRoles`
   opens the metrics listener "FIRST" and so needed no startup allowance; that is first within
@@ -161,6 +163,11 @@ in values.yaml, where the two numbers would drift.
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 5
     failureThreshold: 30
+  {{- if eq $role "replicator" }}
+  readinessProbe:
+    httpGet: { path: '/readyz?deep=1', port: metrics }
+    periodSeconds: 10
+  {{- end }}
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15

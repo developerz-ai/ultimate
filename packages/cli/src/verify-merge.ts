@@ -27,25 +27,11 @@ import type { TestCounts } from './test-counts';
 import { VerifyMergeInputError } from './verify-errors';
 import type { VerifyFloor } from './verify-floor';
 import { floorRequires, skippedSuiteFinding } from './verify-floor';
+import type { PartStep } from './verify-part-step';
+import { readPartStep } from './verify-part-step';
 import { verifySummary } from './verify-run';
+import { corpusHash } from './verify-shard';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
-
-interface PartStep {
-  readonly name: string;
-  readonly ok: boolean;
-  readonly durationMs: number;
-  readonly skipped: boolean;
-  readonly findings: readonly Finding[];
-  readonly workers?: number;
-  readonly tests?: TestCounts;
-  readonly output?: string;
-  readonly shard?: {
-    readonly index: number;
-    readonly total: number;
-    readonly corpusHash: string;
-    readonly files: readonly string[];
-  };
-}
 
 export interface VerifyPart {
   readonly file: string;
@@ -70,8 +56,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * The LAST non-empty line that parses: `bin/check --json` prints the build's document and then
- * the gate's, and a reader takes the last one.
+ * The LAST non-empty line, and only it: `bin/check --json` prints the build's document and then
+ * the gate's. Never "the last line that parses" — a part whose tail is not the gate's document is
+ * a truncated or appended upload, and falling back to an earlier line would believe it.
  */
 export function parsePart(file: string, text: string, command: string = GATE_COMMAND): VerifyPart {
   const lines = text
@@ -100,14 +87,9 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
   const data = isRecord(doc['data']) ? doc['data'] : {};
   const steps: PartStep[] = [];
   for (const raw of doc['steps'] as unknown[]) {
-    if (!isRecord(raw) || typeof raw['name'] !== 'string' || typeof raw['ok'] !== 'boolean') {
-      throw new VerifyMergeInputError({
-        file,
-        reason: 'holds a step without a name and ok',
-        command,
-      });
-    }
-    steps.push(raw as unknown as PartStep);
+    const step = readPartStep(raw);
+    if (typeof step === 'string') throw new VerifyMergeInputError({ file, reason: step, command });
+    steps.push(step);
   }
   const coverage = new Map<string, CoverageMap>();
   for (const [step, entry] of Object.entries(isRecord(data['coverage']) ? data['coverage'] : {})) {
@@ -184,6 +166,39 @@ const sumCounts = (steps: readonly PartStep[]): TestCounts | undefined => {
   };
 };
 
+/**
+ * The shards' `files` must PARTITION the corpus they all hashed: each file in exactly one shard,
+ * and the union hashing to `corpusHash`. Agreeing on the hash is not agreeing on the split — shard
+ * 1/2 round-robin beside 2/2 with `--timings` ran one file twice and another nowhere, green.
+ */
+function partitionGaps(
+  name: string,
+  sharded: readonly { readonly step: PartStep }[],
+  gap: Gap,
+): readonly Finding[] {
+  const counts = new Map<string, number>();
+  for (const entry of sharded) {
+    for (const file of entry.step.shard?.files ?? []) counts.set(file, (counts.get(file) ?? 0) + 1);
+  }
+  const twice = [...counts].filter(([, count]) => count > 1).map(([file]) => file);
+  const found: Finding[] = [];
+  if (twice.length > 0) {
+    found.push(gap(`step "${name}" ran ${twice.join(', ')} in more than one shard`, name));
+  }
+  // A list's fingerprint, not a credential: what the shards ran against what they all counted.
+  const ranCorpus = corpusHash([...counts.keys()]);
+  const countedCorpus = sharded[0]?.step.shard?.corpusHash;
+  if (ranCorpus !== countedCorpus) {
+    found.push(
+      gap(
+        `step "${name}"'s shards ran ${String(counts.size)} distinct file(s), which is not the corpus they hashed — some file ran in no shard; every shard must split one list the same way (all with --timings, or none)`,
+        name,
+      ),
+    );
+  }
+  return found;
+}
+
 /** One step's entries from every part, folded into one step result and its gaps. */
 function mergeStep(
   name: string,
@@ -246,6 +261,8 @@ function mergeStep(
     if (doubled.length > 0) {
       gaps.push(gap(`step "${name}" has shard(s) ${doubled.join(', ')} more than once`, name));
     }
+    // Only over a complete, single-corpus set — any gap above already explains a partial union.
+    if (gaps.length === 0) gaps.push(...partitionGaps(name, sharded, gap));
   }
   const steps = entries.map((entry) => entry.step);
   const tests = sumCounts(steps);
