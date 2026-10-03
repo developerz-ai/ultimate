@@ -325,6 +325,7 @@ A tool a caller may not see is absent from `tools/list` and answers ToolNotFound
 | a route reading a table with no org predicate | `contract` | `X_TENANCY_UNSCOPED` |
 | a grant nothing enforces | — | not a gate; read the `x policy list` columns |
 | a permission a mounted admin route asks for that no role grants | `policy` | `X_PERMISSION_UNGRANTED` |
+| an app rule's `can()` naming a permission only `defineAdmin()` declared, never the app's own `definePermissions()` | `policy` | `X_PERMISSION_BORROWED` |
 
 ## Next
 

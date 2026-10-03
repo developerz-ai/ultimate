@@ -12,6 +12,13 @@ import { absoluteUrl, attributes, escapeXml } from './xml';
 export const SITEMAP_MAX_URLS = 50_000;
 export const SITEMAP_INDEX_MAX_FILES = 50_000;
 
+/**
+ * Where the parts of a split sitemap live: `/sitemaps/1.xml`, `/sitemaps/2.xml`, … — one directory,
+ * so a running server answers every part from ONE route (`/sitemaps/:file`). `/sitemap-N.xml` needed
+ * a parameter inside a segment, which no router here has, and every part 404'd from the web role.
+ */
+export const SITEMAP_PARTS_DIR = '/sitemaps';
+
 export interface SitemapAlternate {
   hreflang: string;
   href: string;
@@ -26,7 +33,7 @@ export interface SitemapUrl {
 }
 
 export interface SitemapFile {
-  /** Path relative to the site root, e.g. `/sitemap-1.xml`. */
+  /** Path relative to the site root: `/sitemap.xml`, or a part, `/sitemaps/1.xml`. */
   path: string;
   xml: string;
   urlCount: number;
@@ -214,7 +221,7 @@ export async function buildSitemap(
   }
 
   const files: SitemapFile[] = groups.map((group, position) => ({
-    path: `/sitemap-${position + 1}.xml`,
+    path: `${SITEMAP_PARTS_DIR}/${position + 1}.xml`,
     xml: renderUrlSet(group),
     urlCount: group.length,
   }));

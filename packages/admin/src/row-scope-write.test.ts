@@ -15,6 +15,7 @@ import {
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -29,6 +30,7 @@ const { callAdminTool } = await import('./mcp');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const cases = entity('admin_scope_writes', {
   columns: {
@@ -75,7 +77,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

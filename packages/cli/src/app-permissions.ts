@@ -7,9 +7,6 @@
 // required it on `/dashboard`, declared it nowhere, and served HTTP 500 on two of its three routes
 // with `x verify` green (#F1). This is the question nothing asked.
 
-// why: Bun ships no path API, and `relative` is what turns a stack frame's absolute path into
-// the app-root-relative one every finding is keyed by.
-import { relative } from 'node:path';
 import {
   grantMatches,
   isKnownPermission,
@@ -21,6 +18,8 @@ import {
 import { routeEntries } from '@ultimat3/render';
 import { definedStorage } from '@ultimat3/storage';
 import { loadApp } from './app-load';
+import { borrowedFinding, borrowedPermissions, permissionsFile } from './app-permissions-borrowed';
+import { siteFile } from './app-permissions-site';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import type { Finding } from './output';
@@ -44,19 +43,6 @@ export interface PermissionReference {
 
 /** What this check needs of a boot — the seam `i18n-registration.ts` already established. */
 export type AppLoader = (root: string) => Promise<{ readonly findings: readonly Finding[] }>;
-
-/**
- * A role's declaration site is a stack FRAME (`at foo (/abs/path.ts:3:1)`), which is the only
- * place the declaring module's name exists by the time `defineRoles` runs. Reduced to the
- * app-relative path an agent opens, or dropped: a locator nobody can act on is worse than none.
- */
-export function siteFile(root: string, site: string): string | undefined {
-  const match = /\(?(\/[^():]+\.[cm]?tsx?)(?::\d+)?(?::\d+)?\)?/.exec(site);
-  const absolute = match?.[1];
-  if (absolute === undefined) return undefined;
-  const rel = relative(root, absolute).replaceAll('\\', '/');
-  return rel.startsWith('..') || rel.length === 0 ? undefined : rel;
-}
 
 /** Every permission a registered role grants, with where that role was declared. */
 export function grantedReferences(root: string): readonly PermissionReference[] {
@@ -198,7 +184,11 @@ export async function policyFindings(
     unknown.length === 0
       ? ungrantedRequirements().map((rule) => ungrantedFinding(rule, rolesAt))
       : [];
-  const findings = [...duplicated, ...unknown, ...ungranted];
+  // Asked of KNOWN names only (`borrowedPermissions` skips the rest), so it rides beside the
+  // unknown half rather than behind it: one fault, one finding.
+  const declaredIn = permissionsFile(root);
+  const borrowed = borrowedPermissions(root).map((entry) => borrowedFinding(entry, declaredIn));
+  const findings = [...duplicated, ...unknown, ...borrowed, ...ungranted];
   return findings.length === 0 ? [] : [...findings, ...app.findings];
 }
 

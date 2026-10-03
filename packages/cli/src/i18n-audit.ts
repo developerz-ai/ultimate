@@ -28,13 +28,16 @@ import { CATALOG_ROOT, catalogPath } from './templates/locales';
  * glob set every text-scanning gate step already shares (`errors`, `filesize`) — a second glob
  * here would mean this command and `x verify` disagree on what "the app's source" is. Test files
  * are excluded: a fixture's `t('fixture.key')` is not a gap the shipped catalogs owe an answer to.
+ * So are `guards/`: gate tooling renders nothing, and its fix lines quote `t('…')` as an example.
  * `extractFromFiles` reads by absolute path, so its `file` label is rewritten back to the same
  * root-relative POSIX shape `app-load.ts` uses for every other CLI-reported path.
  */
+const isGuard = (file: string): boolean => file.startsWith('guards/');
+
 export async function scanSource(root: string): Promise<Extraction> {
   const files: string[] = [];
   for await (const file of eachSourceFile(root)) {
-    if (!isTest(file)) files.push(file);
+    if (!isTest(file) && !isGuard(file)) files.push(file);
   }
   const extraction = await extractFromFiles(files.map((file) => join(root, file)));
   const toRelative = (file: string): string => relative(root, file).split(sep).join('/');

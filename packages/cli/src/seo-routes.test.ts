@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { RouteConfig } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { SITEMAP_MAX_URLS } from '@ultimat3/seo';
 import { appRoutes } from './runtime-render';
 import { seoRoutes } from './seo-routes';
 import { siteSeo } from './site-seo';
@@ -159,4 +160,91 @@ describe('seoRoutes, served by the web role', () => {
       await (await fromRequest.fetch(new Request('https://req.example.com/sitemap.xml'))).text(),
     ).toContain('<loc>https://req.example.com</loc>');
   });
+});
+
+// Every `/robots.txt` hit recomputed the whole sitemap — each dynamic route's `prerender()`
+// included — and `/sitemap.xml` did it again. One answer per origin now serves both files for as
+// long as the response may be cached anyway.
+describe('seoRoutes memoises one answer per origin', () => {
+  test('robots.txt and sitemap.xml share one enumeration; another origin gets its own', async () => {
+    let enumerated = 0;
+    route('apps/web/site/blog/[slug]/page.tsx', {
+      prerender: () => {
+        enumerated += 1;
+        return ['hello'];
+      },
+    });
+    const server = serve({ ULTIMATE_ENV: 'production' });
+    await server.fetch(new Request('https://a.example.com/robots.txt'));
+    await server.fetch(new Request('https://a.example.com/sitemap.xml'));
+    await server.fetch(new Request('https://a.example.com/sitemap.xml'));
+    expect(enumerated).toBe(1);
+    const other = await server.fetch(new Request('https://b.example.com/sitemap.xml'));
+    expect(await other.text()).toContain('<loc>https://b.example.com/blog/hello</loc>');
+    expect(enumerated).toBe(2);
+  });
+
+  // With no declared origin the key is the request's `Host`, which the caller picks: bounded.
+  test('the memo keeps a bounded number of origins, the oldest out first', async () => {
+    let enumerated = 0;
+    route('apps/web/site/blog/[slug]/page.tsx', {
+      prerender: () => {
+        enumerated += 1;
+        return ['hello'];
+      },
+    });
+    const server = serve({ ULTIMATE_ENV: 'production' });
+    const ask = (host: string) => server.fetch(new Request(`https://${host}/sitemap.xml`));
+    for (let index = 0; index < 9; index += 1) await ask(`h${index}.example.com`);
+    expect(enumerated).toBe(9);
+    await ask('h8.example.com');
+    expect(enumerated).toBe(9);
+    await ask('h0.example.com');
+    expect(enumerated).toBe(10);
+  });
+
+  test('a failed enumeration is not kept: the next request asks again', async () => {
+    let calls = 0;
+    route('apps/web/site/blog/[slug]/page.tsx', {
+      prerender: () => {
+        calls += 1;
+        if (calls === 1) throw new TypeError('the data store blinked');
+        return ['hello'];
+      },
+    });
+    const server = serve({ ULTIMATE_ENV: 'production', APP_URL: 'https://www.example.com' });
+    expect((await server.fetch(new Request('http://x/sitemap.xml'))).status).toBe(500);
+    const retried = await server.fetch(new Request('http://x/sitemap.xml'));
+    expect(await retried.text()).toContain('/blog/hello');
+  });
+});
+
+// s2-cli #11: past 50,000 URLs `/sitemap.xml` is an index naming its parts, and the web role served
+// the index alone — every part it named was a 404. The parts come from the same memoised answer.
+describe('seoRoutes serves every part a split sitemap names', () => {
+  test('each <loc> in the index answers 200 with its own urlset; an unnamed part is a 404', async () => {
+    let enumerated = 0;
+    route('apps/web/site/p/[id]/page.tsx', {
+      prerender: () => {
+        enumerated += 1;
+        return Array.from({ length: SITEMAP_MAX_URLS + 1 }, (_unused, index) => String(index));
+      },
+    });
+    const server = serve(PRODUCTION);
+    const index = await (await server.fetch(new Request('http://x/sitemap.xml'))).text();
+    expect(index).toContain('<sitemapindex');
+    const parts = [...index.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1] ?? '');
+    expect(parts).toEqual([
+      'https://www.example.com/sitemaps/1.xml',
+      'https://www.example.com/sitemaps/2.xml',
+    ]);
+    for (const part of parts) {
+      const response = await server.fetch(new Request(`http://x${new URL(part).pathname}`));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('application/xml');
+      expect(await response.text()).toContain('<urlset');
+    }
+    expect((await server.fetch(new Request('http://x/sitemaps/3.xml'))).status).toBe(404);
+    expect(enumerated).toBe(1);
+  }, 60_000);
 });

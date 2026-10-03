@@ -9,6 +9,7 @@ import { registerCatalog } from '@ultimat3/i18n';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -28,6 +29,7 @@ const { callAdminTool } = await import('./mcp');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const cases = entity('admin_scope_cases', {
   columns: {
@@ -84,7 +86,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

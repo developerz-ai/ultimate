@@ -102,7 +102,7 @@ export function containedPath(root: string, path: string): string {
       dir: base,
       // Command first, the caveat behind a `#`: the line runs verbatim and the shell drops the
       // rest. `x g <kind> <name>` pasted into bash is a redirect, not a command.
-      fix: `x g resource posts --dry-run   # name every file relative to the app root, no ".." segment`,
+      fix: `x g resource post --dry-run   # name every file relative to the app root, no ".." segment`,
     });
   return target;
 }
@@ -198,14 +198,56 @@ function planFile(
   return { kind: 'write', file, absolute, contents: file.contents };
 }
 
+/** Every file's plan, decided without touching the disk — the first of `writeFiles`' two passes. */
+async function planAll(
+  root: string,
+  files: readonly GeneratedFile[],
+  force: boolean,
+  invocation: string,
+): Promise<readonly WritePlan[]> {
+  const plans: WritePlan[] = [];
+  for (const file of files) {
+    const absolute = containedPath(root, file.path);
+    plans.push(
+      file.merge === 'json'
+        ? await planJsonMerge(file, absolute)
+        : planFile(file, absolute, force, invocation),
+    );
+  }
+  return plans;
+}
+
+const conflictsOf = (plans: readonly WritePlan[]): readonly Finding[] =>
+  plans.flatMap((plan) => (plan.kind === 'conflict' ? [plan.finding] : []));
+
+/**
+ * What `writeFiles` WOULD do, and nothing else: the paths it would write and the conflicts that
+ * would stop it. `x g --dry-run` answers with this — the bare file list said "would write 33"
+ * where the real run was `X_GENERATE_CONFLICT`, and listed slice modules the run skips as writes.
+ */
+export async function planWrites(
+  root: string,
+  files: readonly GeneratedFile[],
+  force: boolean,
+  invocation = 'x g <kind> <name>',
+): Promise<WriteReport> {
+  const plans = await planAll(root, files, force, invocation);
+  const conflicts = conflictsOf(plans);
+  if (conflicts.length > 0) return { written: [], conflicts };
+  return {
+    written: plans.flatMap((plan) => (plan.kind === 'write' ? [plan.file.path] : [])),
+    conflicts: [],
+  };
+}
+
 /**
  * Never clobbers, and never half-writes. A generator that overwrites is a generator nobody runs
  * twice; a generator that lands four of seven files and then reports a conflict is worse, because
  * the next run conflicts on the files the failed one wrote.
  *
  * Two passes, and the split is the point: the first decides — containment, existence, whether a
- * catalog can be merged into — and touches nothing, the second writes only when the first found
- * no conflict at all. Containment was already proven up front and the rest was not.
+ * catalog can be merged into — and touches nothing (`planWrites` is that pass alone), the second
+ * writes only when the first found no conflict at all.
  */
 export async function writeFiles(
   root: string,
@@ -218,16 +260,8 @@ export async function writeFiles(
    */
   invocation = 'x g <kind> <name>',
 ): Promise<WriteReport> {
-  const plans: WritePlan[] = [];
-  for (const file of files) {
-    const absolute = containedPath(root, file.path);
-    plans.push(
-      file.merge === 'json'
-        ? await planJsonMerge(file, absolute)
-        : planFile(file, absolute, force, invocation),
-    );
-  }
-  const conflicts = plans.flatMap((plan) => (plan.kind === 'conflict' ? [plan.finding] : []));
+  const plans = await planAll(root, files, force, invocation);
+  const conflicts = conflictsOf(plans);
   if (conflicts.length > 0) return { written: [], conflicts };
 
   const written: string[] = [];

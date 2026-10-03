@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "85a67d7bea3eb046918cc53575039ccae17fef8a5864efa6b449faf7cac055c1",
+  "buildId": "85ce74c9759dcd2862d7a179cd1715114769a268a4d6febd9d9b32c71e6f7a6e",
   "tiers": {
     "0": [
       "core",
@@ -658,6 +658,11 @@
       "code": "X_BUILD_ID_MISSING",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_BUILD_OUT_UNSAFE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BUILD_SKEW",
@@ -2493,6 +2498,11 @@
       "code": "X_PATH_INVALID",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_PERMISSION_BORROWED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_PERMISSION_UNGRANTED",

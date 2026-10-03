@@ -16,6 +16,12 @@ export const SOURCE_GLOBS = [
   'api/**/*.{ts,tsx}',
   'shared/**/*.{ts,tsx}',
   'apps/*/{app,site,api,shared}/**/*.{ts,tsx}',
+  // An app's own entry files: authored, shipped, and outside every surface glob above — a 900-line
+  // `server.ts` or an unrunnable `fix:` in it was invisible to `filesize` and `errors`.
+  // And its guards: run on the gate, held to the error contract, and invisible to `filesize`.
+  'guards/*.ts',
+  'apps/*/server.ts',
+  'apps/*/prerender.ts',
 ] as const;
 
 /**

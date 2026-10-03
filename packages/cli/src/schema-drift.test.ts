@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { EntityDescriptionLike, SchemaDescription, TableDescription } from '@ultimat3/db';
+import { replicaIdentityTables } from './db-subscribes';
 import { MIGRATIONS_DIR, snapshotFileName } from './migrations';
 import type { Finding } from './output';
 import { checkMigrationDrift, checkSnapshotDrift, schemaDifferenceCause } from './schema-drift';
@@ -126,7 +127,9 @@ describe('unit · schema snapshot drift', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]?.code).toBe('X_DB_SCHEMA_UNDECLARED');
       expect(findings[0]?.cause).toContain('comments_gone_check');
-      expect(findings[0]?.fix).toContain('re-declare');
+      // One runnable command: the re-declare branch rides in the cause, never behind a `#`.
+      expect(findings[0]?.fix).toBe('x db gen "drop comments_gone_check"');
+      expect(findings[0]?.cause).toContain('re-declare it on the entity instead');
     });
   });
 
@@ -143,8 +146,12 @@ describe('unit · schema snapshot drift', () => {
       };
       const findings = await checkSnapshotDrift(root, supply(unrenderable));
       expect(findings.length).toBeGreaterThan(0);
-      for (const finding of findings) expect(finding.fix).not.toContain('x db gen "');
+      for (const finding of findings) {
+        expect(finding.fix).not.toContain('x db gen "');
+        expect(finding.fix).not.toContain('#');
+      }
       expect(findings[0]?.fix).toContain('packages/entity/src/describe.ts');
+      expect(findings.some((finding) => finding.cause.includes('reaches no SQL'))).toBe(true);
     });
   });
 
@@ -221,5 +228,90 @@ describe('unit · a table difference names its table once', () => {
     expect(schemaDifferenceCause({ ...base, part: 'column', name: 'email' })).toBe(
       'column "email" on table "customers" is declared',
     );
+  });
+});
+
+// Plan 101 slice 12: the identity a realtime declaration needs is a tier-3 fact no entity carries,
+// so a hash of the entity source cannot move when a channel with params is added over an existing
+// table — and that app was never told it owed the migration that lets a DELETE reach its members.
+describe('unit · replica identity a realtime declaration needs', () => {
+  const wants =
+    (...tables: readonly string[]) =>
+    (declared: ReadonlySet<string>): readonly string[] =>
+      tables.filter((table) => declared.has(table));
+
+  test('a table a channel needs FULL on that no sidecar records is X_DB_SCHEMA_UNMIGRATED', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', SIDECAR_WITHOUT_CHECKS);
+      const findings = await checkSnapshotDrift(root, supply(comments()), wants('comments'));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.code).toBe('X_DB_SCHEMA_UNMIGRATED');
+      expect(findings[0]?.cause).toBe(
+        'table "comments" needs REPLICA IDENTITY FULL — a channel with params or a live query ' +
+          'subscribes to it — and no migration recorded it',
+      );
+      expect(findings[0]?.fix).toBe('x db gen "record replica identity full"');
+    });
+  });
+
+  test('a sidecar recording FULL on that table is not drift', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', {
+        tables: [{ ...COMMENTS_TABLE, replicaIdentityFull: true }],
+      });
+      expect(await checkSnapshotDrift(root, supply(comments()), wants('comments'))).toEqual([]);
+    });
+  });
+
+  // `replica-identity.ts` never reverts the identity, so a table dropping out of every realtime
+  // declaration keeps it — reporting the recorded FULL as undeclared would ask for a statement
+  // `x db gen` will never emit.
+  test('a recorded FULL no declaration needs any more is not drift', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', {
+        tables: [{ ...COMMENTS_TABLE, replicaIdentityFull: true }],
+      });
+      expect(await checkSnapshotDrift(root, supply(comments()), wants())).toEqual([]);
+    });
+  });
+
+  test('the declared tables are what the need is computed over', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', SIDECAR_WITHOUT_CHECKS);
+      const seen: string[][] = [];
+      const spy = (declared: ReadonlySet<string>): readonly string[] => {
+        seen.push([...declared]);
+        return [];
+      };
+      await checkSnapshotDrift(root, supply(comments()), spy);
+      expect(seen).toEqual([['comments']]);
+    });
+  });
+
+  // `x db gen` refuses a `subscribes:` name no entity declares; the gate reports that refusal as a
+  // finding rather than letting it escape the step as an unexpected throw.
+  test('a subscribes: name no entity declares is reported as X_QUERY_SUBSCRIBES_UNKNOWN', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', SIDECAR_WITHOUT_CHECKS);
+      const typo = (declared: ReadonlySet<string>): readonly string[] =>
+        replicaIdentityTables([{ name: 'feed', subscribes: ['coments'] }], declared, []);
+      const findings = await checkSnapshotDrift(root, supply(comments()), typo);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.code).toBe('X_QUERY_SUBSCRIBES_UNKNOWN');
+      expect(findings[0]?.at).toBe(MIGRATIONS_DIR);
+    });
+  });
+
+  test('the composed step carries the identity through to the snapshot half', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', SIDECAR_WITHOUT_CHECKS);
+      const findings = await checkMigrationDrift(
+        root,
+        supply(comments()),
+        never,
+        wants('comments'),
+      );
+      expect(findings.map((finding) => finding.code)).toEqual(['X_DB_SCHEMA_UNMIGRATED']);
+    });
   });
 });

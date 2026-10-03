@@ -6,6 +6,7 @@ import {
   chunk,
   SITEMAP_INDEX_MAX_FILES,
   SITEMAP_MAX_URLS,
+  SITEMAP_PARTS_DIR,
   sitemapUrls,
 } from './sitemap';
 
@@ -136,15 +137,17 @@ describe('buildSitemap', () => {
       { ...BASE, maxUrls: 50 },
     );
     expect(result.urlCount).toBe(120);
+    // Under one directory, so a running web role serves every part from ONE route
+    // (`/sitemaps/:file`) — the router has no mid-segment params, and `/sitemap-N.xml` 404'd.
     expect(result.files.map((file) => file.path)).toEqual([
-      '/sitemap-1.xml',
-      '/sitemap-2.xml',
-      '/sitemap-3.xml',
+      `${SITEMAP_PARTS_DIR}/1.xml`,
+      '/sitemaps/2.xml',
+      '/sitemaps/3.xml',
     ]);
     expect(result.files.map((file) => file.urlCount)).toEqual([50, 50, 20]);
     expect(result.index?.path).toBe('/sitemap.xml');
     expect(result.index?.xml).toContain('<sitemapindex');
-    expect(result.index?.xml).toContain('https://ultimate.dev/sitemap-3.xml');
+    expect(result.index?.xml).toContain('<loc>https://ultimate.dev/sitemaps/3.xml</loc>');
   });
 
   test('a maxUrls that is not a positive count is refused, never a loop that never ends', async () => {

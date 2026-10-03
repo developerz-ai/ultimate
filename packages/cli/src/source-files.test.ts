@@ -2,6 +2,9 @@
 // `errors` and `x i18n check` can never report on — a hole none of them can see from the inside.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no temp-directory API or recursive delete.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { eachSourceFile, isGenerated, isTest, isVendored, SOURCE_GLOBS } from './source-files';
@@ -34,5 +37,29 @@ describe('unit · the source set', () => {
     expect(isGenerated('packages/ui/src/scss.d.ts')).toBe(true);
     expect(isTest('packages/core/e2e/version.e2e.test.ts')).toBe(true);
     expect(isTest('packages/core/src/errors.ts')).toBe(false);
+  });
+});
+
+describe("unit · an app's own entry files and guards are source (s1-t5 gaps)", () => {
+  // `filesize` and `errors` never saw a 900-line guard or an unrunnable `fix:` in the server
+  // entry: `guards/*.ts`, `apps/*/server.ts` and `apps/*/prerender.ts` sat outside every glob.
+  test('guards/*.ts, apps/*/server.ts and apps/*/prerender.ts are walked', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-source-files-'));
+    const files = [
+      'guards/raw-colour.ts',
+      'guards/raw-colour.test.ts',
+      'apps/web/server.ts',
+      'apps/web/prerender.ts',
+      'apps/admin/server.ts',
+      'apps/web/app/post/entity.ts',
+    ];
+    try {
+      for (const path of [...files, 'apps/web/node_modules/x/server.ts', 'docker/x.ts']) {
+        await Bun.write(join(root, path), 'export {};\n');
+      }
+      expect([...(await collect(root))].sort()).toEqual([...files].sort());
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

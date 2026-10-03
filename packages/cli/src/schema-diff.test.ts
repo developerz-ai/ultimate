@@ -265,3 +265,31 @@ describe('unit · declared schema vs recorded snapshot', () => {
     expect(differences.map((difference) => difference.table)).toEqual(['alpha', 'zeta']);
   });
 });
+
+// One direction only: `replica-identity.ts` adds the identity and never reverts it, so a recorded
+// FULL with no declaration needing it is the state `x db gen` deliberately leaves behind.
+describe('unit · replica identity full', () => {
+  test('declared FULL that no snapshot recorded is one unmigrated table difference', () => {
+    const differences = diffDeclaredSchema(
+      schema(table({ replicaIdentityFull: true })),
+      schema(table()),
+    );
+    expect(differences).toEqual([
+      {
+        direction: 'unmigrated',
+        part: 'table',
+        table: 'comments',
+        name: 'replica identity full',
+        detail:
+          'needs REPLICA IDENTITY FULL — a channel with params or a live query subscribes to it — ' +
+          'and no migration recorded it',
+      },
+    ]);
+  });
+
+  test('FULL on both sides, or recorded alone, is agreement', () => {
+    const full = table({ replicaIdentityFull: true });
+    expect(diffDeclaredSchema(schema(full), schema(full))).toEqual([]);
+    expect(diffDeclaredSchema(schema(table()), schema(full))).toEqual([]);
+  });
+});

@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { registerAdminResources } from './admin-registration';
-import { registerGeneratedPrimitives } from './api-registration';
+import { indexBindingFindings, registerGeneratedPrimitives } from './api-registration';
 import { writeAppArtifacts } from './app-artifacts';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
@@ -18,7 +18,8 @@ import { ungrantedByGenerator } from './generate-grant-findings';
 import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
-import { containedPath, writeFiles } from './generate-write';
+import { refuseShadowedTypes } from './generate-shadow';
+import { containedPath, planWrites, writeFiles } from './generate-write';
 import { declareGeneratedImports } from './generated-imports';
 import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -39,6 +40,15 @@ export type { Generator } from './generate-kinds';
 export { GENERATORS } from './generate-kinds';
 export type { WriteReport } from './generate-write';
 export { dedupe, writeFiles } from './generate-write';
+
+/**
+ * The same run under a name the API index does not hold: the feature's prefix, or the kind's suffix
+ * when no feature is named — kebab output, so it pastes into a shell as one argument.
+ */
+const freeName = (kind: Generator, name: string, feature: string | undefined): string =>
+  feature === undefined
+    ? `${kebab(name)}-${kind.split(':').at(-1) ?? kind}`
+    : `${kebab(feature)}-${kebab(name)}`;
 
 export const generateCommand: CliCommand = {
   spec: generateSpec,
@@ -89,24 +99,45 @@ export const generateCommand: CliCommand = {
       ...(dbModule === undefined ? {} : { dbModule }),
       shell,
     });
-    if (flagBool(ctx.args, 'dry-run')) {
-      return {
-        ok: true,
-        command: 'g',
-        summary: msg('cli.generate.planned', { count: files.length, kind, name }),
-        data: { files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => msg('cli.file.added', { path: file.path })),
-      };
-    }
+    // On the planned files, before a dry run answers or anything lands: a name whose type spelling
+    // the emitted code also uses as a global is a slice that does not compile.
+    refuseShadowedTypes(files, kind, name);
     // The caller's own invocation, EVERY flag it set included: without `--feature` the fix wrote
     // a second slice beside the one that conflicted.
-    const invocation = [
+    const flags = reproducedFlags(generateCommand.spec, ctx.args);
+    const invocation = [invocationOf(ctx, 'g'), kind, quoteArg(name), ...flags].join(' ');
+    // A module the API index would list under a name it already holds: refused before anything is
+    // written, with the same run under a name that is free — the feature's own prefix.
+    const renamed = [
       invocationOf(ctx, 'g'),
       kind,
-      quoteArg(name),
-      ...reproducedFlags(generateCommand.spec, ctx.args),
-    ].join(' ');
-    const report = await writeFiles(root, files, flagBool(ctx.args, 'force'), invocation);
+      quoteArg(freeName(kind, name, featureFlag)),
+      ...flags,
+    ];
+    const bindings = await indexBindingFindings(
+      root,
+      files.map((file) => file.path),
+      renamed.join(' '),
+    );
+    const force = flagBool(ctx.args, 'force');
+    if (flagBool(ctx.args, 'dry-run')) {
+      // The write plan, never the bare file list: what the real run would write, skip and refuse.
+      const plan = await planWrites(root, files, force, invocation);
+      const findings = [...plan.conflicts, ...bindings];
+      const planned = findings.length === 0 ? plan.written : [];
+      return {
+        ok: findings.length === 0,
+        command: 'g',
+        summary: msg('cli.generate.planned', { count: planned.length, kind, name }),
+        data: { files: planned, dryRun: true },
+        lines: planned.map((file) => msg('cli.file.added', { path: file })),
+        findings,
+      };
+    }
+    const report =
+      bindings.length > 0
+        ? { written: [], conflicts: bindings }
+        : await writeFiles(root, files, force, invocation);
     // The three edits a generated primitive needs outside its own slice, performed rather than
     // left as findings: a declared permission granted to a role, a job listed in `defineApi`, and
     // an entity added to the typed handle its `repo.ts` reads through. Before the manifest load

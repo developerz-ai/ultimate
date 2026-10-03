@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { knownPermissions, restorePermissions } from '@ultimat3/policy';
+import { knownPermissions, permissionDeclarationSites, restorePermissions } from '@ultimat3/policy';
 import type { AdminApp } from './admin';
 import { staticAuthz } from './authz';
 import { relationsFor } from './relations';
@@ -16,6 +16,7 @@ const authors = entity('admin_labels_authors', {
 });
 
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 let admin: AdminApp;
 const ids: string[] = [];
 
@@ -33,7 +34,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

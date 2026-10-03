@@ -16,7 +16,7 @@
     "dev": "bin/dev",
     "check": "bin/check",
     "build": "x build",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "tsc -p . --pretty",
     "test": "bun test --isolate",
     "db:gen": "x db gen",
     "db:migrate": "x db migrate",

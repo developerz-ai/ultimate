@@ -1,8 +1,8 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "rootDir": "src",
+    "composite": false,
     "noEmit": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../../apps/web/shared/services.ts", "../../apps/web/app/*/policy.ts"]
 }

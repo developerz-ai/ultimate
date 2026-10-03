@@ -115,6 +115,7 @@ export {
   chunk,
   SITEMAP_INDEX_MAX_FILES,
   SITEMAP_MAX_URLS,
+  SITEMAP_PARTS_DIR,
   sitemapUrls,
 } from './sitemap';
 export type { MetaIssue, MetaValidationReport, ValidateMetaOptions } from './validate';

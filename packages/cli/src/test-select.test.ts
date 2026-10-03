@@ -181,3 +181,35 @@ describe('unit · discoverTests sees every test file the root runner sees', () =
     }
   });
 });
+
+describe('unit · discoverTests anchors the repo-only ignores at the root (s2-cli #4)', () => {
+  // `x g resource build` writes `apps/web/app/build/…` and `x g resource example` the page
+  // `apps/web/app/examples/…`: an ignore list matched at any depth dropped both slices' tests from
+  // `x test` and from the gate's parallel steps, which select through this same function.
+  test('a slice named build, example or dummy is discovered; the root directories are not', async () => {
+    const root = join(tmpdir(), `ultimate-test-select-${Bun.randomUUIDv7()}`);
+    const kept = [
+      'apps/web/app/build/service.test.ts',
+      'apps/web/app/builds/page.test.tsx',
+      'apps/web/app/examples/page.test.tsx',
+      'apps/web/app/example/actions/create-example.contract.test.ts',
+      'apps/web/app/dummy/service.test.ts',
+    ];
+    const dropped = [
+      'build/out.test.ts',
+      'examples/dummy/apps/web/a.test.ts',
+      'dummy/social-media-clone/b.test.ts',
+      'dist/c.test.ts',
+      'packages/ui/dist/d.test.ts',
+      'node_modules/pkg/e.test.ts',
+      'packages/ui/node_modules/pkg/f.test.ts',
+    ];
+    for (const path of [...kept, ...dropped]) await Bun.write(join(root, path), 'export {};\n');
+    try {
+      const paths = (await discoverTests(root)).map((file) => file.path).sort();
+      expect(paths).toEqual([...kept].sort());
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

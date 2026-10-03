@@ -9,6 +9,7 @@ import {
   definePermissions,
   isKnownPermission,
   knownPermissions,
+  permissionDeclarationSites,
   resourceOf,
   restorePermissions,
   verbOf,
@@ -137,7 +138,7 @@ describe('restorePermissions()', () => {
     clearPermissions();
     expect(knownPermissions()).toEqual([]);
 
-    restorePermissions(captured);
+    restorePermissions(captured, {});
     expect(knownPermissions()).toEqual(['admin:read', 'admin:write']);
     expect(isKnownPermission('admin:read')).toBe(true);
   });
@@ -147,7 +148,7 @@ describe('restorePermissions()', () => {
     const captured = knownPermissions();
     definePermissions(['org:admin']);
 
-    restorePermissions(captured);
+    restorePermissions(captured, {});
 
     expect(knownPermissions()).toEqual(['post:read']);
   });
@@ -156,10 +157,61 @@ describe('restorePermissions()', () => {
     const captured = knownPermissions();
     definePermissions(['post:read']);
 
-    restorePermissions(captured);
+    restorePermissions(captured, {});
 
     expect(knownPermissions()).toEqual([]);
     // Empty is the "no app has declared its set" state, where every string is admitted.
     expect(isKnownPermission('anything:at-all')).toBe(true);
+  });
+});
+
+// Where each permission was declared, as `roleDeclarationSites` answers for roles: the policy step
+// asks whether an app's own rule leans on a permission only a package it imports declared
+// (`@ultimat3/admin`'s `defineAdmin()`), which is a question about the declaring module.
+describe('permissionDeclarationSites()', () => {
+  const declareHere = (): void => {
+    definePermissions(['post:read']);
+  };
+
+  test('names the caller of definePermissions, never this package', () => {
+    declareHere();
+    const sites = permissionDeclarationSites()['post:read'] ?? [];
+    expect(sites).toHaveLength(1);
+    expect(sites[0]).toContain('permissions.test.ts');
+    expect(sites[0]).not.toContain('permissions.ts:');
+    expect(sites[0]).not.toContain('declaration-site.ts');
+  });
+
+  test('keeps every distinct site, and one per site however often it runs', () => {
+    declareHere();
+    declareHere();
+    definePermissions(['post:read', 'post:publish']);
+    expect(permissionDeclarationSites()['post:read']).toHaveLength(2);
+    expect(permissionDeclarationSites()['post:publish']).toHaveLength(1);
+  });
+
+  test('a name that spells an Object.prototype member is an own key', () => {
+    definePermissions(['constructor:read']);
+    expect(Object.keys(permissionDeclarationSites())).toEqual(['constructor:read']);
+    expect(permissionDeclarationSites()['toString:read']).toBeUndefined();
+  });
+
+  test('clearPermissions forgets the sites with the names', () => {
+    declareHere();
+    clearPermissions();
+    expect(permissionDeclarationSites()).toEqual({});
+  });
+
+  // The restore must take the sites too: re-declaring through `definePermissions` would name the
+  // harness as the declaring module of every permission it put back.
+  test('restorePermissions puts back the sites it is handed, and only for names it restores', () => {
+    declareHere();
+    const names = knownPermissions();
+    const sites = permissionDeclarationSites();
+    clearPermissions();
+    restorePermissions(names, { ...sites, 'ghost:read': ['nowhere'] });
+    expect(permissionDeclarationSites()).toEqual(sites);
+    restorePermissions(names, {});
+    expect(permissionDeclarationSites()).toEqual({});
   });
 });

@@ -10,7 +10,13 @@ import { join } from 'node:path';
 import { clientTransport, MEASUREMENT_ACTOR_ID, useContext } from '@ultimat3/core';
 import { db, sql } from '@ultimat3/db';
 import { useRequestHeader } from '@ultimat3/http';
-import { can, definePermissions, knownPermissions, restorePermissions } from '@ultimat3/policy';
+import {
+  can,
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { from, query, registerQueries, resetRegistry, runQuery, t } from '@ultimat3/query';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
@@ -44,6 +50,7 @@ describe('the actor a measurement render runs as', () => {
   // Weighing bytes needs no data authority; the rendered document is discarded.
   test('an app route whose load runs a policy-guarded query is measured, as the build actor', async () => {
     const before = knownPermissions();
+    const beforeSites = permissionDeclarationSites();
     definePermissions(['thing:read']);
     try {
       const things = query({
@@ -80,7 +87,7 @@ describe('the actor a measurement render runs as', () => {
       expect(await Bun.file(join(out, 'things/index.html')).exists()).toBe(false);
     } finally {
       resetRegistry();
-      restorePermissions(before);
+      restorePermissions(before, beforeSites);
     }
   });
 
@@ -115,6 +122,7 @@ describe('the actor a measurement render runs as', () => {
   // the header, `X_CLIENT_TRANSPORT_FAILED` for the dial. The app's own API answers in process now.
   test('a load that reads over HTTP is answered by the app API, in process, inside a request', async () => {
     const before = knownPermissions();
+    const beforeSites = permissionDeclarationSites();
     definePermissions(['thing:read']);
     try {
       const things = query({
@@ -156,7 +164,7 @@ describe('the actor a measurement render runs as', () => {
       expect(process.env['APP_URL']).toBeUndefined();
     } finally {
       resetRegistry();
-      restorePermissions(before);
+      restorePermissions(before, beforeSites);
     }
   });
 

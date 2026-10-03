@@ -12,7 +12,7 @@
     "bun": ">=1.4.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json",
     "test": "bun test",
     "doc": "x mcp doc --json"
   },

@@ -15,8 +15,10 @@ import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult } from './output';
+import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
 import { PREBUILT_DIR } from './serve-prebuilt-paths';
+import { quoteArg } from './shell-quote';
 import type { StaticReport } from './static-report';
 import {
   readStaticReport,
@@ -190,6 +192,46 @@ export function buildResult(input: {
   };
 }
 
+/** The flags only some targets read. */
+const TARGET_SCOPED_FLAGS = ['tag', 'out', 'preflight'] as const;
+
+type TargetScopedFlag = (typeof TARGET_SCOPED_FLAGS)[number];
+
+/** The optional flags each target READS. One table, so a flag cannot be read by one and ignored. */
+const TARGET_FLAGS: ReadonlyMap<BuildTarget, readonly TargetScopedFlag[]> = new Map([
+  ['docker', ['tag', 'preflight']],
+  ['binary', ['out', 'preflight']],
+  ['static', ['out', 'preflight']],
+  // The boot reads ONE place, and the image holds no devDependencies to run a gate with.
+  ['prebuilt', []],
+]);
+
+/** Why a target takes no `--<flag>`, in the words its refusal prints. */
+const UNREAD_BECAUSE: Readonly<Record<TargetScopedFlag, string>> = {
+  tag: 'only the docker target tags an image',
+  out: 'the docker target writes an image, not a path',
+  preflight: 'the prebuilt target runs no gate: `x verify` ran before `docker build` was called',
+};
+
+/**
+ * A flag the chosen target never reads is refused before the gate runs. Accepted and dropped, it
+ * printed a green build: `--out dist` on `docker` and `--tag` on `binary` read as if they landed.
+ */
+function refuseUnreadFlags(args: ParsedArgs, target: BuildTarget): void {
+  for (const flag of TARGET_SCOPED_FLAGS) {
+    if (!args.flags.has(flag) || TARGET_FLAGS.get(target)?.includes(flag) === true) continue;
+    throw new BadFlagError({
+      flag,
+      command: 'build',
+      reason:
+        target === 'prebuilt' && flag !== 'preflight'
+          ? `the prebuilt target writes ${PREBUILT_DIR}, the one place a container boots from, and takes no --${flag}`
+          : `--target ${target} never reads it: ${UNREAD_BECAUSE[flag]}`,
+      fix: `x build --target ${quoteArg(target)}`,
+    });
+  }
+}
+
 /**
  * `x build --target prebuilt`: the island chunks and compiled stylesheets, written by the process
  * `docker build` runs after the source is copied in. No gate and no subprocess — the image holds
@@ -198,17 +240,7 @@ export function buildResult(input: {
  * A module that would not import fails the image build rather than warning into a build log
  * nobody reads: its stylesheets are missing from the store, and every pod would compile them.
  */
-async function buildPrebuilt(ctx: CommandContext, root: string): Promise<CommandResult> {
-  // The boot reads ONE place; a flag that seemed to move it would write a store no pod opens.
-  for (const flag of ['tag', 'out']) {
-    if (flagString(ctx.args, flag) === undefined) continue;
-    throw new BadFlagError({
-      flag,
-      command: 'build',
-      reason: `the prebuilt target writes ${PREBUILT_DIR}, the one place a container boots from, and takes no --${flag}`,
-      fix: 'x build --target prebuilt',
-    });
-  }
+async function buildPrebuilt(root: string): Promise<CommandResult> {
   const started = Bun.nanoseconds();
   const { prebuildImage } = await import('./image-prepare');
   const built = await prebuildImage(root);
@@ -248,7 +280,8 @@ export const buildCommand: CliCommand = {
     // typecheck, and eight seconds of `tsc` ahead of "that file does not exist" is eight seconds
     // an agent spends on the wrong question.
     requireEntry(root, target);
-    if (target === 'prebuilt') return buildPrebuilt(ctx, root);
+    refuseUnreadFlags(ctx.args, target);
+    if (target === 'prebuilt') return buildPrebuilt(root);
 
     // Run static verify steps before building — unless the caller is a gate that runs the same
     // six steps itself right after (`bin/check`: `x build --no-preflight && x verify`), where the

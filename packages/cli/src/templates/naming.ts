@@ -77,6 +77,34 @@ export const plural = (input: string): string => {
   return `${input}s`;
 };
 
+/** Singular words `plural()` already handles, though they end in a lone `s`. */
+const SINGULAR_IN_S: ReadonlySet<string> = new Set([
+  'alias',
+  'atlas',
+  'bias',
+  'canvas',
+  'gas',
+  'lens',
+]);
+
+/**
+ * The singular a plural name was made from, kebab-case — `undefined` when the name is not one
+ * `plural()` would have produced. Read off the last word only, `plural()`'s inverse: a name that
+ * is already plural is pluralised AGAIN by every generator that names a table (`posts` →
+ * `postses`), so it is refused with this spelling. `ss`, `us`, `is` endings are singular.
+ */
+export const singularOf = (input: string): string | undefined => {
+  const parts = words(input);
+  const last = parts.at(-1);
+  if (last === undefined || !last.endsWith('s') || /(ss|us|is)$/.test(last)) return undefined;
+  if (SINGULAR_IN_S.has(last)) return undefined;
+  const candidates = last.endsWith('ies')
+    ? [`${last.slice(0, -3)}y`]
+    : [last.slice(0, -2), last.slice(0, -1)];
+  const found = candidates.find((candidate) => candidate.length > 0 && plural(candidate) === last);
+  return found === undefined ? undefined : [...parts.slice(0, -1), found].join('-');
+};
+
 export const titleKey = (input: string): string => `app.${kebab(input)}.title`;
 
 /**

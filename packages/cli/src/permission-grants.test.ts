@@ -14,6 +14,7 @@ import {
   defineRoles,
   knownPermissions,
   or,
+  permissionDeclarationSites,
   restorePermissions,
   restoreRoles,
   roleDeclarationSites,
@@ -23,6 +24,7 @@ import { clearRoutes, defineRoute, registerMountedRoutes } from '@ultimat3/rende
 import { requirements, ungrantedFinding, ungrantedRequirements } from './permission-grants';
 
 let permissions: readonly string[] = [];
+let permissionSites: ReturnType<typeof permissionDeclarationSites> = {};
 let roles: ReturnType<typeof roleDefinitions> = {};
 let sites: ReturnType<typeof roleDeclarationSites> = {};
 // The action registry is process-wide and other files register at module scope: put theirs back.
@@ -30,6 +32,7 @@ let actions: readonly AnyAction[] = [];
 
 beforeEach(() => {
   permissions = knownPermissions();
+  permissionSites = permissionDeclarationSites();
   roles = roleDefinitions();
   sites = roleDeclarationSites();
   clearPermissions();
@@ -43,7 +46,7 @@ afterEach(() => {
   resetRegistry();
   for (const target of actions) registerAction(target.name, target);
   clearRoutes();
-  restorePermissions(permissions);
+  restorePermissions(permissions, permissionSites);
   restoreRoles(roles, sites);
 });
 

@@ -16,6 +16,7 @@ import {
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -32,6 +33,7 @@ const { adminResource } = await import('./resource');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const orders = entity('admin_tab_orders', {
   columns: {
@@ -85,7 +87,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

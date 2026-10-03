@@ -53,13 +53,13 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `templates/scaffold-guards.ts` | `SHIPPED` — the one list of shipped guards: `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). A new one is a `templates/guard-<name>.ts` + a row + `guard-<name>.test.ts`; `scaffold-guards-style.test.ts` holds embedded scales to `@ultimat3/ui`, the framework's own sheets to the rules, and both tracked apps byte-equal to the templates |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize`. A published package's `files` negates `*.test.ts` and `*-fixture.ts`, and no entry point (`exports`, `bin`) may reach a `-fixture.ts` — `X_PACKAGE_SHAPE` names the file to rename |
-| `app-permissions.ts` / `permission-grants.ts` | `policy`: every permission granted or required is declared, and every one required is granted by some role (`X_PERMISSION_UNGRANTED`) |
+| `app-permissions.ts` / `permission-grants.ts` / `app-permissions-borrowed.ts` / `app-permissions-site.ts` | `policy`: every permission granted or required is declared, every one required is granted by some role (`X_PERMISSION_UNGRANTED`), and every one an app rule requires is declared by an app module, not only by a package (`X_PERMISSION_BORROWED`, read off `permissionDeclarationSites()`) |
 | `job-registration.ts` | `manifest`: no job or task under a positional `anonymous-*` name (`X_JOB_UNREGISTERED`) |
 | `unscanned-admin.ts` | `manifest`: a `defineAdmin()` outside the app scan (`apps/*/src/`) is `X_ADMIN_UNSCANNED`, with the `git mv` that mounts it |
 | `verify-role-load.ts` / `verify-role-load-probe.ts` | `manifest`: a child imports the app as a worker does, then the rest module by module; a registration only a document-reaching module makes is `X_ROLE_LOAD_INCOMPLETE` with the module and the import the API index lacks |
 | `async-pages.ts` / `live-routes.ts` / `budgets.ts` | `budgets` riders: an async `Page` with no `load`, a live read no island imports, bytes per route |
 | `app-agents-md.ts` / `app-env.ts` / `app-openapi.ts` / `app-manifest.ts` | `manifest` and `contract-diff` |
-| `schema-drift.ts` / `drift.ts` / `db-destructive.ts` / `db-ungeneratable.ts` | `drift`: snapshot vs declarations, the source hash (core's `canonicalJson`), the header markers |
+| `schema-drift.ts` / `drift.ts` / `drift-replica-identity.ts` / `db-destructive.ts` / `db-ungeneratable.ts` | `drift`: snapshot vs declarations (`REPLICA IDENTITY FULL` a params channel or `subscribes:` needs included), the source hash (core's `canonicalJson`), the header markers |
 | `schema-dump-drift.ts` | `drift`'s fourth rail, the only one that boots a database: committed `packages/db/schema/` vs a scratch replay, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`) |
 | `i18n-registration.ts` / `i18n-audit.ts` / `admin-catalog-keys.ts` | `i18n`; a mounted admin's keys are `AdminApp.catalogKeys()`, asked of every app catalog — never re-derived here (`X_CATALOG_MISSING_KEYS`) |
 | `error-unthrown.ts` | host check: a registered code nothing throws must say so |
@@ -70,6 +70,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 |---|---|
 | `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` | argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`) |
 | `generate-feature.ts` | a `--feature` naming no slice is `X_FEATURE_UNKNOWN`; nothing invents an entity |
+| `generate-shadow.ts` | a name whose type spelling a planned file also uses as a global or local type (`promise`, `row`) is `X_CLI_BAD_FLAG`, decided on the planned files |
 | `generate-grants.ts` | a written `policy.ts` grants `:read` to `member`, `:write` to `admin` in `apps/web/shared/roles.ts`; a written `entity.ts` declares its table's `<table>:read\|write\|delete` there and grants all three to `admin` — what the admin asks for the screen that entity just became |
 | `api-registration.ts` | a written job or task is listed in `apps/web/api/index.ts` |
 | `handle-registration.ts` / `workspace-dep-edit.ts` / `templates/scaffold-db-client.ts` | a written entity joins `const entities = { … }` in `packages/db/src/client.ts` (the typed handle every generated `repo.ts` reads), with the two manifest lines the new imports need; no anchor is `X_DB_HANDLE_UNREGISTERED` carrying the lines. `cmd-generate.ts`'s `nextSteps` prints what the new table owes |

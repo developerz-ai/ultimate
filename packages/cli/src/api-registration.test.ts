@@ -2,7 +2,8 @@
 // and without the example slice, because the two differ exactly in whether a `jobs:` list exists.
 
 import { describe, expect, test } from 'bun:test';
-import { apiEntriesFor, insertApiEntries } from './api-registration';
+import { apiBindingFindings, apiEntriesFor, insertApiEntries } from './api-registration';
+import { API_INDEX } from './app-root';
 import { apiFiles } from './templates/scaffold-api';
 
 const indexOf = (example: boolean): string =>
@@ -159,5 +160,58 @@ describe('unit · a list already wrapped one entry per line', () => {
     const list = /jobs: \[(?<body>[^\]]*)\]/.exec(source)?.groups?.['body'] ?? '';
     for (const name of names) expect(list).toContain(`${name}Job`);
     expect(list).toContain('reindexPost');
+  });
+});
+
+describe('unit · a binding the index already holds is a finding, never a silent skip (s1-t5 #7)', () => {
+  const FIX = 'x g job comment-reindex-post --feature comment';
+  const withPostJob = insertApiEntries(
+    indexOf(false),
+    apiEntriesFor(['apps/web/app/post/jobs/reindex-post.ts']),
+  ).source;
+
+  // (a) `x g job reindex-post --feature comment` beside `post`'s: ok, three files written, and the
+  // second job never listed — the namespace binding is the file's basename alone.
+  test('a second module under a bound name is refused, naming both modules', () => {
+    const findings = apiBindingFindings(
+      withPostJob,
+      ['apps/web/app/comment/jobs/reindex-post.ts'],
+      FIX,
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ code: 'X_GENERATE_CONFLICT', fix: FIX, at: API_INDEX });
+    expect(findings[0]?.cause).toContain('reindexPost');
+    expect(findings[0]?.cause).toContain('../app/post/jobs/reindex-post');
+    expect(findings[0]?.cause).toContain('../app/comment/jobs/reindex-post');
+  });
+
+  // (b) `x g action api` / `x g query define-api`: `import * as api` beside `export const api`, and
+  // every app-loading command died with a ReferenceError.
+  test.each([
+    ['apps/web/app/post/actions/api.ts', 'api'],
+    ['apps/web/app/post/queries/define-api.ts', 'defineApi'],
+    ['apps/web/app/post/actions/health.ts', 'health'],
+  ])('%s would rebind %s, which the index already declares', (path, binding) => {
+    const findings = apiBindingFindings(indexOf(true), [path], FIX);
+    expect(findings.map((finding) => finding.code)).toEqual(['X_GENERATE_CONFLICT']);
+    expect(findings[0]?.cause).toContain(`"${binding}"`);
+  });
+
+  test('the same module again, or a name nothing holds, is no finding', () => {
+    expect(
+      apiBindingFindings(withPostJob, ['apps/web/app/post/jobs/reindex-post.ts'], FIX),
+    ).toEqual([]);
+    expect(apiBindingFindings(withPostJob, ['apps/web/app/post/jobs/notify-post.ts'], FIX)).toEqual(
+      [],
+    );
+  });
+
+  test('two modules in ONE run under one binding are refused too', () => {
+    const findings = apiBindingFindings(
+      indexOf(false),
+      ['apps/web/app/post/jobs/sync.ts', 'apps/web/app/post/tasks/sync.ts'],
+      FIX,
+    );
+    expect(findings).toHaveLength(1);
   });
 });

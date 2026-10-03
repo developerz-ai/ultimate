@@ -8,6 +8,7 @@ import {
   definePermissions,
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   restoreRoles,
   roleDeclarationSites,
@@ -15,7 +16,8 @@ import {
 } from '@ultimat3/policy';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
-import { grantedReferences, permissionFindings, policyFindings, siteFile } from './app-permissions';
+import { grantedReferences, permissionFindings, policyFindings } from './app-permissions';
+import { siteFile } from './app-permissions-site';
 import { CLI_ORIGIN, type DuplicateInstall } from './duplicate-packages';
 import type { Finding } from './output';
 import { STORAGE_READ_PERMISSION } from './runtime-storage';
@@ -26,11 +28,13 @@ const ROOT = '/tmp/x-app-permissions';
 // is permanent for every later file in the process unless the captured set is put back — the rule
 // `packages/policy/src/permissions.ts` spells out on `restorePermissions`.
 let permissions: readonly string[] = [];
+let permissionSites: ReturnType<typeof permissionDeclarationSites> = {};
 let roles: ReturnType<typeof roleDefinitions> = {};
 let sites: ReturnType<typeof roleDeclarationSites> = {};
 
 beforeEach(() => {
   permissions = knownPermissions();
+  permissionSites = permissionDeclarationSites();
   roles = roleDefinitions();
   sites = roleDeclarationSites();
   clearPermissions();
@@ -44,7 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearRoutes();
-  restorePermissions(permissions);
+  restorePermissions(permissions, permissionSites);
   restoreRoles(roles, sites);
 });
 
@@ -56,6 +60,17 @@ const routeConfig = (permission: string) =>
     policy: { permission },
     meta: () => ({ title: 'Dashboard', description: 'x'.repeat(60) }),
   });
+
+/**
+ * Declared from a module UNDER the app root, as an app's own `definePermissions()` is — a call from
+ * this file is outside `ROOT`, which the step reads as a package's declaration
+ * (`X_PERMISSION_BORROWED`, `app-permissions-borrowed.ts`).
+ */
+const declareInApp = (...names: readonly string[]): void =>
+  restorePermissions(
+    names,
+    Object.fromEntries(names.map((name) => [name, [`at ${ROOT}/shared/permissions.ts:1:1`]])),
+  );
 
 const codesOf = (findings: readonly Finding[]): readonly string[] =>
   findings.map((finding) => finding.code);
@@ -162,7 +177,7 @@ describe('unit · the step reports one finding per place, and carries the load',
   });
 
   test('an ungranted requirement names the file the role map is DECLARED in, wherever that is', async () => {
-    definePermissions(['posts:read', 'posts:write']);
+    declareInApp('posts:read', 'posts:write');
     // The reference app's layout, not the scaffold's: its roles live in `shared/policies.ts`.
     restoreRoles(
       { member: { grants: ['posts:read'] } },
@@ -178,7 +193,7 @@ describe('unit · the step reports one finding per place, and carries the load',
   });
 
   test('a role map declared where no file can be named is not guessed at', async () => {
-    definePermissions(['posts:read', 'posts:write']);
+    declareInApp('posts:read', 'posts:write');
     restoreRoles({ member: { grants: ['posts:read'] } }, {});
     registerRoute({ file: 'apps/web/app/posts/new/page.tsx', config: routeConfig('posts:write') });
     const [finding] = await policyFindings(ROOT, async () => ({ findings: [] }));
@@ -250,5 +265,30 @@ describe('unit · a stack frame reduced to a file an agent can open', () => {
   test('a path outside the root and an unreadable frame both answer undefined', () => {
     expect(siteFile('/app', 'at x (/elsewhere/roles.ts:1:1)')).toBeUndefined();
     expect(siteFile('/app', 'unknown site')).toBeUndefined();
+  });
+});
+
+describe('unit · an app rule leaning on a permission only a package declared', () => {
+  // The admin's own declaration, as `defineAdmin()` leaves it: a frame in the package, outside ROOT.
+  const ADMIN = 'at declareAdminPermissions (/repo/packages/admin/src/policy-bridge.ts:73:3)';
+
+  test('the step reports X_PERMISSION_BORROWED at the app file its permissions live in', async () => {
+    restorePermissions(['posts:read', 'org:read'], {
+      'posts:read': [ADMIN],
+      'org:read': [`at ${ROOT}/shared/permissions.ts:1:1`],
+    });
+    registerRoute({ file: 'apps/web/app/posts/page.tsx', config: routeConfig('posts:read') });
+    const findings = await policyFindings(ROOT, async () => ({ findings: [] }));
+    expect(codesOf(findings)).toEqual(['X_PERMISSION_BORROWED']);
+    expect(findings[0]?.at).toBe('shared/permissions.ts');
+    expect(findings[0]?.cause).toContain('apps/web/app/posts/page.tsx requires');
+  });
+
+  test('declared by the app too, it is not a finding', async () => {
+    restorePermissions(['posts:read'], {
+      'posts:read': [ADMIN, `at ${ROOT}/shared/permissions.ts:1:1`],
+    });
+    registerRoute({ file: 'apps/web/app/posts/page.tsx', config: routeConfig('posts:read') });
+    expect(await policyFindings(ROOT, async () => ({ findings: [] }))).toEqual([]);
   });
 });

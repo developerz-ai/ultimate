@@ -124,7 +124,10 @@ const isSerial = (type: TestType): boolean => SERIAL_TYPES.includes(type);
  * Build output, and nested projects that carry their own `x verify`. `examples/**` and
  * `dummy/**` are the second kind: each holds a whole app gated by its own run of this same step
  * list, so collecting them here would report one app failure on two different gates. The patterns
- * are relative to the run's root, so this excludes nothing when the app itself is the root.
+ * are relative to the run's root, so this excludes nothing when the app itself is the root — and
+ * every one but `dist` is ANCHORED there: matched at any depth, `build` dropped the live tests of
+ * an app slice named `build` (and `examples` the page of `x g resource example`) from the gate's
+ * serial steps, while `test-select.ts` — the parallel steps' selector — anchors the same three.
  *
  * `dummy/**` was added after the framework gate started running a demo app's tests and disagreeing
  * with `bun run test` — which already excluded it — for no reason a reader could see.
@@ -133,7 +136,7 @@ const isSerial = (type: TestType): boolean => SERIAL_TYPES.includes(type);
  * those apps and blocks on a per-app ratchet. Until 2026-08 that was only true of `examples/**`,
  * and `dummy/social-media-clone` was excluded by this list and gated by nothing.
  */
-const NEVER_A_TEST = ['**/dist/**', '**/build/**', '**/examples/**', '**/dummy/**'];
+const NEVER_A_TEST = ['**/dist/**', 'build/**', 'examples/**', 'dummy/**'];
 
 const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);

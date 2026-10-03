@@ -384,7 +384,7 @@ An **embedder** that builds its own server — `createServer({ routes, config: d
 | Call | Options | Notes |
 |---|---|---|
 | `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `disallow?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
-| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `lastmod?` | splits into an index past `SITEMAP_MAX_URLS` (50,000). `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
+| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `lastmod?` | splits past `SITEMAP_MAX_URLS` (50,000) into the index `/sitemap.xml` and parts `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`), which the web role serves from `GET /sitemaps/:file`. `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
 
 `baseUrl` is the argument every one of them takes, so the canonical origin stays an env key the app reads (`APP_URL`) and never a config field. There is no `seo.lighthouse` gate and no `seo.ogImage` renderer `As of 2026-08-22`.
 

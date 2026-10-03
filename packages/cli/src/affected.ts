@@ -26,23 +26,6 @@ import { readWorkspaceGraph } from './workspace-graph';
 export const DEFAULT_BASE = 'main';
 
 /**
- * Root files that belong to no workspace and change what every workspace compiles to: a compiler
- * option, a lint rule, the root manifest, the resolved dependency tree, the test preload, the app
- * config. A "scoped" run that skipped them reports green over packages the edit just broke.
- *
- * Matched on the WHOLE path — `packages/cli/package.json` is the cli workspace's own file and
- * reaches only cli's dependents, `package.json` at the root reaches everything.
- */
-export const ROOT_WIDE_FILES: readonly string[] = [
-  'app.config.ts',
-  'biome.json',
-  'bun.lock',
-  'bunfig.toml',
-  'package.json',
-  'tsconfig.json',
-];
-
-/**
  * A file with no compilation unit behind it. A doc or a plan re-checks nothing, so it maps to no
  * workspace at all rather than to the one it happens to sit inside — `packages/cli/README.md` is
  * not a reason to run `packages/cli`'s tests.
@@ -107,7 +90,13 @@ export interface AffectedPlan {
   readonly changed: readonly string[];
   /** The subset with no compilation unit behind it, named so an empty answer explains itself. */
   readonly ignored: readonly string[];
-  /** The root files that forced every workspace in, empty when none did. */
+  /**
+   * The changed files no workspace owns, which forced every workspace in — and the root itself — or
+   * empty when none did. A root file (`tsconfig.base.json`, `biome.json`, `bun.lock`, the test
+   * preload, `scripts/`, `guards/`) changes what every workspace compiles to or is checked by, and
+   * a scoped run that skipped it reports green over packages the edit just broke. Matched on
+   * ownership, never on a list of names: a list misses the file nobody thought to add to it.
+   */
   readonly rootWide: readonly string[];
   readonly workspaces: readonly WorkspaceNode[];
 }
@@ -124,14 +113,15 @@ export function planAffected(
 ): AffectedPlan {
   const ignored = changed.filter(isDoc);
   const considered = changed.filter((path) => !isDoc(path));
-  const rootWide = considered.filter((path) => ROOT_WIDE_FILES.includes(path));
-  if (rootWide.length > 0) {
-    return { changed, ignored, rootWide, workspaces: [...graph].sort(byName) };
-  }
+  const rootWide: string[] = [];
   const seeds = new Set<string>();
   for (const path of considered) {
     const node = owningWorkspace(graph, path);
-    if (node !== undefined) seeds.add(node.name);
+    if (node === undefined) rootWide.push(path);
+    else seeds.add(node.name);
+  }
+  if (rootWide.length > 0) {
+    return { changed, ignored, rootWide, workspaces: [...graph].sort(byName) };
   }
   const reached = withDependents(graph, seeds);
   return {
@@ -263,14 +253,20 @@ export interface AffectedScope {
 }
 
 /**
- * An empty prefix means the scan root IS an affected workspace, so every path it yields is in
- * scope; a prefix starting with `..` is a workspace outside that root, which has no file there to
- * select and must not be allowed to collapse into a match-everything empty string.
+ * The plan's scope, relative to the directory the caller scans. A ROOT-WIDE plan is the whole scan
+ * root (`''`): every workspace is in it, and so is every file no workspace owns — a `scripts/` test
+ * stayed out of the run while `package.json` changed when only workspace directories were listed.
+ *
+ * Otherwise an empty prefix means the scan root IS an affected workspace, so every path it yields
+ * is in scope; a prefix starting with `..` is a workspace outside that root, which has no file there
+ * to select and must not be allowed to collapse into a match-everything empty string.
  */
-const scopePrefixes = (root: string, cwd: string, dirs: readonly string[]): readonly string[] =>
-  dirs
-    .map((dir) => relative(cwd, join(root, dir)).split('\\').join('/'))
-    .filter((path) => !path.startsWith('..'));
+export const scopePrefixes = (plan: AffectedPlan, root: string, cwd: string): readonly string[] =>
+  plan.rootWide.length > 0
+    ? ['']
+    : plan.workspaces
+        .map((workspace) => relative(cwd, join(root, workspace.dir)).split('\\').join('/'))
+        .filter((path) => !path.startsWith('..'));
 
 export const inScope = (path: string, prefixes: readonly string[]): boolean =>
   prefixes.some((prefix) => prefix === '' || path === prefix || path.startsWith(`${prefix}/`));
@@ -300,11 +296,7 @@ export async function affectedScope(options: AffectedScopeOptions): Promise<Affe
     selection,
     root,
     plan,
-    prefixes: scopePrefixes(
-      root,
-      options.cwd,
-      plan.workspaces.map((workspace) => workspace.dir),
-    ),
+    prefixes: scopePrefixes(plan, root, options.cwd),
   };
 }
 

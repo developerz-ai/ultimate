@@ -31,7 +31,10 @@ commits `packages/db/schema/` runs `x db gen`, once** — the `manifest`, `contr
 steps are red until it does. Then `ai`, with its status row in `http`: **a gateway's `actor` and
 `org` ceilings now count every `llm()`, `agent()` and `hive()` call — size them before the
 deploy.** Slice 11 is complete: `testing`, `scraping` and `admin` — **an admin edit form posts
-`_version`, and an edit with none, or with a stale one, is a 409 that writes nothing.**
+`_version`, and an edit with none, or with a stale one, is a 409 that writes nothing.** Slice 12a
+is `cli`'s build, generator, test-selection and policy half, with what it changed in `seo`,
+`policy` and `testing`: **the `policy` step refuses a permission only `defineAdmin()` declared, and
+the `drift` step a `REPLICA IDENTITY FULL` no migration recorded.**
 
 ### Added
 
@@ -239,6 +242,15 @@ Tier 5 — admin (slice 11).
   `/_x` DB panel's SQL runner, inside `@ultimat3/db`'s `readOnlyQuery`: its own `BEGIN READ ONLY`
   transaction, a statement timeout, a row ceiling. A host wires `runSql: readOnlySql(client)`;
   `x dev` does not yet.
+
+Tier 1 — seo. Tier 2 — policy. Tier 5 — cli (slice 12a).
+
+- **seo:** `SITEMAP_PARTS_DIR` (`'/sitemaps'`) — the directory a split sitemap's parts are written
+  under. See Changed.
+- **policy:** `permissionDeclarationSites()` — per permission, the module of each
+  `definePermissions()` call that declared it, as `roleDeclarationSites()` answers for roles.
+  `restorePermissions(names, declaredAt)` takes it back — see Changed.
+- **cli:** `X_BUILD_OUT_UNSAFE` and `X_PERMISSION_BORROWED` — see Changed.
 
 Tier 5 — cli.
 
@@ -1185,6 +1197,102 @@ Tier 5 — admin (slice 11).
 - **admin:** `BATCH_QUEUED_REASON` is declared in `batch-queue.ts`; `@ultimat3/admin` still exports
   it. No edit.
 
+Tier 1 — seo (slice 12a).
+
+- **BREAKING — a split sitemap's parts are `/sitemaps/<n>.xml`, were `/sitemap-<n>.xml`.** Past
+  `maxUrls` (50,000 by default) `buildSitemap` writes the index at `/sitemap.xml` and its parts
+  under `SITEMAP_PARTS_DIR`. The running web role now serves them (`GET /sitemaps/:file`); every
+  `/sitemap-<n>.xml` 404'd there, because a route parameter is a whole path segment. A part the
+  index does not name is `404 X_ROUTE_NOT_FOUND`. A site that large: `x build --target static`,
+  upload the new `sitemaps/` folder, delete or redirect each old `sitemap-<n>.xml`, and re-submit
+  `/sitemap.xml`, which is unchanged and names the new parts.
+
+Tier 2 — policy (slice 12a).
+
+- **BREAKING — `restorePermissions(names, declaredAt)` requires where each permission was
+  declared.** A one-argument call is TS2554. It restored the names with no declaration site, and
+  a name with no site is one the `policy` step never judges — so a hand-written restore silently
+  turned `X_PERMISSION_BORROWED` off for every permission it put back. Capture
+  `permissionDeclarationSites()` with `knownPermissions()` and pass both back; pass `{}` only when
+  you mean no provenance.
+
+Tier 5 — cli (slice 12a).
+
+- **BREAKING — `x build --target static` refuses an export directory it cannot prove is its own:
+  `X_BUILD_OUT_UNSAFE`.** Every build empties the directory first, and deleted an existing,
+  non-empty `--out` whatever it held. It now empties only a directory that is absent, empty, or
+  holds the `.x-export` marker an earlier build wrote — every build writes it, and the default
+  `.x/static` is exempt. An `--out` that is the app root or holds it is `X_BUILD_OUT_UNSAFE`, was
+  `X_CLI_BAD_FLAG`. Empty a custom output directory once, or build to `.x/static`; the marker
+  ships in the export.
+- **BREAKING — a static build over a module that fails to import is `X_BUILD_FAILED`.** The build
+  succeeded and the page that module registered was missing from the export. It is refused before
+  the export is emptied, so the last good export survives. `x verify --only manifest --json` lists
+  each module and why.
+- **BREAKING — `x build` refuses a flag its target never reads: `X_CLI_BAD_FLAG`.** `--tag` is the
+  docker target's only; `--out` is not the docker target's; the prebuilt target takes none of
+  `--tag`, `--out` or `--no-preflight`. Each was ignored. Drop the flag.
+- **BREAKING — `x g --dry-run` is the write plan.** It answers `ok: false` with the conflicts the
+  real run would meet, and `data.files` lists only files it would write — a slice module already
+  on disk is no longer listed. It answered `ok: true` and every planned path.
+- **BREAKING — `x g` refuses a primitive whose binding `apps/web/api/index.ts` already holds:
+  `X_GENERATE_CONFLICT`, before anything is written.** The index binds each listed module under its
+  camelCased file name; a name held by another feature's module, or by the index's own `api`,
+  `defineApi` or `health`, left the job unregistered under a green run or the index unloadable.
+  The `fix:` is the same command under a free name, prefixed with the feature.
+- **BREAKING — `x g` refuses three kinds of name: `X_CLI_BAD_FLAG`.** A plural `resource` or
+  `entity` name (`posts` → `x g resource post`), a name with a non-ASCII letter (`Über` →
+  `x g entity uber`), and a name whose type the generated code also uses (`promise`, `omit`,
+  `partial`, `row` → `x g resource promise-resource`). Each wrote a slice that pluralised twice or
+  did not compile. `date`, `record`, `response`, `event`, `error` and `money` stay allowed.
+- **BREAKING — `x affected` and `x test --affected` read a changed file no workspace owns as
+  root-wide.** Any non-doc path outside every workspace — `scripts/`, `guards/`,
+  `tsconfig.base.json`, `bin/` — selects every workspace and every test file, those outside any
+  workspace included. Only a fixed list of root files did; a change under `scripts/` selected
+  nothing. A CI job keyed on `--affected` runs more.
+- **BREAKING — test discovery skips `build/`, `examples/` and `dummy/` at the root only.** `x test`
+  and the gate's steps — the parallel ones and the serial `live` and `e2e` — matched them at any
+  depth, so an app slice named `build` lost 14 of its 16 test files and `x g resource example` its
+  page tests. `dist/` and `node_modules/` are still skipped everywhere. A test under such a slice
+  that never ran now runs, and may fail. Both tracked apps and this repository select the same
+  files as before.
+- **BREAKING — the `filesize` and `errors` steps read `guards/*.ts`, `apps/*/server.ts` and
+  `apps/*/prerender.ts`; `x i18n check` and the `i18n` step skip `guards/`.** A guard or an app
+  entry file past 500 lines, or with a `fix:` that is not a runnable command, now fails the gate.
+  A guard's fix text quotes `t('…')` as an example, which the `i18n` step read as a missing key.
+- **BREAKING — the web role keeps `/robots.txt`, `/sitemap.xml` and its parts for one hour per
+  origin, at most 8 origins.** Every request recomputed them, each dynamic route's `prerender()`
+  included. A computation that fails is not kept. A sitemap change reaches a running process an
+  hour later at most — restart it to see one sooner.
+- **BREAKING — `x new` pins `solid-js` 1.9.15**, the runtime the island compiler targets and this
+  repository runs; it pinned 1.9.14. An existing app moves its pin by hand.
+- **BREAKING — `x new` writes `tsc --noEmit -p ../../tsconfig.json` as the `typecheck` script of
+  `apps/web` and `apps/admin`**, as every package workspace already had. `-p tsconfig.json` left
+  out type extensions another workspace declares (`PermissionRegistry` in `app/*/policy.ts`), so
+  `apps/admin` passed a permission typo the gate refuses. The script now checks the whole program,
+  and is slower. An existing app sets the script in both `package.json` files.
+- **BREAKING — the `policy` step refuses a permission only a package declared:
+  `X_PERMISSION_BORROWED`.** An app action, query or route guard whose `can()` — inside `or()`
+  included — names a permission every `definePermissions()` call for which ran outside the app root
+  or under `node_modules`: `defineAdmin()` declares `<entity>:read|write|delete` for each mounted
+  entity, so a worker, a script or a test that never mounts the admin throws
+  `X_PERMISSION_UNKNOWN` at that `can()`. Add the name to the app's own `definePermissions([...])`
+  — the finding names the file. A permission whose declaration site cannot be read is not judged;
+  an undeclared one is still `X_PERMISSION_UNKNOWN`.
+- **BREAKING — the `drift` step reports a `REPLICA IDENTITY FULL` no migration recorded:
+  `X_DB_SCHEMA_UNMIGRATED`.** The tables `x db gen` grants it to — each params channel's `records`
+  tables and each live query's `subscribes:` — are part of the declared snapshot; a table whose
+  FULL no migration records is reported, with `x db gen "record replica identity full"`. An app
+  that never generated the migration upgrade step 33 names is red until it does. A `subscribes:`
+  name no entity declares is `X_QUERY_SUBSCRIBES_UNKNOWN`; it crashed the step.
+
+Tier 5 — testing (slice 12a).
+
+- **BREAKING — `ProcessRegistrySnapshot` has a required `permissionSites`.** It captures
+  `permissionDeclarationSites()` and restores through `restorePermissions(names, sites)`, so a
+  test's restore keeps every permission's provenance. A hand-built snapshot is TS2741: add
+  `permissionSites: permissionDeclarationSites()`, or `{}` for none.
+
 Tier 5 — cli.
 
 - **cli:** `X_VERIFY_STEP_TIMEOUT` names what was running. On expiry the step's test workers are
@@ -1660,6 +1768,13 @@ Tier 5 — admin (slice 11).
 - **admin:** the timeline and cache dev panels show "unavailable" for `DevSourceUnavailableError`
   only, as the db and live panels do; any other error from a source is thrown, no longer drawn as
   unavailable.
+
+Reference app (slice 12a).
+
+- **examples/dummy:** `bun run typecheck` is `tsc -p . --pretty`, the program the gate checks, and
+  each workspace's is `tsc --noEmit -p ../../tsconfig.json`; it reported 351 errors the gate never
+  saw. Each workspace `tsconfig.json` drops `rootDir`, sets `composite: false` and includes the
+  type extensions the app relies on, for editors.
 
 ## 23.0.0 - 2026-10-02
 

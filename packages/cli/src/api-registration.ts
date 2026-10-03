@@ -4,8 +4,10 @@
 // `x.manifest.json` and in every dead-letter trace — under a green gate (plan 101 slice 11 b).
 // Actions and queries are listed for the TYPE: `Api` is what the browser's client is shaped from.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { API_INDEX } from './app-root';
 import { containedPath } from './generate-write';
+import type { Finding } from './output';
 import { camel } from './templates/naming';
 import { wrapList } from './templates/wrap';
 
@@ -141,6 +143,93 @@ function withImport(source: string, importLine: string): string {
   const at = before?.index ?? (relative.at(-1)?.index ?? -1) + 1;
   lines.splice(at, 0, importLine);
   return lines.join('\n');
+}
+
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/** Every binding an import clause declares: `* as x`, `x`, `{ a, b as c, type d }`. */
+const clauseBindings = (clause: string): readonly string[] =>
+  clause
+    .replace(/^type\s+/, '')
+    .replace(/[{}]/g, ',')
+    .split(',')
+    .map((part) =>
+      part
+        .trim()
+        .replace(/^type\s+/, '')
+        .replace(/^\*\s+as\s+/, ''),
+    )
+    .map(
+      (part) =>
+        part
+          .split(/\s+as\s+/)
+          .at(-1)
+          ?.trim() ?? '',
+    )
+    .filter((name) => IDENTIFIER.test(name));
+
+/**
+ * Every top-level name the index declares, and what holds it: a namespace import by its
+ * specifier, anything else (`defineApi`, `api`, `Api`, a named import) by its own name. A second
+ * binding of any of them is a module that does not load — `import * as api` beside
+ * `export const api` is a ReferenceError in every app-loading command.
+ */
+function declaredBindings(source: string): ReadonlyMap<string, string> {
+  const held = new Map<string, string>();
+  for (const found of source.matchAll(/^import\s+([^;]*?)\s+from\s+'([^']+)';/gm)) {
+    const [, clause = '', specifier = ''] = found;
+    const namespace = /^\*\s+as\s+([A-Za-z_$][\w$]*)$/.exec(clause.trim())?.[1];
+    if (namespace !== undefined) held.set(namespace, specifier);
+    else for (const name of clauseBindings(clause)) held.set(name, `an import from ${specifier}`);
+  }
+  const declaration =
+    /^(?:export\s+)?(?:declare\s+)?(?:const|let|var|function\*?|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/gm;
+  for (const found of source.matchAll(declaration)) {
+    const [, name = ''] = found;
+    if (!held.has(name)) held.set(name, `the index's own ${name}`);
+  }
+  return held;
+}
+
+/**
+ * A written primitive whose namespace binding the index already holds — for another module, or as
+ * one of its own names — is a finding, decided BEFORE anything is written. Skipped silently, the
+ * job stayed unregistered under a green run; inserted, the index stopped loading.
+ */
+export function apiBindingFindings(
+  source: string,
+  written: readonly string[],
+  fix: string,
+): readonly Finding[] {
+  const held = new Map(declaredBindings(source));
+  const findings: Finding[] = [];
+  for (const entry of apiEntriesFor(written)) {
+    const holder = held.get(entry.binding);
+    if (holder === entry.specifier) continue;
+    if (holder === undefined) {
+      held.set(entry.binding, entry.specifier);
+      continue;
+    }
+    findings.push({
+      code: 'X_GENERATE_CONFLICT',
+      cause: `${API_INDEX} binds every listed module under its file name, and "${entry.binding}" is already ${holder.startsWith('.') ? `the namespace of ${holder}` : holder} — ${entry.specifier} cannot be listed under it`,
+      fix,
+      docs: ERROR_DOCS_URL,
+      at: API_INDEX,
+    });
+  }
+  return findings;
+}
+
+/** `apiBindingFindings` against the app's own index; none when the app has no index. */
+export async function indexBindingFindings(
+  root: string,
+  written: readonly string[],
+  fix: string,
+): Promise<readonly Finding[]> {
+  const file = containedPath(root, API_INDEX);
+  if (!(await Bun.file(file).exists())) return [];
+  return apiBindingFindings(await Bun.file(file).text(), written, fix);
 }
 
 /** Performs `insertApiEntries` on the app's index. Answers the paths it rewrote. */

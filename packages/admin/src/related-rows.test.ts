@@ -17,6 +17,7 @@ import { registerCatalog } from '@ultimat3/i18n';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -30,6 +31,7 @@ const { adminRouteMatch } = await import('./routes');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 /** Every call a table makes to its repository. One entry, one statement. */
 const statements: string[] = [];
@@ -117,7 +119,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

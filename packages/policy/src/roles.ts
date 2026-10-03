@@ -3,6 +3,7 @@
 // evaluator never has to reason about hierarchy — and a cycle is caught here, once.
 // The per-actor flattening and its memo live in `grant-index.ts`; this file owns the map.
 import type { Actor as CoreActor } from '@ultimat3/core';
+import { callerSite, UNKNOWN_SITE } from './declaration-site';
 import { roleRedefined } from './errors';
 import { resourceOf } from './permissions';
 
@@ -45,15 +46,7 @@ export const roleMapGeneration = (): number => generation;
 /** Frames inside this file — never the answer to "who declared this role?". */
 const INTERNAL_FRAME = /declarationSite|defineRoles/;
 
-const declarationSite = (): string => {
-  // Not a throw: the stack is the only place the declaring module's name exists at this point,
-  // and `X_ROLE_REDEFINED` is unactionable without both sides of the collision.
-  const stack = new Error().stack;
-  if (stack === undefined) return 'unknown site';
-  const frames = stack.split('\n').slice(1);
-  const frame = frames.find((line) => !INTERNAL_FRAME.test(line)) ?? frames[0] ?? '';
-  return frame.trim() === '' ? 'unknown site' : frame.trim();
-};
+const declarationSite = (): string => callerSite(INTERNAL_FRAME);
 
 /**
  * A role name is caller data, and an app's role map is a plain object literal — so `map['constructor']`
@@ -106,7 +99,7 @@ export const defineRoles = <const M extends RoleMap>(map: M): M => {
   for (const [role, definition] of Object.entries(map)) {
     const existing = own(merged, role);
     if (existing !== undefined && !sameDefinition(existing, definition)) {
-      throw roleRedefined(role, own(sites, role) ?? 'unknown site', site);
+      throw roleRedefined(role, own(sites, role) ?? UNKNOWN_SITE, site);
     }
     put(merged, role, definition);
     put(nextSites, role, own(nextSites, role) ?? site);

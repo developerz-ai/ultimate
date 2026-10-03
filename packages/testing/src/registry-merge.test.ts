@@ -9,6 +9,7 @@ const snap = (over: Partial<ProcessRegistrySnapshot>): ProcessRegistrySnapshot =
   locales: { supported: ['en'], fallback: 'en', order: [] } as never,
   catalogs: [],
   permissions: [],
+  permissionSites: {},
   roles: {},
   roleSites: {},
   tasks: [],
@@ -45,6 +46,20 @@ describe('unit · merged registry snapshots', () => {
     expect(merged.catalogs).toEqual([['en', { hello: 'Hello', bye: 'Bye' }]] as never);
     expect(merged.tasks.map((t) => t.name).sort()).toEqual(['hourly', 'nightly']);
     expect(merged.catalogDeclarations).toBe(2);
+  });
+
+  test('permission declaration sites are a union per name, as the names are', () => {
+    const merged = mergeSnapshots(
+      snap({ permissions: ['a:read'], permissionSites: { 'a:read': ['app.ts:1'] } }),
+      snap({
+        permissions: ['a:read', 'b:write'],
+        permissionSites: { 'a:read': ['admin.ts:9', 'app.ts:1'], 'b:write': ['b.ts:2'] },
+      }),
+    );
+    expect(merged.permissionSites).toEqual({
+      'a:read': ['app.ts:1', 'admin.ts:9'],
+      'b:write': ['b.ts:2'],
+    });
   });
 
   test('with nothing mounted, disposing live islands is a no-op', () => {

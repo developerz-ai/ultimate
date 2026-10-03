@@ -210,6 +210,20 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(majorOf(pinned ?? '')).toBe(majorOf(ours ?? ''));
   });
 
+  // The scaffold pinned `solid-js` 1.9.14 while this repository ran 1.9.15 and the CLI's own
+  // `babel-preset-solid ^1.9.15` compiles every island against it: a literal in a dependency block
+  // drifts with no failing check, so it is a constant held to the root manifest here.
+  test('the scaffold pins the solid-js this repository itself runs', async () => {
+    const scaffolded = JSON.parse(emitted('package.json')) as {
+      dependencies?: Record<string, string>;
+    };
+    const root = (await Bun.file(
+      new URL('../../../../package.json', import.meta.url).pathname,
+    ).json()) as { devDependencies?: Record<string, string> };
+    expect(root.devDependencies?.['solid-js']).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(scaffolded.dependencies?.['solid-js']).toBe(root.devDependencies?.['solid-js'] ?? '');
+  });
+
   test('the scaffold lints with the Biome this repository itself runs', async () => {
     // Exact, where the TypeScript pin above compares majors: a formatter is a build input, and a
     // patch apart is already visible — the repo sat on 2.5.5 under a `^2.4.15` range while the

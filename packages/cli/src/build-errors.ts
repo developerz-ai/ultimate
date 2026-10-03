@@ -3,6 +3,7 @@
 // ceiling; `errors.ts` re-exports every name, so no import site moves.
 
 import { UltimateError } from '@ultimat3/core';
+import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 
 /**
@@ -49,6 +50,27 @@ export class FrameworkScriptBuildFailedError extends UltimateError {
       code: 'X_BUILD_FAILED',
       cause: `the ${input.what} (${input.entry}) would not bundle for the browser: ${input.logs}`,
       fix: `bun build --target browser --format iife ${quoteArg(input.entry)}`,
+    });
+  }
+}
+
+/**
+ * A static build over an app whose modules did not all import. The route registry is filled BY the
+ * import, so a page whose module threw is not skipped but absent — and an export without it, with
+ * `x build` green, is a deploy that deletes a page. The `manifest` step owns load findings
+ * (`load-findings.ts`), so the fix is the command that lists every one with its own fix.
+ */
+export class PrerenderLoadFailedError extends UltimateError {
+  constructor(findings: readonly Finding[]) {
+    const listed = findings.map((finding) =>
+      finding.at === undefined
+        ? `${finding.code} ${finding.cause}`
+        : `${finding.at}: ${finding.code} ${finding.cause}`,
+    );
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `the static export renders the routes the app's modules register, and ${findings.length} module load finding(s) left it short: ${listed.join('; ')}`,
+      fix: 'x verify --only manifest --json',
     });
   }
 }

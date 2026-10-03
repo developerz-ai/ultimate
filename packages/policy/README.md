@@ -158,6 +158,11 @@ adds roles; it never deletes the first module's. A role two modules define *diff
 `X_ROLE_REDEFINED`, naming both declaration sites — and an identical re-declaration is a no-op,
 so `defineRoles({ ...roleDefinitions(), … })` stays legal.
 
+`permissionDeclarationSites()` answers where each permission was declared — one stack frame per
+distinct `definePermissions()` call. `x verify`'s `policy` step reads it to refuse an app rule
+whose permission only a package declared (`X_PERMISSION_BORROWED`: `defineAdmin()` declares
+`<entity>:read|write|delete`, and a process that never mounts the admin does not).
+
 The flattened grant set is memoised per actor and invalidated the moment the role map changes.
 It is keyed on the actor object, so it lives exactly as long as the request does: `@ultimat3/auth`
 re-reads the user row every request, and a revoked role takes effect on the next one.
