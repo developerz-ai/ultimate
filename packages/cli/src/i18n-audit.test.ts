@@ -68,6 +68,20 @@ describe('unit · scanSource', () => {
     expect(extraction.dynamic[0]?.file).toBe('app/page.ts');
     expect(extraction.usages.some((usage) => usage.key === 'fixture.only')).toBe(false);
   });
+
+  // A guard is gate tooling, not UI: `guards/untranslated-string.ts` names `{t('…')}` inside its own
+  // fix line, and read as source that became a key every catalog "owed" — both tracked apps went
+  // red on `i18n` the moment `guards/*.ts` joined the shared source set. The app's entry files do
+  // render, so they stay in the scan.
+  test('a guard is not scanned for keys; an app entry file is', async () => {
+    const dir = tempRoot('x-i18n-guards-');
+    await Bun.write(join(dir, 'guards/untranslated-string.ts'), "const fix = `{t('…')}`;\n");
+    await Bun.write(join(dir, 'apps/web/server.ts'), "const ready = t('server.ready');\n");
+
+    const keys = (await scanSource(dir)).usages.map((usage) => usage.key);
+
+    expect(keys).toEqual(['server.ready']);
+  });
 });
 
 describe('unit · loadCatalogs', () => {

@@ -10,6 +10,7 @@ import {
   defineRoles,
   isKnownPermission,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -30,6 +31,7 @@ const db = database({ posts }, { driver: memoryDriver() });
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 beforeAll(async () => {
   await db.posts.insert({ title: 'Bound' });
@@ -37,7 +39,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

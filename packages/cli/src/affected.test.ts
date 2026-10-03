@@ -7,10 +7,11 @@ import {
   changedFiles,
   DEFAULT_BASE,
   gitRoot,
+  inScope,
   owningWorkspace,
   planAffected,
-  ROOT_WIDE_FILES,
   readAffectedSelection,
+  scopePrefixes,
 } from './affected';
 import type { ExecResult, Runner } from './exec';
 import type { CommandSpec } from './parse';
@@ -55,11 +56,17 @@ describe('unit · affected closes over the graph transitively', () => {
     expect(names(planAffected(cyclic, ['packages/one/src/a.ts']))).toEqual(['@x/one', '@x/two']);
   });
 
-  test('a file under no workspace at all affects nothing', () => {
-    const plan = planAffected(CHAIN, ['scripts/bench/run.ts']);
-    expect(plan.workspaces).toEqual([]);
-    expect(plan.rootWide).toEqual([]);
-  });
+  // s2-cli #10: an edit to `scripts/x.ts`, `guards/y.ts` or `tsconfig.base.json` vanished from the
+  // plan — `workspaces: []`, `rootWide: []` — and `x test --affected` ran nothing. A file no
+  // workspace owns is owned by the root, and the root reaches everything.
+  test.each(['scripts/bench/run.ts', 'guards/raw-colour.ts', 'tsconfig.base.json', 'bin/check'])(
+    '%s, under no workspace, is root-wide',
+    (path) => {
+      const plan = planAffected(CHAIN, [path]);
+      expect(names(plan)).toEqual(['@x/a', '@x/b', '@x/c']);
+      expect(plan.rootWide).toEqual([path]);
+    },
+  );
 });
 
 describe('unit · affected maps a path to the workspace that owns it', () => {
@@ -79,7 +86,7 @@ describe('unit · affected maps a path to the workspace that owns it', () => {
 });
 
 describe('unit · a root file means every workspace', () => {
-  test.each(['tsconfig.json', 'biome.json', 'package.json', 'app.config.ts'])(
+  test.each(['tsconfig.json', 'biome.json', 'package.json', 'app.config.ts', 'bun.lock'])(
     '%s is root-wide, so a scoped run can never skip a package it just broke',
     (path) => {
       const plan = planAffected(CHAIN, [path]);
@@ -97,8 +104,19 @@ describe('unit · a root file means every workspace', () => {
     expect(names(planAffected(CHAIN, ['packages/a/package.json']))).toEqual(['@x/a']);
   });
 
-  test('every declared root-wide file is a root-level path, never a directory', () => {
-    for (const path of ROOT_WIDE_FILES) expect(path.includes('/')).toBe(false);
+  // Root-wide selects the ROOT too: the prefixes were the workspace directories alone, so a
+  // `scripts/*.test.ts` file stayed out of `x test --affected` even when `package.json` changed.
+  test('a root-wide plan scopes the whole scan root, files under no workspace included', () => {
+    const plan = planAffected(CHAIN, ['scripts/x.ts']);
+    expect(scopePrefixes(plan, '/repo', '/repo')).toEqual(['']);
+    expect(inScope('scripts/x.test.ts', scopePrefixes(plan, '/repo', '/repo'))).toBe(true);
+    expect(scopePrefixes(plan, '/repo', '/repo/packages/a')).toEqual(['']);
+  });
+
+  test('a scoped plan keeps its workspaces, relative to the scan root', () => {
+    const plan = planAffected(CHAIN, ['packages/a/src/x.ts']);
+    expect(scopePrefixes(plan, '/repo', '/repo')).toEqual(['packages/a']);
+    expect(scopePrefixes(plan, '/repo', '/repo/packages/b')).toEqual([]);
   });
 });
 

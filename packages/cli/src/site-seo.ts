@@ -173,7 +173,7 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
             localizedPath(path, locale, defaultLocale),
         }),
   });
-  // Past 50,000 URLs `files` are `/sitemap-N.xml` and the index is `/sitemap.xml`; below it,
+  // Past 50,000 URLs `files` are `/sitemaps/<n>.xml` and the index is `/sitemap.xml`; below it,
   // `files` is that one file and there is no index.
   const sitemaps = sitemap.index === undefined ? sitemap.files : [sitemap.index, ...sitemap.files];
   const robots = buildRobots({

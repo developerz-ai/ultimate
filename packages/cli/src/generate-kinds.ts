@@ -11,7 +11,7 @@ import {
 } from './errors';
 import { quoteArg } from './shell-quote';
 import type { Surface } from './templates';
-import { camel, kebab } from './templates/naming';
+import { camel, kebab, plural, singularOf } from './templates/naming';
 
 export const GENERATORS = [
   'resource',
@@ -137,8 +137,40 @@ export function readName(raw: string | undefined, kind: Generator): string {
   // directory that serves it. Every other generator's name is one directory segment.
   if (kind === 'route') return readRoutePath(raw);
   refusePath(raw, 'name', kind);
+  refuseNonAscii(raw, kind);
   refuseBadIdentifier(raw, kind);
+  refusePlural(raw, kind);
   return raw;
+}
+
+/**
+ * Every derived spelling keeps `[a-zA-Z0-9]` and drops the rest as a separator, so a letter
+ * outside ASCII vanished: `x g entity Über` wrote `ber`. Refused, with the name folded to ASCII.
+ */
+function refuseNonAscii(raw: string, kind: Generator): void {
+  if (!/[^\p{ASCII}]/u.test(raw)) return;
+  const folded = kebab(raw.normalize('NFKD').replace(/[^\p{ASCII}]/gu, ''));
+  throw new BadFlagError({
+    flag: 'name',
+    command: `g ${kind}`,
+    reason: `"${raw}" holds a letter outside ASCII, and every file, identifier and table name the generator derives from it keeps ASCII letters and digits only`,
+    fix: folded === '' ? exampleFor(kind) : ['x g', kind, folded].join(' '),
+  });
+}
+
+/** The generators that pluralise their name into a table and a page. */
+const PLURALISED: ReadonlySet<Generator> = new Set<Generator>(['resource', 'entity']);
+
+/** `x g resource posts` declared `entity('postses')`: a plural name is pluralised again. */
+function refusePlural(raw: string, kind: Generator): void {
+  const singular = PLURALISED.has(kind) ? singularOf(raw) : undefined;
+  if (singular === undefined) return;
+  throw new BadFlagError({
+    flag: 'name',
+    command: `g ${kind}`,
+    reason: `"${raw}" is already plural, and the generator pluralises the name for its table and page — "${plural(camel(raw))}"`,
+    fix: ['x g', kind, singular].join(' '),
+  });
 }
 
 /** A static segment, or `[param]` / `[...rest]` — the directory convention `x routes` reads. */

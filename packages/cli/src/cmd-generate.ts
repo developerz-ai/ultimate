@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { registerAdminResources } from './admin-registration';
-import { registerGeneratedPrimitives } from './api-registration';
+import { indexBindingFindings, registerGeneratedPrimitives } from './api-registration';
 import { writeAppArtifacts } from './app-artifacts';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
@@ -18,7 +18,8 @@ import { ungrantedByGenerator } from './generate-grant-findings';
 import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
-import { containedPath, writeFiles } from './generate-write';
+import { refuseShadowedTypes } from './generate-shadow';
+import { containedPath, planWrites, writeFiles } from './generate-write';
 import { declareGeneratedImports } from './generated-imports';
 import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -28,6 +29,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
 import { quoteArg } from './shell-quote';
+import type { GeneratedFile } from './templates';
 import { kebab, names, resolveLocales } from './templates';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
@@ -39,6 +41,24 @@ export type { Generator } from './generate-kinds';
 export { GENERATORS } from './generate-kinds';
 export type { WriteReport } from './generate-write';
 export { dedupe, writeFiles } from './generate-write';
+
+/**
+ * Names to suggest when the API index already holds the requested one, in order: the feature's
+ * prefix, the kind's suffix, then that suffix numbered — kebab output, so each pastes into a shell
+ * as one argument. The caller re-plans each and offers the first the index does not hold either.
+ */
+const freeNames = (
+  kind: Generator,
+  name: string,
+  feature: string | undefined,
+): readonly string[] => {
+  const suffixed = `${kebab(name)}-${kind.split(':').at(-1) ?? kind}`;
+  return [
+    ...(feature === undefined ? [] : [`${kebab(feature)}-${kebab(name)}`]),
+    suffixed,
+    ...Array.from({ length: 8 }, (_unused, index) => `${suffixed}-${index + 2}`),
+  ];
+};
 
 export const generateCommand: CliCommand = {
   spec: generateSpec,
@@ -72,41 +92,68 @@ export const generateCommand: CliCommand = {
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
     const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
     const sliceRepo = await readSliceFile(root, kind, slice, 'repo.ts');
-    const files = generate({
-      kind,
-      name,
-      ...(featureFlag === undefined ? {} : { feature: featureFlag }),
-      ...(sliceErrors === undefined ? {} : { sliceErrors }),
-      ...(sliceEntity === undefined ? {} : { sliceEntity }),
-      ...(sliceRepo === undefined ? {} : { sliceRepo }),
-      ...(at === undefined ? {} : { at }),
-      ...(permission === undefined ? {} : { permission }),
-      surface,
-      live: flagBool(ctx.args, 'live'),
-      admin: flagBool(ctx.args, 'admin'),
-      locales,
-      ...(catalogModule === undefined ? {} : { catalogModule }),
-      ...(dbModule === undefined ? {} : { dbModule }),
-      shell,
-    });
-    if (flagBool(ctx.args, 'dry-run')) {
-      return {
-        ok: true,
-        command: 'g',
-        summary: msg('cli.generate.planned', { count: files.length, kind, name }),
-        data: { files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => msg('cli.file.added', { path: file.path })),
-      };
-    }
+    const planFor = (planned: string) =>
+      generate({
+        kind,
+        name: planned,
+        ...(featureFlag === undefined ? {} : { feature: featureFlag }),
+        ...(sliceErrors === undefined ? {} : { sliceErrors }),
+        ...(sliceEntity === undefined ? {} : { sliceEntity }),
+        ...(sliceRepo === undefined ? {} : { sliceRepo }),
+        ...(at === undefined ? {} : { at }),
+        ...(permission === undefined ? {} : { permission }),
+        surface,
+        live: flagBool(ctx.args, 'live'),
+        admin: flagBool(ctx.args, 'admin'),
+        locales,
+        ...(catalogModule === undefined ? {} : { catalogModule }),
+        ...(dbModule === undefined ? {} : { dbModule }),
+        shell,
+      });
+    const files = planFor(name);
+    // On the planned files, before a dry run answers or anything lands: a name whose type spelling
+    // the emitted code also uses as a global is a slice that does not compile.
+    refuseShadowedTypes(files, kind, name);
     // The caller's own invocation, EVERY flag it set included: without `--feature` the fix wrote
     // a second slice beside the one that conflicted.
-    const invocation = [
-      invocationOf(ctx, 'g'),
-      kind,
-      quoteArg(name),
-      ...reproducedFlags(generateCommand.spec, ctx.args),
-    ].join(' ');
-    const report = await writeFiles(root, files, flagBool(ctx.args, 'force'), invocation);
+    const flags = reproducedFlags(generateCommand.spec, ctx.args);
+    const invocation = [invocationOf(ctx, 'g'), kind, quoteArg(name), ...flags].join(' ');
+    // A module the API index would list under a name it already holds: refused before anything is
+    // written, with the same run under a name that is free — re-planned and re-checked, so the
+    // suggestion is never itself a conflict.
+    const pathsOf = (planned: readonly GeneratedFile[]) => planned.map((file) => file.path);
+    const held = await indexBindingFindings(root, pathsOf(files), '');
+    let bindings: readonly Finding[] = [];
+    if (held.length > 0) {
+      let free = freeNames(kind, name, featureFlag).at(-1) ?? name;
+      for (const candidate of freeNames(kind, name, featureFlag)) {
+        if ((await indexBindingFindings(root, pathsOf(planFor(candidate)), '')).length > 0)
+          continue;
+        free = candidate;
+        break;
+      }
+      const renamed = [invocationOf(ctx, 'g'), kind, quoteArg(free), ...flags].join(' ');
+      bindings = held.map((finding) => ({ ...finding, fix: renamed }));
+    }
+    const force = flagBool(ctx.args, 'force');
+    if (flagBool(ctx.args, 'dry-run')) {
+      // The write plan, never the bare file list: what the real run would write, skip and refuse.
+      const plan = await planWrites(root, files, force, invocation);
+      const findings = [...plan.conflicts, ...bindings];
+      const planned = findings.length === 0 ? plan.written : [];
+      return {
+        ok: findings.length === 0,
+        command: 'g',
+        summary: msg('cli.generate.planned', { count: planned.length, kind, name }),
+        data: { files: planned, dryRun: true },
+        lines: planned.map((file) => msg('cli.file.added', { path: file })),
+        findings,
+      };
+    }
+    const report =
+      bindings.length > 0
+        ? { written: [], conflicts: bindings }
+        : await writeFiles(root, files, force, invocation);
     // The three edits a generated primitive needs outside its own slice, performed rather than
     // left as findings: a declared permission granted to a role, a job listed in `defineApi`, and
     // an entity added to the typed handle its `repo.ts` reads through. Before the manifest load

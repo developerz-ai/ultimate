@@ -9,6 +9,7 @@ import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import { isIgnoredTestPath } from './test-ignores';
 import type { TestType } from './verify-tests';
 import { ownerOf, TEST_TYPES } from './verify-tests';
 
@@ -27,20 +28,10 @@ const TEST_GLOB = '**/*.test.{ts,tsx}';
 
 /**
  * The root `test` script's ignore list, kept identical so `x test` and `bun run test` see one
- * suite. `e2e/` is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is
- * a suite nobody runs until CI says so. `examples/` is, because the reference app is a separate
- * project with its own gate — `x verify` there, not `x test` here.
- *
- * `dummy/` and `build/` complete the list `verify-tests.ts` already excluded (`NEVER_A_TEST`). The
- * comment above claimed the two agreed and they did not: `x test unit` discovered 464 files where
- * the gate's `unit` step ran 441, so the gate's own test steps — which now select through this
- * function — would have started running a nested demo app's suite on the framework's gate.
- *
- * Both directories are gated where they belong, by `scripts/reference-app-gate.ts` running
- * `x verify` inside each app — see `NEVER_A_TEST` for why that is the only place they run.
+ * suite — `test-ignores.ts` holds it, and the serial steps' argv projects the same policy. `e2e/`
+ * is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is a suite nobody
+ * runs until CI says so.
  */
-const IGNORED = ['/dist/', '/build/', '/node_modules/', '/examples/', '/dummy/'];
-
 /**
  * File size stands in for duration: cheap to read, and it correlates far better than file count.
  * `type`, when given, narrows to exactly the files verify-tests.ts would run for that suite — one
@@ -58,7 +49,7 @@ export async function discoverTests(
   const files: TestFile[] = [];
   for await (const found of new Bun.Glob(TEST_GLOB).scan({ cwd: root, absolute: false })) {
     const path = found.split('\\').join('/');
-    if (IGNORED.some((part) => `/${path}`.includes(part))) continue;
+    if (isIgnoredTestPath(path)) continue;
     if (filters !== undefined && !filters.some((part) => path.includes(part))) continue;
     if (type !== undefined && !belongsToType(path, type)) continue;
     files.push({ path, bytes: Bun.file(join(root, path)).size });

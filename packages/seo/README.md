@@ -47,7 +47,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; there is no `social` switch |
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
-| `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |
+| `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k — the index stays `/sitemap.xml`, the parts are `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`) |
 | `robots.ts` | `buildRobots()`, environment-aware and fail-closed; `disallow` reaches **every** group, and a `User-agent: *` group is emitted for it when none is declared |
 | `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list. Channel `author`/`copyright`/`icon` → Atom `<author>`/`<rights>`/`<icon>`; an item `author` → Atom `<author>`, RSS `<author>` when it has an email, `<dc:creator>` when it does not; an item `image` → Atom `<link rel="enclosure">`, RSS `<media:content medium="image">`. Extra RSS namespaces are declared only when used |
 | `feed-dates.ts` | the one place a feed timestamp is parsed or formatted — an item date that will not parse is *absent*, never `Invalid Date` and never a crash |

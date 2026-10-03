@@ -9,6 +9,7 @@ import { resetCatalogs } from '@ultimat3/i18n';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -20,6 +21,7 @@ const { adminRouteMatch } = await import('./routes');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 // Not tenant-scoped: one row both orgs may open, so only the trail itself can keep them apart.
 const notes = entity('admin_audit_tenancy_notes', {
@@ -60,7 +62,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
   resetCatalogs();
 });

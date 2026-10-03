@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "composite": false,
     "noEmit": true
   },
   "include": [
@@ -9,6 +10,7 @@
     "api/**/*",
     "shared/**/*",
     "e2e/**/*",
-    "../../types/scss.d.ts"
+    "../../types/scss.d.ts",
+    "../../scripts/test-setup.ts"
   ]
 }

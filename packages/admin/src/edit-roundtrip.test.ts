@@ -17,6 +17,7 @@ import {
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -30,6 +31,7 @@ const { adminRouteMatch } = await import('./routes');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const articles = entity('admin_roundtrip_articles', {
   columns: {
@@ -60,7 +62,7 @@ beforeAll(() => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

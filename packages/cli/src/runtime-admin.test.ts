@@ -19,6 +19,7 @@ import { frameworkSources } from '@ultimat3/manifest';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -35,6 +36,7 @@ const { ADMIN_MOUNTS, adminMounts, clearAdminMounts, defineAdmin } = await impor
 const BUILD_ID = 'build-under-test';
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const parts = entity('cli_admin_parts', {
   columns: { id: uuid().primaryKey(), title: text({ max: 80 }), stock: integer() },
@@ -62,7 +64,7 @@ beforeAll(async () => {
 afterAll(() => {
   clearAdminMounts();
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

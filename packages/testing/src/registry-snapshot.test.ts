@@ -14,6 +14,7 @@ import {
   clearPermissions,
   definePermissions,
   knownPermissions,
+  permissionDeclarationSites,
 } from '../../policy/src/permissions';
 import {
   clearRoles,
@@ -76,6 +77,22 @@ describe('captureProcessRegistries / restoreProcessRegistries', () => {
       restoreProcessRegistries(snapshot);
 
       expect(knownPermissions()).toEqual(expect.arrayContaining(['admin:read', 'admin:write']));
+    }));
+
+  test('permission declaration sites come back with the names', () =>
+    around(() => {
+      // Without them a restored permission has no provable origin, and the policy step's
+      // X_PERMISSION_BORROWED check can never judge it.
+      clearPermissions();
+      definePermissions(['admin:read']);
+      const sites = permissionDeclarationSites();
+      expect(sites['admin:read']).toHaveLength(1);
+      const snapshot = captureProcessRegistries();
+
+      clearPermissions();
+      restoreProcessRegistries(snapshot);
+
+      expect(permissionDeclarationSites()).toEqual(sites);
     }));
 
   test('permissions declared after the capture are gone after the restore', () =>

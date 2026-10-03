@@ -18,6 +18,7 @@ import { registerCatalog } from '@ultimat3/i18n';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -36,6 +37,7 @@ const KEY_ENV = 'ULTIMATE_SECRETS_KEY';
 const previousKey = process.env[KEY_ENV];
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const widgets = entity('admin_when_widgets', {
   columns: {
@@ -116,7 +118,7 @@ afterAll(() => {
   if (previousKey === undefined) delete process.env[KEY_ENV];
   else process.env[KEY_ENV] = previousKey;
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

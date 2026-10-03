@@ -22,6 +22,7 @@ import { registerCatalog } from '@ultimat3/i18n';
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -35,6 +36,7 @@ const { adminRouteMatch } = await import('./routes');
 
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const ORG = '0190a000-0000-7000-8000-0000000000aa';
 
@@ -180,7 +182,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
 });
 

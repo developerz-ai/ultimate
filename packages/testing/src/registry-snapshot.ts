@@ -24,6 +24,7 @@ import { registeredTasks, restoreTasks } from '@ultimat3/jobs';
 import type { RoleMap } from '@ultimat3/policy';
 import {
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   restoreRoles,
   roleDeclarationSites,
@@ -39,6 +40,8 @@ export interface ProcessRegistrySnapshot {
   readonly locales: LocaleConfig;
   readonly catalogs: readonly (readonly [Locale, Catalog])[];
   readonly permissions: readonly string[];
+  /** Restored WITH the names: a site-less permission is one the policy step can never judge. */
+  readonly permissionSites: Readonly<Record<string, readonly string[]>>;
   readonly roles: RoleMap;
   /** Kept beside the map: restoring through `defineRoles()` would rewrite every site. */
   readonly roleSites: Readonly<Record<string, string>>;
@@ -57,6 +60,7 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     locales: localeConfig(),
     catalogs: registeredLocales().map((locale) => [locale, catalogFor(locale)] as const),
     permissions: knownPermissions(),
+    permissionSites: permissionDeclarationSites(),
     roles: roleDefinitions(),
     roleSites: roleDeclarationSites(),
     tasks: registeredTasks(),
@@ -74,7 +78,7 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   // a partial call can never widen `supported` back.
   configureLocales(snapshot.locales);
   restoreCatalogs(snapshot.catalogs);
-  restorePermissions(snapshot.permissions);
+  restorePermissions(snapshot.permissions, snapshot.permissionSites);
   restoreRoles(snapshot.roles, snapshot.roleSites);
   restoreTasks(snapshot.tasks);
 }
@@ -138,9 +142,26 @@ export function mergeSnapshots(
     locales: newer.locales,
     catalogs: [...catalogs],
     permissions: [...new Set([...older.permissions, ...newer.permissions])],
+    permissionSites: mergeSites(older.permissionSites, newer.permissionSites),
     roles: { ...older.roles, ...newer.roles },
     roleSites: { ...older.roleSites, ...newer.roleSites },
     tasks: [...tasks.values()],
     catalogDeclarations: Math.max(older.catalogDeclarations, newer.catalogDeclarations),
   };
+}
+
+/** Per name, every module either snapshot saw declare it — the union the names themselves are. */
+function mergeSites(
+  older: Readonly<Record<string, readonly string[]>>,
+  newer: Readonly<Record<string, readonly string[]>>,
+): Readonly<Record<string, readonly string[]>> {
+  const merged = new Map<string, Set<string>>();
+  for (const side of [older, newer]) {
+    for (const [name, at] of Object.entries(side)) {
+      const into = merged.get(name) ?? new Set<string>();
+      for (const site of at) into.add(site);
+      merged.set(name, into);
+    }
+  }
+  return Object.fromEntries([...merged].map(([name, at]) => [name, [...at]]));
 }

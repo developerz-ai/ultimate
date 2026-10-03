@@ -40,6 +40,11 @@ export interface SchemaDifference {
 
 const DECLARED_ONLY = 'is declared by the entities and no migration recorded it';
 const RECORDED_ONLY = 'was recorded by the newest migration and no entity declares it';
+/** The difference's name — what `x db gen "record …"` is told to write down. */
+const REPLICA_IDENTITY_FULL = 'replica identity full';
+const REPLICA_IDENTITY_UNRECORDED =
+  'needs REPLICA IDENTITY FULL — a channel with params or a live query subscribes to it — and no ' +
+  'migration recorded it';
 
 const columns = (names: readonly string[]): string => names.join(', ');
 
@@ -185,6 +190,17 @@ function compareTable(declared: TableDescription, recorded: TableDescription): S
       table,
       name: table,
       detail: `declares primary key (${columns(declared.primaryKey)}) and the migration recorded (${columns(recorded.primaryKey)})`,
+    });
+  }
+  // One direction: `replica-identity.ts` never reverts the identity, so a recorded FULL nothing
+  // needs any more is what `x db gen` leaves behind on purpose, not a difference.
+  if (declared.replicaIdentityFull === true && recorded.replicaIdentityFull !== true) {
+    out.push({
+      direction: 'unmigrated',
+      part: 'table',
+      table,
+      name: REPLICA_IDENTITY_FULL,
+      detail: REPLICA_IDENTITY_UNRECORDED,
     });
   }
   out.push(

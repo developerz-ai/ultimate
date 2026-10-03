@@ -21,6 +21,7 @@ import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs
 import {
   defineRoles,
   knownPermissions,
+  permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
@@ -38,6 +39,7 @@ const KEY_ENV = 'ULTIMATE_SECRETS_KEY';
 const previousKey = process.env[KEY_ENV];
 const previousRoles = roleDefinitions();
 const previousPermissions = knownPermissions();
+const previousPermissionSites = permissionDeclarationSites();
 
 const gadgets = entity('admin_mount_gadgets', {
   columns: {
@@ -152,7 +154,7 @@ afterAll(() => {
   if (previousKey === undefined) delete process.env[KEY_ENV];
   else process.env[KEY_ENV] = previousKey;
   defineRoles(previousRoles);
-  restorePermissions(previousPermissions);
+  restorePermissions(previousPermissions, previousPermissionSites);
   clearRegistry();
   resetCatalogs();
 });

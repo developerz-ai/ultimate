@@ -15,10 +15,15 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
-import { declaredSchema, snapshotOf, unrenderedOf } from '@ultimat3/db';
+import { declaredSchema, shellInertIdentifier, snapshotOf, unrenderedOf } from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
+import {
+  appReplicaIdentity,
+  type ReplicaIdentityWanted,
+  wantedReplicaIdentity,
+} from './drift-replica-identity';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
 import { diffDeclaredSchema, type SchemaDifference } from './schema-diff';
@@ -50,10 +55,17 @@ const appEntities: DeclaredEntities = async (root) => {
  * silently and the result is green. In that state the unrendered entry's own `fix:` is the
  * instruction: `@ultimat3/db` owns that wording, and a second one here would drift from it.
  */
+interface Repair {
+  /** One runnable command or one edit — never a second option behind a shell comment. */
+  readonly fix: string;
+  /** Why this fix and not the obvious one, appended to the cause where the reader sees it. */
+  readonly why?: string;
+}
+
 function repairFix(
   unrendered: readonly UnrenderedDeclaration[],
   difference: SchemaDifference,
-): string {
+): Repair {
   // The entry ABOUT this difference first, then any entry at all. Reading `unrendered[0]`
   // unconditionally meant that in any app carrying an unrendered DEFAULT, every difference —
   // a dropped CHECK included — was answered with the default's edit, which is an instruction for
@@ -62,7 +74,7 @@ function repairFix(
     (entry) => entry.table === difference.table && entry.name === difference.name,
   );
   // The entry ABOUT this difference carries the edit that repairs it, so it is the whole answer.
-  if (named !== undefined) return named.fix;
+  if (named !== undefined) return { fix: named.fix };
   // Otherwise `x db gen` is still unsafe — it would drop what the other entries name — but the
   // reader must NOT be handed a different declaration's edit as the instruction for this one.
   // Reading `unrendered[0]` did exactly that: a column default and an index each got
@@ -72,16 +84,26 @@ function repairFix(
   // app — not only for the one the entry names.
   const blocker = unrendered[0];
   if (blocker !== undefined) {
-    return `${blocker.fix}   # ${blocker.table}.${blocker.name} reaches no SQL, so regenerating would drop it; repair that before recording ${difference.name}`;
+    return {
+      fix: blocker.fix,
+      why: `${blocker.table}.${blocker.name} reaches no SQL, so regenerating would drop it — repair that before recording ${difference.name}`,
+    };
   }
   // "record", not "add": one finding covers a declaration the migrations never carried AND one they
-  // carry differently, so `add` would be a wrong migration name for half of them. `undeclared` gets
-  // both branches, in the order they are safe — regenerating emits the DROP, and the declaration
-  // may have been LOST rather than removed, which is the whole reason this direction is its own
-  // finding.
-  return difference.direction === 'unmigrated'
-    ? `x db gen "record ${difference.name}"`
-    : `x db gen "drop ${difference.name}"   # or re-declare ${difference.name} on the entity`;
+  // carry differently, so `add` would be a wrong migration name for half of them. `undeclared` runs
+  // the DROP, and the other branch — the declaration may have been LOST rather than removed, which
+  // is the whole reason this direction is its own finding — rides in the cause: a `fix:` is one
+  // command, and a `# or …` after it was a shell comment nobody's paste would run.
+  if (difference.direction === 'unmigrated') return { fix: `x db gen "record ${difference.name}"` };
+  // The name was read off a sidecar on disk and lands inside double quotes, where `$(…)` and a
+  // backtick still run: one the shell would act on is named in the cause only, never the command.
+  const inert = shellInertIdentifier(difference.name) !== null;
+  return {
+    fix: inert
+      ? `x db gen "drop ${difference.name}"`
+      : 'x db gen "drop what the entities no longer declare"',
+    why: `if ${difference.name} was lost rather than removed, re-declare it on the entity instead — this command drops it`,
+  };
 }
 
 /**
@@ -95,8 +117,10 @@ export const schemaDifferenceCause = (difference: SchemaDifference): string =>
     ? `table "${difference.table}" ${difference.detail}`
     : `${difference.part} "${difference.name}" on table "${difference.table}" ${difference.detail}`;
 
-function findingFor(difference: SchemaDifference, fix: string): Finding {
-  const cause = schemaDifferenceCause(difference);
+function findingFor(difference: SchemaDifference, repair: Repair): Finding {
+  const { fix } = repair;
+  const stated = schemaDifferenceCause(difference);
+  const cause = repair.why === undefined ? stated : `${stated} — ${repair.why}`;
   return difference.direction === 'unmigrated'
     ? { code: 'X_DB_SCHEMA_UNMIGRATED', cause, fix, docs: ERROR_DOCS_URL, at: MIGRATIONS_DIR }
     : { code: 'X_DB_SCHEMA_UNDECLARED', cause, fix, docs: ERROR_DOCS_URL, at: MIGRATIONS_DIR };
@@ -114,6 +138,7 @@ function findingFor(difference: SchemaDifference, fix: string): Finding {
 export async function checkSnapshotDrift(
   root: string,
   declared: DeclaredEntities = appEntities,
+  identity: ReplicaIdentityWanted = appReplicaIdentity,
 ): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const entities = await declared(root);
@@ -122,7 +147,11 @@ export async function checkSnapshotDrift(
   if (migrations.length === 0) return [];
   const recorded = declaredSchema(migrations);
   if (recorded === undefined) return [];
-  const differences = diffDeclaredSchema(snapshotOf(entities), recorded);
+  // Read only over a WHOLE registry (`entities` is `undefined` otherwise), the rule `x db gen`
+  // states for the same call: a short one makes every subscribed name in the missing module a typo.
+  const wanted = wantedReplicaIdentity(identity, new Set(entities.map((entity) => entity.table)));
+  if ('finding' in wanted) return [wanted.finding];
+  const differences = diffDeclaredSchema(snapshotOf(entities, wanted.tables), recorded);
   if (differences.length === 0) return [];
   // `recorded` and not the entities alone: whether an `assert` is a LOSS depends on whether a
   // migration recorded a CHECK for it, which only the sidecar knows.
@@ -145,8 +174,9 @@ export async function checkMigrationDrift(
   root: string,
   declared: DeclaredEntities = appEntities,
   hashDrift: (root: string) => Promise<readonly Finding[]> = checkSourceDrift,
+  identity: ReplicaIdentityWanted = appReplicaIdentity,
 ): Promise<readonly Finding[]> {
-  const snapshot = await checkSnapshotDrift(root, declared);
+  const snapshot = await checkSnapshotDrift(root, declared, identity);
   if (snapshot.length > 0) return snapshot;
   return hashDrift(root);
 }

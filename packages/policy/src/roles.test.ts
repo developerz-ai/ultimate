@@ -212,6 +212,17 @@ describe('restoreRoles()', () => {
     expect(expandRoles(['editor'])).toEqual(['post:publish', 'post:read']);
   });
 
+  // Skipped by FILE, never by a name the frame spells: an app helper named after the call is the
+  // declaring site, and skipping it reported whichever frame happened to come next.
+  test('a caller whose own name spells defineRoles is still the declaring site', () => {
+    // A named declaration: Bun names an arrow function's frame `<anonymous>`.
+    function defineRolesForViewers(): void {
+      defineRoles({ viewer: roles['viewer'] as RoleDef });
+    }
+    defineRolesForViewers();
+    expect(roleDeclarationSites()['viewer']).toContain('defineRolesForViewers');
+  });
+
   // `defineRoles()` cannot be the restore: it re-derives the declaration site from the CALLER's
   // stack, so every role would report the harness as its origin and X_ROLE_REDEFINED would name
   // a frame no reader can act on.

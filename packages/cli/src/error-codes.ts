@@ -221,6 +221,8 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_IMAGE_NOT_PREBUILT',
   'X_ADMIN_UNSCANNED',
   'X_FRAMEWORK_TABLE_ORPHANED',
+  'X_BUILD_OUT_UNSAFE',
+  'X_PERMISSION_BORROWED',
 ] as const;
 
 /**
@@ -395,6 +397,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
     'a defineAdmin() declaration sits outside the app scan, so the admin is never mounted',
   X_FRAMEWORK_TABLE_ORPHANED:
     'a framework table no release reads any more is still in the database',
+  X_BUILD_OUT_UNSAFE: 'the static export directory is not one a build may empty',
+  X_PERMISSION_BORROWED: 'an app rule requires a permission only an imported package declared',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

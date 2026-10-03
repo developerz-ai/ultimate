@@ -16,6 +16,10 @@ import { rolesFiles } from './scaffold-roles';
 import { shellFiles } from './scaffold-shell';
 import { siteFiles } from './scaffold-site';
 
+// `typecheck` is the ROOT program, as in every workspace `x new` writes: a type extension declared in
+// one workspace (`PermissionRegistry` in `app/*/policy.ts`) is in force only where its file is in
+// the program, and the app's own `tsconfig.json` passed in `apps/admin` what the gate refuses.
+//
 // The one dependency this manifest names, and it is not decoration: every page below reads its
 // strings through `@<app>/i18n`'s `useT()`, so the surface that renders a string DEPENDS on the
 // module that registers the catalogs. An undeclared workspace dependency resolves through the root
@@ -36,7 +40,7 @@ const webPackage = (app: NameSet, example: boolean): string => {
     "./*.tsx": "./*.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {${db}
     "@${app.kebab}/i18n": "0.0.0"
@@ -260,7 +264,7 @@ const adminPackage = (app: NameSet): string => `{
     "./*.tsx": "./*.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
     "@${app.kebab}/db": "0.0.0",

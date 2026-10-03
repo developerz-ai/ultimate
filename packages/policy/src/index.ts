@@ -45,6 +45,7 @@ export {
   definePermissions,
   isKnownPermission,
   knownPermissions,
+  permissionDeclarationSites,
   resourceOf,
   restorePermissions,
   verbOf,

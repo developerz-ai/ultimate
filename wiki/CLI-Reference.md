@@ -285,9 +285,11 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override **and list it** under `resources:` in `apps/admin/app/admin/admin.ts`. The screen itself needs no flag — an entity in the handle is an admin screen |
 | `--locales` | string | every locale with a catalog in `packages/i18n/catalogs/`, else `en` | comma-separated locales; lands each generator's catalog entry in every one, and for `resource` extends `packages/i18n/catalogs/` on disk |
 | `--force` | boolean | `false` | overwrite existing files |
-| `--dry-run` | boolean | `false` | print the file list, write nothing |
+| `--dry-run` | boolean | `false` | the write plan, nothing written: the files the run would write (a slice module already on disk is skipped, not listed), and `ok: false` with every conflict the real run would stop on — an existing file, an API-index binding already held |
 
 `resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **33 files** (35 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`.
+
+**A name the templates would mangle is `X_CLI_BAD_FLAG` before anything is planned**, each with a `fix:` that runs: a reserved word or a leading digit; a letter outside ASCII (`Über` → `x g entity uber` — it was dropped to `ber`); an already-plural `resource`/`entity` name (`posts` → `x g resource post` — it became `entity('postses')`); and a name whose type spelling an emitted file also uses as a global or local type (`promise`, `omit`, `partial`, `row` → `x g resource promise-resource`).
 
 **`entity` and `resource` write a repo over the typed handle, and register the entity in it**, `As of 2026-10`. The generated `repo.ts` holds no `sql` literal, no row decoding and no tenant predicate of any kind — `byId(id)`, `list(limit)` and `insert(row)` read `db.<table>`, and the handle scopes each to the actor's org ([Entities and migrations](Entities-And-Migrations#the-repo)) — and a table is on the handle only when its entity is in the set `packages/db/src/client.ts` passes to `database()`. The generator makes that edit, and four more:
 
@@ -298,7 +300,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `packages/db/package.json`, `apps/web/package.json` | the workspace dependency each new import needs: `@<app>/db` in the app, and `@<app>/web` in the db package only when the handle this run leaves imports an entity from it. Planned with the handle edit and written together — a handle that refuses the entry leaves both manifests untouched | left to `package-shape` (`X_WORKSPACE_DEP_UNDECLARED`), whose `fix:` is the same line |
 | `packages/i18n/catalogs/<locale>.json` | the labels the admin reads for the new screen — `admin.<table>.title` and one `admin.<table>.field.<column>` per column — merged in the file's OWN key order (a sorted level stays sorted, a hand-ordered one gains its keys at the end), in every locale the run writes to | — |
 | `apps/web/shared/roles.ts` | a written `policy.ts`'s grants (`<feature>:read` to `member`, `<feature>:write` to `admin`) and the admin's three per-table permissions, declared and granted | `X_PERMISSION_UNGRANTED`, exit 1, naming each role and the permissions its `grants` owes — an app whose role map lives elsewhere is told, not skipped |
-| `apps/web/api/index.ts` | every action, query, job and task module the run wrote, imported and listed under `actions` / `queries` / `jobs` / `tasks` — the lists `Api`, the typed client's shape, is read from | left alone when the file is not `defineApi({ actions: [...] })`; `X_JOB_UNREGISTERED` on the `manifest` step names a job nothing lists |
+| `apps/web/api/index.ts` | every action, query, job and task module the run wrote, imported and listed under `actions` / `queries` / `jobs` / `tasks` — the lists `Api`, the typed client's shape, is read from | left alone when the file is not `defineApi({ actions: [...] })`; `X_JOB_UNREGISTERED` on the `manifest` step names a job nothing lists. A module whose binding (its file name, camelCased) the index already holds — another feature's `reindex-post`, or `api` / `defineApi` / `health` — is `X_GENERATE_CONFLICT` **before anything is written**, fix: the same run with the feature as a prefix |
 | `apps/admin/app/admin/admin.ts` (`--admin` only) | the override's import, and `<table>: <name>AdminResource,` under `resources:` — the block is created, last in the call, when there is none | `X_ADMIN_RESOURCE_UNWIRED`, exit 1, the two lines in the `fix:` |
 
 The summary line ends with what the new table owes, as commands that run as printed, and `--json` carries them as `data.next`:
@@ -307,7 +309,7 @@ The summary line ends with what the new table owes, as commands that run as prin
 ✓ wrote 7 file(s) for entity widget — next: bunx x db gen "create widgets" && bunx x db migrate
 ```
 
-`bun install` leads the list when a manifest gained a dependency. `--dry-run` lists the generator's own files only, never the edits above.
+`bun install` leads the list when a manifest gained a dependency. `--dry-run` plans the generator's own files only, never the edits above.
 
 **`x g admin:page` DECLARES the permission it requires**, `As of 2026-09`. It emitted
 `permissions: ['ops:read']` and nothing anywhere declared `ops:read`, so `assertPermission` threw
@@ -661,9 +663,13 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-p
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`), `prebuilt` (the island store and compiled stylesheets, written to `node_modules/.cache/ultimate` — the app image's own `RUN` line; no gate, no subprocess, refuses `--tag` and `--out`). The list is `BUILD_TARGETS` in `packages/cli/src/cmd-build.ts` |
-| `--tag` | string | `ultimate-app:dev` | image tag, docker target |
-| `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
-| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bin/check` does. `As of 22.7` |
+| `--tag` | string | `ultimate-app:dev` | image tag, docker target only |
+| `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
+| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bin/check` does. Not on `prebuilt`. `As of 22.7` |
+
+A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, any of the three on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
+
+**`--out` for `static` is emptied before every build**, so it must be provably the build's: absent, empty, the default `.x/static`, or a directory holding the `.x-export` marker every static build writes. The app root, an ancestor of it, or any other non-empty directory (`apps`, `.x`, `.x/pgdata`, a home directory) is `X_BUILD_OUT_UNSAFE` and nothing is removed. A module that will not import fails the static build with `X_BUILD_FAILED` (`fix: x verify --only manifest --json`) before the export is touched — its page would otherwise vanish from the artifact under a green build.
 
 ### Every target has one entry file
 
@@ -677,7 +683,7 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-p
 
 All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whose `fix` names the file and points at a fresh scaffold — the usual cause is an app scaffolded before 1.1.0 wrote `server.ts` and `prerender.ts`, or a deleted `docker/Dockerfile`.
 
-Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
+Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`, `X_BUILD_OUT_UNSAFE`, `X_CLI_BAD_FLAG`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
 
 ### `--target static` names every route it emitted, and every one it did not
 
@@ -1196,7 +1202,7 @@ Three rules the set obeys:
 
 | Change | Affected |
 |---|---|
-| a root file — `tsconfig.json`, `biome.json`, `bunfig.toml`, `bun.lock`, root `package.json`, `app.config.ts` | **every** workspace. These change what all of them compile or resolve |
+| any non-doc file no workspace owns — `tsconfig.json`, `tsconfig.base.json`, `biome.json`, `bun.lock`, root `package.json`, `app.config.ts`, `scripts/**`, `guards/**` | **every** workspace, and the root itself: `x test --affected` runs every test file, those under no workspace included. Decided by ownership, never by a list of names |
 | a workspace's own `package.json` | that workspace only |
 | a `.md` | nothing. A doc has no compilation unit to re-check |
 

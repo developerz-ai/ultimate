@@ -88,7 +88,7 @@ takes the public `site/` routes (no `policy`), leaves out any page whose `meta` 
 | Where | How |
 |---|---|
 | static export | the scaffolded `apps/web/prerender.ts` writes `siteSeo()`'s files into `.x/static`. A dynamic route lists exactly the pages the build emitted |
-| web role (`x dev`, `runRole`) | `GET /robots.txt` and `GET /sitemap.xml`, `public, max-age=3600`, built per request. Absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's own origin. `As of 2026-09-25` (22.2.2) |
+| web role (`x dev`, `runRole`) | `GET /robots.txt`, `GET /sitemap.xml` and its parts `GET /sitemaps/:file`, `public, max-age=3600`, built once per origin and kept for that same hour (every file shares one answer; a failed build is not kept). Absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's own origin. `As of 2026-09-25` (22.2.2) |
 
 **Beyond `site/`, and `<lastmod>`** (`As of 22.10`) — `seo.sitemap` in `app.config.ts`:
 
@@ -104,5 +104,7 @@ seo: { sitemap: { extra: ['/verificar', '/estado'], lastmod: 'git' } },
 The scaffolded `prerender.ts` passes `sitemap` and `root` from `loadSiteSettings(root)`; an app with
 its own `prerender.ts` adds `sitemap: settings.sitemap, root` to its `siteSeo({ … })` call.
 
-Past 50,000 URLs, `/sitemap.xml` is the index. The web role serves the index but not the
-`/sitemap-N.xml` parts, so a site that large serves its sitemap from the static export.
+Past 50,000 URLs, `/sitemap.xml` is the index and its parts are `/sitemaps/1.xml`,
+`/sitemaps/2.xml`, … (`SITEMAP_PARTS_DIR`). The static export writes them and the web role serves
+them (`GET /sitemaps/:file`, from the same answer as the index); a part the index does not name is a
+404. `As of 2026-10`: the parts were `/sitemap-N.xml` before, which no running process could serve.

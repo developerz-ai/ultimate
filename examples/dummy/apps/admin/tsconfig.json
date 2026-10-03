@@ -1,8 +1,8 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "rootDir": "app",
+    "composite": false,
     "noEmit": true
   },
-  "include": ["app/**/*"]
+  "include": ["app/**/*", "../web/shared/services.ts", "../../scripts/test-setup.ts"]
 }

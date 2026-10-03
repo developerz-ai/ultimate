@@ -20,6 +20,7 @@ import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
 import { measureDocumentJs, writeBuildStats } from './budgets';
+import { PrerenderLoadFailedError } from './build-errors';
 import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { FAVICON_PATH, faviconBytes } from './favicon';
 import type { IslandBundle } from './island-bundle';
@@ -172,11 +173,13 @@ const declaresBudget = (entry: RouteEntry): boolean => {
 };
 
 export async function prerenderSite(options: PrerenderOptions): Promise<PrerenderReport> {
-  // The same load `x dev` and `x manifest` perform: importing the app's modules IS what fills the
-  // route registry, so there is no route table to prerender before this runs.
-  // Emptied FIRST: the export only ever gained files, so a deleted route's HTML kept shipping.
+  // The load `x dev` and `x manifest` perform: importing the app's modules fills the route registry.
+  // A module that would not import registered nothing, so its page would vanish from the export
+  // under a green build — refused BEFORE the export is emptied, so the last good artifact survives.
+  const loaded = await loadApp(options.root);
+  if (loaded.findings.length > 0) throw new PrerenderLoadFailedError(loaded.findings);
+  // Emptied before anything is written: a deleted route's HTML kept shipping when it only grew.
   await clearPrerenderOut(options.out, options.root);
-  await loadApp(options.root);
   const buildId = (await appManifest(options.root)).manifest.buildId;
   const declaredOrigin =
     options.origin ?? publicOrigin(process.env, await loadSiteSettings(options.root));

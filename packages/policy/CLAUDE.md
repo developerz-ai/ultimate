@@ -80,6 +80,14 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   process — so a clear in one test file is permanent for every file after it, whose own `import` is a
   cache hit that declares nothing. `restoreRoles` takes the declaration sites too: `defineRoles()` derives
   them from the CALLER's stack, so restoring through it would make `X_ROLE_REDEFINED` name the harness.
+- **Every permission records WHERE it was declared** (`permissionDeclarationSites()`, `As of 2026-10-02`):
+  one stack frame per distinct `definePermissions()` call, through `declaration-site.ts`, the helper
+  `defineRoles()` uses. All sites, not the first — the question asked of it is provenance:
+  `@ultimat3/cli`'s `policy` step flags an app rule whose permission only a package declared
+  (`defineAdmin()`'s `<entity>:read`), `X_PERMISSION_BORROWED`. `restorePermissions(names, sites)`
+  takes them back for the same reason `restoreRoles` does, and the second argument is REQUIRED — a
+  name restored with none has no provable origin and is not judged, so a default would have let a
+  forgotten argument switch the check off.
 - **`and()` and `or()` REFUSE an empty clause list** (`X_POLICY_CLAUSE_EMPTY`, `As of 2026-08-25`),
   at the call that builds them. An empty `and()` found nothing to deny and answered ALLOWED, so
   `and(...requiredCaps.map(can))` over a list that filtered to nothing — a config-driven or
@@ -167,6 +175,7 @@ reappearing there is a failing test.
 | `decisions.ts` | the `DecisionSink` seam — no-op default, one call site, never PII |
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
 | `roles.ts` | the role map: merge, conflict, inheritance, wildcards |
+| `declaration-site.ts` | the caller's stack frame a role or permission declaration records |
 | `grant-index.ts` | the per-actor flattened grant set, memoised against the role generation |
 | `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` — whose `.actor` is typed `Actor`, never `null`, so it goes straight into `createContext({ actor })` |
 

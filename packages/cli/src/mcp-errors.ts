@@ -285,6 +285,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ADMIN_UNSCANNED:
     'git mv apps/admin/src/index.ts apps/admin/app/admin/admin.ts   # then repoint its relative imports and x verify --only manifest --json',
   X_FRAMEWORK_TABLE_ORPHANED: 'x doctor --json',
+  X_BUILD_OUT_UNSAFE: 'x build --target static --out .x/static --json',
+  X_PERMISSION_BORROWED: 'x verify --only policy --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

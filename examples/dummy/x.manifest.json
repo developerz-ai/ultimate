@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "e7ed48088a142600",
+  "buildId": "2092f0b7cf262c10",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -5004,6 +5004,74 @@
     {
       "code": "X_RUN_QUEUE_UNAVAILABLE",
       "package": "apps/web"
+    },
+    {
+      "code": "X_ANIMATED_LAYOUT_PROPERTY",
+      "package": "guards/animated-layout-property.ts"
+    },
+    {
+      "code": "X_BARE_ERROR",
+      "package": "guards/bare-error.ts"
+    },
+    {
+      "code": "X_FOCUS_VISIBLE",
+      "package": "guards/focus-visible.ts"
+    },
+    {
+      "code": "X_IMAGE_DIMENSIONS",
+      "package": "guards/image-dimensions.ts"
+    },
+    {
+      "code": "X_ISLAND_WITHOUT_STATES",
+      "package": "guards/island-without-states.ts"
+    },
+    {
+      "code": "X_RAW_BREAKPOINT",
+      "package": "guards/raw-breakpoint.ts"
+    },
+    {
+      "code": "X_RAW_COLOUR",
+      "package": "guards/raw-colour.ts"
+    },
+    {
+      "code": "X_RAW_LENGTH",
+      "package": "guards/raw-length.ts"
+    },
+    {
+      "code": "X_RAW_MOTION",
+      "package": "guards/raw-motion.ts"
+    },
+    {
+      "code": "X_RAW_SHADOW",
+      "package": "guards/raw-shadow.ts"
+    },
+    {
+      "code": "X_RAW_Z_INDEX",
+      "package": "guards/raw-z-index.ts"
+    },
+    {
+      "code": "X_REPO_RAW_SQL",
+      "package": "guards/repo-raw-sql.ts"
+    },
+    {
+      "code": "X_SEMANTIC_INTERACTIVE",
+      "package": "guards/semantic-interactive.ts"
+    },
+    {
+      "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "guards/undeclared-custom-property.ts"
+    },
+    {
+      "code": "X_UNDEFINED_STYLE_CLASS",
+      "package": "guards/undefined-style-class.ts"
+    },
+    {
+      "code": "X_UNTRANSLATED_STRING",
+      "package": "guards/untranslated-string.ts"
+    },
+    {
+      "code": "X_UNZONED_DATE",
+      "package": "guards/unzoned-date.ts"
     },
     {
       "code": "X_BILLING_NOT_AN_UPGRADE",
