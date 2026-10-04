@@ -105,7 +105,7 @@ describe('--locale', () => {
     rmSync(root, { recursive: true, force: true });
     await Bun.write(
       join(root, 'app.config.ts'),
-      "export const config = { locales: ['es-co', 'en'], defaultLocale: 'es-co' };\n",
+      "export const config = { name: 'demo', locales: ['es-co', 'en'], defaultLocale: 'es-co' };\n",
     );
     expect(await loadShotLocales(root)).toEqual({
       locales: ['es-co', 'en'],

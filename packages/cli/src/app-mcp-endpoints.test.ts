@@ -31,7 +31,7 @@ const fixture = async (name: string, mcpTs: string, path = '/mcp'): Promise<stri
   await rm(root, { recursive: true, force: true });
   await Bun.write(
     join(root, 'app.config.ts'),
-    `export const config = { ai: { mcp: { expose: true, path: '${path}' } } };\n`,
+    `export const config = { name: 'demo', ai: { mcp: { expose: true, path: '${path}' } } };\n`,
   );
   await Bun.write(join(root, 'apps/web/mcp.ts'), mcpTs);
   return root;

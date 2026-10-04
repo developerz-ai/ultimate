@@ -66,6 +66,7 @@ import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
 import { flagBool, parseScriptArgs } from './lib/args';
+import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { report, writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
 import { REPO_GATE, readVerifyArgs, VERIFY_SUBCOMMANDS } from './lib/verify-args';
@@ -120,6 +121,8 @@ export const tierBoundaries: HostCheck = async (root) => {
     ...floorFindings(source),
     ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
     ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
+    // One config loader: an `import(` of an app's `app.config.ts` outside `app-config-load.ts`.
+    ...checkConfigImports(source).map(configImportFindingFor),
     ...(await frameworkCatalogFindings(root)),
     ...(await imageContractFindings(root)),
     // The CLI's own declarations, held to each other: a flag the parser accepts that no file reads is

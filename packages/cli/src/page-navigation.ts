@@ -6,12 +6,9 @@
 // check a soft visit gets before `load`. No surface opted in: nothing is built, served or named — a
 // `site/` page that did not ask stays 0kb (axiom 6).
 
-// why: Bun exposes no path-join primitive, and the config path is app-root-relative — the same
-// necessity `theme-boot.ts` records.
-import { join } from 'node:path';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx, NavigationSurface } from '@ultimat3/core';
-import { CLIENT_NAVIGATION_SCOPE_HEADER, NAVIGATION_SURFACES } from '@ultimat3/core';
+import { CLIENT_NAVIGATION_SCOPE_HEADER } from '@ultimat3/core';
 import type { Route, RouteNavigation, UltimateRequest } from '@ultimat3/http';
 import { locationFor, navigationPurpose, relocate } from '@ultimat3/http';
 import type { ClientNavigationHead, HeadTag, RouteEntry } from '@ultimat3/render';
@@ -22,8 +19,7 @@ import {
   routeEntries,
 } from '@ultimat3/render';
 import { ssrHeaders } from '@ultimat3/render/server';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 import { FrameworkScriptBuildFailedError } from './errors';
 import {
   buildNavigationScript,
@@ -56,26 +52,14 @@ export interface NavigationDeclaration {
   readonly surfaces: readonly NavigationSurface[];
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const isSurface = (value: unknown): value is NavigationSurface =>
-  NAVIGATION_SURFACES.some((surface) => surface === value);
-
 /**
- * `navigation.client` and `name`, as `defineConfig` validated them — no surfaces when the app says
- * nothing or has no config file. Structural, never `instanceof`, for `loadThemeMode`'s reason.
+ * `navigation.client` and `name`, off the one loader (`app-config-load.ts`) — no surfaces, and the
+ * app called `app`, for a root with no config file.
  */
 export async function loadNavigation(root: string): Promise<NavigationDeclaration> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return { app: 'app', surfaces: [] };
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!isRecord(config)) return { app: 'app', surfaces: [] };
-  const app = typeof config['name'] === 'string' ? config['name'] : 'app';
-  const navigation = config['navigation'];
-  const client = isRecord(navigation) ? navigation['client'] : undefined;
-  return { app, surfaces: Array.isArray(client) ? client.filter(isSurface) : [] };
+  const config = await loadAppConfig(root);
+  if (config === undefined) return { app: 'app', surfaces: [] };
+  return { app: config.name, surfaces: config.navigation.client };
 }
 
 /**

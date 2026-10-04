@@ -11,7 +11,10 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-joining API, so the temp root and the config file are joined with this.
 import { join } from 'node:path';
 import { defineConfig, isUltimateError } from '@ultimat3/core';
-import { loadRealtimeConfig, REALTIME_DEFAULTS } from './runtime-realtime';
+import { loadAppConfig } from './app-config-load';
+import { REALTIME_DEFAULTS, realtimeConfigOf } from './runtime-realtime';
+
+const loadRealtimeConfig = async (root: string) => realtimeConfigOf(await loadAppConfig(root));
 
 const dirs: string[] = [];
 
@@ -27,10 +30,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('loadRealtimeConfig', () => {
+describe('realtimeConfigOf, over the one loader', () => {
   test('reads all three keys out of the app own config', async () => {
     const root = await appRoot(
-      "export const config = { realtime: { enabled: true, transport: 'nats', urlEnv: 'BUS_URL' } };\n",
+      "export const config = { name: 'demo', realtime: { enabled: true, transport: 'nats', urlEnv: 'BUS_URL' } };\n",
     );
     expect(await loadRealtimeConfig(root)).toEqual({
       enabled: true,
@@ -45,14 +48,16 @@ describe('loadRealtimeConfig', () => {
   test('no file and no section are core defaults: enabled, in-process', async () => {
     expect(await loadRealtimeConfig(await appRoot(undefined))).toEqual(REALTIME_DEFAULTS);
     expect(
-      await loadRealtimeConfig(await appRoot("export const config = { name: 'a' };\n")),
+      await loadRealtimeConfig(await appRoot("export const config = { name: 'demo' };\n")),
     ).toEqual(REALTIME_DEFAULTS);
     expect(REALTIME_DEFAULTS).toEqual({ enabled: true, transport: 'memory', urlEnv: undefined });
     expect(defineConfig({ name: 'myapp' }).realtime).toEqual(REALTIME_DEFAULTS);
   });
 
   test('a section naming only some keys keeps the defaults for the rest', async () => {
-    const root = await appRoot('export const config = { realtime: { enabled: false } };\n');
+    const root = await appRoot(
+      "export const config = { name: 'demo', realtime: { enabled: false } };\n",
+    );
     expect(await loadRealtimeConfig(root)).toEqual({
       enabled: false,
       transport: 'memory',
@@ -60,11 +65,11 @@ describe('loadRealtimeConfig', () => {
     });
   });
 
-  // A hand-built object never met `defineConfig`'s validator. Guessing a bus for a value nothing
-  // builds is how `'redis'` booted NATS for two majors, so it is refused here too.
+  // A hand-built object is held to `defineConfig`'s validator by the one loader. Guessing a bus for
+  // a value nothing builds is how `'redis'` booted NATS for two majors.
   test('a transport nothing builds is refused, naming the key', async () => {
     const root = await appRoot(
-      "export const config = { realtime: { enabled: true, transport: 'redis' } };\n",
+      "export const config = { name: 'demo', realtime: { enabled: true, transport: 'redis' } };\n",
     );
     const error: unknown = await loadRealtimeConfig(root).then(
       () => undefined,

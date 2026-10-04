@@ -22,7 +22,7 @@ import type { ThrownShape } from './thrown-by';
 /** An app root with the entries the docker and prebuilt targets require. */
 async function buildRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-prebuilt-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   await Bun.write(
     join(dir, 'package.json'),
     JSON.stringify({ name: 'build-prebuilt', version: '1.0.0' }),

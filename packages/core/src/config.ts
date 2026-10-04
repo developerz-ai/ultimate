@@ -279,7 +279,10 @@ function validate(config: AppConfig): void {
   // Same shape again: carried only when an installable app is missing what an install needs.
   const pwaFix: string[] = [];
 
-  if (!NAME_RE.test(config.name)) {
+  // `typeof` first: `NAME_RE.test(undefined)` tests the string "undefined", which matches.
+  if (typeof config.name !== 'string') {
+    issues.push(`name must be a string like "my-app", not ${describeValue(config.name)}`);
+  } else if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
   }
   localeIssues(config.locales, config.defaultLocale, issues);

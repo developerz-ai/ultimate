@@ -2,8 +2,6 @@
 // `app.config.ts`, the `.env.example` projected from it, and the drift between the two. One
 // declaration, both files (axiom 2) — nothing here holds a second list of variable names.
 
-// why: Bun ships no synchronous exists; `existsSync` answers whether this root is an app.
-import { existsSync } from 'node:fs';
 // why: Bun exposes no path API — the two files this module reads are joined to the app root.
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
@@ -13,6 +11,7 @@ import {
   ERROR_DOCS_URL,
   renderEnvExample,
 } from '@ultimat3/core';
+import { appConfigExport } from './app-config-load';
 import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -45,17 +44,12 @@ export const isEnvSchema = (value: unknown): value is EnvSchema =>
   isRecord(value) && Object.values(value).every(isDecl);
 
 /**
- * Import `app.config.ts` and hand back the declaration it exports. Importing is the only honest
- * way to read it — the alternative is a regex over the app's source, which is the pattern
- * `app-load.ts` exists to refuse. `undefined` means "this root declares no environment"; a config
- * that will not import throws, and the caller turns that into the finding.
+ * The declaration `app.config.ts` exports, through the one loader (`app-config-load.ts`).
+ * `undefined` means "this root declares no environment"; a config that will not import throws, and
+ * the caller turns that into the finding.
  */
 export async function loadEnvSchema(root: string): Promise<EnvSchema | undefined> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!existsSync(configPath)) return undefined;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const declared = module[ENV_SCHEMA_EXPORT];
-  if (declared === undefined) return undefined;
+  const declared = await appConfigExport(root, ENV_SCHEMA_EXPORT);
   return isEnvSchema(declared) ? declared : undefined;
 }
 

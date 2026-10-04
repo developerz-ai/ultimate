@@ -26,6 +26,13 @@
 // own package and none spelling the qualified `<section>.<key>`, the reader set is not evidence and
 // says so — `X_CONFIG_KEY_READER_AMBIGUOUS`. Nineteen readers should always have been the alarm.
 //
+// WHERE THE CLI'S READS COME FROM, `As of 2026-10-03`: one loader.
+// `packages/cli/src/app-config-load.ts` is the only importer of an app's `app.config.ts`
+// (`scripts/lib/config-import.ts`, `X_CONFIG_IMPORT_OUTSIDE_LOADER`) and hands back a typed
+// `AppConfig`, so every boot reader spells `config.<section>.<key>` — the qualified form
+// `qualifiedPattern` counts — where seventeen structural walks spelled `config['jobs']`, which no
+// pattern here reads as a read at all.
+//
 // A key whose only legitimate reader is APP code (`config.defaultCurrency` in a price view) is pinned
 // with the sentence saying so — and that sentence is CHECKED against both tracked apps
 // (`lib/config-app-readers.ts`), because a claim nobody reads is a waiver, not a decision.

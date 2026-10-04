@@ -30,7 +30,7 @@ const run = async (root: string, argv: readonly string[]) => {
 test('--json streams each finished step to stderr and keeps stdout one document', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ultimate-verify-stream-'));
   try {
-    await Bun.write(join(root, APP_CONFIG_FILE), 'export const config = {};\n');
+    await Bun.write(join(root, APP_CONFIG_FILE), "export const config = { name: 'fixture' };\n");
     await Bun.write(join(root, 'apps/web/app/a.ts'), 'export const a = 1;\n');
     const json = await run(root, ['--only', 'filesize,package-shape', '--json']);
     const lines = json.stderr

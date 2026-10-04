@@ -76,7 +76,7 @@ describe('unit · dev services · what a report may carry', () => {
   });
 });
 
-// `loadInboxRetention` reads the app's own `app.config.ts`, so a boot needs the app ROOT and not
+// `startServices` loads the app's own `app.config.ts`, so a boot needs the app ROOT and not
 // only `.x/`. Carried rather than re-derived: a `dirname(stateDir)` that silently disagreed with
 // `join(root, '.x')` above would be a path bug nothing catches.
 test('the app root is carried, not left to be re-derived from stateDir', () => {

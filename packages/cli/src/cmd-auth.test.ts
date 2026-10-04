@@ -20,7 +20,7 @@ const KEY = { [SECRETS_KEY_ENV]: Bun.env[SECRETS_KEY_ENV] };
 
 const appRoot = (): string => {
   const dir = mkdtempSync(join(tmpdir(), 'x-auth-'));
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 };
 

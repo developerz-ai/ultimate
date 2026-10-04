@@ -1,6 +1,6 @@
-// `loadSpeculation` reads the app's config module structurally, so what it finds may never have
-// passed `defineConfig`. Pinned, failures first: it refuses what `defineConfig` refuses — through
-// core's one validator — and never coerces a wrong value into a rule the app did not write.
+// `loadSpeculation` reads the app's config through the one loader, so a hand-written object meets
+// `defineConfig` too. Pinned, failures first: it refuses what `defineConfig` refuses and never
+// coerces a wrong value into a rule the app did not write.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
@@ -24,7 +24,7 @@ afterEach(async () => {
 const writeConfig = (speculation: string) =>
   Bun.write(
     join(root, 'app.config.ts'),
-    `export const config = { navigation: { speculation: ${speculation} } };\n`,
+    `export const config = { name: 'demo', navigation: { speculation: ${speculation} } };\n`,
   );
 
 const refusal = async (): Promise<unknown> => {
@@ -66,7 +66,7 @@ describe('unit · loadSpeculation refuses, never coerces', () => {
   });
 
   test('a config that says nothing is the default', async () => {
-    await Bun.write(join(root, 'app.config.ts'), 'export const config = { name: "x" };\n');
+    await Bun.write(join(root, 'app.config.ts'), 'export const config = { name: "demo" };\n');
     expect(await loadSpeculation(root)).toEqual({ prefetch: 'moderate', exclude: [] });
   });
 

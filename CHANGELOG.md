@@ -1504,6 +1504,50 @@ Repository (slice 13b).
 - **ci:** the `contract` and `job` steps run in the `e2e` part, test services start before setup,
   and a red part's step table names its failing tests on the job summary.
 
+One home per helper, one loader, one wire schema — tiers 0 to 5 (slice 14).
+
+- **BREAKING — (#196) `budget.lcp` is gone from `defineRoute`.** Nothing ever measured it: no
+  build, test or gate read the number. With it go `RouteDescriptor.budgetLcp`, `lcp` in
+  `x routes --json` and in `x.manifest.json` routes (`RouteFact.budget` is `{ js?: string }`), and
+  `lcpMs` in `.x/build-stats.json`. A route that still declares it is a type error, and
+  `registerRoute` refuses it with `X_ROUTE_MODE_INVALID`. Delete `lcp` from every `budget: { … }`.
+- **BREAKING — (#197) `x test --worker I` is removed: `X_CLI_BAD_FLAG`.** It ran shard I of an
+  N-way split serially, a second way to do what `x verify --only unit --shard i/n` does. Use that.
+- **BREAKING — (#198) one wire schema, in `@ultimat3/schema`.** `toWireSchema` and
+  `toWireOutputSchema` (was `@ultimat3/mcp`'s `toOutputSchema`) and the `WireJsonSchema` type move
+  to `@ultimat3/schema`; `@ultimat3/mcp` no longer exports `toWireSchema` or `toOutputSchema`,
+  `@ultimat3/action` no longer exports `mcpSchemaOf`, and `@ultimat3/schema` no longer exports
+  `toMcpInputSchema`. Import `toWireSchema` from `@ultimat3/schema` for a tool schema, or
+  `toJsonSchema(s, { dialect: 'draft-07', includeDialect: false })` for the full draft-07 document.
+- **BREAKING — (#199) tool schemas are the wire subset everywhere.** A query's
+  `.tool().inputSchema`, `@ultimat3/ai`'s `JsonSchema` (now `WireJsonSchema`), agent tool schemas
+  and the `respond` tool carry no `format`, and an open record publishes
+  `additionalProperties: true`; `additionalProperties` is a boolean only. The action's own parse
+  still enforces every format. A hand-built `ProjectableAction` with `additionalProperties:
+  <schema>` writes `true`.
+- **BREAKING — (#200) `defineConfig` refuses a config with no string `name`:
+  `X_CONFIG_INVALID`.** `NAME_RE.test(undefined)` tested the string `"undefined"`, so an untyped
+  config with no name loaded as an app named `undefined`, its default queue `undefined-default`.
+  Every reader of `app.config.ts` now goes through one loader. Write `defineConfig({ name:
+  'my-app', … })`.
+- **BREAKING — (#201) `X_NOT_IMPLEMENTED` has one class, `@ultimat3/core`'s
+  `NotImplementedError`.** Removed: `storageNotImplemented`, `dbNotImplemented`,
+  `scrapeNotImplemented`, `JobsNotImplementedError`, `CliNotImplementedError`, and the
+  `NotImplementedError` of `@ultimat3/pwa` and `@ultimat3/realtime`. Such a refusal is no longer an
+  instance of its package's error base (`StorageError`, `JobsError`, …). Throw or catch
+  `NotImplementedError` from `@ultimat3/core`; match on `err.code === 'X_NOT_IMPLEMENTED'`.
+- **BREAKING — (#202) shared helpers live in `@ultimat3/core`.** `@ultimat3/auth` no longer
+  exports `readCookie` and `@ultimat3/seo` no longer exports `escapeAttribute`. Import `readCookie`
+  and `escapeHtml` from `@ultimat3/core`. `@ultimat3/http`, `@ultimat3/mail` and `@ultimat3/flags`
+  still re-export `escapeHtml`, `readCookie` and `fnv1a`; `PgExecutor` is core's type, re-exported
+  where it was.
+- **seo:** `escapeXml` writes an apostrophe as `&#39;`, not `&apos;` — core's one character table;
+  both are well-formed XML. Not breaking.
+- **pwa:** no longer depends on `@ultimat3/seo`.
+- **scripts:** a module outside the loader that imports `app.config.ts` fails `boundaries`
+  (`X_CONFIG_IMPORT_OUTSIDE_LOADER`); a second copy of a core helper fails it too; a
+  `NotImplementedError` constructed outside core fails `not-implemented-copies`.
+
 
 Tier 5 — cli.
 

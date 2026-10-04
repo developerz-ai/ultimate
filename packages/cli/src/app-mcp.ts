@@ -9,7 +9,7 @@
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';
-// why: Bun exposes no path-join primitive; the config file and each candidate are joined to root.
+// why: Bun exposes no path-join primitive; each candidate is joined to root.
 import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
@@ -20,8 +20,7 @@ import {
   McpPathDuplicateError,
   PROTECTED_RESOURCE_WELL_KNOWN,
 } from '@ultimat3/mcp';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 
 /** The one file an app writes, per app directory. */
 export const APP_MCP_GLOB = 'apps/*/mcp.ts';
@@ -57,26 +56,9 @@ interface ExposeDeclaration {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-/**
- * `config.ai.mcp`, off the app's own resolved config — the exported `config` is what
- * `defineConfig` returned, so both keys are present and defaulted. Read the same way
- * `loadSignInPath` reads `auth.signInPath`: the config file is imported, never re-parsed.
- * An app with no config file has nothing exposed and nothing to warn about.
- */
+/** `config.ai.mcp` off the one loader (`app-config-load.ts`); nothing exposed with no config file. */
 async function exposeDeclaration(root: string): Promise<ExposeDeclaration | undefined> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return undefined;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!isRecord(config) || !isRecord(config['ai']) || !isRecord(config['ai']['mcp'])) {
-    return undefined;
-  }
-  const mcp = config['ai']['mcp'];
-  const path = mcp['path'];
-  return {
-    expose: mcp['expose'] === true,
-    path: typeof path === 'string' && path.startsWith('/') ? path : '/mcp',
-  };
+  return (await loadAppConfig(root))?.ai.mcp;
 }
 
 const isAppMcp = (value: unknown): value is AppMcp =>

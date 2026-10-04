@@ -285,7 +285,7 @@ describe('unit · resolveCatalogModule', () => {
 
   test('answers undefined for an app with no catalog package — never a specifier that cannot resolve', async () => {
     const dir = tempRoot('x-i18n-module-none-');
-    await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+    await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
 
     expect(await resolveCatalogModule(dir)).toBeUndefined();
   });

@@ -23,10 +23,11 @@ import { createContext, isUltimateError, logger } from '@ultimat3/core';
 import { readThrough } from '@ultimat3/query';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
+import { loadAppConfig } from './app-config-load';
 import {
   CACHE_INVALIDATE_SUBJECT,
+  cacheTiersOf,
   DEFAULT_CACHE_TIERS,
-  loadCacheTiers,
   startCacheTiers,
 } from './runtime-cache';
 
@@ -252,6 +253,8 @@ describe('a named rung this deployment cannot build is a refusal, not a shorter 
   });
 });
 
+const loadCacheTiers = async (root: string) => cacheTiersOf(await loadAppConfig(root));
+
 describe("where the ladder comes from: the app's own cache.tiers", () => {
   let root = '';
 
@@ -274,23 +277,26 @@ describe("where the ladder comes from: the app's own cache.tiers", () => {
     expect(await loadCacheTiers(root)).toEqual(['request-memo', 'redis']);
   });
 
-  test('an app that declares an empty ladder gets one', async () => {
-    await writeConfig("export const config = { name: 'demo', cache: { tiers: [] } };\n");
-    expect(await loadCacheTiers(root)).toEqual([]);
-  });
-
   test('no cache section, and no app.config.ts at all, both read as the default', async () => {
     expect(await loadCacheTiers(root)).toEqual([...DEFAULT_CACHE_TIERS]);
     await writeConfig("export const config = { name: 'demo' };\n");
     expect(await loadCacheTiers(root)).toEqual([...DEFAULT_CACHE_TIERS]);
   });
 
-  // Unreachable through `defineConfig` — `validate()` refuses an unknown rung at import — so this
-  // is the hand-written config object, and a rung `sortTiers` would place at index -1 (ahead of
-  // the request memo) must not reach the ladder.
-  test('a rung the ladder cannot build is not taken from a hand-written config', async () => {
-    await writeConfig("export const config = { name: 'demo', cache: { tiers: ['isr'] } };\n");
-    expect(await loadCacheTiers(root)).toEqual([...DEFAULT_CACHE_TIERS]);
+  // A hand-written config object is held to `defineConfig`'s validator by the one loader: an empty
+  // ladder builds no tier, and an unknown rung `sortTiers` would place AHEAD of the request memo —
+  // both refused at boot, where they used to read as the default ladder.
+  test('an empty ladder or a rung nothing builds is refused, never defaulted', async () => {
+    for (const tiers of ['[]', "['isr']"]) {
+      await rm(root, { recursive: true, force: true });
+      root = await mkdtemp(join(tmpdir(), 'ultimate-dev-cache-'));
+      await writeConfig(`export const config = { name: 'demo', cache: { tiers: ${tiers} } };\n`);
+      const error: unknown = await loadCacheTiers(root).then(
+        () => undefined,
+        (thrown: unknown) => thrown,
+      );
+      expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
+    }
   });
 });
 

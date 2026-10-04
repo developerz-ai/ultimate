@@ -33,7 +33,7 @@ const ctxFor = (
 /** An app root whose embedded database exists on disk, so `x db branch` has something to clone. */
 async function appRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-db-branch-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   await Bun.write(join(dir, '.x', 'pgdata', 'PG_VERSION'), '15\n');
   return dir;
 }

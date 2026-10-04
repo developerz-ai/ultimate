@@ -14,7 +14,10 @@ afterEach(async () => {
 describe('loadSiteSettings — refusals', () => {
   test('no app.config.ts, or one with no site section, is "not declared" — never a crash', async () => {
     expect(await loadSiteSettings(join(ROOT, 'absent'))).toEqual(NO_SITE_SETTINGS);
-    await Bun.write(join(ROOT, 'bare', 'app.config.ts'), 'export const config = { name: "x" };\n');
+    await Bun.write(
+      join(ROOT, 'bare', 'app.config.ts'),
+      'export const config = { name: "demo" };\n',
+    );
     expect(await loadSiteSettings(join(ROOT, 'bare'))).toEqual(NO_SITE_SETTINGS);
   });
 });
@@ -23,7 +26,7 @@ describe('loadSiteSettings', () => {
   test('reads site.origin (trailing slash dropped) and seo.robots.disallow', async () => {
     await Bun.write(
       join(ROOT, 'app', 'app.config.ts'),
-      "export const config = { site: { origin: 'https://notificado.co/' }," +
+      "export const config = { name: 'demo', site: { origin: 'https://notificado.co/' }," +
         " seo: { robots: { disallow: ['/panel'] } } };\n",
     );
     expect(await loadSiteSettings(join(ROOT, 'app'))).toEqual({
@@ -36,7 +39,7 @@ describe('loadSiteSettings', () => {
   test('reads seo.sitemap when the config carries it', async () => {
     await Bun.write(
       join(ROOT, 'sitemap', 'app.config.ts'),
-      "export const config = { site: { origin: null }, seo: { robots: { disallow: [] }, sitemap: { extra: ['/verificar'], lastmod: 'git' } } };\n",
+      "export const config = { name: 'demo', site: { origin: null }, seo: { robots: { disallow: [] }, sitemap: { extra: ['/verificar'], lastmod: 'git' } } };\n",
     );
     expect((await loadSiteSettings(join(ROOT, 'sitemap'))).sitemap).toEqual({
       extra: ['/verificar'],

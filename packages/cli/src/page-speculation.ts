@@ -5,11 +5,8 @@
 // the next page's document on pointer rest, so a full-page navigation between prerendered pages
 // paints from memory — and the page still ships 0kb of JavaScript (axiom 6).
 
-// why: Bun exposes no path-join primitive, and the config path is app-root-relative — the same
-// necessity `theme-boot.ts` records.
-import { join } from 'node:path';
 import type { NavigationSurface, SpeculationConfig } from '@ultimat3/core';
-import { DEFAULT_SPECULATION, localeSegment, resolveSpeculation } from '@ultimat3/core';
+import { DEFAULT_SPECULATION, localeSegment } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
 import { localeConfig, routedLocales } from '@ultimat3/i18n';
 import type { RouteDescriptor, RouteEntry } from '@ultimat3/render';
@@ -21,26 +18,14 @@ import {
   speculationRulesBody,
   speculationRulesTag,
 } from '@ultimat3/render';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+import { loadAppConfig } from './app-config-load';
 
 /**
- * `navigation.speculation` — the default (on, `'moderate'`) when the app says nothing or has no
- * config file. Structural, for `loadThemeMode`'s reason, and so possibly NOT what `defineConfig`
- * validated: what it finds goes through core's `resolveSpeculation`, the one validator, which
- * REFUSES (`X_CONFIG_INVALID`) a value `defineConfig` would refuse. Never coerced: an `'eager'`
- * quietly served as `'moderate'` is a rule the app did not write.
+ * `navigation.speculation` off the one loader (`app-config-load.ts`), which holds it to core's
+ * `resolveSpeculation` — the default (on, `'moderate'`) for a root with no config file.
  */
 export async function loadSpeculation(root: string): Promise<SpeculationConfig> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return DEFAULT_SPECULATION;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  const navigation = isRecord(config) ? config['navigation'] : undefined;
-  return resolveSpeculation(isRecord(navigation) ? navigation['speculation'] : undefined);
+  return (await loadAppConfig(root))?.navigation.speculation ?? DEFAULT_SPECULATION;
 }
 
 /**

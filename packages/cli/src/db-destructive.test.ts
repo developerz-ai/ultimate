@@ -164,7 +164,7 @@ describe('unit · the destructive rail', () => {
 describe('unit · the rail is wired into `x verify`', () => {
   test('the `drift` step reports an undeclared drop', async () => {
     const root = await appWith({ '0002_drop.sql': 'drop table "post";\n' });
-    await Bun.write(join(root, APP_CONFIG_FILE), 'export const config = {};\n');
+    await Bun.write(join(root, APP_CONFIG_FILE), "export const config = { name: 'fixture' };\n");
 
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
     expect(await drift?.applies?.({ root, runner: async () => ({}) as never })).toBe(true);

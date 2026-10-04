@@ -10,7 +10,7 @@ hand-edited; `--check` refuses drift (`X_GUARDS_DOC_DRIFT`). A guard is a runnab
 |---|---|---|
 | `bun run async-context-guard` | Enforce, as a build error, that `packages/core/src/async-context.ts` holds the framework's ONE `AsyncLocalStorage`. | `X_ASYNC_CONTEXT_UNAVAILABLE` |
 | `bun run scripts/bench-claims.ts` | Enforce, on `x verify`'s `manifest` step, that the realtime capacity figures `scripts/bench/results/README.md` states are the figures the committed bench results carry. | `X_BENCH_CLAIM_STALE` |
-| `bun run boundaries` | Enforce the repo's import rules as BUILD ERRORS, not lint warnings (axiom 3). | `X_ADMIN_FLATTENER_VIOLATION` `X_BOUNDARY_SHARED_LEAF` `X_BOUNDARY_VIOLATION` |
+| `bun run boundaries` | Enforce the repo's import rules as BUILD ERRORS, not lint warnings (axiom 3). | `X_ADMIN_FLATTENER_VIOLATION` `X_BOUNDARY_SHARED_LEAF` `X_BOUNDARY_VIOLATION` `X_CONFIG_IMPORT_OUTSIDE_LOADER` |
 | `bun run browser-transport` | This repository's run of the browser-transport rule: ONE HTTP function and ONE socket in browser code. | `X_BROWSER_TRANSPORT_UNSCANNED` |
 | `bun run budget-raises` | Enforce, as a build error, the half of axiom 9 that is a diff: a route's `budget:` may be RAISED, and the raise carries its measured number and its reason in the same change. | `X_BUDGET_BASE_MISSING` `X_BUDGET_RAISE_UNSTATED` |
 | `bun run catalog-keys` | Enforce, as a gate rule, that every i18n key the framework hands to `t()` as DATA — in a constant or a property, `reason: ROW_CHANGED_REASON` — resolves in a catalog the framework ships. | `X_CATALOG_CARRIER_UNSCANNED` `X_CATALOG_MISSING_KEYS` |
@@ -76,7 +76,7 @@ hand-edited; `--check` refuses drift (`X_GUARDS_DOC_DRIFT`). A guard is a runnab
 | `bun run scripts/test-typecheck-gate.ts` | Enforce, as a gate step, that this repo's TEST sources typecheck. | `X_CLI_BAD_FLAG` `X_TEST_TYPECHECK_PIN_STALE` `X_TEST_TYPECHECK_REGRESSED` `X_TEST_TYPECHECK_UNSCANNED` |
 | `bun run scripts/to-throw-returns.ts` | Enforce, as a gate step, that `expect(fn).toThrow(...)` is given a function that THROWS. | `X_TEST_THROW_NOT_THROWN` |
 | `bun run scripts/trust-publishers.ts` | Attaches the OIDC trusted publisher to every published package, and verifies it stayed attached. | `X_TRUST_2FA_REQUIRED` `X_TRUST_ENVIRONMENT_EMPTY` `X_TRUST_NPM_TOO_OLD` `X_TRUST_PUBLISHER_FAILED` `X_TRUST_PUBLISHER_MISSING` |
-| `bun run verify` | The gate for the framework repo itself: `x verify`, run at the repo root. | `X_MANIFEST_DRIFT` `X_VERIFY_FAILED` |
+| `bun run verify` | The gate for the framework repo itself: `x verify`, run at the repo root. | `X_CONFIG_IMPORT_OUTSIDE_LOADER` `X_MANIFEST_DRIFT` `X_VERIFY_FAILED` |
 | `bun run scripts/version-stamps.ts` | Enforce, as a gate step, the two version facts this repo states in prose and checked nowhere. | `X_LOCKFILE_STALE` `X_VERSION_LOCKSTEP_BROKEN` `X_VERSION_STAMP_DUPLICATE` `X_VERSION_STAMP_PIN_STALE` `X_VERSION_STAMP_STALE` `X_VERSION_STAMP_UNSCANNED` |
 | `bun run scripts/wiki-frames.ts` | Enforce, as a gate step, that `wiki/Realtime.md` and the wire protocol still name the same frames. | `X_FRAME_DOCS_STALE` |
 | `bun run scripts/wiki-tables.ts` | Enforce, as a gate step, that every markdown table in `wiki/` still renders as a table. | `X_WIKI_TABLE_MALFORMED` |

@@ -1,4 +1,5 @@
-// The drain section a container's boot hands its web server, read off the app's own config.
+// The drain and health sections a container's boot hands its web server, read off the app's own
+// config through the one loader.
 
 import { expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and the fixtures are written synchronously.
@@ -7,7 +8,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { loadDrainConfig } from './serve-drain';
+import { defaultReadinessGraceMs } from '@ultimat3/core';
+import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 
 const appWith = (config: string): string => {
   const root = mkdtempSync(join(tmpdir(), 'serve-drain-'));
@@ -15,13 +17,25 @@ const appWith = (config: string): string => {
   return root;
 };
 
+const none = (): string => mkdtempSync(join(tmpdir(), 'serve-drain-none-'));
+
 test('the declared readiness grace is read off app.config.ts', async () => {
-  expect(await loadDrainConfig(appWith('{ drain: { readinessGraceMs: 7000 } }'))).toEqual({
-    readinessGraceMs: 7000,
-  });
+  const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000 } }');
+  expect(await loadDrainConfig(root)).toEqual({ readinessGraceMs: 7000 });
 });
 
-test('no drain section, or no config at all, leaves the default to core', async () => {
-  expect(await loadDrainConfig(appWith('{ name: "x" }'))).toBeUndefined();
-  expect(await loadDrainConfig(mkdtempSync(join(tmpdir(), 'serve-drain-none-')))).toBeUndefined();
+test('no drain section is core default; no config at all leaves the default to core', async () => {
+  expect(await loadDrainConfig(appWith('{ name: "demo" }'))).toEqual({
+    readinessGraceMs: defaultReadinessGraceMs(),
+  });
+  expect(await loadDrainConfig(none())).toBeUndefined();
+});
+
+test('the declared readiness mode is read off app.config.ts, and core default without one', async () => {
+  const root = appWith('{ name: "demo", health: { readiness: "process" } }');
+  expect(await loadHealthConfig(root)).toEqual({ readiness: 'process' });
+  expect(await loadHealthConfig(appWith('{ name: "demo" }'))).toEqual({
+    readiness: 'dependencies',
+  });
+  expect(await loadHealthConfig(none())).toBeUndefined();
 });

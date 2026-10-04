@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { REQUIRED_BUN } from './app-root';
-import { envCommand } from './cmd-env';
+import { EnvSchemaMissingError, envCommand } from './cmd-env';
 import type { CommandContext } from './command';
 import type { ExecResult } from './exec';
 import type { JsonValue } from './output';
@@ -82,9 +82,12 @@ describe('unit · x env example', () => {
 
   test('an app that declares no environment is refused, never written empty', async () => {
     const dir = join(base, 'schemaless');
-    await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+    await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     await expect(envCommand.run(context(['env', 'example'], dir))).rejects.toBeUltimateError(
       'X_CONFIG_INVALID',
+    );
+    await expect(envCommand.run(context(['env', 'example'], dir))).rejects.toBeInstanceOf(
+      EnvSchemaMissingError,
     );
   });
 });

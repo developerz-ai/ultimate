@@ -13,10 +13,13 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-joining API, so the temp root and the config file are joined with this.
 import { join } from 'node:path';
 import { job, t } from '@ultimat3/jobs';
+import { loadAppConfig } from './app-config-load';
 import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
-import { loadWorkerConfig, workerQueuesFor } from './runtime-jobs';
+import { workerConfigOf, workerQueuesFor } from './runtime-jobs';
+
+const loadWorkerConfig = async (root: string) => workerConfigOf(await loadAppConfig(root));
 
 const dirs: string[] = [];
 
@@ -31,10 +34,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe('loadWorkerConfig', () => {
+describe('workerConfigOf, over the one loader', () => {
   test('reads the three keys the worker takes out of the app own config', async () => {
     const root = await appRoot(
-      "export const config = { jobs: { queues: ['default', 'mail'], concurrency: 3, visibilityTimeoutMs: 45000, maxAttempts: 5 } };\n",
+      "export const config = { name: 'demo', jobs: { queues: ['default', 'mail'], concurrency: 3, visibilityTimeoutMs: 45000, maxAttempts: 5 } };\n",
     );
     expect(await loadWorkerConfig(root)).toEqual({
       queues: ['default', 'mail'],
@@ -43,12 +46,21 @@ describe('loadWorkerConfig', () => {
     });
   });
 
-  test('no file and no section leave the worker its own defaults', async () => {
+  test('no file leaves the worker its own defaults', async () => {
     const none = { queues: [], concurrency: undefined, visibilityTimeoutMs: undefined };
     expect(await loadWorkerConfig(await appRoot(undefined))).toEqual(none);
-    expect(await loadWorkerConfig(await appRoot("export const config = { name: 'a' };\n"))).toEqual(
-      none,
-    );
+  });
+
+  // Core's defaults, the ones the app's own `config` object holds — a hand-built object with no
+  // section used to read as "the worker's own", disagreeing with that object.
+  test('a config with no jobs section is core default: <name>-default, 8, 30 s', async () => {
+    expect(
+      await loadWorkerConfig(await appRoot("export const config = { name: 'demo' };\n")),
+    ).toEqual({
+      queues: ['demo-default'],
+      concurrency: 8,
+      visibilityTimeoutMs: 30_000,
+    });
   });
 });
 

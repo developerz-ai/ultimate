@@ -1,14 +1,9 @@
 // `jobs.queues`, `jobs.concurrency` and `jobs.visibilityTimeoutMs`, read out of the app's own
-// `app.config.ts` for the `worker` role — the sibling of `runtime-realtime.ts`, and structural
-// for its reason. Until 22.0.0 `createWorker` was called with none of them: every worker served
-// `default` at its own concurrency whatever the config said, so a `mail` queue ran nothing.
+// `app.config.ts` for the `worker` role, out of the config `startServices` loads once. Until 22.0.0
+// `createWorker` was called with none of them, so a `mail` queue ran nothing.
 
-// why: Bun ships no path-joining API — `Object.keys(Bun)` has `file`, `write`, `Glob`,
-// `pathToFileURL` and `fileURLToPath`, and nothing that joins a path.
-import { join } from 'node:path';
+import type { AppConfig } from '@ultimat3/core';
 import { registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
 
 /** What the worker takes from the config. An absent number keeps the worker's own default. */
 export interface WorkerConfig {
@@ -17,37 +12,17 @@ export interface WorkerConfig {
   readonly visibilityTimeoutMs: number | undefined;
 }
 
+/** A root with no `app.config.ts`: no queue of its own, and the worker's own timings. */
 const NO_WORKER_CONFIG: WorkerConfig = Object.freeze({
   queues: [],
   concurrency: undefined,
   visibilityTimeoutMs: undefined,
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-/**
- * A number is handed on AS WRITTEN, never screened here: `createWorker`'s `resolveWorkerTimings`
- * is the one refusal for a non-finite knob, and core's `defineConfig` screens both counts first.
- */
-const numberOf = (value: unknown): number | undefined =>
-  typeof value === 'number' ? value : undefined;
-
-export async function loadWorkerConfig(root: string): Promise<WorkerConfig> {
-  const path = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(path).exists())) return NO_WORKER_CONFIG;
-  const module = (await import(path)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  const jobs = isRecord(config) ? config['jobs'] : undefined;
-  if (!isRecord(jobs)) return NO_WORKER_CONFIG;
-  const queues = Array.isArray(jobs['queues'])
-    ? jobs['queues'].filter((queue): queue is string => typeof queue === 'string' && queue !== '')
-    : [];
-  return {
-    queues,
-    concurrency: numberOf(jobs['concurrency']),
-    visibilityTimeoutMs: numberOf(jobs['visibilityTimeoutMs']),
-  };
+export function workerConfigOf(config: AppConfig | undefined): WorkerConfig {
+  if (config === undefined) return NO_WORKER_CONFIG;
+  const { queues, concurrency, visibilityTimeoutMs } = config.jobs;
+  return { queues, concurrency, visibilityTimeoutMs };
 }
 
 /**

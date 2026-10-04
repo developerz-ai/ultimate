@@ -43,7 +43,7 @@ describe('unit · x shot refuses before it boots anything', () => {
 
   beforeAll(async () => {
     root = `${Bun.env['TMPDIR'] ?? '/tmp'}/x-shot-refusal-${crypto.randomUUID()}`;
-    await Bun.write(`${root}/app.config.ts`, 'export const config = {};\n');
+    await Bun.write(`${root}/app.config.ts`, "export const config = { name: 'fixture' };\n");
     chromeStub = `${root}/not-really-chrome`;
     await Bun.write(chromeStub, '');
   });

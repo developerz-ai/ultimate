@@ -433,7 +433,7 @@ describe('unit · which server the picture is of', () => {
    */
   test('a boot that throws gives the dev lock back, so the next command is not refused', async () => {
     const root = mkdtempSync(join(tmpdir(), 'x-shot-boot-'));
-    writeFileSync(join(root, 'app.config.ts'), 'export const config = {};\n');
+    writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     const stateDir = resolveServices(root, {}).stateDir;
 
     let thrown = 'no-throw';

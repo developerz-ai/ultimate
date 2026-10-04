@@ -255,7 +255,7 @@ test('an app whose modules will not load generates nothing — a short registry 
 
 test('a newest migration with no snapshot refuses to generate, never diffs against nothing', async () => {
   const dir = tempRoot();
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // Diffed against the empty schema instead, every table the database already holds looks new and
   // the generated `up` is `create table` for all of them.
   await Bun.write(join(dir, MIGRATIONS_DIR, '0001_init.sql'), 'create table "gen_posts" ();');

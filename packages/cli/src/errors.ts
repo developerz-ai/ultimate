@@ -410,25 +410,6 @@ export class PortInvalidError extends UltimateError {
 }
 
 /**
- * `x env` was run in an app whose `app.config.ts` exports no `envSchema`. Not a silent success:
- * writing a `.env.example` with no variables in it, or reporting "0 declared variables, all
- * present", both read as a working environment declaration to whoever runs the command next.
- *
- * `X_CONFIG_INVALID` is core's code for "a configuration this process cannot boot on — env or
- * `app.config.ts`", which is exactly this; the CLI names it in `CLI_BORROWED_ERROR_CODES` rather
- * than minting a synonym.
- */
-export class EnvSchemaMissingError extends UltimateError {
-  constructor(input: { subcommand: string }) {
-    super({
-      code: 'X_CONFIG_INVALID',
-      cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
-      fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
-    });
-  }
-}
-
-/**
  * The process could not obtain a storage disk to write to.
  *
  * Thrown at boot rather than at the first upload, and with a `fix` naming the two real options —

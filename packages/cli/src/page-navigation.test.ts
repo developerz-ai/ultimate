@@ -201,15 +201,34 @@ describe('unit · pageNavigation', () => {
 });
 
 describe('unit · loadNavigation', () => {
-  test('no config file is no opt-in; only real surfaces are read back, with the app name', async () => {
+  // A surface no router serves is core's refusal now, through the one loader, where it used to be
+  // filtered out here and the app booted without the router it asked for on `api`.
+  test('no config file is no opt-in; declared surfaces are read back, with the app name', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ultimate-nav-'));
     try {
-      expect((await loadNavigation(root)).surfaces).toEqual([]);
+      expect(await loadNavigation(root)).toEqual({ app: 'app', surfaces: [] });
+      await writeFile(
+        join(root, 'app.config.ts'),
+        "export const config = { name: 'notificado', navigation: { client: ['app'] } };\n",
+      );
+      expect(await loadNavigation(root)).toEqual({ app: 'notificado', surfaces: ['app'] });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a surface no router serves is refused, not filtered out', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-nav-api-'));
+    try {
       await writeFile(
         join(root, 'app.config.ts'),
         "export const config = { name: 'notificado', navigation: { client: ['app', 'api'] } };\n",
       );
-      expect(await loadNavigation(root)).toEqual({ app: 'notificado', surfaces: ['app'] });
+      const error: unknown = await loadNavigation(root).then(
+        () => undefined,
+        (thrown: unknown) => thrown,
+      );
+      expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

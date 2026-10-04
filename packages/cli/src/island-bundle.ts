@@ -22,8 +22,7 @@
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { basename, join, posix, relative, sep } from 'node:path';
 import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 import { IslandBuildFailedError } from './errors';
 import { describeBuildError, sourcesContentOf, stableChunk, stripDebugId } from './island-identity';
 import type { BuiltOutput, LinkedFile } from './island-link';
@@ -357,20 +356,9 @@ export interface BuildIslandsOptions {
   readonly sharedChunks?: boolean;
 }
 
-/**
- * `islands.sharedChunks` as `defineConfig` validated it — `false` for an app with no config file or
- * none of it. Structural, never `instanceof`, for `loadNavigation`'s reason.
- */
+/** `islands.sharedChunks` off the one loader (`app-config-load.ts`) — `false` with no config file. */
 export async function loadSharedChunks(root: string): Promise<boolean> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return false;
-  const config: unknown = ((await import(configPath)) as Record<string, unknown>)[
-    APP_CONFIG_EXPORT
-  ];
-  if (typeof config !== 'object' || config === null) return false;
-  const islands: unknown = (config as Record<string, unknown>)['islands'];
-  if (typeof islands !== 'object' || islands === null) return false;
-  return (islands as Record<string, unknown>)['sharedChunks'] === true;
+  return (await loadAppConfig(root))?.islands.sharedChunks ?? false;
 }
 
 /** Build every island in the app. An app with none returns an empty bundle and costs one glob. */

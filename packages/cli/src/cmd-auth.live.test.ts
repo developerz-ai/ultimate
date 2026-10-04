@@ -78,7 +78,7 @@ const secrets = async (): Promise<readonly string[]> =>
 describeLive('live · postgres · x auth seal-mfa', () => {
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'x-auth-live-'));
-    writeFileSync(join(root, 'app.config.ts'), 'export const config = {};\n');
+    writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
     await on(url ?? '', `create database ${PROBE_DB}`);
   });

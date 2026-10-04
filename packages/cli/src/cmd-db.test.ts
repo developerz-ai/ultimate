@@ -43,7 +43,7 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
  */
 async function appRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-db-cmd-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // One module the scan imports: an app whose scan imports NOTHING is `X_APP_EMPTY`, and these
   // cases passed only while some other file in the process had left a registry non-empty.
   await Bun.write(join(dir, 'apps/web/shared/app-name.ts'), "export const APP_NAME = 'db-cmd';\n");

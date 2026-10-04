@@ -205,7 +205,7 @@ describe('unit · the ungeneratable rail', () => {
 describe('unit · the rail is wired into `x verify`', () => {
   test('the `drift` step reports an undeclared hand-written statement', async () => {
     const root = await appWith({ '0001_init.sql': `-- 0001_init\n${HANDWRITTEN}\n` });
-    await Bun.write(join(root, APP_CONFIG_FILE), 'export const config = {};\n');
+    await Bun.write(join(root, APP_CONFIG_FILE), "export const config = { name: 'fixture' };\n");
 
     const drift = VERIFY_STEPS.find((step) => step.name === 'drift');
     const result = await drift?.run({ root, runner: async () => ({}) as never });

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { isUltimateError } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
 import { THEME_STORAGE_KEY } from '@ultimat3/render';
 import { loadThemeMode, themeBoot } from './theme-boot';
@@ -22,19 +23,25 @@ const writeConfig = (body: string) => Bun.write(join(root, 'app.config.ts'), bod
 
 describe('unit · theme.defaultMode has a reader', () => {
   test("'dark' when the app declares it", async () => {
-    await writeConfig("export const config = { theme: { defaultMode: 'dark' } };\n");
+    await writeConfig("export const config = { name: 'demo', theme: { defaultMode: 'dark' } };\n");
     expect(await loadThemeMode(root)).toBe('dark');
   });
 
   test("'system' when the app declares nothing, no theme block, or no file at all", async () => {
     expect(await loadThemeMode(root)).toBe('system');
-    await writeConfig('export const config = { name: "x" };\n');
+    await writeConfig('export const config = { name: "demo" };\n');
     expect(await loadThemeMode(root)).toBe('system');
   });
 
-  test('a value the tokens have no block for falls back to system, never onto the document', async () => {
-    await writeConfig("export const config = { theme: { defaultMode: 'sepia' } };\n");
-    expect(await loadThemeMode(root)).toBe('system');
+  // Refused by core's validator through the one loader, never carried onto the document — and no
+  // longer quietly read as 'system' either.
+  test('a value the tokens have no block for is refused', async () => {
+    await writeConfig("export const config = { name: 'demo', theme: { defaultMode: 'sepia' } };\n");
+    const error: unknown = await loadThemeMode(root).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
   });
 });
 

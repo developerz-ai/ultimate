@@ -20,7 +20,8 @@ const fixture = async (name: string, files: Readonly<Record<string, string>>): P
   return root;
 };
 
-const configWith = (mcp: string): string => `export const config = { ai: { mcp: ${mcp} } };\n`;
+const configWith = (mcp: string): string =>
+  `export const config = { name: 'demo', ai: { mcp: ${mcp} } };\n`;
 
 /** The shape `defineAppMcp` returns, with a route that answers by its own hand. */
 const MCP_WITH_ROUTE = `export const mcp = {

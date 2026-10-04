@@ -352,7 +352,7 @@ export const DEFAULT_VISIBILITY_TIMEOUT_MS = 30_000;
 
 let ambient: JobDriver | undefined;
 
-/** Set once at boot from `app.config.ts`. Roles share one driver instance per process. */
+/** Set once at boot over the database binding, never a config key. One instance per process. */
 export function setJobDriver(driver: JobDriver): void {
   ambient = driver;
 }

@@ -30,17 +30,18 @@ import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
 import { selectTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
+import { loadAppConfig } from './app-config-load';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
 import type { DevServices, Env } from './runtime-bindings';
-import { loadCacheTiers, startCacheTiers } from './runtime-cache';
-import { loadWorkerConfig, type WorkerConfig } from './runtime-jobs';
-import { loadInboxRetention } from './runtime-notify-retention';
+import { cacheTiersOf, startCacheTiers } from './runtime-cache';
+import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
+import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
 import type { DevDbClient, SchemaMode } from './runtime-queue';
 import { pgExecutorFor, startQueue } from './runtime-queue';
-import { loadRealtimeConfig } from './runtime-realtime';
+import { realtimeConfigOf } from './runtime-realtime';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -319,10 +320,11 @@ export async function startServices(
   // service starts, rather than quietly keeping the in-process bus. Which transport, which KV
   // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
-  // container it stands in for. `services.root`, never `dirname(stateDir)`: `ULTIMATE_STATE_DIR`
-  // moves `.x/` (a read-only root filesystem), and its parent is then not the app.
-  const realtime = await loadRealtimeConfig(services.root);
-  const workerConfig = await loadWorkerConfig(services.root);
+  // container it stands in for. The app's config is loaded ONCE, here, and every section below is
+  // read out of that one validated object.
+  const config = await loadAppConfig(services.root);
+  const realtime = realtimeConfigOf(config);
+  const workerConfig = workerConfigOf(config);
   const bus: TransportSelection = selectTransport(env, realtime);
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
   // reader here already uses it, so a queue that asked `process.env` would decide the standby from
@@ -361,14 +363,14 @@ export async function startServices(
     // `x_rate_limit` takes one upsert per request the web role serves, assets included.
     //
     // `inboxRetention` is READ HERE and not defaulted in `runtime-purge.ts`: the two windows are the
-    // app's, `startServices` holds no `AppConfig`, and a loader that silently answered "never
-    // sweep" from inside the sweep would be indistinguishable from an app that chose it.
+    // app's, and a loader that silently answered "never sweep" from inside the sweep would be
+    // indistinguishable from an app that chose it.
     started.push(
       installRetentionSweep({
         idempotency: queue.idempotency,
         rateLimit: rateLimitStore,
         events,
-        inboxRetention: await loadInboxRetention(services.root),
+        inboxRetention: inboxRetentionOf(config),
       }),
     );
     // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
@@ -413,7 +415,7 @@ export async function startServices(
     // The ladder is the app's declaration, never the environment's. `cache.tiers` was declared,
     // validated and documented while NOTHING read it — so an app asking for one rung got four,
     // and one asking for a shared tier got whatever `REDIS_URL` happened to say.
-    const tiers = await loadCacheTiers(services.root);
+    const tiers = cacheTiersOf(config);
     started.push(startCacheTiers({ env, purge, transport, tiers }));
 
     return {
