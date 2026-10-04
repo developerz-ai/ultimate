@@ -3,9 +3,9 @@
 // DDL applied once; every check claims only from a queue it named, so they share it.
 
 import { afterAll, beforeAll, describe } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { createPostgresClient, raw } from '@ultimat3/db';
-import type { PgExecutor } from '@ultimat3/jobs';
 import { createPgDriver, SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { jobDriverConformance } from './job-driver-conformance';
 import { behavesLike } from './shared-examples';

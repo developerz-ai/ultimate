@@ -5,11 +5,10 @@
  * production. Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, PgExecutor } from '@ultimat3/core';
 import { uuid } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { auditableInput } from './audit-input';
-import type { PgExecutor } from './idempotency-postgres';
 
 /**
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, and

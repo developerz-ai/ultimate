@@ -1,12 +1,12 @@
 // Single responsibility: the public API of @ultimat3/mail. Explicit named exports only —
 // other packages call `defineMail`, `send` and the driver seam, and nothing else.
 
+export { escapeHtml } from '@ultimat3/core';
 /** Re-exported so a `defineMail` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
-
 export { MAIL_CATALOG, MAIL_CATALOG_LOCALE } from './catalog';
 export type {
   MailDriver,
@@ -61,8 +61,7 @@ export {
   transformFailed,
 } from './errors';
 export { assertHeaderSafe } from './header-safety';
-
-export { escapeHtml, safeUrl } from './html';
+export { safeUrl } from './html';
 
 export { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 export { mailMessageSchema, sendMailJob } from './job';

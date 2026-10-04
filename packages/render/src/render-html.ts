@@ -11,7 +11,7 @@ import {
   IslandPropsInvalidError,
   PrerenderFailedError,
 } from './errors';
-import { escapeText, renderAttributes, VOID_ELEMENTS } from './html';
+import { escapeHtml, renderAttributes, VOID_ELEMENTS } from './html';
 import { emitIslandAttributes, emitIslandProps } from './hydrate';
 import type { IslandNode } from './island';
 import { isIslandNode } from './island';
@@ -62,8 +62,8 @@ export interface RenderHtmlOptions {
 async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): Promise<string> {
   assertDepth(depth);
   if (value === null || value === undefined || value === false || value === true) return '';
-  if (typeof value === 'string') return escapeText(value);
-  if (typeof value === 'number' || typeof value === 'bigint') return escapeText(String(value));
+  if (typeof value === 'string') return escapeHtml(value);
+  if (typeof value === 'number' || typeof value === 'bigint') return escapeHtml(String(value));
   if (value instanceof Promise) return unwrap(await value, depth, walk);
   // Before the array branch, never after: an island node IS an array — the only object shape the
   // configured `JSX.Element` admits — so the generic branch would render its empty contents and
@@ -75,7 +75,7 @@ async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): P
   }
   if (isJsxNode(value)) return renderNode(value.type, value.props, depth, walk);
   if (typeof value === 'function') return unwrap((value as () => unknown)(), depth + 1, walk);
-  return escapeText(String(value));
+  return escapeHtml(String(value));
 }
 
 /**

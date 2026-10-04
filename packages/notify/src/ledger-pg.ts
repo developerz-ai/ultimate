@@ -4,8 +4,8 @@
 //
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
+import type { PgExecutor } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
-import type { PgExecutor } from '@ultimat3/jobs';
 import type { DeliveryClaim, DeliveryLedger, DeliveryRecord, DeliveryStatus } from './ledger';
 import { isDeliveryStatus } from './ledger';
 

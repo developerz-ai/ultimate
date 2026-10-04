@@ -267,7 +267,7 @@ describe('the inert server path', () => {
 
     expect(html).not.toContain('value=');
     // The serializer's leading newline, which the parser strips, then the value. Escaping is
-    // `@ultimat3/render`'s (`escapeText`), not this file's — the harness here is a 30-line copy.
+    // `@ultimat3/render`'s (core's `escapeHtml`), not this file's — the harness here is a 30-line copy.
     expect(html).toContain('>\nhello</textarea>');
   });
 

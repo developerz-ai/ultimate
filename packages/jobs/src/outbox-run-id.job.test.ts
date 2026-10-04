@@ -5,10 +5,10 @@
 // (`.job.`): booting Postgres costs seconds.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { claimOf } from './driver';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { job, resetJobs } from './job';

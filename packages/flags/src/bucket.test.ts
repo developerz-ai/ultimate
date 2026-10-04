@@ -3,7 +3,7 @@
 // "10%" rollout to a third of the userbase.
 
 import { describe, expect, test } from 'bun:test';
-import { BUCKETS, bucketOf, fnv1a } from './bucket';
+import { BUCKETS, bucketOf } from './bucket';
 
 const actorIds = (count: number): string[] =>
   Array.from({ length: count }, (_unused, index) => `user-${index}`);
@@ -80,14 +80,5 @@ describe('unit · pinned assignments', () => {
     for (let call = 0; call < 1_000; call += 1) {
       expect(bucketOf('billing.export', 'org-42')).toBe(first);
     }
-  });
-});
-
-describe('unit · fnv1a', () => {
-  test('is the published 32-bit FNV-1a, so two nodes agree without talking', () => {
-    // Reference vectors from the FNV specification.
-    expect(fnv1a('')).toBe(0x811c_9dc5);
-    expect(fnv1a('a')).toBe(0xe40c_292c);
-    expect(fnv1a('foobar')).toBe(0xbf9c_f968);
   });
 });

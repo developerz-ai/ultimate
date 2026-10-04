@@ -16,7 +16,7 @@
 // assembled per app — both outside what this tier may import — so the CLI supplies them and
 // this function stays pure and unit-testable.
 
-import { canonicalJson } from '@ultimat3/core';
+import { fingerprint } from '@ultimat3/core';
 import { assertFiniteFacts } from './finite-facts';
 import type {
   ActionFact,
@@ -103,17 +103,16 @@ export function buildManifest(sources: ManifestSources): Manifest {
 }
 
 /**
- * Content hash of the manifest body. Deliberately excludes `buildId` itself, and is taken over
- * `@ultimat3/core`'s `canonicalJson` — the same INJECTIVE form the diff compares on, so a fact
- * that changed cannot hash the same as the fact it replaced.
+ * Content hash of the manifest body: `@ultimat3/core`'s `fingerprint`, SHA-256/16 over the same
+ * INJECTIVE `canonicalJson` the diff compares on, so a fact that changed cannot hash the same as
+ * the fact it replaced. It was a hand-written copy of that function, byte for byte — the value is
+ * unchanged, the second implementation is gone. Deliberately excludes `buildId` itself.
  *
  * This is a HASH, never the published document: `manifestJson` in `emit.ts` is what reaches disk,
  * and it is `JSON.stringify` with a fixed key order for exactly that reason.
  */
 export function contentHash(body: Omit<Manifest, 'buildId'>): string {
-  const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(canonicalJson(body));
-  return hasher.digest('hex').slice(0, 16);
+  return fingerprint(body);
 }
 
 function sortBy<T>(items: readonly T[], key: (item: T) => string): readonly T[] {

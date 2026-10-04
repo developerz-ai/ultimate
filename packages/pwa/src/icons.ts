@@ -4,8 +4,7 @@
  * icons end up with clipped logos.
  */
 
-import { transformImageBytes } from '@ultimat3/core';
-import { escapeAttribute } from '@ultimat3/seo';
+import { escapeHtml, transformImageBytes } from '@ultimat3/core';
 import { PwaIconMissingError } from './errors';
 import type { ManifestIcon } from './manifest';
 
@@ -186,7 +185,7 @@ export function appleTouchLinks(plan: IconPlan): string {
       // `href` — a quote in it closed the attribute AND the tag, so `<head>` got a live element.
       // seo's escaper is tier 1 and the one this package can reach; render's html.ts is tier 4.
       (entry) =>
-        `<link rel="apple-touch-icon" sizes="${entry.spec.size}x${entry.spec.size}" href="${escapeAttribute(entry.outputPath)}">`,
+        `<link rel="apple-touch-icon" sizes="${entry.spec.size}x${entry.spec.size}" href="${escapeHtml(entry.outputPath)}">`,
     )
     .join('');
 }

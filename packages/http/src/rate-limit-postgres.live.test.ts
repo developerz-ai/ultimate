@@ -12,9 +12,9 @@
 //     bun test packages/http/src/rate-limit-postgres.live.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { Bucket } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
-import type { PgExecutor } from './rate-limit-postgres';
 import {
   type PostgresRateLimitStore,
   postgresRateLimitStore,

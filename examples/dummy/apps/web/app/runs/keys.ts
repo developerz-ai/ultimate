@@ -14,7 +14,7 @@ import {
   MemoryAdapter,
   revokeApiKey,
 } from '@ultimat3/auth';
-import { type Clock, resolveEnvironment } from '@ultimat3/core';
+import { type Clock, resolveEnvironment, storeMode } from '@ultimat3/core';
 
 /** What a run key may do, and the one map the mount cuts its routes by. */
 export const RUN_KEY_SCOPES = {
@@ -24,13 +24,13 @@ export const RUN_KEY_SCOPES = {
 
 /**
  * `x_api_keys` through the framework's adapter, everywhere except `bun test`, where nothing
- * installs a database client — `@postly/db`'s `selectDriver` makes the same carve-out. Built on
- * first use: the adapter takes the process client, which boot installs after this module loads.
+ * installs a database client — core's `storeMode`, the answer `@postly/db`'s `selectDriver` reads
+ * too. Built on first use: the adapter takes the process client, which boot installs after this
+ * module loads.
  */
 let store: ApiKeyVerifyStore | undefined;
 const keys = (): ApiKeyVerifyStore => {
-  store ??=
-    resolveEnvironment({ env: Bun.env }) === 'test' ? new MemoryAdapter() : new BuiltinAdapter();
+  store ??= storeMode(Bun.env) === 'memory' ? new MemoryAdapter() : new BuiltinAdapter();
   return store;
 };
 

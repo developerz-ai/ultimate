@@ -28,6 +28,17 @@ describe('unit · the packages/db client x new writes', () => {
     expect(client).not.toContain('@ledger-demo/web');
   });
 
+  // One answer to "which store backs this seam", decided by core: a scaffold that writes its own
+  // environment ternary is a fourth predicate the next app copies, and the three that shipped had
+  // already disagreed (two read the environment, one read DATABASE_URL).
+  test("the driver is chosen by core's storeMode, never a local environment ternary", () => {
+    const client = clientOf('ledger-demo', true);
+    expect(client).toContain("import { storeMode } from '@ultimat3/core';");
+    expect(client).toContain("storeMode(env) === 'memory' ? memoryDriver() : postgresDriver()");
+    expect(client).not.toContain('resolveEnvironment');
+    expect(client).not.toMatch(/=== 'test'/);
+  });
+
   test('the client ships with the test that covers it', () => {
     const paths = dbClientFiles(names('ledger-demo'), true).map((file) => file.path);
     expect(paths).toEqual([HANDLE_FILE, 'packages/db/src/client.test.ts']);

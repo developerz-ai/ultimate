@@ -2,8 +2,8 @@
 // appended it and every replica coalesces into the same window. `createMemoryDigestStore` is the
 // same queue of windows in one heap; this is what a deployment with more than one process installs.
 
+import type { PgExecutor } from '@ultimat3/core';
 import { finiteCount, UltimateError } from '@ultimat3/core';
-import type { PgExecutor } from '@ultimat3/jobs';
 import type { DigestSlot, DigestStore } from './digest';
 import type { NotifyEvent } from './notification';
 

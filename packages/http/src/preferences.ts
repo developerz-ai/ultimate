@@ -2,10 +2,10 @@
 // and `auth` calls it again once the actor's saved preference is known. WHERE each value is read
 // from is this file's; what a locale or a zone IS stays `@ultimat3/i18n`'s and `@ultimat3/time`'s.
 
+import { readCookie } from '@ultimat3/core';
 import { resolveTimeZone } from '@ultimat3/time';
 import type { HttpConfig } from './config';
 import type { RequestContext } from './context';
-import { readCookie } from './locale';
 import { requestLocale } from './locale-prefix';
 import type { UltimateRequest } from './request';
 

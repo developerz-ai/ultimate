@@ -300,7 +300,8 @@ describe('unit · relation labels and computed columns', () => {
     expect(html).toMatch(/<time[^>]*datetime="/); // relative-time
     expect(html).toContain('…</span>'); // truncate
     expect(html).toContain(`<a href="/vendors/${vendorId}">Open vendor</a>`); // link
-    expect(html).toContain('<pre class="x-admin-json">{"lines":1}</pre>'); // json
+    // Text is escaped with the one five-character table, quotes included.
+    expect(html).toContain('<pre class="x-admin-json">{&quot;lines&quot;:1}</pre>'); // json
     expect(html).toContain('×1'); // a component
   });
 });

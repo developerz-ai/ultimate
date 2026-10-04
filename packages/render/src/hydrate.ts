@@ -7,7 +7,7 @@
 
 import type { HydrateStrategy } from '@ultimat3/core';
 import { HYDRATE_STRATEGIES } from '@ultimat3/core';
-import { escapeAttribute, escapeJsonContent } from './html';
+import { escapeHtml, escapeJsonContent } from './html';
 
 export interface IslandDirective {
   /** Unique per INSTANCE: two of the same island on a page need two prop bags to find. */
@@ -61,7 +61,7 @@ export function emitIslandAttributes(directive: IslandDirective): string {
   // and the rest of the string is markup. Author-controlled today — which is why it costs nothing
   // to route through the ONE escaper now, rather than after a build id or a prop-derived margin
   // starts carrying something the author did not type.
-  const attr = (name: string, value: string): string => `${name}="${escapeAttribute(value)}"`;
+  const attr = (name: string, value: string): string => `${name}="${escapeHtml(value)}"`;
   const attrs = [
     attr('data-x-island', directive.islandId),
     attr('data-x-hydrate', directive.strategy),
@@ -89,7 +89,7 @@ export function emitIslandProps(directive: IslandDirective): string {
     // The id goes through the SAME escaper every other attribute in this file does. Safe today —
     // `islandModuleId` reduces to `[a-z0-9-]` — which is exactly why it costs nothing to route it
     // now, rather than after an id starts being derived from something an author did not type.
-    `<script type="application/json" data-x-props="${escapeAttribute(directive.islandId)}">` +
+    `<script type="application/json" data-x-props="${escapeHtml(directive.islandId)}">` +
     `${escapeJsonContent(JSON.stringify(directive.props))}</script>`
   );
 }

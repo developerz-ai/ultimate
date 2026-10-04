@@ -5,7 +5,7 @@
 
 import { canEncode, finiteCount } from '@ultimat3/core';
 import { imageQueryInvalid } from './errors';
-import { attributes, escapeAttribute } from './xml';
+import { attributes, escapeXml } from './xml';
 
 /** Ordered widest-first is wrong for `srcset`; browsers want ascending. */
 export const DEFAULT_WIDTHS: readonly number[] = [320, 480, 640, 768, 1024, 1280, 1536, 1920];
@@ -288,5 +288,5 @@ export function renderPicture(image: ResponsiveImage): string {
 
 /** Escapes a data URI for inline `style`, for callers assembling their own tags. */
 export function inlineBlur(dataUrl: string): string {
-  return escapeAttribute(`background-image:url(${dataUrl});background-size:cover`);
+  return escapeXml(`background-image:url(${dataUrl});background-size:cover`);
 }

@@ -3,7 +3,7 @@
 // again — is this package's, and runs without a server.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/jobs';
+import type { PgExecutor } from '@ultimat3/core';
 import type { DigestSlot } from './digest';
 import {
   createPgDigestStore,

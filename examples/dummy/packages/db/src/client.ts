@@ -3,7 +3,7 @@
  * `posts` is declared, not because someone wrote a repository class for it.
  */
 
-import { resolveEnvironment } from '@ultimat3/core';
+import { storeMode } from '@ultimat3/core';
 import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';
 import { comments } from './schema/comments';
 import { connections } from './schema/connections';
@@ -32,11 +32,11 @@ import { runs } from './schema/runs';
  * both — loud, not silent.
  *
  * `test` is the one carve-out and it is not laziness: `bun test` installs no client, so a
- * statement would have nothing to reach. `resolveEnvironment` reads `ULTIMATE_ENV` then `NODE_ENV`,
- * and `bun test` sets the second to `test`.
+ * statement would have nothing to reach. Core's `storeMode` is that rule, written once: it reads
+ * `ULTIMATE_ENV` then `NODE_ENV`, and `bun test` sets the second to `test`.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver =>
-  resolveEnvironment({ env }) === 'test' ? memoryDriver() : postgresDriver();
+  storeMode(env) === 'memory' ? memoryDriver() : postgresDriver();
 
 export const driver = selectDriver(Bun.env);
 

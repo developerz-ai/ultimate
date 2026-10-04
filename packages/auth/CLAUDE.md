@@ -59,7 +59,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `insert … on conflict do update` reading the window off `x_auth_lockouts.<column>`, never a CTE
   and never a second table: only the row the statement locks is re-read after a wait. `admitted`
   is a column because `returning` cannot see the old row; no row back is never an admission. A
-  live lockout is never rewritten. `PgExecutor` is structural: the pool is the host's.
+  live lockout is never rewritten. `PgExecutor` (`@ultimat3/core`'s, re-exported) is structural:
+  the pool is the host's.
 - **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
   `config.limiter` → the installed factory → `createAuthLimiter`. `installedAuthLimiter` and
@@ -109,7 +110,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   that would not run degrades to prose: `jwks.ts`'s `readTheKeySet(tail)` decides with core's
   `isFixShellSafe`. `oauth-discovery.ts` still owes that repair (it keeps `auth` on
   `FIX_SHELL_ARG_PINS`). `${provider}` is registry-validated boot config, not foreign.
-- `readCookie` never throws on a malformed value (`decodeURIComponent('%')`).
+- Cookies are read through `@ultimat3/core`'s `readCookie` (`readSessionCookie`, the oauth
+  handshake), which never throws on a malformed value (`decodeURIComponent('%')`).
 - A token endpoint's HTTP 200 is not success — read `error`.
 - Link by address only when the provider **and** the local account both verified it
   (`link: 'verified-email'`, default; `'never'` is the only other value).

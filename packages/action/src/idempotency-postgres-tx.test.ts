@@ -2,10 +2,10 @@
 // `idempotency-parity.test.ts` (memory and the embedded server) and the live suite.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
 import { createPgliteClient, raw, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
-import type { PgExecutor } from './idempotency-postgres';
 import { postgresIdempotencyStore, SQL_IDEMPOTENCY_RESERVE } from './idempotency-postgres';
 import { postgresUnderTest } from './idempotency-tx-fixture';
 

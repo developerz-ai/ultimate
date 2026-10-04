@@ -4,7 +4,7 @@
 // the worker resuming on worker-7 re-suspended every 30s until the 24h timeout dead-lettered it.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from './driver-pg';
+import type { PgExecutor } from '@ultimat3/core';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,

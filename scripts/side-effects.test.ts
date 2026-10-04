@@ -159,8 +159,8 @@ describe('a declared module nothing imports for effect', () => {
     expect(finding.code).toBe('X_SIDE_EFFECTS_UNANCHORED');
     expect(finding.at).toBe('packages/x/package.json');
     // The fix is the edit, spelled as the line an author pastes.
-    expect(finding.fix).toContain("import './errors';");
-    expect(finding.fix).toContain('packages/x/src/index.ts');
+    expect(finding.fix).toBe("import './errors';");
+    expect(finding.cause).toContain('packages/x/src/index.ts');
   });
 
   test('a bare import from an entry settles it', () => {

@@ -7,10 +7,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { createContext, REDACTED, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
 import { postgresAuditSink, SQL_AUDIT_INSERT, SQL_AUDIT_TABLE } from './audit-postgres';
-import type { PgExecutor } from './idempotency-postgres';
 
 interface Call {
   readonly sql: string;

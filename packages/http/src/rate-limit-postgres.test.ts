@@ -4,10 +4,10 @@
 // `.live.` twin's job — a scripted executor answers whatever the script says.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
 import type { Bucket } from './rate-limit';
 import { memoryRateLimitStore, rateLimitDecision } from './rate-limit';
-import type { PgExecutor } from './rate-limit-postgres';
 import {
   postgresRateLimitStore,
   SQL_RATE_LIMIT_PEEK,

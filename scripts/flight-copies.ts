@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
-// One rule, two halves: the framework computes a retry delay in ONE place, and it never rolls a
-// die a test cannot control. Written because a sweep deleted three backoff curves and nothing
-// stopped a fourth — the same hole `formatBytes` has, and axiom 3 says a rule that is not a build
-// error does not exist.
+// One home per helper: a retry delay is computed in ONE place, no die rolls that a test cannot
+// control, and each helper in `lib/helper-homes.ts` (escaper, cookie reader, hashes, `PgExecutor`,
+// `storeMode`) has one implementation. Written because sweeps deleted copies and nothing stopped
+// the next one — axiom 3 says a rule that is not a build error does not exist.
 //   bun run scripts/flight-copies.ts [--json]
 
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { shippedSources } from './lib/corpus';
+import { checkHelperHomes } from './lib/helper-homes';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -149,6 +150,7 @@ export function checkFlightCopies(files: readonly SourceFile[]): readonly Findin
     findings.push(...randomCallFindings(file));
     const curve = secondCurveFinding(file);
     if (curve !== undefined) findings.push(curve);
+    findings.push(...checkHelperHomes(file));
   }
   return findings;
 }
@@ -175,7 +177,7 @@ export const flightCopyResult = (files: readonly SourceFile[]): ScriptResult => 
     script: SCRIPT,
     summary:
       findings.length === 0
-        ? `${files.length} files, one backoff curve (${BACKOFF_MODULE}) and no uninjected roll`
+        ? `${files.length} files, one backoff curve (${BACKOFF_MODULE}), no uninjected roll, every helper in its one home`
         : `${findings.length} flight-control copy findings`,
     findings,
     data: { scanned: files.length },

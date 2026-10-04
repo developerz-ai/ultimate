@@ -165,6 +165,8 @@ export {
   useService,
   withChildContext,
 } from './context';
+/** The one `Cookie:` reader — auth, http and i18n each parsed the header and could not share it. */
+export { readCookie } from './cookie';
 export type { CursorPayload } from './cursor';
 export {
   CursorInvalidError,
@@ -465,6 +467,7 @@ export type {
   FlightGateState,
 } from './flight-gate';
 export { createFlightGate, gateOverloaded } from './flight-gate';
+export { fnv1a } from './fnv1a';
 export { formatBytes } from './format-bytes';
 export type { GenerationFence } from './generation-fence';
 export { createFence, isSuperseded } from './generation-fence';
@@ -472,6 +475,7 @@ export type { PublicHealthBody } from './health-disclosure';
 export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
 export type { HostDecision, HostRule } from './host-rules';
 export { ANY_HOST, hostDecision, hostMatches } from './host-rules';
+export { escapeHtml } from './html-escape';
 export type { Brand, Id } from './ids';
 export {
   isSpanId,
@@ -616,6 +620,8 @@ export {
   CLIENT_SYNC_META,
   CLIENT_SYNC_WORKER_META,
 } from './page-meta';
+/** The structural Postgres seam http, auth, action and jobs share without a `@ultimat3/db` edge. */
+export type { PgExecutor } from './pg-executor';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
 export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';
@@ -682,6 +688,8 @@ export {
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { createSingleFlight } from './single-flight';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
+export type { StoreMode } from './store-mode';
+export { STORE_MODES, storeMode } from './store-mode';
 export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,

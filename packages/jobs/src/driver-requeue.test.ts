@@ -5,10 +5,10 @@
 // contract says "from that step onward", so later steps replayed results from the old run.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_JOB_REQUEUE } from './driver-pg-jobs-sql';
 

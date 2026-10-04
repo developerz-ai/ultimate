@@ -4,6 +4,7 @@
  * without it, `replicas: 3` means a retry that lands elsewhere re-runs a committed handler.
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
+import type { PgExecutor } from '@ultimat3/core';
 import { finiteCount, logger, uuid } from '@ultimat3/core';
 import { IdempotencyReservationLostError, IdempotencyStatusUnknownError } from './errors';
 import type {
@@ -16,23 +17,6 @@ import type {
 import { IDEMPOTENCY_STATUSES, isIdempotencyStatus } from './idempotency';
 import { DEFAULT_IDEMPOTENCY_WINDOW_MS } from './idempotency-memory';
 import { liveTransaction } from './tx-scope';
-
-/**
- * The one thing this store needs from the DB layer, declared structurally rather than imported.
- * `@ultimat3/jobs` declares the same shape for the same reason: neither package owns the
- * connection — boot does. (The OPEN TRANSACTION's connection is the one thing this package reads
- * for itself, in `tx-scope.ts`.)
- *
- * **`Bun.sql` does not satisfy it** — verified against Bun 1.3.14: `Bun.sql.query` is `undefined`.
- * `Bun.sql` is a tagged template whose positional form is `unsafe`, so `{ executor: Bun.sql }`
- * would `TypeError` on the first reservation, which is the one call path that must not fail open.
- * What satisfies it is a client that already speaks `(text, values)`, wrapped in one line —
- * `@ultimat3/cli`'s `pgExecutorFor(client)` over `@ultimat3/db`'s `DbClient.query({ text, values })`
- * is the framework's own — or a transaction handle, which is a client on its own connection.
- */
-export interface PgExecutor {
-  query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]>;
-}
 
 /**
  * The store's ONE install point, applied the way `SQL_JOBS_TABLE` is — by the boot, not by an app

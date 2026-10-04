@@ -14,7 +14,7 @@ export const FIX_PROSE_PINS_FILE = 'scripts/lib/fix-prose-pins.ts';
 
 export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   action: 28,
-  admin: 38,
+  admin: 31,
   ai: 24,
   auth: 47,
   cache: 11,

@@ -2,12 +2,12 @@
 // inside a transaction, and the one way a test makes a record old. Not a test file — the parity
 // suite (memory and embedded Postgres) and the live one both drive it, through the same cases.
 
+import type { PgExecutor } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import { raw, sql, withTransaction } from '@ultimat3/db';
 import type { IdempotencyStore } from './idempotency';
 import { withIdempotency } from './idempotency';
 import { MemoryIdempotencyStore } from './idempotency-memory';
-import type { PgExecutor } from './idempotency-postgres';
 import { postgresIdempotencyStore, SQL_IDEMPOTENCY_TABLE } from './idempotency-postgres';
 
 /** The deadline every suite reclaims after. */

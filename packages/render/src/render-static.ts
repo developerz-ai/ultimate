@@ -31,9 +31,11 @@ export type StaticRenderFn = (input: {
  * 96 kB document against 21 µs here, and every static page, ISR regeneration and CSS module hashes
  * through it. xxHash32 is a SPECIFIED algorithm — the test pins its reference vectors — so the value
  * is stable across machines and Bun versions, as the FNV one was. Switching was a one-time cache
- * bust: every ETag and every scoped CSS class name changed once, in 22.0.0.
+ * bust: every ETag and every scoped CSS class name changed once, in 22.0.0. Bytes hash to what
+ * their UTF-8 string does, so an icon's or an `asset()` file's ETag is this function too — the one
+ * xxHash32 call in the framework (`bun run flight-copies` refuses a second).
  */
-export function contentHash(input: string): string {
+export function contentHash(input: string | Uint8Array): string {
   return Bun.hash.xxHash32(input).toString(16).padStart(8, '0');
 }
 

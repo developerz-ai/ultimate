@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { canonicalJson, fingerprint } from '@ultimat3/core';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { diffManifest } from './diff';
@@ -122,6 +123,16 @@ describe('the manifest is deterministic', () => {
 
   test('buildId is verifiable from the file alone', () => {
     expect(verifyBuildId(buildManifest(sources))).toBe(true);
+  });
+
+  // Every buildId ever stamped into an app's `x.manifest.json` was SHA-256/16 over canonicalJson;
+  // that is core's `fingerprint`, so the copy was deleted rather than the value changed.
+  test("buildId is core's fingerprint of the body, so no stamped manifest moves", () => {
+    const { buildId, ...body } = buildManifest(sources);
+    expect(buildId).toBe(fingerprint(body));
+    expect(buildId).toBe(
+      new Bun.CryptoHasher('sha256').update(canonicalJson(body)).digest('hex').slice(0, 16),
+    );
   });
 });
 

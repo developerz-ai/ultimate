@@ -1,12 +1,14 @@
 // The public surface of @ultimat3/http. Explicit, never `export *`: what is not
 // listed here is an implementation detail and may change without a major bump.
 
-export type { RenderMode } from '@ultimat3/core';
+export type { PgExecutor, RenderMode } from '@ultimat3/core';
 // The wire format is `@ultimat3/core`'s and is RE-EXPORTED, never re-declared: it is one module at
 // the tier both halves can reach, because `@ultimat3/jobs` signs a delivery, this package verifies
 // one, and neither may import the other. Re-exported here so a receiver route needs one import.
 export {
+  escapeHtml,
   isCanonicalWebhookField,
+  readCookie,
   WEBHOOK_ID_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_SIGNATURE_VERSION,
@@ -105,9 +107,8 @@ export {
 } from './forwarded';
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
-export { escapeHtml } from './html-render';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
-export { DEFAULT_LOCALE_CONFIG, readCookie } from './locale';
+export { DEFAULT_LOCALE_CONFIG } from './locale';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { NavigationPurpose } from './navigation';
@@ -163,11 +164,7 @@ export {
 } from './rate-limit-errors';
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';
-export type {
-  PgExecutor,
-  PostgresRateLimitStore,
-  PostgresRateLimitStoreOptions,
-} from './rate-limit-postgres';
+export type { PostgresRateLimitStore, PostgresRateLimitStoreOptions } from './rate-limit-postgres';
 export {
   postgresRateLimitStore,
   SQL_RATE_LIMIT_TABLE,

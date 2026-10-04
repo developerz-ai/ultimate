@@ -12,10 +12,10 @@
 //     bun test packages/auth/src/rate-limit-postgres.live.test.ts
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
+import type { Clock, PgExecutor } from '@ultimat3/core';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type AuthRateLimitPolicy, accountKey } from './rate-limit';
-import type { PgExecutor, PostgresAuthLimiter } from './rate-limit-postgres';
+import type { PostgresAuthLimiter } from './rate-limit-postgres';
 import { postgresAuthLimiter, SQL_AUTH_LIMIT_TABLES } from './rate-limit-postgres';
 
 const url = Bun.env['TEST_DATABASE_URL'];

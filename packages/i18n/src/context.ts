@@ -3,7 +3,13 @@
  * No call site passes a locale by hand — `t()` here is the ambient translator.
  */
 
-import { assertLocale, cachedFormatter, canonicalLocale, tryUseContext } from '@ultimat3/core';
+import {
+  assertLocale,
+  cachedFormatter,
+  canonicalLocale,
+  readCookie,
+  tryUseContext,
+} from '@ultimat3/core';
 import { type Catalog, mergeCatalogs } from './catalog';
 import {
   DEFAULT_LOCALE,
@@ -145,24 +151,12 @@ export function resolveLocale(
   return { locale: fallback, direction: directionOf(fallback), source: 'default' };
 }
 
-/** Read `x_locale` out of a raw `Cookie` header. */
+/**
+ * Read `x_locale` out of a raw `Cookie` header — through core's `readCookie`, so a malformed
+ * escape (`x_locale=%`) is the raw value, which `resolveLocale` then fails to normalise and skips.
+ */
 export function localeCookieOf(cookieHeader?: string | null): string | undefined {
-  if (!cookieHeader) return undefined;
-  for (const pair of cookieHeader.split(';')) {
-    const index = pair.indexOf('=');
-    if (index === -1) continue;
-    if (pair.slice(0, index).trim() !== LOCALE_COOKIE) continue;
-    const raw = pair.slice(index + 1).trim();
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      // A cookie is client-authored: `x_locale=%` is a `URIError` out of a per-request path, and
-      // a 500 for a malformed locale is worse than the raw value, which `resolveLocale` then
-      // fails to normalise and skips. Same guard as `@ultimat3/auth`'s `decodeCookieValue`.
-      return raw;
-    }
-  }
-  return undefined;
+  return readCookie(cookieHeader, LOCALE_COOKIE) ?? undefined;
 }
 
 /**

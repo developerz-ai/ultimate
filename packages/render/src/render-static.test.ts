@@ -78,6 +78,14 @@ describe('contentHash', () => {
     expect(contentHash('')).toBe('02cc5d05');
     expect(contentHash('hello')).toBe('fb0077f9');
   });
+
+  // An icon or an `asset()` file is bytes, not a string, and its ETag is the same function's: a
+  // second xxHash32 call in `@ultimat3/cli` was how the hex width or the seed could drift apart.
+  test('hashes bytes to exactly what it hashes their UTF-8 string to', () => {
+    expect(contentHash(new Uint8Array())).toBe('02cc5d05');
+    expect(contentHash(new TextEncoder().encode('hello'))).toBe('fb0077f9');
+    expect(contentHash(new Uint8Array([0xff, 0x00, 0x10]))).toMatch(/^[0-9a-f]{8}$/);
+  });
 });
 
 describe('fillPath', () => {

@@ -9,11 +9,10 @@
 // `Tx` on" is a question only boot can answer. Boot has `currentTx()` — a `DbTx` IS a client on
 // the transaction's connection — so the wiring is one line there and no tier crossing here.
 
-import type { Clock } from '@ultimat3/core';
+import type { Clock, PgExecutor } from '@ultimat3/core';
 import { uuid } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
-import type { PgExecutor } from './driver-pg';
 import {
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,

@@ -119,6 +119,7 @@ bun run flight-copies --json
 |---|---|
 | a second backoff curve — a factor raised to an attempt and clamped inside one expression | `X_FLIGHT_SECOND_CURVE` |
 | a **call** to `Math.random()` in shipped source | `X_FLIGHT_RANDOM_UNINJECTED` |
+| a second implementation of a one-home helper (`scripts/lib/helper-homes.ts`: `escapeHtml`, `readCookie`, `fnv1a`, `fingerprint`, `contentHash`, `PgExecutor`, `storeMode`) | `X_HELPER_COPY` |
 
 Matched on **shape**, never on a name: the copy that would do the damage will not be called
 `backoffDelay`, exactly as the render-mode copy was not called `RenderMode`. Three signals together

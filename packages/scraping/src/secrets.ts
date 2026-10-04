@@ -7,7 +7,7 @@
 // logger. The third is not, because pixels cannot be redacted after the fact.
 
 import type { Secret } from '@ultimat3/core';
-import { revealSecret, secret, UltimateError } from '@ultimat3/core';
+import { escapeHtml, revealSecret, secret, UltimateError } from '@ultimat3/core';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 
 export interface ScrapeSecrets {
@@ -95,14 +95,12 @@ export const SECRET_PLACEHOLDER = '[redacted]';
  */
 export const MIN_REDACTABLE_LENGTH = 4;
 
-const HTML_TEXT: Readonly<Record<string, string>> = Object.freeze<Record<string, string>>({
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-});
-
-const escapeWith = (value: string, pattern: RegExp, table: Readonly<Record<string, string>>) =>
-  value.replace(pattern, (char) => table[char] ?? char);
+/**
+ * The SUBSET a serialiser escaped, each character spelt by core's one table — a page escapes fewer
+ * characters than `escapeHtml` does (a browser's text serialiser leaves quotes alone), so the
+ * spelling is the table applied to that serialiser's set, never a second table.
+ */
+const escapeOnly = (value: string, chars: RegExp): string => value.replace(chars, escapeHtml);
 
 /**
  * Every spelling a page or a URL writes one value in. The raw value alone missed the case
@@ -113,9 +111,9 @@ const escapeWith = (value: string, pattern: RegExp, table: Readonly<Record<strin
  * Each spelling is at least as long as the value, so the length floor is decided on the value.
  */
 function spellingsOf(value: string): readonly string[] {
-  const text = escapeWith(value, /[&<>]/g, HTML_TEXT);
-  const attribute = escapeWith(value, /[&"]/g, { '&': '&amp;', '"': '&quot;' });
-  const full = escapeWith(value, /[&<>"]/g, { ...HTML_TEXT, '"': '&quot;' });
+  const text = escapeOnly(value, /[&<>]/g);
+  const attribute = escapeOnly(value, /[&"]/g);
+  const full = escapeOnly(value, /[&<>"]/g);
   return [
     value,
     encodeURIComponent(value),

@@ -1,11 +1,11 @@
 /**
- * HTML text and attribute serialization for the server renderer. Escaping lives here and only
- * here: a second escaper is how one of them ends up missing a character, and a missing character
- * in an attribute is an injection.
+ * HTML text and attribute serialization for the server renderer. The character table is
+ * `@ultimat3/core`'s `escapeHtml`, reached from here and nowhere else in this package: a second
+ * escaper is how one of them ends up missing a character, and a missing character in an attribute
+ * is an injection.
  */
 
-import { safeUrl, URL_ATTRIBUTES } from '@ultimat3/core';
-import { escapeAttribute } from '@ultimat3/seo';
+import { escapeHtml, safeUrl, URL_ATTRIBUTES } from '@ultimat3/core';
 import type { JsxProps } from './jsx';
 
 /** Elements that never carry children, so the writer must not emit a closing tag. */
@@ -26,21 +26,15 @@ export const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   'wbr',
 ]);
 
-export function escapeText(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
 /**
- * Re-exported, never re-implemented: `@ultimat3/seo` (tier 1) owns the one attribute escaper, and
- * the copy that lived here was a second place for a character to go missing. It stays reachable
- * from `./html` so this module remains the single import site every render-* file already uses —
- * one implementation, one place to look.
+ * Re-exported, never re-implemented: one set of five characters for text AND attributes, so a
+ * value is inert wherever it lands. Every render-* file escapes through this import.
  */
-export { escapeAttribute };
+export { escapeHtml };
 
 /**
  * `<script>` and `<style>` hold RAW TEXT: a character reference is not decoded inside them, so
- * `escapeText` there would ship `&lt;` to a JS or CSS parser and corrupt the code without closing
+ * `escapeHtml` there would ship `&lt;` to a JS or CSS parser and corrupt the code without closing
  * the hole. What actually ends the element is `</` followed by its tag name, and — inside a script
  * only — `<!--` switches the tokenizer into the escaped state where the element's own `</script>`
  * no longer closes it and the rest of the document becomes script text.
@@ -113,7 +107,7 @@ const URL_BEARING_ATTRIBUTES: ReadonlySet<string> = new Set([
 
 /**
  * Attributes that carry MARKUP, not text or a URL, and are therefore never emitted. `srcdoc` is
- * entity-DECODED and then parsed as HTML, so `escapeAttribute`'s `&lt;script&gt;` becomes a live
+ * entity-DECODED and then parsed as HTML, so an escaped `&lt;script&gt;` becomes a live
  * `<script>` inside the iframe — on this origin, with this session's cookie. Escaping cannot make
  * it inert, so the attribute is refused instead, the same way `innerHTML` above stays the one
  * explicit escape hatch rather than a prop anyone can spread in from a row.
@@ -167,7 +161,7 @@ export function attributePair(name: string, value: unknown): string | null {
   if (value === true) return attribute;
   if (attribute === 'style') {
     const style = styleValue(value);
-    return style === null ? null : `style="${escapeAttribute(style)}"`;
+    return style === null ? null : `style="${escapeHtml(style)}"`;
   }
   const text = String(value);
   // Escaping makes a value inert inside the quotes; it cannot make a SCHEME inert, because
@@ -178,9 +172,9 @@ export function attributePair(name: string, value: unknown): string | null {
   if (URL_BEARING_ATTRIBUTES.has(attribute.toLowerCase())) {
     const url = safeUrl(text, attribute.toLowerCase());
     if (url === null) return null;
-    return `${attribute}="${escapeAttribute(url)}"`;
+    return `${attribute}="${escapeHtml(url)}"`;
   }
-  return `${attribute}="${escapeAttribute(text)}"`;
+  return `${attribute}="${escapeHtml(text)}"`;
 }
 
 export function renderAttributes(props: JsxProps): string {

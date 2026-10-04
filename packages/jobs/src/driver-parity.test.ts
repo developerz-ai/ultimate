@@ -5,10 +5,10 @@
 // the same thing, in one test, so neither side can move alone.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver, NackOptions } from './driver';
 import { createMemoryDriver } from './driver-memory';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_ACK, SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 import { createMemoryLeaseStore } from './leases';

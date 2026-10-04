@@ -1,13 +1,8 @@
-// XML/HTML escaping and tag emission. One implementation, because a sitemap, a
-// feed, and a <head> tag all fail the same way on an unescaped ampersand.
+// XML/HTML escaping and tag emission. The character table is `@ultimat3/core`'s `escapeHtml`; this
+// file adds only what XML needs on top of it — the characters XML cannot carry at all — because a
+// sitemap, a feed and a <head> tag all fail the same way on an unescaped ampersand.
 
-const XML_ESCAPES: Readonly<Record<string, string>> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&apos;',
-};
+import { escapeHtml } from '@ultimat3/core';
 
 /**
  * The characters XML 1.0 excludes from `Char`: the C0 controls other than tab, LF and CR, and the
@@ -29,13 +24,13 @@ const ILLEGAL_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
 /** Never a surrogate range: an astral character is a legal PAIR, and half of one is worse. */
 const legal = (value: string): string => value.replace(ILLEGAL_XML, '');
 
+/**
+ * Element text and attribute values alike: the XML-illegal characters dropped, then core's one
+ * character table. `&#39;` is a numeric reference, so the same output is well-formed XML and valid
+ * HTML — which is why the `<head>` tags and `<picture>` markup this package writes use it too.
+ */
 export function escapeXml(value: string): string {
-  return legal(value).replace(/[&<>"']/g, (char) => XML_ESCAPES[char] ?? char);
-}
-
-/** Attribute values only ever need these three; apostrophes stay readable. */
-export function escapeAttribute(value: string): string {
-  return legal(value).replace(/[&<>"]/g, (char) => XML_ESCAPES[char] ?? char);
+  return escapeHtml(legal(value));
 }
 
 export function xmlElement(name: string, text: string): string {
@@ -49,7 +44,7 @@ export function cdata(value: string): string {
 
 export function attributes(attrs: Readonly<Record<string, string>>): string {
   return Object.entries(attrs)
-    .map(([key, value]) => ` ${key}="${escapeAttribute(value)}"`)
+    .map(([key, value]) => ` ${key}="${escapeXml(value)}"`)
     .join('');
 }
 

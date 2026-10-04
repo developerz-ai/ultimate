@@ -3,7 +3,8 @@
 // `]]>` inside CDATA turns a valid document into one a crawler rejects.
 
 import { describe, expect, test } from 'bun:test';
-import { absoluteUrl, attributes, cdata, escapeAttribute, escapeXml, xmlElement } from './xml';
+import { escapeHtml } from '@ultimat3/core';
+import { absoluteUrl, attributes, cdata, escapeXml, xmlElement } from './xml';
 
 describe('escapeXml', () => {
   test('escapes all five special characters', () => {
@@ -11,7 +12,8 @@ describe('escapeXml', () => {
     expect(escapeXml('<')).toBe('&lt;');
     expect(escapeXml('>')).toBe('&gt;');
     expect(escapeXml('"')).toBe('&quot;');
-    expect(escapeXml("'")).toBe('&apos;');
+    // `&#39;`, a numeric reference: the same output is well-formed XML and valid HTML.
+    expect(escapeXml("'")).toBe('&#39;');
   });
 
   test('leaves other characters untouched', () => {
@@ -27,12 +29,17 @@ describe('escapeXml', () => {
     // if `&` were escaped first and the result re-scanned, the `&` inside `&amp;` would be
     // re-escaped into `&amp;amp;` — assert the exact one-pass output instead.
     expect(escapeXml('<script>alert("x")&\'y\'</script>')).toBe(
-      '&lt;script&gt;alert(&quot;x&quot;)&amp;&apos;y&apos;&lt;/script&gt;',
+      '&lt;script&gt;alert(&quot;x&quot;)&amp;&#39;y&#39;&lt;/script&gt;',
     );
   });
 
   test('all five special characters in sequence encode in order', () => {
-    expect(escapeXml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&apos;');
+    expect(escapeXml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&#39;');
+  });
+
+  test("is core's character table, so seo and every HTML writer escape one set", () => {
+    const value = `it's "quoted" & <tagged>`;
+    expect(escapeXml(value)).toBe(escapeHtml(value));
   });
 });
 
@@ -58,8 +65,7 @@ describe('a character XML 1.0 cannot represent', () => {
     expect(escapeXml('a👍b')).toBe('a👍b');
   });
 
-  test('escapeAttribute drops it too, so an attribute cannot break the document either', () => {
-    expect(escapeAttribute(`a${CONTROL}b`)).toBe('ab');
+  test('an attribute drops it too, so an attribute cannot break the document either', () => {
     expect(attributes({ href: `x${NUL}y` })).toBe(' href="xy"');
   });
 
@@ -74,22 +80,6 @@ describe('a character XML 1.0 cannot represent', () => {
   });
 });
 
-describe('escapeAttribute', () => {
-  test('escapes & < > " but not the apostrophe', () => {
-    expect(escapeAttribute('&')).toBe('&amp;');
-    expect(escapeAttribute('<')).toBe('&lt;');
-    expect(escapeAttribute('>')).toBe('&gt;');
-    expect(escapeAttribute('"')).toBe('&quot;');
-    expect(escapeAttribute("'")).toBe("'");
-  });
-
-  test('asymmetry vs escapeXml: apostrophes survive escapeAttribute but not escapeXml', () => {
-    const value = `it's "quoted" & <tagged>`;
-    expect(escapeAttribute(value)).toBe(`it's &quot;quoted&quot; &amp; &lt;tagged&gt;`);
-    expect(escapeXml(value)).toBe(`it&apos;s &quot;quoted&quot; &amp; &lt;tagged&gt;`);
-  });
-});
-
 describe('xmlElement', () => {
   test('wraps text in <name>...</name>', () => {
     expect(xmlElement('title', 'hello')).toBe('<title>hello</title>');
@@ -101,10 +91,8 @@ describe('xmlElement', () => {
     );
   });
 
-  test('uses escapeXml specifically, not escapeAttribute — apostrophes are also escaped', () => {
-    // escapeAttribute deliberately leaves `'` alone; xmlElement must not use it, since element
-    // text (unlike an attribute value) is never apostrophe-safe without escaping.
-    expect(xmlElement('title', "cook's tour")).toBe('<title>cook&apos;s tour</title>');
+  test('apostrophes are escaped in element text too', () => {
+    expect(xmlElement('title', "cook's tour")).toBe('<title>cook&#39;s tour</title>');
   });
 });
 
@@ -147,8 +135,8 @@ describe('attributes', () => {
     expect(attributes({ href: '/a', title: 'A' })).toBe(' href="/a" title="A"');
   });
 
-  test('values are escaped via escapeAttribute: apostrophes survive, quotes do not', () => {
-    expect(attributes({ title: `it's "quoted"` })).toBe(` title="it's &quot;quoted&quot;"`);
+  test('values are escaped with the one table: apostrophes and quotes both', () => {
+    expect(attributes({ title: `it's "quoted"` })).toBe(` title="it&#39;s &quot;quoted&quot;"`);
   });
 });
 

@@ -3,7 +3,7 @@
 // sends again.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/jobs';
+import type { PgExecutor } from '@ultimat3/core';
 import type { DeliveryClaim } from './ledger';
 import {
   createPgDeliveryLedger,

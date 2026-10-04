@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0a84adc50661cb7e34b82ef25c92c45036e3ae7cb313afe05d605ff14ea0fc76",
+  "buildId": "20e0fb0b4f9a5b756ec0cb6f37692f2a5deca5d08ede1edf699d3219a3088fe6",
   "tiers": {
     "0": [
       "core",
@@ -1743,6 +1743,11 @@
       "code": "X_GUARDS_DOC_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/guards-doc.ts"
+    },
+    {
+      "code": "X_HELPER_COPY",
+      "owner": "scripts",
+      "at": "scripts/lib/helper-homes.ts"
     },
     {
       "code": "X_HIVE_EMPTY",

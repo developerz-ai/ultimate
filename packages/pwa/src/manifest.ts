@@ -10,7 +10,7 @@
 // with no map between them and nothing asserting they agreed, which is the same axiom-1 defect the
 // two `PwaConfig`s were. An app writes them once, in the one config file.
 import type { PwaColors } from '@ultimat3/core';
-import { escapeAttribute } from '@ultimat3/seo';
+import { escapeHtml } from '@ultimat3/core';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
 import { isEnabled, resolveCapabilities } from './capabilities';
 import { PwaManifestInvalidError } from './errors';
@@ -247,7 +247,7 @@ export function renderThemeColorMeta(metas: readonly ThemeColorMeta[]): string {
       // quote in one emitted a second, live attribute — same class as `appleTouchLinks`, same
       // escaper, one per package rather than one per call site.
       (meta) =>
-        `<meta name="theme-color" content="${escapeAttribute(meta.content)}" media="${escapeAttribute(meta.media)}">`,
+        `<meta name="theme-color" content="${escapeHtml(meta.content)}" media="${escapeHtml(meta.media)}">`,
     )
     .join('');
 }

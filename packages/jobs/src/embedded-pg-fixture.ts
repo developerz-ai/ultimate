@@ -7,9 +7,9 @@
 // No row is deleted and no statement of the driver's is bypassed — a lease that lapses here
 // lapses because `expires_at > now()` stopped being true, which is the production path.
 
+import type { PgExecutor } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { createPgliteClient } from '@ultimat3/db';
-import type { PgExecutor } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import type { PgListener } from './queue-wake';
 

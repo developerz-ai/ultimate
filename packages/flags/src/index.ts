@@ -1,6 +1,7 @@
 // Public API of @ultimat3/flags. Explicit re-exports only.
 
-export { BUCKETS, bucketOf, fnv1a } from './bucket';
+export { fnv1a } from '@ultimat3/core';
+export { BUCKETS, bucketOf } from './bucket';
 export type { FlagSubjectVia, FlagsErrorCode } from './errors';
 export {
   FLAGS_ERROR_CODES,

@@ -17,11 +17,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { createContext, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink } from './audit-memory';
 import { postgresAuditSink } from './audit-postgres';
-import type { PgExecutor } from './idempotency-postgres';
 
 /**
  * `SQL_AUDIT_INSERT`'s parameter order, named once. This is also the pin on that order: a column
