@@ -199,6 +199,7 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
 }
 
 const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>> = {
+  __proto__: null,
   undeclared: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNDECLARED',
     cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
