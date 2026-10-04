@@ -1,6 +1,6 @@
 plan: 101-deep-dive-bug-audit
 title: Deep-dive bug audit — twelve sweeps, one plan
-status: done
+status: complete
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
@@ -19,32 +19,32 @@ current_focus: >
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     pr: 101
   - file: 10-tests.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     pr: 101
   - file: 07-security.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     prs: [102, 103, 104]
   - file: 01-tier01-bugs.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     pr: 105
   - file: 09-logic-edge-cases.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     pr: 105
   - file: 04-projection-contract.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     pr: 106
     note: >
@@ -57,47 +57,47 @@ slices:
       the slice landed.
   - file: 02-tier23-bugs.md
     tier: 2
-    status: done
+    status: complete
     percent: 100
     prs: [107, 110, 112]
   - file: 06-concurrency-lifecycle.md
     tier: 2
-    status: done
+    status: complete
     percent: 100
     prs: [107, 110, 112]
   - file: 03-tier45-bugs.md
     tier: 4
-    status: done
+    status: complete
     percent: 99
     pr: 113
   - file: 11-deploy-ci.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     pr: 114
   - file: 14-agent-dx.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     pr: 114
   - file: 08-architecture.md
     tier: 0
-    status: done
+    status: complete
     percent: 85
     pr: 116
   - file: 12-tracked-apps.md
     tier: 5
-    status: done
+    status: complete
     percent: 90
     pr: 118
   - file: 15-dead-code-drift.md
     tier: 0
-    status: done
+    status: complete
     percent: 85
     pr: 117
   - file: 13-docs-drift.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     pr: 119
 evidence:

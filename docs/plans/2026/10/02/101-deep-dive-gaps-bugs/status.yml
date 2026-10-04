@@ -1,80 +1,80 @@
 plan: 101-deep-dive-gaps-bugs
 title: "Deep dive: gaps, problems, bugs"
-status: in_progress        # not_started | in_progress | blocked | complete | superseded
+status: complete
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 95
-current_focus: "PR 15 — owner decisions and doc drift (15-owner-decisions-docs.md)"
+percent: 100
+current_focus: "complete: slices 01-14 + 15B released as 24.0.0 (d7b8c7fa, #646); 15A owner decisions moved to docs/plans/2026/10/04/101-squeaky-clean-sweep/00-owner-decisions.md"
 slices:
   - file: 01-core-schema.md
     tier: 0
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 1 (fix/101-01-core-schema): every row fixed behind a failing-first test, none dropped. bun run verify green (14 of 14 root steps), reference-app-gate 20/20 on both apps with no pin. Not done here and carried forward: the DNS-resolution half of s2-sec L1 (a wildcard allowHosts still admits a hostname that resolves inward) belongs to scraping/cli connection code, slices 11-12; core's registerPublicCause can be called by an app for a framework code, bypassing http's refusal - closing it needs an owner per registered code."
   - file: 02-db.md
     tier: 1
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 2 (fix/101-02-tier1): every row fixed, none dropped, together with the 2026-09-28 plan's slice 02 (a rolled-back transaction reported committed; savepoints not LIFO) and the ambiguous-COMMIT row. Three codes: X_DB_TRANSACTION_ABORTED, X_DB_COMMIT_UNKNOWN, X_DB_SIBLING_SCOPE_TIMEOUT. 1160 db tests on PGlite and Postgres 17."
   - file: 03-tier1-services.md
     tier: 1
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 2 (#617) landed the time, i18n and flags rows (the cron row follows Vixie's wildcard rule because the plan's literal fix cannot satisfy its own step-1 proof). PR 3 (fix/101-03-tier1-services) landed cache, seo, storage and the 2026-09-28 plan's money and storage rows; none dropped. Found on the way: no shipped response carried a surrogate key, so a CDN purge matched nothing - ISR documents with revalidate.tags now carry them. The CDN key scheme is an e:<entity> index key, not the plan's bare entity key, which would have made a row bust clear its sibling rows. Local prefix keys are a coded refusal (X_STORAGE_KEY_CONFLICT), not a layout change. Residuals recorded in wiki/Known-Gaps.md."
   - file: 04-entity-policy-http.md
     tier: 2
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 4a (#619, 521d0514): entity, policy and the db drift fixes, with the 2026-09-28 containment row; none dropped. PR 4b (fix/101-04b-http-launcher): the http rows, the 2026-09-28 plan's four http rows (login CSRF, non-http redirect targets, shared-cache offers, the timer overflow) and the parked 2026-09-22 Set-Cookie bug; none dropped. CSRF is narrower than the 09-28 wording: an anonymous unsafe request is checked only when it carries Origin or sec-fetch-site, because the strict rule breaks inbound webhooks and one-click unsubscribe. Health detail is limited on the web role only; the sync role is recorded for slice 08."
   - file: 05-auth.md
     tier: 2
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 5 (fix/101-05-auth): every row fixed, none dropped. The mfa_secret row was first blocked - the sealed-column 'legacy plaintext' precedent the plan cites does not exist - and landed as: sealed at enrolment, a one-shot x auth seal-mfa (compare-and-set), completeMfa refusing an unsealed value with that command as its fix, x doctor reporting the count. No plaintext read path. Slice 15 decision 13 (optional adapter members) is answered here by the owner's standing rule: required, eight members. Found on the way: an OAuth user with MFA could not finish; recovery codes had no atomic redemption. Codes: X_MFA_SECRET_UNSEALED, X_FRAMEWORK_TABLE_ORPHANED."
   - file: 06-action-query.md
     tier: 3
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 6a (#623, 5dcb2ff7): query, with entity's comparison rule, admin and mcp. PR 6b (fix/101-06b-action): action; the audit-redaction row dropped as already satisfied by PR 1. Mutators refuse at declaration without idempotent: true. The bust and the idempotency settle ride the transaction, on both stores. action gained a db dependency, one file, recorded in docs/history/tier-decisions.md - the plan's 'no slice adds an import edge' is departed from there, on purpose. x verify's manifest step and x manifest --check are one check. Codes: X_MUTATOR_NOT_IDEMPOTENT, X_IDEMPOTENCY_RESERVATION_LOST."
   - file: 07-jobs.md
     tier: 3
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 7 (fix/101-07-jobs): every row fixed, none dropped. The poison claim is buried in the claim statement on both drivers and announced by the worker; a deadLetter: false job is buried failed through ClaimOptions.dropExhausted, with no DDL. Step writes are fenced on the claim. The event purge is wired into the cli sweep here, not in slice 12. From the four unaudited worker files: six defects found and fixed (fleet slots and the registry row keyed by job id, an unbounded registry stop, a counted refusal that never landed, a throwing context after a nack, silent slot-renewal failures). waitForEvent's timeout is asked of the bus only when the runner thinks time is up; a runner behind the bus still times out late by the skew. Code: X_JOB_NOT_FOUND."
   - file: 08-realtime.md
     tier: 3
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 8 (fix/101-08-realtime), one PR of about 190 files: the three halves (replication pipeline, sync node and channels, browser client) depend on each other in both directions and no cut builds alone. CodeRabbit refuses above 150 files, so three independent read-only reviewers (correctness, concurrency, security) audited the tree before the PR; they found about twenty defects in a green suite, all fixed here except one designed and recorded (a replayed offline write is not bound to its principal on the server - wiki/Known-Gaps.md). Every plan row fixed, none dropped. Also here: the sync role's health disclosure (rule moved to core), carried from PR 4b; the outbox re-send traced in PR 5 is at-least-once by design. The websocket origin rule ended as: a declared origin is the whole allow-list; undeclared, the origin the node was reached on (and its https spelling over plain http); x dev adds its own. Not run locally: the logical-replication and Redis live suites. Code: X_OFFLINE_QUEUE_ABANDONED."
   - file: 09-render-pwa-ui.md
     tier: 4
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 9b (ui): every ui row fixed, none dropped. QR codes now scan (four placement defects; an independent test reader plus whole matrices from a second encoder for versions 1-3). Theme: ThemeEnv gains current() and appDefault(); the boot stamps data-theme-default so a fixed defaultMode is kept by clearTheme and watchOsTheme; the x new template's bootedEnv workaround deleted. RTL centring with a sheet-wide guard and a 390 px Chrome e2e; useId scoped per bundle copy; the removed-in-21 inline-script exports deleted. PR 9a (http, render, pwa, core): every render and pwa row fixed, none dropped. ISR regeneration through createSingleFlight with a 30 s deadline; most-specific fallback. Found beyond the plan: the live http router 404ed a catch-all's bare prefix that static-path writes, and both 404ed (and Bun.serve refused to start over) a static route outside ASCII; both fixed. Route order unified into core's routeRank (render and pwa each carried a copy, pwa's ranked against the router). Known gaps carried: server-side useId is a process-wide counter (ISR bytes vary between regenerations); cmd-dev-orphan.live.test.ts timed out once under the full gate's load (3/3 alone) - scripts PR. 9b is ui."
   - file: 10-ai-mcp-mail-notify-manifest.md
     tier: 4
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 10b (ai): every ai row fixed, none dropped. Tool results hide a 5xx cause by the same verdict as MCP and the problem document; gateway budgets hold for hive members, per actor and per org, under concurrency (BudgetStore.take required, the root turnstile deleted; counters written only for a declared ceiling). fnv1a replaced by core fingerprint; non-object outputs wrapped; parseJsonish linear; unscoped vector reads in an org request refused (X_VECTOR_UNSCOPED). Carried: a BudgetStore conformance helper in @ultimat3/testing (testing PR). PR 10a (schema, http, mcp, mail, notify, manifest): every row fixed, none dropped. Found beyond the plan: the http pipeline let a correct credential through from an address that had spent its failed-credential allowance (now refused before authenticate, through a new read-only RateLimitStore.peek so a signed-in request writes nothing); the MCP mounts never passed the client address to the meter. Mail rides the caller's transaction; notify digests gain a Postgres store and an x.purge sweep. Carried to the scripts PR: a guard that refuses a prose fix: (X_MANIFEST_FACT_INVALID and siblings in manifest/errors.ts); an Upgrading-row vs CHANGELOG one-to-one check; the one-enqueue guard (slice 13). 10b is ai."
   - file: 11-admin-scraping-testing.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 11b (admin): every admin row fixed, none dropped. Keyset paging seeks on (sort, id) with NULLs ordered and millisecond ties re-read, proven on memory and Postgres; an untouched datetime is left out of the patch; edits carry a _version and a stale one answers 409; an action, a set-based matching call and a queued batch commit with their audit entry; audit screens tenant-scoped; batchId derived from content; create/update decided on the written values; dev panels catch only DevSourceUnavailableError; readOnlySql runner over readOnlyQuery. Module-scope defineAdmin moved into beforeAll, so bun test ./packages/admin ./packages/query passes in one process (165 failures before). Two missing catalog keys (admin.error.row-changed, admin.search.skipped.failed) found by the docs pass and added. PR 11a (testing, scraping, #634): every row fixed; one half-row dropped (pooled advisory unlock does not reproduce). Testing: per-mount island scratch dirs, entity decoding, template drop+clone inside the lock (reproduced live), jobDriverConformance and budgetStoreConformance, island-state-mount ordered by signals. Scraping: caller args cannot displace the proxy, new targets screened at browser level (reproduced on Chrome 150), robots redirects screened per hop, wildcard hosts resolved and pinned, encoded-spelling redaction, versioned sessions. Carried: x dev wiring readOnlySql and the can()-literal provenance check (cli, slice 12); a guard that every admin t() key resolves in the catalog (scripts); WebSocket handshakes and browser-side DNS uninterceptable over CDP (Known-Gaps row)."
   - file: 12-cli.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 12b (runtime/boot, commands, http): every row fixed or dropped with its line. Serving roles verify the framework schema and refuse to boot until ROLE=migrate applied it (advisory lock + lock_timeout, a build stamp, a mixed-major warning); ISR controllers attached on every boot path (a tag bust now marks a tag-only page stale; e2e); drain process-wide; cache subscribe retried; static memo single-flighted; stored non-media served as attachment with a sandbox CSP (http keeps a handler-set CSP beside the app policy); replicator /readyz on the metrics port with a helm probe, non-web roles marked ready; boot warnings for unsealed MFA and a per-process idempotency store. Commands: no command answers ok beside a finding; /_x loopback-Host only and the SQL panel same-origin POST through admin readOnlySql; doctor probes PORT and APP_URL; verify merge validates parts and the shard partition; x routes, x help, x jobs refuse bad input at the door. Dropped as already fixed by slices 07/08: replicator readiness watch, x_job_events purge, params-channel FULL identity; not reproduced: the role-start sync-upgrade flake. PR 12a (build, generate, policy provenance, seo, examples/dummy): every build/generate row fixed but one dropped (cmd-build --out already resolved against the cwd). Static export refuses an unmarked directory (X_BUILD_OUT_UNSAFE); a page that fails to import fails the build; unread build flags refused; x g --dry-run is the write plan; plural, non-ASCII and type-shadowing names refused; x affected treats unowned paths as root-wide; test discovery root-anchored for x test and the gate's live/e2e; sitemap parts at /sitemaps/<n>.xml, served and memoised; guards/ under filesize/errors. Policy records permission declaration sites; the policy step refuses a permission only a package declared (X_PERMISSION_BORROWED); restorePermissions requires the sites. Drift reports an unrecorded REPLICA IDENTITY FULL. examples/dummy per-workspace typecheck 351 -> 0 (composite/rootDir and out-of-include type extensions), and the scaffold's app typecheck runs the root program. Dropped: the n-plus-one registry leak (no ordering reproduces it). 12b (runtime/boot, commands, http) follows."
   - file: 13-scripts-ci.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     evidence: "PR 13a (#638): guards report what they read — a scan that reads nothing is red; spawned processes carry a timeout (spawn-timeout); raised pins carry a why: on the line above (pin-raises); CHANGELOG BREAKING lines pair with Upgrading rows by (#N), ranges cover each row once; release scripts refuse a half-stamped tree. PR 13b (#639): every workflow action pinned by SHA, no ${{ }} in run: but runner.temp; release publishes only on a fully green ci run; the chart renders a NetworkPolicy per role, bounds /tmp, refuses a role with no Secret; the sync node takes its own kernel-chosen port at port 0; Docker bases pinned by digest; solid-loader prepareStackTrace no longer leaks between files."
   - file: 14-unify-and-delete.md
     tier: 5
-    status: done
+    status: complete
     percent: 100
     evidence: "One config loader (app-config-load.ts; 17 walks deleted; boundaries refuses an app.config import outside it, X_CONFIG_IMPORT_OUTSIDE_LOADER; defineConfig refuses a missing name). One X_NOT_IMPLEMENTED class in core (nine copies deleted; not-implemented-copies guard). PgExecutor, fnv1a, escapeHtml, readCookie and storeMode each in core once (helper-homes guard). One wire schema in schema (toWireSchema/toWireOutputSchema; mcpSchemaOf and toMcpInputSchema removed). --worker deleted (--shard i/n the one way; X_TEST_SHARD_FAILED kept as an unthrown code, codes are forever). budget.lcp deleted end to end. Dropped: serverSideEncryption's typed refusals stay — a call-site refusal for an option Bun.S3Client cannot honour is the point, not a second path; the ui 'removed in 21' export was already gone. Found on the way: core's source-mask lost every declaration after a regex inside a template ${} — fixed, which surfaced 7 prose fix: lines in scripts/side-effects.ts, rewritten."
   - file: 15-owner-decisions-docs.md
@@ -82,7 +82,7 @@ slices:
     status: blocked
     percent: 40
     evidence: "Section B (doc drift) landed except wiki/PWA-And-Offline.md, which follows decision 11. Roadmap M2/M6/M9, the CLAUDE.md table reference and the ui tier; gated-apps comment; CLI-Reference planned fixes verbatim with the code, flags on a planned command (they reach X_NOT_IMPLEMENTED now), the worker default, four build targets, x mcp tools; x manifest usage names --no-openapi; 02-boundaries' three shipped checkers; Known-Gaps: .env.example re-dated, two new rows (no query output schema, no outbox count); SECURITY.md supported versions without a number, the Postgres rate-limit stores, persist: true shipping, the preview-deploy rule. Already true when checked (fixed by earlier slices): seo webp, storage grantUpload, ui islands, scraping's edge, pgoutput's Postgres 14, realtime's params-channel identity, manifest query input, the ISR and S3 Known-Gaps rows. Section A — 21 decisions — waits on the owner; blocked, not dropped."
-evidence: []
+evidence: ["#616..#646", "d7b8c7fa"]
 notes: >-
   Audited at 2ea5eb17 (23.0.0) on 2026-10-02 by three read-only sweeps, 22 auditor runs, findings
   in findings/ (20 files). Sweep 1: seven auditors (four tier-scoped correctness hunts, concurrency,
@@ -188,4 +188,5 @@ notes: >-
   envelope would); x doctor could probe APP_URL on the sync role.
   For the admin PR, also: move 22 module-scope defineAdmin() calls (see above). Section A of slice 15 holds 21 owner decisions; five were first asked on
   2026-09-28. Unaudited areas are listed at the end of each findings file.
-last_updated: 2026-10-02
+last_updated: 2026-10-04
+# 2026-10-04 reconciliation: 15-owner-decisions-docs.md section A superseded by the new plan; #13 answered (auth/src/adapter.ts:78)
