@@ -6,7 +6,7 @@ import type { CommandSpec } from './parse';
 export const manifestSpec: CommandSpec = {
   name: 'manifest',
   summary: 'regenerate x.manifest.json and openapi.json from the code',
-  usage: 'x manifest [--check] [--json]',
+  usage: 'x manifest [--check] [--no-openapi] [--json]',
   requiresApp: true,
   flags: [
     { name: 'check', type: 'boolean', summary: 'fail if the committed files are stale' },

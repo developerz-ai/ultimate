@@ -45,8 +45,10 @@ same violation as a cut, off one rule → code table.
 | route → db | `X_BOUNDARY_ROUTE_TO_DB` | `page.tsx` / `layout.tsx` / `route.ts` importing `@ultimat3/db`, a `*/db` specifier or `drizzle-orm` | N+1 queries in a `<head>` computation, SQL no policy guards, a route that cannot be unit-tested |
 | service → http | `X_BOUNDARY_SERVICE_TO_HTTP` | `service.ts` importing `@ultimat3/http` or a `*/http` specifier | a service that only works inside a request — so the identical logic gets re-implemented in a job |
 
-**Seven rules this page claimed and no checker implements**, `As of 2026-08`: `component-holds-logic`,
-`cross-feature-repo`, `site-emits-js`, `raw-img`, `raw-hex`, `hardcoded-string`, `date-no-tz`. Nor do
+**Four rules this page claimed and no checker implements**, `As of 2026-10`: `component-holds-logic`,
+`cross-feature-repo`, `site-emits-js`, `raw-img`. Three it once listed here ship as guards in every
+scaffolded app instead — `raw-hex` as `raw-colour`, `hardcoded-string` as `untranslated-string`,
+`date-no-tz` as `unzoned-date` (`packages/cli/src/templates/scaffold-guards.ts`). Nor do
 the framework-side `tier-cycle`, `barrel-star`, `deep-import`, `no-any` or `node-api` rule ids exist
 as rules — `no-any` is Biome's `noExplicitAny`, and the rest are conventions in
 [`00-conventions.md`](./00-conventions.md) that no build error enforces. Per axiom 3 an unenforced

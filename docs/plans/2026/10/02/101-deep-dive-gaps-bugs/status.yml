@@ -79,8 +79,9 @@ slices:
     evidence: "One config loader (app-config-load.ts; 17 walks deleted; boundaries refuses an app.config import outside it, X_CONFIG_IMPORT_OUTSIDE_LOADER; defineConfig refuses a missing name). One X_NOT_IMPLEMENTED class in core (nine copies deleted; not-implemented-copies guard). PgExecutor, fnv1a, escapeHtml, readCookie and storeMode each in core once (helper-homes guard). One wire schema in schema (toWireSchema/toWireOutputSchema; mcpSchemaOf and toMcpInputSchema removed). --worker deleted (--shard i/n the one way; X_TEST_SHARD_FAILED kept as an unthrown code, codes are forever). budget.lcp deleted end to end. Dropped: serverSideEncryption's typed refusals stay — a call-site refusal for an option Bun.S3Client cannot honour is the point, not a second path; the ui 'removed in 21' export was already gone. Found on the way: core's source-mask lost every declaration after a regex inside a template ${} — fixed, which surfaced 7 prose fix: lines in scripts/side-effects.ts, rewritten."
   - file: 15-owner-decisions-docs.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: blocked
+    percent: 40
+    evidence: "Section B (doc drift) landed except wiki/PWA-And-Offline.md, which follows decision 11. Roadmap M2/M6/M9, the CLAUDE.md table reference and the ui tier; gated-apps comment; CLI-Reference planned fixes verbatim with the code, flags on a planned command (they reach X_NOT_IMPLEMENTED now), the worker default, four build targets, x mcp tools; x manifest usage names --no-openapi; 02-boundaries' three shipped checkers; Known-Gaps: .env.example re-dated, two new rows (no query output schema, no outbox count); SECURITY.md supported versions without a number, the Postgres rate-limit stores, persist: true shipping, the preview-deploy rule. Already true when checked (fixed by earlier slices): seo webp, storage grantUpload, ui islands, scraping's edge, pgoutput's Postgres 14, realtime's params-channel identity, manifest query input, the ISR and S3 Known-Gaps rows. Section A — 21 decisions — waits on the owner; blocked, not dropped."
 evidence: []
 notes: >-
   Audited at 2ea5eb17 (23.0.0) on 2026-10-02 by three read-only sweeps, 22 auditor runs, findings

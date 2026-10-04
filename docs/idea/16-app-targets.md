@@ -106,7 +106,7 @@ Two. Not five.
 
 | Package | Tier | Imports | Earns its line because |
 |---|---|---|---|
-| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in tier-5 `ui`: a tier-4 native runtime cannot import upward, and dragging 41 Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
+| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in `ui`: `ui` is tier 4, and a tier-4 native runtime cannot import sideways, and dragging 41 Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
 | `@ultimat3/native` | **4** | `core`, `schema`, `tokens`, `i18n`, `money`, `time`, `storage`, `http`, `action` | the device runtime (client wiring, secure-storage session, token→`StyleSheet` bridge, error rendering, update client) **and** the Expo Updates server endpoint. `realtime` is the precedent for one package owning both halves of one protocol |
 
 `@ultimat3/native` sits at tier 4 as the **peer of `render`**, and never imports it. That is the
