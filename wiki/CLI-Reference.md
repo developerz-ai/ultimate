@@ -23,7 +23,7 @@ x version              # CLI version
 
 ## Command index
 
-`As of 2026-08`. **shipped** = implemented in `packages/cli`; **planned** = specified, not yet built — calling it exits with `X_NOT_IMPLEMENTED` and a `fix:` line pointing at the closest shipped command.
+`As of 2026-10`. **shipped** = implemented in `packages/cli`; **planned** = specified, not yet built — calling it exits with `X_NOT_IMPLEMENTED` and a `fix:` line pointing at the closest shipped command.
 
 | Command | Does | Status |
 |---|---|---|
@@ -35,11 +35,11 @@ x version              # CLI version
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
-| `x build` | container image, single binary, or prerendered static site | shipped |
+| `x build` | container image, single binary, prerendered static site, or a prebuilt bundle (`--target docker\|binary\|static\|prebuilt`) | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
 | `x routes` | the route table: path, surface, render mode, hydrate, offline | shipped |
-| `x mcp serve` | serve the framework MCP tools over stdio or HTTP | shipped |
+| `x mcp serve` · `x mcp tools` | serve the framework MCP tools over stdio or HTTP · list them | shipped |
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
@@ -572,15 +572,12 @@ declaration and say so in the output. **`x test live` and `x test e2e` obey the 
 `As of 2026-08-27`** — they did not, so `x test live --workers 8` ran eight processes over the very
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
-selection is now partitioned by each file's own type. The default oversubscribes the cores —
-`max(2, min(ceil(cpus * 1.5), floor(freemem * 0.6 / 1.5 GiB)))` — because leaving a core spare
-measured *slower than not sharding at all* on a 4-core runner, where the split's own cost is not
-covered by three workers. **No fixed ceiling of 8, `As of 22.3`**: it held a 12-core box with 30 GB
-free to 8. Memory is the bound instead (`WORKER_BYTES` and `MEMORY_SHARE` in
-`packages/cli/src/test-workers.ts`): 1.5 GiB a worker — the largest single worker measured on a
-768-file PGlite corpus — against 60% of what was available when the run started, because nothing
-else on the box stops growing once it has. `--workers` accepts 2 to 64 on `x verify` and 1 to 64
-on `x test`; an explicit width is the caller's call and is not held to memory.
+selection is now partitioned by each file's own type. The default width is
+a memory budget, `As of 22.7`: `min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker
+(`WORKER_BYTES`, `GATE_BUDGET_CAP`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
+`packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.
+**No fixed ceiling of 8**: it held a 12-core box with 30 GB free to 8. `--workers` accepts 1 to
+64 on both `x verify` and `x test`; an explicit width is the caller's call and is not held to memory.
 
 **A large selection runs in batches, `As of 22.6.2`.** A `--parallel` worker's heap grows with
 every file it runs and is returned only when its `bun test` exits, so one process over the whole
@@ -943,6 +940,7 @@ Errors: `X_ROUTE_CONFLICT`, `X_ROUTE_META_MISSING`.
 ## x mcp
 
 ```bash
+x mcp tools [--json]
 x mcp serve [--transport stdio|http] [--port 9229] [--json]
 ```
 
@@ -1396,17 +1394,17 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 
 | Command | Purpose | `fix:` today |
 |---|---|---|
-| `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` → the `/_x` cache panel |
-| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch create <name>` — and `x db branch ls` / `x db branch drop <name>` for the other two halves |
+| `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` — then the cache panel at `/_x` |
+| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch ls --json` — the database half: `ls`, `create <name>`, `drop <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
-| `x logs tail` | structured logs and spans, filterable | `x dev` → the `/_x` timeline panel |
+| `x logs tail` | structured logs and spans, filterable | `x dev` — then the timeline panel at `/_x` |
 | `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
-| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot — shipped `As of 2026-08`, and it is what this command promised |
+| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x errors explain X_CURRENCY_UNKNOWN --json` — extend it in code: `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot. Shipped `As of 2026-08`, and it is what this command promised |
 | `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
-**Call them flagless.** A planned command's spec declares no command-specific flags, so `x money add-currency USD --exponent 2` and `x upgrade --dry-run` fail at the *parser* with `X_CLI_BAD_FLAG` — an unknown flag — instead of the honest `X_NOT_IMPLEMENTED`. Only the bare form reaches the real message. [Known gaps](Known-Gaps).
+**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x upgrade --dry-run --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
 
 ## Names that moved
 

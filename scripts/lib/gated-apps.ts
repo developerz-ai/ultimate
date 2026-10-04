@@ -37,10 +37,10 @@ export const GATED_APPS: readonly GatedApp[] = [
     // push to main). It was tracked, deployed and gated by nothing until 2026-08 — 237 files whose
     // only claim to working was that someone had once run them. It entered the ratchet at 3 red,
     // went to 2 when `typecheck` came off the pin, back to 3 when `drift` learned to read the
-    // entity registry and found what the source-text hash could not, and to 2 again when the
-    // migration that answers it landed — not because it is the reference app, but because an image
-    // this repo ships to a live URL is a claim, and axiom 3 says a claim that is not a build error
-    // does not exist.
+    // entity registry and found what the source-text hash could not, to 2 again when the
+    // migration that answers it landed, and to 0 — `{}` — once its last two steps went green. It
+    // is gated not because it is the reference app, but because an image this repo ships to a live
+    // URL is a claim, and axiom 3 says a claim that is not a build error does not exist.
     dir: 'dummy/social-media-clone',
     reference: './dummy/social-media-clone',
     expectedRed: {} satisfies Partial<Record<VerifyStepName, string>>,

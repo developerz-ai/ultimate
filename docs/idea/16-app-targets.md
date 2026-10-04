@@ -106,7 +106,7 @@ Two. Not five.
 
 | Package | Tier | Imports | Earns its line because |
 |---|---|---|---|
-| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in tier-5 `ui`: a tier-4 native runtime cannot import upward, and dragging 41 Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
+| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in `ui`: `ui` is tier 4, and a tier-4 native runtime cannot import sideways, and dragging 41 Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
 | `@ultimat3/native` | **4** | `core`, `schema`, `tokens`, `i18n`, `money`, `time`, `storage`, `http`, `action` | the device runtime (client wiring, secure-storage session, token→`StyleSheet` bridge, error rendering, update client) **and** the Expo Updates server endpoint. `realtime` is the precedent for one package owning both halves of one protocol |
 
 `@ultimat3/native` sits at tier 4 as the **peer of `render`**, and never imports it. That is the
@@ -115,9 +115,8 @@ from a Metro bundle may reach it. It reads the route table through `core`'s regi
 (`primitiveRegistrar('route')`) — the same seam `defineApi` uses to reach `query` and `jobs`
 without a sideways import.
 
-`ui` (5) → `native` (4) is a *downward* edge, which the tier rule would allow. It must not be
-allowed. `scripts/lib/tiers.ts` gains a `FORBIDDEN` map alongside `SIDEWAYS_ALLOW`, with one entry
-earning its line: `ui ✗ native`.
+`ui` (4) → `native` (4) is a same-tier edge, which the tier rule already refuses unless
+`SIDEWAYS_ALLOW` lists it. It must stay unlisted; no separate `FORBIDDEN` map is needed.
 
 ### Packages deliberately not created
 

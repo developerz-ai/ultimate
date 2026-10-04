@@ -1805,6 +1805,9 @@ Tier 3 — jobs (slice 07).
 - **jobs:** a redelivered completed backfill pass reports `{ skipped: false, batches, rows }`.
 
 Tier 3 — realtime (slice 08).
+- **realtime:** a `persist: true` restore whose principal changed while it read the disk restores
+  nothing. The read is async; a sign-out and sign-in inside it had already cleared the store, and
+  the previous principal's rows landed in the next principal's on a shared browser.
 
 - **realtime:** an UPDATE that leaves a TOASTed column untouched on a non-FULL table no longer
   reads as the whole row (`ChangeEvent.omitted`); a live-query add patch lacking a projected

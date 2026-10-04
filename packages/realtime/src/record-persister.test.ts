@@ -176,6 +176,32 @@ describe('recordPersister', () => {
     expect((await local.rows('anon')).get('post')?.['p2']).toBeUndefined();
   });
 
+  test('a restore whose principal changed while the disk read was in flight restores nothing', async () => {
+    const store = fakeStore();
+    const local = new MemoryLocalStore();
+    await local.write('p:u1', [{ type: 'post', key: 'p1', row: { id: 'p1' } }], []);
+    let principal = 'u1';
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const read = local.rows.bind(local);
+    local.rows = async (scope) => {
+      await gate;
+      return read(scope);
+    };
+    const persister = recordPersister({
+      store,
+      local,
+      types: new Set(['post']),
+      principal: () => principal,
+      onLeave: () => () => {},
+    });
+    const restoring = persister.restore();
+    principal = 'u2'; // signed out and in as someone else on a shared browser
+    release();
+    expect(await restoring).toBe(0);
+    expect(store.restored).toEqual([]);
+  });
+
   test("a principal change wipes the previous principal's rows from disk", async () => {
     const store = fakeStore();
     const local = new MemoryLocalStore();
