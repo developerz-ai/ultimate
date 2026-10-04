@@ -265,7 +265,7 @@ export const config = defineRoute({
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
-  budget:     { js: '40kb', lcp: 2000 },
+  budget:     { js: '40kb' },
   load:       ({ params }) => db.posts.bySlug(params.slug),   // once per render
   meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
                                     og: { image: data.cover }, canonical: url,

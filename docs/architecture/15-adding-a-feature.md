@@ -240,7 +240,7 @@ export const config = defineRoute({
   prerender:  async () => (await queries.publicPostSlugs({})).map((post) => post.slug),
   offline:    'runtime',
   hydrate:    'visible',
-  budget:     { js: '40kb', lcp: 2000 },
+  budget:     { js: '40kb' },
   // `load` is the one server-side data seam, resolved once per render and handed to both `meta`
   // and the page component.
   load:       async ({ params }) => oneRow(await queries.publicPost({ slug: params.slug ?? '' })),

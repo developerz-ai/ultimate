@@ -59,7 +59,7 @@ describe('routes()', () => {
         render: 'ssr',
         offline: 'precache',
         hydrate: 'visible',
-        budget: { js: '12kb', lcp: 2_000 },
+        budget: { js: '12kb' },
         revalidate: { tags: [{ entity: 'dev_facts_widget' }], ttl: 60 },
         meta: () => ({ title: 'Widgets' }),
       }),
@@ -82,8 +82,8 @@ describe('routes()', () => {
       // No `handler` on a `RouteDescriptor`, so the FILE is what names the row — the panel would
       // otherwise show a blank cell for every route in the table.
       handler: 'apps/web/app/widgets/page.tsx',
-      // Two flat descriptor fields, `budgetJs`/`budgetLcp` — never a nested `budget` bag.
-      budget: { js: '12kb', lcp: 2_000 },
+      // One flat descriptor field, `budgetJs` — never a nested `budget` bag.
+      budget: { js: '12kb' },
       // Already flattened to cache keys by the descriptor; `revalidate.tags` is not a shape it has.
       revalidateTags: ['dev_facts_widget'],
       // A FILE route: nobody mounted it. `null`, never `{ by: '', permissions: [] }`.

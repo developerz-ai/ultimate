@@ -95,7 +95,6 @@ export interface RouteDescriptor {
    */
   readonly islandSources: readonly string[];
   readonly budgetJs: string | null;
-  readonly budgetLcp: number | null;
   /**
    * Present on a route NO surface file declares: who mounted it and every permission that gates
    * it. Absent on a file route — so a reader never has to ask whether `file` is a path.
@@ -432,7 +431,6 @@ const descriptorOf = (
   islands: config.islands.map((spec) => spec.moduleId),
   islandSources: config.islands.map((spec) => spec.src),
   budgetJs: config.budget.js ?? null,
-  budgetLcp: config.budget.lcp ?? null,
 });
 
 /** See `RouteDescriptor.personal`. */

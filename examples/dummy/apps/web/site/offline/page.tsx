@@ -22,7 +22,7 @@ export const config = defineRoute({
    * document can open no member's outbox), and a budget above what the page costs hides the next
    * regression. `/x-sw-register.js` is the framework's and exempt (`FRAMEWORK_SCRIPTS`).
    */
-  budget: { js: '0kb', lcp: 1000 },
+  budget: { js: '0kb' },
   meta: ({ t }) => ({
     title: t('site.offline.metaTitle'),
     description: t('site.offline.metaDescription'),

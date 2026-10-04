@@ -57,7 +57,7 @@ Every projection is a method on the action — `publishPost.tool()`, never `toMc
 |---|---|---|
 | `publishPost(input, options?)` | the mutation | parse `input` → load `row` → evaluate `policy` → `handle` → parse `output` |
 | `.as(actor, input, options?)` | the same mutation, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
-| `.tool()` | the MCP tool descriptor | `publishPost.tool().policy === publishPost.policy` — one authz object, never a copy |
+| `.tool()` | the MCP tool descriptor | `publishPost.tool().policy === publishPost.policy` — one authz object, never a copy. Its `inputSchema`/`outputSchema` are what `tools/list` serves (`@ultimat3/schema`'s `toWireSchema`/`toWireOutputSchema`); `outputSchema` is absent when `output` has no object root |
 | `.openapi()` | the OpenAPI 3.1 operation | byte-stable; `x verify` diffs it for contract drift |
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |

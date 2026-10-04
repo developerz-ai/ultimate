@@ -25,7 +25,7 @@ export const config = defineRoute({
   // messages at all"; WHICH threads is decided per row by `threadRead`, which the thread page and
   // the send action evaluate against the participants row.
   policy: { permission: 'message:read' },
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
   // The framework's own identity, not `currentViewer()`: membership is a row keyed by user id, so
   // the resolved friend/block graph a post rule needs is not part of this question.
   load: async (): Promise<{ readonly threads: readonly ThreadSummary[] }> => {

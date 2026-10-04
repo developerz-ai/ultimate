@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "2092f0b7cf262c10",
+  "buildId": "f9d2c232f3a8189c",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -14,8 +14,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1200
+        "js": "0kb"
       }
     },
     {
@@ -404,8 +403,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1500
+        "js": "0kb"
       }
     },
     {
@@ -418,8 +416,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1800
+        "js": "0kb"
       }
     },
     {
@@ -430,8 +427,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "123kb",
-        "lcp": 2000
+        "js": "123kb"
       }
     },
     {
@@ -442,8 +438,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1000
+        "js": "0kb"
       }
     },
     {
@@ -454,8 +449,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "153.5kb",
-        "lcp": 2000
+        "js": "153.5kb"
       }
     },
     {
@@ -466,8 +460,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "22kb",
-        "lcp": 1200
+        "js": "22kb"
       }
     },
     {
@@ -480,8 +473,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "22kb",
-        "lcp": 1500
+        "js": "22kb"
       }
     },
     {
@@ -492,8 +484,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "130.5kb",
-        "lcp": 2000
+        "js": "130.5kb"
       }
     },
     {
@@ -504,8 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "59kb",
-        "lcp": 1800
+        "js": "59kb"
       }
     }
   ],

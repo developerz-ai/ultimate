@@ -51,7 +51,7 @@ export type {
   JsonSchemaType,
   ToJsonSchemaOptions,
 } from './json-schema';
-export { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
+export { nodeToJsonSchema, toJsonSchema } from './json-schema';
 export type { MoneyValue } from './money-value';
 export {
   CURRENCY_CODE_PATTERN,
@@ -114,3 +114,5 @@ export {
   refineSchema,
   unionSchema,
 } from './validators';
+export type { WireJsonSchema } from './wire-schema';
+export { toWireOutputSchema, toWireSchema } from './wire-schema';

@@ -38,7 +38,7 @@ const staticRoute = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({ title: 'Home', description: 'the landing page' }),
 });
 
@@ -201,7 +201,7 @@ describe('x build --target static, with islands', () => {
 
     // And the `budgets` step itself, off the files this build wrote.
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'budgets');
-    await Bun.write(join(ROOT, 'app.config.ts'), 'export const config = {};\n');
+    await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     const outcome = await step?.run({ ...VERIFY_CTX, root: ROOT });
     expect(outcome?.ok).toBe(false);
     const own = outcome?.findings.filter((finding) => finding.at === '/fleet');

@@ -216,7 +216,7 @@ export { actionName, invoke } from './invoke';
 export type { ActionJobHandle } from './job-handle';
 export { toJobHandle } from './job-handle';
 export type { JsonSchemaObject } from './json-schema';
-export { jsonSchemaOf, mcpSchemaOf } from './json-schema';
+export { jsonSchemaOf } from './json-schema';
 export type { McpInvokeOptions, McpToolDescriptor } from './mcp-tool';
 export { isExposed, toMcpTool, toMcpTools } from './mcp-tool';
 export type {

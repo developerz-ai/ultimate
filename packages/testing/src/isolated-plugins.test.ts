@@ -127,3 +127,19 @@ describe('releasePluginsAfterIsolatedFile', () => {
     expect(cleared).toBe(1);
   });
 });
+
+// `x test` sets the variable and this package's preload reads it: a second spelling on either side
+// is a rename that compiles and silently turns the per-file release off.
+describe('ISOLATED_ENV is spelled once', () => {
+  test('no framework source outside isolated-plugins.ts writes the name as a literal', async () => {
+    const packages = join(import.meta.dir, '..', '..');
+    const spelled: string[] = [];
+    for await (const path of new Bun.Glob('*/src/**/*.{ts,tsx}').scan({ cwd: packages })) {
+      if (path.endsWith('.test.ts') || path === 'testing/src/isolated-plugins.ts') continue;
+      if ((await Bun.file(join(packages, path)).text()).includes(`'${ISOLATED_ENV}'`)) {
+        spelled.push(path);
+      }
+    }
+    expect(spelled).toEqual([]);
+  });
+});

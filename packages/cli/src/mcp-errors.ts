@@ -51,7 +51,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only unit --json   # the finding carries the measured numbers and the "coverage" line to add to x.verify.json',
   X_COVERAGE_FLOOR_STALE:
     'x verify --only unit --json   # the finding carries the measured numbers; raise "coverage" in x.verify.json to them',
-  X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
+  // Unthrown since `--worker` was deleted, and kept only because this record is typed over every
+  // registered code: `--shard i/n` is the one way to rerun a slice.
+  X_TEST_SHARD_FAILED: 'x verify --only unit --shard 1/2 --json',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route posts --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:
     'bun test packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',

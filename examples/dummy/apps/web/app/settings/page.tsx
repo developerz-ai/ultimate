@@ -98,7 +98,7 @@ export const config = defineRoute({
    * `<a href="#">` and an unparsable href stay the browser's. The other +198 B is the router's
    * growth on main between 22.8.1's statement and this slice (19,071 → 19,269 B), unstated until now.
    */
-  budget: { js: '59kb', lcp: 1800 },
+  budget: { js: '59kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

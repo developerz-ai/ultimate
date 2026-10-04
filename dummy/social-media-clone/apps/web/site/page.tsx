@@ -19,7 +19,7 @@ export const config = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({
     title: t('site.home.title'),
     // Not `site.home.description`: that string is the on-page lede at 186 characters, which reads

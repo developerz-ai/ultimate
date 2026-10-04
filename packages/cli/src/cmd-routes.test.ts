@@ -28,7 +28,7 @@ let root = '';
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'x-routes-'));
-  writeFileSync(join(root, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // One module, so this is an app with no API routes rather than an app that loaded NOTHING —
   // which `loadApp` now refuses as X_APP_EMPTY.
   mkdirSync(join(root, 'apps/web/shared'), { recursive: true });
@@ -121,7 +121,7 @@ describe('unit · x routes --json projects every fact the table shows', () => {
     render: 'static',
     hydrate: 'never',
     offline: 'precache',
-    budget: { js: '0kb', lcp: 1500 },
+    budget: { js: '0kb' },
     meta: () => ({ title: 'Home', description: 'the landing page' }),
   });
   const app = defineRoute({
@@ -129,7 +129,7 @@ describe('unit · x routes --json projects every fact the table shows', () => {
     hydrate: 'visible',
     offline: 'runtime',
     policy: { permission: 'dashboard:read' },
-    budget: { js: '60kb', lcp: 2500 },
+    budget: { js: '60kb' },
     meta: () => ({ title: 'Dashboard', description: 'authed' }),
   });
 
@@ -153,7 +153,7 @@ describe('unit · x routes --json projects every fact the table shows', () => {
           render: 'static',
           hydrate: 'never',
           offline: 'precache',
-          budget: { js: '0kb', lcp: 1500 },
+          budget: { js: '0kb' },
         },
       ],
     });

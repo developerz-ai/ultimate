@@ -29,7 +29,6 @@ import. The CLI wires it.
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface; boot-time refusal of an unknown or doubly-claimed tool |
-| `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
@@ -108,10 +107,11 @@ import. The CLI wires it.
   compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
   `iana-time-zone`), and this package cannot check it without a second definition of each that can
   only drift from the action's own parse. `tools/list` published it and `validate-args.ts` ignored
-  it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true` — the silent pass
-  `input-schema.ts` exists to prevent. `pattern` is the opposite case and is kept: the rule travels
-  with the schema. `input-schema.test.ts` asserts every published keyword is one this server
-  enforces, at any depth.
+  it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true`. `pattern` is the
+  opposite case and is kept: the rule travels with the schema. The narrowing is `@ultimat3/schema`'s
+  `toWireSchema` (tier 0, so `@ultimat3/action`'s `.tool()` publishes the same document) and the
+  type is its `WireJsonSchema`, which `wire.ts` names `JsonSchema`; `validate-args-subset.test.ts`
+  asserts every published keyword is one this server enforces, at any depth.
 - **A hand-written app tool parses its own input**, in the slot `invoke` puts it: parse, then
   `guard()`, then `handle`. A projected action re-parses inside `invoke`; `app-tool.ts` had no second
   parse, so `handle` was handed whatever the wire subset let through — typed `InferOutput<TInput>`,
@@ -261,8 +261,8 @@ import. The CLI wires it.
 - **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
   `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
   back-pressure; only a child-process test can see it.
-- **A schema property lands through `Object.defineProperty` too** — `input-schema.ts`'s
-  `narrowProperties`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
+- **A schema property lands through `Object.defineProperty` too** — `@ultimat3/schema`'s
+  `wire-schema.ts`, the twin of `validate-args.ts`'s `put` on the schema side. `out[key] = …` for
   a property named `__proto__` runs `Object.prototype`'s setter and re-prototypes the published
   `properties` record instead of adding a key, so a field the tool author declared vanishes from
   `tools/list` and from what the arg validator reads back.

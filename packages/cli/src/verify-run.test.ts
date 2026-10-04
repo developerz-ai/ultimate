@@ -9,11 +9,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { PREFLIGHT_STEPS } from './cmd-build';
 import { msg } from './messages';
 import { exitCodeFor, renderHuman, renderJson } from './output';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
-import { runVerify } from './verify-run';
+import { BESIDE_SERIAL_SUITES, runVerify, SERIAL_SUITES } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
+import { VERIFY_STEP_NAMES } from './verify-step';
 import { resetTestDiscovery, TEST_STEPS } from './verify-tests';
 
 /** The banner a narrowed run carries, from the catalog that renders it — never a second literal. */
@@ -249,5 +251,29 @@ describe('a suite that executed nothing is a skip, never a pass', () => {
       expect(dataOf(result.data).skipped).toEqual([]);
       expect(result.ok).toBe(true);
     });
+  });
+});
+
+/**
+ * Three subsets of the step list were typed `string`, so a renamed or deleted step left a stale
+ * name that compiled and simply never matched. They are `VerifyStepName` now: the stale name is
+ * `TS2322` where it is written, and the pins below stop compiling if one widens back to `string`.
+ */
+describe('every step-name subset is drawn from VERIFY_STEP_NAMES', () => {
+  test('each member is a step the gate has', () => {
+    const subsets = [...PREFLIGHT_STEPS, ...BESIDE_SERIAL_SUITES, ...SERIAL_SUITES];
+    expect(subsets.filter((name) => !VERIFY_STEP_NAMES.includes(name))).toEqual([]);
+  });
+
+  test('a free string is not a member, by type', () => {
+    const pins = (): readonly unknown[] => [
+      // @ts-expect-error a preflight step is a VerifyStepName, never a free string
+      PREFLIGHT_STEPS.includes('not-a-step'),
+      // @ts-expect-error a step beside the serial suites is a VerifyStepName
+      BESIDE_SERIAL_SUITES.has('not-a-step'),
+      // @ts-expect-error a serial suite is a VerifyStepName
+      SERIAL_SUITES.includes('not-a-step'),
+    ];
+    expect(typeof pins).toBe('function');
   });
 });

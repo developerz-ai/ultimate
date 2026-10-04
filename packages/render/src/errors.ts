@@ -43,7 +43,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ROUTE_LOAD_FAILED: "a route's load threw while resolving its data",
   X_ROUTE_STATUS_INVALID: 'a route answered a status a rendered page cannot carry',
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
-  X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
+  X_BUDGET_EXCEEDED: 'a route blew its JS budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
   X_ISLAND_INVALID: 'an island declaration cannot become a client entry',
   X_ISLAND_PROPS_INVALID: 'an island was passed props it cannot carry to the browser',
@@ -163,7 +163,7 @@ export class SurfaceBoundaryError extends UltimateError {
   }
 }
 
-/** A route's measured JS/LCP exceeded its declared `budget`. */
+/** A route's measured JS exceeded its declared `budget`. */
 export class BudgetExceededError extends UltimateError {
   static readonly code = 'X_BUDGET_EXCEEDED' as const;
   constructor(cause: string, fix: string) {

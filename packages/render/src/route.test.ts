@@ -116,10 +116,23 @@ describe('the descriptor always carries a budget', () => {
       render: 'static',
       offline: 'precache',
       hydrate: 'never',
-      budget: { js: '40kb', lcp: 2000 },
+      budget: { js: '40kb' },
       meta,
     });
-    expect(config.budget).toEqual({ js: '40kb', lcp: 2000 });
+    expect(config.budget).toEqual({ js: '40kb' });
+  });
+
+  test('lcp is not a budget key, by type', () => {
+    const declare = () =>
+      defineRoute({
+        render: 'static',
+        offline: 'precache',
+        hydrate: 'never',
+        // @ts-expect-error nothing measures a paint, so `lcp` is not a budget a route can declare
+        budget: { js: '40kb', lcp: 2000 },
+        meta,
+      });
+    expect(typeof declare).toBe('function');
   });
 
   test('the always-present budget does not satisfy the site/ hydration check', () => {

@@ -5,7 +5,7 @@
  */
 
 import type { ActionPathStyle } from '@ultimat3/core';
-import { SchemaUnsupportedError } from '@ultimat3/schema';
+import { SchemaUnsupportedError, toWireSchema } from '@ultimat3/schema';
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
 import { resetApiDeclaration } from './api-declaration';
@@ -19,7 +19,7 @@ import {
 } from './http-path';
 import { assertIdempotencyScope } from './idempotency';
 import { defOf } from './invoke';
-import { jsonSchemaOf, mcpSchemaOf } from './json-schema';
+import { jsonSchemaOf } from './json-schema';
 import type { ActionPath } from './naming';
 import { seatedActions } from './registry-store';
 
@@ -111,7 +111,8 @@ function assertProjectable(name: string, target: AnyAction): void {
   for (const field of ['input', 'output'] as const) {
     try {
       jsonSchemaOf(target[field]);
-      mcpSchemaOf(target[field]);
+      // The schema `.tool()` and `tools/list` publish — the one an MCP client reads.
+      toWireSchema(target[field]);
     } catch {
       // The thrown value is deliberately not rendered into the cause: it is the provider's, of
       // unknown shape, and this package's own two facts — which action, which field — are the

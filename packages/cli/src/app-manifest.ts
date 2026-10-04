@@ -117,14 +117,8 @@ const routeFacts = (): readonly RouteFact[] =>
       ...budgetOf(route),
     }));
 
-function budgetOf(route: RouteDescriptor): { budget?: { js?: string; lcp?: number } } {
-  if (route.budgetJs === null && route.budgetLcp === null) return {};
-  return {
-    budget: {
-      ...(route.budgetJs === null ? {} : { js: route.budgetJs }),
-      ...(route.budgetLcp === null ? {} : { lcp: route.budgetLcp }),
-    },
-  };
+function budgetOf(route: RouteDescriptor): { budget?: { js: string } } {
+  return route.budgetJs === null ? {} : { budget: { js: route.budgetJs } };
 }
 
 /**

@@ -200,6 +200,17 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
     );
   }
 
+  // `js` is the one budget anything measures. `lcp`, `css`, `cls` and `tbt` were each accepted,
+  // stored and compared by nothing that had a measurement — a false green — so a key the type no
+  // longer declares, arriving by a cast or from plain JS, is refused rather than carried.
+  for (const key of Object.keys(config.budget)) {
+    if (key === 'js') continue;
+    throw new RouteModeInvalidError(
+      `${ctx.file} declares budget.${key}, which nothing in the framework measures — only budget.js is weighed (x verify's budgets step). In ${ctx.file}, delete ${key}: the whole budget is the js key`,
+      "budget: { js: '10kb' }",
+    );
+  }
+
   // `budget` is always on the descriptor; `budget.js` is the field that stays optional,
   // and its absence is the failure — site/ is 0kb until a route says otherwise, in bytes.
   if (ctx.surface === 'site' && config.hydrate !== 'never' && config.budget.js === undefined) {

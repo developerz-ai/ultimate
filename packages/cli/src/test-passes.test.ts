@@ -83,14 +83,6 @@ describe('unit · a selection becomes one pass, or one per serial type', () => {
     expect(passes).toHaveLength(1);
     expect(passes[0]?.workers).toBe(1);
   });
-
-  // A `--worker I` rerun is a single `bun test --isolate --shard=i/N` process, so nothing inside it
-  // runs beside anything else — and splitting it would make shard i of the rerun a different set
-  // of files from shard i of the run it reproduces, which is the one thing a shard must not do.
-  test('a shard rerun is left whole, serial files included', () => {
-    const files = [file('a.test.ts'), file('feed.live.test.ts')];
-    expect(testPasses({ files, workers: 2, shard: 1 })).toHaveLength(1);
-  });
 });
 
 describe('unit · x test spends those passes, one bun test each', () => {

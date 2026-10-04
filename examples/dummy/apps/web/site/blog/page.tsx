@@ -22,7 +22,7 @@ export const config = defineRoute({
   revalidate: { tags: [tag.blog] },
   offline: 'runtime',
   hydrate: 'never',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   // No `feed:` key: `defineRoute` takes the contract's nine keys and nothing else, so the one
   // that used to sit here declared three feed formats and emitted none. A feed is its own URL —
   // `buildFeed` from @ultimat3/seo, behind an `api/` route — never a flag on the HTML page.

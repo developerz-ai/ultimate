@@ -39,12 +39,12 @@
 // `@ultimat3/testing`'s preload clears the plugins after each file (`isolated-plugins.ts`). And the
 // per-WORKER database survives untouched: `@ultimat3/testing`'s `workerId` already read
 // `BUN_TEST_WORKER_ID` as its second key, which is exactly what Bun sets, 1..N, one per real
-// process (probed on 1.4.0). `ULTIMATE_TEST_WORKER` stays the first key and is what `--worker`
-// still sets, so a single-shard rerun keeps naming its own database.
+// process (probed on 1.4.0).
 
 // why: Bun ships no path-join primitive; the timings cache lives under the run's root.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ISOLATED_ENV } from '@ultimat3/testing';
 import type { AffectedSelection } from './affected';
 import type { Runner } from './exec';
 import { msg } from './messages';
@@ -52,8 +52,8 @@ import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
 import { testEnvOverrides } from './test-dotenv';
 
-/** `@ultimat3/testing`'s `ISOLATED_ENV`, restated: `cli → testing` is a runtime edge, kept to fixtures. */
-export const ISOLATED_TEST_ENV = 'ULTIMATE_TEST_ISOLATED';
+/** `@ultimat3/testing`'s `ISOLATED_ENV` — the one spelling, which that package's preload reads. */
+export const ISOLATED_TEST_ENV = ISOLATED_ENV;
 
 /** Bun's per-file durations, cached under the run's root and refreshed by every parallel run. */
 export const TEST_TIMINGS_FILE = '.x/test-timings.json';
@@ -68,24 +68,13 @@ import type { TestType } from './verify-tests';
  * The argv for one run. An explicit file list, never a re-glob: discovery already decided which
  * files belong to this type, and a child that globs again can pick up a file the selection removed.
  *
- * `--parallel=N` for the whole selection, `--shard=i+1/N` for one slice of it. The shard form is
- * `--worker`'s, and it carries `--isolate` in its own right — only `--parallel` implies it, and a
- * partition without a fresh module registry per file is the failure mode this whole design exists
- * to remove: measured on this repo, an 8-way split turned 0 failures into 36, every one
- * `X_PERMISSION_UNKNOWN` in `@ultimat3/query` because the `packages/cli` file that had been
- * declaring `feed:read` for it landed elsewhere. Half a dozen registries here are process-global by
- * design — the permission set, the roles, the entity/action/query tables, the error-code titles,
- * the fixture bag — and a serial `bun test` only passes because glob order happens to put every
- * declaring file before every file that reads what it left behind.
- *
- * Bun's shard partition is round-robin over the list it is given, so the sorted list this hands it
- * makes `--shard=2/8` the same 1/8 on CI and on a laptop (probed on 1.4.0).
+ * `--parallel=N` over the selection, sorted, so two runs over one corpus hand Bun the same list.
+ * One CI job's share of the corpus is `x verify --only unit --shard i/n` (`verify-shard.ts`), never
+ * a flag here: `x test --worker I` was a second, 0-based, unhashed split of the same suite.
  */
 export function testArgs(input: {
   readonly files: readonly string[];
   readonly workers: number;
-  /** 0-based, matching `--worker`. Absent runs the whole selection across `workers` processes. */
-  readonly shard?: number;
   /**
    * Everything after a bare `--`, handed to `bun test` verbatim and BEFORE the file list, which is
    * where bun reads its flags. `ParsedArgs.passthrough` had no reader anywhere until 2026-09, so
@@ -114,32 +103,23 @@ export function testArgs(input: {
   const isolate =
     extra.includes('--isolate') || (input.isolate === true && !extra.includes('--no-isolate'));
   const bare = extra.filter((arg) => arg !== '--isolate' && arg !== '--no-isolate');
-  return input.shard === undefined
-    ? [
-        'bun',
-        'test',
-        `--parallel=${String(input.workers)}`,
-        ...(isolate ? [] : ['--no-isolate']),
-        ...(input.timings === undefined || bare.some((arg) => arg.startsWith('--timings'))
-          ? []
-          : [`--timings=${input.timings}`, '--update-timings']),
-        ...bare,
-        ...files,
-      ]
-    : [
-        'bun',
-        'test',
-        ...(isolate ? ['--isolate'] : []),
-        `--shard=${String(input.shard + 1)}/${String(input.workers)}`,
-        ...bare,
-        ...files,
-      ];
+  return [
+    'bun',
+    'test',
+    `--parallel=${String(input.workers)}`,
+    ...(isolate ? [] : ['--no-isolate']),
+    ...(input.timings === undefined || bare.some((arg) => arg.startsWith('--timings'))
+      ? []
+      : [`--timings=${input.timings}`, '--update-timings']),
+    ...bare,
+    ...files,
+  ];
 }
 
 /**
  * The files an argv selects, flags stripped. `bun test` takes its file list positionally, so this
  * is the inverse of `testArgs` and the one thing a test asserting "what did the child get?" needs
- * — the flag COUNT is not fixed (`--parallel=N` is one token, a shard run carries two more), and a
+ * — the flag COUNT is not fixed (`--no-isolate` and the timings pair come and go), and a
  * test slicing a hardcoded prefix length reads a flag as a filename the day that changes.
  */
 export const filesIn = (command: readonly string[]): readonly string[] =>
@@ -154,12 +134,9 @@ export interface ReproduceOptions {
   readonly sample?: number;
   /**
    * The `--affected` narrowing, when there was one. The input most easily forgotten: `--affected`
-   * decides which files exist to run at all, so a rerun without it selects the WHOLE corpus and
-   * its shard 2 is a different shard 2.
+   * decides which files exist to run at all, so a rerun without it selects the WHOLE corpus.
    */
   readonly affected?: AffectedSelection;
-  /** 0-based, when reproducing ONE shard. Absent reproduces the whole selection. */
-  readonly shard?: number;
   /** What the caller put after `--`. It reaches `bun test`, so a rerun without it runs differently. */
   readonly passthrough?: readonly string[];
   /** The run was isolated per file; the rerun must be too. */
@@ -185,7 +162,6 @@ export function reproduceFor(options: ReproduceOptions): string {
     ...(options.affected?.dirty === true ? ['--dirty'] : []),
     '--workers',
     String(options.workers),
-    ...(options.shard === undefined ? [] : ['--worker', String(options.shard)]),
     ...(options.isolate === true ? ['--isolate'] : []),
     // Last, and after a `--` of its own, because that is where the caller typed it and where the
     // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
@@ -200,14 +176,11 @@ export interface RunShardsOptions {
   readonly runner: Runner;
   readonly files: readonly TestFile[];
   readonly workers: number;
-  /** Run exactly one shard of the same N-way split, not a one-worker run of everything. */
-  readonly only?: number;
   readonly filter?: string;
   readonly type?: TestType;
   /**
    * Set when `--sample` narrowed `files`: `kept` is what survived, `total` what discovery found.
-   * `kept` is carried rather than counted from what ran, because `--worker N` runs one shard of the
-   * sample and would otherwise report that shard's size as the corpus.
+   * Carried rather than counted from what ran: a pass runs part of the sample, never the corpus.
    */
   readonly sample?: { readonly kept: number; readonly total: number };
   /** Passed straight to `reproduceFor`: see `ReproduceOptions.affected`. */
@@ -248,7 +221,6 @@ const planOf = (
   ...(pass.type === undefined ? {} : { type: pass.type }),
   ...(options.sample === undefined ? {} : { sample: options.sample.kept }),
   ...(options.affected === undefined ? {} : { affected: options.affected }),
-  ...(options.only === undefined ? {} : { shard: options.only }),
   ...(options.isolate === true ? { isolate: true } : {}),
   ...(options.passthrough === undefined || options.passthrough.length === 0
     ? {}
@@ -256,17 +228,12 @@ const planOf = (
 });
 
 /**
- * `X_TEST_SHARD_FAILED` for a `--worker` run and `X_TEST_FAILED` for a whole one, because the two
- * name different reruns: a shard is reproduced by naming it, and a full run by rerunning it. Both
- * codes already exist and both are already documented — a third would be a new name for a failed
- * `bun test`.
+ * `X_TEST_FAILED`, whose `fix:` reruns exactly what failed. `X_TEST_SHARD_FAILED` was the
+ * `--worker` rerun's and went with it: the code stays registered (codes are forever) and unthrown.
  */
 export const failureOf = (code: number, files: number, plan: ReproduceOptions): Finding => ({
-  code: plan.shard === undefined ? 'X_TEST_FAILED' : 'X_TEST_SHARD_FAILED',
-  cause:
-    plan.shard === undefined
-      ? `${plan.type ?? 'test'} run exited ${code} across ${plan.workers} worker(s) (${files} file(s))`
-      : `shard ${plan.shard} of ${plan.workers} exited ${code} (${files} file(s))`,
+  code: 'X_TEST_FAILED',
+  cause: `${plan.type ?? 'test'} run exited ${code} across ${plan.workers} worker(s) (${files} file(s))`,
   fix: reproduceFor(plan),
   docs: ERROR_DOCS_URL,
 });
@@ -281,12 +248,10 @@ export const failureOf = (code: number, files: number, plan: ReproduceOptions): 
  * it. And every pass runs even after one fails — the caller asked for a suite, and a report that
  * stops at the first red step hides the rest of the answer.
  *
- * `ULTIMATE_TEST_WORKER` is still set for a `--worker` rerun and only then: that run is one
- * process, so naming its database is this file's to do. A `--parallel` run has N of them and Bun
- * numbers each with `BUN_TEST_WORKER_ID`, which `@ultimat3/testing`'s `workerId` already reads.
+ * No `ULTIMATE_TEST_WORKER` here: a `--parallel` run has N processes and Bun numbers each with
+ * `BUN_TEST_WORKER_ID`, which `@ultimat3/testing`'s `workerId` already reads.
  */
 export async function runShards(options: RunShardsOptions): Promise<CommandResult> {
-  const only = options.only;
   // Computed ONCE per invocation, never per pass: every pass spawns from the same `root` and the
   // same parent env, so the leaked-key set cannot differ pass to pass.
   const envOverrides: Record<string, string | undefined> = {
@@ -302,7 +267,6 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     files: options.files,
     workers: options.workers,
     ...(options.type === undefined ? {} : { type: options.type }),
-    ...(only === undefined ? {} : { shard: only }),
   });
   const started = performance.now();
   const steps: StepResult[] = [];
@@ -312,53 +276,38 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   let exitCode = 0;
   for (const pass of passes) {
     const files = pass.files.map((file) => file.path);
-    // A `--worker` rerun is one process over one shard and is never split: shard i of the rerun
-    // must be the same files as shard i of the run it reproduces. Nor is `-- --watch`, which never
-    // exits, so a second batch would never start. Every other pass is spent in `test-batches.ts`'
-    // batches, one `bun test` after another.
-    const batches =
-      only === undefined && !watching
-        ? testBatches(
-            files,
-            pass.workers,
-            isolatedRun(options) ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
-          )
-        : [files];
+    // `-- --watch` is never split: it never exits, so a second batch would never start. Every
+    // other pass is spent in `test-batches.ts`' batches, one `bun test` after another.
+    const batches = !watching
+      ? testBatches(
+          files,
+          pass.workers,
+          isolatedRun(options) ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
+        )
+      : [files];
     const result = await runBatches({
       runner: options.runner,
       batches,
       stopOnFailure: bailing,
       workers: pass.workers,
-      // A `--worker` rerun is one process whatever its N says, and a serial pass is one worker:
-      // only a default-width parallel pass leases from the machine pool.
-      ...(only === undefined && pass.workers > 1 && options.lease !== undefined
-        ? { lease: options.lease }
-        : {}),
+      // A serial pass is one worker: only a default-width parallel pass leases from the pool.
+      ...(pass.workers > 1 && options.lease !== undefined ? { lease: options.lease } : {}),
       argsFor: (batch, width) =>
         testArgs({
           files: batch,
-          workers: only === undefined ? width : pass.workers,
-          ...(only === undefined ? {} : { shard: only }),
+          workers: width,
           ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
           ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
           timings: join(options.root, TEST_TIMINGS_FILE),
         }),
       options: {
         cwd: options.root,
-        ...(Object.keys(envOverrides).length === 0 && only === undefined
-          ? {}
-          : {
-              env: {
-                ...envOverrides,
-                ...(only === undefined ? {} : { ULTIMATE_TEST_WORKER: String(only) }),
-              },
-            }),
+        ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
       },
     });
     batchCount += batches.length;
     const plan = planOf(options, pass);
-    const label =
-      only === undefined ? `${pass.workers} worker(s)` : `shard ${only} of ${pass.workers}`;
+    const label = `${pass.workers} worker(s)`;
     steps.push({
       name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files${
         batches.length > 1 ? msg('cli.test.batches', { batches: batches.length }) : ''
@@ -403,7 +352,6 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     durationMs,
     ...(options.filter === undefined ? {} : { filter: options.filter }),
     ...(sample === undefined ? {} : { sample: { kept: sample.kept, total: sample.total } }),
-    ...(only === undefined ? {} : { shard: only }),
     // Only when the split made more than one, so a single-pass run's JSON is byte-identical to
     // what it has always been — and a mixed one can never be read as if it were a single run.
     ...(spent.length > 1 ? { passes: spent } : {}),

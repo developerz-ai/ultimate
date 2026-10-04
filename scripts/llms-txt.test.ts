@@ -1,18 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { SIDEWAYS_ALLOW } from './lib/tiers';
 import {
   fillBlocks,
   homeSummaries,
   llmsDrift,
   llmsTxtFindings,
   packageLine,
+  sidewaysLines,
   wikiLines,
 } from './llms-txt';
 
 const OPEN_P = '<!-- generated: packages — bun run llms-txt --write -->';
 const OPEN_W = '<!-- generated: wiki — bun run llms-txt --write -->';
+const OPEN_S = '<!-- generated: sideways — bun run llms-txt --write -->';
 const CLOSE = '<!-- end generated -->';
-const FILE = ['# t', OPEN_P, '- old', CLOSE, 'prose', OPEN_W, CLOSE, ''].join('\n');
+const FILE = ['# t', OPEN_S, CLOSE, OPEN_P, '- old', CLOSE, 'prose', OPEN_W, CLOSE, ''].join('\n');
 
 describe('unit · llms.txt lists are generated, and drift is refused', () => {
   test('a package line carries its tier, description and both links', () => {
@@ -33,16 +36,30 @@ describe('unit · llms.txt lists are generated, and drift is refused', () => {
     expect(lines[2]).toEndWith('FAQ.md).');
   });
 
+  // The edge list was hand-written beside `SIDEWAYS_ALLOW` and had already lost `core -> schema`.
+  test('the sideways-edge line is SIDEWAYS_ALLOW, every edge, in its order', () => {
+    const edges = Object.entries(SIDEWAYS_ALLOW).flatMap(([from, to]) =>
+      to.map((target) => `\`${from} -> ${target}\``),
+    );
+    expect(edges.length).toBeGreaterThan(0);
+    expect(sidewaysLines(SIDEWAYS_ALLOW)).toEqual([
+      `Declared sideways edges: ${edges.join(', ')}.`,
+    ]);
+    expect(sidewaysLines({ a: ['b'] })).toEqual(['Declared sideways edges: `a -> b`.']);
+  });
+
   test('only the marked blocks are rewritten; prose is kept', () => {
-    const filled = fillBlocks(FILE, { packages: ['- new'], wiki: ['- w'] });
+    const filled = fillBlocks(FILE, { packages: ['- new'], wiki: ['- w'], sideways: ['e'] });
     expect(filled.missing).toEqual([]);
     expect(filled.text).toBe(
-      ['# t', OPEN_P, '- new', CLOSE, 'prose', OPEN_W, '- w', CLOSE, ''].join('\n'),
+      ['# t', OPEN_S, 'e', CLOSE, OPEN_P, '- new', CLOSE, 'prose', OPEN_W, '- w', CLOSE, ''].join(
+        '\n',
+      ),
     );
   });
 
   test('a missing entry and an extra entry are each X_LLMS_TXT_DRIFT, naming the line', () => {
-    const filled = fillBlocks(FILE, { packages: ['- new'], wiki: [] });
+    const filled = fillBlocks(FILE, { packages: ['- new'], wiki: [], sideways: [] });
     const causes = llmsDrift(FILE, filled.text, filled.missing).map((f) => `${f.code} ${f.cause}`);
     expect(causes).toEqual([
       'X_LLMS_TXT_DRIFT llms.txt is missing - new',
@@ -51,9 +68,9 @@ describe('unit · llms.txt lists are generated, and drift is refused', () => {
   });
 
   test('a block whose markers are gone is refused, never skipped', () => {
-    const filled = fillBlocks('# no markers\n', { packages: ['- x'], wiki: [] });
-    expect(filled.missing).toEqual(['packages', 'wiki']);
-    expect(llmsDrift('# no markers\n', filled.text, filled.missing)).toHaveLength(2);
+    const filled = fillBlocks('# no markers\n', { packages: ['- x'], wiki: [], sideways: [] });
+    expect(filled.missing).toEqual(['packages', 'wiki', 'sideways']);
+    expect(llmsDrift('# no markers\n', filled.text, filled.missing)).toHaveLength(3);
   });
 });
 

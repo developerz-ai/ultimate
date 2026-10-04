@@ -16,11 +16,10 @@ import { useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatIssues, toValidationIssues, validateAsync } from '@ultimat3/schema';
+import { formatIssues, toValidationIssues, toWireSchema, validateAsync } from '@ultimat3/schema';
 import { asCallerContext } from './caller-context';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
-import { toWireSchema } from './input-schema';
 import type { McpRole, McpToolAnnotations } from './registry';
 
 export interface AppToolArgs<TInput extends StandardSchemaV1> {

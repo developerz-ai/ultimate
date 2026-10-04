@@ -58,7 +58,7 @@ export const config = defineRoute({
    * up to 1,124 B larger on a run that keeps `schema-error-codes.ts`. It comes DOWN with the shared
    * island runtime (#505), as `/feed` does.
    */
-  budget: { js: '130.5kb', lcp: 2000 },
+  budget: { js: '130.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

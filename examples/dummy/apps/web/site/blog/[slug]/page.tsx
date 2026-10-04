@@ -34,7 +34,7 @@ export const config = defineRoute({
   prerender: async () => (await queries.publicPostSlugs({})).map((post) => post.slug),
   offline: 'runtime',
   hydrate: 'never',
-  budget: { js: '0kb', lcp: 1800 },
+  budget: { js: '0kb' },
   /**
    * `publishedAt` is rehydrated here and nowhere else: the read answered over HTTP, so the
    * instant arrived as the string `JSON.stringify` wrote, and `meta` below calls `toISOString()`

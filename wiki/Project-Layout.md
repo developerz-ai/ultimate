@@ -127,13 +127,13 @@ Inside the framework repo, a package may import from **strictly lower** tiers on
 | Tier | Packages | May import |
 |---|---|---|
 | 0 | `core`, `schema` | nothing internal |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` | tier 0 |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` | tier 0 |
 | 2 | `entity`, `policy`, `http`, `auth` | tier 0–1 |
 | 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
-| 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` | tier 0–3 |
+| 5 | `admin`, `testing`, `cli`, `scraping` | tier 0–4 |
 
-**Five** sideways edges are declared and no others, `As of 2026-08-23`: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`. `cli → scraping` was declared 2026-08-21, when `x shot` needed the one package that drives a real browser. `admin → ui` was deleted 2026-08-19 by moving `ui` from tier 5 to 4 — the edge existed only to undo a placement two tiers above what `ui` actually imports. [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of both tables.
+The declared sideways edges are `SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts), the executable copy of both tables; [`llms.txt`](https://github.com/developerz-ai/ultimate/blob/main/llms.txt) carries a generated copy of the list. `admin → ui` was deleted 2026-08-19 by moving `ui` from tier 5 to 4 — the edge existed only to undo a placement two tiers above what `ui` actually imports.
 
 Per-package layout is fixed: `package.json`, `tsconfig.json`, `README.md`, `CLAUDE.md`, `src/index.ts` (explicit exports, no `export *` outside pure-type modules), `src/errors.ts` (this package's `X_*` codes), one `src/<concern>.ts` per responsibility with `<concern>.test.ts` beside it. Target < 200 LOC per file, hard ceiling ~500. See [Contributing](Contributing).
 

@@ -37,7 +37,6 @@ const ROUTE_READS = [
   'hydrate',
   'revalidateTags',
   'budgetJs',
-  'budgetLcp',
 ] as const satisfies readonly (keyof RouteDescriptor)[];
 
 const JOB_READS = [
@@ -77,7 +76,7 @@ beforeAll(() => {
       render: 'ssr',
       offline: 'network-only',
       hydrate: 'idle',
-      budget: { js: '12kb', lcp: 2_000 },
+      budget: { js: '12kb' },
       revalidate: { tags: [{ entity: 'published_keys_widget' }], ttl: 60 },
       meta: () => ({ title: 'Published keys' }),
     }),
@@ -132,10 +131,9 @@ describe('every key /_x reads is a key the registry publishes', () => {
     if (descriptor === undefined) return;
 
     for (const key of ROUTE_READS) expect([key, published(descriptor, key)]).toEqual([key, true]);
-    // The premise. `budgetJs`/`budgetLcp` are `null` on a route that declares no budget, and a
-    // walk over a descriptor whose optional halves are all null would pass while proving nothing.
+    // The premise. `budgetJs` is `null` on a route that declares no budget, and a walk over a
+    // descriptor whose optional halves are all null would pass while proving nothing.
     expect(descriptor.budgetJs).toBe('12kb');
-    expect(descriptor.budgetLcp).toBe(2_000);
     expect(descriptor.revalidateTags.length).toBeGreaterThan(0);
   });
 

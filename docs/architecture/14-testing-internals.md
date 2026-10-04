@@ -25,7 +25,7 @@ bun test --workers 8
 
 | Step | Detail |
 |---|---|
-| Worker identity | `ULTIMATE_TEST_WORKER` first, then `BUN_TEST_WORKER_ID`, then `JEST_WORKER_ID` (`packages/testing/src/template-db.ts`'s `workerId`), read once at module init. **The second key is what carries the pool, `As of 2026-08-27`**: `x test` runs one `bun test --parallel=N` rather than N processes of its own, and Bun numbers each real worker 1..N with that variable. The first key is still set, and only for a single-shard `x test --worker I` rerun, which is one process and therefore one database this repo has to name |
+| Worker identity | `ULTIMATE_TEST_WORKER` first, then `BUN_TEST_WORKER_ID`, then `JEST_WORKER_ID` (`packages/testing/src/template-db.ts`'s `workerId`), read once at module init. **The second key is what carries the pool, `As of 2026-08-27`**: `x test` runs one `bun test --parallel=N` rather than N processes of its own, and Bun numbers each real worker 1..N with that variable. The first key is set only by `x verify`'s coverage run, which spawns its own slices and names each one's database by slot |
 | Name | `${app}_test_${workerIndex}` — deterministic, so a failed run's database is findable by index |
 | Connection | the pool for that process is built from a rewritten `DATABASE_URL`; `env.DATABASE_URL` inside a test resolves to the worker's clone |
 | Sticky per file | a test file runs entirely on one worker, so one file = one database for its lifetime |

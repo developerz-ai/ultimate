@@ -325,7 +325,7 @@ export function toJsonSchema(schema: unknown, options?: ToJsonSchemaOptions): Js
   };
 }
 
-/** The exact shape an MCP `tools/list` entry needs: draft-07, no `$schema`. */
+/** Draft-07, no `$schema`: the document `wire-schema.ts` narrows to what an MCP tool publishes. */
 export function toMcpInputSchema(schema: unknown): JsonSchema {
   return toJsonSchema(schema, { dialect: 'draft-07', includeDialect: false });
 }

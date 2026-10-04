@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
-// `llms.txt`'s two derived lists, generated: the packages (from `listWorkspaces` and each
-// package's own `description`) and the wiki pages (in `wiki/_Sidebar.md`'s order, summarised by
-// `wiki/Home.md`'s tables). The file said "generated from list-workspaces" and was hand-written —
-// `@ultimat3/notify` shipped and never appeared in it. Everything outside the two marked blocks
-// stays prose; `--write` rewrites the blocks, and the gate's `manifest` step refuses drift.
+// `llms.txt`'s derived lists, generated: the packages (from `listWorkspaces` and each package's own
+// `description`), the wiki pages (in `wiki/_Sidebar.md`'s order, summarised by `wiki/Home.md`'s
+// tables) and the declared sideways edges (`SIDEWAYS_ALLOW`). Each was hand-written and each went
+// stale. Everything outside the marked blocks stays prose; `--write` rewrites the blocks, and the
+// gate's `manifest` step refuses drift.
 //
 //   bun run llms-txt [--write] [--json]
 
@@ -11,13 +11,14 @@ import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { SIDEWAYS_ALLOW } from './lib/tiers';
 import { listWorkspaces } from './lib/workspaces';
 
 export const LLMS_TXT = 'llms.txt';
 const RAW = 'https://raw.githubusercontent.com/developerz-ai/ultimate/main';
 const FIX = 'bun run llms-txt --write';
 
-export const BLOCKS = ['packages', 'wiki'] as const;
+export const BLOCKS = ['packages', 'wiki', 'sideways'] as const;
 export type BlockName = (typeof BLOCKS)[number];
 
 const open = (name: BlockName): string => `<!-- generated: ${name} — ${FIX} -->`;
@@ -36,6 +37,16 @@ export const packageLine = (pkg: PackageLine): string => {
   const base = `${RAW}/packages/${pkg.dir}`;
   const text = pkg.description.replace(/\.?\s*$/, '.');
   return `- [${pkg.name}](${base}/README.md): tier ${pkg.tier} — ${text} Boundary and deps: [CLAUDE.md](${base}/CLAUDE.md).`;
+};
+
+/** The one line naming every declared sideways edge, in `SIDEWAYS_ALLOW`'s order. */
+export const sidewaysLines = (
+  allow: Readonly<Record<string, readonly string[]>>,
+): readonly string[] => {
+  const edges = Object.entries(allow).flatMap(([from, to]) =>
+    to.map((target) => `\`${from} -> ${target}\``),
+  );
+  return [`Declared sideways edges: ${edges.join(', ')}.`];
 };
 
 /** `[Title](Page)` links in the sidebar, in order: the reading order the wiki itself chose. */
@@ -137,7 +148,7 @@ export async function renderLlmsTxt(root: string) {
     await Bun.file(`${root}/wiki/_Sidebar.md`).text(),
     await Bun.file(`${root}/wiki/Home.md`).text(),
   );
-  const filled = fillBlocks(current, { packages, wiki });
+  const filled = fillBlocks(current, { packages, wiki, sideways: sidewaysLines(SIDEWAYS_ALLOW) });
   return { current, ...filled, findings: llmsDrift(current, filled.text, filled.missing) };
 }
 

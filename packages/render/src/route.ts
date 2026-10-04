@@ -51,17 +51,15 @@ export interface RevalidateConfig {
 }
 
 /**
- * What a route promises to stay under. **Two keys, and every one of them is PROJECTED** — a key
- * here that `RouteDescriptor` does not carry is a number an author writes and nothing can ever
- * compare against, which `type-pins.tsx` now makes a build error.
+ * What a route promises to stay under. **One key, and it is MEASURED** — a key here that nothing
+ * weighs is a number an author writes and nothing can ever compare against. `type-pins.tsx` makes
+ * an unprojected key a build error, and `assertModeInvariants` refuses one that arrives anyway.
  *
- * `css`, `cls` and `tbt` were three such keys and are gone in 12.0.0. `registerRoute` flattens a
- * budget to `budgetJs` + `budgetLcp`, and every reader downstream — `x verify`'s `budgets` step,
- * `x.manifest.json`, `x routes`, the dev dashboard — reads only those two, so `budget: { cls: 0.1 }`
- * was accepted, normalised, stored and ignored while the gate that exists to enforce budgets
- * reported green. Deleted rather than wired for `PwaConfig.installPrompt`'s reason: the measuring
- * half does not exist either, and a knob that fails silently in the permissive direction is the
- * framework's most repeated defect.
+ * `css`, `cls` and `tbt` went in 12.0.0 and `lcp` after them: each was accepted, stored and
+ * ignored while the gate that exists to enforce budgets reported green, because nothing in the
+ * framework observes a paint — the build emits static HTML. Deleted rather than wired for
+ * `PwaConfig.installPrompt`'s reason: the measuring half does not exist, and a knob that fails
+ * silently in the permissive direction is the framework's most repeated defect.
  */
 export interface RouteBudget {
   /**
@@ -72,12 +70,6 @@ export interface RouteBudget {
    * `As of 2026-09-05`; `packages/cli/src/budgets.ts`'s `measureDocumentJs` is the one reader.
    */
   readonly js?: string;
-  /**
-   * Milliseconds. PUBLISHED, not enforced: it reaches `x.manifest.json` and `x routes`, and no
-   * step of the gate compares it — nothing in the framework produces an `lcp` measurement, which
-   * `packages/cli/src/templates/route.ts` states at the one place an author would write one.
-   */
-  readonly lcp?: number;
 }
 
 /**

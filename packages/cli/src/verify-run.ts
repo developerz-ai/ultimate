@@ -180,7 +180,7 @@ export function verifySummary(input: {
  * `manifest` joined them 2026-09-23: it compares committed files against the code and writes
  * nothing, and at the repo root its host checks are ~20 whole-tree reads that sat alone at the end.
  */
-export const BESIDE_SERIAL_SUITES: ReadonlySet<string> = new Set([
+export const BESIDE_SERIAL_SUITES: ReadonlySet<VerifyStepName> = new Set<VerifyStepName>([
   'lint',
   'boundaries',
   'filesize',
@@ -190,7 +190,7 @@ export const BESIDE_SERIAL_SUITES: ReadonlySet<string> = new Set([
 ]);
 
 /** The consecutive run of steps the static group overlaps, in the order `VERIFY_STEP_NAMES` holds. */
-export const SERIAL_SUITES: readonly string[] = ['live', 'job', 'e2e', 'eval'];
+export const SERIAL_SUITES: readonly VerifyStepName[] = ['live', 'job', 'e2e', 'eval'];
 
 async function runStep(
   step: VerifyStep,

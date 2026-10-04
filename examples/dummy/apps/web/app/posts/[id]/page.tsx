@@ -118,7 +118,7 @@ export const config = defineRoute({
    * to the element under the pointer, a press skips the running transition, and a press or click
    * cancels the pending prefetch, so a fast click sends one request, not two (+795 B).
    */
-  budget: { js: '153.5kb', lcp: 2000 },
+  budget: { js: '153.5kb' },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.

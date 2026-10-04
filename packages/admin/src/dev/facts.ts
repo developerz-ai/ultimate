@@ -20,7 +20,7 @@ export interface RouteFact {
   readonly hydrate: string;
   /** The route's source file: what names the row. A descriptor publishes no handler. */
   readonly handler: string;
-  readonly budget: { readonly js?: string; readonly lcp?: number };
+  readonly budget: { readonly js?: string };
   readonly revalidateTags: readonly string[];
   /**
    * `RouteDescriptor.mount` — who mounted a route no surface file declares (`defineAdmin`), and

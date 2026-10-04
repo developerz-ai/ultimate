@@ -1,7 +1,7 @@
 // How wide a parallel test run goes, decided in one place. `x test --workers`, `x verify
 // --workers` and every parallel step of the gate read this — a second default would split the same
-// suite two different ways, and the `--worker N` reproduction a shard failure prints would then
-// name a shard the gate never ran.
+// suite two different ways, and the `--workers N` a failure's reproduction prints would then name
+// a width the gate never ran.
 
 // Bun ships no CPU-count or memory primitive: `cpus()` is the fallback when navigator cannot
 // answer, and `totalmem()` is the only reader of the machine's RAM.
@@ -241,7 +241,7 @@ export const sharedWorkers = (
  * Which types run across worker processes, and why the other two cannot.
  *
  * Parallel is safe when the only thing a test file shares with another file is the database, and
- * the database is per worker by construction (`ULTIMATE_TEST_WORKER` → one clone of the migrated
+ * the database is per worker by construction (`BUN_TEST_WORKER_ID` → one clone of the migrated
  * template, `@ultimat3/testing`'s `acquireWorkerDatabase`). Every other process-global in this
  * framework — the permission set, the roles, the entity/action/query registries, the error-code
  * titles, the fixture bag — is handled by `--isolate` giving each FILE its own module registry.

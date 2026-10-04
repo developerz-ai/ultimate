@@ -33,7 +33,7 @@ export const config = defineRoute<ProfileData>({
   render: 'ssr',
   hydrate: 'never',
   offline: 'runtime',
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
   // A null viewer: anonymous. Every hiding decision on this page follows from that one argument.
   load: async ({ params }) => ({ profile: await publicProfile(null, handleOf(params)) }),
   meta: ({ data: { profile } }) => {

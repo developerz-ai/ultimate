@@ -169,7 +169,7 @@ const NOT_FOUND_STATUS = 404;
  */
 const declaresBudget = (entry: RouteEntry): boolean => {
   const budget = entry.config.budget;
-  return budget !== undefined && (budget.js !== undefined || budget.lcp !== undefined);
+  return budget?.js !== undefined;
 };
 
 export async function prerenderSite(options: PrerenderOptions): Promise<PrerenderReport> {

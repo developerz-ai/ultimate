@@ -3,7 +3,7 @@
 // envelope a non-object `output` is wrapped in and its unwrapping cannot drift apart.
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { toMcpInputSchema } from '@ultimat3/schema';
+import { toWireSchema } from '@ultimat3/schema';
 import type { GenerateResult } from './provider';
 import type { LlmTool } from './tools';
 
@@ -26,16 +26,16 @@ export interface Respond {
 
 /**
  * The output schema as the only tool the model may answer through — the spec's "structured
- * output drives tool use". `toMcpInputSchema` is the same projection an MCP client sees, so a
- * model and an agent are shown one shape, and a schema it cannot express throws HERE, at
- * declaration time.
+ * output drives tool use". `toWireSchema` is the projection an MCP client is served, so a model
+ * and an agent are shown one shape, and a schema it cannot express throws HERE, at declaration
+ * time.
  *
  * A tool's `input_schema` must be an OBJECT, so any other `output` (`t.string`, `t.number`, an
  * array) is wrapped in `{ value }` and unwrapped on the way back — never refused: `.stream()` is
  * documented for `output: t.string`, and the same declaration must work called plainly.
  */
 export function respondFor(output: StandardSchemaV1): Respond {
-  const schema = toMcpInputSchema(output);
+  const schema = toWireSchema(output);
   const wrapped = schema.type !== 'object';
   return {
     tool: {

@@ -13,7 +13,7 @@ export const config = defineRoute({
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
-  budget:     { js: '40kb', lcp: 2000 },
+  budget:     { js: '40kb' },
   meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
                                og: { image: post.cover }, ld: ld.Article(post) }),
 });
@@ -205,7 +205,7 @@ Hydration is per-island, never per-page. A blown `budget.js` is a build failure,
 
 ## Budgets
 
-Per route. `budget.js` in bytes, `budget.lcp` in milliseconds.
+Per route, and one key: `budget.js`, in bytes. `budget.lcp` is deleted — nothing in the build observes a paint, so it was declared and never weighed.
 
 **`budget.js` counts raw minified bytes on disk — uncompressed**, `As of 2026-09-05`: what the
 browser parses and executes, never the gzip or brotli size it transfers. A 350 kB library is 350 kB
@@ -216,7 +216,6 @@ bandwidth. `measureDocumentJs` in `packages/cli/src/budgets.ts` is the one reade
 | Check | Source of truth |
 |---|---|
 | Per-route JS bytes | `budget.js` on the route; measured from the real bundle graph |
-| LCP / CLS / TBT | headless Lighthouse against the built output, median of N runs |
 | Lighthouse SEO + a11y scores | minimum thresholds in `app.config.ts`, defaults 100 / 95 |
 | Precache size | total `sw.js` precache set, see [PWA and offline](PWA-And-Offline) |
 | Regression | budgets ratchet — the recorded baseline can tighten, never loosen silently |
@@ -229,7 +228,6 @@ x verify
   ✓ lint                 ✓ tests (6 types)        ✓ contract diff
   ✗ budgets
       site/pricing   js 61kb > 40kb   (chart.js via shared/ui/button.tsx)
-      app/reports    lcp 2400 > 2000
 ```
 
 Failures name the *cause* — the transitive import that added the bytes — because "bundle too big" without a chain is not an instruction. `x verify --json` emits the same content machine-readably.

@@ -19,7 +19,7 @@ export const config = defineRoute({
   render: 'ssr',
   hydrate: 'never',
   offline: 'runtime',
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
   // A null viewer: anonymous. The audience ladder answers `public` and nothing else, so a
   // friends-only post, a private note and a soft-deleted row are all absent from this list
   // WITHOUT a `where` clause saying so — the policy is the only place that decides.

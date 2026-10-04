@@ -20,17 +20,17 @@ const refusal = (sources: ManifestSources): unknown => {
 };
 
 describe('a number JSON cannot round-trip is refused where the manifest is built', () => {
-  const lcp = (value: number): ManifestSources => ({
-    ...FIXTURE,
-    routes: [{ url: '/posts', render: 'isr', budget: { js: '40kb', lcp: value } }],
-  });
+  const attempts = (value: number): ManifestSources => {
+    const job = FIXTURE.jobs?.[0] ?? expect.unreachable('the fixture carries a job');
+    return { ...FIXTURE, jobs: [{ ...job, retry: { ...job.retry, attempts: value } }] };
+  };
 
   for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0]) {
     test(`${Object.is(value, -0) ? '-0' : String(value)} names the fact it sits at`, () => {
-      const error = refusal(lcp(value));
+      const error = refusal(attempts(value));
       expect(isUltimateError(error) ? error.code : error).toBe('X_MANIFEST_FACT_INVALID');
       expect(isUltimateError(error) ? error.meta?.['path'] : undefined).toBe(
-        'routes[0].budget.lcp',
+        'jobs[0].retry.attempts',
       );
     });
   }
@@ -50,7 +50,7 @@ describe('a number JSON cannot round-trip is refused where the manifest is built
   });
 
   test('a finite manifest still round-trips its own buildId through the written bytes', () => {
-    const built = buildManifest(lcp(2000));
+    const built = buildManifest(attempts(3));
     const reread = JSON.parse(manifestJson(built)) as Manifest;
     expect(verifyBuildId(reread)).toBe(true);
   });

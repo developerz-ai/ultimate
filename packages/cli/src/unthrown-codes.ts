@@ -21,4 +21,6 @@ export const UNTHROWN_CODES: ReadonlySet<string> = new Set([
   // 21.0.0: the worker no longer POSTs a flush endpoint nothing mounted.
   'X_PWA_SYNC_FLUSH_FAILED',
   'X_PWA_SYNC_INCOMPLETE',
+  // 24.0.0: `x test --worker` was deleted; `x verify --only unit --shard i/n` is the one split.
+  'X_TEST_SHARD_FAILED',
 ]);

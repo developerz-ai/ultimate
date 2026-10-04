@@ -1,5 +1,5 @@
-// The projection's one rule, executable: `tools/list` publishes ONLY keywords
-// `validate-args.ts` enforces.
+// The wire subset's one rule, executable: `@ultimat3/schema`'s `toWireSchema` publishes ONLY
+// keywords `validate-args.ts` enforces — the validator every hand-written tool is held to.
 //
 // "Handing an agent a keyword the server ignores is worse than omitting it — the agent obeys a
 // rule nothing checks and gets a silent pass." `format` was published verbatim and checked
@@ -8,8 +8,7 @@
 // declaration, and the agent was judged against the one it never saw.
 
 import { describe, expect, test } from 'bun:test';
-import { t } from '@ultimat3/schema';
-import { toWireSchema } from './input-schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import { validateArgs } from './validate-args';
 import type { JsonSchema } from './wire';
 
@@ -146,7 +145,7 @@ describe('the published bound and the enforced bound count the same unit', () =>
 
 /**
  * The twin of `validate-args.ts`'s `put`, on the schema side. A property NAME is the tool
- * author's, and `out[key] = narrow(child)` is not an assignment for exactly one of them:
+ * author's, and `out[key] = …` is not an assignment for exactly one of them:
  * `__proto__` runs `Object.prototype`'s setter, so the published `properties` object loses its
  * prototype instead of gaining a key — the declared field vanishes from `tools/list`, and
  * `validate-args.ts` then reads the tool as declaring one field fewer than it does.
@@ -169,7 +168,7 @@ describe('a property named __proto__ is a key, never a prototype', () => {
 
 /**
  * Asked by ai-maxxing on 2026-09-07: does a per-argument `.describe()` reach `tools/list`? It does
- * — `@ultimat3/schema`'s `convert` carries `node.description` and `narrow` above keeps
+ * — `@ultimat3/schema`'s `convert` carries `node.description` and `toWireSchema` keeps
  * `description` — so a catalog whose arguments carry no descriptions is a catalog whose actions
  * never called `.describe()`. Pinned here so the answer stays measured rather than remembered.
  */

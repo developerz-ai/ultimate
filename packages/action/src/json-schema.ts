@@ -1,10 +1,10 @@
 /**
- * Standard Schema -> JSON Schema, normalized to a plain record. OpenAPI, MCP
- * descriptors and the manifest all need the same object, produced the same way.
+ * Standard Schema -> JSON Schema, normalized to a plain record, for OpenAPI and the manifest. An
+ * MCP tool's schema is `@ultimat3/schema`'s `toWireSchema` — the one `tools/list` serves.
  */
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { SchemaUnsupportedError, toJsonSchema, toMcpInputSchema } from '@ultimat3/schema';
+import { SchemaUnsupportedError, toJsonSchema } from '@ultimat3/schema';
 import { isJsonObject, stableStringify } from './stable';
 
 export type JsonSchemaObject = Record<string, unknown>;
@@ -23,13 +23,8 @@ export function jsonSchemaOf(schema: StandardSchemaV1): JsonSchemaObject {
   return normalizeJsonSchema(() => toJsonSchema(schema));
 }
 
-/** Draft-07, no `$schema` — the exact shape an MCP `tools/list` entry needs. */
-export function mcpSchemaOf(schema: StandardSchemaV1): JsonSchemaObject {
-  return normalizeJsonSchema(() => toMcpInputSchema(schema));
-}
-
 /**
- * The narrowing both projections share, and the refusal it earns: a converter that answered with
+ * The narrowing `jsonSchemaOf` applies, and the refusal it earns: a converter that answered with
  * something that is not a JSON object is the same failure by a quieter route, so it gets the same
  * shipped code rather than a permissive node. Exported for its own test and nothing else — it is
  * absent from `src/index.ts`, exactly as `sortSchema` is.

@@ -23,7 +23,7 @@ const staticRoute = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({ title: 'Home', description: 'the landing page' }),
 });
 
@@ -32,7 +32,7 @@ const streamRoute = defineRoute({
   hydrate: 'visible',
   offline: 'runtime',
   policy: { permission: 'dashboard:read' },
-  budget: { js: '60kb', lcp: 2500 },
+  budget: { js: '60kb' },
   meta: () => ({ title: 'Dashboard', description: 'authed' }),
 });
 
@@ -41,7 +41,7 @@ const streamRoute = defineRoute({
  * `enabled` switch, a name, both colour pairs and the fallback — and nothing else.
  */
 const pwaConfig = (): string =>
-  "export const config = { pwa: { enabled: true, name: 'Fixture'," +
+  "export const config = { name: 'fixture', pwa: { enabled: true, name: 'Fixture'," +
   " offline: { fallback: '/offline' }," +
   " colors: { light: { themeColor: '#fff', backgroundColor: '#fff' }," +
   " dark: { themeColor: '#000', backgroundColor: '#000' } } } };\n";
@@ -208,7 +208,7 @@ describe('x build --target static', () => {
         render: 'static',
         hydrate: 'never',
         offline: 'precache',
-        budget: { js: '0kb', lcp: 1500 },
+        budget: { js: '0kb' },
         meta: (data) => ({ title: String(data['url']), description: 'echoes the build url' }),
       }),
     });

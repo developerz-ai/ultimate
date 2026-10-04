@@ -5,9 +5,10 @@
  */
 import type { Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
+import { toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { actionName, defOf, invoke } from './invoke';
-import { type JsonSchemaObject, mcpSchemaOf, sortSchema } from './json-schema';
+import { type JsonSchemaObject, sortSchema } from './json-schema';
 import type { ActionPolicy } from './policy-gate';
 import { listActions } from './registry';
 
@@ -29,8 +30,14 @@ export interface McpToolDescriptor {
    * is what makes "an MCP call cannot reach a different authz path" checkable.
    */
   readonly policy: ActionPolicy;
+  /**
+   * What `@ultimat3/mcp`'s `tools/list` serves for this action — `@ultimat3/schema`'s wire subset,
+   * key-sorted — minus the reserved `idempotencyKey` argument an idempotent action's tool adds,
+   * which `invoke` here takes as an option instead.
+   */
   readonly inputSchema: JsonSchemaObject;
-  readonly outputSchema: JsonSchemaObject;
+  /** The served `outputSchema`: structure only, and absent when `output` has no object root. */
+  readonly outputSchema?: JsonSchemaObject;
   invoke(input: unknown, options?: McpInvokeOptions): Promise<unknown>;
 }
 
@@ -47,13 +54,14 @@ export interface McpInvokeOptions {
 export function toMcpTool(target: AnyAction): McpToolDescriptor {
   const name = actionName(target);
   const def = defOf(target);
+  const output = toWireOutputSchema(def.output);
   return {
     name,
     description: def.mcp?.description ?? name,
     action: name,
     policy: def.policy,
-    inputSchema: sortSchema(mcpSchemaOf(def.input)),
-    outputSchema: sortSchema(mcpSchemaOf(def.output)),
+    inputSchema: sortSchema({ ...toWireSchema(def.input) }),
+    ...(output === undefined ? {} : { outputSchema: sortSchema({ ...output }) }),
     invoke: (input, options = {}) =>
       invoke(target, input, {
         surface: 'mcp',

@@ -16,7 +16,7 @@ const route = (overrides: Partial<Route> = {}): readonly Route[] => [
     offline: 'precache',
     hydrate: 'idle',
     revalidateTags: ['post'],
-    budget: { js: '40kb', lcp: 2000 },
+    budget: { js: '40kb' },
     surface: 'site',
     ...overrides,
   },

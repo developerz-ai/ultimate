@@ -4,13 +4,12 @@ Bun's own runner, one real Postgres database per test worker, sealed network. No
 
 ## One database per worker
 
-Which process a test runs in decides which database it gets. `workerId` reads `ULTIMATE_TEST_WORKER` first, then Bun's own `BUN_TEST_WORKER_ID` / `JEST_WORKER_ID`, then falls back to the pid ([`packages/testing/src/template-db.ts`](../../packages/testing/src/template-db.ts)).
+Which process a test runs in decides which database it gets. `workerId` reads `ULTIMATE_TEST_WORKER` first (set by `x verify`'s coverage run, one per slice), then Bun's own `BUN_TEST_WORKER_ID` / `JEST_WORKER_ID`, then falls back to the pid ([`packages/testing/src/template-db.ts`](../../packages/testing/src/template-db.ts)).
 
 | Command | Processes | Databases |
 |---|---|---|
 | `bun test` | 1, worker 0 | 1 |
 | `x test [type] --workers N` | 1 parent, N Bun workers — `bun test --parallel=N`, which sets `BUN_TEST_WORKER_ID` 1..N | N |
-| `x test [type] --worker I --workers N` | 1, `--shard=I+1/N --isolate`, run with `ULTIMATE_TEST_WORKER=I` | 1 |
 | `bun test --parallel=N` | N, Bun's own split — implies `--isolate`, workers 1..N | N |
 
 **There is no `bun test --workers` flag.** `--workers` belongs to `x test` ([`packages/cli/src/cmd-test.ts`](../../packages/cli/src/cmd-test.ts), [`test-shards.ts`](../../packages/cli/src/test-shards.ts)) and is spent as Bun's `--parallel`; `--parallel` belongs to Bun. `x test` packed the files itself until 2026-08-27 and no longer does — the packer measured the same as Bun's pool and was deleted for it (#342).

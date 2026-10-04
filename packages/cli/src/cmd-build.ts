@@ -26,6 +26,7 @@ import {
   renderStaticReport,
   staticReportData,
 } from './static-report';
+import type { VerifyStepName } from './verify-step';
 
 /**
  * A build target names an entry file the app does not have. `x build` refuses before it spawns the
@@ -277,7 +278,7 @@ async function buildPrebuilt(root: string): Promise<CommandResult> {
 }
 
 /** The static steps `x build` runs before it builds, and `--no-preflight` leaves to the gate. */
-export const PREFLIGHT_STEPS: readonly string[] = [
+export const PREFLIGHT_STEPS: readonly VerifyStepName[] = [
   'typecheck',
   'lint',
   'boundaries',
