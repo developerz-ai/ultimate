@@ -1,0 +1,77 @@
+plan: 101-squeaky-clean-sweep
+title: "Squeaky-clean sweep: every bug, leak, legacy path and open issue, to 25.0.0"
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "sweep 0: merge this plan PR, then triage the 7 already-fixed issues and open the owner-decisions issue; next 01-security.md"
+slices:
+  - file: 00-owner-decisions.md
+    tier: 0
+    sweep: 0
+    status: not_started
+    percent: 0
+  - file: 01-security.md
+    tier: 1
+    sweep: 1
+    status: not_started
+    percent: 0
+  - file: 02-data-integrity.md
+    tier: 2
+    sweep: 2
+    status: not_started
+    percent: 0
+  - file: 03-deps-bun.md
+    tier: 0
+    sweep: 3
+    status: not_started
+    percent: 0
+  - file: 04-correctness.md
+    tier: 0
+    sweep: 4
+    status: not_started
+    percent: 0
+  - file: 05-open-issues-web.md
+    tier: 2
+    sweep: 5
+    status: not_started
+    percent: 0
+  - file: 06-cli-ci-tooling.md
+    tier: 0
+    sweep: 6
+    status: not_started
+    percent: 0
+  - file: 07-cleanup.md
+    tier: 0
+    sweep: 7
+    status: not_started
+    percent: 0
+  - file: 08-windows.md
+    tier: 0
+    sweep: 8
+    status: not_started
+    percent: 0
+  - file: 09-realtime-islands.md
+    tier: 3
+    sweep: 9
+    status: not_started
+    percent: 0
+  - file: 10-carried-backlog.md
+    tier: 0
+    sweep: 10
+    status: not_started
+    percent: 0
+  - file: 11-audit-coverage.md
+    tier: 0
+    sweep: 11
+    status: not_started
+    percent: 0
+  - file: 12-major-25.md
+    tier: 0
+    sweep: 12
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Audit at d7b8c7fa (24.0.0), 2026-10-04: 13 read-only agents in two waves + a Windows audit. Supersedes the open trackers of 2026/08/12/101, 2026/09/22/102, 2026/09/28/101; 2026/10/01/101 and 2026/10/02/101 marked complete. Owner answers are recorded here and in the owner-decisions issue."
+last_updated: 2026-10-04

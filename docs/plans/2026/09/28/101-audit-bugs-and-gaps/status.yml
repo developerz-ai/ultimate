@@ -1,11 +1,11 @@
 plan: 101-audit-bugs-and-gaps
 title: "Audit sweep: bugs, gaps, drift"
-status: in_progress
+status: superseded
 created_by: sebi
 worked_by: ""
 owner: sebi
 percent: 11
-current_focus: "01-core-money-storage.md, 02-db-transaction.md, 03-http-entity.md can start in parallel; owner decisions needed before 09 section A"
+current_focus: "superseded by docs/plans/2026/10/04/101-squeaky-clean-sweep: 01-05 + 07 done (folded into plan 2026/10/02/101 and 23.0.0/24.0.0); 06/08/09 leftovers carried into 06-cli-ci-tooling.md K12-K14, 07-cleanup.md T11, 09-carried-backlog.md, 00-owner-decisions.md"
 slices:
   - file: 01-core-money-storage.md
     tier: 0
@@ -21,7 +21,7 @@ slices:
     percent: 0
   - file: 04-jobs.md
     tier: 3
-    status: done
+    status: complete
     percent: 100
     evidence: "done under plan 2026/10/01/101 (slices 05-06 and their follow-ups), uncommitted on 2026-10-01: step 1 packages/jobs/src/execute-retry.test.ts + driver-settle-parity.test.ts; step 2 driver-parity.test.ts (claim-fenced settle, extended to same-worker re-claims via x_jobs.claims); step 3 SchedulerState.fire / SQL_SCHEDULER_FIRE, scheduler tests; step 4 outbox-relay.test.ts 'a shutdown deadline landing on a manual stop() bounds the wait already in flight'"
   - file: 05-tier4-5-services.md
@@ -48,4 +48,4 @@ slices:
     percent: 10
 evidence: []
 notes: "04-jobs closed 2026-10-01 by plan 2026/10/01/101. The MCP job-tools row of 09-gaps-and-docs.md closed 2026-10-01 by that plan's slice 16 (the jobs dashboard's admin tools); its four doc promises were rewritten to those names the same day. Audited at fcfe31dc (22.8.2). Unaudited: realtime server, render SSR, db migrate/drift, entity repos/tenancy, http pipeline stages, auth oauth/jwks, most guards and CLI generators."
-last_updated: 2026-10-03
+last_updated: 2026-10-04
