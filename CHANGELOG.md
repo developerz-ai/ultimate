@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 24.0.0 - 2026-10-04
+
 **24.0.0 in progress: deep dive — gaps, problems, bugs**
 ([`docs/plans/2026/10/02/101-deep-dive-gaps-bugs/`](docs/plans/2026/10/02/101-deep-dive-gaps-bugs/overview.md)).
 Every breaking entry below has a manual edit in the
@@ -2065,6 +2069,35 @@ Tier 5 — cli (slice 13b).
   last of them ends. Babel installs its own on the first transform, and a second transform that
   started meanwhile saved Babel's and put it back, so a later error in that process — in `x dev`,
   or a test run that bundles islands — printed `Error:` for its own class.
+
+### Commits
+
+- docs: plan 101 slice 15b — doc drift closed against the tree; a persist restore fenced to its principal (#615) (#645)
+- refactor(cli,core): plan 101 slice 14d — one config loader; slice 14's CHANGELOG and upgrade rows (#615) (#644)
+- refactor: plan 101 slice 14c — one wire schema, one shard flag, no LCP budget (#615) (#643)
+- refactor: plan 101 slice 14b — one X_NOT_IMPLEMENTED class, each error beside its thrower (#615) (#642)
+- refactor(core): plan 101 slice 14a — one home per helper (#615) (#641)
+- fix(ci,helm,cli): plan 101 slice 13b — SHA-pinned actions, a fenced and bounded chart, a kernel-picked sync port (#615) (#639)
+- fix(scripts,cli): plan 101 slice 13a — honest guards, spawn timeouts, CHANGELOG↔Upgrading pairing (#615) (#638)
+- fix(cli,http): plan 101 slice 12b — schema left to migrate, ISR tag busts that land, a loopback-only dev dashboard (#615) (#637)
+- fix(cli,policy,seo): plan 101 slice 12a — safe static export, borrowed permissions refused, sitemap parts served (#615) (#636)
+- fix(admin): plan 101 slice 11b — keyset paging past ties and NULLs, optimistic edits, atomic audit (#615) (#635)
+- fix(testing,scraping): plan 101 slice 11a — isolated island fixtures, race-safe template DB, an egress the caller cannot bypass (#615) (#634)
+- fix(ai): plan 101 slice 10b — a tool result hides a 5xx cause, a gateway budget that holds per actor, per org and under concurrency (#615) (#633)
+- fix(http,mcp,mail,notify,manifest,schema): plan 101 slice 10a — a spent address is refused before authenticate, MCP hides a 5xx cause, mail rides the caller's transaction (#615) (#632)
+- fix(ui,render,cli): plan 101 slice 09b — QR codes that scan, a theme default the toggle keeps, centring that survives RTL (#615) (#631)
+- fix(http,render,pwa,core): plan 101 slice 09a — an ISR render that hangs frees its path, one route rank, scroll restored, worker rules that match what the browser sends (#615) (#630)
+- fix(realtime,core,cli): plan 101 slice 08 — a replication stream that restarts, rows revived across the bus, a queue that never changes hands (#615) (#626)
+- fix(jobs,cli): plan 101 slice 07 — a poisoned job is buried, not re-claimed forever; a loop that does not spin; one clock for an event wait (#615) (#625)
+- fix(action,cli,http): plan 101 slice 06 — replayable mutators, a bust and a settle that ride the transaction, one manifest check (#615) (#624)
+- fix(query,entity,admin,mcp): plan 101 slice 06 — one comparison rule that agrees with Postgres, a limit that bounds every page (#623)
+- fix(auth,testing): plan 101 slice 05 — a disabled user's keys stop, lockout is a reservation, the second factor completes, mfa_secret is sealed (#622)
+- fix(http,testing): plan 101 slice 04 — login CSRF, metered auth failures, a private verdict on health, both cookies on the wire; a browser launch that survives a cold runner (#615) (#620)
+- fix(entity,policy,db): plan 101 slice 04 — a transition that names no row moves none, numeric invariants by value, runnable drift fixes (#619)
+- fix(cache,seo,storage,money,render): plan 101 slice 03 — purge keys that reach a response, measured promotion, torn-write-proof local disk (#618)
+- fix(db,time,i18n,flags): plan 101 slices 02–03 — transactions that report an abort, primary-key migrations, cron fall-back hour (#617)
+- fix(core,schema): plan 101 slice 01 — tier-0 bounds, dates, coercion, config, redaction (#616)
+- docs(plans): 101 — deep dive: gaps, problems, bugs (#614)
 
 ## 23.0.0 - 2026-10-02
 
