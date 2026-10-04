@@ -3,7 +3,7 @@
 // of 2026-08`, is a build gate: no step of `x verify` calls the asserts that throw them (see
 // `README.md`), so they fail the app that calls one itself and nothing else.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { NotImplementedError, registerErrorCodes, UltimateError } from '@ultimat3/core';
 // errors.ts <-> images.ts: images.ts throws imageQueryInvalid() and this file spells its fix
 // using images.ts's IMAGE_QUERY_KEYS. Safe like core's errors.ts <-> error-codes.ts cycle:
 // nothing at this module's top level reads the import, only the factory body below does, and by
@@ -29,7 +29,9 @@ export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES
  * deliberately not among them: `@ultimat3/render` owns `X_BUDGET_EXCEEDED` and `@ultimat3/cli`'s
  * `checkBudgets` is the gate that throws it, so seo naming the same condition was a second code
  * for one fault whose only thrower was its own test. `errors.test.ts` pins the set.
- * `X_NOT_IMPLEMENTED` and `X_IMAGE_UNSUPPORTED` are core's; `SeoError` throws them, untitled here.
+ * `X_NOT_IMPLEMENTED` is core's, and so is its one constructor: `notImplementedDriver` below builds
+ * core's `NotImplementedError`, never a `SeoError` carrying the code. `X_IMAGE_UNSUPPORTED` is
+ * core's codec's, untitled here.
  */
 registerErrorCodes({
   X_SEO_META_MISSING: { title: 'a site/ route is missing required metadata' },
@@ -43,7 +45,7 @@ registerErrorCodes({
 });
 
 export interface SeoErrorInit {
-  readonly code: SeoErrorCode | 'X_NOT_IMPLEMENTED';
+  readonly code: SeoErrorCode;
   readonly cause: string;
   readonly fix: string;
   readonly meta?: Readonly<Record<string, unknown>>;
@@ -180,9 +182,12 @@ export function imageQueryInvalid(param: string, value: string, reason: string):
  * `at` is the driver's own module path — pass `import.meta.path`. It is required because
  * `driver` is a display name, and a fix an agent cannot open is not a fix.
  */
-export function notImplementedDriver(driver: string, capability: string, at: string): SeoError {
-  return new SeoError({
-    code: 'X_NOT_IMPLEMENTED',
+export function notImplementedDriver(
+  driver: string,
+  capability: string,
+  at: string,
+): NotImplementedError {
+  return new NotImplementedError({
     cause: `the ${driver} image driver does not implement ${capability} yet`,
     fix:
       `implement ${capability} in ${at}, or swap the driver for builtinImageDriver({ read }) ` +

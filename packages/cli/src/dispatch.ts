@@ -6,9 +6,9 @@ import { isAbsolute, resolve } from 'node:path';
 import { setLogStream } from '@ultimat3/core';
 import { requireAppRoot, requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
-import { plannedCommandFor } from './cmd-planned';
+import { plannedCommandError, plannedCommandFor } from './cmd-planned';
 import type { CommandContext } from './command';
-import { CliNotImplementedError, UnknownCommandError } from './errors';
+import { UnknownCommandError } from './errors';
 import type { Runner } from './exec';
 import { exec } from './exec';
 import type { CommandResult } from './output';
@@ -91,10 +91,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     // X_NOT_IMPLEMENTED with a runnable fix. Substituted here rather than in `parse.ts`, which is
     // pure and knows nothing about what a command means; the precedent is the help swap below.
     const planned = plannedCommandFor(commandFor(options.argv[0] ?? '')?.spec.name);
-    const failure =
-      planned === undefined
-        ? error
-        : new CliNotImplementedError({ feature: `x ${planned.name}`, fix: planned.fix });
+    const failure = planned === undefined ? error : plannedCommandError(planned);
     // `wantsJson`, not `includes('--json')`: a typo'd flag or a typo'd command is exactly the case
     // an agent hits while always passing `-j`, and the short form rendered prose it then parsed.
     const result = errorResult(planned?.name ?? 'x', failure);

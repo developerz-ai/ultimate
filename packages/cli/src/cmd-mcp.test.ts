@@ -6,14 +6,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
+import { NotImplementedError, UltimateError } from '@ultimat3/core';
 import { MCP_UNAUTHENTICATED_LIMIT } from '@ultimat3/mcp';
 import { resetAppLoad } from './app-load';
 import { REQUIRED_BUN } from './app-root';
 import type { McpHttpServer } from './cmd-mcp';
 import { mcpCommand, startMcpHttp, stdioResult } from './cmd-mcp';
 import type { CommandContext } from './command';
-import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { createDevMcpServer } from './mcp-host';
 import { renderJson } from './output';
@@ -31,8 +30,8 @@ const FILES: Readonly<Record<string, string>> = {
 
 /** No subprocess is reachable from `x mcp tools` or the HTTP mount; a call here is the bug. */
 const runner: Runner = (command) => {
-  throw new CliNotImplementedError({
-    feature: `a subprocess from x mcp (${command.join(' ')})`,
+  throw new NotImplementedError({
+    cause: `a subprocess from x mcp (${command.join(' ')}) is not implemented in this build`,
     fix: 'x mcp tools --json',
   });
 };

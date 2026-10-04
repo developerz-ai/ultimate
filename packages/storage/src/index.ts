@@ -92,7 +92,6 @@ export {
   signedUrlRejected,
   signedUrlUnverifiable,
   signingSecretMissing,
-  storageNotImplemented,
   tooLarge,
   uploadFailed,
 } from './errors';

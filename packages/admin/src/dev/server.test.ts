@@ -219,6 +219,7 @@ describe('a panel that draws itself', () => {
     expect(html).toContain('<details><summary>--json</summary>');
     const refused = await (await dashboard.handle(new Request('http://x/_x/failing')))?.text();
     expect(refused).not.toContain('id="drawn"');
-    expect(refused).toContain('X_NOT_IMPLEMENTED');
+    // An uncoded throw is core's `X_INTERNAL` on the panel, never a claim that a feature is missing.
+    expect(refused).toContain('X_INTERNAL');
   });
 });

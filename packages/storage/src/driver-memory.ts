@@ -5,7 +5,7 @@
 // It exists because the alternative was written by hand in every suite that needed a bucket: a
 // fake with three methods and five `unsupported()` stubs, each a slightly different contract.
 
-import { type Clock, finiteCount, systemClock } from '@ultimat3/core';
+import { type Clock, finiteCount, NotImplementedError, systemClock } from '@ultimat3/core';
 import {
   assertListOptions,
   assertPutOptions,
@@ -24,7 +24,7 @@ import {
   toBytes,
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
-import { checksumMismatch, getTooLarge, objectNotFound, storageNotImplemented } from './errors';
+import { checksumMismatch, getTooLarge, objectNotFound } from './errors';
 import { assertSafeKey } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
@@ -106,10 +106,11 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       // The same refusal both shipped disks make: a `put()` that succeeds in a test and throws in
       // production is a gap an app meets on the worst day.
       if (putOptions?.serverSideEncryption !== undefined) {
-        throw storageNotImplemented(
-          'server-side encryption on the memory driver (it holds bytes in a Map)',
-          'drop serverSideEncryption from put(), and encrypt the disk itself — an s3Driver over a bucket with a default KMS rule',
-        );
+        throw new NotImplementedError({
+          cause:
+            'server-side encryption on the memory driver (it holds bytes in a Map) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule',
+          fix: 'put(key, body)',
+        });
       }
       assertPutOptions(DRIVER_NAME, putOptions);
       const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });

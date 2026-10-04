@@ -8,12 +8,11 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join, relative } from 'node:path';
 import { invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { resetLifecycle } from '@ultimat3/core';
+import { NotImplementedError, resetLifecycle } from '@ultimat3/core';
 import type { StalePin } from './app-reload-graph';
 import type { DevServer } from './cmd-dev';
 import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES, resetRegistries } from './cmd-dev-fixture';
-import { CliNotImplementedError } from './errors';
 
 const ROOT = join(import.meta.dir, '..', '.dev-reload-fixture');
 
@@ -132,8 +131,8 @@ afterAll(async () => {
 const page = async (path: string): Promise<string> => {
   const handle = server.running.server;
   if (handle === null) {
-    throw new CliNotImplementedError({
-      feature: 'fetching from x dev without the web role',
+    throw new NotImplementedError({
+      cause: 'fetching from x dev without the web role is not implemented in this build',
       fix: 'x dev --role web',
     });
   }

@@ -3,8 +3,8 @@
 // does not exist", which is false and sends an agent looking for a typo. X_NOT_IMPLEMENTED plus a
 // fix naming the closest shipped command says the true thing, and `x help` lists them honestly.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type { CliCommand } from './command';
-import { CliNotImplementedError } from './errors';
 import type { CommandResult } from './output';
 import type { CommandSpec } from './parse';
 
@@ -134,17 +134,27 @@ export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [
  * the error rather than throwing it, because a `run` that throws synchronously escapes the
  * promise its signature promises — the caller does `throw plannedSubcommand(...)`.
  */
-export function plannedSubcommand(command: string, subcommand: string): CliNotImplementedError {
+export function plannedSubcommand(command: string, subcommand: string): NotImplementedError {
   const planned = PLANNED_SUBCOMMANDS.find(
     (entry) => entry.command === command && entry.subcommand === subcommand,
   );
-  return new CliNotImplementedError({
-    feature: `x ${command} ${subcommand}`,
+  return new NotImplementedError({
+    cause: `x ${command} ${subcommand} is not implemented in this build`,
     // `x help <command>`, not `x <command> --help`: for a command that declares subcommands and no
     // default, the latter is refused by the parser before help is ever rendered.
     fix: planned?.fix ?? `x help ${command}`,
   });
 }
+
+/**
+ * What every invocation of a planned command answers — its `run`, and the dispatcher when the
+ * parser refused a flag before any `run` was reached. One builder, so the two cannot drift.
+ */
+export const plannedCommandError = (planned: PlannedCommand): NotImplementedError =>
+  new NotImplementedError({
+    cause: `x ${planned.name} is not implemented in this build`,
+    fix: planned.fix,
+  });
 
 const specFor = (planned: PlannedCommand): CommandSpec => ({
   name: planned.name,
@@ -167,10 +177,7 @@ const toCommand = (planned: PlannedCommand): CliCommand => ({
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.
   async run(): Promise<CommandResult> {
-    throw new CliNotImplementedError({
-      feature: `x ${planned.name}`,
-      fix: planned.fix,
-    });
+    throw plannedCommandError(planned);
   },
 });
 

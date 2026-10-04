@@ -6,6 +6,7 @@
 // (XADD / XREADGROUP / XACK), `XAUTOCLAIM` for the visibility timeout, a ZSET for delayed
 // and suspended runs, and step records in a hash keyed by run id.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type {
   ClaimedJob,
   ClaimOptions,
@@ -16,7 +17,6 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { JobsNotImplementedError } from './errors';
 import type { StepRecord, StepStore } from './steps';
 
 // Names the seam that actually replaces the stub, and NOTHING ELSE — the two other repairs this
@@ -37,7 +37,10 @@ const FIX =
   'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it';
 
 const unavailable = (method: string): never => {
-  throw new JobsNotImplementedError({ feature: `redis jobs driver (${method})`, fix: FIX });
+  throw new NotImplementedError({
+    cause: `redis jobs driver (${method}) is not implemented`,
+    fix: FIX,
+  });
 };
 
 const redisStepStore = (): StepStore => ({

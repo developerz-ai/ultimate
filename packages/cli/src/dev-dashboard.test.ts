@@ -14,6 +14,7 @@ import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3
 import {
   configureTelemetry,
   createContext,
+  NotImplementedError,
   resetTelemetry,
   runWithContext,
   withSpan,
@@ -24,7 +25,6 @@ import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 import { createStatementLedger } from './dev-n-plus-one';
 import { createTraceRecorder } from './dev-traces';
-import { CliNotImplementedError } from './errors';
 import type { DevServices, ServiceBinding } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
 
@@ -107,8 +107,8 @@ function caughtOutbox(fixture: readonly SentMail[]): MemoryMailDriver {
     // `panelFor`'s reason: a throw with no code and no fix is not an instruction.
     send: (): Promise<never> =>
       Promise.reject(
-        new CliNotImplementedError({
-          feature: 'sending through the caught-outbox fixture',
+        new NotImplementedError({
+          cause: 'sending through the caught-outbox fixture is not implemented in this build',
           fix: 'x dev   # boots the memory driver that does catch mail',
         }),
       ),
@@ -151,8 +151,8 @@ const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
             // not an instruction to whoever does reach it.
             send: (): Promise<never> =>
               Promise.reject(
-                new CliNotImplementedError({
-                  feature: `sending through the ${fake.transport} fixture transport`,
+                new NotImplementedError({
+                  cause: `sending through the ${fake.transport} fixture transport is not implemented in this build`,
                   fix: 'x dev   # boots the transport the credential selects, which does send',
                 }),
               ),
@@ -175,8 +175,8 @@ const panelFor = (input: DevDashboardInput, key: string): DevPanel => {
   const panel = devPanels(input).find((candidate) => candidate.key === key);
   // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
   if (panel === undefined) {
-    throw new CliNotImplementedError({
-      feature: `a /_x panel named "${key}"`,
+    throw new NotImplementedError({
+      cause: `a /_x panel named "${key}" is not implemented in this build`,
       fix: 'x dev --json   # `panels` lists every key devPanels() mounts',
     });
   }

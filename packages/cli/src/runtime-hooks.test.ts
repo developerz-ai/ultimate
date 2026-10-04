@@ -12,7 +12,7 @@ import {
   t,
   toRoute,
 } from '@ultimat3/action';
-import { userActor } from '@ultimat3/core';
+import { NotImplementedError, userActor } from '@ultimat3/core';
 import type { AuthzDecision, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import {
   configureAuthenticator,
@@ -29,7 +29,6 @@ import {
   defineRoles,
 } from '@ultimat3/policy';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
-import { CliNotImplementedError } from './errors';
 import { devHooks } from './runtime-hooks';
 import { appRoutes } from './runtime-render';
 
@@ -46,8 +45,8 @@ const decide = async (route: Route, ctx: RequestContext): Promise<AuthzDecision>
   const authorize = devHooks().authorize;
   // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
   if (authorize === undefined) {
-    throw new CliNotImplementedError({
-      feature: 'an authorize hook on devHooks()',
+    throw new NotImplementedError({
+      cause: 'an authorize hook on devHooks() is not implemented in this build',
       fix: 'return authorize from devHooks() in packages/cli/src/runtime-hooks.ts',
     });
   }
@@ -115,8 +114,8 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     });
     const route = appRoutes({ buildId: 'test' })[0];
     if (route === undefined) {
-      throw new CliNotImplementedError({
-        feature: 'a route table for the registered settings page',
+      throw new NotImplementedError({
+        cause: 'a route table for the registered settings page is not implemented in this build',
         fix: 'x routes --json   # every route registerRoute() holds',
       });
     }

@@ -10,7 +10,6 @@ import {
   isPolicyDenial,
   LiveQueryUnknownError,
   LiveRowUnidentifiedError,
-  NotImplementedError,
   POLICY_DENIAL_CODES,
   REALTIME_BORROWED_ERROR_CODES,
   REALTIME_CLIENT_FAULT_CODES,
@@ -225,18 +224,6 @@ describe('isPolicyDenial', () => {
 });
 
 describe('the refusals with a fixed next step', () => {
-  test('X_NOT_IMPLEMENTED names what is missing and carries the caller-supplied fix verbatim', () => {
-    const error = new NotImplementedError({
-      what: 'the redis transport',
-      fix: 'x doctor transport',
-    });
-    expect(error.code).toBe('X_NOT_IMPLEMENTED');
-    expect(error.cause).toBe(
-      'the redis transport is interface-complete but not implemented in this build',
-    );
-    expect(error.fix).toBe('x doctor transport');
-  });
-
   test('X_REPLICATOR_SLOT_HELD names the holder only when one is known, and always the scale fix', () => {
     const known = new ReplicatorSlotHeldError({ key: '42', holder: 'pid 7' });
     const unknown = new ReplicatorSlotHeldError({ key: '42' });

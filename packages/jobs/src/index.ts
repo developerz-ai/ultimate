@@ -194,7 +194,6 @@ export {
   JobNotCancellableError,
   JobRowStatusUnknownError,
   JobSlotLostError,
-  JobsNotImplementedError,
   JobTenantRequiredError,
   JobTimeoutError,
   LeaseLostError,

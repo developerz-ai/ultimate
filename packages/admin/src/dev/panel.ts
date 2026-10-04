@@ -2,7 +2,7 @@
 // draws — and because `data()` returns plain JSON, `--json` and the rendered tab are the
 // same facts by construction.
 
-import { renderThrowable, stringField } from '@ultimat3/core';
+import { InternalError, renderThrowable, stringField } from '@ultimat3/core';
 import type { DevSources } from './facts';
 
 export interface DevPanel<Data = unknown> {
@@ -53,7 +53,9 @@ export async function panelPayload(
       panel: panel.key,
       ok: false,
       error: {
-        code: stringField(error, 'code') ?? 'X_NOT_IMPLEMENTED',
+        // Core's code for a failure nothing classified. `X_NOT_IMPLEMENTED` was here, and it told
+        // the reader a feature was missing when a source had thrown something with no code at all.
+        code: stringField(error, 'code') ?? InternalError.code,
         cause: stringField(error, 'cause') ?? renderThrowable(error),
         fix: stringField(error, 'fix') ?? 'x dev --help',
       },

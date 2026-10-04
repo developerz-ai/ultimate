@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/admin. Every one names the exact edit that fixes it,
 // because the two dashboards fail at boot (bad registry, bad mount) where an agent has no
 // stack trace to reason from — only the message.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { NotImplementedError, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const ADMIN_OWNED_ERROR_CODES = [
@@ -32,8 +32,8 @@ export const ADMIN_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `DevSourceUnavailableError` throws it; this package
- * neither titles nor registers it, because the owner's title is the only one that may exist.
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `DevSourceUnavailableError` IS core's
+ * `NotImplementedError`, narrowed; this package neither constructs, titles nor registers the code, because the owner's title is the only one that may exist.
  */
 export const ADMIN_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
 
@@ -254,11 +254,15 @@ export class AdminPagePathInvalidError extends UltimateError {
  * A `/_x` panel needs a fact the framework cannot introspect on its own — request traces,
  * caught mail, the read-only SQL tool, the committed manifest. Thrown instead of drawing an
  * empty panel, because an empty panel reads as "nothing happened".
+ *
+ * Core's NotImplementedError and not a sibling of it: core is the one constructor of the code.
+ * A class of its own all the same, because a panel degrades on "this source is not wired" and on
+ * nothing wider — a wired source whose driver answers X_NOT_IMPLEMENTED is a diagnostic, not an
+ * unwired tab (dev/panel-degrade.test.ts).
  */
-export class DevSourceUnavailableError extends UltimateError {
+export class DevSourceUnavailableError extends NotImplementedError {
   constructor(input: { source: string; panel: string; wiring?: string }) {
     super({
-      code: 'X_NOT_IMPLEMENTED',
       cause: `the /_x ${input.panel} panel needs the "${input.source}" source, which is not wired in this process`,
       // `wiring`, when supplied, replaces the whole `defaultDevSources(...)` argument text —
       // the default `hooks: { <source> }` phrasing is only valid when the source really is a

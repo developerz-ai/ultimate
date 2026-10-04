@@ -12,7 +12,14 @@ import { readShard } from './cmd-verify';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { thrownBy } from './thrown-by';
-import { assertShardable, corpusHash, parseShard, readTimings, shardFiles } from './verify-shard';
+import {
+  assertShardable,
+  corpusHash,
+  parseShard,
+  readTimings,
+  shardFiles,
+  VerifyShardInvalidError,
+} from './verify-shard';
 
 const corpus = Array.from({ length: 23 }, (_, i) => `pkg/f${String(i).padStart(2, '0')}.test.ts`);
 
@@ -22,6 +29,8 @@ describe('unit · --shard refusals', () => {
       expect(thrownBy(() => parseShard(raw)).code).toBe('X_VERIFY_SHARD_INVALID');
     }
     expect(thrownBy(() => parseShard('5/4')).fix).toContain('--shard 4/4');
+    // Declared beside the parser that raises it, never in a file split off for size.
+    expect(() => parseShard('3')).toThrow(VerifyShardInvalidError);
   });
 
   test('every refusal is spelled for the entry that raised it', () => {

@@ -2,7 +2,8 @@
 // `cmd-generate.ts` so a generator's output can be asserted on — by the generator tests, the
 // scaffold fixture and `x new` — without a command line, an app root or a filesystem.
 
-import { BadFlagError, CliNotImplementedError } from './errors';
+import { NotImplementedError } from '@ultimat3/core';
+import { BadFlagError } from './errors';
 import type { Generator } from './generate-kinds';
 import { assertLiveSupported, assertSurfaceSupported, GENERATORS } from './generate-kinds';
 import { dedupe } from './generate-write';
@@ -233,8 +234,8 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         }),
       );
     default:
-      throw new CliNotImplementedError({
-        feature: `generator "${String(options.kind)}"`,
+      throw new NotImplementedError({
+        cause: `generator "${String(options.kind)}" is not implemented in this build`,
         fix: `x g ${GENERATORS.join('|')}`,
       });
   }

@@ -81,7 +81,6 @@ export {
   redirectLoop,
   remoteRequired,
   robotsDisallowed,
-  scrapeNotImplemented,
   scrapeTimeout,
   secretExposed,
   selectorMissing,

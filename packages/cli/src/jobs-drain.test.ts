@@ -3,9 +3,9 @@
 // always granted a lease would assert nothing: not leasing is exactly the case that must be safe.
 
 import { describe, expect, test } from 'bun:test';
+import { NotImplementedError } from '@ultimat3/core';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
 import { createMemoryDriver, createRedisDriver } from '@ultimat3/jobs';
-import { CliNotImplementedError } from './errors';
 import { drainJobs } from './jobs-drain';
 import { listJobs } from './jobs-report';
 
@@ -260,7 +260,10 @@ describe('unit · a refused row is tried once', () => {
       enqueue: (request) =>
         request.name === 'bad'
           ? Promise.reject(
-              new CliNotImplementedError({ feature: 'the bad job', fix: 'x jobs ls --json' }),
+              new NotImplementedError({
+                cause: 'the bad job is not implemented in this build',
+                fix: 'x jobs ls --json',
+              }),
             )
           : inner.enqueue(request),
     };

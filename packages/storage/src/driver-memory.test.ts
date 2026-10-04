@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`.
 import { tmpdir } from 'node:os';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { sha256Base64 } from './driver';
 import { localDriver } from './driver-local';
@@ -117,6 +117,9 @@ describe('the memory disk answers as the local disk does', () => {
           driver.put('a.txt', bytes('x'), { serverSideEncryption: { algorithm: 'AES256' } }),
         ),
       ]).toEqual([name, 'X_NOT_IMPLEMENTED']);
+      await expect(
+        driver.put('a.txt', bytes('x'), { serverSideEncryption: { algorithm: 'AES256' } }),
+      ).rejects.toBeInstanceOf(NotImplementedError);
     }
   });
 

@@ -36,9 +36,8 @@ import { isUltimateError, renderThrowable } from '@ultimat3/core';
 // The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
 import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
 import { BadFlagError, MissingPositionalError } from '../packages/cli/src/errors';
-import { VerifyMergeInputError } from '../packages/cli/src/verify-errors';
 import { readVerifyFloor } from '../packages/cli/src/verify-floor';
-import { mergeParts, parsePart } from '../packages/cli/src/verify-merge';
+import { mergeParts, parsePart, VerifyMergeInputError } from '../packages/cli/src/verify-merge';
 import { stepStream } from '../packages/cli/src/verify-progress';
 import { readTimings } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';

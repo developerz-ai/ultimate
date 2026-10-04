@@ -1,7 +1,7 @@
-// Single responsibility: the OAuth half of this package's error factories — every refusal a
-// provider handshake can produce, and the one phrase their fixes are built from.
-// Split from `errors.ts` at the 500-line ceiling; the codes, the titles and the single
-// `registerErrorCodes()` call stay there, so this file adds no code and registers nothing.
+// Single responsibility: the OAuth refusals more than one OAuth module raises, and the one phrase
+// every "start over" fix is built from. A refusal with one thrower lives beside it (`oauthDenied`
+// in `oauth-route.ts`, the linking ones in `oauth-login.ts`); the codes, titles and the single
+// `registerErrorCodes()` call stay in `errors.ts`, so this file adds no code and registers nothing.
 
 import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import { AuthError } from './errors';
@@ -24,30 +24,6 @@ export const oauthStateInvalid = (provider: string, part: string): AuthError =>
 /** The one phrase every "start over" fix is built from, so none of them can name a dead route. */
 export const restartAt = (provider: string): string =>
   `restart the flow at GET ${oauthStartPath(provider)}`;
-
-/**
- * The provider came back with `error=` and no code — almost always the user pressing Cancel.
- * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
- * misconfigured, and folding the single commonest non-success outcome of a login into the code
- * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
- */
-export const oauthDenied = (
-  provider: string,
-  reason: string,
-  description: string | null,
-): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_DENIED',
-    // `reason` and `description` are query parameters off the callback URL — whatever the browser
-    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
-    // string literals, so a forged `error_description` cannot forge a second log line or break the
-    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
-    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
-      description === null ? '' : ` (${renderCauseValue(description)})`
-    }`,
-    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
-    meta: { provider, reason },
-  });
 
 /**
  * A URL segment naming a provider no `registerOAuthProvider` call has claimed, or one that is but
@@ -76,19 +52,6 @@ export const oauthProviderUnknown = (provider: string, supported: readonly strin
     code: 'X_OAUTH_PROVIDER_UNKNOWN',
     cause: `no oauth provider is mounted at ${renderCauseValue(oauthStartPath(provider))}`,
     fix: `registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) if it is not built in, then add that id to defineAuth({ providers: [...] }) — known here: ${supported.map((id) => `'${id}'`).join(', ')}`,
-    meta: { provider },
-  });
-
-/**
- * Two `registerOAuthProvider` calls claiming one id. A silent replacement would let whichever
- * module imported second decide where every login for that id goes — including which `issuers`
- * an id token may claim — so the second registration refuses at boot instead.
- */
-export const oauthProviderDuplicate = (provider: string): AuthError =>
-  new AuthError({
-    code: 'X_OAUTH_PROVIDER_DUPLICATE',
-    cause: `an oauth provider is already registered as ${renderCauseValue(provider)}, so the second registration would silently replace the first`,
-    fix: `give one of them a different id, or delete the duplicate registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) call`,
     meta: { provider },
   });
 
@@ -123,49 +86,6 @@ export const oauthExchangeFailed = (failure: OAuthExchangeFailure): AuthError =>
       stage: failure.stage,
       ...(failure.status === undefined ? {} : { status: failure.status }),
     },
-  });
-
-/**
- * The address is proven to the provider, and an account that never proved it already holds it.
- * Naming that is not account enumeration — this caller just demonstrated they own the address —
- * and staying silent would leave them with a login that fails forever and no way out.
- *
- * The address itself rides in `meta`, never in `cause`: a log pipeline can redact a field by
- * key, and cannot redact an address that was already interpolated into a sentence.
- */
-export const oauthAccountNotLinked = (provider: string, email: string): AuthError =>
-  new AuthError({
-    code: 'X_UNAUTHENTICATED',
-    cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
-    fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
-    meta: { provider, email },
-  });
-
-/**
- * `link: 'never'` and a local account already holds the address. Same code and same disclosure
- * rule as `oauthAccountNotLinked` — the caller proved to the provider that the address is theirs,
- * so naming the collision is not enumeration — and the address rides in `meta`, never in `cause`.
- */
-export const oauthLinkingDisabled = (provider: string, email: string): AuthError =>
-  new AuthError({
-    code: 'X_UNAUTHENTICATED',
-    cause: `an account already holds this address and defineAuth({ link: 'never' }) forbids ${provider} from claiming it`,
-    fix: "sign in with that account's own credentials, or set link: 'verified-email' in defineAuth to let a provider-verified address claim a locally-verified account",
-    meta: { provider, email },
-  });
-
-/**
- * `CreateUserInput` carries no `emailVerifiedAt`, so a provider-verified address takes a second
- * write. Falling back to the unstamped row would mint a session for a user every later login
- * reads as unverified — the exact state `resolveUser` refuses to link a provider to — so the
- * flow fails closed on an adapter that loses the stamp instead of half-succeeding.
- */
-export const emailVerifiedNotStored = (provider: string, userId: string): AuthError =>
-  new AuthError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
-    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
-    meta: { provider, userId },
   });
 
 /** The token arrived, and is not one this handshake can trust: wrong `iss`, `aud`, or expired. */

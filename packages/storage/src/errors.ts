@@ -32,8 +32,8 @@ export const STORAGE_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `storageNotImplemented()` throws it and this package
- * keeps no title for it — one code, one owner, one title, or the two copies drift apart in silence.
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. The drivers throw core's own `NotImplementedError`
+ * and this package keeps no title for it — one code, one owner, one title, or the two copies drift apart in silence.
  * `X_IMAGE_UNSUPPORTED` / `X_IMAGE_DECODE_FAILED` are core's too and surface unwrapped (`image.ts`).
  * `X_ENV_MISSING` is core's for the same reason: an unset `STORAGE_SIGNING_SECRET` outside
  * development is a missing environment variable, not a storage concept needing its own code.
@@ -453,13 +453,4 @@ export const signingSecretMissing = (environment: string, disk = 'local'): Stora
     cause: `the ${disk} disk has no usable signing secret (no signingSecret option, and STORAGE_SIGNING_SECRET is unset, empty or the published development key) and the resolved environment is "${environment}", so it would sign URLs with the shipped development key`,
     fix: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
     meta: { key: 'STORAGE_SIGNING_SECRET', environment },
-  });
-
-/** An interface-complete driver whose remote half is not bound yet. Always carries a fix. */
-export const storageNotImplemented = (feature: string, fix: string): StorageError =>
-  new StorageError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `${feature} is declared but not implemented in @ultimat3/storage`,
-    fix,
-    meta: { feature },
   });

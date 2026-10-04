@@ -806,7 +806,7 @@ later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is a
 | `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout. The cause names the caller's own address or email, never an org |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired, wrong, or owned by a user who is gone or disabled |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
-| `X_NOT_IMPLEMENTED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
+| `X_AUTH_WRITE_FAILED` | an `AuthAdapter` lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 
 ```bash
 bun test packages/auth

@@ -4,12 +4,11 @@
 // job-trace shapes depend on.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { assert, type UltimateError } from '@ultimat3/core';
+import { assert, NotImplementedError, type UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { resetJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
-import { JobsNotImplementedError } from './errors';
 import {
   inspectDeadLetters,
   inspectJob,
@@ -168,7 +167,7 @@ async function expectIntrospectionRequired(call: () => Promise<unknown>): Promis
   }
   // Captured, then asserted — inside the `catch` a call that resolved would run no assertion at
   // all, and the guard under test is exactly the thing that must not silently let one through.
-  expect(thrown).toBeInstanceOf(JobsNotImplementedError);
+  expect(thrown).toBeInstanceOf(NotImplementedError);
   const ultimateError = thrown as UltimateError;
   expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
   expect(ultimateError.cause).toContain('introspection for the "memory" jobs driver');

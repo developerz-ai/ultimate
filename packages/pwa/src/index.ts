@@ -25,7 +25,6 @@ export {
 export type { PwaErrorCode } from './errors';
 export {
   BuildIdMissingError,
-  NotImplementedError,
   PWA_ERROR_CODES,
   PWA_ERROR_TITLES,
   PwaIconMissingError,

@@ -1277,7 +1277,6 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobPageInvalidError` | `X_JOB_PAGE_INVALID` | `src/errors-operator.ts` |
 | `JobRowStatusUnknownError` | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
 | `JobSlotLostError` | `X_JOB_SLOT_LOST` | `src/errors.ts` |
-| `JobsNotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
 | `JobTenantRequiredError` | `X_JOB_TENANT_REQUIRED` | `src/errors.ts` |
 | `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
 | `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |

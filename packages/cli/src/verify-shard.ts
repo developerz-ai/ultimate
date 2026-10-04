@@ -5,12 +5,23 @@
 // of the machine, the clock or the order a glob yielded — so job 3 of 8 is the same files on every
 // runner, and a failing shard reproduces locally with the same flags.
 
-import { renderFixShellArg } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 import { CryptoHasher } from 'bun';
 import type { ShardFacts } from './output';
-import { VerifyShardInvalidError } from './verify-errors';
 import type { VerifyStepName } from './verify-step';
 import { GATE_COMMAND } from './verify-step';
+
+/** `x verify --shard` asked for a split the gate cannot make. */
+export class VerifyShardInvalidError extends UltimateError {
+  constructor(input: { reason: string; fix?: string; command?: string }) {
+    const command = input.command ?? GATE_COMMAND;
+    super({
+      code: 'X_VERIFY_SHARD_INVALID',
+      cause: `${command} --shard: ${input.reason}`,
+      fix: input.fix ?? `${command} --only unit --shard 1/4 --json`,
+    });
+  }
+}
 
 /** The steps a shard may split: the parallel suites. `live` and `e2e` are serial by design. */
 export const SHARDABLE_STEPS: readonly VerifyStepName[] = ['unit', 'contract', 'job'];

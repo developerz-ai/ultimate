@@ -8,6 +8,7 @@ import {
   ConfigInvalidError,
   EnvMissingError,
   finiteCount,
+  NotImplementedError,
   renderFixShellArg,
   stringField,
 } from '@ultimat3/core';
@@ -38,7 +39,6 @@ import {
   objectNotFound,
   putFailed,
   readFailed,
-  storageNotImplemented,
 } from './errors';
 import { assertSafeKey } from './path';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
@@ -218,12 +218,12 @@ function isAbsentObject(error: unknown): boolean {
  */
 function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptions): void {
   if (putOptions?.metadata !== undefined || putOptions?.cacheControl !== undefined) {
-    const uri = `s3://${bucket}/${key}`;
-    throw storageNotImplemented(
-      'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet)',
-      `drop metadata/cacheControl from put(), or set them out of band: ` +
-        `aws s3 cp ${uri} ${uri} --metadata-directive REPLACE`,
-    );
+    const uri = renderFixShellArg(`s3://${bucket}/${key}`, '<s3-uri>');
+    throw new NotImplementedError({
+      cause:
+        'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet) is not implemented by this driver — drop metadata/cacheControl from put(), or set them out of band with the command in fix',
+      fix: `aws s3 cp ${uri} ${uri} --metadata-directive REPLACE`,
+    });
   }
   const sse = putOptions?.serverSideEncryption;
   if (sse === undefined) return;
@@ -231,10 +231,11 @@ function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptio
     sse.algorithm === 'aws:kms'
       ? `{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":"${sse.kmsKeyId ?? '<key-arn>'}"}`
       : '{"SSEAlgorithm":"AES256"}';
-  throw storageNotImplemented(
-    'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption)',
-    `set it bucket-wide, then drop serverSideEncryption from put(): aws s3api put-bucket-encryption --bucket ${bucket} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
-  );
+  throw new NotImplementedError({
+    cause:
+      'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption) is not implemented by this driver — set it bucket-wide with the command in fix, then drop serverSideEncryption from put()',
+    fix: `aws s3api put-bucket-encryption --bucket ${renderFixShellArg(bucket, '<bucket>')} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
+  });
 }
 
 export function s3Driver(options: S3DriverOptions): StorageDriver {

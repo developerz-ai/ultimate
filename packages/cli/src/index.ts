@@ -21,7 +21,7 @@ export { appManifest, writeAppManifest } from './app-manifest';
 export { requireAppRoot } from './app-root';
 export type { RouteStats } from './budgets';
 export { checkBudgets, FRAMEWORK_INLINE_SCRIPTS, FRAMEWORK_SCRIPTS } from './budgets';
-export { BUILD_ENTRY, BUILD_TARGETS, readTarget } from './cmd-build';
+export { BUILD_ENTRY, BUILD_TARGETS, BuildEntryMissingError, readTarget } from './cmd-build';
 export { dbCommand } from './cmd-db';
 export { planDeploy } from './cmd-deploy';
 export { startDev } from './cmd-dev';
@@ -69,10 +69,8 @@ export {
 export { checkErrorCodesThrown } from './error-unthrown';
 export {
   BadFlagError,
-  BuildEntryMissingError,
   BunVersionError,
   CatalogExistsError,
-  CliNotImplementedError,
   DeclarationUnknownError,
   ErrorCodeUnknownError,
   FixTargetUnknownError,

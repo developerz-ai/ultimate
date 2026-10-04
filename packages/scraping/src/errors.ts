@@ -45,8 +45,8 @@ export const SCRAPE_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s and `recover.ts` throws it for the agent seam, the
- * way `packages/jobs/src/driver-redis.ts` does for its stub. `X_ENV_MISSING` is core's too: a
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s: `recover.ts`, `cdp-target.ts` and `html-target.ts`
+ * throw it as core's own `NotImplementedError`, never a constructor of this package's. `X_ENV_MISSING` is core's too: a
  * declared secret with no value in the environment is a missing environment variable, not a
  * scraping concept needing its own code. No title is kept here for either — one code, one owner,
  * or the two copies drift.

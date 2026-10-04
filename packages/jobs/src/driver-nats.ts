@@ -3,6 +3,7 @@
 // a durable pull consumer per worker pool (`fetch` == claim, `ack`/`nak` map 1:1),
 // `ack_wait` as the visibility timeout, and a KV bucket for step records.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type {
   ClaimedJob,
   ClaimOptions,
@@ -13,7 +14,6 @@ import type {
   NackOptions,
   QueueStats,
 } from './driver';
-import { JobsNotImplementedError } from './errors';
 import type { StepRecord, StepStore } from './steps';
 
 // Names the seam that actually replaces the stub, and NOTHING ELSE — the two other repairs this
@@ -34,7 +34,10 @@ const FIX =
   'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it';
 
 const unavailable = (method: string): never => {
-  throw new JobsNotImplementedError({ feature: `nats jobs driver (${method})`, fix: FIX });
+  throw new NotImplementedError({
+    cause: `nats jobs driver (${method}) is not implemented`,
+    fix: FIX,
+  });
 };
 
 const natsStepStore = (): StepStore => ({

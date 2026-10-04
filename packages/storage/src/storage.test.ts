@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
-import { isStorageError, storageNotImplemented } from './errors';
+import { isStorageError } from './errors';
 import { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
 
 /** A driver stub: `defineStorage` must not touch the file system or a socket to resolve a name. */
 function stubDriver(name: string): StorageDriver {
   const unused = (op: string): Promise<never> =>
     Promise.reject(
-      storageNotImplemented(`${name}.${op} in a resolution test`, 'use a real driver'),
+      new NotImplementedError({
+        cause: `${name}.${op} is not implemented in a resolution test`,
+        fix: 'use a real driver',
+      }),
     );
   return {
     name,

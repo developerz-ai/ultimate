@@ -25,7 +25,9 @@ describe('panelPayload survives every shape a panel can reject with', () => {
     expect(payload).toMatchObject({
       panel: 'probe',
       ok: false,
-      error: { code: 'X_NOT_IMPLEMENTED', fix: 'x dev --help' },
+      // `X_INTERNAL`, never `X_NOT_IMPLEMENTED`: a value with no code of its own is a failure the
+      // framework could not classify, not a feature nobody built — and core alone constructs that.
+      error: { code: 'X_INTERNAL', fix: 'x dev --help' },
     });
     expect(typeof (payload as { error: { cause: unknown } }).error.cause).toBe('string');
   });
@@ -40,7 +42,7 @@ describe('panelPayload survives every shape a panel can reject with', () => {
       },
     };
     const payload = await render(hostile);
-    expect(payload).toMatchObject({ ok: false, error: { code: 'X_NOT_IMPLEMENTED' } });
+    expect(payload).toMatchObject({ ok: false, error: { code: 'X_INTERNAL' } });
   });
 
   test('an UltimateError-shaped rejection keeps its own code, cause and fix', async () => {

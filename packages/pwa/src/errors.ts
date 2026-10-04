@@ -20,8 +20,9 @@ export const PWA_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. Thrown here, titled only there — the copy this file
- * used to keep was a second title that could drift from core's with nothing to catch it.
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — constructed only there, by core's own
+ * `NotImplementedError`, and titled only there: the copy this file used to keep was a second title
+ * that could drift from core's with nothing to catch it.
  */
 export const PWA_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
 
@@ -127,18 +128,6 @@ export class PwaStrategyExhaustedError extends UltimateError {
       code: PwaStrategyExhaustedError.code,
       cause: `no cached response and the network failed for "${input.cacheName}"`,
       fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
-    });
-  }
-}
-
-/** A driver whose interface exists and whose backing implementation does not, yet. */
-export class NotImplementedError extends UltimateError {
-  static readonly code = 'X_NOT_IMPLEMENTED' as const;
-  constructor(cause: string, fix: string) {
-    super({
-      code: NotImplementedError.code,
-      cause,
-      fix,
     });
   }
 }

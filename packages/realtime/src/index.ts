@@ -62,7 +62,6 @@ export {
   FrameRateLimitError,
   LiveQueryUnknownError,
   LiveRowUnidentifiedError,
-  NotImplementedError,
   OfflineQueueAbandonedError,
   ProtocolVersionError,
   REALTIME_ERROR_CODES,

@@ -3,6 +3,7 @@
 // build actually ships. Each of those three is one assertion below.
 
 import { describe, expect, test } from 'bun:test';
+import { NotImplementedError } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import {
   PLANNED_COMMANDS,
@@ -96,6 +97,8 @@ describe('unit · the planned subcommand table', () => {
   test('an unlisted subcommand still fails as not-implemented, never as a bare throw', () => {
     const error = plannedSubcommand('db', 'nope');
     expect(error).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(error).toBeInstanceOf(NotImplementedError);
+    expect(error.cause).toBe('x db nope is not implemented in this build');
     // `x db --help` is refused by the parser — `db` declares subcommands and no default, so the
     // subcommand is resolved before help is rendered. A fix has to be a command that runs.
     expect(error.fix).toBe('x help db');
@@ -113,6 +116,8 @@ describe('unit · what a planned command tells the caller', () => {
         (error: unknown) => error,
       );
     expect(failure).toBeUltimateError('X_NOT_IMPLEMENTED');
+    // Core's one constructor of the code — the CLI keeps no wrapper of its own beside it.
+    expect(failure).toBeInstanceOf(NotImplementedError);
     expect((failure as { fix: string }).fix).toContain('x dev');
   });
 

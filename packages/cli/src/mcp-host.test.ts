@@ -3,12 +3,11 @@
 // Driven against a fake `DevHost` so nothing here boots a database.
 
 import { describe, expect, test } from 'bun:test';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, NotImplementedError } from '@ultimat3/core';
 import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
 import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
 import { loadCodeFixes } from './error-fixes';
-import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
@@ -404,8 +403,8 @@ describe('unit · the database target', () => {
 });
 
 const noRunner: Runner = (command) => {
-  throw new CliNotImplementedError({
-    feature: `a subprocess in this test (${command.join(' ')})`,
+  throw new NotImplementedError({
+    cause: `a subprocess in this test (${command.join(' ')}) is not implemented in this build`,
     fix: 'x mcp tools --json',
   });
 };

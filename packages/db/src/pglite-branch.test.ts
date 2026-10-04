@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { NotImplementedError } from '@ultimat3/core';
 import { createPgliteClient } from './pglite';
 import { branchPglite, pgliteBranchDir } from './pglite-branch';
 import { sql } from './sql';
@@ -110,6 +111,8 @@ describe('branchPglite', () => {
     const error = await failure(() => branchPglite('feature_x', { from: 'pglite://memory/t' }));
     expect(error.code).toBe('X_NOT_IMPLEMENTED');
     expect(error.fix).toContain('x dev');
+    // Core's one constructor of the code, never a package wrapper beside it.
+    expect(error).toBeInstanceOf(NotImplementedError);
   });
 
   test('a data directory that was never created reports X_DB_UNAVAILABLE', async () => {

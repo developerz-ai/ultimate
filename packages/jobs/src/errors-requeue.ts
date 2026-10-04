@@ -1,5 +1,6 @@
 // Single responsibility: the three refusals `requeue` — `x jobs retry` — gives before it moves a
-// row. Its own module because `errors.ts` sits at the size ceiling; the codes are registered there.
+// row, raised identically by `driver-memory.ts` and `driver-pg.ts`: one answer for both drivers is
+// the point, and neither driver imports the other. The codes are registered in `errors.ts`.
 
 import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import { JobDuplicateError } from './errors';

@@ -64,8 +64,9 @@ describe('signInWithOAuth', () => {
       providers: ['github', 'google'],
     });
 
+    // A runtime fault, not a missing feature: the adapter implements updateUser and lost the write.
     expect(await codeOf(signInWithOAuth(failing, { profile: profile(), tokens: tokens() }))).toBe(
-      'X_NOT_IMPLEMENTED',
+      'X_AUTH_WRITE_FAILED',
     );
     const created = await losing.findUserByEmail('ada@example.com');
     // The row exists and is unverified — which is exactly why signing it in was the bug.

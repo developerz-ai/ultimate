@@ -5,9 +5,24 @@
 // account linking with it. The three built-ins register through the same call an app uses, so the
 // opening does not create a second path.
 
+import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
+import { AuthError } from './errors';
 import type { OAuthProvider } from './oauth';
 import { BUILTIN_OAUTH_PROVIDERS } from './oauth-builtins';
-import { oauthProviderDuplicate, oauthProviderUnknown } from './oauth-errors';
+import { oauthProviderUnknown } from './oauth-errors';
+
+/**
+ * Two `registerOAuthProvider` calls claiming one id. A silent replacement would let whichever
+ * module imported second decide where every login for that id goes — including which `issuers`
+ * an id token may claim — so the second registration refuses at boot instead.
+ */
+export const oauthProviderDuplicate = (provider: string): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_PROVIDER_DUPLICATE',
+    cause: `an oauth provider is already registered as ${renderCauseValue(provider)}, so the second registration would silently replace the first`,
+    fix: `give one of them a different id, or delete the duplicate registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) call`,
+    meta: { provider },
+  });
 
 const registry = new Map<string, OAuthProvider>();
 
