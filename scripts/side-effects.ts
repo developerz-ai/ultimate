@@ -324,7 +324,7 @@ if (import.meta.main) {
           {
             code: 'X_CLI_BAD_FLAG',
             cause,
-            fix: 'bun run scripts/side-effects.ts --unpin packages/action',
+            fix: 'grep -n -A40 "SIDE_EFFECTS_UNDECLARED" scripts/side-effects.ts',
             at: PINS_FILE,
           },
         ],
