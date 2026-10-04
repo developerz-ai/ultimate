@@ -8,8 +8,7 @@
 // why: Bun exposes no path-join primitive; the chart path is handed to helm as one joined string.
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 import { BadFlagError } from './errors';
 
 /** Long enough for a migration a pre-upgrade hook must finish; helm's own 5m default is not. */
@@ -67,16 +66,18 @@ export function readLabel(flag: 'namespace' | 'release', raw: string): string {
  */
 export async function readReleaseName(root: string, flag: string | undefined): Promise<string> {
   if (flag !== undefined) return readLabel('release', flag);
-  const module = (await import(join(root, APP_CONFIG_FILE))) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  const name = isRecord(config) ? config['name'] : undefined;
+  const config = await loadAppConfig(root);
+  // `unknown`, not the declared `string`: core reads an absent name as `"undefined"` and lets it by.
+  const name: unknown = config?.name;
   if (typeof name === 'string' && name.length <= RELEASE_MAX && LABEL.test(name)) return name;
   throw new UltimateError({
     code: 'X_CONFIG_INVALID',
     cause:
       typeof name === 'string'
         ? `app.config.ts names the app "${name.slice(0, 80)}", which is not a helm release name (a DNS-1123 label of at most ${RELEASE_MAX} characters)`
-        : 'app.config.ts exports no config.name, and x deploy --method helm names the release after it',
+        : config === undefined
+          ? `${root} has no app.config.ts, and x deploy --method helm names the release after its config.name`
+          : 'app.config.ts exports no config.name, and x deploy --method helm names the release after it',
     fix: 'name the release explicitly: x deploy --method helm --release my-app --json',
   });
 }

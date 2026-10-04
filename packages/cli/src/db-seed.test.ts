@@ -60,7 +60,7 @@ const seedModule = (name: string, tier: string): string =>
  */
 async function appRoot(seeds: Readonly<Record<string, string>> = {}): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-db-seed-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   mkdirSync(join(dir, 'packages', 'db', 'seeds'), { recursive: true });
   for (const [file, contents] of Object.entries(seeds)) {
     await Bun.write(join(dir, file), contents);

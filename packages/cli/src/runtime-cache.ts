@@ -4,8 +4,6 @@
 // and lru unconditionally, redis on `REDIS_URL` and cdn on any real purge driver, so the key was
 // declared, validated at boot, documented, and read by nothing.
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { CacheTier, PurgeDriver } from '@ultimat3/cache';
 import {
   CacheDriverUnavailableError,
@@ -19,11 +17,9 @@ import {
   registerTier,
   resetTiers,
 } from '@ultimat3/cache';
-import type { CacheTierName } from '@ultimat3/core';
-import { backoffDelay, CACHE_TIERS, defineConfig, logger, renderThrowable } from '@ultimat3/core';
+import type { AppConfig, CacheTierName } from '@ultimat3/core';
+import { backoffDelay, defineConfig, logger, renderThrowable } from '@ultimat3/core';
 import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
 import type { Env } from './runtime-bindings';
 
 /**
@@ -41,7 +37,7 @@ export interface CacheTiersOptions {
   /**
    * `config.cache.tiers`, verbatim. REQUIRED, and that is the enforcement (axiom 3): a boot that
    * has not read the app's declaration cannot call this function at all — it is a type error, not
-   * a convention to remember. `loadCacheTiers` is what a boot holding only a root calls for it.
+   * a convention to remember. `cacheTiersOf` is what a boot holding the loaded config calls for it.
    */
   readonly tiers: readonly CacheTierName[];
   /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
@@ -62,32 +58,9 @@ export const DEFAULT_CACHE_TIERS: readonly CacheTierName[] = defineConfig({
   name: 'cache-defaults',
 }).cache.tiers;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const isTierList = (value: unknown): value is readonly CacheTierName[] =>
-  Array.isArray(value) && value.every((entry) => CACHE_TIERS.some((name) => name === entry));
-
-/**
- * `cache.tiers` out of the app's own `app.config.ts` — the sibling of `app-auth.ts`'s
- * `loadSignInPath`, and structural for the same reason: `defineConfig` returns a plain object, and
- * a config that resolved through an older core simply has no `cache` section.
- *
- * A list this refuses cannot come from `defineConfig` — `validate()` rejects an unknown rung one
- * `await import` above this line — so the fallback is for a hand-written config object, and the
- * two rungs every app starts from are the honest answer for one.
- */
-export async function loadCacheTiers(root: string): Promise<readonly CacheTierName[]> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!existsSync(configPath)) return DEFAULT_CACHE_TIERS;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!isRecord(config)) return DEFAULT_CACHE_TIERS;
-  const cache = config['cache'];
-  if (!isRecord(cache)) return DEFAULT_CACHE_TIERS;
-  const { tiers } = cache;
-  return isTierList(tiers) ? tiers : DEFAULT_CACHE_TIERS;
-}
+/** `cache.tiers` out of the config `startServices` loads once; the defaults for a root with none. */
+export const cacheTiersOf = (config: AppConfig | undefined): readonly CacheTierName[] =>
+  config?.cache.tiers ?? DEFAULT_CACHE_TIERS;
 
 /**
  * `REDIS_URL` is the same "an unset variable means the embedded default" law the db, events,

@@ -34,7 +34,7 @@ let root = '';
  */
 async function seedApp(options: { readonly linked?: boolean } = {}): Promise<string> {
   root = mkdtempSync(join(tmpdir(), 'x-i18n-cmd-'));
-  await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // The one dependency the app's i18n module imports, linked to this checkout's own copy (one
   // realpath, so one registry): without it the module cannot load, and `add`/`sync` answer with
   // that load finding — which is a failure, and is the subject of exactly one test below.

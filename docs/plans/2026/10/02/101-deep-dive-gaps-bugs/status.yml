@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"          # executor fills with their git user.name
 owner: sebi
-percent: 85
-current_focus: "PR 13 — scripts and CI (13-scripts-ci.md)"
+percent: 95
+current_focus: "PR 15 — owner decisions and doc drift (15-owner-decisions-docs.md)"
 slices:
   - file: 01-core-schema.md
     tier: 0
@@ -69,12 +69,14 @@ slices:
     evidence: "PR 12b (runtime/boot, commands, http): every row fixed or dropped with its line. Serving roles verify the framework schema and refuse to boot until ROLE=migrate applied it (advisory lock + lock_timeout, a build stamp, a mixed-major warning); ISR controllers attached on every boot path (a tag bust now marks a tag-only page stale; e2e); drain process-wide; cache subscribe retried; static memo single-flighted; stored non-media served as attachment with a sandbox CSP (http keeps a handler-set CSP beside the app policy); replicator /readyz on the metrics port with a helm probe, non-web roles marked ready; boot warnings for unsealed MFA and a per-process idempotency store. Commands: no command answers ok beside a finding; /_x loopback-Host only and the SQL panel same-origin POST through admin readOnlySql; doctor probes PORT and APP_URL; verify merge validates parts and the shard partition; x routes, x help, x jobs refuse bad input at the door. Dropped as already fixed by slices 07/08: replicator readiness watch, x_job_events purge, params-channel FULL identity; not reproduced: the role-start sync-upgrade flake. PR 12a (build, generate, policy provenance, seo, examples/dummy): every build/generate row fixed but one dropped (cmd-build --out already resolved against the cwd). Static export refuses an unmarked directory (X_BUILD_OUT_UNSAFE); a page that fails to import fails the build; unread build flags refused; x g --dry-run is the write plan; plural, non-ASCII and type-shadowing names refused; x affected treats unowned paths as root-wide; test discovery root-anchored for x test and the gate's live/e2e; sitemap parts at /sitemaps/<n>.xml, served and memoised; guards/ under filesize/errors. Policy records permission declaration sites; the policy step refuses a permission only a package declared (X_PERMISSION_BORROWED); restorePermissions requires the sites. Drift reports an unrecorded REPLICA IDENTITY FULL. examples/dummy per-workspace typecheck 351 -> 0 (composite/rootDir and out-of-include type extensions), and the scaffold's app typecheck runs the root program. Dropped: the n-plus-one registry leak (no ordering reproduces it). 12b (runtime/boot, commands, http) follows."
   - file: 13-scripts-ci.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "PR 13a (#638): guards report what they read — a scan that reads nothing is red; spawned processes carry a timeout (spawn-timeout); raised pins carry a why: on the line above (pin-raises); CHANGELOG BREAKING lines pair with Upgrading rows by (#N), ranges cover each row once; release scripts refuse a half-stamped tree. PR 13b (#639): every workflow action pinned by SHA, no ${{ }} in run: but runner.temp; release publishes only on a fully green ci run; the chart renders a NetworkPolicy per role, bounds /tmp, refuses a role with no Secret; the sync node takes its own kernel-chosen port at port 0; Docker bases pinned by digest; solid-loader prepareStackTrace no longer leaks between files."
   - file: 14-unify-and-delete.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    evidence: "One config loader (app-config-load.ts; 17 walks deleted; boundaries refuses an app.config import outside it, X_CONFIG_IMPORT_OUTSIDE_LOADER; defineConfig refuses a missing name). One X_NOT_IMPLEMENTED class in core (nine copies deleted; not-implemented-copies guard). PgExecutor, fnv1a, escapeHtml, readCookie and storeMode each in core once (helper-homes guard). One wire schema in schema (toWireSchema/toWireOutputSchema; mcpSchemaOf and toMcpInputSchema removed). --worker deleted (--shard i/n the one way; X_TEST_SHARD_FAILED kept as an unthrown code, codes are forever). budget.lcp deleted end to end. Dropped: serverSideEncryption's typed refusals stay — a call-site refusal for an option Bun.S3Client cannot honour is the point, not a second path; the ui 'removed in 21' export was already gone. Found on the way: core's source-mask lost every declaration after a regex inside a template ${} — fixed, which surfaced 7 prose fix: lines in scripts/side-effects.ts, rewritten."
   - file: 15-owner-decisions-docs.md
     tier: 5
     status: not_started

@@ -1,14 +1,10 @@
 // The public origin and the crawler rules out of `app.config.ts` — `site.origin` and
 // `seo.robots.disallow` — and the one resolution of "which origin is this site served on" every
-// absolute URL a document, a sitemap or a robots file carries is built against. Sibling of
-// `app-auth.ts`'s `loadSignInPath`, and it imports the config for the same reason.
+// absolute URL a document, a sitemap or a robots file carries is built against. Read off the one
+// loader (`app-config-load.ts`).
 
-// why: Bun exposes no path-join primitive, and the config path is app-root-relative.
-import { join } from 'node:path';
-import type { AppConfig, Environment, SeoSitemapConfig, SitemapLastmod } from '@ultimat3/core';
-import { SITEMAP_LASTMOD_SOURCES } from '@ultimat3/core';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import type { Environment, SeoSitemapConfig } from '@ultimat3/core';
+import { loadAppConfig } from './app-config-load';
 
 export interface SiteSettings {
   /** `site.origin`, trailing slash removed; `null` when the app declares none. */
@@ -25,51 +21,16 @@ export const NO_SITE_SETTINGS: SiteSettings = {
   sitemap: { extra: [], lastmod: 'none' },
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-/**
- * Structural, never `instanceof`, for `loadSignInPath`'s reason: a config that resolved through an
- * older core simply has no `site` section, and that is the "not declared" answer, not a crash.
- */
-const hasSiteSections = (value: unknown): value is Pick<AppConfig, 'site' | 'seo'> =>
-  isRecord(value) &&
-  isRecord(value['site']) &&
-  isRecord(value['seo']) &&
-  isRecord(value['seo']['robots']);
-
 const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
 
 export async function loadSiteSettings(root: string): Promise<SiteSettings> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return NO_SITE_SETTINGS;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!hasSiteSections(config)) return NO_SITE_SETTINGS;
-  const origin = config.site.origin;
+  const config = await loadAppConfig(root);
+  if (config === undefined) return NO_SITE_SETTINGS;
+  const { origin } = config.site;
   return {
-    origin: typeof origin === 'string' && origin !== '' ? trimSlash(origin) : null,
+    origin: origin === null ? null : trimSlash(origin),
     disallow: [...config.seo.robots.disallow],
-    sitemap: sitemapOf(config.seo),
-  };
-}
-
-/**
- * Structural for `hasSiteSections`' reason: a config resolved through a core older than
- * `seo.sitemap` has no such key, and that is the default, not a crash.
- */
-function sitemapOf(seo: unknown): SeoSitemapConfig {
-  const declared = isRecord(seo) ? seo['sitemap'] : undefined;
-  if (!isRecord(declared)) return NO_SITE_SETTINGS.sitemap;
-  const extra = declared['extra'];
-  const lastmod = declared['lastmod'];
-  return {
-    extra: Array.isArray(extra)
-      ? extra.filter((path): path is string => typeof path === 'string')
-      : [],
-    lastmod: SITEMAP_LASTMOD_SOURCES.includes(lastmod as SitemapLastmod)
-      ? (lastmod as SitemapLastmod)
-      : 'none',
+    sitemap: config.seo.sitemap,
   };
 }
 

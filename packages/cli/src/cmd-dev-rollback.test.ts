@@ -28,7 +28,7 @@ describe('unit · a failed x dev boot gives back what it acquired', () => {
     'the statement observer is uninstalled and the data directory is free for the retry',
     async () => {
       root = await mkdtemp(join(tmpdir(), 'x-dev-rollback-'));
-      await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+      await Bun.write(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
       await Bun.write(join(root, 'package.json'), '{"name":"rollback","version":"1.0.0"}');
       await Bun.write(join(root, 'apps/web/runtime.ts'), 'throw new TypeError("boot refused");\n');
       const options = { root, port: 0, env: {}, roles: ['web'] as const };

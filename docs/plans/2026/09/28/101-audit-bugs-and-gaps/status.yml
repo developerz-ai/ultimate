@@ -39,12 +39,13 @@ slices:
     evidence: "closed 2026-10-03 by plan 2026/10/02/101 slice 13, uncommitted: publish order — publishSequence/publishOrder in scripts/lib/workspaces.ts, list-workspaces.ts emits it, release.yml's group_by keeps it (scripts/release-workflow.test.ts 'every dependency publishes before its dependant across the whole plan', scripts/lib/workspaces.test.ts); corpus.ts `tests` scope reads packages/*/e2e (scripts/lib/corpus.test.ts); verify-args --workers through parseIntFlag 1..64 (scripts/lib/verify-args.test.ts; positionals were already refused in scripts/verify.ts). wiki.yml and the setup action's actions/cache are SHA-pinned in the tree. OPEN: release.yml check waits on the verify job only; deploy-social-demo retags :latest every run and a dispatch can build an off-main commit; skip-if-cleanup.ts TEST_GLOBS still misses packages/*/e2e"
   - file: 08-architecture-dedup.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
+    evidence: "closed 2026-10-03 by plan 2026/10/02/101 slice 14 (agent dedupe), uncommitted: row 1 xxHash32 — render's contentHash takes string | Uint8Array, cli/site-assets.ts and cli/revalidated-response.ts call it (packages/render/src/render-static.test.ts 'hashes bytes to exactly what it hashes their UTF-8 string to', packages/cli/src/revalidated-response.test.ts ETag equality); row 2 HTML escapers — ONE table, core's escapeHtml (packages/core/src/html-escape.ts), http/mail re-export it, render text+attributes and seo's escapeXml apply it, the cli shot-matrix, admin dev-server and scraping spellings copies deleted, seo escapeAttribute deleted (one flagged alias left for packages/cli/src/pwa-artifacts.ts); row 3 readCookie — core's packages/core/src/cookie.ts, auth/http/i18n copies deleted; row 5 fnv1a — core's packages/core/src/fnv1a.ts (flags re-exports, testing seedFor calls it), ai's copy already gone, llm-cache keyed on fingerprint. Enforcer for all four plus fingerprint, PgExecutor and storeMode: scripts/lib/helper-homes.ts wired into bun run flight-copies (X_HELPER_COPY; scripts/lib/helper-homes.test.ts, scripts/flight-copies.test.ts real tree). OPEN: row 4 (two Page types), row 6 (sideways-edge prose), row 7 (step-name subsets typed string), row 8 (scaffold-repo createOpfsLocalStore comment, realtime NotImplementedError)"
   - file: 09-gaps-and-docs.md
     tier: 0
     status: in_progress
     percent: 10
 evidence: []
 notes: "04-jobs closed 2026-10-01 by plan 2026/10/01/101. The MCP job-tools row of 09-gaps-and-docs.md closed 2026-10-01 by that plan's slice 16 (the jobs dashboard's admin tools); its four doc promises were rewritten to those names the same day. Audited at fcfe31dc (22.8.2). Unaudited: realtime server, render SSR, db migrate/drift, entity repos/tenancy, http pipeline stages, auth oauth/jwks, most guards and CLI generators."
-last_updated: 2026-10-01
+last_updated: 2026-10-03

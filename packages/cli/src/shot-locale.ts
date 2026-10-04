@@ -3,9 +3,7 @@
 // on the language of the machine's Chrome. A non-default locale is also a URL prefix (`/en/…`),
 // because on a `site/` route the unprefixed path is always the default locale whatever the header.
 
-import { join } from 'node:path'; // why: Bun ships no path join.
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 import { BadFlagError } from './errors';
 
 export interface ShotLocales {
@@ -16,27 +14,11 @@ export interface ShotLocales {
 /** An app that declares nothing is `en` only — the framework's own default. */
 export const FALLBACK_SHOT_LOCALES: ShotLocales = { locales: ['en'], defaultLocale: 'en' };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-/** `app.config.ts`'s `locales` and `defaultLocale`, read the way `loadThemeMode` reads `theme`. */
+/** `app.config.ts`'s `locales` and `defaultLocale`, off the one loader (`app-config-load.ts`). */
 export async function loadShotLocales(root: string): Promise<ShotLocales> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(configPath).exists())) return FALLBACK_SHOT_LOCALES;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!isRecord(config)) return FALLBACK_SHOT_LOCALES;
-  const declared = config['locales'];
-  const locales = Array.isArray(declared)
-    ? declared.filter((locale): locale is string => typeof locale === 'string')
-    : [];
-  const fallback = config['defaultLocale'];
-  const defaultLocale =
-    typeof fallback === 'string' && fallback !== '' ? fallback : (locales[0] ?? 'en');
-  return {
-    locales: locales.length === 0 ? [defaultLocale] : locales,
-    defaultLocale,
-  };
+  const config = await loadAppConfig(root);
+  if (config === undefined) return FALLBACK_SHOT_LOCALES;
+  return { locales: config.locales, defaultLocale: config.defaultLocale };
 }
 
 /** `--locale <l>`, refused by name when the app does not declare it — a typo costs no browser. */

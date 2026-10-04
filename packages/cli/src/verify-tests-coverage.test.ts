@@ -25,7 +25,7 @@ const TEST = (name: string, importPath: string, call: string): string =>
 
 /** Two fully covered modules in two directories, so a 2-way shard splits them. */
 async function writeApp(dir: string): Promise<void> {
-  await Bun.write(join(dir, APP_CONFIG_FILE), 'export const config = {};\n');
+  await Bun.write(join(dir, APP_CONFIG_FILE), "export const config = { name: 'fixture' };\n");
   await Bun.write(join(dir, 'apps/web/app/a/a.ts'), 'export const a = (): number => 1;\n');
   await Bun.write(join(dir, 'apps/web/app/a/a.test.ts'), TEST('a', './a', 'm.a()'));
   await Bun.write(join(dir, 'apps/web/app/b/b.ts'), 'export const b = (): number => 2;\n');

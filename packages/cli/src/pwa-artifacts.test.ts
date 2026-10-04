@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createRaster, encodeImage } from '@ultimat3/core';
+import { createRaster, encodeImage, isUltimateError } from '@ultimat3/core';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
 import { ICON_SOURCE } from './icon-assets';
 import {
@@ -41,7 +41,7 @@ const COLORS =
 const installable = (extra = '') =>
   writeConfig(
     `export const config = { name: 'probe', pwa: { enabled: true, name: 'Probe App', ` +
-      `colors: ${COLORS}${extra} } };\n`,
+      `offline: { fallback: '/offline' }, colors: ${COLORS}${extra} } };\n`,
   );
 
 describe('unit · the web manifest an installable app promises', () => {
@@ -132,29 +132,29 @@ describe('unit · the web manifest an installable app promises', () => {
     expect(await loadPwaArtifacts(root)).toBeUndefined();
   });
 
-  // `=== true`, not truthiness: `enabled` is the key this file exists to give a reader, and a
-  // hand-written config that spelled it wrong must get no manifest rather than one nobody asked
-  // for. `defineConfig` would have refused this one line above; a plain object never reaches it.
-  test('a hand-written config that does not really say true is not installable', async () => {
-    await writeConfig(
-      `export const config = { pwa: { enabled: 'yes', name: 'Probe', colors: ${COLORS} } };\n`,
-    );
-    expect(await loadPwaArtifacts(root)).toBeUndefined();
-  });
-
+  // A hand-written block is held to core's validator by the one loader: `enabled: 'yes'`, a missing
+  // name or colour, or a missing offline fallback is refused at boot — where each used to read as
+  // "not installable" and serve a document with no manifest and nothing said.
   test.each([
-    ['no name', `{ enabled: true, colors: ${COLORS} }`],
-    ['a blank name', `{ enabled: true, name: '  ', colors: ${COLORS} }`],
-    ['no colours', "{ enabled: true, name: 'Probe' }"],
-    ['one scheme only', "{ enabled: true, name: 'Probe', colors: { light: {} } }"],
+    ['an enabled that is not true', `{ enabled: 'yes', name: 'Probe', colors: ${COLORS} }`],
+    ['no name', `{ enabled: true, offline: { fallback: '/offline' }, colors: ${COLORS} }`],
     [
-      'a blank colour',
-      "{ enabled: true, name: 'Probe', colors: { light: { themeColor: '', " +
-        "backgroundColor: '#fff' }, dark: { themeColor: '#000', backgroundColor: '#000' } } }",
+      'a blank name',
+      `{ enabled: true, name: '  ', offline: { fallback: '/offline' }, colors: ${COLORS} }`,
     ],
-  ])('a hand-written config with %s produces no manifest', async (_why, pwa) => {
-    await writeConfig(`export const config = { pwa: ${pwa} };\n`);
-    expect(await loadPwaArtifacts(root)).toBeUndefined();
+    ['no colours', "{ enabled: true, name: 'Probe', offline: { fallback: '/offline' } }"],
+    ['no offline fallback', `{ enabled: true, name: 'Probe', colors: ${COLORS} }`],
+    [
+      'one scheme only',
+      "{ enabled: true, name: 'Probe', offline: { fallback: '/offline' }, colors: { light: {} } }",
+    ],
+  ])('a hand-written config with %s is refused', async (_why, pwa) => {
+    await writeConfig(`export const config = { name: 'probe', pwa: ${pwa} };\n`);
+    const error: unknown = await loadPwaArtifacts(root).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
   });
 
   // Public and cacheable, and it must not be immutable: the path carries no content hash, so an

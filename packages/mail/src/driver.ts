@@ -232,7 +232,7 @@ export function createLogDriver(logger = rootLogger): MailDriver {
 
 let ambient: MailDriver | undefined;
 
-/** Set once at boot from `app.config.ts`. One driver per process, like the job driver. */
+/** Set once at boot from the environment (`selectMailDriver`). One per process, like the job driver. */
 export function setMailDriver(driver: MailDriver): void {
   ambient = driver;
 }

@@ -24,10 +24,10 @@ export interface DevServices {
   readonly storage: ServiceBinding;
   readonly stateDir: string;
   /**
-   * The app directory itself, carried rather than re-derived from `stateDir`. A boot that needs to
-   * read the app's own `app.config.ts` — `loadInboxRetention` does — otherwise has to undo the
-   * `join(root, '.x')` above, and a `dirname` that silently disagrees with this file's join is a
-   * path bug nothing would catch.
+   * The app directory itself, carried rather than re-derived from `stateDir`. A boot that needs
+   * to read the app's own `app.config.ts` — `startServices`' `loadAppConfig` does — otherwise has
+   * to undo the `join(root, '.x')` above, and a `dirname` that silently disagrees with this
+   * file's join is a path bug nothing would catch.
    */
   readonly root: string;
 }

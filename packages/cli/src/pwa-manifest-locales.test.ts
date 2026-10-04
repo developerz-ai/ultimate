@@ -139,14 +139,34 @@ describe('the install sheet members an app declares', () => {
     expect(en.shortcuts[0]?.icons[0]?.src).toMatch(HASHED('panel'));
   });
 
+  // An absolute path outside `/assets/` is the app's own route and is named as written; a
+  // shortcut icon's `src` is not screened by core, so an off-site one is carried verbatim too.
   test('a src that is not an asset path passes untouched', async () => {
     const artifacts = await load(
       TWO_LOCALES,
+      ", screenshots: [{ src: '/media/wide.png', sizes: '1280x800', type: 'image/png' }]" +
+        ", shortcuts: [{ name: 'Panel', url: '/panel'," +
+        " icons: [{ src: 'https://cdn.test/panel.png', sizes: '96x96', type: 'image/png' }] }]",
+    );
+    const body = parse(artifacts.body) as {
+      screenshots: { src: string }[];
+      shortcuts: { icons: { src: string }[] }[];
+    };
+    expect(body.screenshots[0]?.src).toBe('/media/wide.png');
+    expect(body.shortcuts[0]?.icons[0]?.src).toBe('https://cdn.test/panel.png');
+  });
+
+  // A manifest `src` resolves against the manifest's own URL, so core refuses a screenshot that is
+  // not an absolute path — an off-site URL included — before any manifest is built.
+  test('a screenshot src that is not an absolute path is refused at boot', async () => {
+    const refused = await load(
+      TWO_LOCALES,
       ", screenshots: [{ src: 'https://cdn.test/wide.png', sizes: '1280x800', type: 'image/png' }]",
+    ).then(
+      () => 'loaded',
+      (error: { code?: string }) => error.code,
     );
-    expect((parse(artifacts.body)['screenshots'] as { src: string }[])[0]?.src).toBe(
-      'https://cdn.test/wide.png',
-    );
+    expect(refused).toBe('X_CONFIG_INVALID');
   });
 
   test('each manifest carries them in its own language, with its own URLs', async () => {

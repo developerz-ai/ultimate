@@ -1,7 +1,7 @@
 // Single responsibility: environment → purge driver. The one place that decides which CDN a boot
 // purges against, so `x dev`, a worker container and any custom host resolve it identically. Keyed
-// on env rather than an `app.config.ts` field because nothing loads that file's contents at
-// runtime — a `cache.cdn` block would be a setting no boot could read.
+// on env, never an `app.config.ts` field the boot's one loader would read: the edge is a credential
+// and a deployment's, and one image is purged against a different edge per environment.
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';

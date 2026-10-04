@@ -426,7 +426,7 @@ describe('unit · x doctor · the command', () => {
 function doctorAppRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-doctor-'));
   mkdirSync(join(dir, 'apps', 'web'), { recursive: true });
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }
 

@@ -19,7 +19,7 @@ describe('unit · app JSX loader', () => {
   });
 
   test('in an app root the render loader is installed', async () => {
-    writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+    writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     expect(isAppRoot(dir)).toBe(true);
     expect(await installAppJsxLoader(dir)).toBe(true);
   });

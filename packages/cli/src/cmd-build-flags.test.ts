@@ -16,7 +16,7 @@ import { SPECS } from './registry';
 
 async function appRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-flags-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   await Bun.write(join(dir, 'package.json'), JSON.stringify({ name: 'flags', version: '1.0.0' }));
   await Bun.write(join(dir, 'docker', 'Dockerfile'), 'FROM oven/bun:1.3-alpine\n');
   await Bun.write(join(dir, 'apps/web/server.ts'), 'export {};\n');

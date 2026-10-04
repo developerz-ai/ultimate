@@ -15,7 +15,7 @@ describe('e2eDefaultLocale', () => {
     const root = join(scratch, 'declared');
     await Bun.write(
       join(root, 'app.config.ts'),
-      "export const config = { locales: ['es-co', 'en'], defaultLocale: 'es-co' };\n",
+      "export const config = { name: 'fixture', locales: ['es-co', 'en'], defaultLocale: 'es-co' };\n",
     );
     expect(await e2eDefaultLocale(root)).toBe('es-co');
   });

@@ -24,7 +24,7 @@ export interface RunOptions {
 
 export function appRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-jobs-'));
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }
 

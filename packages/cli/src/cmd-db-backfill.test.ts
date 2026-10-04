@@ -41,7 +41,7 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
 /** An app root the command will accept: `app.config.ts` is what `requireAppRoot` looks for. */
 async function appRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-db-backfill-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }
 

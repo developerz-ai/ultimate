@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CacheTierName } from './cache-vocabulary';
-import { type AppConfig, defineConfig, INBOX_RETENTION_KEYS } from './config';
+import { type AppConfig, type AppConfigInput, defineConfig, INBOX_RETENTION_KEYS } from './config';
 import { isUltimateError, type UltimateError } from './errors';
 
 describe('defineConfig', () => {
@@ -73,6 +73,22 @@ describe('defineConfig', () => {
     expect(error.cause).toContain('is not an IANA Area/Location zone name');
     expect(error.cause).toContain('is not a 3-letter ISO 4217 code');
     expect(error.fix).toContain('x verify');
+  });
+
+  // `NAME_RE.test(undefined)` tests the STRING "undefined", which matches: an untyped config with no
+  // name was accepted and named "undefined". Every missing or non-string name is refused by shape.
+  test.each([undefined, null, 42])('a name of %p is refused, never read as a string', (name) => {
+    const error = (() => {
+      try {
+        defineConfig({ name } as unknown as AppConfigInput);
+      } catch (thrown) {
+        return thrown;
+      }
+      return expect.unreachable('defineConfig accepted a config with no string name');
+    })();
+    expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
+    expect(isUltimateError(error) ? error.cause : '').toContain('name must be a string');
+    expect(isUltimateError(error) ? error.fix : '').toContain('x verify');
   });
 
   test('defaultCurrency answers the same bound schema declares, case by case', () => {

@@ -13,7 +13,12 @@ import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { deployCommand } from './cmd-deploy';
-import { HELM_DEFAULT_TIMEOUT, readHelmTimeout, readRollout } from './cmd-deploy-helm';
+import {
+  HELM_DEFAULT_TIMEOUT,
+  readHelmTimeout,
+  readReleaseName,
+  readRollout,
+} from './cmd-deploy-helm';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
@@ -158,6 +163,18 @@ describe('unit · what x deploy --method helm refuses before spawning anything',
     const { runner, ran } = helmRunner();
     await run(['--method', 'helm', '--release', 'app'], appRoot('{}'), runner);
     expect(ran[0]?.[3]).toBe('app');
+  });
+
+  // The app name is a slug of up to 64 characters and a release at most 53; and a root with no
+  // config file has no name at all. Both refused by name rather than deployed as `app`.
+  test('an app name too long for a release, or no app.config.ts, is X_CONFIG_INVALID', async () => {
+    const long = `a${'b'.repeat(55)}`;
+    expect(await refusalCode(readReleaseName(appRoot(`{ name: '${long}' }`), undefined))).toBe(
+      'X_CONFIG_INVALID',
+    );
+    const bare = mkdtempSync(join(tmpdir(), 'x-deploy-helm-bare-'));
+    expect(await refusalCode(readReleaseName(bare, undefined))).toBe('X_CONFIG_INVALID');
+    expect(await readReleaseName(appRoot(), undefined)).toBe('shop-web');
   });
 
   test('stdout that is not helm’s record reads as unknown, never as deployed', () => {

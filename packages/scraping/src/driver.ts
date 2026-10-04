@@ -102,7 +102,7 @@ export interface ScrapeDriver {
 
 let ambient: ScrapeDriver | undefined;
 
-/** Set once at boot from `app.config.ts`. A scrape's own `driver:` overrides it per definition. */
+/** Set once by the app at boot — no config key names it. A scrape's own `driver:` overrides it. */
 export function setScrapeDriver(driver: ScrapeDriver): void {
   ambient = driver;
 }

@@ -12,7 +12,7 @@ import { KEEP_GLOBAL_CLI_ENV, LOCAL_CLI_BIN, type LocalCliIo, resolveLocalCli } 
 
 const app = () => {
   const dir = mkdtempSync(join(tmpdir(), 'x-local-cli-'));
-  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 };
 

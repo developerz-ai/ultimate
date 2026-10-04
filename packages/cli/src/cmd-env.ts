@@ -4,14 +4,38 @@
 
 // Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
-import { checkEnv, ENV_EXAMPLE_PATH, ERROR_DOCS_URL, maskedEnvValues } from '@ultimat3/core';
+import {
+  checkEnv,
+  ENV_EXAMPLE_PATH,
+  ERROR_DOCS_URL,
+  maskedEnvValues,
+  UltimateError,
+} from '@ultimat3/core';
 import { envExampleFor, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
-import { EnvSchemaMissingError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+
+/**
+ * `x env` was run in an app whose `app.config.ts` exports no `envSchema`. Not a silent success:
+ * writing a `.env.example` with no variables in it, or reporting "0 declared variables, all
+ * present", both read as a working environment declaration to whoever runs the command next.
+ *
+ * `X_CONFIG_INVALID` is core's code for "a configuration this process cannot boot on — env or
+ * `app.config.ts`", which is exactly this; the CLI names it in `CLI_BORROWED_ERROR_CODES` rather
+ * than minting a synonym.
+ */
+export class EnvSchemaMissingError extends UltimateError {
+  constructor(input: { subcommand: string }) {
+    super({
+      code: 'X_CONFIG_INVALID',
+      cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
+      fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
+    });
+  }
+}
 
 /**
  * Every subcommand needs the declaration, and an app without one is a usage error rather than an

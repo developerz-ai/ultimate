@@ -11,6 +11,7 @@
 //   3. The leaf rule across an example app's `shared/`: a leaf may name an `app/` or `site/`
 //      type, never load its module.
 //   4. `@ultimat3/admin`'s one-flattener rule: one file may read `$meta`/`$describe()`.
+//   5. One config loader: `import(` of an app's `app.config.ts` only in `app-config-load.ts`.
 //
 // The scan is `packages/cli/src/import-scan.ts`, a leaf read by path — the ONE import scanner, which
 // `workspace-graph.ts` reads too. It was a second regex scanner there until #493 showed the two
@@ -22,6 +23,7 @@ import { join } from 'node:path';
 import { dirname, join as joinPosix, normalize } from 'node:path/posix';
 import { scanAllImports, scanRuntimeImports } from '../packages/cli/src/import-scan';
 import { parseScriptArgs } from './lib/args';
+import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -365,11 +367,15 @@ if (import.meta.main) {
   const leaks = checkSharedLeaf(sharedFiles);
   const adminFiles = typeof only === 'string' ? [] : await collectAdminFiles(root);
   const adminLeaks = checkAdminFlattener(adminFiles);
+  // Over the whole tree even under `--package`: a second reader is a fact about the tree, and the
+  // filtered set would miss one in every package the filter dropped.
+  const configImports = checkConfigImports(everySource);
   const findings = [
     ...violations.map(findingFor),
     ...floors.map(floorFindingFor),
     ...leaks.map(sharedLeafFindingFor),
     ...adminLeaks.map(adminFlattenerFindingFor),
+    ...configImports.map(configImportFindingFor),
   ];
   const scanned = files.length + sharedFiles.length + adminFiles.length;
   report(
@@ -381,7 +387,7 @@ if (import.meta.main) {
           ? `${scanned} files, no boundary violations`
           : `${findings.length} boundary violation(s) across ${scanned} files`,
       findings,
-      data: { files: scanned, violations, floors, leaks, adminLeaks },
+      data: { files: scanned, violations, floors, leaks, adminLeaks, configImports },
     },
     args.json,
   );

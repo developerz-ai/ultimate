@@ -59,9 +59,10 @@ export interface RetentionStores {
    */
   readonly events: EventBus;
   /**
-   * The app's own answer to "how long is an unread message kept", loaded from `app.config.ts` by
-   * `loadInboxRetention`. Absent windows mean the inbox is never swept, which is the default and a
-   * decision rather than an oversight — see `NotifyConfig` in `@ultimat3/core`.
+   * The app's own answer to "how long is an unread message kept", read off the config
+   * `startServices` loads (`inboxRetentionOf`). Absent windows mean the inbox is never swept,
+   * which is the default and a decision rather than an oversight — see `NotifyConfig` in
+   * `@ultimat3/core`.
    */
   readonly inboxRetention?: InboxRetention | undefined;
 }

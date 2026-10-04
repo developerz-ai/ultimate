@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "bfe6ea6fb38aaae24feea85573cafd065c3bb492c8a27442bfd25ecf1ace59d4",
+  "buildId": "9b3637c18a0afe442004bb0954ca6bb82256f8399b1f76ea8680250d668328f3",
   "tiers": {
     "0": [
       "core",
@@ -843,6 +843,11 @@
       "code": "X_CLIENT_TRANSPORT_FAILED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_CONFIG_IMPORT_OUTSIDE_LOADER",
+      "owner": "scripts",
+      "at": "scripts/lib/config-import.ts"
     },
     {
       "code": "X_CONFIG_INVALID",

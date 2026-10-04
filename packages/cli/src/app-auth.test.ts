@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { isUltimateError } from '@ultimat3/core';
 import { loadSignInPath } from './app-auth';
 
 let root = '';
@@ -21,7 +22,7 @@ const writeConfig = (body: string) => Bun.write(join(root, 'app.config.ts'), bod
 
 describe('unit · where the app says its sign-in page is', () => {
   test('the declared path', async () => {
-    await writeConfig("export const config = { auth: { signInPath: '/signin' } };\n");
+    await writeConfig("export const config = { name: 'demo', auth: { signInPath: '/signin' } };\n");
     expect(await loadSignInPath(root)).toBe('/signin');
   });
 
@@ -35,9 +36,16 @@ describe('unit · where the app says its sign-in page is', () => {
   });
 
   // `signInPath` becomes a `Location:` header. A value that is not a rooted path is either a
-  // typo or an off-site destination, and both are worse than the problem document it replaces.
+  // typo or an off-site destination: refused by core's validator through the one loader, where it
+  // used to read as "no redirect" and boot.
   test('anything that is not a rooted path is refused', async () => {
-    await writeConfig("export const config = { auth: { signInPath: 'https://evil.test' } };\n");
-    expect(await loadSignInPath(root)).toBeNull();
+    await writeConfig(
+      "export const config = { name: 'demo', auth: { signInPath: 'https://evil.test' } };\n",
+    );
+    const error: unknown = await loadSignInPath(root).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
   });
 });

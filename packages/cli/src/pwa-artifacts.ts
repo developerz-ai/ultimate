@@ -15,12 +15,7 @@
 // build behind them — `wiki/PWA-And-Offline.md` says so — and a bad `sw.js` is sticky in a way a
 // manifest is not, so the worker lands behind a real browser check rather than beside this.
 
-// why: Bun exposes no synchronous file-existence primitive, and this read is the same one
-// `app-auth.ts` and `runtime-cache.ts` each make before importing an app's config — a root with no
-// `app.config.ts` is an ordinary answer here (a scratch root, `x build` outside an app).
-import { existsSync } from 'node:fs';
-// why: Bun exposes no path-join primitive, and `APP_CONFIG_FILE` is app-root-relative — the same
-// necessity `favicon.ts` and `runtime-assets.ts` each record for their own root-relative constant.
+// why: Bun exposes no path-join primitive, and the export writes each icon under an out directory.
 import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import { escapeHtml, localeSegment } from '@ultimat3/core';
@@ -34,8 +29,7 @@ import {
 } from '@ultimat3/pwa';
 import type { AssetPath } from '@ultimat3/render';
 import { assetPathProblem } from '@ultimat3/render';
-import { APP_CONFIG_EXPORT } from './app-auth';
-import { APP_CONFIG_FILE } from './app-root';
+import { loadAppConfig } from './app-config-load';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
 import type { AppLocales } from './pwa-manifest-locales';
 import { appLocales, localeMembers, spellIn } from './pwa-manifest-locales';
@@ -79,45 +73,12 @@ export interface PwaArtifacts {
   /** The `<head>` for a document in `locale` — it links that locale's manifest. */
   headFor(locale: string): string;
   /**
-   * The three `pwa` keys the SERVICE WORKER needs, carried here because this is the one module
-   * that reads an app's config file — `sw-artifacts.ts` needs the route table and the island
-   * bundle as well, and a second `await import` of `app.config.ts` would be a second answer to
-   * "what did this app declare".
+   * The three `pwa` keys the SERVICE WORKER needs, carried here so `sw-artifacts.ts` — which needs
+   * the route table and the island bundle as well — reads them off the same resolved block.
    */
   readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
   readonly push: boolean;
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const text = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() !== '' ? value : undefined;
-
-/**
- * `colors` read structurally, for `loadSignInPath`'s reason: `defineConfig` returns a plain object
- * and a config resolved through an older core simply has no such key. `validate()` already refused
- * a blank one an `await import` above this line, so anything this rejects is a hand-written config
- * object — and the honest answer for one is no manifest at all, never a colour we invented.
- */
-function colorsOf(value: unknown): PwaColors | undefined {
-  if (!isRecord(value)) return undefined;
-  const light = isRecord(value['light']) ? value['light'] : undefined;
-  const dark = isRecord(value['dark']) ? value['dark'] : undefined;
-  if (light === undefined || dark === undefined) return undefined;
-  const [lt, lb, dt, db] = [
-    text(light['themeColor']),
-    text(light['backgroundColor']),
-    text(dark['themeColor']),
-    text(dark['backgroundColor']),
-  ];
-  if (lt === undefined || lb === undefined || dt === undefined || db === undefined)
-    return undefined;
-  return {
-    light: { themeColor: lt, backgroundColor: lb },
-    dark: { themeColor: dt, backgroundColor: db },
-  };
 }
 
 /** The `pwa` block, as much of it as this file needs, or `undefined` when the app declares none. */
@@ -132,60 +93,30 @@ interface InstallableApp {
   readonly push: boolean;
 }
 
-async function loadInstallable(root: string): Promise<InstallableApp | undefined> {
-  const configPath = join(root, APP_CONFIG_FILE);
-  if (!existsSync(configPath)) return undefined;
-  const module = (await import(configPath)) as Record<string, unknown>;
-  const config = module[APP_CONFIG_EXPORT];
-  if (!isRecord(config)) return undefined;
-  const pwa = config['pwa'];
-  // `pwa.enabled`, read. Not a truthiness test: `enabled` is the key this whole file exists to
-  // give a reader, and `=== true` is what makes a hand-written `enabled: 'yes'` produce no
-  // manifest rather than one nobody asked for.
-  if (!isRecord(pwa) || pwa['enabled'] !== true) return undefined;
-  const name = text(pwa['name']);
-  const colors = colorsOf(pwa['colors']);
-  if (name === undefined || colors === undefined) return undefined;
-  return {
-    name,
-    colors,
-    block: pwa,
-    locales: appLocales(config),
-    offline: offlineOf(pwa['offline']),
-    ...flags(pwa),
-  };
-}
-
 /**
- * The offline block, read structurally for `colorsOf`'s reason: `defineConfig` refuses
- * `enabled: true` without an absolute `offline.fallback`, but a HAND-WRITTEN config object never
- * passed through it. A missing or relative fallback answers `null`, and `serviceWorkerArtifacts`
- * then emits no worker at all — never a path the framework invented, which offline would be a
- * cached 404 answering every navigation.
+ * `pwa.enabled`, read, off the one loader (`app-config-load.ts`). Core's validator refuses an
+ * enabled block without a name, both colour schemes or an absolute `offline.fallback`, so nothing
+ * here invents a colour or a fallback route; `colors` is optional only in the type.
  */
-function offlineOf(value: unknown): PwaOfflineConfig {
-  const block = isRecord(value) ? value : {};
-  const fallback = text(block['fallback']);
-  const patterns = block['neverCache'];
+async function loadInstallable(root: string): Promise<InstallableApp | undefined> {
+  const config = await loadAppConfig(root);
+  const pwa = config?.pwa;
+  if (config === undefined || pwa === undefined || !pwa.enabled || pwa.colors === undefined) {
+    return undefined;
+  }
   return {
-    fallback: fallback?.startsWith('/') === true ? fallback : null,
-    image: text(block['image']) ?? null,
-    font: text(block['font']) ?? null,
-    neverCache: Array.isArray(patterns)
-      ? patterns.filter((entry): entry is string => typeof entry === 'string')
-      : [],
-    personalPages: block['personalPages'] === 'last-member' ? 'last-member' : 'never',
+    name: pwa.name,
+    colors: pwa.colors,
+    block: { ...pwa },
+    locales: appLocales({ locales: config.locales, defaultLocale: config.defaultLocale }),
+    offline: pwa.offline,
+    backgroundSync: pwa.backgroundSync,
+    push: pwa.push,
   };
 }
 
-/** `=== true` for `enabled`'s reason: a hand-written `backgroundSync: 'yes'` wires nothing. */
-const flags = (pwa: Record<string, unknown>): { backgroundSync: boolean; push: boolean } => ({
-  backgroundSync: pwa['backgroundSync'] === true,
-  push: pwa['push'] === true,
-});
-
 /**
- * Resolved ONCE at boot, like `loadSignInPath` and `loadCacheTiers` and unlike `faviconBytes`:
+ * Resolved ONCE at boot, like `loadSignInPath` and unlike `faviconBytes`: the loader's
  * `await import` caches the module, so re-reading per request would answer the same object at a
  * per-request cost, and the head string has to be available synchronously while a document renders.
  */
@@ -243,7 +174,9 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
  * `asset()` does in a page. The site serves an asset ONLY at its hashed URL, and the manifest took
  * `src` verbatim, so an app had to hash its own screenshots to avoid shipping a 404 in the install
  * sheet (notificado.co's `pwa-install.ts`). A missing file is `X_ASSET_MISSING` at boot, never a
- * broken image in an install prompt; any other `src` (absolute, already hashed) passes untouched.
+ * broken image in an install prompt; any other `src` passes untouched — an absolute path outside
+ * `/assets/`, an already hashed one, or a shortcut icon's off-site URL (core screens screenshots and
+ * shortcut urls to absolute paths, not icon sources).
  */
 function withHashedAssets<M extends ReturnType<typeof localeMembers>>(members: M, root: string): M {
   const resolve = (src: string): string => {

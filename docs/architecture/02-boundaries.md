@@ -17,6 +17,7 @@ that runs it needs no `bun install`. Five rules, `As of 2026-10-03`:
 | the tier **floor** over the same set | `X_TIER_FLOOR_UNDECLARED` · `X_TIER_FLOOR_STALE` | a package sitting above the floor its own imports allow with no reason in `FLOOR_ABOVE` — or a reason left standing for a package that has since reached its floor | a tier that reads as an enforcement and is only a habit; and a waiver protecting nothing while reading as a rule in force ([`01-package-map.md`](./01-package-map.md#floors-the-other-half-of-the-rule)) |
 | the leaf rule over a tracked app's `shared/` | `X_BOUNDARY_SHARED_LEAF` | `shared/` loading an `app/` or `site/` **module**. Naming its type is allowed | `shared/` stops being a leaf; the graph becomes bidirectional and unbudgetable |
 | the admin one-flattener rule | `X_ADMIN_FLATTENER_VIOLATION` | a second flattener beside `entity-columns.ts` | two answers to "how does a row become columns" |
+| the one config loader | `X_CONFIG_IMPORT_OUTSIDE_LOADER` | an `import(` of an app's `app.config.ts` outside `packages/cli/src/app-config-load.ts` (`scripts/lib/config-import.ts`; a tier-forced exemption is a row in `CONFIG_IMPORT_EXEMPT`) | seventeen readers, each with its own defaults and trust policy, disagreeing about one file |
 
 `X_CATALOG_KEY_UNREACHABLE` rides on the same step — the framework catalog defining a key no
 framework source can reach. It is a boundary in the same sense: a rule this repo makes about itself

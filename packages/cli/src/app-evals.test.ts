@@ -41,7 +41,7 @@ export const summarizeEval = defineEval({
 });
 `;
 
-const APP_CONFIG = 'export const config = {};\n';
+const APP_CONFIG = "export const config = { name: 'fixture' };\n";
 
 const FIXTURES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   [COVERED]: {

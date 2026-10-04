@@ -384,7 +384,10 @@ describe('unit · x verify', () => {
           join(root, 'package.json'),
           JSON.stringify({ name: 'broken-app', version: '1.0.0' }),
         );
-        await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+        await Bun.write(
+          join(root, 'app.config.ts'),
+          "export const config = { name: 'fixture' };\n",
+        );
         await Bun.write(
           join(root, 'apps/web/app/broken/module.ts'),
           "throw new Error('this module never imports');\n",

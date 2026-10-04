@@ -81,7 +81,7 @@ const countIn = async (table: string): Promise<number> => {
  * The boot every role runs, over a database this test owns.
  *
  * `config` is written as a real `app.config.ts`, because that is the ONLY path the inbox windows
- * travel: `startServices` holds no `AppConfig` and `loadInboxRetention` reads the file. A test that
+ * travel: `startServices` loads it through `loadAppConfig` and reads the windows off. A test that
  * handed the windows to `installRetentionSweep` directly would prove the sweep and not the wiring,
  * and the wiring is the half a config key loses.
  */
@@ -204,7 +204,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       // 60s read window, and deliberately NO unread window — the default, and the axiom-8
       // promise this key exists to keep.
       const started = await boot(
-        'export const config = { notify: { inboxReadRetentionMs: 60_000 } };\n',
+        "export const config = { name: 'fixture', notify: { inboxReadRetentionMs: 60_000 } };\n",
       );
       const executor = pgExecutorFor(started.db);
       const ledger = createPgDeliveryLedger({ executor, windowMs: 60_000 });

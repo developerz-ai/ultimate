@@ -44,7 +44,7 @@ describe('unit · reading the app env declaration', () => {
   });
 
   test('an app that declares no environment declares nothing to drift', async () => {
-    const root = await appRoot('none', 'export const config = {};\n');
+    const root = await appRoot('none', "export const config = { name: 'fixture' };\n");
     expect(await loadEnvSchema(root)).toBeUndefined();
     expect(await envExampleFindings(root)).toEqual([]);
   });
