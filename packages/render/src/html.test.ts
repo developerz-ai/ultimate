@@ -1,25 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import { escapeAttribute as seoEscapeAttribute } from '@ultimat3/seo';
-import { attributePair, escapeAttribute, escapeText, renderAttributes, styleValue } from './html';
+import { escapeHtml as coreEscapeHtml } from '@ultimat3/core';
+import { attributePair, escapeHtml, renderAttributes, styleValue } from './html';
 
 describe('escaping', () => {
-  test('text escapes the three characters that can open a tag', () => {
-    expect(escapeText('a & b < c > d')).toBe('a &amp; b &lt; c &gt; d');
+  test('text escapes every character that can open a tag or close a quote', () => {
+    expect(escapeHtml(`a & b < c > d "e" 'f'`)).toBe(
+      'a &amp; b &lt; c &gt; d &quot;e&quot; &#39;f&#39;',
+    );
   });
 
   test('escapes the ampersand first, so an entity is not double-encoded into nonsense', () => {
-    expect(escapeText('<')).toBe('&lt;');
+    expect(escapeHtml('<')).toBe('&lt;');
   });
 
-  test('an attribute additionally escapes the quote that would close it', () => {
-    expect(escapeAttribute('" onload="alert(1)')).toBe('&quot; onload=&quot;alert(1)');
+  test('an attribute escapes the quote that would close it', () => {
+    expect(escapeHtml('" onload="alert(1)')).toBe('&quot; onload=&quot;alert(1)');
   });
 
   // Identity, not equivalence: two functions that agree today are exactly how one of them ends up
-  // missing a character. `@ultimat3/seo` owns the one attribute escaper and this package re-exports
-  // it, so re-introducing a local copy fails here rather than in a pentest.
-  test("the attribute escaper is seo's own function, never a second copy", () => {
-    expect(escapeAttribute).toBe(seoEscapeAttribute);
+  // missing a character. `@ultimat3/core` owns the one table and this package re-exports it, so
+  // re-introducing a local copy fails here rather than in a pentest.
+  test("the escaper is core's own function, never a second copy", () => {
+    expect(escapeHtml).toBe(coreEscapeHtml);
   });
 });
 

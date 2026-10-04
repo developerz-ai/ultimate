@@ -3,7 +3,7 @@
 // is written — the shape `concurrency: 0` and `stepTimeout: 0` are already refused in.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from './driver-pg';
+import type { PgExecutor } from '@ultimat3/core';
 import { createMemoryOutboxStore } from './outbox';
 import { DEFAULT_OUTBOX_CLAIM_LEASE_MS, resolveClaimLeaseMs } from './outbox-lease';
 import { createPgOutboxStore } from './outbox-pg';

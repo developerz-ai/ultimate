@@ -4,10 +4,9 @@
 // `queue-wake.live.test.ts` (a server, and a killed session).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { LogSink } from '@ultimat3/core';
+import type { LogSink, PgExecutor } from '@ultimat3/core';
 import { createContext, frozenClock, setLogSink } from '@ultimat3/core';
 import { createMemoryDriver } from './driver-memory';
-import type { PgExecutor } from './driver-pg';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
 import {

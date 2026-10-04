@@ -195,7 +195,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   Spent, it REFUSES the address before `authenticate()` (`refuseExhaustedAddress`, via the store's
   read-only `peek` — never a take: that was an upsert per signed-in page),
   a valid credential included; no `ctx.ip`, no gate. Signed-in callers behind that NAT wait too.
-- **`postgresRateLimitStore({ executor })` is the shared store**, over a structural `PgExecutor`. The
+- **`postgresRateLimitStore({ executor })` is the shared store**, over `@ultimat3/core`'s structural
+  `PgExecutor` (re-exported here). The
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
   `purgeExpired(nowMs)` takes the caller's clock.
 - **A bucket a route names must be registered**: `withRouteBuckets` merges `meta.rateLimitBucket`
@@ -245,7 +246,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
-| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
+| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by `@ultimat3/core`'s `readCookie`, which `index.ts` re-exports |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
 | `health-disclosure.ts` | WHO the web role's `/healthz` and `/readyz` tell the detail to: the `healthDetailPeers` config key, its screen, and the trusted-proxy half. The body rule and the peer match are core's (`health-disclosure.ts` there), shared with the sync node |

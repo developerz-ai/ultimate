@@ -3,25 +3,11 @@
 // is a declaration nothing can satisfy while `docker/helm/values.yaml` runs `replicas: 3`.
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
+import type { PgExecutor } from '@ultimat3/core';
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
 import { rateLimitStoreUnavailable } from './rate-limit-errors';
 import { rateLimitPeek, refilledTokens } from './rate-limit-peek';
-
-/**
- * The one thing this store needs from the DB layer, declared structurally rather than imported —
- * `@ultimat3/action`'s `idempotency-postgres.ts` and `@ultimat3/jobs` declare the same shape for
- * the same reason: neither package owns the other's connection. Here it is also the only option:
- * `@ultimat3/http` has no `@ultimat3/db` dependency at all, and taking one to type a single method
- * would put the whole database package in this package's install graph.
- *
- * **`Bun.sql` does not satisfy it** — `Bun.sql.query` is `undefined`; it is a tagged template whose
- * positional form is `unsafe`. What satisfies it is a client that already speaks `(text, values)`,
- * wrapped in one line — `@ultimat3/db`'s `DbClient.query({ text, values })` is the framework's own.
- */
-export interface PgExecutor {
-  query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]>;
-}
 
 /**
  * Installed by the boot, not by an app migration — the same rule `SQL_IDEMPOTENCY_TABLE` follows,

@@ -3,8 +3,8 @@
 // else owns the reservation, and a row outside the window is reclaimed rather than replayed.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { IDEMPOTENCY_STATUSES } from './idempotency';
-import type { PgExecutor } from './idempotency-postgres';
 import {
   postgresIdempotencyStore,
   SQL_IDEMPOTENCY_FAIL,

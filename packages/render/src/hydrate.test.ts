@@ -54,7 +54,7 @@ describe('emitIslandAttributes', () => {
 
   test('every value goes through the shared attribute escaper, never into raw HTML', () => {
     // Author-controlled today, which is exactly when the escaping is cheap to add. `head.ts`
-    // imports `escapeAttribute` and this file did not — so `render/CLAUDE.md`'s Escaping row
+    // imports the shared escaper and this file did not — so `render/CLAUDE.md`'s Escaping row
     // ("both now import") was true of one of the two files it named.
     const attrs = emitIslandAttributes(
       directive({

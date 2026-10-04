@@ -5,6 +5,7 @@
 // to them without this package importing it (same-tier packages must not depend on each other).
 
 import type { Clock } from '@ultimat3/core';
+import { readCookie } from '@ultimat3/core';
 import type { AuthSession, SessionStore } from './adapter';
 import { sessionExpired, sessionUnknown } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
@@ -278,36 +279,9 @@ export function clearSessionCookie(policy: SessionPolicy, name?: string): string
 }
 
 /**
- * The one `Cookie:` parser in this package — the oauth handshake reads through it too, so it never
- * throws: a missing or unreadable cookie is `null` or the raw value, never an exception.
+ * The session token off the request, through core's `readCookie` — the oauth handshake reads
+ * through the same one, so neither throws: a missing or unreadable cookie is `null` or the raw value.
  */
-export function readCookie(request: RequestLike, name: string): string | null {
-  const header = request.headers.get('cookie');
-  if (header === null) return null;
-  for (const part of header.split(';')) {
-    const equals = part.indexOf('=');
-    if (equals < 0) continue;
-    if (part.slice(0, equals).trim() !== name) continue;
-    return decodeCookieValue(part.slice(equals + 1).trim());
-  }
-  return null;
-}
-
-/**
- * A `Cookie:` header is attacker-controlled, and `decodeURIComponent('%')` throws a bare
- * `URIError` — which escapes every coded path that reads through here: an OAuth callback would
- * answer 500 instead of `X_OAUTH_STATE_INVALID`. The raw value is returned instead, so the
- * caller's own rejection stays the readable failure. Nothing is loosened by it: a raw value is
- * still checked against a signature or a stored hash, and neither matches a mangled one.
- */
-function decodeCookieValue(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
 export function readSessionCookie(request: RequestLike, policy: SessionPolicy): string | null {
-  return readCookie(request, policy.cookieName);
+  return readCookie(request.headers.get('cookie'), policy.cookieName);
 }

@@ -23,7 +23,7 @@ import { existsSync } from 'node:fs';
 // necessity `favicon.ts` and `runtime-assets.ts` each record for their own root-relative constant.
 import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
-import { localeSegment } from '@ultimat3/core';
+import { escapeHtml, localeSegment } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import {
@@ -34,7 +34,6 @@ import {
 } from '@ultimat3/pwa';
 import type { AssetPath } from '@ultimat3/render';
 import { assetPathProblem } from '@ultimat3/render';
-import { escapeAttribute } from '@ultimat3/seo';
 import { APP_CONFIG_EXPORT } from './app-auth';
 import { APP_CONFIG_FILE } from './app-root';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
@@ -219,7 +218,7 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
       path,
       body: serializeWebManifest(result.manifest),
       head:
-        `<link rel="manifest" href="${escapeAttribute(path)}">` +
+        `<link rel="manifest" href="${escapeHtml(path)}">` +
         renderThemeColorMeta(result.themeColorMeta) +
         (icons === undefined ? '' : appleTouchLinks(icons)),
     };

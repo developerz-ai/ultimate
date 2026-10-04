@@ -12,9 +12,9 @@
 // reason back would be asserting about itself, not about what the ledger receives.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { DbClient, SqlFragment, StatementEvent } from '@ultimat3/db';
 import { createPostgresClient, setStatementObserver } from '@ultimat3/db';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_STEP_LIST, SQL_STEP_PUT } from './driver-pg-sql';
 import { JobTimeoutError } from './errors';

@@ -2,24 +2,9 @@
 // lockout one pod established is visible to the rest. Without it `rateLimit.scope: 'shared'` is a
 // declaration nothing can satisfy, while `x new` scaffolds `replicas: 2` — which is
 // `maxAttempts × 2` guesses per account.
-import type { Clock } from '@ultimat3/core';
+import type { Clock, PgExecutor } from '@ultimat3/core';
 import { accountLocked, authWriteFailed } from './errors';
 import type { AuthLimiter, AuthRateLimitPolicy, AuthReservation } from './rate-limit';
-
-/**
- * The one thing this limiter needs from the DB layer, declared structurally rather than imported.
- * `@ultimat3/action`'s `idempotency-postgres.ts` and `@ultimat3/http`'s rate-limit store declare
- * the same shape for the same reason: the connection belongs to the HOST, not to any of them, so
- * a limiter takes the pool the boot already opened instead of opening a second one against a URL
- * that was resolved once.
- *
- * **`Bun.sql` does not satisfy it** — `Bun.sql.query` is `undefined`; it is a tagged template
- * whose positional form is `unsafe`. `@ultimat3/db`'s `DbClient.query({ text, values })` does,
- * wrapped in one line, and so does a transaction handle.
- */
-export interface PgExecutor {
-  query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]>;
-}
 
 /**
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, so

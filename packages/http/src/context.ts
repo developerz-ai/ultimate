@@ -11,6 +11,7 @@ import {
   type Logger,
   traceId as newTraceId,
   type Role,
+  readCookie,
   type ServiceBag,
   systemClock,
   useContext,
@@ -21,7 +22,6 @@ import { timeConfig } from '@ultimat3/time';
 import type { HttpConfig } from './config';
 import { noRequest } from './errors';
 import type { AuthzDecision } from './hooks';
-import { readCookie } from './locale';
 import type { PeerIdentity } from './peer-identity';
 import type { RateLimitDecision } from './rate-limit';
 import { bindRequestServices } from './request-services';

@@ -1,6 +1,6 @@
 // Email as a channel, over a STRUCTURAL mailer rather than an import of @ultimat3/mail.
 //
-// That is the tier argument, and it is the same one `@ultimat3/action`'s `PgExecutor` makes about
+// That is the tier argument, and it is the same one `PgExecutor` (`@ultimat3/core`) makes about
 // `@ultimat3/db`. `@ultimat3/mail` is tier 4 and so is this package, so importing it would be a
 // sideways edge — and moving `notify` to tier 5 to legalise it would put notifications above
 // `render`, `pwa` and `ui` for no reason other than one channel's transport. A mailer is a driver

@@ -23,9 +23,9 @@
 //     bun test packages/cli/src/pg-array.live.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { createPostgresClient, statementsOf } from '@ultimat3/db';
-import type { PgExecutor } from '@ultimat3/jobs';
 import { SQL_CLAIM, SQL_JOBS_TABLE, SQL_OUTBOX_RELEASE } from '@ultimat3/jobs';
 import { SQL_NOTIFY_INBOX_MARK_READ, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
 import { pgExecutorFor } from './runtime-queue';

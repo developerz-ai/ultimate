@@ -3,9 +3,9 @@
 // question, two answers. Both refuse it now, before anything is read.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
 import { createMemoryBackfillLedger } from './backfill-ledger';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 
 const RUN_ID = '019ff1c5-0000-7000-8000-00000000beef';

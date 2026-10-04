@@ -11,13 +11,7 @@ import { finiteCount } from '@ultimat3/core';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 // `html.ts` is this package's one escaper — a second one is how a character ends up missing.
-import {
-  escapeAttribute,
-  escapeJsonContent,
-  escapeRawTextContent,
-  escapeText,
-  isAttributeName,
-} from './html';
+import { escapeHtml, escapeJsonContent, escapeRawTextContent, isAttributeName } from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -125,7 +119,7 @@ function renderTag(tag: HeadTag): string {
   const attrs = Object.entries(tag.attrs ?? {})
     .filter(([name]) => isAttributeName(name))
     .map(([name, value]) =>
-      value === true ? ` ${name}` : ` ${name}="${escapeAttribute(String(value))}"`,
+      value === true ? ` ${name}` : ` ${name}="${escapeHtml(String(value))}"`,
     )
     .join('');
   if (VOID_KINDS.has(tag.kind)) return `<${tag.kind}${attrs}>`;
@@ -141,7 +135,7 @@ function renderTag(tag: HeadTag): string {
  * reaching `meta.ld` — a title, a product name, a bio — able to close the element.
  */
 function contentOf(tag: HeadTag, raw: string): string {
-  if (tag.kind !== 'script' && tag.kind !== 'style') return escapeText(raw);
+  if (tag.kind !== 'script' && tag.kind !== 'style') return escapeHtml(raw);
   return carriesJson(tag) ? escapeJsonContent(raw) : escapeRawTextContent(raw);
 }
 

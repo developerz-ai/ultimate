@@ -5,6 +5,7 @@
 
 // why: no Bun native joins a path.
 import { join, relative } from 'node:path';
+import { escapeHtml } from '@ultimat3/core';
 import { routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import type { ShotRun } from './cmd-shot';
@@ -93,9 +94,6 @@ export interface MatrixShot {
   /** Relative to the matrix directory, as the contact sheet links it. */
   readonly image: string;
 }
-
-const escapeHtml = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /**
  * The contact sheet. System colours only (`Canvas`, `CanvasText`, `Mark`): a generated review page

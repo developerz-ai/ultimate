@@ -3,8 +3,9 @@
 // renderer, because email clients drop <style> and templates must never carry a raw hex.
 // Table-based and 600px wide: Outlook still renders with Word's HTML engine.
 
+import { escapeHtml } from '@ultimat3/core';
 import { mailLayoutDuplicate } from './errors';
-import { escapeHtml, safeUrl, styleAttr } from './html';
+import { safeUrl, styleAttr } from './html';
 
 export type ColorScheme = 'light' | 'dark';
 

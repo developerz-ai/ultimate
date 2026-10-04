@@ -74,7 +74,7 @@ export const dbClientSource = (
 // same two lines: its import, and \`<tableName>: <entity>,\` in the set.
 
 ${sortedImports([
-  "import { resolveEnvironment } from '@ultimat3/core';",
+  "import { storeMode } from '@ultimat3/core';",
   "import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/entity';",
   ...entries.map(handleImportLine),
 ])}
@@ -86,9 +86,11 @@ ${sortedImports([
  * \`postgresDriver()\` takes no connection: it resolves \`@ultimat3/db\`'s process client, which is
  * the embedded PGlite under \`x dev\` and the \`DATABASE_URL\` pool in a container. \`bun test\`
  * installs no client, so a test gets the in-memory driver — the same contract, no database.
+ * \`storeMode\` is core's one answer to that question, shared with every other seam that has a
+ * memory and a database store.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver =>
-  resolveEnvironment({ env }) === 'test' ? memoryDriver() : postgresDriver();
+  storeMode(env) === 'memory' ? memoryDriver() : postgresDriver();
 
 export const driver = selectDriver(Bun.env);
 

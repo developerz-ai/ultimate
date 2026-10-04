@@ -3,11 +3,10 @@
 // both failures are silent — a redeployed pod arms to tomorrow and never reports the 03:00 run the
 // pod it replaced dropped, and two pods in a rolling update both dispatch every task.
 
-import type { Clock } from '@ultimat3/core';
+import type { Clock, PgExecutor } from '@ultimat3/core';
 import { finiteOption, uuid } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { DEFAULT_QUEUE } from './driver';
-import type { PgExecutor } from './driver-pg';
 import { SQL_SCHEDULER_FIRE } from './driver-pg-operator-sql';
 import {
   SQL_LEADER_ACQUIRE,

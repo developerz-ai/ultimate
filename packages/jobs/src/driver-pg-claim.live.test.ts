@@ -4,11 +4,11 @@
 // racing its key's holder settling must answer, never refuse. Skips unless `TEST_DATABASE_URL`.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { createPostgresClient, raw } from '@ultimat3/db';
 import type { JobDriver, JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 

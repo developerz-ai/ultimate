@@ -6,6 +6,7 @@
 // caller composes, an association is a column whose value comes from another factory built with
 // the SAME strategy — `build()` leaves the parent in memory, `create()` writes it.
 
+import { fnv1a } from '@ultimat3/core';
 import { seededRandom, seededUuid } from './determinism';
 import { FactoryTraitUnknownError } from './errors';
 import { persistRow } from './factory-persist';
@@ -91,15 +92,12 @@ export interface Factory<TRow, TTrait extends string = string> {
 
 /**
  * Two factories with the same seed emit the same uuids, so a default of `1` everywhere gave a user
- * and a post the same id — rows that only look related. FNV-1a over the table name keeps every
- * table on its own stream while staying a pure function of the schema, so the ids are still
+ * and a post the same id — rows that only look related. Core's FNV-1a over the table name keeps
+ * every table on its own stream while staying a pure function of the schema, so the ids are still
  * identical run to run and machine to machine.
  */
 export function seedFor(table: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < table.length; i += 1) {
-    hash = Math.imul(hash ^ table.charCodeAt(i), 0x01000193) >>> 0;
-  }
+  const hash = fnv1a(table);
   return hash === 0 ? 1 : hash;
 }
 

@@ -3,13 +3,13 @@
 // injected clock. The SQL's own arithmetic is the `.live.` twin's job.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import {
   type AuthRateLimitPolicy,
   assertAuthLimiterPolicy,
   DEFAULT_AUTH_RATE_LIMIT,
 } from './rate-limit';
-import type { PgExecutor } from './rate-limit-postgres';
 import {
   postgresAuthLimiter,
   SQL_AUTH_LIMIT_TABLES,

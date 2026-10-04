@@ -3,9 +3,9 @@
 // that file is the claim/settle driver and sits near its size ceiling; this is the read-and-repair
 // half a dashboard and `x jobs` call.
 
+import type { PgExecutor } from '@ultimat3/core';
 import { assert, finiteOption } from '@ultimat3/core';
 import { REQUEUEABLE_STATES } from './driver';
-import type { PgExecutor } from './driver-pg';
 import { SQL_JOB_LIST, SQL_JOB_LIST_BEFORE } from './driver-pg-jobs-sql';
 import {
   SQL_COUNTER_DROP,

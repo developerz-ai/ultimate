@@ -149,12 +149,12 @@ describe('renderHead', () => {
     expect(html).toBe('<meta name="a" content="b">');
   });
 
-  // One escaper for the package (`html.ts`), so this is `escapeAttribute`'s set: &, <, > and ".
-  // It was a private copy here that left `>` alone — harmless in an attribute, but a second
+  // One escaper for the package (`html.ts`, core's `escapeHtml`), so this is its set: &, <, >, "
+  // and '. It was a private copy here that left `>` alone — harmless in an attribute, but a second
   // escaper is how one of them ends up missing a character that is not harmless.
-  test('attribute values are escaped for &, ", < and >', () => {
-    const html = renderHead([{ kind: 'meta', key: 'meta:a', attrs: { content: '<a> & "b"' } }]);
-    expect(html).toBe('<meta content="&lt;a&gt; &amp; &quot;b&quot;">');
+  test('attribute values are escaped for &, ", \', < and >', () => {
+    const html = renderHead([{ kind: 'meta', key: 'meta:a', attrs: { content: `<a> & "b" 'c'` } }]);
+    expect(html).toBe('<meta content="&lt;a&gt; &amp; &quot;b&quot; &#39;c&#39;">');
   });
 
   test('title content is escaped for &, < and >', () => {

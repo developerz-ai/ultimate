@@ -75,3 +75,31 @@ describe('a template literal nested inside another template', () => {
     expect(masked.length).toBe(source.length);
   });
 });
+
+describe('a regex literal inside a template placeholder', () => {
+  // The shape `admin/src/errors.ts` hid a `code:` behind: `\//` inside `${}` was read as a `//`
+  // comment, which swallowed the `}` and the closing backtick, so the rest of the file masked as
+  // template text and every scanner reading the mask lost every declaration below it.
+  const source =
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    "const a = `add ['${p.replace(/^\\//, '')}:read']`;\nconst b = { code: 'X_N', fix: 'f' };\n";
+
+  test('ends the placeholder where it ends, so the code after it is still code', () => {
+    const masked = maskLiterals(source);
+    expect(masked.length).toBe(source.length);
+    expect(masked).toContain('code:');
+    expect(masked.split('\n')[0]?.endsWith('`;')).toBe(true);
+  });
+
+  test('a division inside a placeholder is still a division', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    const text = "const r = `${a / b} and ${c / 2}`;\nconst d = { code: 'X_D' };\n";
+    expect(maskLiterals(text)).toContain('code:');
+  });
+
+  test('a comment inside a placeholder is still a comment', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+    const text = 'const r = `${a /* } ` */ + b}`;\nconst d = { code: 1 };\n';
+    expect(maskLiterals(text)).toContain('code:');
+  });
+});

@@ -5,8 +5,8 @@
 // writes on the CALLER'S connection and nothing else does.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
-import type { PgExecutor } from './driver-pg';
 import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_STAGE } from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
 import { createPgOutboxStore } from './outbox-pg';

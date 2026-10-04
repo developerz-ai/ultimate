@@ -4,7 +4,7 @@
 // The Postgres half needs `TEST_DATABASE_URL`; it makes its own database and drops it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/jobs';
+import type { PgExecutor } from '@ultimat3/core';
 import { createMemoryDigestStore, type DigestSlot, type DigestStore } from './digest';
 import { createPgDigestStore, SQL_NOTIFY_DIGESTS_TABLE } from './digest-pg';
 import type { NotifyEvent } from './notification';

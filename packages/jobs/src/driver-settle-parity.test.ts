@@ -7,10 +7,10 @@
 // test in this repo run against, and `driver-pg.ts` is what production runs against.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { JobDriver, NackOptions } from './driver';
 import { nackState } from './driver';
 import { createMemoryDriver } from './driver-memory';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 

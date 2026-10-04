@@ -449,7 +449,6 @@
       "version": "23.0.0",
       "dependencies": {
         "@ultimat3/core": "23.0.0",
-        "@ultimat3/seo": "23.0.0",
       },
     },
     "packages/query": {

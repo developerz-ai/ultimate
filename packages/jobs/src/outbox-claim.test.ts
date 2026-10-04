@@ -7,9 +7,9 @@
 // live states; a repeat that lands after the first job finished inserts a second row.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
-import type { PgExecutor } from './driver-pg';
 import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_MARK_PUBLISHED, SQL_OUTBOX_RELEASE } from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
 import { createMemoryOutboxStore } from './outbox';

@@ -45,7 +45,11 @@ function endOfInterpolation(text: string, from: number): number {
   let i = from;
   while (i < text.length) {
     const ch = text[i] as string;
-    if (ch === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
+    // A regex before the comment test: in `${p.replace(/^\//, '')}` the `\//` is the regex's own
+    // escaped slash and its close, and read as a `//` comment it swallowed the `}` and the closing
+    // backtick — every declaration below masked as template text (`admin/src/errors.ts` hid one).
+    if (ch === '/' && opensRegex(text, i, from)) i = endOfRegex(text, i);
+    else if (ch === '/' && (text[i + 1] === '/' || text[i + 1] === '*')) {
       const line = text[i + 1] === '/';
       const end = line ? text.indexOf('\n', i) : text.indexOf('*/', i + 2);
       i = end === -1 ? text.length : line ? end : end + 2;
@@ -66,19 +70,21 @@ function endOfInterpolation(text: string, from: number): number {
  * Whether the `/` at `at` opens a regex rather than divides — the call no scanner without a parser
  * avoids. A regex cannot follow what ends an expression: an identifier that is not one of the words
  * above, a number, `)`, `]`, a string's closing quote. Every other position is an operator's and
- * opens one; `</` and `/>` are JSX delimiters. Read from the masked prefix, so a comment is space.
+ * opens one; `</` and `/>` are JSX delimiters; `//` and `/*` open comments. Read from the masked
+ * prefix, so a comment is space — or, inside a `${}`, from the raw body from `floor` on, where the
+ * placeholder's own start is an operator position.
  */
-function opensRegex(out: readonly string[], at: number): boolean {
-  if (out[at + 1] === '>') return false;
+function opensRegex(out: ArrayLike<string>, at: number, floor = 0): boolean {
+  if (out[at + 1] === '>' || out[at + 1] === '/' || out[at + 1] === '*') return false;
   let i = at - 1;
-  while (i >= 0 && /\s/.test(out[i] as string)) i -= 1;
-  if (i < 0) return true;
+  while (i >= floor && /\s/.test(out[i] as string)) i -= 1;
+  if (i < floor) return true;
   const ch = out[i] as string;
   if (ch === '<' || ch === ')' || ch === ']' || QUOTES.has(ch)) return false;
   if (!WORD.test(ch)) return true;
   let start = i;
-  while (start >= 0 && WORD.test(out[start] as string)) start -= 1;
-  return REGEX_AFTER_WORDS.has(out.slice(start + 1, i + 1).join(''));
+  while (start >= floor && WORD.test(out[start] as string)) start -= 1;
+  return REGEX_AFTER_WORDS.has(Array.prototype.slice.call(out, start + 1, i + 1).join(''));
 }
 
 /**

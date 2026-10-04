@@ -19,12 +19,18 @@
  * before. `isSuperseded` is core's too: reading a fenced answer is the point of installing a
  * flight, and it should not cost a second import.
  */
+/**
+ * The SHARED store, and the only one an app running more than one replica may install. The
+ * statements are exported beside it because the table is applied the way `SQL_JOBS_TABLE` is —
+ * by `x db up` in development and by the release-phase `ROLE=migrate` in production.
+ */
 export type {
   ClientFlight,
   ClientFlightOptions,
   ClientRetry,
   FlightKeyOptions,
   FlightPlan,
+  PgExecutor,
   WireAnswer,
 } from '@ultimat3/core';
 export {
@@ -191,13 +197,7 @@ export {
   DEFAULT_MAX_IDEMPOTENCY_KEYS,
   MemoryIdempotencyStore,
 } from './idempotency-memory';
-/**
- * The SHARED store, and the only one an app running more than one replica may install. The
- * statements are exported beside it because the table is applied the way `SQL_JOBS_TABLE` is —
- * by `x db up` in development and by the release-phase `ROLE=migrate` in production.
- */
 export type {
-  PgExecutor,
   PostgresIdempotencyStore,
   PostgresIdempotencyStoreOptions,
 } from './idempotency-postgres';

@@ -3,6 +3,8 @@
 // nothing here reads a database or a request — `app/auth/viewer.ts` turns the token into an actor,
 // and `app/auth/authenticator.ts` is what hands it the header.
 
+import { readCookie as readCookieValue } from '@ultimat3/core';
+
 /**
  * Two names for one cookie, chosen by the flag that makes the strong one legal.
  *
@@ -42,17 +44,13 @@ export const newSessionToken = (): string =>
 export const hashToken = (token: string): string =>
   new Bun.CryptoHasher('sha256').update(token).digest('hex');
 
-/** One cookie out of a `Cookie:` header. Returns null rather than '' so "absent" has one spelling. */
+/**
+ * One cookie out of a `Cookie:` header, through the framework's one reader — which never throws on
+ * a malformed escape. Returns null rather than '' so "absent" has one spelling.
+ */
 export const readCookie = (header: string | null, name: string): string | null => {
-  if (header === null) return null;
-  for (const part of header.split(';')) {
-    const separator = part.indexOf('=');
-    if (separator === -1) continue;
-    if (part.slice(0, separator).trim() !== name) continue;
-    const value = part.slice(separator + 1).trim();
-    return value.length === 0 ? null : decodeURIComponent(value);
-  }
-  return null;
+  const value = readCookieValue(header, name);
+  return value === '' ? null : value;
 };
 
 /** Both names are read, because the same browser may hold a cookie set before TLS was in front. */

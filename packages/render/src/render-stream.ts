@@ -13,7 +13,7 @@
 
 import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
-import { escapeAttribute } from './html';
+import { escapeHtml } from './html';
 import type { RenderResult } from './route';
 import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
 
@@ -54,7 +54,7 @@ export function holeId(id: string): string {
  * from a param. `fallback` is already-rendered HTML and stays verbatim.
  */
 export function holeMarker(id: string, fallback: string): string {
-  return `<x-hole id="${escapeAttribute(holeId(id))}">${fallback}</x-hole>`;
+  return `<x-hole id="${escapeHtml(holeId(id))}">${fallback}</x-hole>`;
 }
 
 /**
@@ -64,10 +64,10 @@ export function holeMarker(id: string, fallback: string): string {
 export const REVEAL_SCRIPT = `<script>${REVEAL_BODY}</script>`;
 
 export function revealChunk(id: string, html: string): string {
-  // The id reaches markup ONLY through `escapeAttribute` — never a script — so a quote in it
+  // The id reaches markup ONLY through `escapeHtml` — never a script — so a quote in it
   // cannot close anything, and no per-hole body exists for a CSP to fail to list.
   return (
-    `<template data-x-hole="${escapeAttribute(holeId(id))}">${html}</template>` +
+    `<template data-x-hole="${escapeHtml(holeId(id))}">${html}</template>` +
     `<script>${REVEAL_CALL}</script>`
   );
 }
@@ -118,8 +118,7 @@ export function renderStreamHtml(
   const tail = plan.tail ?? '</body></html>';
   const errorFallback =
     // Escaped as `holeMarker` escapes the same id: it lands inside an attribute either way.
-    options.errorFallback ??
-    ((id) => `<div data-x-hole-error="${escapeAttribute(id)}" hidden></div>`);
+    options.errorFallback ?? ((id) => `<div data-x-hole-error="${escapeHtml(id)}" hidden></div>`);
   // A deadline is the bound a non-finite value does not disable but MOVES: `setTimeout(fn, NaN)`
   // is `setTimeout(fn, 0)`, so every hole would miss a deadline nobody set and the document would
   // be all fallbacks. `null` is the declared opt-out; there is no spelling that means "immediately".

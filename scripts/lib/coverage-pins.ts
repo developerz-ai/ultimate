@@ -76,8 +76,8 @@ export interface CoveragePin {
  */
 export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
   scripts: {
-    lines: 80,
-    funcs: 88,
+    lines: 82,
+    funcs: 89,
     why:
       'First measurement, 2026-10-01: 80.35% lines / 88.21% functions over 139 files, a file no ' +
       "test loads counted at 0%. What is uncovered is each script's `import.meta.main` block " +
@@ -85,7 +85,7 @@ export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
       'side-effects.ts 102) and seven entry points nothing imports (setup.ts, ' +
       'list-workspaces.ts, the four bench/restart-bench*.ts, lib/guard-preload.ts). Closed by ' +
       "moving each main block's logic into an exported function its test calls; the pin rises " +
-      'with every script that does.',
+      'with every script that does. 2026-10-04: 82.74% / 89.52% after slice 14a.',
   },
 };
 

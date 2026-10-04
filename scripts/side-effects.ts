@@ -36,6 +36,7 @@
 
 // why: Bun exposes no path-join primitive, and the pins file is rewritten by absolute path.
 import { join } from 'node:path';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagBool, flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -200,44 +201,44 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
 const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>> = {
   undeclared: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNDECLARED',
-    cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports`,
-    fix: `add "./${gap.subject}" to "sideEffects" in ${gap.dir}/package.json — bun run side-effects --explain --json prints the array this tree measures`,
+    cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
+    fix: `{ "sideEffects": ["./${gap.subject}"] }`,
     at: `${gap.dir}/${gap.subject}:${String(gap.line ?? 1)}`,
   }),
   unanchored: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNANCHORED',
-    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it: Bun reads any sideEffects ARRAY as false and shakes the module out anyway (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island`,
-    fix: `add \`import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';\` to ${gap.dir}/src/index.ts — a bare import is in the module graph unconditionally, on every bundler, and costs nothing where the array was already honoured`,
+    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it: Bun reads any sideEffects ARRAY as false and shakes the module out anyway (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island — add the import below to ${gap.dir}/src/index.ts: a bare import is in the module graph unconditionally, on every bundler, and costs nothing where the array was already honoured`,
+    fix: `import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';`,
     at: `${gap.dir}/package.json`,
   }),
   'stale-entry': (gap) => ({
     code: 'X_SIDE_EFFECTS_ENTRY_STALE',
-    cause: `${gap.dir}/package.json declares sideEffects entry ${JSON.stringify(gap.subject)} and no file in ${gap.dir} matches it, so the entry protects nothing and reads as a rule that is still in force`,
-    fix: `delete ${JSON.stringify(gap.subject)} from "sideEffects" in ${gap.dir}/package.json, or point it at the file it was written for`,
+    cause: `${gap.dir}/package.json declares sideEffects entry ${JSON.stringify(gap.subject)} and no file in ${gap.dir} matches it, so the entry protects nothing and reads as a rule that is still in force — delete it from "sideEffects" in ${gap.dir}/package.json, or point it at the file it was written for; the command prints the array this tree measures`,
+    fix: 'bun run side-effects --explain --json',
     at: `${gap.dir}/package.json`,
   }),
   missing: (gap) => ({
     code: 'X_SIDE_EFFECTS_MISSING',
-    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one, and it is NOT a claim that Bun then keeps the named modules: it does not (oven-sh/bun#40650), which is what X_SIDE_EFFECTS_UNANCHORED is for`,
-    fix: `run bun run side-effects --explain --json, copy this package's array into ${gap.dir}/package.json, then bun run scripts/side-effects.ts --unpin ${gap.dir}`,
+    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one, and it is NOT a claim that Bun then keeps the named modules: it does not (oven-sh/bun#40650), which is what X_SIDE_EFFECTS_UNANCHORED is for. Copy this package's array from the command into ${gap.dir}/package.json, then \`bun run scripts/side-effects.ts --unpin ${gap.dir}\``,
+    fix: 'bun run side-effects --explain --json',
     at: `${gap.dir}/package.json`,
   }),
   'anchor-stale': (gap) => ({
     code: 'X_SIDE_EFFECTS_ANCHOR_STALE',
-    cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force`,
-    fix: `delete the ${JSON.stringify(gap.subject)} row from SIDE_EFFECTS_ANCHORS in scripts/lib/side-effects-scan.ts, or point it at the module it was written for`,
+    cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force — delete that row, or point it at the module it was written for`,
+    fix: 'grep -n SIDE_EFFECTS_ANCHORS scripts/lib/side-effects-scan.ts',
     at: 'scripts/lib/side-effects-scan.ts',
   }),
   'pin-stale': (gap) => ({
     code: 'X_SIDE_EFFECTS_PIN_STALE',
     cause: `${gap.dir} is pinned as declaring no sideEffects and now declares one, so the pin would let the field be deleted again in silence`,
-    fix: `bun run scripts/side-effects.ts --unpin ${gap.dir}`,
+    fix: `bun run scripts/side-effects.ts --unpin ${renderFixShellArg(gap.dir, '<package dir>')}`,
     at: PINS_FILE,
   }),
   unscanned: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNSCANNED',
-    cause: `${gap.subject}, so every package reports clean and the rule enforces nothing — a scan that reads nothing looks exactly like a tree with no lies in it`,
-    fix: `fix the walk in ${PINS_FILE}: PACKAGE_GLOB must match this repo's packages and scanTopLevelEffects must still read a registerErrorCodes call`,
+    cause: `${gap.subject}, so every package reports clean and the rule enforces nothing — a scan that reads nothing looks exactly like a tree with no lies in it — the walk in ${PINS_FILE} is wrong: PACKAGE_GLOB must match this repo's packages and scanTopLevelEffects must still read a registerErrorCodes call`,
+    fix: 'bun run scripts/side-effects.ts --explain --json',
     at: PINS_FILE,
   }),
 };
@@ -313,7 +314,7 @@ if (import.meta.main) {
   const unpin = flagList(args, 'unpin');
   const unknown = unknownPins(unpin);
   if (unknown.length > 0) {
-    const cause = `--unpin names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not on the ratchet, so nothing would have been lowered and the command would still have answered ok`;
+    const cause = `--unpin names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not on the ratchet, so nothing would have been lowered and the command would still have answered ok — spell each one as its repo-relative directory; the ratchet is the SIDE_EFFECTS_UNDECLARED array in ${PINS_FILE}`;
     report(
       {
         ok: false,
@@ -323,7 +324,7 @@ if (import.meta.main) {
           {
             code: 'X_CLI_BAD_FLAG',
             cause,
-            fix: `spell each one as its repo-relative directory, e.g. packages/action — the ratchet is the SIDE_EFFECTS_UNDECLARED array in ${PINS_FILE}`,
+            fix: 'grep -n -A40 "SIDE_EFFECTS_UNDECLARED" scripts/side-effects.ts',
             at: PINS_FILE,
           },
         ],

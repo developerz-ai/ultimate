@@ -57,7 +57,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
       '`n-plus-one.ts`, `errors.ts` and `array-element.ts` index fix tables by a bulk-write op and an array element kind, both narrowed from the entity registry.',
   },
   mail: {
-    count: 4,
+    count: 3,
     reason: 'MIME header and encoding tables keyed by a union this package declares.',
   },
   pwa: {
@@ -69,15 +69,12 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
     reason:
       'render-mode, surface and hydration tables, each keyed by a member of a vocabulary `scripts/render-modes.ts` already refuses a second copy of.',
   },
+  // why: 26 -> 27 because core's source-mask now reads past a regex inside a template ${}, which
+  // had hidden scripts/side-effects.ts's FINDINGS[gap.kind] — the same shape this row already pins.
   scripts: {
-    count: 26,
+    count: 27,
     reason:
       'the gate scripts themselves: `FINDINGS[gap.kind]` in every ratchet, a table keyed by a union the same file declares one line above and narrows exhaustively. Not shipped to an app, and the key never crosses a process boundary. It went 36 -> 38 when the two newest ratchets landed, which is the honest cost of keeping one shape across twenty guards rather than one guard shaped differently.',
-  },
-  seo: {
-    count: 2,
-    reason:
-      '`xml.ts` escapes a character its own regex matched. `images.ts` was one of the thirteen and is repaired.',
   },
   testing: {
     count: 3,

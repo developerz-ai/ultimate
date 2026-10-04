@@ -6,10 +6,10 @@
 // Stored and not broadcast, exactly as the memory bus is: a step that suspends at 12:00 and
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
+import type { PgExecutor } from '@ultimat3/core';
 import { finiteOption, logger, uuid } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
-import type { PgExecutor } from './driver-pg';
 import {
   SQL_EVENT_FIND,
   SQL_EVENT_LIST,

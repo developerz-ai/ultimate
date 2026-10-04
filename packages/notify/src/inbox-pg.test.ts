@@ -3,7 +3,7 @@
 // write into somebody else's inbox.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/jobs';
+import type { PgExecutor } from '@ultimat3/core';
 import type { InboxStore } from './inbox';
 import { createMemoryInboxStore } from './inbox';
 import {

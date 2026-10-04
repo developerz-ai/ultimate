@@ -1,6 +1,7 @@
 // Single responsibility: the public API of @ultimat3/auth. Explicit named exports only — this
 // list is what the http pipeline, the MCP surface and generated apps are allowed to depend on.
 
+export type { PgExecutor } from '@ultimat3/core';
 export type {
   AccountStore,
   ApiKeyStore,
@@ -60,7 +61,6 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
-
 export { BuiltinAdapter } from './builtin-adapter';
 /** The opaque per-principal id a per-request document hands the page's client store. */
 export type { ClientScopeOptions } from './client-scope';
@@ -290,11 +290,7 @@ export {
   orgKey,
   orgRateLimit,
 } from './rate-limit';
-export type {
-  PgExecutor,
-  PostgresAuthLimiter,
-  PostgresAuthLimiterOptions,
-} from './rate-limit-postgres';
+export type { PostgresAuthLimiter, PostgresAuthLimiterOptions } from './rate-limit-postgres';
 export {
   postgresAuthLimiter,
   SQL_AUTH_LIMIT_TABLES,
@@ -324,7 +320,6 @@ export {
   DEFAULT_SESSION_POLICY,
   idleSlideMs,
   listDevices,
-  readCookie,
   readSessionCookie,
   revokeOtherSessions,
   revokeSession,

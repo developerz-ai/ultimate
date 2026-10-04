@@ -4,9 +4,9 @@
 // when the transaction began. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { createPostgresClient, raw } from '@ultimat3/db';
-import type { PgExecutor } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import { createPgEventBus } from './events-pg';
 

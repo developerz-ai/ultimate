@@ -4,7 +4,7 @@
 // one lease instead of one job. The statements themselves live in `driver-pg-sql.ts`, the schema
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
-import type { Clock } from '@ultimat3/core';
+import type { Clock, PgExecutor } from '@ultimat3/core';
 import { finiteCount, renderCauseValue, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { listedRunId } from './backfill-ledger';
@@ -66,23 +66,6 @@ import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { HeldLease, LeaseStore } from './leases';
 import type { StepStore } from './steps';
-
-/**
- * The one thing this driver needs from the DB layer, declared structurally so this package needs
- * no database CLIENT: `@ultimat3/db` is imported for `expectedQueryLoop` — the marker that tells
- * the N+1 detector a step write is one-per-step by design (`steps.ts`) — and never for a
- * connection.
- *
- * **Not satisfied by `Bun.sql`** — verified against Bun 1.4.0: `Bun.sql.query` is `undefined`.
- * `Bun.sql` is a tagged template whose positional form is `unsafe`, so a `{ executor: Bun.sql }`
- * would `TypeError` on the first claim. What satisfies it is a one-line adapter over a client that
- * already speaks `(text, values)` — `@ultimat3/cli`'s `pgExecutorFor(client)` is the framework's
- * own, wrapping `@ultimat3/db`'s `DbClient.query({ text, values })` — and a `DbTx`, which is a
- * client on the transaction's own connection.
- */
-export interface PgExecutor {
-  query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]>;
-}
 
 /** How often `enqueue` sends its insert before it calls a refusal an index fault, not a race. */
 const ENQUEUE_ATTEMPTS = 2;

@@ -78,6 +78,15 @@ unitTest('a cookie header is parsed by name, not by position', () => {
   expect(readCookie(null, SESSION_COOKIE_PLAIN)).toBe(null);
 });
 
+// The header is client-authored: `smc_session=%` used to be a bare `URIError` out of the
+// authenticator, a 500 on every request that browser sent. Core's reader answers the raw value,
+// which then matches no stored hash — an anonymous request, never a crash.
+unitTest('a malformed escape is the raw value, and an empty one is absent', () => {
+  expect(readCookie('smc_session=%', SESSION_COOKIE_PLAIN)).toBe('%');
+  expect(readCookie('smc_session=%ZZ; other=1', SESSION_COOKIE_PLAIN)).toBe('%ZZ');
+  expect(readCookie('smc_session=', SESSION_COOKIE_PLAIN)).toBe(null);
+});
+
 unitTest('the secure name wins when a browser is holding both', () => {
   const header = `${SESSION_COOKIE_PLAIN}=old; ${SESSION_COOKIE_SECURE}=new`;
   expect(readSessionToken(header)).toBe('new');

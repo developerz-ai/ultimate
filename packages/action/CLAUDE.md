@@ -216,7 +216,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `configureIdempotency({ scope })`, compared by `assertIdempotencyScope` in `registerAction`
   (`X_IDEMPOTENCY_NOT_SHARED`). Default `'process'`.
 - **The memory store is bounded; `in-flight` records are the last evicted.** Never an LRU.
-- **`postgresIdempotencyStore` is the shared store** over a structural `PgExecutor`; the
+- **`postgresIdempotencyStore` is the shared store** over `@ultimat3/core`'s structural `PgExecutor`; the
   reservation is ONE `insert … on conflict` statement. The CLI boot installs it.
 - **Inside a transaction the SETTLE commits with the write, on BOTH stores** (`liveTransaction()`):
   Postgres on the handler's connection, memory at `onCommit`. The reservation and `fail` stay

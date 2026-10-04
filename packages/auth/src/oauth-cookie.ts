@@ -6,12 +6,12 @@
 // format at one trust level.
 
 import type { Clock } from '@ultimat3/core';
-import { EnvMissingError, systemClock } from '@ultimat3/core';
+import { EnvMissingError, readCookie, systemClock } from '@ultimat3/core';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
 import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
 import { assertFiniteAuthCount } from './policy-numbers';
-import { type RequestLike, readCookie } from './session';
+import type { RequestLike } from './session';
 import { base64Url, timingSafeEqual } from './tokens';
 
 /** `__Host-` for the same reason the session cookie carries it: no subdomain can plant one. */
@@ -209,7 +209,10 @@ export function readHandshakeCookie(
   provider: OAuthProviderId,
   options?: HandshakeCookieOptions,
 ): OAuthHandshake {
-  const sealed = readCookie(request, options?.name ?? handshakeCookieName(provider));
+  const sealed = readCookie(
+    request.headers.get('cookie'),
+    options?.name ?? handshakeCookieName(provider),
+  );
   if (sealed === null) {
     throw oauthStateInvalid(provider, 'no handshake cookie arrived with the callback');
   }

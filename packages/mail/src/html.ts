@@ -1,19 +1,8 @@
-// Single responsibility: turning untrusted values into inert HTML. Mail bodies interpolate
-// user-supplied names, org names and URLs; an unescaped one is a phishing vector that also
-// renders in the recipient's client forever, so escaping lives in exactly one place.
+// Single responsibility: the mail-specific half of making untrusted values inert — which URLs a
+// link may carry and how a style attribute is written. The character escaping is core's
+// `escapeHtml`, the one table: an unescaped name in a mail is a phishing vector forever.
 
-const ESCAPES: Readonly<Record<string, string>> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-
-/** Escape text content AND attribute values — the same set covers both in mail. */
-export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ESCAPES[char] ?? char);
-}
+import { escapeHtml } from '@ultimat3/core';
 
 const SAFE_PROTOCOLS: readonly string[] = ['http:', 'https:', 'mailto:'];
 

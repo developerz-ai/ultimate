@@ -32,6 +32,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
+| which store backs a seam — `storeMode(env)`: `memory` under `test`, `database` everywhere else | `store-mode.ts` |
 | the boot refusal of a shipped dev signing secret outside development/test — `X_CURSOR_SECRET_DEV` | `dev-secrets.ts` |
 | a value that cannot be printed by accident | `secret.ts` |
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
@@ -71,6 +72,13 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the registrar table one same-tier package reaches another through | `registrar.ts` |
 | decode → resize → encode, the one image pipeline (over `Bun.Image`) | `image/` |
 | `assertNever`, `invariant` | `assert.ts` |
+| the one HTML character table — `escapeHtml`, text and attributes alike (`& < > " '`) | `html-escape.ts` |
+| the one `Cookie:` reader — `readCookie(header, name)`, `null` when absent, never a throw | `cookie.ts` |
+| 32-bit FNV-1a — a BUCKET (rollouts, factory seeds), never a sharing key (`fingerprint` is) | `fnv1a.ts` |
+| `PgExecutor` — the structural `query(text, values)` seam every Postgres store takes | `pg-executor.ts` |
+
+Each of the four, and `fingerprint`, `storeMode` and render's `contentHash`, has ONE implementation:
+`bun run flight-copies` refuses a second by its shape (`X_HELPER_COPY`), whatever it is named.
 
 ## Errors are instructions
 
@@ -316,6 +324,10 @@ fallback of its own; the caller does.
 `ULTIMATE_ENV=prod` is `X_ENVIRONMENT_INVALID`. An unrecognised `NODE_ENV` is *not* an error: it
 is not our key. This is the twin of `roles.ts` — `ROLE` says what the process does,
 `ULTIMATE_ENV` says which deploy it belongs to.
+
+`storeMode(Bun.env)` is the one answer to "memory store or database store?" for a seam with both —
+`memory` under `test` (no database client is installed there), `database` everywhere else, `x dev`'s
+embedded PGlite included. Never a `DATABASE_URL` truthiness check: `x dev` sets none.
 
 ## A secret is redacted by value, not by name
 

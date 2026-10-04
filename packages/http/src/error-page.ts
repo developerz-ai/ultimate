@@ -5,10 +5,9 @@
 //
 // An app overrides it with a file per status; `ServerHooks.errorPage` is the seam that reads one,
 // because this package cannot see a disk.
-import { singleLine } from '@ultimat3/core';
+import { escapeHtml, singleLine } from '@ultimat3/core';
 import type { InterpolationVars } from '@ultimat3/i18n';
 import { t } from '@ultimat3/i18n';
-import { escapeHtml } from './html-render';
 import { OVERLAY_STYLE } from './overlay-style';
 import { html } from './response';
 

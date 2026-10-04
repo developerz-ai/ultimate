@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { DEFAULT_QUEUE } from './driver';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver, createPgLeader } from './driver-pg';
 import {
   SQL_ACK,

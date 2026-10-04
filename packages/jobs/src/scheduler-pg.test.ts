@@ -4,7 +4,7 @@
 // two leaders. Both halves are pinned here.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from './driver-pg';
+import type { PgExecutor } from '@ultimat3/core';
 import { createPgLeader } from './driver-pg';
 import {
   SQL_ADVISORY_UNLOCK,

@@ -4,6 +4,7 @@
 // name that outlives its bytes is a file no client refreshes for a year.
 
 import type { UltimateRequest } from '@ultimat3/http';
+import { contentHash } from '@ultimat3/render/server';
 import { etagMatches } from './runtime-storage';
 
 /**
@@ -14,8 +15,8 @@ import { etagMatches } from './runtime-storage';
 export const REVALIDATE_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 
 /**
- * A strong validator from the bytes — xxHash32, the function `contentHash` applies to a document,
- * taken here over bytes because an icon is not a string. Revalidating costs a request and no body.
+ * A strong validator from the bytes — `@ultimat3/render`'s `contentHash`, the function a document's
+ * ETag is, taken here over bytes because an icon is not a string. Revalidating costs a request and no body.
  */
 export function revalidatedResponse(
   request: UltimateRequest,
@@ -25,7 +26,7 @@ export function revalidatedResponse(
   // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
   // `SharedArrayBuffer`, which `Response` does not accept — `runtime-assets.ts`'s rule, verbatim.
   const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body);
-  const etag = `"${Bun.hash.xxHash32(bytes).toString(16).padStart(8, '0')}"`;
+  const etag = `"${contentHash(bytes)}"`;
   const headers = {
     'content-type': contentType,
     'cache-control': REVALIDATE_CACHE_CONTROL,

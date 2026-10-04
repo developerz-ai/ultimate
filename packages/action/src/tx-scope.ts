@@ -3,9 +3,10 @@
  * `@ultimat3/db` (`tx-scope.test.ts` holds that). When is a write durable (`openCommitScope`, the
  * cache bust), and is a transaction really OPEN, on which client (`liveTransaction`, idempotency).
  */
-import { currentTx, liveTxConnection } from '@ultimat3/db';
+
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
-import type { PgExecutor } from './idempotency-postgres';
+import type { PgExecutor } from '@ultimat3/core';
+import { currentTx, liveTxConnection } from '@ultimat3/db';
 
 /** The half of a transaction a deferred effect needs. `@ultimat3/db`'s `DbTx` satisfies it. */
 export interface CommitScope {

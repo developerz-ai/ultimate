@@ -5,9 +5,8 @@
 // the poll keeps running underneath, and this file's other job is to say whether the wake is
 // PROVEN: the loops raise their idle ceiling only while it is.
 
-import type { Random } from '@ultimat3/core';
+import type { PgExecutor, Random } from '@ultimat3/core';
 import { backoffDelay, finiteOption, logger, renderThrowable } from '@ultimat3/core';
-import type { PgExecutor } from './driver-pg';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { setWakeLive, signalEnqueued, signalStaged } from './enqueue-signal';
 

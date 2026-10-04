@@ -4,10 +4,10 @@
 // comes back on its own. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { createPostgresClient, raw, sql } from '@ultimat3/db';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import { setWakeLive, wakeIsLive } from './enqueue-signal';

@@ -16,13 +16,13 @@
 //     bun test packages/auth/src/limiter-install.live.test.ts
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { defineAuth, login, register } from './auth';
 import { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
 import { MemoryAdapter } from './memory-adapter';
 import type { AuthRateLimitPolicy } from './rate-limit';
-import type { PgExecutor } from './rate-limit-postgres';
 import { postgresAuthLimiter, SQL_AUTH_LIMIT_TABLES } from './rate-limit-postgres';
 
 const url = Bun.env['TEST_DATABASE_URL'];

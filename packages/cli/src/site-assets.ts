@@ -9,6 +9,7 @@ import { copyFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path'; // why: Bun ships no path API.
 import type { AssetExtension, AssetPath } from '@ultimat3/render';
 import { ASSET_DIR, AssetMissingError, assetPathProblem } from '@ultimat3/render';
+import { contentHash } from '@ultimat3/render/server';
 
 /** App-root-relative, beside `favicon.ico`: `apps/web/site/` is where an app's public files live. */
 export const SITE_ASSETS_SOURCE = `apps/web/site/${ASSET_DIR}`;
@@ -37,7 +38,7 @@ export interface SiteAsset {
   readonly path: AssetPath;
   /** Absolute path on disk. */
   readonly file: string;
-  /** xxHash32 of the bytes, 8 hex characters — the algorithm `contentHash` uses for CSS. */
+  /** `@ultimat3/render`'s `contentHash` of the bytes, 8 hex characters — the one CSS and HTML get. */
   readonly hash: string;
   /** `/assets/brand/logo.<hash>.svg`. */
   readonly url: string;
@@ -68,9 +69,6 @@ export function parseHashedAssetUrl(
   if (assetPathProblem(path) !== undefined) return undefined;
   return { path: path as AssetPath, hash: match[2] ?? '' };
 }
-
-const hashBytes = (bytes: Uint8Array): string =>
-  Bun.hash.xxHash32(bytes).toString(16).padStart(8, '0');
 
 export interface SiteAssetTable {
   /** The asset `asset()` named, hashed as the bytes are NOW. Throws `X_ASSET_MISSING`. */
@@ -110,7 +108,7 @@ export function createSiteAssetTable(root: string): SiteAssetTable {
     const cached = cache.get(path);
     if (cached !== undefined && cached.stamp === stamp) return cached.asset;
     const bytes = readFileSync(file);
-    const hash = hashBytes(bytes);
+    const hash = contentHash(bytes);
     // `assetPathProblem` already refused an unknown extension; the guard keeps `constructor` from
     // ever answering an `Object` member if that check is loosened.
     const extension = splitExtension(path).extension.toLowerCase();

@@ -19,7 +19,7 @@ tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
 
-`SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this table, `As of 2026-08-22` — read it rather than counting rows here; nothing checks that these two agree. Each edge earns its line:
+`SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this table; `scripts/tier-table-drift.test.ts` holds the rows to it, edge for edge and in order. Each edge earns its line:
 
 | Sideways exception | Why |
 |---|---|
@@ -147,7 +147,6 @@ graph TD
   render --> i18n
   ui --> i18n
   ui --> money
-  pwa --> seo
   mcp --> action
   mcp --> query
   mcp --> policy

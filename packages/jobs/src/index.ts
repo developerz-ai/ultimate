@@ -11,7 +11,7 @@ import './register';
 // the tier both halves can reach, because this package signs a delivery, `@ultimat3/http` verifies
 // one, and neither may import the other. Re-exported here so a `job` file needs one import rather
 // than two — the same reason `t` is re-exported above.
-export type { WebhookMacInput, WebhookSigningInput } from '@ultimat3/core';
+export type { PgExecutor, WebhookMacInput, WebhookSigningInput } from '@ultimat3/core';
 export {
   isCanonicalWebhookField,
   WEBHOOK_FIELD_MAX,
@@ -124,7 +124,7 @@ export type { MemoryDriverOptions, MemoryJobDriver } from './driver-memory';
 export { createMemoryDriver } from './driver-memory';
 export type { NatsDriverOptions } from './driver-nats';
 export { createNatsDriver } from './driver-nats';
-export type { PgDriverOptions, PgExecutor } from './driver-pg';
+export type { PgDriverOptions } from './driver-pg';
 export { createPgDriver, createPgLeader } from './driver-pg';
 export {
   SQL_COUNTER_DROP,

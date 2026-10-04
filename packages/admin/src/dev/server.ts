@@ -4,7 +4,7 @@
 
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
-import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
+import { DEFAULT_ENVIRONMENT, escapeHtml, tryResolveEnvironment } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG_LOCALE, translatorFor } from '@ultimat3/i18n';
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
@@ -84,9 +84,6 @@ const jsonResponse = (body: unknown, status = 200): Response =>
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
-
-const escapeHtml = (value: string): string =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** The six roles /_x paints with. `--x-*` is the admin's namespace; the values are ui's. */
 const SHELL_ROLES = [

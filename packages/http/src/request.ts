@@ -3,10 +3,9 @@
 // context so they cannot drift from what the pipeline resolved.
 
 import type { Actor } from '@ultimat3/core';
-import { readWithinLimit, renderThrowable } from '@ultimat3/core';
+import { readCookie, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
-import { readCookie } from './locale';
 import type { Schema } from './validate';
 import { validate, validateSync } from './validate';
 

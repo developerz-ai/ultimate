@@ -4,11 +4,11 @@
 // same scenarios against a real Postgres are `driver-pg-lifecycle.job.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT, LIVE_STATES } from './driver';
 import { createMemoryDriver } from './driver-memory';
-import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_CANCEL, SQL_CLAIM, SQL_FIND_LIVE_BY_KEY, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 import { isFinalAttempt } from './retry';

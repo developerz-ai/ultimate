@@ -5,7 +5,7 @@
 // so a driver that starts issuing a different one fails here rather than reading as covered.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from './driver-pg';
+import type { PgExecutor } from '@ultimat3/core';
 import { createPgDriver } from './driver-pg';
 import type { JobRow } from './driver-pg-rows';
 import {

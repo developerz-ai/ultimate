@@ -5,8 +5,8 @@
 // same value shape; this is that rule, applied twice.
 
 import { describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
-import type { PgExecutor } from './driver-pg';
 import { createMemoryEventBus } from './events';
 import { createPgEventBus } from './events-pg';
 

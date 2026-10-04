@@ -87,6 +87,13 @@ describe('this repository', () => {
     expect(await flightCopyFindings(ROOT)).toEqual([]);
   });
 
+  // The helper-home rows are this command's too, so the gate's one real-tree assertion above
+  // covers them — proven here by a copy reaching the same entry point the gate calls.
+  test('and refuses a second implementation of a one-home helper through the same entry', () => {
+    const copy = "const T = { '&': '&amp;', '<': '&lt;' };\n";
+    expect(codes(file('packages/x/src/escape.ts', copy))).toEqual(['X_HELPER_COPY']);
+  });
+
   test('and the scan really walked shipped source, skipping tests', async () => {
     const files = await readSources(ROOT);
     expect(files.length).toBeGreaterThan(100);

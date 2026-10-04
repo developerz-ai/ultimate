@@ -3,7 +3,7 @@
 // overwrite. The behaviour on a real database is `driver-answers-fixture.ts`, on both drivers.
 
 import { describe, expect, test } from 'bun:test';
-import type { PgExecutor } from './driver-pg';
+import type { PgExecutor } from '@ultimat3/core';
 import { createPgDriver } from './driver-pg';
 import { SQL_STEP_PUT } from './driver-pg-sql';
 

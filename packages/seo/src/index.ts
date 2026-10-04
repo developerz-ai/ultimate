@@ -120,5 +120,4 @@ export {
 } from './sitemap';
 export type { MetaIssue, MetaValidationReport, ValidateMetaOptions } from './validate';
 export { assertMeta, validateMeta } from './validate';
-
-export { absoluteUrl, escapeAttribute, escapeXml } from './xml';
+export { absoluteUrl, escapeXml } from './xml';
