@@ -88,12 +88,13 @@ export function recordPersister(options: RecordPersisterOptions): RecordPersiste
   });
 
   const restore = async (): Promise<number> => {
-    const scope = scopeKey(principal());
+    const owner = principal();
+    const scope = scopeKey(owner);
     if (scope === undefined) return 0;
     const stored = await options.local.rows(scope);
     // The read is async and a principal change can land inside it: its rescope has already cleared
     // the store, so restoring now would hand the previous principal's rows to the next one.
-    if (scopeKey(principal()) !== scope) return 0;
+    if (principal() !== owner) return 0;
     let restored = 0;
     for (const [type, rows] of stored) {
       if (!options.types.has(type)) continue;

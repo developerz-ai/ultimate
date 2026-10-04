@@ -30,7 +30,7 @@ Milestones 12–14 exist as a **design, not a plan in progress** — see [Design
 
 ## Open at 1.0.0
 
-1.0.0 shipped 28 packages (31 publish `As of 2026-10`), the docs and the three build targets. What this table once claimed and cannot yet prove is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
+1.0.0 shipped the 28 packages, the docs and the three build targets; the packages number 31 `As of 2026-10`. What this table once claimed and cannot yet prove is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
 
 Nothing in this table is open `As of 2026-09-24`; the rows below record what closed.
 
