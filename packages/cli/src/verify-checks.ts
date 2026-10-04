@@ -215,7 +215,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'budgets',
     summary:
-      'per-route JS bytes and LCP, the global style layer every document carries, and the routes that boot nothing to receive their live rows',
+      'per-route JS bytes, the global style layer every document carries, and the routes that boot nothing to receive their live rows',
     // The global-style assertion rides here rather than becoming a step of its own, because this
     // step already asks the one question it asks: what does the document this build emits actually
     // contain? It is also the same app load — `appManifest` fills render's stylesheet registry on

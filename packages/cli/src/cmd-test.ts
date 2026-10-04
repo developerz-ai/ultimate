@@ -40,22 +40,20 @@ import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
 /**
- * `--workers` and `--shard`. `Number.parseInt` alone accepted `4abc` and `4.9` as four, while
- * `cmd-verify.ts`'s own comment claimed `x test --workers` refused the same values `x verify`
- * does — so the two commands disagreed about the same flag. One reader now answers for both.
+ * `--workers`. `Number.parseInt` alone accepted `4abc` and `4.9` as four, while `cmd-verify.ts`'s
+ * own comment claimed `x test --workers` refused the same values `x verify` does — so the two
+ * commands disagreed about the same flag. One reader now answers for both.
  */
-const readIndex = (args: ParsedArgs, name: string, min: number): number | undefined =>
+const readWorkers = (args: ParsedArgs): number | undefined =>
   readIntFlag(args, {
-    name,
+    name: 'workers',
     command: 'test',
-    min,
+    min: 1,
     // The ceiling the summary already claimed and the reader never enforced: `--workers 5000` was
     // accepted and the run clamps only to the file count, which is one Bun worker per test FILE,
-    // each with the framework module graph and a cloned database. `--worker` is an index into an
-    // N-way split, so the same bound holds it (the exact upper index is `workers - 1`, refused a
-    // line below by the check that knows the real width).
+    // each with the framework module graph and a cloned database.
     max: WORKER_CEILING,
-    example: `x test --${name} ${Math.max(min, 1)}`,
+    example: 'x test --workers 1',
   });
 
 /**
@@ -168,29 +166,17 @@ export const testCommand: CliCommand = {
       });
     }
     const files = sample === undefined ? selected : sampleFiles(selected, sample);
-    const explicit = readIndex(ctx.args, 'workers', 1);
+    const explicit = readWorkers(ctx.args);
     const plan =
       explicit === undefined ? workerPlan(availableCpus(), totalMemory(), ctx.env) : undefined;
     const requested = explicit ?? (plan as WorkerPlan).workers;
     const floor = await readVerifyFloor(ctx.cwd);
     const isolate = flagBool(ctx.args, 'isolate') || floor?.isolate === true;
-    // The width a `--worker` index is judged against, and nothing else: which files really run one
-    // at a time is `test-passes.ts`, off the FILES rather than off the positional. This line read
-    // the positional alone until 2026-09 and the comment here claimed it made a serial type serial
-    // — true for `x test live`, false for the bare `x test --workers 8` that selects every type,
-    // which ran the same `live` and `e2e` files eight at a time. It stays because a `--worker` run
-    // is one process per CI JOB: sharding a serial type across N of them is the cluster-wide race
-    // in a second disguise, and refusing the index is where that is caught.
+    // A serial type is one worker whatever `--workers` says. `test-passes.ts` makes the same call
+    // off the FILES, which is what decides which files really run one at a time; this keeps the
+    // width the run reports and reproduces with the one it ran at.
     const ceiling = type !== undefined && SERIAL_TYPES.includes(type) ? 1 : files.length;
     const workers = Math.max(1, Math.min(requested, ceiling));
-    const only = readIndex(ctx.args, 'worker', 0);
-    if (only !== undefined && only >= workers) {
-      throw new BadFlagError({
-        flag: 'worker',
-        command: 'test',
-        reason: `shard ${only} does not exist in a ${workers}-worker split (0..${workers - 1})`,
-      });
-    }
     const result = await runShards({
       root: ctx.cwd,
       runner: ctx.runner,
@@ -201,11 +187,9 @@ export const testCommand: CliCommand = {
       // A default-width run leases its workers from the machine pool, so a second `x test` or
       // gate on the same box runs narrower instead of doubling its memory.
       ...(plan === undefined ? {} : withLease(machineLease(plan.workers, ctx.env))),
-      ...(only === undefined ? {} : { only }),
       ...(filter === undefined ? {} : { filter }),
       ...(type === undefined ? {} : { type }),
-      // `kept` is the corpus the split saw; a `--worker` rerun must name it, not its own shard.
-      // `selected`, not `discovered`: with `--affected` the sample was taken from the narrowed
+      // `kept` is the corpus the run saw. `selected`, not `discovered`: with `--affected` the sample was taken from the narrowed
       // set, and reporting the whole tree as its total would name a corpus no run ever had.
       ...(sample === undefined ? {} : { sample: { kept: files.length, total: selected.length } }),
       // The fourth input to the split. Without it a failing shard's `fix:` re-splits the whole

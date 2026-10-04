@@ -22,7 +22,7 @@ export const config = defineRoute({
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
-  budget:     { js: '40kb', lcp: 2000 },
+  budget:     { js: '40kb' },
   meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
                                og: { image: post.cover }, ld: ld.Article(post) }),
 });
@@ -145,7 +145,6 @@ x verify
   ✓ lint                 ✓ tests (6 types)        ✓ contract diff
   ✗ budgets
       site/pricing   js 61kb > 40kb   (chart.js via shared/ui/button.tsx)
-      app/reports    lcp 2400 > 2000
 ```
 
 | Check | Source of truth |

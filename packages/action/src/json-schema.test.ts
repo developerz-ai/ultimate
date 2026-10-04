@@ -1,5 +1,5 @@
 /**
- * `jsonSchemaOf`/`mcpSchemaOf` REFUSE a schema the active provider cannot describe — publishing
+ * `jsonSchemaOf` REFUSES a schema the active provider cannot describe — publishing
  * "any object accepted" for an input `validateInput` rejects every payload from is the deploy that
  * succeeds while every caller is lied to — and `sortSchema` is the byte-stable ordering the
  * committed OpenAPI file depends on.
@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { SchemaUnsupportedError, t } from '@ultimat3/schema';
-import { jsonSchemaOf, mcpSchemaOf, normalizeJsonSchema, sortSchema } from './json-schema';
+import { jsonSchemaOf, normalizeJsonSchema, sortSchema } from './json-schema';
 
 const Schema = t.object({ postId: t.uuid, title: t.string });
 
@@ -39,19 +39,6 @@ describe('jsonSchemaOf', () => {
   // `validateInput` refused every payload. A spec that cannot be produced must not be produced.
   test('refuses, with the provider code, when the provider cannot introspect it', () => {
     expect(() => jsonSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
-  });
-});
-
-describe('mcpSchemaOf', () => {
-  test('converts a real schema, draft-07, without a $schema key', () => {
-    const result = mcpSchemaOf(Schema);
-
-    expect(result['$schema']).toBeUndefined();
-    expect(result['type']).toBe('object');
-  });
-
-  test('refuses, with the provider code, when the provider cannot introspect it', () => {
-    expect(() => mcpSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
   });
 });
 

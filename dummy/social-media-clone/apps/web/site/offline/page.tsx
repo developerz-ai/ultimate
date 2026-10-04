@@ -22,7 +22,7 @@ export const config = defineRoute({
   // `precache`, or the document that answers a lost network is itself fetched over the network.
   offline: 'precache',
   hydrate: 'never',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({
     title: t('app.offline.title'),
     description: t('app.offline.description'),

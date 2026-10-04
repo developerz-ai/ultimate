@@ -106,7 +106,7 @@ export const config = defineRoute({
   render: 'static',
   offline: 'precache',
   hydrate: 'never',
-  budget: { js: '0kb', lcp: 1200 },
+  budget: { js: '0kb' },
   meta: () => ({ title: 'Pricing' }),
 });
 `,
@@ -181,7 +181,7 @@ describe('unit · x manifest', () => {
         hydrate: 'never',
         revalidateTags: [],
         surface: 'site',
-        budget: { js: '0kb', lcp: 1200 },
+        budget: { js: '0kb' },
       },
     ]);
   });

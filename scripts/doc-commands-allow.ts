@@ -46,6 +46,15 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     kind: 'absent',
     why: 'the row records that no forced-reload exception ships, and names the deleted flag as one of the two things that never acted on it',
   },
+  // `x test --worker I` was deleted for `x verify --only unit --shard i/n`, the split CI already
+  // used. The 22.x row recording what X_TEST_SHARD_FAILED belonged to, and the major's own
+  // migration row, name the flag so a reader with it in a script finds the replacement.
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x test --worker',
+    kind: 'absent',
+    why: 'an upgrade page must name a removed flag: the migration is "x verify --only unit --shard i/n", and a reader who used it needs to find that line',
+  },
   {
     path: 'wiki/Upgrading.md',
     cites: 'x deploy --critical',

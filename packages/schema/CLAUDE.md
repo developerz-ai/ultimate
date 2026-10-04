@@ -164,6 +164,10 @@ Gotchas:
   returned untouched first, so `number | string` never turns `01234` into 1234. Numerics are
   decimal only (`DECIMAL`); `Number()` also reads `0x10`.
 - Adding a `SchemaKind` means updating `json-schema.ts`, `coerce.ts` and `node-fits.ts` in the same commit.
+- **`wire-schema.ts` is the one MCP tool-schema narrowing** (`toWireSchema`, `toWireOutputSchema`,
+  `WireJsonSchema`): `@ultimat3/mcp`'s `tools/list` and `@ultimat3/action`'s `.tool()` both publish
+  through it, so one declaration has one tool document. It lived in `mcp` (tier 4), out of
+  `action`'s reach, and the two documents differed (`format`, output bounds).
 - **`ToJsonSchemaOptions.dialect` is a closed vocabulary read with `Object.hasOwn`** (`As of
   2026-09-06`). `DIALECTS[dialect]` on an object literal answered the `Object` FUNCTION for
   `dialect: 'constructor'` — measured: `$schema` held it, `JSON.stringify` dropped the key in

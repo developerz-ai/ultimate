@@ -22,7 +22,7 @@ export const config = defineRoute({
   offline: 'runtime',
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
   policy: { permission: 'dashboard:read' },
-  budget: { js: '60kb', lcp: 2500 },
+  budget: { js: '60kb' },
   meta: () => ({ title: t('app.dashboard.title'), description: t('app.dashboard.description') }),
 });
 

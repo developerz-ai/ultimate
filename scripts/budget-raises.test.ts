@@ -27,13 +27,12 @@ const raises = (base: string, now: string) =>
   );
 
 describe('reading a route budget', () => {
-  test('bytes through the one parser, lcp as a number, and the line of the key', () => {
-    expect(readBudget(route("{ js: '20kb', lcp: 1800 }"))).toEqual({
+  test('bytes through the one parser, and the line of the key', () => {
+    expect(readBudget(route("{ js: '20kb' }"))).toEqual({
       line: 3,
       js: { written: '20kb', bytes: 20480 },
-      lcp: 1800,
     });
-    expect(readBudget(route('{ lcp: 1500 }'))).toEqual({ line: 3, lcp: 1500 });
+    expect(readBudget(route('{}'))).toEqual({ line: 3 });
   });
 
   test('a budget quoted inside a string or a comment is not the route`s', () => {
@@ -87,19 +86,6 @@ describe('a raise must state its number and its reason', () => {
     expect(raises(route("{ js: '16kb' }"), route("{ js: '20kb' }", over))).toEqual([
       'js:16kb->20kb',
     ]);
-    const lcpOver = '  // measured: 2500 ms — why: a hero image\n';
-    expect(raises(route('{ lcp: 1800 }'), route('{ lcp: 2200 }', lcpOver))).toEqual([
-      'lcp:1800->2200',
-    ]);
-  });
-
-  test('an lcp raise is stated in milliseconds, not bytes', () => {
-    const inBytes = '  // measured: 2100 B — why: a hero image\n';
-    const inMs = '  // measured: 2100 ms — why: a hero image\n';
-    expect(raises(route('{ lcp: 1800 }'), route('{ lcp: 2200 }', inBytes))).toEqual([
-      'lcp:1800->2200',
-    ]);
-    expect(raises(route('{ lcp: 1800 }'), route('{ lcp: 2200 }', inMs))).toEqual([]);
   });
 
   test('a lower, equal-in-bytes or brand-new budget is not a raise', () => {

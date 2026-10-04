@@ -49,7 +49,7 @@ export const FIXTURE: ManifestSources = {
       offline: 'precache',
       hydrate: 'idle',
       revalidateTags: ['post'],
-      budget: { js: '40kb', lcp: 2000 },
+      budget: { js: '40kb' },
       surface: 'site',
     },
   ],

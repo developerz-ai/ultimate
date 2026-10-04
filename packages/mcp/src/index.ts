@@ -90,7 +90,6 @@ export {
   toolsListed,
 } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
-export { toOutputSchema, toRowsOutputSchema, toWireSchema } from './input-schema';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
 export {
@@ -126,7 +125,7 @@ export {
   protectedResourceMetadata,
 } from './oauth-metadata';
 export type { ListedPrimitive } from './projectable';
-export { asProjectable } from './projectable';
+export { asProjectable, toRowsOutputSchema } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
 export {
   capQueryRows,

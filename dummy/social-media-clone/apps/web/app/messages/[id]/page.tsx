@@ -27,7 +27,7 @@ export const config = defineRoute({
   hydrate: 'never',
   offline: 'runtime',
   policy: { permission: 'message:read' },
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
   // Refuses before reading a single message, and refuses identically for a conversation that does
   // not exist. The rejection is never caught here: `routeDataFor` rethrows an `UltimateError` as
   // itself, with its code, cause and fix, and a page that turned a denial into an empty list would

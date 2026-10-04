@@ -21,6 +21,7 @@
 // PUBLISHED name against the catalog the server actually answers.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { AnyAction } from '@ultimat3/action';
 import {
   action,
   buildOpenApi,
@@ -218,6 +219,73 @@ describe('a flagged pattern: the MCP server and the schema agree', () => {
       expect(validateArgs(schema, value).ok).toBe(await accepts(value));
     }
     expect(validateArgs(schema, { word: 'ABC', letters: 'é' }).ok).toBe(true);
+  });
+});
+
+/**
+ * `.tool()` is what an author reads to learn the tool an agent is shown, so it has to BE that tool:
+ * it published the full draft-07 shape (`format: 'uuid'`, every bound on the output) while
+ * `tools/list` served `@ultimat3/schema`'s wire subset — two documents for one declaration.
+ */
+describe('`.tool()` returns the shape `tools/list` serves', () => {
+  const declareShaped = () =>
+    action({
+      input: t.object({
+        orderId: t.uuid,
+        reason: t.string.min(1).max(80).describe('why'),
+        notify: t.boolean.default(true),
+        tags: t.record(t.number),
+      }),
+      output: t.object({ id: t.uuid, archivedAt: t.string.max(40) }),
+      policy: can('order:archive'),
+      mcp: { expose: true, description: 'Archive by id' },
+      handle: () => ({ id: '00000000-0000-4000-8000-000000000000', archivedAt: 'now' }),
+    });
+
+  beforeEach(() => {
+    resetActions();
+    definePermissions(['order:archive']);
+    defineRoles({ owner: { grants: ['order:archive'] } });
+  });
+
+  afterEach(() => {
+    resetActions();
+    clearRoles();
+    clearPermissions();
+  });
+
+  const served = async (target: AnyAction) => {
+    const response = await defineAppMcp({ actions: [target] }).server.handle(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      caller,
+    );
+    const result = response?.result as
+      | { tools?: { inputSchema: JsonSchema; outputSchema?: JsonSchema }[] }
+      | undefined;
+    return result?.tools?.[0];
+  };
+
+  test('input and output alike, keyword for keyword', async () => {
+    const archiveById = registerAction('archiveById', declareShaped());
+    const listed = await served(archiveById);
+    expect(listed).toBeDefined();
+    expect(archiveById.tool().inputSchema).toEqual({ ...listed?.inputSchema });
+    expect(archiveById.tool().outputSchema).toEqual({ ...listed?.outputSchema });
+  });
+
+  test('an output with no object root publishes no outputSchema on either side', async () => {
+    const listIds = registerAction(
+      'listIds',
+      action({
+        input: t.object({}),
+        output: t.array(t.uuid),
+        policy: can('order:archive'),
+        mcp: { expose: true },
+        handle: () => [],
+      }),
+    );
+    expect((await served(listIds))?.outputSchema).toBeUndefined();
+    expect(listIds.tool().outputSchema).toBeUndefined();
   });
 });
 

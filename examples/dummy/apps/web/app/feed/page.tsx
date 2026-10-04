@@ -77,7 +77,7 @@ export const config = defineRoute({
    * (8,288 B). Each island still carries its own copy of the page's realtime (`splitting:
    * false`); the shared runtime is #505, and this number comes DOWN again when it lands.
    */
-  budget: { js: '123kb', lcp: 2000 },
+  budget: { js: '123kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, useContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import type { FetchLike } from './client';
 import { query } from './query';
 import { from } from './source';
@@ -118,7 +118,8 @@ describe('the fluent surface', () => {
     expect(tool.query).toBe('orgFeed');
     expect(tool.description).toBe('The org feed');
     expect(tool.mutates).toBe(false);
-    expect(tool.inputSchema['type']).toBe('object');
+    // The served shape: what `@ultimat3/mcp`'s `tools/list` publishes for this read.
+    expect(tool.inputSchema).toEqual(toWireSchema(Input));
 
     const rows = await tool.read({ orgId: ORG }, { ctx: member });
     expect(rows).toEqual([posts[0] as object]);

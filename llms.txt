@@ -53,7 +53,11 @@ This file is a link map, not a status page. **It states no version, count or ver
 
 ## Packages
 
-Generated from `bun run scripts/list-workspaces.ts --json` and each package's own `description`. A package may import only from a STRICTLY LOWER tier — never sideways unless the edge is declared, never upward; a violation is a build error (`bun run boundaries`). Declared sideways edges: `realtime -> query`, `cli -> admin`, `cli -> testing`, `create-ultimate -> cli`.
+Generated from `bun run scripts/list-workspaces.ts --json` and each package's own `description`. A package may import only from a STRICTLY LOWER tier — never sideways unless the edge is declared, never upward; a violation is a build error (`bun run boundaries`).
+
+<!-- generated: sideways — bun run llms-txt --write -->
+Declared sideways edges: `core -> schema`, `realtime -> query`, `cli -> admin`, `cli -> testing`, `create-ultimate -> cli`.
+<!-- end generated -->
 
 <!-- generated: packages — bun run llms-txt --write -->
 - [@ultimat3/core](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/README.md): tier 0 — Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle. Boundary and deps: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/core/CLAUDE.md).

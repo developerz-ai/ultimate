@@ -22,7 +22,7 @@ export const config = defineRoute({
   hydrate: 'never',
   // Never from a cache. A stale sign-in form is a form posting at a build that has moved on.
   offline: 'network-only',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({
     title: t('site.signin.title'),
     description: t('site.signin.description'),

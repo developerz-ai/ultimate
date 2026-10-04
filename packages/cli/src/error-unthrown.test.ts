@@ -92,7 +92,7 @@ describe('checkErrorCodesThrown', () => {
     expect(findings[0]?.fix).toBe('x errors explain X_ERROR_CODE_UNTHROWN_STALE --json');
   });
 
-  test('the shipped list is the five codes this repo retired without a thrower', () => {
+  test('the shipped list is the six codes this repo retired without a thrower', () => {
     // `X_RPC_FAILED`'s row says "thrown by nothing", and `@ultimat3/action` still constructs it in a
     // class kept exported — so it was never the prose waiver that kept it green, and it is not listed.
     expect([...UNTHROWN_CODES].sort()).toEqual([
@@ -101,6 +101,7 @@ describe('checkErrorCodesThrown', () => {
       'X_PWA_SYNC_FLUSH_FAILED',
       'X_PWA_SYNC_INCOMPLETE',
       'X_QUERY_NOT_SUBSCRIBABLE',
+      'X_TEST_SHARD_FAILED',
     ]);
   });
 

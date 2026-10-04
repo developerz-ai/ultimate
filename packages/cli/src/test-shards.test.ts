@@ -1,6 +1,6 @@
 // The run has to be reproducible: the line a failure prints has to reselect exactly the files that
-// ran. The argv one `bun test` receives, the shard form `--worker` takes, and every input the
-// reproduction carries back are asserted here — nowhere else.
+// ran. The argv one `bun test` receives and every input the reproduction carries back are
+// asserted here — nowhere else.
 //
 // WHAT LEFT WHEN THE PACKER DID. The determinism and balance cases below used to be about
 // `planShards`, a largest-first greedy bin-packer over file SIZE. There is no packer any more —
@@ -14,7 +14,6 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no temp-directory root.
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
-import { ISOLATED_ENV } from '@ultimat3/testing';
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
@@ -73,16 +72,12 @@ describe('unit · the argv one bun test receives', () => {
   });
 
   // 22.7: isolation is opt-in. `--parallel` implies `--isolate`, so the default run must say
-  // `--no-isolate`; the shard form is serial and simply omits `--isolate`. The framework repo
-  // itself opts back in through `x.verify.json` (its registries are process-global by design).
-  test('isolation is opt-in, in both forms, and a caller’s -- --no-isolate beats the floor', () => {
+  // `--no-isolate`. The framework repo itself opts back in through `x.verify.json` (its registries
+  // are process-global by design).
+  test('isolation is opt-in, and a caller’s -- --no-isolate beats the floor', () => {
     expect(testArgs({ files: ['a.test.ts'], workers: 2 })).toContain('--no-isolate');
-    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0 })).not.toContain('--isolate');
     expect(testArgs({ files: ['a.test.ts'], workers: 2, isolate: true })).not.toContain(
       '--no-isolate',
-    );
-    expect(testArgs({ files: ['a.test.ts'], workers: 2, shard: 0, isolate: true })).toContain(
-      '--isolate',
     );
     const overridden = testArgs({
       files: ['a.test.ts'],
@@ -94,13 +89,10 @@ describe('unit · the argv one bun test receives', () => {
   });
 
   // The slowest files first, from a local cache every run refreshes; a caller's own flag wins.
-  test('a parallel run reads and refreshes the timings cache; the shard form and a caller override do not', () => {
+  test('a parallel run reads and refreshes the timings cache; a caller override wins', () => {
     const args = testArgs({ files: ['a.test.ts'], workers: 2, timings: '/r/.x/test-timings.json' });
     expect(args).toContain('--timings=/r/.x/test-timings.json');
     expect(args).toContain('--update-timings');
-    expect(
-      testArgs({ files: ['a.test.ts'], workers: 2, shard: 0, timings: '/r/t.json' }).join(' '),
-    ).not.toContain('--timings');
     const own = testArgs({
       files: ['a.test.ts'],
       workers: 2,
@@ -110,31 +102,8 @@ describe('unit · the argv one bun test receives', () => {
     expect(own.filter((arg) => arg.startsWith('--timings'))).toEqual(['--timings=mine.json']);
   });
 
-  // 0-based on the flag, 1-based in bun's own grammar. Off by one here is a rerun of the wrong
-  // eighth of the corpus, reported as the one that failed.
-  test('--worker I is bun shard I+1 of N, serial within the shard', () => {
-    expect(
-      testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3, isolate: true }),
-    ).toEqual(['bun', 'test', '--isolate', '--shard=4/8', 'a.test.ts', 'b.test.ts']);
-    expect(testArgs({ files: ['a.test.ts'], workers: 8, shard: 3 })).toEqual([
-      'bun',
-      'test',
-      '--shard=4/8',
-      'a.test.ts',
-    ]);
-  });
-
-  // Bun partitions round-robin over the list it is given, so a sorted list is what makes
-  // `--shard=2/8` the same eighth on CI and on a laptop. Discovery order must not reach it.
-  test('discovery order cannot change which file lands in which shard', () => {
-    const files = corpus(20).map((file) => file.path);
-    expect(testArgs({ files: [...files].reverse(), workers: 4, shard: 1 })).toEqual(
-      testArgs({ files, workers: 4, shard: 1 }),
-    );
-  });
-
   test('filesIn is the inverse, and reads no flag as a filename', () => {
-    const command = testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, shard: 3 });
+    const command = testArgs({ files: ['a.test.ts', 'b.test.ts'], workers: 8, timings: '/t' });
     expect(filesIn(command)).toEqual(['a.test.ts', 'b.test.ts']);
   });
 });
@@ -143,7 +112,6 @@ describe('unit · x test execution', () => {
   // Bun 1.4.0 keeps every finished file alive under --isolate while a plugin is registered; the
   // testing preload frees them only when it is told the run is isolated (`isolated-plugins.ts`).
   test('only an isolated child is told so — the default shared-global run is not', async () => {
-    expect(ISOLATED_TEST_ENV).toBe(ISOLATED_ENV);
     const shared = recorder();
     await runShards({ root: '/repo', runner: shared.runner, files: corpus(6), workers: 2 });
     expect(shared.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBeUndefined();
@@ -242,19 +210,6 @@ describe('unit · x test execution', () => {
     expect(all.calls.length).toBe(3);
   });
 
-  test('a --worker rerun is never batched: shard i is the same files as in the run', async () => {
-    const { calls, runner } = recorder();
-    await runShards({
-      root: '/repo',
-      runner,
-      files: corpus(BATCH_FILES_PER_WORKER * 10),
-      workers: 4,
-      only: 1,
-    });
-    expect(calls.length).toBe(1);
-    expect(calls[0]?.command).toContain('--shard=2/4');
-  });
-
   test('a key `.env.development` leaked into this process is not handed to the bun test child', async () => {
     // Real mechanism, not a mock of it: Bun auto-loads `.env.development` into the PARENT `x`
     // process whenever `NODE_ENV` is unset, and `exec.ts`'s `spawnOrRefuse` used to spread
@@ -277,16 +232,6 @@ describe('unit · x test execution', () => {
     }
   });
 
-  test('--worker reruns one shard, and names its own database', async () => {
-    const { calls, runner } = recorder();
-    await runShards({ root: '/repo', runner, files: corpus(40), workers: 4, only: 2 });
-
-    expect(calls.length).toBe(1);
-    expect(calls[0]?.command).toContain('--shard=3/4');
-    // One process, so the database is this file's to name — the case above is the other half.
-    expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBe('2');
-  });
-
   test('the width is clamped to the file count, so the reproduction is runnable', async () => {
     const { calls, runner } = recorder();
     const result = await runShards({ root: '/repo', runner, files: corpus(3), workers: 16 });
@@ -301,21 +246,6 @@ describe('unit · x test execution', () => {
     expect(result.exitCode).toBe(1);
     expect(firstCode(result)).toBe('X_TEST_FAILED');
     expect(firstFix(result)).toBe('x test --workers 4');
-  });
-
-  // Two codes because they name two different reruns, and both already exist: a shard is
-  // reproduced by naming it, a whole run by rerunning it.
-  test('a failing --worker run is the SHARD code, and its fix names the shard', async () => {
-    const { runner } = recorder(true);
-    const result = await runShards({
-      root: '/repo',
-      runner,
-      files: corpus(40),
-      workers: 4,
-      only: 1,
-    });
-    expect(firstCode(result)).toBe('X_TEST_SHARD_FAILED');
-    expect(firstFix(result)).toBe('x test --workers 4 --worker 1');
   });
 
   test('a filter is carried into the reproduction command as --filter, not a bare positional', async () => {
@@ -389,7 +319,7 @@ describe('unit · x test execution', () => {
 });
 
 describe('unit · x test --sample is part of the selection', () => {
-  const sampled = (only?: number) =>
+  const sampled = () =>
     runShards({
       root: '/repo',
       runner: recorder(true).runner,
@@ -397,7 +327,6 @@ describe('unit · x test --sample is part of the selection', () => {
       workers: 2,
       type: 'eval',
       sample: { kept: 3, total: 10 },
-      ...(only === undefined ? {} : { only }),
     });
 
   test('a sampled run names kept/total and is flagged in the human lines, not just data', async () => {
@@ -409,47 +338,24 @@ describe('unit · x test --sample is part of the selection', () => {
   test('the reproduction carries --sample, so the rerun selects the same corpus', async () => {
     expect(firstFix(await sampled())).toBe('x test eval --sample 3 --workers 2');
   });
-
-  test('a --worker report names the sample it split, not the one shard that ran', async () => {
-    // The bug this pins: kept was counted from what ran, so `--worker 1` of a 3-file sample
-    // reported its own files as the corpus and printed a fix with no --sample at all.
-    const result = await sampled(1);
-    expect(result.data).toMatchObject({ sample: { kept: 3, total: 10 } });
-    expect(result.lines?.[0]).toContain('sampled 3 of 10');
-    expect(firstFix(result)).toBe('x test eval --sample 3 --workers 2 --worker 1');
-  });
 });
 
 describe('unit · reproduceFor', () => {
   // Against the command's real spec, not a fixture: a reproduction the shipped parser rejects is
   // not a reproduction, and a fixture would go on agreeing with itself after the flags changed.
-  test('round-trips through parseArgs to the same type, filter, sample, workers and worker', () => {
+  test('round-trips through parseArgs to the same type, filter, sample and workers', () => {
     const command = reproduceFor({
       workers: 5,
       filter: 'packages/http',
       type: 'contract',
       sample: 4,
-      shard: 2,
     });
-    expect(command).toBe(
-      'x test contract --filter packages/http --sample 4 --workers 5 --worker 2',
-    );
+    expect(command).toBe('x test contract --filter packages/http --sample 4 --workers 5');
     const parsed = parseArgs(command.split(' ').slice(1), [testCommand.spec]);
     expect(parsed.positionals[0]).toBe('contract');
     expect(flagString(parsed, 'filter')).toBe('packages/http');
     expect(flagString(parsed, 'sample')).toBe('4');
     expect(flagString(parsed, 'workers')).toBe('5');
-    expect(flagString(parsed, 'worker')).toBe('2');
-  });
-
-  // No shard means the whole selection, so `--worker` must be ABSENT rather than `--worker 0`:
-  // that would rerun one eighth of the corpus and report it as the run that failed.
-  test('no shard reproduces the whole run, with no --worker at all', () => {
-    const command = reproduceFor({ workers: 3 });
-    expect(command).toBe('x test --workers 3');
-    expect(flagString(parseArgs(command.split(' ').slice(1), [testCommand.spec]), 'worker')).toBe(
-      undefined,
-    );
   });
 
   // The input most easily dropped: `--affected` decides which files exist to run at all, so a
@@ -459,19 +365,17 @@ describe('unit · reproduceFor', () => {
     const command = reproduceFor({
       workers: 4,
       affected: { base: 'origin/main', dirty: false },
-      shard: 2,
     });
-    expect(command).toBe('x test --affected --base origin/main --workers 4 --worker 2');
+    expect(command).toBe('x test --affected --base origin/main --workers 4');
 
     const parsed = parseArgs(command.split(' ').slice(1), [testCommand.spec]);
     expect(flagBool(parsed, 'affected')).toBe(true);
     expect(flagString(parsed, 'base')).toBe('origin/main');
-    expect(flagString(parsed, 'worker')).toBe('2');
   });
 
   test('--dirty survives too, because it changes which files the run saw', () => {
-    expect(reproduceFor({ workers: 2, affected: { base: 'main', dirty: true }, shard: 1 })).toBe(
-      'x test --affected --base main --dirty --workers 2 --worker 1',
+    expect(reproduceFor({ workers: 2, affected: { base: 'main', dirty: true } })).toBe(
+      'x test --affected --base main --dirty --workers 2',
     );
   });
 
@@ -482,8 +386,8 @@ describe('unit · reproduceFor', () => {
   });
 
   test('a filter with shell punctuation cannot become a second command', () => {
-    expect(reproduceFor({ workers: 2, filter: 'a; rm -rf b', shard: 1 })).toBe(
-      "x test --filter 'a; rm -rf b' --workers 2 --worker 1",
+    expect(reproduceFor({ workers: 2, filter: 'a; rm -rf b' })).toBe(
+      "x test --filter 'a; rm -rf b' --workers 2",
     );
   });
 

@@ -33,7 +33,7 @@ axiom 6). Never `cli` (upward).
 | Type claims | `type-pins.tsx`, never a `.test.ts` — `tsconfig.json` excludes tests. `.tsx` so the island-as-JSX claim is checked against the JSX an author writes. |
 | Descriptor `meta` / `load` | always `(x) => Promise<…>`. Authors may declare either sync; consumers never branch. |
 | Descriptor `budget` | always an object, `{}` when undeclared. `budget.js === undefined` is the site/ hydration failure. |
-| `RouteBudget` keys | **`js` and `lcp` only, and every key is PROJECTED** (`budgetJs`, `budgetLcp`). `type-pins.tsx` derives the allowed set from `RouteDescriptor`'s `budget*` keys, so an unprojected key is a build error; `scripts/declaration-readers.ts` finds the class across every declaration. |
+| `RouteBudget` keys | **`js` only, PROJECTED as `budgetJs`** — `lcp` went with `budgetLcp`, measured by nothing. `assertModeInvariants` refuses any other key that arrives by a cast (`X_ROUTE_MODE_INVALID`); `type-pins.tsx` derives the allowed set from `RouteDescriptor`'s `budget*` keys, so an unprojected key is a build error; `scripts/declaration-readers.ts` finds the class across every declaration. |
 | No `describe()` on a route | `describeRoutes()` is the one route list. |
 | Mode invariants | `modes.ts` only; never inline a mode check in a render-\* file. **Four modes, and every one renders the route's component.** A fifth mode has to name the function that renders it. |
 | Island declaration | `island({ src })` — a **specifier**, never an import, so a `static` page's graph cannot grow the island's dependencies. Never add an overload that takes a component. |

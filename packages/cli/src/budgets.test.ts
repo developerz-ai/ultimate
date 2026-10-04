@@ -91,19 +91,6 @@ describe('unit · budgets', () => {
     expect(built[0]?.cause).not.toBe(never[0]?.cause);
   });
 
-  test('a declared LCP budget with no measurement is a finding too', () => {
-    const findings = checkBudgets(manifestOf(route('/slow', { lcp: 1200 })), undefined);
-    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
-    expect(findings[0]?.cause).toContain('LCP');
-    expect(findings[0]?.cause).not.toContain('JS');
-  });
-
-  test('both budgets unmeasured is one finding that names both', () => {
-    const findings = checkBudgets(manifestOf(route('/both', { js: '5kb', lcp: 900 })), undefined);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.cause).toContain('JS and LCP');
-  });
-
   test('a route that declares no budget and was never measured is not a finding', () => {
     expect(checkBudgets(manifestOf(route('/about')), undefined)).toEqual([]);
   });
@@ -140,21 +127,12 @@ describe('unit · budgets', () => {
     expect(findings[0]?.fix).toContain('// measured: 40960 B (x build --target static)');
   });
 
-  test('a measured route inside both budgets passes', () => {
+  test('a measured route inside its budget passes', () => {
     const findings = checkBudgets(
-      manifestOf(route('/dash', { js: '10kb', lcp: 1500 })),
-      stats({ path: '/dash', jsBytes: 1_000, lcpMs: 900 }),
+      manifestOf(route('/dash', { js: '10kb' })),
+      stats({ path: '/dash', jsBytes: 1_000 }),
     );
     expect(findings).toEqual([]);
-  });
-
-  test('a measured route over its LCP budget fails on LCP alone', () => {
-    const findings = checkBudgets(
-      manifestOf(route('/dash', { lcp: 1000 })),
-      stats({ path: '/dash', jsBytes: 0, lcpMs: 2400 }),
-    );
-    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
-    expect(findings[0]?.cause).toContain('2400ms');
   });
 });
 
@@ -321,8 +299,8 @@ describe('unit · an ABSENT stats file is every budget unmeasured, not nothing t
     );
     expect(await readBuildStats(root)).toBeUndefined();
     const manifest = manifestOf(
-      route('/', { js: '0kb', lcp: 1200 }),
-      route('/dash', { js: '60kb', lcp: 2500 }),
+      route('/', { js: '0kb' }),
+      route('/dash', { js: '60kb' }),
       // A route declaring nothing is still skipped — the rule is "declared but unweighed".
       route('/about'),
     );

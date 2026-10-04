@@ -592,9 +592,8 @@ corpus. notificado.co's `x test unit`, 768 files, 12 cores: 22.6.1's default (18
 process) peaked at 17.1-18.2 GB of process tree in 132-167s; 22.6.2's default (13-14 workers,
 3 batches) at 11.3-12.2 GB in 152-163s, on a box shared at load 30-40. At the same width the split
 costs no wall time within noise (12 workers: 150-158s unbatched, 147s in three batches). The split is a pure function of the file list and the width,
-so the `fix:` a failure prints (`x test unit --workers N`) reruns the same batches; a
-`--worker I` rerun is one process over one shard and is never split, and neither is a `-- --watch`
-run; a forwarded `-- --bail` starts no batch after a red one. `x test --json` carries `batches`
+so the `fix:` a failure prints (`x test unit --workers N`) reruns the same batches; a `-- --watch`
+run is never split; a forwarded `-- --bail` starts no batch after a red one. `x test --json` carries `batches`
 when a pass was split, and each batch's output is kept under a line naming it.
 
 **Bun owns the pool, `As of 2026-08-27`.** The CLI used to pack the files into N bins itself
@@ -622,7 +621,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | the code vs the **committed** `x.manifest.json`: a breaking change without a major bump |
-| `budgets` | per-route JS bytes and LCP, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`) |
+| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`) |
 | `manifest` | the files an agent reads: `x.manifest.json` **and `openapi.json`** freshness — the one check `x manifest --check` runs (`X_MANIFEST_MISSING` / `X_MANIFEST_DRIFT` / `X_MANIFEST_STALE`) — `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
@@ -1177,7 +1176,7 @@ Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`
 
 ```bash
 x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empty] [--sample N]
-       [--affected [--base <ref>] [--dirty]] [--workers N] [--worker I] [--json]
+       [--affected [--base <ref>] [--dirty]] [--workers N] [--json]
        [-- <bun test flags>]
 ```
 
@@ -1188,7 +1187,6 @@ x test [unit|contract|live|job|e2e|eval] [--filter path[,path…]] [--allow-empt
 | `--allow-empty` | boolean | off | a selection that matches no test file exits **0**, spawns nothing, and says so (`no test file matches … — 0 test file(s) ran`, `data.files: 0`, `data.empty: true`) instead of `X_TEST_NO_FILES`. For a runner that computes the selection; a hand-typed typo stays red without it |
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
 | `--workers` | string | `ceil(cpus * 1.5)`, held to 60% of free memory at 1.5 GiB a worker | worker count, 1 to 64; each worker gets its own template-cloned database |
-| `--worker` | string | — | run only shard I of an N-way split of the selection, serially — one CI job's share, and the flag `--workers` bounds |
 | `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
 | `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
 | `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |

@@ -6,6 +6,7 @@
 // Reference: https://modelcontextprotocol.io/specification (2025-06-18).
 
 import { frameworkVersion } from '@ultimat3/core';
+import type { WireJsonSchema } from '@ultimat3/schema';
 
 /** MCP protocol version advertised on `initialize`. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
@@ -62,53 +63,10 @@ export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
 
 /**
- * The JSON Schema subset the framework emits and `validate-args.ts` enforces. Narrow on
- * purpose: a tool schema an agent cannot fully understand is a tool it will call wrong.
+ * The JSON Schema subset a tool publishes and `validate-args.ts` enforces — `@ultimat3/schema`'s
+ * `WireJsonSchema`, declared there so `@ultimat3/action`'s `.tool()` speaks the same one.
  */
-export interface JsonSchema {
-  readonly type?: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
-  readonly title?: string;
-  readonly description?: string;
-  readonly properties?: Readonly<Record<string, JsonSchema>>;
-  readonly required?: readonly string[];
-  readonly additionalProperties?: boolean;
-  readonly items?: JsonSchema;
-  readonly enum?: readonly (string | number | boolean | null)[];
-  readonly const?: string | number | boolean | null;
-  readonly default?: unknown;
-  /**
-   * NOT in the subset, and deliberately absent: `format` NAMES a rule whose meaning lives in
-   * `@ultimat3/schema` (`uuid`, `email`, `iana-time-zone`, `bcp47-locale`), and this package
-   * cannot enforce it without a second definition of each one — which would drift from the parse
-   * the action itself runs and refuse values that surface accepts. So it is dropped by
-   * `input-schema.ts` rather than published unchecked: an agent told `format: 'uuid'` by a server
-   * that accepted `"not-a-uuid"` obeyed a rule nothing checked. `pattern` below is the opposite
-   * case — the rule travels WITH the schema as a source string, so it is enforceable and is kept.
-   *
-   * `readonly format?: never;` states it in the type: a narrow() that starts copying `format`
-   * again fails to compile rather than shipping a silent pass.
-   */
-  readonly format?: never;
-  readonly minimum?: number;
-  readonly maximum?: number;
-  readonly minLength?: number;
-  readonly maxLength?: number;
-  /**
-   * A `RegExp.source` string, JSON Schema semantics (a partial match unless it anchors itself).
-   * In the subset because `validate-args.ts` enforces it: without it `tools/list` published
-   * `{minLength,maxLength}` for a field whose OpenAPI component carried the pattern, so an HTTP
-   * client and an MCP agent held different contracts for one declaration and the agent's only
-   * way to learn the format was `X_INPUT_INVALID` from the action's own parse.
-   */
-  readonly pattern?: string;
-  /**
-   * The flags `pattern` is compiled with — `@ultimat3/schema`'s extension, carried because JSON
-   * Schema's `pattern` has none: compiled without them, `/^[a-z]+$/i` refused `ABC` here while the
-   * action's own parse accepted it.
-   */
-  readonly 'x-ultimate-pattern-flags'?: string;
-  readonly anyOf?: readonly JsonSchema[];
-}
+export type JsonSchema = WireJsonSchema;
 
 /** An empty-object schema — the honest shape for a no-argument tool. */
 export const NO_ARGS: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };

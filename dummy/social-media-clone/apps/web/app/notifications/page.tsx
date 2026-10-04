@@ -21,7 +21,7 @@ export const config = defineRoute({
   hydrate: 'never',
   offline: 'runtime',
   policy: { permission: 'notification:read' },
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
   load: async (): Promise<{ readonly inbox: Inbox }> => {
     const viewer = actorOf(useContext());
     return { inbox: viewer === null ? { items: [], unread: 0 } : await inboxFor(viewer.id) };

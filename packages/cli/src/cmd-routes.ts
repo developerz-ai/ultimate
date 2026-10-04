@@ -52,7 +52,7 @@ const routeJson = (routes: readonly RouteDescriptor[]): JsonValue =>
     render: route.mode,
     hydrate: route.hydrate,
     offline: route.offline,
-    budget: { js: route.budgetJs, lcp: route.budgetLcp },
+    budget: { js: route.budgetJs },
     // Absent on a file route, never `null`: only a mounted route has the fact.
     ...(route.mount === undefined
       ? {}

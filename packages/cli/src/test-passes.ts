@@ -24,8 +24,6 @@ export interface PassInput {
   readonly workers: number;
   /** The positional, when there was one. A pass over one type keeps it; the split never adds one. */
   readonly type?: TestType;
-  /** Set for a `--worker I` rerun, which is one process by construction. */
-  readonly shard?: number;
 }
 
 const widthFor = (files: readonly TestFile[], workers: number): number =>
@@ -45,22 +43,9 @@ const widthFor = (files: readonly TestFile[], workers: number): number =>
  *
  * Each serial type is its own pass rather than one pass over both, because the pass's `type` is
  * what its failure reproduces with: `x test live --workers 1` selects exactly the files that ran.
- *
- * A `--worker I` rerun is left whole: it is a single `bun test --isolate --shard=i/N` process, so
- * nothing inside it runs beside anything else, and splitting it would make shard i of the rerun a
- * different set of files from shard i of the run it reproduces.
  */
 export function testPasses(input: PassInput): readonly TestPass[] {
   const serialTypes = new Set<TestType>(SERIAL_TYPES);
-  if (input.shard !== undefined) {
-    return [
-      {
-        files: input.files,
-        workers: widthFor(input.files, input.workers),
-        ...(input.type === undefined ? {} : { type: input.type }),
-      },
-    ];
-  }
   const shared = input.files.filter((file) => !serialTypes.has(ownerOf(file.path)));
   const passes: TestPass[] = [];
   // Cheapest first, and the widest first: the pool run is most of the corpus and most of the

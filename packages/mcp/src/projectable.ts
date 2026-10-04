@@ -20,12 +20,13 @@ import {
   readAnswer,
   sourceFor,
 } from '@ultimat3/query';
+import { toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
 import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
-import { toOutputSchema, toRowsOutputSchema, toWireSchema } from './input-schema';
 import type { McpListParams } from './list-params';
 import type { McpToolAnnotations } from './registry';
+import type { JsonSchema } from './wire';
 
 /**
  * What `defineAppMcp`'s `actions:`/`queries:` accept.
@@ -61,7 +62,7 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
   // `idempotent: true` is honoured on this surface exactly as over HTTP: the caller's key reaches
   // `invoke`, which files it under the action, the caller and the key (`idempotencyKeyFor`).
   const keyed = target.describe().idempotent;
-  const output = toOutputSchema(target.output);
+  const output = toWireOutputSchema(target.output);
   return {
     name,
     ...(exposure === undefined ? {} : { mcp: exposure }),
@@ -94,7 +95,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   // Only a query that DECLARED its rows (`rows: Post.$schema`) has a known answer shape. A list
   // read answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent`
   // is an object by the spec; a single read's answer already IS the object.
-  const output = single ? toOutputSchema(target.rows) : toRowsOutputSchema(target.rows);
+  const output = single ? toWireOutputSchema(target.rows) : toRowsOutputSchema(target.rows);
   const name = queryName(target);
   return {
     name,
@@ -121,6 +122,18 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         // `@ultimat3/query`'s one rule for what a read answers: rows, or a single read's row.
         return readAnswer(target, await source.execute());
       }),
+  };
+}
+
+/** `{ rows: [<row>] }` — a query's answer as `structuredContent`. `undefined` when no row schema. */
+export function toRowsOutputSchema(rows: unknown): JsonSchema | undefined {
+  if (rows === undefined) return undefined;
+  const row = toWireOutputSchema(rows);
+  if (row === undefined) return undefined;
+  return {
+    type: 'object',
+    properties: { rows: { type: 'array', items: row } },
+    required: ['rows'],
   };
 }
 

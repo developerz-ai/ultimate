@@ -270,64 +270,30 @@ describe('unit · x test --sample', () => {
   });
 });
 
-describe('unit · x test --worker names a shard that exists', () => {
-  // The shard index is a position in a split the command computed, not a free integer: asking for
-  // shard 2 of a 2-worker split runs nothing and reports green, which is the one outcome a shard
-  // reproduction must never produce.
-  test('a shard past the end of the split is refused before anything runs', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
-    try {
-      for (let i = 0; i < 4; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
-      const { calls, runner } = recorder();
-      const thrown: unknown = await testCommand
-        .run(context(['test', '--workers', '2', '--worker', '2'], root, runner))
-        .then(
-          () => undefined,
-          (error: unknown) => error,
-        );
-      expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
-      expect((thrown as { cause?: string }).cause).toBe(
-        '--worker on "x test": shard 2 does not exist in a 2-worker split (0..1)',
+describe('unit · x test has one way to run a share of the suite, and it is not --worker', () => {
+  // `x test --workers N --worker I` (0-based, uncorpus-hashed) and `x verify --only unit --shard
+  // i/n` (1-based, merge-proved) answered the same question two ways, and CI used only the second.
+  test('the spec declares no --worker, and its usage line names none', () => {
+    expect(testCommand.spec.flags?.map((flag) => flag.name)).not.toContain('worker');
+    expect(testCommand.spec.usage).not.toContain('--worker ');
+  });
+
+  test('--worker is an unknown flag, refused before anything runs', async () => {
+    const { calls, runner } = recorder();
+    const thrown: unknown = await Promise.resolve()
+      .then(() =>
+        testCommand.run(context(['test', '--workers', '2', '--worker', '1'], '/', runner)),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
       );
-      expect(calls).toEqual([]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+    expect(calls).toEqual([]);
   });
+});
 
-  test('the last shard of the split is accepted', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
-    try {
-      for (let i = 0; i < 4; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
-      const { calls, runner } = recorder();
-      const result = await testCommand.run(
-        context(['test', '--workers', '2', '--worker', '1'], root, runner),
-      );
-      expect(result.ok).toBe(true);
-      expect(calls).toHaveLength(1);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  // The clamp is what makes this reachable: 2 files can only be a 2-worker split, so `--workers 8
-  // --worker 3` is out of range for a reason the caller cannot see from their own flags.
-  test('the split is clamped to the file count, and the refusal names the clamped width', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
-    try {
-      for (let i = 0; i < 2; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
-      const thrown: unknown = await testCommand
-        .run(context(['test', '--workers', '8', '--worker', '3'], root, recorder().runner))
-        .then(
-          () => undefined,
-          (error: unknown) => error,
-        );
-      expect((thrown as { cause?: string }).cause).toContain('in a 2-worker split (0..1)');
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
+describe('unit · x test runs a serial type one file at a time', () => {
   // `x verify` routes `live` and `e2e` through `runSerial`; this command read no such list, so the
   // same files ran one process under the gate and eight under the command a human types. What is
   // at stake is not tidiness: a logical replication slot is named at the Postgres CLUSTER level,

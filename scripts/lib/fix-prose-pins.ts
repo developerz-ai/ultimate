@@ -18,7 +18,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   ai: 24,
   auth: 47,
   cache: 11,
-  cli: 84,
+  cli: 83,
   core: 52,
   db: 32,
   entity: 49,

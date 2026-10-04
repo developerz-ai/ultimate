@@ -216,6 +216,32 @@ describe('surface-level mode rules', () => {
     }
     expect(fix).toContain('budget: { js:');
   });
+
+  // `lcp`, `css`, `cls` and `tbt` were each accepted, stored and compared by nothing that ever had a
+  // measurement. A key the type no longer declares can still arrive by a cast or from plain JS.
+  test.each(['lcp', 'cls'])(
+    'a budget key nothing measures (%s) is refused, naming the file',
+    (key) => {
+      clearRoutes();
+      const config = defineRoute({
+        render: 'static',
+        offline: 'precache',
+        hydrate: 'never',
+        budget: { js: '0kb', [key]: 1200 } as { js: string },
+        meta,
+      });
+      let thrown: unknown;
+      try {
+        registerRoute({ file: 'apps/web/site/page.tsx', config });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(RouteModeInvalidError);
+      expect(String((thrown as { cause?: unknown }).cause)).toContain(`budget.${key}`);
+      expect(String((thrown as { cause?: unknown }).cause)).toContain('apps/web/site/page.tsx');
+      expect(fixOf(thrown)).toBe("budget: { js: '10kb' }");
+    },
+  );
 });
 
 /**

@@ -12,7 +12,7 @@ import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
 import { installAppJsxLoader } from './app-jsx-loader';
 import { onFileBoundary } from './file-boundary';
-import { releasePluginsAfterIsolatedFile } from './isolated-plugins';
+import { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 import { installPerTestReset } from './per-test-reset';
 import { installRegistryLeakGuard } from './registry-leak-guard';
 import { sealNetwork } from './sealed-network';
@@ -50,7 +50,7 @@ installPerTestReset();
 // A shared worker only (an isolated file is a fresh registry anyway): the app's
 // `defineApi({ pathStyle })` evaluates once per worker, in whichever file first imports it, and
 // must not be refused because an EARLIER file derived action paths under the default style.
-if (Bun.env['ULTIMATE_TEST_ISOLATED'] !== '1') {
+if (Bun.env[ISOLATED_ENV] !== '1') {
   const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
   onFileBoundary(forgetHandedOutActionPaths);
 }

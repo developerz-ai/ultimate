@@ -71,13 +71,13 @@ A package may import from **strictly lower** tiers only — never sideways withi
 | Tier | Packages | May import |
 |---|---|---|
 | 0 | `core`, `schema` | nothing internal |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` | tier 0 |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` | tier 0 |
 | 2 | `entity`, `policy`, `http`, `auth` | tier 0–1 |
 | 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
-| 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` | tier 0–3 |
+| 5 | `admin`, `testing`, `cli`, `scraping` | tier 0–4 |
 
-[`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of that table — change it there first. **Five** sideways edges are declared and no others, `As of 2026-08-23`: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli` — `SIDEWAYS_ALLOW` is the list, and `bun run boundaries --json` re-derives it. `admin → ui` was deleted 2026-08-19 by moving `ui` to tier 4.
+[`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of that table — change it there first. The declared sideways edges are `SIDEWAYS_ALLOW` there and nowhere else by hand; [`llms.txt`](https://github.com/developerz-ai/ultimate/blob/main/llms.txt) carries a generated copy (`bun run llms-txt --write`). `admin → ui` was deleted 2026-08-19 by moving `ui` to tier 4.
 
 Enforced by [`scripts/boundaries.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/boundaries.ts): `bun run boundaries`. A violation is `X_BOUNDARY_VIOLATION` with the **transitive chain**, not just the offending line. It runs on pre-push and inside `x verify` — a lint warning would not count as enforcement.
 

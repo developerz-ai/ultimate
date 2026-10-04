@@ -18,7 +18,7 @@ export const config = defineRoute({
   offline: 'precache',
   /** Nothing here needs JavaScript: the nav toggle is CSS, the form posts natively. */
   hydrate: 'never',
-  budget: { js: '0kb', lcp: 1200 },
+  budget: { js: '0kb' },
   /**
    * The offer is the free plan read out of the catalog, in the currency the URL names — the same
    * rule `/pricing` renders from, through the same helper. A price written into this file would

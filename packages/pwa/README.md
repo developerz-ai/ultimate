@@ -152,9 +152,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
   lands exactly inside `maskableSafeZone(size)`; the ring around it is `background`, which is
   hex or `transparent` (there are no named colours). Same bytes in, same bytes out.
 - **Every HTML sink goes through one escaper.** `appleTouchLinks` and `renderThemeColorMeta`
-  interpolate app configuration into attributes, so both run it through `escapeAttribute` from
-  `@ultimat3/seo` (tier 1, and the one this package can reach — `@ultimat3/render`'s `html.ts` is
-  tier 4, sideways). Never a second escaper here.
+  interpolate app configuration into attributes, so both run it through `escapeHtml` from
+  `@ultimat3/core` — the framework's one HTML character table (`@ultimat3/render`'s `html.ts` is
+  tier 4, sideways, and re-exports the same function). Never a second escaper here.
 - **A precache URL may already carry a query.** `PrecacheAsset.url` is public API and bundlers emit
   `?v=<hash>` of their own, so the install block picks `?` or `&` per entry. A fixed `?` produced
   `...?locale=en?v=<rev>`, and because `cache.addAll` is all-or-nothing a single non-200 there means

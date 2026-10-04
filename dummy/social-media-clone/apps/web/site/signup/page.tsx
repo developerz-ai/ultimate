@@ -15,7 +15,7 @@ export const config = defineRoute({
   render: 'ssr',
   hydrate: 'never',
   offline: 'network-only',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({
     title: t('site.signup.title'),
     description: t('site.signup.description'),

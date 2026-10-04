@@ -161,7 +161,7 @@ export const config = defineRoute({
     alternates: post.locales.map((l) => ({ hreflang: l, href: `/${l}/blog/${post.slug}` })),
     ld: [ld.Article({ headline: post.title, datePublished: post.publishedAt, author: post.author })],
   }),
-  budget: { js: '0kb', lcp: 2000 },
+  budget: { js: '0kb' },
 });
 ```
 

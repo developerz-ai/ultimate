@@ -33,12 +33,9 @@ const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
 /**
  * Structured, not a literal string: the route and the test that pins it read the same fact.
  *
- * `lcp` is deliberately NOT here. `RouteBudget.lcp` is accepted by `defineRoute`, and nothing in
- * the framework can produce the `lcpMs` that `checkBudgets` compares it against — `prerender.ts`
- * emits static HTML and there is no browser in the build to observe a paint. A scaffolded `lcp`
- * was therefore a budget that reads as declared, is never weighed, and passes silently the moment
- * a `build-stats.json` row exists: the false green `budgets.ts`'s own header forbids. Scaffolding
- * only what the build measures is the half of "delete it or thread it" that `x new` can act on.
+ * `js` is the one budget a route can declare: it is the one the build weighs. `lcp` was scaffolded
+ * here once and then deleted from `RouteBudget` itself — nothing in the framework observes a
+ * paint, so it read as declared and was never weighed.
  */
 const BUDGET: Record<Surface, { readonly js: string }> = {
   site: { js: '0kb' },

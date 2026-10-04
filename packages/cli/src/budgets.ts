@@ -39,15 +39,6 @@ export interface RouteStats {
    * older build simply did not count it, and `checkBudgets` reads `jsBytes` either way.
    */
   readonly frameworkJsBytes?: number;
-  /**
-   * **Written by nothing, `As of 2026-08`.** `apps/web/prerender.ts` is the only producer of this
-   * file and it emits static HTML — there is no browser in the build to observe a paint. So the
-   * comparison in `checkBudgets` below is reachable only for an app that writes its own stats, and
-   * `x new` no longer scaffolds an `lcp` budget for exactly that reason: a budget the build cannot
-   * weigh passes silently the moment a stats row exists, which is the false green this file's
-   * header is about. `RouteBudget.lcp` still accepts one — that key is `@ultimat3/render`'s.
-   */
-  readonly lcpMs?: number;
   /** Import chain that pulled the heaviest module into this route. */
   readonly heaviestChain?: readonly string[];
 }
@@ -93,14 +84,6 @@ function exceededJsFix(url: string, file: string | undefined, bytes: number): st
   const where = file ?? `the file declaring ${url}`;
   const kb = Math.ceil(bytes / KB);
   return `edit ${where} — set budget: { js: '${String(kb)}kb' } with // measured: ${String(bytes)} B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'`;
-}
-
-/** Which budgets the route declared, for a cause line that names what went unmeasured. */
-function declaredBudgets(js: number | null, lcp: number | undefined): string {
-  const labels: string[] = [];
-  if (js !== null) labels.push('JS');
-  if (lcp !== undefined) labels.push('LCP');
-  return labels.join(' and ');
 }
 
 /**
@@ -211,17 +194,11 @@ export function checkBudgets(
     if (unweighable.has(route.url)) continue;
     const measured = byPath.get(route.url);
     const js = jsBudgetOf(route);
-    const lcp = route.budget?.lcp;
     if (measured === undefined) {
-      if (js !== null || lcp !== undefined) {
+      if (js !== null) {
         findings.push(
           ownCodeFinding(route.url, unmeasured) ??
-            unmeasuredFinding(
-              route.url,
-              declaredBudgets(js, lcp),
-              stats !== undefined,
-              stats?.stale === true,
-            ),
+            unmeasuredFinding(route.url, 'JS', stats !== undefined, stats?.stale === true),
         );
       }
       continue;
@@ -231,15 +208,6 @@ export function checkBudgets(
         code: 'X_BUDGET_EXCEEDED',
         cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
         fix: exceededJsFix(route.url, fileOf(route.url), measured.jsBytes),
-        docs: ERROR_DOCS_URL,
-        at: route.url,
-      });
-    }
-    if (lcp !== undefined && measured.lcpMs !== undefined && measured.lcpMs > lcp) {
-      findings.push({
-        code: 'X_BUDGET_EXCEEDED',
-        cause: `${route.url} LCP ${measured.lcpMs}ms over the ${lcp}ms budget`,
-        fix: `raise the budget in defineRoute, or switch render to 'isr' to serve it prebuilt`,
         docs: ERROR_DOCS_URL,
         at: route.url,
       });

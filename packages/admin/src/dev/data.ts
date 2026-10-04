@@ -155,12 +155,9 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         hydrate: route.hydrate,
         // A descriptor has no `handler`: the FILE is what names the row.
         handler: route.file,
-        // Two flat fields on the descriptor, one nested bag on the fact — the panel's budget
-        // check reads `budget.js`. Spread, never `js: undefined`: `exactOptionalPropertyTypes`.
-        budget: {
-          ...(route.budgetJs === null ? {} : { js: route.budgetJs }),
-          ...(route.budgetLcp === null ? {} : { lcp: route.budgetLcp }),
-        },
+        // A flat field on the descriptor, a nested bag on the fact — the panel's budget check
+        // reads `budget.js`. Spread, never `js: undefined`: `exactOptionalPropertyTypes`.
+        budget: route.budgetJs === null ? {} : { js: route.budgetJs },
         // `revalidateTags`, already flattened to keys — never `revalidate.tags`, a shape the
         // descriptor does not have and which answered `[]` for every ISR route in the app.
         revalidateTags: route.revalidateTags,

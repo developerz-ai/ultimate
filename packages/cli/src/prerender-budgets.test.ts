@@ -26,7 +26,7 @@ const staticRoute = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({ title: 'Home', description: 'the landing page' }),
 });
 
@@ -36,7 +36,7 @@ const staticRoute = defineRoute({
  * what makes `serviceWorkerHead` emit the registration tag, which is the whole subject here.
  */
 const pwaConfig = (): string =>
-  "export const config = { pwa: { enabled: true, name: 'Fixture'," +
+  "export const config = { name: 'fixture', pwa: { enabled: true, name: 'Fixture'," +
   " offline: { fallback: '/offline' }," +
   " colors: { light: { themeColor: '#fff', backgroundColor: '#fff' }," +
   " dark: { themeColor: '#000', backgroundColor: '#000' } } } };\n";

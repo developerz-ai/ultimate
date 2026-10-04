@@ -6,8 +6,8 @@
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
-import type { JsonSchema } from '@ultimat3/schema';
-import { toMcpInputSchema } from '@ultimat3/schema';
+import type { WireJsonSchema } from '@ultimat3/schema';
+import { toWireSchema } from '@ultimat3/schema';
 import type { QueryPolicy } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
@@ -46,7 +46,8 @@ export interface QueryToolDescriptor<TSingle extends boolean = boolean> {
    * is what makes "an MCP call cannot reach a different authz path" checkable.
    */
   readonly policy: QueryPolicy;
-  readonly inputSchema: JsonSchema;
+  /** What `@ultimat3/mcp`'s `tools/list` serves for this read — `@ultimat3/schema`'s wire subset. */
+  readonly inputSchema: WireJsonSchema;
   /** Always false: a query reads. Drives the rate-limit bucket in @ultimat3/mcp. */
   readonly mutates: false;
   /**
@@ -66,7 +67,7 @@ export function toQueryTool<TSingle extends boolean = boolean>(
     description: target.mcp?.description ?? name,
     query: name,
     policy: target.policy,
-    inputSchema: toMcpInputSchema(target.input),
+    inputSchema: toWireSchema(target.input),
     mutates: false,
     read: async (input, options = {}) => {
       // Executed without the cache tiers on purpose: an agent diffing two tool

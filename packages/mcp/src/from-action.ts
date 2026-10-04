@@ -13,16 +13,10 @@
 // tool in `defineAppMcp`'s `scopes:` map (see `scopes.ts`) — declared once, next to the
 // other tools that same token capability covers, never guessed from the action.
 //
-// `toWireSchema` (`input-schema.ts`), reached through `projectable.ts`, owns the schema half of
-// what THIS server publishes; this file owns the execution half. It is deliberately not
-// `toMcpTool` in @ultimat3/action — which this comment claimed until 2026-08, while
-// `projectable.ts` had always called `toWireSchema`. The two are not interchangeable:
-// `toMcpTool` emits the full draft-07 vocabulary and `toWireSchema` narrows to the subset
-// `validate-args.ts` can ENFORCE, so a keyword in one and not the other is a contract an agent
-// is judged against and was never shown. `pattern` was exactly that until 2026-08.
-// `action` is tier 3 and this package is tier 4, so the two cannot share one function today; the
-// shared home would be `@ultimat3/schema`. `packages/mcp/src/cross-surface.test.ts` is what keeps
-// them from diverging again.
+// `toWireSchema` from `@ultimat3/schema`, reached through `projectable.ts`, owns the schema half
+// of what THIS server publishes; this file owns the execution half. `@ultimat3/action`'s
+// `.tool()` publishes through the same function, so the two cannot describe one declaration
+// differently — `packages/mcp/src/cross-surface.test.ts` holds them to it.
 
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
@@ -85,7 +79,7 @@ export interface ProjectablePrimitive {
   /** The action honours an idempotency key — a repeat is answered, not re-run. */
   readonly idempotent?: boolean;
   /**
-   * The `outputSchema` to publish, already narrowed (`toOutputSchema`) and with an OBJECT root.
+   * The `outputSchema` to publish, already narrowed (`toWireOutputSchema`) with an OBJECT root.
    * Absent: no `outputSchema`, no `structuredContent` — only the text block.
    */
   readonly outputJsonSchema?: JsonSchema;

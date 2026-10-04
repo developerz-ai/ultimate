@@ -703,7 +703,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
 | `contract-diff` | a breaking change to a published action/query without a version bump |
-| `budgets` | per-route JS bytes and LCP; a live hook on a route with no island is `X_LIVE_ROUTE_NO_ISLAND` |
+| `budgets` | per-route JS bytes; a live hook on a route with no island is `X_LIVE_ROUTE_NO_ISLAND` |
 | `seo` | an indexable `site/` route with no title, or no description a search result can render |
 | `i18n` | a key missing from a locale's catalog, or a catalog no module ever registered |
 | `policy` | a permission this app grants or requires that it does not declare. Skipped — never passed — in a repo with no `app.config.ts` |

@@ -28,7 +28,7 @@ const staticRoute = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({ title: 'Home', description: 'the landing page' }),
 });
 
@@ -68,7 +68,7 @@ describe('the actor a measurement render runs as', () => {
           hydrate: 'visible',
           offline: 'runtime',
           policy: { permission: 'thing:read' },
-          budget: { js: '60kb', lcp: 2500 },
+          budget: { js: '60kb' },
           load: async () => {
             renderedAs = useContext().actor.id;
             return { rows: await runQuery(things, {}) };
@@ -102,7 +102,7 @@ describe('the actor a measurement render runs as', () => {
         render: 'static',
         hydrate: 'never',
         offline: 'precache',
-        budget: { js: '0kb', lcp: 1500 },
+        budget: { js: '0kb' },
         load: async () => {
           renderedAs = useContext().actor.kind;
           return {};
@@ -139,7 +139,7 @@ describe('the actor a measurement render runs as', () => {
           render: 'ssr',
           hydrate: 'visible',
           offline: 'runtime',
-          budget: { js: '60kb', lcp: 2500 },
+          budget: { js: '60kb' },
           load: async () => {
             const cookie = useRequestHeader('cookie');
             const response = await clientTransport({
@@ -185,7 +185,7 @@ describe('the actor a measurement render runs as', () => {
         render: 'ssr',
         hydrate: 'visible',
         offline: 'runtime',
-        budget: { js: '60kb', lcp: 2500 },
+        budget: { js: '60kb' },
         load: async () => {
           rows = await db().query(sql`select count(*)::int as n from things`);
           return {};

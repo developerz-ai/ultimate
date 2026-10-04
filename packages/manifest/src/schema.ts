@@ -36,7 +36,7 @@ export interface RouteFact {
   readonly offline?: OfflineStrategy;
   readonly hydrate?: HydrateStrategy;
   readonly revalidateTags?: readonly string[];
-  readonly budget?: { readonly js?: string; readonly lcp?: number };
+  readonly budget?: { readonly js?: string };
   /** Which surface the route lives in — `site` may never import from `app`. */
   readonly surface?: 'site' | 'app' | 'api';
 }

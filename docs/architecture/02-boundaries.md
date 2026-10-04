@@ -9,7 +9,7 @@ tier finding; a generated app's surface rules each carry their own `X_BOUNDARY_*
 ## Framework rules — this repo, `scripts/boundaries.ts`
 
 The script imports no workspace package and reads source through Bun's own transpiler, so the CI job
-that runs it needs no `bun install`. Four rules, `As of 2026-08-22`:
+that runs it needs no `bun install`. Five rules, `As of 2026-10-03`:
 
 | Rule | Code | Forbids | Prevents |
 |---|---|---|---|
@@ -24,9 +24,10 @@ that the framework cannot know.
 
 The **executable** tier table is [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts), and the prose
 copies in the root `CLAUDE.md` and in [`01-package-map.md`](./01-package-map.md) must agree with it
-— `tier-table-drift.test.ts` asserts both, row for row. The declared sideways edges are
-`realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing` and `create-ultimate → cli`;
-`SIDEWAYS_ALLOW` is the list, and **nothing checks that the prose beside it is complete**. **`schema → core` is not one of them and never was**:
+— `tier-table-drift.test.ts` asserts both, row for row. `SIDEWAYS_ALLOW` is the one list of
+declared sideways edges: `llms.txt` carries a generated copy, the root `CLAUDE.md` and
+`01-package-map.md` copies are held to it by the same test, and that test refuses any other doc
+that enumerates them. **`schema → core` is not one of them and never was**:
 `packages/schema/src/errors.ts` states outright that schema may not import `@ultimat3/core`, because
 core's error machinery would make tier 0 a cycle.
 

@@ -316,9 +316,9 @@ the template to leave, and the next worker's migration holds one. With no Postgr
 | Command | Processes | Worker ids | Databases |
 |---|---|---|---|
 | `bun test` (what a scaffolded app's `test` script still runs) | 1 | `0` | one |
-| `x verify` (`unit`, `contract`, `job`, `eval`; `live` and `e2e` stay serial) | `clamp(round(cpus * 1.5), 2, 8)` | `0..N-1`, from `ULTIMATE_TEST_WORKER` | N |
+| `x verify` (`unit`, `contract`, `job`, `eval`; `live` and `e2e` stay serial) | `clamp(round(cpus * 1.5), 2, 8)` | `1..N`, from Bun's own `BUN_TEST_WORKER_ID` — `0..N-1` from `ULTIMATE_TEST_WORKER` in its coverage run | N |
 | `bun test --parallel[=N]` | N (default: CPU count) | `1..N`, from Bun's own `BUN_TEST_WORKER_ID` | N |
-| `x test --workers N` | N | `0..N-1`, from `ULTIMATE_TEST_WORKER` | N |
+| `x test --workers N` | N | `1..N`, from Bun's own `BUN_TEST_WORKER_ID` | N |
 
 `ULTIMATE_TEST_WORKER` is read first so a runner-assigned shard always beats the index Bun assigns
 its own `--parallel` worker — measured on Bun 1.3.14, `--parallel` populates `BUN_TEST_WORKER_ID`

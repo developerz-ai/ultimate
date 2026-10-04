@@ -22,20 +22,14 @@ import { actionName, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { hasPublicCause, isMcpExposed, isUltimateError, stringField } from '@ultimat3/core';
 import { statusFor } from '@ultimat3/http';
-import { toMcpInputSchema } from '@ultimat3/schema';
+import type { WireJsonSchema } from '@ultimat3/schema';
+import { toWireSchema } from '@ultimat3/schema';
 
-/** The JSON Schema subset the framework emits for tool arguments. */
-export interface JsonSchema {
-  readonly type?: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
-  readonly description?: string;
-  readonly properties?: Readonly<Record<string, JsonSchema>>;
-  readonly required?: readonly string[];
-  /** A schema, not just a flag: `@ultimat3/schema` emits one for open records. */
-  readonly additionalProperties?: boolean | JsonSchema;
-  readonly items?: JsonSchema;
-  readonly enum?: readonly (string | number | boolean | null)[];
-  readonly default?: unknown;
-}
+/**
+ * The JSON Schema subset the framework emits for tool arguments — `@ultimat3/schema`'s
+ * `WireJsonSchema`, the one document `.tool()`, `tools/list` and the model are all handed.
+ */
+export type JsonSchema = WireJsonSchema;
 
 /** Anthropic Messages API tool definition shape (`tools[]` on a request). */
 export interface LlmTool {
@@ -92,10 +86,8 @@ export type AgentTool = AnyAction | ProjectableAction;
 /**
  * Adapt whatever the author listed. The same shape @ultimat3/mcp's `asProjectable` produces, from
  * the same `invoke` — an in-app agent and an external MCP client end at one execution path, so one
- * policy decides both. It is not shared code and cannot be: `mcp` is this package's own tier, and
- * the two projections narrow the schema differently on purpose (`toWireSchema` publishes only what
- * that server's arg validator will hold a call to; this one publishes the tool schema the Messages
- * API reads).
+ * policy decides both. The execution adapter is not shared code and cannot be — `mcp` is this
+ * package's own tier — but the schema is: both publish `@ultimat3/schema`'s `toWireSchema`.
  *
  * `isAction` is structural against @ultimat3/action's PRIVATE declaration store, so a look-alike
  * carrying `kind: 'action'` cannot take the first branch — it falls through as the already
@@ -110,7 +102,7 @@ export function asProjectableAction(listed: AgentTool): ProjectableAction {
     name: actionName(listed),
     ...(mcp === undefined ? {} : { mcp }),
     ...(mcp?.description === undefined ? {} : { description: mcp.description }),
-    inputJsonSchema: toMcpInputSchema(listed.input),
+    inputJsonSchema: toWireSchema(listed.input),
     // The actor rides in on the options and `invoke` swaps it inside the one execution path —
     // the action's own `policy` still decides, and its `input:` still parses what the model sent,
     // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.

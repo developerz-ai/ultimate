@@ -65,7 +65,7 @@ export const config = defineRoute({
   offline: 'runtime',
   /**
    * No `hydrate` here on purpose: the island below is the declaration, and a route carrying one
-   * hydrates on `interaction`. `lcp` stays because nothing derives it.
+   * hydrates on `interaction`.
    *
    * measured: 21,487 B (2026-09-22; `x build`'s `buildIslands`, `hydrateRuntimeBytes`) — the
    * island chunk 19,858 + the `interaction` runtime 1,629, against 21,504. `site/`'s derived
@@ -102,7 +102,7 @@ export const config = defineRoute({
    * announcing every write (`onClientWrite`), which is what empties a router's prefetch cache. This
    * page ships no router: `site/` did not opt into client navigation.
    */
-  budget: { js: '22kb', lcp: 1500 },
+  budget: { js: '22kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

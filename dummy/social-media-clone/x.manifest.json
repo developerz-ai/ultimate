@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "a210112792b22a96",
+  "buildId": "92b47d5d1ee4eea9",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -14,8 +14,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1500
+        "js": "0kb"
       }
     },
     {
@@ -282,8 +281,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "60kb",
-        "lcp": 2500
+        "js": "60kb"
       }
     },
     {
@@ -294,8 +292,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 2000
+        "js": "0kb"
       }
     },
     {
@@ -306,8 +303,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "0kb",
-        "lcp": 2500
+        "js": "0kb"
       }
     },
     {
@@ -318,8 +314,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "0kb",
-        "lcp": 2000
+        "js": "0kb"
       }
     },
     {
@@ -330,8 +325,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "0kb",
-        "lcp": 2000
+        "js": "0kb"
       }
     },
     {
@@ -342,8 +336,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "0kb",
-        "lcp": 2000
+        "js": "0kb"
       }
     },
     {
@@ -354,8 +347,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1500
+        "js": "0kb"
       }
     },
     {
@@ -366,8 +358,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1500
+        "js": "0kb"
       }
     },
     {
@@ -378,8 +369,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 1500
+        "js": "0kb"
       }
     },
     {
@@ -390,8 +380,7 @@
       "revalidateTags": [],
       "surface": "site",
       "budget": {
-        "js": "0kb",
-        "lcp": 2000
+        "js": "0kb"
       }
     }
   ],

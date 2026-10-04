@@ -63,6 +63,16 @@ describe('unit · the catalog list', () => {
     expect(undeclared).toEqual([]);
   });
 
+  // `@ultimat3/admin` sat in the optional list while `package.json` declared it and `x dev` imported
+  // it: "a bare CLI process may not have it" was false, and the excuse covered nothing.
+  test('an optional host is one the CLI does NOT declare — a declared one is never optional', async () => {
+    const manifest = (await Bun.file(
+      join(import.meta.dir, '..', 'package.json'),
+    ).json()) as CliManifest;
+    const declared = new Set(Object.keys(manifest.dependencies ?? {}));
+    expect(CATALOG_OPTIONAL_HOSTS.filter((host) => declared.has(host))).toEqual([]);
+  });
+
   test('the optional hosts are packages the catalog actually imports', () => {
     for (const host of CATALOG_OPTIONAL_HOSTS) {
       expect(CATALOG_PACKAGES).toContain(host as (typeof CATALOG_PACKAGES)[number]);

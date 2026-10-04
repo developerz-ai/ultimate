@@ -28,7 +28,7 @@ export const config = defineRoute({
   // Auth is a policy, never a route-local flag: `friend:read` is the same object the actions and
   // the MCP tools are gated by.
   policy: { permission: 'friend:read' },
-  budget: { js: '0kb', lcp: 2500 },
+  budget: { js: '0kb' },
   // `null` for no viewer. Unreachable through HTTP — `friend:read` denies an anonymous caller
   // before the render — but a loader is not the place to assert that: an empty screen beats a
   // thrown TypeError.

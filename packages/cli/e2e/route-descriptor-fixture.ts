@@ -32,5 +32,4 @@ export const routeDescriptor = (fixture: RouteFixture): RouteDescriptor => ({
   islands: [],
   islandSources: fixture.islandSources ?? [],
   budgetJs: null,
-  budgetLcp: null,
 });

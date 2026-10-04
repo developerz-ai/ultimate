@@ -10,7 +10,7 @@ export const testSpec: CommandSpec = {
   name: 'test',
   summary:
     'run one test type — or the whole suite — across N workers, one isolated database per worker',
-  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--worker I] [--isolate] [--json] [-- <bun test flags>]`,
+  usage: `x test [${TEST_TYPES.join('|')}] [--filter path[,path…]] [--allow-empty] [--sample N] [--affected [--base ref] [--dirty]] [--workers N] [--isolate] [--json] [-- <bun test flags>]`,
   positionalChoices: TEST_TYPES,
   // The one command that hands a tail to another tool — `bun test` — and the reason
   // `CommandSpec.passthrough` exists: `x test unit -- --coverage --bail` parsed both flags and
@@ -27,12 +27,6 @@ export const testSpec: CommandSpec = {
       type: 'boolean',
       summary:
         'a fresh global per test file (bun test --isolate) — off by default since 22.7; x.verify.json "isolate": true makes it the repo default',
-    },
-    {
-      name: 'worker',
-      type: 'string',
-      summary:
-        'run only shard I of an N-way split of the selection, serially — one CI job\u2019s share',
     },
     {
       name: 'filter',

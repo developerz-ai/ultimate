@@ -11,7 +11,7 @@ import {
 import { driverError } from '@ultimat3/db';
 import { registerErrorStatus, registerProblemMeta, resetErrorStatus } from '@ultimat3/http';
 import { allow, forbidden } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';
 import {
   asProjectableAction,
@@ -332,6 +332,22 @@ describe('asProjectableAction', () => {
       mcp: { expose: true, description: 'Publish a draft post' },
       handle: ({ input, ctx }) => ({ published: `${input.id}:${ctx.actor.id}` !== '' }),
     });
+
+  // One tool document per declaration: the model is offered what `.tool()` returns and what an MCP
+  // client's `tools/list` serves, never a fuller draft-07 shape of its own.
+  test('the model is offered the wire schema every other tool surface publishes', () => {
+    const Input = t.object({ id: t.uuid, note: t.string.max(80) });
+    const projected = asProjectableAction(
+      action({
+        input: Input,
+        output: t.object({ ok: t.boolean }),
+        policy: allow(),
+        mcp: { expose: true },
+        handle: () => ({ ok: true }),
+      }).named('noteOn'),
+    );
+    expect(projected.inputJsonSchema).toEqual(toWireSchema(Input));
+  });
 
   test("a real action() becomes the seam, carrying its own schema and its declaration's name", () => {
     const projected = asProjectableAction(publishPost().named('publishPost'));

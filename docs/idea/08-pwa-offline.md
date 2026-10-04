@@ -16,7 +16,7 @@ export const config = defineRoute({
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
-  budget:     { js: '40kb', lcp: 2000 },
+  budget:     { js: '40kb' },
   meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
                                og: { image: post.cover }, ld: ld.Article(post) }),
 });
