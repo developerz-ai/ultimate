@@ -9,7 +9,7 @@ Framework packages move in lockstep, so "supported version" is one number coveri
 | the latest major — `npm view @ultimat3/core version` | ✅ security fixes |
 | every earlier major | ❌ upgrade — see [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) |
 
-Only the latest major gets fixes. A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md); there are no per-package security branches and no backports. Report against the version `npm view @ultimat3/core version` answers.
+Only the latest major gets fixes. A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md); there are no per-package security branches and no backports. Report against the latest major the table above names.
 
 ## Reporting a vulnerability
 
@@ -29,7 +29,7 @@ Design decisions that carry security weight, so you know what to audit:
 | **Multi-tenancy** | A tenant-scoped entity queried without an org predicate throws `X_TENANCY_UNSCOPED`. It is a runtime guard, not a convention. |
 | **Secrets** | Env vars declared `secret` are redacted in logs, traces, and error output. `.env` is gitignored; `.env.example` documents the shape with no values. |
 | **Admin** | Every admin mutation is appended to an audit log with actor, before/after diff, and request id. Destructive actions require re-confirmation. |
-| **Preview deploys** | Any environment but `production` serves `Disallow: /` in `robots.txt` and no sitemap (`isIndexable` in `@ultimat3/seo`), and every service-worker cache is namespaced by build ID (`cacheNamespace` in `@ultimat3/pwa`), so a preview can never poison the production cache. |
+| **Preview deploys** | Any environment but `production` serves `Disallow: /` in `robots.txt` and no sitemap (`isIndexable` in `@ultimat3/seo`), Service-worker caches are namespaced by build ID (`cacheNamespace` in `@ultimat3/pwa`), so a preview isolates its cache from production only on a different build ID or a different origin. |
 | **CSP** | Locked defaults. The theme inline script ships with its sha256 hash so no `unsafe-inline` is needed. |
 | **Egress in tests** | Sealed by default — `sealNetwork()` replaces global `fetch`, and any unmocked outbound request throws `X_TEST_NETWORK_SEALED` naming the URL and the line that allows it. Opting out is an env var (`ULTIMATE_TEST_ALLOW_NET=1`), never an API, so no test file can quietly unseal the network for itself. **One documented exception**: a caller that swallows the refusal defeats the seal, and `@ultimat3/scraping`'s `/robots.txt` read is one — `robotsFetcher`'s `catch { return undefined }` turns "sealed" into "unreadable", which the robots gate reads as allow-everything, so an offline `fakeBrowser`/`fixtureBrowser` scrape attempts one real request per origin and the suite is green either way. Verified 2026-08-19; tracked in [`wiki/Known-Gaps.md`](wiki/Known-Gaps.md). |
 
@@ -47,5 +47,5 @@ Design decisions that carry security weight, so you know what to audit:
   | HTTP — `resolveRateLimitConfig` | **throws `X_RATE_LIMIT_SCOPE_UNSET`** while the limiter is enabled. `DEFAULT_RATE_LIMIT` is typed `Omit<RateLimitConfig, 'scope'>`, so it structurally cannot carry one. Defaulting made "we did not ask" indistinguishable from "the app said one replica", and the chart's `replicas: 3` then enforced every number three times over, silently. `enabled: false` reads as `'process'` — a limiter that is switched off has nothing to be wrong about |
   | Credentials — `DEFAULT_AUTH_RATE_LIMIT` | defaults to `'process'`. Per-IP and per-account lockout, one process' worth of state |
 
-  A deployment with more than one replica installs the Postgres stores, or terminates rate limiting at a shared proxy.
-- **The sync protocol has had no adversarial review.** Tiers 1–2 ship, and so does tier 3's client half: record types marked `persist: true` are kept in IndexedDB per principal and restored before the socket connects, stale until the server confirms them (`packages/realtime/src/record-persister.ts`). Only synced truth is written, never an optimistic overlay — but what a hostile client can send the sync node has not been reviewed by anyone outside this repository.
+  A shared proxy can add a fleet-wide limit at ingress, but it does not satisfy the app's own guards: `scope: 'shared'` still needs the Postgres stores, and an enabled `scope: 'process'` limit still counts per replica.
+- **The sync protocol has had no adversarial review.** Tiers 1–2 ship, and so does tier 3's client half: record types marked `persist: true` are stored under principal-scoped IndexedDB keys and restored on page boot before the first socket connection, stale until the server confirms them (`packages/realtime/src/record-persister.ts`); a restore whose principal changed while it read is discarded. Only synced truth is written, never an optimistic overlay — but what a hostile client can send the sync node has not been reviewed by anyone outside this repository.

@@ -576,8 +576,8 @@ selection is now partitioned by each file's own type. The default width is
 a memory budget, `As of 22.7`: `min(4 GiB, max(2.75 GiB, 25% of RAM))` at 1.25 GiB a worker
 (`WORKER_BYTES`, `GATE_BUDGET_CAP`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
 `packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.
-**No fixed ceiling of 8**: it held a 12-core box with 30 GB free to 8. `--workers` accepts 2 to
-64 on `x verify` and 1 to 64 on `x test`; an explicit width is the caller's call and is not held to memory.
+**No fixed ceiling of 8**: it held a 12-core box with 30 GB free to 8. `--workers` accepts 1 to
+64 on both `x verify` and `x test`; an explicit width is the caller's call and is not held to memory.
 
 **A large selection runs in batches, `As of 22.6.2`.** A `--parallel` worker's heap grows with
 every file it runs and is returned only when its `bun test` exits, so one process over the whole

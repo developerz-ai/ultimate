@@ -115,9 +115,8 @@ from a Metro bundle may reach it. It reads the route table through `core`'s regi
 (`primitiveRegistrar('route')`) — the same seam `defineApi` uses to reach `query` and `jobs`
 without a sideways import.
 
-`ui` (5) → `native` (4) is a *downward* edge, which the tier rule would allow. It must not be
-allowed. `scripts/lib/tiers.ts` gains a `FORBIDDEN` map alongside `SIDEWAYS_ALLOW`, with one entry
-earning its line: `ui ✗ native`.
+`ui` (4) → `native` (4) is a same-tier edge, which the tier rule already refuses unless
+`SIDEWAYS_ALLOW` lists it. It must stay unlisted; no separate `FORBIDDEN` map is needed.
 
 ### Packages deliberately not created
 

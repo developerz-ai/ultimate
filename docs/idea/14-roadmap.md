@@ -30,7 +30,7 @@ Milestones 12–14 exist as a **design, not a plan in progress** — see [Design
 
 ## Open at 1.0.0
 
-1.0.0 shipped 28 packages (31 publish today), the docs and the three build targets. What this table once claimed and cannot yet prove is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
+1.0.0 shipped 28 packages (31 publish `As of 2026-10`), the docs and the three build targets. What this table once claimed and cannot yet prove is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
 
 Nothing in this table is open `As of 2026-09-24`; the rows below record what closed.
 
@@ -38,7 +38,7 @@ Nothing in this table is open `As of 2026-09-24`; the rows below record what clo
 
 **Closed since**: a scaffolded app now has a deployable artifact. [`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts) boots a role with no dev watcher and no `/_x`, `ROLE=migrate` applies migrations through the db ledger and exits — the release phase a PaaS asks for — and `x new` writes `apps/web/server.ts`, `apps/web/prerender.ts`, `docker/Dockerfile`, its `.dockerignore` and `docker/docker-compose.prod.yml` ([`templates/scaffold-app.ts`](../../packages/cli/src/templates/scaffold-app.ts), [`templates/scaffold-container.ts`](../../packages/cli/src/templates/scaffold-container.ts)). That was the missing half of "one command produces something you can run"; it is **not** the two-platform proof, which is a measurement on real infrastructure and remains open.
 
-Four known gaps sat inside what did ship — the compose host port paired with `replicas` > 1, the shared cache tier's Lua `DEL` of keys it never declared in `KEYS`, `x build --target binary`, and `resolveEnvironment()` declared in two packages. **All four are closed** `As of 2026-08`. What each fix proves is in [`CHANGELOG.md`](../../CHANGELOG.md), under the release that closed it, and is not restated here.
+Four known gaps sat inside what did ship — the compose host port paired with `replicas` > 1, the shared cache tier's Lua `DEL` of keys it never declared in `KEYS`, `x build --target binary`, and `resolveEnvironment()` declared in two packages. **All four are closed** `As of 2026-08`. [`CHANGELOG.md`](../../CHANGELOG.md) records what each fix proves, under the release that closed it.
 
 The deploy proof is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
 
