@@ -37,7 +37,8 @@ Follow `PUBLISHING.md` and `.claude/commands/feature.md` § release; never quote
 | both tracked apps | `bun run scripts/reference-app-gate.ts` green, `expectedRed` `{}` |
 | zero open `bug` issues | `gh issue list --label bug --state open` empty, or each remaining one has a Known-Gaps row and is not security/data-integrity |
 | security/concurrency rows | every row of 01 and 02 merged |
-| release provenance | `npm view @ultimat3/core@25.0.0 dist.attestations _npmUser` → GitHub Actions + `trustedPublisher` |
+| windows | the required `windows-latest` CI job green on the release commit ([`08-windows.md`](08-windows.md)) |
+| release provenance | `bun run scripts/registry-audit.ts --json` → **every** publishable package on npm at 25.0.0, every one attested (spot-check: `npm view @ultimat3/core@25.0.0 dist.attestations _npmUser`) |
 | no stale trackers | every `docs/plans/**/status.yml` `complete` or `superseded` (07 T10 guard) |
 
 ## Done when

@@ -6,7 +6,16 @@
 > (slices 06, 08, 09), both superseded by this plan. Re-verified against `d7b8c7fa`, As of 2026-10.
 > Each row is a factory/option over an existing primitive — no ninth kind.
 
+Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `framework.manifest.json`, `bun.lock`, package `index.ts` re-export merges, `status.yml`.
+
 ## Sweep 10a — tiers 0–1 seams
+| Agent | Rows | Exclusive paths |
+|---|---|---|
+| A | B1 | `packages/core/src/cookie.ts` + test |
+| B | B2 | `packages/schema/src/` (new `json` type) + test |
+| C | B3 | `packages/time/src/` new `months.ts` + `holidays.ts` memo + tests |
+| D | B4, B5 | `packages/core/src/` new `aws-sigv4.ts`, `packages/storage/src/driver-s3*.ts`, `driver-local*.ts` + tests |
+
 | Row | Pkg (tier) | What | Evidence of absence | Test |
 |---|---|---|---|---|
 | B1 | core (0) | `serializeSetCookie` | not in tree | `core/src/cookie.test.ts` round trip with `readCookie` |
@@ -16,6 +25,13 @@
 | B5 | core (0) | `signAwsRequest` (SigV4) — shared by storage s3 + mail SES | not in tree | known-answer vectors from the AWS SigV4 test suite |
 
 ## Sweep 10b — tiers 1–3
+| Agent | Rows | Exclusive paths |
+|---|---|---|
+| A | B6 | `packages/entity/src/` (repo, define), `packages/db/src/{generate,drift}.ts` + tests |
+| B | B7 ★ | `packages/http/src/` new `api-route.ts`, `webhook-verify.ts`, `packages/cli/src/{api-routes,live-routes}.ts` + tests |
+| C | B8 | `packages/http/src/` new `set-cookie.ts`, `packages/auth/src/` cookie call sites + tests |
+| D | B9 ★ | `packages/query/src/` audit, `packages/core/src/` audit types + tests |
+
 | Row | Pkg | What | Test |
 |---|---|---|---|
 | B6 | entity (2) + db (1) | `entity({ appendOnly: true })`: repo refuses update/delete `X_ENTITY_APPEND_ONLY`; `x db gen` emits the trigger; drift `X_APPEND_ONLY_TRIGGER_MISSING` | `entity` unit + `db` `.live` trigger test |
@@ -24,6 +40,13 @@
 | B9 ★ | query (3) | `query({ audit: true })`: `AuditSink`/`AuditRecord` move to core, `action` → `name` (**BREAKING → 12-major-25**); one record per call incl. memo hits; denied/failed; `surface: 'mcp'` | `query` unit + parity with action audit |
 
 ## Sweep 10c — tier 4
+| Agent | Rows | Exclusive paths |
+|---|---|---|
+| A | B10 | `packages/mcp/src/{transport-http,audit}.ts`, new `confirmations.ts` + tests |
+| B | B11 | `packages/mail/src/` new `driver-ses.ts`, `delivery-event.ts` + tests |
+| C | B12 | `packages/ai/src/{models,provider}.ts`, `openai-*.ts` content blocks + tests |
+| D | B13 | per O-13: `packages/pwa/src/`, `packages/cache/src/` check sites |
+
 | Row | Pkg | What | Test |
 |---|---|---|---|
 | B10 | mcp (4) | request facts → `resolveToken` (`mcp/src/transport-http.ts:85,244`); `onAudit` hook (`mcp/src/audit.ts`); confirm factory `mcpConfirmations` (pending row, approve/reject, `X_MCP_CONFIRMATION_EXPIRED`) | `mcp` unit + `.contract` |
@@ -32,6 +55,13 @@
 | B13 | pwa/cache/render | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` (`wiki/Error-Codes.md:1083-1091`): build each check or keep reserved — owner O-13 | per check |
 
 ## Sweep 10d — tier 5
+| Agent | Rows | Exclusive paths |
+|---|---|---|
+| A | B14 | `packages/admin/src/{mcp,mcp-tools}.ts` + tests |
+| B | B15 (a)–(c), (g) | `packages/cli/src/templates/{scaffold-container,scaffold-helm,scaffold-dashboard-example,scaffold-domain-package}.ts`, `packages/cli/src/{app-boundaries,generate-kinds}.ts` |
+| C | B15 (d)–(f) | `packages/cli/src/i18n-audit.ts`, `templates/github/ci.yml.ts`, `templates/{scaffold-repo,scaffold-auth}.ts` |
+| D | B16 | `examples/dummy/**` factory uses, `dummy/social-media-clone/**/e2e`, `scripts/primitive-factories.test.ts` |
+
 | Row | Pkg | What | Test |
 |---|---|---|---|
 | B14 | admin (5) | `readonly` admin action runnable by `admin:read`; real scopes for `admin/src/mcp.ts:445` (`scopes: new Set()`); tool names (`admin/src/mcp-tools.ts:199,234`) per O-10a | `admin` unit |
@@ -39,6 +69,10 @@
 | B16 | examples/dummy | one idiomatic use each of `transition`, `agentJob`, `hive`, `exportRows`, `purge`, `webhook`, `notifier` + guard test that every `PRIMITIVE_FACTORIES` entry is used in the reference app; `dummy/social-media-clone` one e2e smoke | `scripts/primitive-factories.test.ts` extended |
 
 ## Sweep 10e — docs
+| Agent | Rows | Exclusive paths |
+|---|---|---|
+| A | docs | `wiki/Known-Gaps.md`, `wiki/PWA-And-Offline.md` |
+
 - `wiki/Known-Gaps.md` rows for every B-row still open after 10a–10d, each with its tracking issue.
 - `wiki/PWA-And-Offline.md:270-280` after O-11.
 

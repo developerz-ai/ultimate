@@ -8,9 +8,10 @@
 Native Windows (PowerShell/cmd, no WSL) is a supported platform for **all three** of:
 1. contributing to the framework;
 2. building an app (`x new` → `x dev` → `x verify` → `x build`);
-3. running an app on a Windows host. Two ways:
-   - the Linux image under Docker Desktop (axiom 7 unchanged);
-   - the compiled binary: `x build --target binary --platform bun-windows-x64`.
+3. running an app on a Windows host: the Linux image under Docker Desktop (axiom 7 unchanged).
+   A Windows binary as a service (`x build --target binary --platform bun-windows-x64`) is **not** a
+   supported deploy unless owner O-win changes axiom 7. Until then W8 is for dev/CI cross-compile
+   and local runs only.
 
 Enforced by a `windows-latest` CI job (axiom 3). It runs every step in PowerShell, so a bash dependency that comes back fails the job.
 
@@ -78,12 +79,12 @@ Not fixed, on purpose: `dev-watch-tree.ts:83` (one handle per directory works); 
 3. Docs:
    - `docs/idea/15-risks.md:50`: native Windows is supported, with the gate named.
    - `wiki/Installation.md` + `wiki/Getting-Started.md`: PowerShell instructions.
-   - `wiki/Deployment.md`: running on a Windows host (Docker Desktop, or the `--platform bun-windows-x64` binary as a service).
+   - `wiki/Deployment.md`: running on a Windows host with Docker Desktop (the binary-as-service path only if O-win approves it).
 
 ## Done when
 - The `windows-latest` job is green and required. Its scaffold smoke boots a Windows binary and gets 200 from `/healthz`.
 - A contributor on PowerShell runs `bun install && bun run setup && bun run verify` with no WSL. Record the run in the PR.
 
 ## Risks
-- **Axiom 7 ("containers only"):** a Windows binary run as a service is a non-container deploy. `--target binary` already ships for Linux, so W8 adds a platform, not a second deploy mechanism. **Owner O-win:** confirm the binary-on-Windows path is a supported deploy, or keep Windows hosts to Docker Desktop and limit W8 to dev/CI cross-compile.
+- **Axiom 7 ("containers only"):** a Windows binary run as a service is a non-container deploy. `--target binary` already ships for Linux, so W8 adds a platform, not a second deploy mechanism. **Owner O-win:** default is container-only — Windows hosts use Docker Desktop; W8 is dev/CI cross-compile. A binary-as-service deploy needs an explicit axiom-7 change recorded in root `CLAUDE.md`.
 - **CI minutes:** `windows-latest` is about 2× slower. Keep the job ≤ 25 min, and keep the unit subset path-focused rather than the full suite.

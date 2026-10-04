@@ -15,11 +15,11 @@ $ARGUMENTS
 
 1. **Resolve path.** Run `date +%Y`, `date +%m`, `date +%d`. Dir = `docs/plans/<YYYY>/<MM>/<DD>/`. `Glob docs/plans/<YYYY>/<MM>/<DD>/1*` → next number = highest existing `1NN-*` + 1, else `101`. Slug = kebab-case title, max 5 words. Final plan dir: `docs/plans/<YYYY>/<MM>/<DD>/<1NN>-<slug>/`.
 
-2. **Explore — at most 4 agents in parallel, ever.** More areas than four → widen each agent's band or re-task a finished one with `SendMessage`; never a fifth concurrent spawn. Tell every agent it may not spawn its own (no `fork`). `Agent` (subagent_type=Explore, thoroughness="very thorough"): existing patterns and the files to touch (`file:line`), **which tier each package sits in and whether the change respects `scripts/lib/tiers.ts`**, which of the eight primitives the feature is, the error codes involved, tests (`unit` vs the opt-in `contract` / `live` / `job` / `e2e` / `eval` suffixes), and gotchas. Prefer `codegraph_explore` for structural lookups over grep. Skip only for trivial asks.
+2. **Explore — at most 4 agents in parallel, ever.** More areas than four → widen each agent's band or re-task a finished one with `SendMessage`; never a fifth concurrent spawn. Tell every agent it may not spawn its own (no `fork`). `Agent` (subagent_type=Explore, thoroughness="very thorough"): existing patterns and the files to touch (`file:line`), **which tier each package sits in and whether the change respects `scripts/lib/tiers.ts`**, which of the eight primitives the feature is, the error codes involved, tests (`unit` vs the opt-in `contract` / `live` / `job` / `e2e` / `eval` suffixes), and gotchas. Prefer `codegraph_explore` for structural lookups over grep. Whether to spawn at all follows [`feature.md`](feature.md) § Work as a hive mind: a broad search or path-separable scale — a single file with an obvious home is read directly, no agent.
 
    **Falsify the ask before planning it.** Read the code, not just the request. If a claim in the prompt is already false in the tree, say so in `overview.md` under *Risks* with the `file:line` that disproves it, and plan what is actually true.
 
-   **Cut the plan into sweeps.** A sweep = at most 4 parallel agents on disjoint file sets → **one PR, ≤ 100 changed files** → `bun run verify` green → CI green + agent reviews (CodeRabbit et al., when available) addressed → merged → `main` pulled → next sweep. Tier order is sweep order. Estimate each slice's file count from its *Files to change*; a slice over 100 files is split across sweeps, small slices of one tier band share a sweep. `overview.md` carries the sweep table (sweep → slices → agents → est. files); `status.yml` records each slice's `sweep:`.
+   **Cut the plan into sweeps.** A sweep = at most 4 parallel agents on disjoint file sets → **one PR, ≤ 100 changed files** → `bun run verify` green → CI green + agent reviews (CodeRabbit et al., when available) addressed → merged → `main` pulled → next sweep. Tier order is sweep order. Estimate each slice's file count from its *Files to change*; a slice over 100 files is split across sweeps, small slices of one tier band share a sweep. `overview.md` carries the sweep table (sweep → slices → agents → est. files); `status.yml` has one row per sweep (`sweep: "8a"` for a sub-sweep).
 
 3. **Write the plan as multiple files** in the plan dir — never one big `plan.md`. Always produce an `overview.md` index plus one `<NN>-<aspect>.md` per separable area (e.g. `01-entity.md`, `02-policy.md`, `03-action.md`, `04-route.md`, `05-cli.md`, `06-docs.md`). **Split by tier, then by area** — a slice must be independently executable, and imports only go down, so a tier-0/1 slice lands before the tier-3 slice that adopts it. Match the house style in `docs/idea/` and `docs/architecture/` — lead with the rule, fragments over sentences, tables for any ≥3-row structure, `file:line` refs, no meta-framing, no trailing summary.
 
@@ -91,7 +91,7 @@ current_focus: ""          # where it's at right now / next slice to pick up
 slices:                    # one row per <NN>-<aspect>.md slice
   - file: 01-<aspect>.md
     tier: 0                # lowest tier the slice touches; execution order follows it
-    sweep: 1               # the PR this slice lands in; ≤ 4 agents, ≤ 100 files per sweep
+    sweep: "1"             # the PR this row lands in ("8a" for a sub-sweep); ≤ 4 agents, ≤ 100 files
     status: not_started      # not_started | in_progress | complete
     percent: 0
 evidence: []               # commits/PRs proving progress, e.g. ["#53", "abc1234"]
@@ -118,7 +118,6 @@ Execution follows [`feature.md` § Work as a hive mind](feature.md#work-as-a-hiv
 - No checkboxes (`[ ]`). Plain bullets. The plan is a reference map, not a tracker.
 - Multiple files always: `overview.md` + `<NN>-<aspect>.md` slices. Never a single `plan.md`.
 - Self-contained: executor reads only `overview.md`, the slice it's on, and the files those cite.
-- Parallel execution in the plan obeys the same cap: a slice that splits work across agents names **≤ 4 agents per sweep**, each with a disjoint file set (one checkout, no worktrees — the file set is the lock). Big work → several sweeps → several PRs, **one PR at a time** (build → PR → merged → pull → clean tree → next), each **≤ 100 changed files**. Never split a compile unit across sweeps.
 
 ### The axioms the plan must obey ([`CLAUDE.md`](../../CLAUDE.md))
 

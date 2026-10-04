@@ -6,72 +6,128 @@ worked_by: ""
 owner: sebi
 percent: 0
 current_focus: "sweep 0: merge this plan PR, then triage the 7 already-fixed issues and open the owner-decisions issue; next 01-security.md"
-slices:
+slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
-    sweep: 0
+    sweep: "0"
     status: not_started
     percent: 0
+    evidence: []
   - file: 01-security.md
     tier: 1
-    sweep: 1
+    sweep: "1"
     status: not_started
     percent: 0
+    evidence: []
   - file: 02-data-integrity.md
     tier: 2
-    sweep: 2
+    sweep: "2"
     status: not_started
     percent: 0
+    evidence: []
   - file: 03-deps-bun.md
     tier: 0
-    sweep: 3
+    sweep: "3"
     status: not_started
     percent: 0
+    evidence: []
+  - file: 03-deps-bun.md
+    tier: 0
+    sweep: "3b"
+    status: not_started
+    percent: 0
+    evidence: []
+    notes: "only if the biome bump + lint fixes exceed 60 files (03 step 4)"
   - file: 04-correctness.md
     tier: 0
-    sweep: 4
+    sweep: "4"
     status: not_started
     percent: 0
+    evidence: []
   - file: 05-open-issues-web.md
     tier: 2
-    sweep: 5
+    sweep: "5"
     status: not_started
     percent: 0
+    evidence: []
   - file: 06-cli-ci-tooling.md
     tier: 0
-    sweep: 6
+    sweep: "6"
     status: not_started
     percent: 0
+    evidence: []
   - file: 07-cleanup.md
     tier: 0
-    sweep: 7
+    sweep: "7"
     status: not_started
     percent: 0
+    evidence: []
   - file: 08-windows.md
     tier: 0
-    sweep: 8
+    sweep: "8a"
     status: not_started
     percent: 0
+    evidence: []
+  - file: 08-windows.md
+    tier: 0
+    sweep: "8b"
+    status: not_started
+    percent: 0
+    evidence: []
   - file: 09-realtime-islands.md
     tier: 3
-    sweep: 9
+    sweep: "9"
     status: not_started
     percent: 0
+    evidence: []
   - file: 10-carried-backlog.md
     tier: 0
-    sweep: 10
+    sweep: "10a"
     status: not_started
     percent: 0
+    evidence: []
+  - file: 10-carried-backlog.md
+    tier: 1
+    sweep: "10b"
+    status: not_started
+    percent: 0
+    evidence: []
+  - file: 10-carried-backlog.md
+    tier: 4
+    sweep: "10c"
+    status: not_started
+    percent: 0
+    evidence: []
+  - file: 10-carried-backlog.md
+    tier: 5
+    sweep: "10d"
+    status: not_started
+    percent: 0
+    evidence: []
+  - file: 10-carried-backlog.md
+    tier: 5
+    sweep: "10e"
+    status: not_started
+    percent: 0
+    evidence: []
   - file: 11-audit-coverage.md
     tier: 0
-    sweep: 11
+    sweep: "11"
     status: not_started
     percent: 0
+    evidence: []
   - file: 12-major-25.md
     tier: 0
-    sweep: 12
+    sweep: "12a"
     status: not_started
     percent: 0
+    evidence: []
+  - file: 12-major-25.md
+    tier: 0
+    sweep: "12b"
+    status: not_started
+    percent: 0
+    evidence: []
 evidence: []
 notes: "Audit at d7b8c7fa (24.0.0), 2026-10-04: 13 read-only agents in two waves + a Windows audit. Supersedes the open trackers of 2026/08/12/101, 2026/09/22/102, 2026/09/28/101; 2026/10/01/101 and 2026/10/02/101 marked complete. Owner answers are recorded here and in the owner-decisions issue."
 last_updated: 2026-10-04

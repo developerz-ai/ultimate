@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: ""
 owner: sebi
 percent: 11
-current_focus: "superseded by docs/plans/2026/10/04/101-squeaky-clean-sweep: 01-05 + 07 done (folded into plan 2026/10/02/101 and 23.0.0/24.0.0); 06/08/09 leftovers carried into 06-cli-ci-tooling.md K12-K14, 07-cleanup.md T11, 09-carried-backlog.md, 00-owner-decisions.md"
+current_focus: "superseded by docs/plans/2026/10/04/101-squeaky-clean-sweep: 01-05 + 07 done (folded into plan 2026/10/02/101 and 23.0.0/24.0.0); 06/08/09 leftovers carried into 06-cli-ci-tooling.md K12-K14, 07-cleanup.md T11, 10-carried-backlog.md, 00-owner-decisions.md"
 slices:
   - file: 01-core-money-storage.md
     tier: 0

@@ -41,7 +41,7 @@ Coordinator only: `wiki/Error-Codes.md`, `CHANGELOG.md`, `wiki/Known-Gaps.md`, `
 1. Branch `fix/sweep-1-security` from fresh `main`. Brief A–D with the table rows they own + the paths above.
 2. Each agent: failing test first, then fix; `bun test <own files>`; `bunx biome check <own files>`.
 3. Coordinator: register `X_MCP_SCOPE_UNCOVERED` (one `new-error-code` run), CHANGELOG `[Unreleased]` rows (S1, S4 are behaviour changes: minor; an app with an unlisted tool now fails to boot → call it out under **Changed**), `bun run manifest`, `bun run verify`.
-4. Before opening the PR: run `security-auditor` read-only over the diff (high-stakes rule, [`overview.md`](overview.md) § Review).
+4. Before opening the PR: run `security-auditor` **and** `concurrency-auditor` read-only over the diff (high-stakes rule, [`overview.md`](overview.md) § Review).
 5. PR `Sweep 1 — security`, CI green, agent reviews addressed, merged.
 
 ## Done when

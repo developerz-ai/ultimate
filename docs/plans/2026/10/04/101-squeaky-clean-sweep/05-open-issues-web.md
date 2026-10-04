@@ -29,4 +29,4 @@
 3. Coordinator: CHANGELOG, `bun run verify`, PR with `Fixes #627 #621 #488 #494 #590 #492 #541`.
 
 ## Done when
-- Seven issues closed by the merged PR; each has a test that failed on `d7b8c7fa`.
+- Seven issues closed by the merged PR. Each fix row has a test that failed on `d7b8c7fa`; #541 (already fixed upstream of this sweep) needs a passing regression test instead, which fails if the fix is reverted (prove by reverting `cli/src/app-reload-graph.ts:154-171` locally).

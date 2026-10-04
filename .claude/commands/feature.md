@@ -15,7 +15,7 @@ $ARGUMENTS
 
 **The prompt is the context — read the intent.** Autonomy, scope, which packages and tiers, whether to confirm before merging: infer it from the words. "Just ship it" → run start-to-finish, decide everything yourself, merge on green, surfacing decisions in the PR body instead of asking. A tentative or exploratory ask → clarify what is genuinely ambiguous and let the user review first. Don't make the user configure you. Always stop for a true blocker: a destructive or irreversible action, a **shipped error code** you would have to change (they are stable forever), a design that needs a ninth primitive or a new tier, or a dependency you cannot satisfy.
 
-**A sweep = at most 4 parallel agents → one PR → merged.** Then the next sweep. Never two sweeps in flight.
+**A sweep = at most 4 parallel agents → one PR → merged.** Then the next sweep. Never two sweeps in flight. These are coordinator process rules, not `x verify` checks — the gate proves the tree, the coordinator owns the cadence, and a PR body states the sweep's agent count and file count so a reviewer can hold it to them.
 
 **One PR at a time: build → CI → merge → next.** The loop is fixed, and it is the only one:
 

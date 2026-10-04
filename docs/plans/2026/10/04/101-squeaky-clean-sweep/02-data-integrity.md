@@ -35,7 +35,7 @@ work. A lease is measured from **before** the call that granted it (`jobs/src/sc
 1. Branch `fix/sweep-2-data-integrity` from fresh `main`. Brief A–D.
 2. Failing test first per row; narrowed checks only.
 3. Coordinator: `new-error-code` for D7, CHANGELOG, `bun run manifest`, `bun run verify` (needs test services: `docker compose -f docker/docker-compose.test.yml up -d --wait`, `set -a; . docker/test-services.env; set +a`, so `.live` suites run).
-4. Pre-PR: `concurrency-auditor` read-only over the diff.
+4. Pre-PR: `concurrency-auditor` **and** `security-auditor` read-only over the diff.
 5. PR `Sweep 2 — data integrity` with `Fixes #591`; CI green; reviews addressed; merged.
 
 ## Done when

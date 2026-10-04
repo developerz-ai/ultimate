@@ -51,7 +51,7 @@ is given; otherwise the row's work waits and the slice says so in its PR.
 | O-loc | locales declared twice (`core/src/config.ts:197-198,240-241` vs `defineCatalogs({ default })`) | read by `cli/src/shot-locale.ts:21`, `pwa-artifacts.ts:111` | keep `defineCatalogs`, delete config keys | delete config keys | 12 |
 | O-plans | completed plan dirs in `docs/plans/` | 169 files, 1.7 MB | keep (history) / delete (git keeps them) | keep; trackers must be `complete`/`superseded` (guard 07 T10) | — |
 | O-13 | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` | `wiki/Error-Codes.md:1083-1091` | build checks / stay reserved | stay reserved | 10 B13 |
-| O-win | Windows host deploys | axiom 7 vs `x build --target binary --platform bun-windows-x64` | binary-as-service supported / Docker Desktop only (W8 = cross-compile for dev/CI) | supported — `--target binary` already ships for Linux | 08 W8 docs |
+| O-win | Windows host deploys | axiom 7 vs `x build --target binary --platform bun-windows-x64` | binary-as-service supported (axiom-7 change) / Docker Desktop only (W8 = cross-compile for dev/CI) | Docker Desktop only — axiom 7 stands | 08 W8 docs |
 | O-10a | admin MCP tool names (`admin.action.<name>`) | `admin/src/mcp-tools.ts:199,234` | keep / rename | keep | 10 B14 |
 
 ## Step
