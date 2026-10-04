@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "20e0fb0b4f9a5b756ec0cb6f37692f2a5deca5d08ede1edf699d3219a3088fe6",
+  "buildId": "bfe6ea6fb38aaae24feea85573cafd065c3bb492c8a27442bfd25ecf1ace59d4",
   "tiers": {
     "0": [
       "core",
@@ -2428,6 +2428,16 @@
       "code": "X_NOT_IMPLEMENTED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_NOT_IMPLEMENTED_COPY",
+      "owner": "scripts",
+      "at": "scripts/not-implemented-copies.ts"
+    },
+    {
+      "code": "X_NOT_IMPLEMENTED_COPY_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/not-implemented-copies.ts"
     },
     {
       "code": "X_NOT_IN_APP",

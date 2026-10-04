@@ -25,6 +25,7 @@ import {
   SecretsPlaintextInvalidError,
   secretsFileExists,
   serializeSecretValues,
+  UltimateError,
   writeMasterKeyFile,
   writeSecretsFile,
 } from '@ultimat3/core';
@@ -33,18 +34,58 @@ import { requireAppRoot } from './app-root';
 import { appSecrets, dropRetired, retire, retiredKeyIds } from './cmd-secrets-ring';
 import { secretsSpec } from './cmd-secrets-spec';
 import type { CliCommand, CommandContext } from './command';
-import {
-  MissingPositionalError,
-  SecretsEditFailedError,
-  SecretsEditorMissingError,
-  SecretsExistsError,
-} from './errors';
+import { MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagString } from './parse';
 import { recoverRotation, rotateMasterKey } from './secrets-rotation';
 import { shredOnSignal } from './signal-shred';
 import { renderTable } from './table';
+
+/**
+ * `x secrets edit` decrypts into a buffer and hands it to `$EDITOR`. There is no fallback editor:
+ * guessing one and opening a decrypted file in it is the last place a surprise belongs.
+ */
+export class SecretsEditorMissingError extends UltimateError {
+  constructor(input: { vars: readonly string[] }) {
+    super({
+      code: 'X_SECRETS_EDITOR_MISSING',
+      cause: `x secrets edit opens the decrypted secrets in an editor and none of ${input.vars.join(', ')} is set`,
+      fix: 'EDITOR=nano x secrets edit',
+    });
+  }
+}
+
+/**
+ * The editor exited non-zero — a crash, or a deliberate abort. The buffer is discarded either way
+ * and the committed file is left exactly as it was: resealing a buffer whose editor failed would
+ * commit whatever half-written state the crash left behind.
+ */
+export class SecretsEditFailedError extends UltimateError {
+  constructor(input: { editor: string; code: number }) {
+    super({
+      code: 'X_SECRETS_EDIT_FAILED',
+      cause: `"${input.editor}" exited ${input.code}, so the decrypted buffer was discarded and the committed secrets file was not rewritten`,
+      fix: 'x secrets edit',
+    });
+  }
+}
+
+/**
+ * `x secrets init` would overwrite a file that already exists. `X_GENERATE_CONFLICT` is this
+ * package's own code for exactly that, and a second name for "a generator would clobber something"
+ * is the duplication the code registry exists to prevent. Losing a master key is unrecoverable —
+ * the committed file it opens is then ciphertext nobody can read again.
+ */
+export class SecretsExistsError extends UltimateError {
+  constructor(input: { path: string; fix: string }) {
+    super({
+      code: 'X_GENERATE_CONFLICT',
+      cause: `${input.path} already exists, and x secrets init would replace it`,
+      fix: input.fix,
+    });
+  }
+}
 
 export { SECRETS_SUBCOMMANDS } from './cmd-secrets-spec';
 

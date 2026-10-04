@@ -3,6 +3,7 @@
 // and a lookup that walks the prototype chain answers a function where the fixture has nothing.
 
 import { describe, expect, test } from 'bun:test';
+import { NotImplementedError } from '@ultimat3/core';
 import { testClock } from './clock';
 import { htmlTarget } from './html-target';
 import type { PageRecording } from './recording';
@@ -109,6 +110,7 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
     await target.setOfflineMode(true).catch((thrown: unknown) => {
       caught = thrown;
     });
+    expect(caught).toBeInstanceOf(NotImplementedError);
     expect((caught as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
     expect((caught as { fix?: string } | undefined)?.fix).toContain('localBrowser()');
   });
@@ -159,6 +161,7 @@ describe('unit · press, focus and accessibility offline', () => {
     await target.accessibility('div', 25).catch((thrown: unknown) => {
       caught = thrown;
     });
+    expect(caught).toBeInstanceOf(NotImplementedError);
     expect((caught as { code?: string } | undefined)?.code).toBe('X_NOT_IMPLEMENTED');
     expect((caught as { fix?: string } | undefined)?.fix).toContain('localBrowser()');
   });

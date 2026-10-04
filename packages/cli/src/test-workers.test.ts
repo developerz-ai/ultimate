@@ -11,6 +11,7 @@ import {
   memoryBudget,
   parseBytes,
   sharedWorkers,
+  TestBudgetInvalidError,
   totalMemory,
   WORKER_BYTES,
   WORKER_CEILING,
@@ -28,6 +29,13 @@ describe('unit · the budget refuses what it cannot read', () => {
         expect.objectContaining({ code: 'X_TEST_BUDGET_INVALID' }),
       );
     }
+  });
+
+  // Declared beside its one thrower — never in a file split off `errors.ts` for its size.
+  test('the refusal is the class this module declares', () => {
+    expect(() => memoryBudget(16 * GiB, { [MEMORY_BUDGET_ENV]: 'lots' })).toThrow(
+      TestBudgetInvalidError,
+    );
   });
 
   test('a worker cap that is not a positive integer is refused, not ignored', () => {

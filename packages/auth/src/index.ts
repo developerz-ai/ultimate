@@ -195,16 +195,11 @@ export {
 } from './oauth-cookie';
 export type { DiscoverOAuthProviderInput } from './oauth-discovery';
 export { discoverOAuthProvider, discoveryUrl } from './oauth-discovery';
-// The OAuth half of the same contract, split out of `errors.ts` at the 500-line ceiling. Every
-// name below was exported from `./errors` before the split and is exported here after it.
+// The OAuth refusals more than one OAuth module raises. A refusal with one thrower is exported
+// from that module, below.
 export type { OAuthExchangeFailure } from './oauth-errors';
 export {
-  emailVerifiedNotStored,
-  oauthAccountNotLinked,
-  oauthDenied,
   oauthExchangeFailed,
-  oauthLinkingDisabled,
-  oauthProviderDuplicate,
   oauthProviderUnknown,
   oauthStateInvalid,
   oauthTokenInvalid,
@@ -223,7 +218,13 @@ export type {
   OAuthSignInInput,
   ResolveOAuthGrants,
 } from './oauth-login';
-export { completeOAuthLogin, signInWithOAuth } from './oauth-login';
+export {
+  completeOAuthLogin,
+  emailVerifiedNotStored,
+  oauthAccountNotLinked,
+  oauthLinkingDisabled,
+  signInWithOAuth,
+} from './oauth-login';
 export {
   OAUTH_BASE_PATH,
   OAUTH_CALLBACK_ROUTE_PATH,
@@ -235,12 +236,13 @@ export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
 export { oauthProfile } from './oauth-profile';
 export {
   hasOAuthProvider,
+  oauthProviderDuplicate,
   oauthProviderIds,
   providerFor,
   registerOAuthProvider,
 } from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
-export { OAUTH_ROUTE_STATUS, oauthLogin } from './oauth-route';
+export { OAUTH_ROUTE_STATUS, oauthDenied, oauthLogin } from './oauth-route';
 export type {
   PasswordParams,
   PasswordPolicy,

@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { createRaster, encodeImage, probeImage, type Raster } from '@ultimat3/core';
+import {
+  createRaster,
+  encodeImage,
+  NotImplementedError,
+  probeImage,
+  type Raster,
+} from '@ultimat3/core';
 import { notImplementedDriver } from './errors';
 import { builtinImageDriver, type TransformedImage } from './image-driver';
 import { DEFAULT_FORMATS, IMAGE_QUERY_KEYS, parseImageQuery, responsiveImage } from './images';
@@ -157,6 +163,8 @@ describe('notImplementedDriver', () => {
   test('stays the vocabulary a partial user-supplied driver reports with', () => {
     const error = notImplementedDriver('cloudflare', 'blurPlaceholder()', 'app/cdn-image.ts');
     expect(error.code).toBe('X_NOT_IMPLEMENTED');
+    // Core's one constructor of the code: seo renders the fix, it does not own the error.
+    expect(error).toBeInstanceOf(NotImplementedError);
     expect(error.cause).toContain('cloudflare');
     expect(error.fix).toContain('blurPlaceholder()');
     expect(error.fix).toContain('builtinImageDriver');

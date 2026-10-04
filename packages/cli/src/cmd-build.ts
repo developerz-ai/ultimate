@@ -4,13 +4,13 @@
 
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { ERROR_DOCS_URL, frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
+import { ERROR_DOCS_URL, frameworkVersion, UltimateError, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { buildSpec } from './cmd-build-spec';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { externalArgs } from './compile-externals';
-import { BadFlagError, BuildEntryMissingError, UnknownCommandError } from './errors';
+import { BadFlagError, UnknownCommandError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
@@ -26,6 +26,21 @@ import {
   renderStaticReport,
   staticReportData,
 } from './static-report';
+
+/**
+ * A build target names an entry file the app does not have. `x build` refuses before it spawns the
+ * builder: `bun build`'s own "module not found" says nothing about which file an Ultimate app is
+ * supposed to own, and `docker build`'s says nothing about which target wanted it.
+ */
+export class BuildEntryMissingError extends UltimateError {
+  constructor(input: { target: string; entry: string }) {
+    super({
+      code: 'X_BUILD_ENTRY_MISSING',
+      cause: `x build --target ${input.target} builds from ${input.entry}, and the app does not have it`,
+      fix: `x new scratch-app --dry-run --json   # its file list carries ${input.entry}; copy that file into this app`,
+    });
+  }
+}
 
 export const BUILD_TARGETS = ['docker', 'binary', 'static', 'prebuilt'] as const;
 

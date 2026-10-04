@@ -5,16 +5,11 @@
 // through to the network would make a green offline suite that is secretly hitting production —
 // the exact failure an offline driver exists to prevent.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import type { ScrapeClock } from './clock';
 import type { ColorScheme } from './color-scheme';
-import {
-  browserUnreachable,
-  downloadTimeout,
-  fixtureMissing,
-  fixtureStale,
-  scrapeNotImplemented,
-} from './error-throws';
+import { browserUnreachable, downloadTimeout, fixtureMissing, fixtureStale } from './error-throws';
 import { queryHtml } from './html-query';
 import { markupRequests } from './html-requests';
 import type { InterceptRules } from './intercept';
@@ -358,10 +353,10 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
      * attribute would pass every test against the element a screen reader cannot reach.
      */
     async accessibility(_selector: string, _max: number): Promise<readonly AxNode[]> {
-      throw scrapeNotImplemented(
-        `accessibility() on the ${init.driver} driver`,
-        'run this assertion on localBrowser()/remoteBrowser(), whose accessibility() reads the tree the browser computed — an offline driver parses markup and computes no role',
-      );
+      throw new NotImplementedError({
+        cause: `accessibility() on the ${init.driver} driver is not implemented by this driver`,
+        fix: 'run this assertion on localBrowser()/remoteBrowser(), whose accessibility() reads the tree the browser computed — an offline driver parses markup and computes no role',
+      });
     },
     evaluate(expression: string): Promise<unknown> {
       live();
@@ -381,10 +376,10 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     // `async`, so the refusal REJECTS: the method is typed `Promise<void>` and a synchronous
     // `throw` from one jumps straight over `page.offline(true).catch(…)` at every caller.
     async setOfflineMode(_enabled: boolean): Promise<void> {
-      throw scrapeNotImplemented(
-        `setOfflineMode() on the ${init.driver} driver`,
-        'run this assertion on localBrowser()/remoteBrowser(), whose setOfflineMode() reaches a real browser — an offline driver has no network to cut, so it cannot prove an offline behaviour',
-      );
+      throw new NotImplementedError({
+        cause: `setOfflineMode() on the ${init.driver} driver is not implemented by this driver`,
+        fix: 'run this assertion on localBrowser()/remoteBrowser(), whose setOfflineMode() reaches a real browser — an offline driver has no network to cut, so it cannot prove an offline behaviour',
+      });
     },
     /**
      * ACCEPTED and recorded, where `setOfflineMode` refuses — and the line between them is which

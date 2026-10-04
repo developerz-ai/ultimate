@@ -11,7 +11,7 @@
 // directory tree. `node:path` for `join` — Bun exposes no path joiner.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { resolveEnvironment } from '@ultimat3/core';
+import { NotImplementedError, resolveEnvironment } from '@ultimat3/core';
 import { type DriftReport, driftError, withTransaction } from '@ultimat3/db';
 import { postgresDriver } from '@ultimat3/entity';
 import { requireAppRoot } from './app-root';
@@ -40,7 +40,7 @@ import {
   selectSeeds,
 } from './db-seed';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
-import { CliNotImplementedError, MissingSubcommandError, UnknownCommandError } from './errors';
+import { MissingSubcommandError, UnknownCommandError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -254,8 +254,8 @@ async function runMigrate(
 async function runReset(ctx: CommandContext, root: string): Promise<CommandResult> {
   const services = resolveServices(root, ctx.env);
   if (services.db.mode === 'external') {
-    throw new CliNotImplementedError({
-      feature: 'x db reset against an external Postgres',
+    throw new NotImplementedError({
+      cause: 'x db reset against an external Postgres is not implemented in this build',
       fix: 'drop and recreate the database yourself, then run: x db migrate',
     });
   }

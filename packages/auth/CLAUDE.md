@@ -232,7 +232,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
-| `oauth-errors.ts` | the OAuth half of those factories, and `restartAt`. Split off at the 500-line ceiling; declares no code and registers nothing |
+| `oauth-errors.ts` | the OAuth refusals more than one OAuth module raises, and `restartAt`. A refusal with one thrower lives beside it; declares no code and registers nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
 | `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `createFlightGate` with auth's own refusal injected |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |

@@ -11,14 +11,20 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { createContext, logger, resetLifecycle, runWithContext, userActor } from '@ultimat3/core';
+import {
+  createContext,
+  logger,
+  NotImplementedError,
+  resetLifecycle,
+  runWithContext,
+  userActor,
+} from '@ultimat3/core';
 import { statementObserver } from '@ultimat3/db';
 import { cspHashSource } from '@ultimat3/http';
 import { SyncSocket } from '@ultimat3/realtime/server';
 import type { DevServer } from './cmd-dev';
 import { devCommand, startDev } from './cmd-dev';
 import { FakeWs, DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
-import { CliNotImplementedError } from './errors';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
@@ -82,10 +88,7 @@ const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
   const handle = server.running.server;
   // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
   if (handle === null) {
-    throw new CliNotImplementedError({
-      feature: 'fetching from x dev without the web role',
-      fix: 'x dev --role web',
-    });
+    throw new NotImplementedError({ cause: 'no web role in this x dev', fix: 'x dev --role web' });
   }
   // `localhost`: `/_x` refuses any Host that is not this machine (`X_DEV_HOST_REFUSED`, 421).
   return handle.fetch(new Request(`http://localhost${path}`, init));

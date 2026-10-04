@@ -466,14 +466,3 @@ export class GrantRefreshTimeoutError extends RealtimeError {
     });
   }
 }
-
-/** Deep infrastructure that is interface-complete but not wired. Carries the exact next step. */
-export class NotImplementedError extends RealtimeError {
-  constructor(args: { what: string; fix: string }) {
-    super({
-      code: 'X_NOT_IMPLEMENTED',
-      cause: `${args.what} is interface-complete but not implemented in this build`,
-      fix: args.fix,
-    });
-  }
-}

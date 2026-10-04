@@ -231,8 +231,8 @@ export const CLI_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — `CliNotImplementedError` and every planned command
- * throw it, and none of them may declare a title for it. The CLI is the process that imports every
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — every planned command throws it through core's
+ * own `NotImplementedError`, and none of them may declare a title for it. The CLI is the process that imports every
  * package (`error-catalog.ts`), so a title declared twice here is the one that would win by load
  * order rather than by ownership.
  *

@@ -47,9 +47,9 @@ export const JOB_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. `JobsNotImplementedError`,
- * `JobAbortedError` and `JobDrainedError` below throw them; jobs keeps no title for any of the
- * three, because the copy this file used to hold was a second title that nothing would have failed
+ * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. The first is thrown as
+ * core's own `NotImplementedError` (`inspect.ts`, the redis/nats stubs), the other two by
+ * `JobAbortedError` and `JobDrainedError` below; jobs keeps no title for any of the three, because the copy this file used to hold was a second title that nothing would have failed
  * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
  * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
  */
@@ -452,16 +452,6 @@ export class OutboxNoTxError extends UltimateError {
       code: 'X_OUTBOX_NO_TX',
       cause: `ctx.jobs.enqueue(${input.job}) ran outside a transaction with outbox: 'required'`,
       fix: 'wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }',
-    });
-  }
-}
-
-export class JobsNotImplementedError extends UltimateError {
-  constructor(input: { feature: string; fix: string }) {
-    super({
-      code: 'X_NOT_IMPLEMENTED',
-      cause: `${input.feature} is declared but not implemented in @ultimat3/jobs`,
-      fix: input.fix,
     });
   }
 }

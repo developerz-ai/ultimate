@@ -13,15 +13,17 @@ import {
   EnvMissingError,
   isUltimateError,
   logger,
+  renderCauseValue,
   renderFixShellArg,
   renderThrowable,
   type UltimateError,
 } from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
+import { AuthError } from './errors';
 import { beginOAuth, type OAuthProviderId } from './oauth';
 import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
 import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
-import { oauthDenied, oauthExchangeFailed, oauthProviderUnknown } from './oauth-errors';
+import { oauthExchangeFailed, oauthProviderUnknown, restartAt } from './oauth-errors';
 import type { OAuthClientCredentials, OAuthFetch } from './oauth-exchange';
 import { oauthCredentials } from './oauth-exchange';
 import { completeOAuthLogin, type ResolveOAuthGrants } from './oauth-login';
@@ -31,6 +33,30 @@ import {
   oauthCallbackPath,
 } from './oauth-paths';
 import { hasOAuthProvider } from './oauth-registry';
+
+/**
+ * The provider came back with `error=` and no code — almost always the user pressing Cancel.
+ * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
+ * misconfigured, and folding the single commonest non-success outcome of a login into the code
+ * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
+ */
+export const oauthDenied = (
+  provider: string,
+  reason: string,
+  description: string | null,
+): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_DENIED',
+    // `reason` and `description` are query parameters off the callback URL — whatever the browser
+    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
+    // string literals, so a forged `error_description` cannot forge a second log line or break the
+    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
+    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
+      description === null ? '' : ` (${renderCauseValue(description)})`
+    }`,
+    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
+    meta: { provider, reason },
+  });
 
 /**
  * What a router needs to mount one of these. Structural, like `RequestLike` in `session.ts`:

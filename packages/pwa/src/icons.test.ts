@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createRaster, decodeImage, encodeImage, probeImage } from '@ultimat3/core';
-import { NotImplementedError, PwaIconMissingError } from './errors';
+import { PwaIconMissingError } from './errors';
 import {
   appleTouchLinks,
   BuiltinImagePipeline,
@@ -243,25 +243,9 @@ describe('BuiltinImagePipeline', () => {
 });
 
 /**
- * `NotImplementedError` is part of this package's declared error vocabulary and is exported,
- * but the icon driver — its only caller until now — is implemented. This keeps the contract
- * of a public export asserted; the package has no `errors.test.ts` to hold it.
- */
-describe('pwa error vocabulary', () => {
-  test('NotImplementedError still carries its code and an executable fix', () => {
-    const error = new NotImplementedError(
-      'the redis precache driver has no remote half',
-      'x pwa build --driver=local',
-    );
-    expect(error.code).toBe('X_NOT_IMPLEMENTED');
-    expect(fixOf(error)).toBe('x pwa build --driver=local');
-  });
-});
-
-/**
  * `outputPath` is built from `IconSourceConfig.outDir`, which is app config — and the result is
  * interpolated into an `href`. Unescaped, an `outDir` holding a quote closes the attribute and the
- * tag: the emitted `<head>` carried a live `<script>` element. One escaper, `@ultimat3/seo`'s.
+ * tag: the emitted `<head>` carried a live `<script>` element. One escaper, `@ultimat3/core`'s.
  */
 describe('appleTouchLinks escapes what it interpolates', () => {
   test('a quote in outDir cannot close the attribute or open an element', () => {

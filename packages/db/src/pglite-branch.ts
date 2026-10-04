@@ -5,10 +5,10 @@
 
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { systemClock } from '@ultimat3/core';
+import { NotImplementedError, systemClock } from '@ultimat3/core';
 import type { BranchInfo } from './branch';
 import { assertBranchName } from './branch';
-import { branchExists, dbNotImplemented, dbUnavailable } from './errors';
+import { branchExists, dbUnavailable } from './errors';
 import { PGLITE_MEMORY, pgliteDataDir } from './pglite';
 
 export interface PgliteBranchOptions {
@@ -56,10 +56,10 @@ export async function branchPglite(
   assertBranchName(branch);
   const from = pgliteDataDir(options.from);
   if (from === PGLITE_MEMORY) {
-    throw dbNotImplemented(
-      'branching an in-memory PGlite',
-      'x dev   # a branch copies .x/pgdata, so the database has to be on disk first',
-    );
+    throw new NotImplementedError({
+      cause: 'branching an in-memory PGlite is not implemented by this driver',
+      fix: 'x dev   # a branch copies .x/pgdata, so the database has to be on disk first',
+    });
   }
   if (!(await isDirectory(from))) {
     throw dbUnavailable(`there is no PGlite data directory at ${from}, so nothing to branch`);

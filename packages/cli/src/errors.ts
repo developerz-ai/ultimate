@@ -2,6 +2,7 @@
 // that resolves it — the codes themselves, their titles and their registration are `./error-codes`,
 // so a package importing a class does not pull the table and vice versa.
 import { UltimateError } from '@ultimat3/core';
+import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
@@ -301,14 +302,59 @@ export class FixTargetUnknownError extends UltimateError {
   }
 }
 
-// The build and bundle refusals live in `build-errors.ts` (split at the 500-line ceiling); re-exported
-// here so every existing `from './errors'` import keeps resolving.
-export type { FrameworkScriptKind } from './build-errors';
-export {
-  BuildEntryMissingError,
-  FrameworkScriptBuildFailedError,
-  IslandBuildFailedError,
-} from './build-errors';
+/**
+ * A client entry would not compile. `X_BUILD_FAILED`, not a code of its own: an island is a bundle
+ * entry point like any other, and the target's own logs are what says which line. The fix builds
+ * exactly that one file, so the next message an author reads is the compiler's and not the CLI's.
+ */
+export class IslandBuildFailedError extends UltimateError {
+  constructor(input: { file: string; logs: string }) {
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `${input.file} is an island entry point and would not bundle: ${input.logs}`,
+      fix: `bun build --target browser ${input.file}`,
+    });
+  }
+}
+
+/** Which framework script a page ships: the sync worker, the page boot, or the client router. */
+export type FrameworkScriptKind = 'sync worker' | 'page boot' | 'client router';
+
+/**
+ * One of the page's framework scripts would not bundle. Same code as an island: "a browser entry
+ * the framework builds did not build" is one condition, and the entry here is framework code, not
+ * the app's — the cause names WHICH script, so the reader knows what the page is now missing.
+ */
+export class FrameworkScriptBuildFailedError extends UltimateError {
+  constructor(input: { what: FrameworkScriptKind; entry: string; logs: string }) {
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `the ${input.what} (${input.entry}) would not bundle for the browser: ${input.logs}`,
+      fix: `bun build --target browser --format iife ${quoteArg(input.entry)}`,
+    });
+  }
+}
+
+/**
+ * A static build over an app whose modules did not all import. The route registry is filled BY the
+ * import, so a page whose module threw is not skipped but absent — and an export without it, with
+ * `x build` green, is a deploy that deletes a page. The `manifest` step owns load findings
+ * (`load-findings.ts`), so the fix is the command that lists every one with its own fix.
+ */
+export class PrerenderLoadFailedError extends UltimateError {
+  constructor(findings: readonly Finding[]) {
+    const listed = findings.map((finding) =>
+      finding.at === undefined
+        ? `${finding.code} ${finding.cause}`
+        : `${finding.at}: ${finding.code} ${finding.cause}`,
+    );
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `the static export renders the routes the app's modules register, and ${findings.length} module load finding(s) left it short: ${listed.join('; ')}`,
+      fix: 'x verify --only manifest --json',
+    });
+  }
+}
 
 /**
  * `ROLE` selects what a container is. One image runs every role, so a typo is a process that would
@@ -382,17 +428,6 @@ export class EnvSchemaMissingError extends UltimateError {
   }
 }
 
-/** An interface-complete command path whose remote/native half is not written yet. */
-export class CliNotImplementedError extends UltimateError {
-  constructor(input: { feature: string; fix: string }) {
-    super({
-      code: 'X_NOT_IMPLEMENTED',
-      cause: `${input.feature} is not implemented in this build`,
-      fix: input.fix,
-    });
-  }
-}
-
 /**
  * The process could not obtain a storage disk to write to.
  *
@@ -429,51 +464,6 @@ export class LocalDiskUnsafeError extends UltimateError {
         `disk at ${input.root} — and with no STORAGE_SIGNING_SECRET it would sign upload grants ` +
         'with the development key published in @ultimat3/storage',
       fix: 'export S3_ENDPOINT=https://s3.example.com S3_BUCKET=my-app-uploads   # or keep the disk on a mounted volume: export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
-    });
-  }
-}
-
-/**
- * `x secrets edit` decrypts into a buffer and hands it to `$EDITOR`. There is no fallback editor:
- * guessing one and opening a decrypted file in it is the last place a surprise belongs.
- */
-export class SecretsEditorMissingError extends UltimateError {
-  constructor(input: { vars: readonly string[] }) {
-    super({
-      code: 'X_SECRETS_EDITOR_MISSING',
-      cause: `x secrets edit opens the decrypted secrets in an editor and none of ${input.vars.join(', ')} is set`,
-      fix: 'EDITOR=nano x secrets edit',
-    });
-  }
-}
-
-/**
- * The editor exited non-zero — a crash, or a deliberate abort. The buffer is discarded either way
- * and the committed file is left exactly as it was: resealing a buffer whose editor failed would
- * commit whatever half-written state the crash left behind.
- */
-export class SecretsEditFailedError extends UltimateError {
-  constructor(input: { editor: string; code: number }) {
-    super({
-      code: 'X_SECRETS_EDIT_FAILED',
-      cause: `"${input.editor}" exited ${input.code}, so the decrypted buffer was discarded and the committed secrets file was not rewritten`,
-      fix: 'x secrets edit',
-    });
-  }
-}
-
-/**
- * `x secrets init` would overwrite a file that already exists. `X_GENERATE_CONFLICT` is this
- * package's own code for exactly that, and a second name for "a generator would clobber something"
- * is the duplication the code registry exists to prevent. Losing a master key is unrecoverable —
- * the committed file it opens is then ciphertext nobody can read again.
- */
-export class SecretsExistsError extends UltimateError {
-  constructor(input: { path: string; fix: string }) {
-    super({
-      code: 'X_GENERATE_CONFLICT',
-      cause: `${input.path} already exists, and x secrets init would replace it`,
-      fix: input.fix,
     });
   }
 }

@@ -2,11 +2,12 @@
 // object so `x jobs ... --json` and the MCP tool share one shape — an agent debugging a stuck
 // queue reads exactly what the dashboard renders.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type { BackfillProgress } from './backfill-inspect';
 import { backfillForRun } from './backfill-inspect';
 import type { WhenBusy } from './concurrency';
 import type { JobDriver, JobRecord, QueueStats } from './driver';
-import { CancelUnsupportedError, JobNotCancellableError, JobsNotImplementedError } from './errors';
+import { CancelUnsupportedError, JobNotCancellableError } from './errors';
 import type { JobFilter, JobProgress } from './introspection';
 import type { AnyJobHandle } from './job';
 import { registeredJobs } from './job';
@@ -111,8 +112,8 @@ const iso = (ms: number | undefined): string | null =>
 
 function requireIntrospection(driver: JobDriver): NonNullable<JobDriver['introspect']> {
   if (driver.introspect === undefined) {
-    throw new JobsNotImplementedError({
-      feature: `introspection for the "${driver.name}" jobs driver`,
+    throw new NotImplementedError({
+      cause: `introspection for the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
       fix: 'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect — then: x jobs ls --json',
     });
   }

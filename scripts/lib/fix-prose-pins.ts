@@ -39,7 +39,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   scraping: 54,
   scripts: 173,
   seo: 13,
-  storage: 33,
+  storage: 32,
   testing: 28,
   time: 8,
   ui: 13,

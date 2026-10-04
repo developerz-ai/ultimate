@@ -2,11 +2,11 @@
 // boot installs it after `defineAdmin()` has run, and `x dev` swaps it — and its operator surface.
 // A process with no driver, or one that ships no operator surface, is refused with the fix.
 
+import { NotImplementedError } from '@ultimat3/core';
 import {
   DriverUnavailableError,
   type JobDriver,
   type JobIntrospection,
-  JobsNotImplementedError,
   jobDriver,
 } from '@ultimat3/jobs';
 
@@ -25,8 +25,8 @@ export function jobsOperator(): JobsOperator {
     });
   }
   if (driver.introspect === undefined) {
-    throw new JobsNotImplementedError({
-      feature: `the operator surface of the "${driver.name}" jobs driver`,
+    throw new NotImplementedError({
+      cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
       fix: 'call setJobDriver(createPgDriver()) at boot — the pg and memory drivers implement introspect',
     });
   }

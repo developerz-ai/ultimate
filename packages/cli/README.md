@@ -193,14 +193,13 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `BadFlagError` | `X_CLI_BAD_FLAG` | `src/errors.ts` |
-| `BuildEntryMissingError` | `X_BUILD_ENTRY_MISSING` | `src/build-errors.ts` |
+| `BuildEntryMissingError` | `X_BUILD_ENTRY_MISSING` | `src/cmd-build.ts` |
 | `BunVersionError` | `X_BUN_VERSION` | `src/errors.ts` |
 | `CatalogExistsError` | `X_GENERATE_CONFLICT` | `src/errors.ts` |
 | `CdpBrowserMissingError` | `X_CDP_BROWSER_MISSING` | `src/cdp-errors.ts` |
 | `CdpCallFailedError` | `X_CDP_CALL_FAILED` | `src/cdp-errors.ts` |
 | `CdpLaunchFailedError` | `X_CDP_LAUNCH_FAILED` | `src/cdp-errors.ts` |
 | `CdpTimeoutError` | `X_CDP_TIMEOUT` | `src/cdp-errors.ts` |
-| `CliNotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
 | `DeclarationUnknownError` | `X_DECLARATION_UNKNOWN` | `src/errors.ts` |
 | `E2eAppFailedError` | `X_E2E_APP_FAILED` | `src/e2e-errors.ts` |
 | `E2eEvaluateCapturedError` | `X_E2E_EVALUATE_CAPTURED` | `src/e2e-errors.ts` |

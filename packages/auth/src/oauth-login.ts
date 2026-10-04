@@ -7,16 +7,10 @@ import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
-import { authWriteFailed } from './errors';
+import { AuthError, authWriteFailed } from './errors';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
-import {
-  emailVerifiedNotStored,
-  oauthAccountNotLinked,
-  oauthExchangeFailed,
-  oauthLinkingDisabled,
-  restartAt,
-} from './oauth-errors';
+import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import {
   exchangeOAuthCode,
   type OAuthClientCredentials,
@@ -28,6 +22,52 @@ import { type OAuthProfile, oauthProfile } from './oauth-profile';
 import { resolveActor } from './policy-bridge';
 import { loginFailed } from './rate-limit';
 import { createSession, sessionCookie } from './session';
+
+/**
+ * The address is proven to the provider, and an account that never proved it already holds it.
+ * Naming that is not account enumeration — this caller just demonstrated they own the address —
+ * and staying silent would leave them with a login that fails forever and no way out.
+ *
+ * The address itself rides in `meta`, never in `cause`: a log pipeline can redact a field by
+ * key, and cannot redact an address that was already interpolated into a sentence.
+ */
+export const oauthAccountNotLinked = (provider: string, email: string): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
+    fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
+    meta: { provider, email },
+  });
+
+/**
+ * `link: 'never'` and a local account already holds the address. Same code and same disclosure
+ * rule as `oauthAccountNotLinked` — the caller proved to the provider that the address is theirs,
+ * so naming the collision is not enumeration — and the address rides in `meta`, never in `cause`.
+ */
+export const oauthLinkingDisabled = (provider: string, email: string): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: `an account already holds this address and defineAuth({ link: 'never' }) forbids ${provider} from claiming it`,
+    fix: "sign in with that account's own credentials, or set link: 'verified-email' in defineAuth to let a provider-verified address claim a locally-verified account",
+    meta: { provider, email },
+  });
+
+/**
+ * `CreateUserInput` carries no `emailVerifiedAt`, so a provider-verified address takes a second
+ * write. Falling back to the unstamped row would mint a session for a user every later login
+ * reads as unverified — the exact state `resolveUser` refuses to link a provider to — so the
+ * flow fails closed on an adapter that loses the stamp instead of half-succeeding.
+ */
+export const emailVerifiedNotStored = (provider: string, userId: string): AuthError =>
+  new AuthError({
+    // `X_AUTH_WRITE_FAILED`, the code for "an adapter write returned no row". It was
+    // `X_NOT_IMPLEMENTED` — a 501 telling an operator a feature is missing, about an adapter that
+    // implements `updateUser` and lost a write it accepted.
+    code: 'X_AUTH_WRITE_FAILED',
+    cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
+    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
+    meta: { provider, userId },
+  });
 
 /**
  * What the IdP's answer entitles this identity to, in the app's own vocabulary. Which group maps

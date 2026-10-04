@@ -7,7 +7,13 @@
 // or prints inside a `fix:` an operator runs — the dev log, a per-role log, the committed
 // manifest — and string concatenation would answer a different path on a Windows checkout.
 import { join } from 'node:path';
-import { agentActor, isUltimateError, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  agentActor,
+  isUltimateError,
+  NotImplementedError,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import {
   ensureReadOnlyRole,
@@ -35,7 +41,7 @@ import { appManifest, policyFacts } from './app-manifest';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
 import { declareDevEnvironment } from './dev-environment';
 import { loadCodeFixes } from './error-fixes';
-import { BadFlagError, CliNotImplementedError } from './errors';
+import { BadFlagError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
@@ -106,8 +112,9 @@ export function lazyServices(input: DevHostInput): LazyServices {
       // A boot started after close() would hold the PGlite data directory for the life of the
       // process with nobody left to stop it — the host is closed, so the call is the bug.
       if (closed) {
-        throw new CliNotImplementedError({
-          feature: 'an MCP tool that needs the database after the host closed',
+        throw new NotImplementedError({
+          cause:
+            'an MCP tool that needs the database after the host closed is not implemented in this build',
           fix: 'x mcp serve --transport stdio   # keep the host open for the whole session',
         });
       }
@@ -281,8 +288,8 @@ function capabilities(
       if (!(await file.exists())) {
         // `@ultimat3/core`'s `logger` is a module const with no sink seam, so there is nothing to
         // intercept in-process — a log on disk is the only honest source, and the fix creates one.
-        throw new CliNotImplementedError({
-          feature: `logs.tail without ${path}`,
+        throw new NotImplementedError({
+          cause: `logs.tail without ${path} is not implemented in this build`,
           fix:
             role === undefined
               ? `x dev > ${path} 2>&1`

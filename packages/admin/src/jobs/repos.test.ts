@@ -2,7 +2,7 @@
 // a count, a row by key — and the door to the queue refusing a process that installed none.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, NotImplementedError } from '@ultimat3/core';
 import {
   createMemoryDriver,
   type JobDriver,
@@ -250,10 +250,12 @@ describe('a job page at the store’s own ceiling', () => {
 
 describe('jobsOperator', () => {
   test('a process with no queue, or a queue with no operator surface, is refused with the fix', () => {
+    let caught: unknown;
     const codeOf = (): string | undefined => {
       try {
         jobsOperator();
       } catch (error) {
+        caught = error;
         return isUltimateError(error) ? error.code : 'other';
       }
       return undefined;
@@ -263,6 +265,7 @@ describe('jobsOperator', () => {
     const { introspect: _dropped, ...bare } = seeded.driver;
     setJobDriver(bare as JobDriver);
     expect(codeOf()).toBe('X_NOT_IMPLEMENTED');
+    expect(caught).toBeInstanceOf(NotImplementedError);
     setJobDriver(seeded.driver);
     expect(jobsOperator().driver).toBe(seeded.driver);
   });

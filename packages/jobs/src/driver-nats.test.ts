@@ -1,13 +1,12 @@
 // Pins the honest-stub contract: every method of the nats driver throws
-// JobsNotImplementedError naming the method and the exact runnable fix, so an accidental
+// core's NotImplementedError naming the method and the exact runnable fix, so an accidental
 // partial implementation (someone wires `enqueue` but forgets `ack`) fails a test instead of
 // silently dropping jobs in production.
 
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { NotImplementedError, UltimateError } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { createNatsDriver } from './driver-nats';
-import { JobsNotImplementedError } from './errors';
 
 /** A settle names its claim; a stub refuses before it reads one. */
 const BY = { workerId: 'w1', claim: 1 };
@@ -34,7 +33,7 @@ function expectUnavailable(call: () => Promise<unknown>, featureSubstring: strin
   if (returned !== undefined) void Promise.resolve(returned).catch(() => undefined);
 
   expect(returned).toBeUndefined();
-  expect(thrown).toBeInstanceOf(JobsNotImplementedError);
+  expect(thrown).toBeInstanceOf(NotImplementedError);
   expect(thrown).toBeInstanceOf(UltimateError);
   const ultimateError = thrown as UltimateError;
   expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');

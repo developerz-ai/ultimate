@@ -8,7 +8,6 @@ import {
   isRetryableStatus,
   renderFixShellArg,
   renderThrowable,
-  UltimateError,
 } from '@ultimat3/core';
 import type { CaptureClip } from './capture-clip';
 import { ScrapeError } from './errors';
@@ -428,19 +427,6 @@ export const blocked = (scrape: string, url: string, detail: string): ScrapeErro
     cause: `scrape "${scrape}" was refused by ${url}: ${detail}`,
     fix: 'the session is burned and the next attempt starts a new identity — lower rate: on the scrape() definition if this repeats',
     meta: { scrape, url },
-  });
-
-/**
- * The honest stub, in the shape `packages/jobs/src/driver-redis.ts` uses: correct types so an app
- * can be written against the seam, and one labelled throw so nobody discovers the gap from a
- * silently-skipped recovery.
- */
-export const scrapeNotImplemented = (feature: string, fix: string): UltimateError =>
-  new UltimateError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `${feature} is declared and not implemented in @ultimat3/scraping`,
-    fix,
-    meta: { feature },
   });
 
 /**

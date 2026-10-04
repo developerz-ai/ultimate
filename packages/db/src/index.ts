@@ -72,7 +72,6 @@ export {
   DB_ERROR_RETRY,
   DB_ERROR_TITLES,
   DbError,
-  dbNotImplemented,
   dbUnavailable,
   driverError,
   identifierUnsafe,

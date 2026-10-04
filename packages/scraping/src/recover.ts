@@ -6,7 +6,8 @@
 // `X_NOT_IMPLEMENTED` today, in the shape `packages/jobs/src/driver-redis.ts` uses: correct types
 // so an app can be written against it, one labelled throw, no silent no-op.
 
-import { recoverRefused, scrapeNotImplemented } from './error-throws';
+import { NotImplementedError } from '@ultimat3/core';
+import { recoverRefused } from './error-throws';
 import type { ScrapePage } from './page';
 
 export interface RecoveryAttempt {
@@ -41,7 +42,7 @@ export async function runRecovery(recovery: Recovery, attempt: RecoveryAttempt):
     // The agent path lands with `@ultimat3/ai`'s `llm()` behind it: page HTML in, a selector out,
     // re-run once. Until it does, this throws rather than answering `false` — a recovery that
     // silently declines is indistinguishable from one that was never configured.
-    throw scrapeNotImplemented("recover: 'agent'", AGENT_FIX);
+    throw new NotImplementedError({ cause: "recover: 'agent' is not implemented", fix: AGENT_FIX });
   }
   const verdict: unknown = await recovery(attempt);
   if (typeof verdict !== 'boolean') {

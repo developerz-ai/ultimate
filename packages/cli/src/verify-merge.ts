@@ -16,7 +16,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, renderThrowable, UltimateError } from '@ultimat3/core';
 import { APP_CONFIG_FILE } from './app-root';
 import { judgeCoverage } from './coverage-floor';
 import type { CoverageMap } from './coverage-lcov';
@@ -24,7 +24,6 @@ import { decodeCoverage, mergeCoverage } from './coverage-lcov';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import type { TestCounts } from './test-counts';
-import { VerifyMergeInputError } from './verify-errors';
 import type { VerifyFloor } from './verify-floor';
 import { floorRequires, skippedSuiteFinding } from './verify-floor';
 import type { PartStep } from './verify-part-step';
@@ -32,6 +31,23 @@ import { readPartStep } from './verify-part-step';
 import { verifySummary } from './verify-run';
 import { corpusHash } from './verify-shard';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
+
+/**
+ * A part handed to `x verify merge` that is not an `x verify --json` document. `command` is the
+ * entry that raised it — `bun run verify` at the framework root, where `x verify` answers
+ * `X_NOT_IN_APP` — so the `fix:` runs where it was raised.
+ */
+export class VerifyMergeInputError extends UltimateError {
+  constructor(input: { file: string; reason: string; sourceError?: unknown; command?: string }) {
+    const command = input.command ?? GATE_COMMAND;
+    super({
+      code: 'X_VERIFY_MERGE_INPUT',
+      cause: `${command} merge: ${input.file} ${input.reason}`,
+      fix: `${command} --only unit --json > part.json   # one document per part, the last line of stdout`,
+      ...(input.sourceError === undefined ? {} : { sourceError: input.sourceError }),
+    });
+  }
+}
 
 export interface VerifyPart {
   readonly file: string;

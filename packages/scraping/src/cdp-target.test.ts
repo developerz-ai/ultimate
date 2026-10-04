@@ -4,6 +4,7 @@
 // event payloads, so the offline drivers cannot pin any of them.
 
 import { describe, expect, test } from 'bun:test';
+import { NotImplementedError } from '@ultimat3/core';
 import { fakeBrowserTarget } from './cdp-fake-target';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
@@ -438,6 +439,7 @@ describe('unit · setOfflineMode on a launcher that does not have it', () => {
     // `guard()` passes this through: `X_SCRAPE_BROWSER_UNREACHABLE` is registered retryable, and
     // the method is still missing on attempt five.
     expect(thrown.code).toBe('X_NOT_IMPLEMENTED');
+    expect(thrown).toBeInstanceOf(NotImplementedError);
     expect(thrown.fix).toContain('puppeteer-core');
   });
 

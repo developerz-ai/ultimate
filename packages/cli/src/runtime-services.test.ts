@@ -12,13 +12,12 @@ import { join } from 'node:path';
 import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { registerReadinessCheck } from '@ultimat3/core';
+import { NotImplementedError, registerReadinessCheck } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
 import { TransportUnavailableError } from '@ultimat3/realtime';
 import { DEFAULT_PRESENCE_TTL_MS, selectTransport } from '@ultimat3/realtime/server';
-import { CliNotImplementedError } from './errors';
 import type { DevServices } from './runtime-bindings';
 import { eventsBinding, resolveServices } from './runtime-bindings';
 import {
@@ -45,8 +44,8 @@ const fakeSmtp = (): MailDriver => ({
   name: 'smtp',
   send: (): Promise<never> =>
     Promise.reject(
-      new CliNotImplementedError({
-        feature: 'sending through the describeMail fixture transport',
+      new NotImplementedError({
+        cause: 'sending through the describeMail fixture transport is not implemented',
         fix: 'x dev   # boots the transport SMTP_URL selects, which does send',
       }),
     ),
@@ -78,8 +77,8 @@ const root = mkdtempSync(join(tmpdir(), 'x-dev-boot-'));
 function rootDeclaring(tiers: readonly string[]): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-dev-tiers-'));
   // A plain object, not `defineConfig(...)`: this directory is outside the workspace, so it cannot
-  // resolve `@ultimat3/core`, and `loadCacheTiers` reads the shape structurally rather than
-  // requiring the builder. What is under test is that the boot reads the DECLARATION at all.
+  // resolve `@ultimat3/core` — the one loader runs the validator over it instead. What is under
+  // test is that the boot reads the DECLARATION at all.
   writeFileSync(
     join(dir, 'app.config.ts'),
     `export const config = { name: 'tiers', cache: { tiers: ${JSON.stringify(tiers)} } };\n`,

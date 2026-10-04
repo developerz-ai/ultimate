@@ -10,10 +10,9 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
 import { invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
-import { resetLifecycle } from '@ultimat3/core';
+import { NotImplementedError, resetLifecycle } from '@ultimat3/core';
 import { clearRoutes } from '@ultimat3/render';
 import { resetAppLoad } from '../src/app-load';
-import { CliNotImplementedError } from '../src/errors';
 import { serveApp } from '../src/serve';
 import type { ServedApp } from '../src/serve-types';
 
@@ -71,8 +70,8 @@ afterAll(async () => {
 async function get(path: string): Promise<Response> {
   const url = served?.url;
   if (url === undefined || url === null) {
-    throw new CliNotImplementedError({
-      feature: 'an ISR request against a pod that serves no HTTP',
+    throw new NotImplementedError({
+      cause: 'an ISR request against a pod that serves no HTTP is not implemented in this build',
       fix: 'ROLE=web bun run x -- serve',
     });
   }

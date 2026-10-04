@@ -422,10 +422,3 @@ export const isolationLevelInvalid = (received: unknown): DbError =>
     cause: `an isolation level must be one of 'read committed', 'repeatable read' or 'serializable'; got ${describeValue(received)}`,
     fix: "withTransaction(fn, { isolation: 'serializable' })   # or 'repeatable read', or 'read committed'",
   });
-
-export const dbNotImplemented = (feature: string, fix: string): DbError =>
-  new DbError({
-    code: 'X_NOT_IMPLEMENTED',
-    cause: `${feature} is not implemented by this driver`,
-    fix,
-  });

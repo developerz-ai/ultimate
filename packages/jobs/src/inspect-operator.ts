@@ -3,15 +3,15 @@
 // know whether the job is gone or was never theirs to remove. Apart from `inspect.ts`, which is
 // the read side.
 
+import { NotImplementedError } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from './driver';
-import { JobsNotImplementedError } from './errors';
 import { JobNotPromotableError } from './errors-operator';
 import type { JobIntrospection, PausedName } from './introspection';
 
 function operatorOf(driver: JobDriver): JobIntrospection {
   if (driver.introspect === undefined) {
-    throw new JobsNotImplementedError({
-      feature: `the operator surface of the "${driver.name}" jobs driver`,
+    throw new NotImplementedError({
+      cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
       fix: 'call setJobDriver(createPgDriver()) at boot — the pg driver implements introspect — then: x jobs ls --json',
     });
   }

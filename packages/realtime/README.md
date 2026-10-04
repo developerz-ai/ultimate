@@ -775,7 +775,6 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `FrameRateLimitError` (extends `RealtimeError`) | `X_FRAME_RATE_LIMIT` | `src/errors.ts` |
 | `LiveQueryUnknownError` (extends `RealtimeError`) | `X_LIVE_QUERY_UNKNOWN` | `src/errors.ts` |
 | `LiveRowUnidentifiedError` (extends `RealtimeError`) | `X_LIVE_ROW_UNIDENTIFIED` | `src/errors.ts` |
-| `NotImplementedError` (extends `RealtimeError`) | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
 | `OfflineQueueAbandonedError` (extends `RealtimeError`) | `X_OFFLINE_QUEUE_ABANDONED` | `src/page-errors.ts` |
 | `ProtocolVersionError` (extends `RealtimeError`) | `X_PROTOCOL_VERSION` | `src/page-errors.ts` |
 | `RealtimeError` | any `RealtimeErrorCode` — `REALTIME_ERROR_CODES`; the base of every other class here, thrown directly for a code none of them covers | `src/realtime-error.ts` |

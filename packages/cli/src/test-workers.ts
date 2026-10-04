@@ -7,8 +7,30 @@
 // answer, and `totalmem()` is the only reader of the machine's RAM.
 // why: Bun ships no CPU-count or total-memory primitive.
 import { cpus, totalmem } from 'node:os';
+import { UltimateError } from '@ultimat3/core';
 import type { TestType } from '@ultimat3/testing';
-import { TestBudgetInvalidError } from './verify-errors';
+
+/**
+ * `ULTIMATE_TEST_MEMORY_BUDGET` or `ULTIMATE_TEST_MAX_WORKERS` set to something that does not
+ * parse. Refused rather than ignored: a typo read as "the default" is a run sized for a machine
+ * the caller said this is not.
+ */
+export class TestBudgetInvalidError extends UltimateError {
+  constructor(name: string, value: string) {
+    super({
+      code: 'X_TEST_BUDGET_INVALID',
+      cause: `${name}=${JSON.stringify(value)} does not parse — ${
+        name === 'ULTIMATE_TEST_MAX_WORKERS'
+          ? 'expected a positive integer'
+          : 'expected a size such as 3g, 512m or 4GiB'
+      }`,
+      fix:
+        name === 'ULTIMATE_TEST_MAX_WORKERS'
+          ? 'ULTIMATE_TEST_MAX_WORKERS=4 x verify'
+          : 'ULTIMATE_TEST_MEMORY_BUDGET=3g x verify',
+    });
+  }
+}
 
 /** navigator first: it is the runtime's own answer, and it respects a container's CPU limit. */
 export function availableCpus(): number {

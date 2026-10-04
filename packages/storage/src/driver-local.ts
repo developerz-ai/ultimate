@@ -6,6 +6,7 @@
 import {
   type Clock,
   finiteCount,
+  NotImplementedError,
   type ResolveEnvironmentOptions,
   stringField,
   systemClock,
@@ -31,14 +32,7 @@ import {
 import { etagOfFile, headObject, readObjectBytes } from './driver-local-read';
 import type { Sidecar } from './driver-local-sidecar';
 import { commitObject, keyedQueue, pendingPathOf, sidecarPathOf } from './driver-local-write';
-import {
-  checksumMismatch,
-  deleteFailed,
-  getTooLarge,
-  listFailed,
-  objectNotFound,
-  storageNotImplemented,
-} from './errors';
+import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
 import { assertSafeKey, META_DIR } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
@@ -92,10 +86,11 @@ export interface LocalDriverOptions {
  */
 function refuseUnsupportedPut(putOptions?: PutOptions): void {
   if (putOptions?.serverSideEncryption === undefined) return;
-  throw storageNotImplemented(
-    'server-side encryption on the local driver (it writes plain files under one root)',
-    'drop serverSideEncryption from put(), and encrypt the disk itself — an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under `root`',
-  );
+  throw new NotImplementedError({
+    cause:
+      'server-side encryption on the local driver (it writes plain files under one root) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under root',
+    fix: 'put(key, body)',
+  });
 }
 
 /** `ENOENT` is the one delete failure that means "already in the desired state". */

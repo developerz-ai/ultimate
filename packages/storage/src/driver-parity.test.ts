@@ -17,7 +17,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
 // temporary directory is.
 import { tmpdir } from 'node:os';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { s3Driver } from './driver-s3';
@@ -173,12 +173,12 @@ describe('delete is idempotent for an ABSENT key and for nothing else', () => {
 describe('put refuses what its disk cannot honour', () => {
   test('server-side encryption is refused by BOTH, so it is one rule and not two', async () => {
     const sse = { serverSideEncryption: { algorithm: 'AES256' } } as const;
-    expect(codeOf(await catchError(() => local.put(KEY, bytesOf('x'), sse)))).toBe(
-      'X_NOT_IMPLEMENTED',
-    );
-    expect(codeOf(await catchError(() => s3.put(KEY, bytesOf('x'), sse)))).toBe(
-      'X_NOT_IMPLEMENTED',
-    );
+    // Core's one constructor of the code on every disk — never a storage wrapper beside it.
+    for (const disk of [local, s3]) {
+      const refused = await catchError(() => disk.put(KEY, bytesOf('x'), sse));
+      expect(refused).toBeUltimateError('X_NOT_IMPLEMENTED');
+      expect(refused).toBeInstanceOf(NotImplementedError);
+    }
   });
 
   test('metadata and cacheControl are the one PutOptions pair the disks disagree about', async () => {
@@ -198,11 +198,11 @@ describe('put refuses what its disk cannot honour', () => {
     expect(object.metadata).toEqual({ uploadedBy: 'user-1' });
 
     expect(
-      codeOf(await catchError(() => s3.put(KEY, bytesOf('x'), { metadata: { a: 'b' } }))),
-    ).toBe('X_NOT_IMPLEMENTED');
+      await catchError(() => s3.put(KEY, bytesOf('x'), { metadata: { a: 'b' } })),
+    ).toBeUltimateError('X_NOT_IMPLEMENTED');
     expect(
-      codeOf(await catchError(() => s3.put(KEY, bytesOf('x'), { cacheControl: 'no-cache' }))),
-    ).toBe('X_NOT_IMPLEMENTED');
+      await catchError(() => s3.put(KEY, bytesOf('x'), { cacheControl: 'no-cache' })),
+    ).toBeUltimateError('X_NOT_IMPLEMENTED');
   });
 
   test('the server-side byte ceiling is enforced by both, with the same code', async () => {

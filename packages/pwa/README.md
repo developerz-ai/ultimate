@@ -95,7 +95,6 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `BuildIdMissingError` | `X_BUILD_ID_MISSING` | `src/errors.ts` |
-| `NotImplementedError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
 | `PwaIconMissingError` | `X_PWA_ICON_MISSING` | `src/errors.ts` |
 | `PwaManifestInvalidError` | `X_PWA_MANIFEST_INVALID` | `src/errors.ts` |
 | `PwaNoOfflineFallbackError` | `X_PWA_NO_OFFLINE_FALLBACK` | `src/errors.ts` |

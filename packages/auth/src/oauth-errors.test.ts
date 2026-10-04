@@ -1,31 +1,33 @@
 /**
- * What the `errors.ts` → `oauth-errors.ts` split must never change: each OAuth factory's stable
- * code, and the fact that importing this module registers the titles for them.
+ * What moving the OAuth factories must never change: each one's stable code, and the fact that
+ * importing the module that holds it registers the titles for them.
  *
- * It imports `./oauth-errors` and nothing else from this package, deliberately. The one
- * `registerErrorCodes()` call lives in `errors.ts`, and this file reaches it only through
- * `oauth-errors.ts`'s own import — so a later edit that drops that edge (a locally declared error
- * class, a type-only import) leaves every code below unregistered, and `x errors explain` answers
- * a humanised guess instead of the title the package owns. Importing `./errors` here would hide
- * exactly that, because the registration would then run for the test rather than for the subject.
+ * The factories more than one OAuth module raises live in `./oauth-errors`; one with a single
+ * thrower lives beside it. This file imports those modules and never `./errors`, deliberately: the
+ * one `registerErrorCodes()` call lives in `errors.ts`, and each subject must reach it through its
+ * own import — so a later edit that drops that edge (a locally declared error class, a type-only
+ * import) leaves a code unregistered, and `x errors explain` answers a humanised guess instead of
+ * the title the package owns. Importing `./errors` here would hide exactly that.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { hasErrorCode } from '@ultimat3/core';
 import {
-  emailVerifiedNotStored,
-  oauthAccountNotLinked,
-  oauthDenied,
   oauthExchangeFailed,
-  oauthLinkingDisabled,
-  oauthProviderDuplicate,
   oauthProviderUnknown,
   oauthStateInvalid,
   oauthTokenInvalid,
   restartAt,
 } from './oauth-errors';
+import { emailVerifiedNotStored, oauthAccountNotLinked, oauthLinkingDisabled } from './oauth-login';
+import { oauthProviderDuplicate } from './oauth-registry';
+import { oauthDenied } from './oauth-route';
 
-/** Every factory the split moved, against the code it has always carried. Codes are forever. */
+/**
+ * Every OAuth factory, against the code it carries. Codes are forever; `emailVerifiedNotStored`
+ * moved OFF `X_NOT_IMPLEMENTED` — an adapter that dropped a write is a runtime fault, and
+ * `X_AUTH_WRITE_FAILED` is the code this package already owns for exactly that.
+ */
 const BUILT = [
   ['X_OAUTH_STATE_INVALID', () => oauthStateInvalid('github', 'state')],
   ['X_OAUTH_DENIED', () => oauthDenied('github', 'access_denied', null)],
@@ -43,11 +45,11 @@ const BUILT = [
   ],
   ['X_UNAUTHENTICATED', () => oauthAccountNotLinked('github', 'a@example.com')],
   ['X_UNAUTHENTICATED', () => oauthLinkingDisabled('github', 'a@example.com')],
-  ['X_NOT_IMPLEMENTED', () => emailVerifiedNotStored('github', 'user-1')],
+  ['X_AUTH_WRITE_FAILED', () => emailVerifiedNotStored('github', 'user-1')],
   ['X_OAUTH_TOKEN_INVALID', () => oauthTokenInvalid('github', 'wrong iss', 'fix the issuer')],
 ] as const;
 
-describe('the oauth error factories survive the split', () => {
+describe('the oauth error factories, wherever each lives', () => {
   for (const [code, build] of BUILT) {
     test(`${code} is built by a factory that still answers with it`, () => {
       const error = build();

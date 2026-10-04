@@ -4,6 +4,7 @@
 // Split from `driver-s3.test.ts`, which owns the paths that succeed; both drive one fake client.
 
 import { describe, expect, test } from 'bun:test';
+import { NotImplementedError } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, codeOf, FakeS3Client } from './driver-s3-fixture';
@@ -63,10 +64,12 @@ describe('s3Driver put', () => {
           serverSideEncryption: { algorithm: 'aws:kms', kmsKeyId: 'arn:aws:kms:::key/abc' },
         }),
       );
-      expect(codeOf(caught)).toBe('X_NOT_IMPLEMENTED');
+      expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
       const error = caught as StorageError;
-      expect(error.fix).toContain('aws s3api put-bucket-encryption --bucket b');
+      // The fix opens with the command itself: the explanation is the cause's, never the fix's.
+      expect(error.fix).toStartWith('aws s3api put-bucket-encryption --bucket b ');
       expect(error.fix).toContain('arn:aws:kms:::key/abc');
+      expect(error.cause).toContain('drop serverSideEncryption from put()');
       expect(fake.store.has('org/org-1/s.txt')).toBe(false);
     });
 
@@ -108,22 +111,26 @@ describe('s3Driver put', () => {
   });
 
   describe('put: metadata / cacheControl not implemented', () => {
-    test('metadata throws storageNotImplemented (X_NOT_IMPLEMENTED)', async () => {
+    test("metadata throws core's NotImplementedError (X_NOT_IMPLEMENTED)", async () => {
       const fake = new FakeS3Client();
       const driver = s3Driver({ bucket: 'b', client: fake });
       const caught = await catchError(() =>
         driver.put('org/org-1/f.txt', bytesOf('x'), { metadata: { owner: 'a' } }),
       );
-      expect(codeOf(caught)).toBe('X_NOT_IMPLEMENTED');
+      expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
+      expect((caught as StorageError).fix).toBe(
+        'aws s3 cp s3://b/org/org-1/f.txt s3://b/org/org-1/f.txt --metadata-directive REPLACE',
+      );
+      expect(caught).toBeInstanceOf(NotImplementedError);
     });
 
-    test('cacheControl throws storageNotImplemented (X_NOT_IMPLEMENTED)', async () => {
+    test("cacheControl throws core's NotImplementedError (X_NOT_IMPLEMENTED)", async () => {
       const fake = new FakeS3Client();
       const driver = s3Driver({ bucket: 'b', client: fake });
       const caught = await catchError(() =>
         driver.put('org/org-1/g.txt', bytesOf('x'), { cacheControl: 'no-cache' }),
       );
-      expect(codeOf(caught)).toBe('X_NOT_IMPLEMENTED');
+      expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
     });
   });
 });

@@ -1,7 +1,7 @@
 // `ScrapeTarget` over a real browser, through the structural CDP port. Everything driver-specific
 // in this package lives here and in `driver-cdp.ts`; the vocabulary above it does not change.
 
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import { browserRecord } from './browser-record';
@@ -16,7 +16,7 @@ import {
   snapshotExpression,
 } from './cdp-snapshot';
 import { type ColorScheme, colorSchemeFeatures } from './color-scheme';
-import { browserUnreachable, pageCrashed, scrapeNotImplemented } from './error-throws';
+import { browserUnreachable, pageCrashed } from './error-throws';
 import { parseKeyChord } from './key-chord';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import { createRing } from './rings';
@@ -54,7 +54,7 @@ const cookieSchema = t.array(
  *
  * | Code | Why a retry cannot change it |
  * |---|---|
- * | `X_NOT_IMPLEMENTED` | a fact about the launcher's own shape. A browser cannot produce it; only this file's `scrapeNotImplemented()` can, and the method is still missing on attempt five |
+ * | `X_NOT_IMPLEMENTED` | a fact about the launcher's own shape. A browser cannot produce it; only this file's own `NotImplementedError` refusals can, and the method is still missing on attempt five |
  * | `X_VALIDATION_FAILED` | the browser ANSWERED, and the answer did not match the shape this driver reads it with. The page is what it is; attempt five reads the same DOM |
  *
  * Both were re-labelled `X_SCRAPE_BROWSER_UNREACHABLE`, which `errors.ts` registers `retryable`,
@@ -184,10 +184,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     // rather than answered from the PARENT document, which is what the spread alone would do.
     accessibility: (_selector, _max): Promise<readonly AxNode[]> =>
       Promise.reject(
-        scrapeNotImplemented(
-          'accessibility() on a frame of the puppeteer driver',
-          'read the accessibility tree through the page — page.accessibility(selector) — which covers the top-level document only',
-        ),
+        new NotImplementedError({
+          cause:
+            'accessibility() on a frame of the puppeteer driver is not implemented by this driver',
+          fix: 'read the accessibility tree through the page — page.accessibility(selector) — which covers the top-level document only',
+        }),
       ),
   });
 
@@ -229,10 +230,10 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       await guard('press', async () => {
         const keyboard = init.page.keyboard;
         if (keyboard === undefined) {
-          throw scrapeNotImplemented(
-            'press() on a CDP page with no keyboard',
-            'upgrade the launcher to a puppeteer-core that exposes page.keyboard, or dispatch the key from the app under test instead of the browser',
-          );
+          throw new NotImplementedError({
+            cause: 'press() on a CDP page with no keyboard is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.keyboard, or dispatch the key from the app under test instead of the browser',
+          });
         }
         // Down in the order written, the key, then up in REVERSE — the order a hand releases
         // them, and the order the browser's own `press` with modifiers performs. `.call`-free:
@@ -249,10 +250,10 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('focus', async () => {
         const focus = init.page.focus;
         if (typeof focus !== 'function') {
-          throw scrapeNotImplemented(
-            'focus() on a CDP page with no focus() method',
-            'upgrade the launcher to a puppeteer-core that exposes page.focus(), or click the element instead',
-          );
+          throw new NotImplementedError({
+            cause: 'focus() on a CDP page with no focus() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.focus(), or click the element instead',
+          });
         }
         // `.call`, for `setColorScheme`'s reason: the member is read off the object.
         await focus.call(init.page, selector);
@@ -261,10 +262,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('accessibility', async () => {
         const createSession = init.page.createCDPSession;
         if (typeof createSession !== 'function') {
-          throw scrapeNotImplemented(
-            'accessibility() on a CDP page with no createCDPSession() method',
-            'upgrade the launcher to a puppeteer-core that exposes page.createCDPSession(), or assert on the markup with page.query() — which reads attributes, not what the browser computed',
-          );
+          throw new NotImplementedError({
+            cause:
+              'accessibility() on a CDP page with no createCDPSession() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.createCDPSession(), or assert on the markup with page.query() — which reads attributes, not what the browser computed',
+          });
         }
         const session = await createSession.call(init.page);
         try {
@@ -277,10 +279,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('setOfflineMode', async () => {
         const source = init.page as { setOfflineMode?: (value: boolean) => Promise<void> };
         if (typeof source.setOfflineMode !== 'function') {
-          throw scrapeNotImplemented(
-            'setOfflineMode() on a CDP page with no setOfflineMode() method',
-            'upgrade the launcher to a puppeteer-core that exposes page.setOfflineMode(), or drive the condition from the app under test instead of the browser',
-          );
+          throw new NotImplementedError({
+            cause:
+              'setOfflineMode() on a CDP page with no setOfflineMode() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.setOfflineMode(), or drive the condition from the app under test instead of the browser',
+          });
         }
         await source.setOfflineMode(enabled);
       }),
@@ -292,10 +295,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         // older spelling.
         const emulate = init.page.emulateMediaFeatures;
         if (typeof emulate !== 'function') {
-          throw scrapeNotImplemented(
-            'setColorScheme() on a CDP page with no emulateMediaFeatures() method',
-            'upgrade the launcher to a puppeteer-core that exposes page.emulateMediaFeatures(), or have the page under test set its own theme',
-          );
+          throw new NotImplementedError({
+            cause:
+              'setColorScheme() on a CDP page with no emulateMediaFeatures() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.emulateMediaFeatures(), or have the page under test set its own theme',
+          });
         }
         // `.call`, because the member is read off the object: an unbound method loses `this` and
         // puppeteer's own `Page` needs it.
@@ -306,10 +310,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         // Read off the object and called through it, for `setColorScheme`'s reason.
         const evaluateOnNewDocument = init.page.evaluateOnNewDocument;
         if (typeof evaluateOnNewDocument !== 'function') {
-          throw scrapeNotImplemented(
-            'prepare() on a CDP page with no evaluateOnNewDocument() method',
-            'upgrade the launcher to a puppeteer-core that exposes page.evaluateOnNewDocument(), or seed the state from the app under test instead of the browser',
-          );
+          throw new NotImplementedError({
+            cause:
+              'prepare() on a CDP page with no evaluateOnNewDocument() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes page.evaluateOnNewDocument(), or seed the state from the app under test instead of the browser',
+          });
         }
         await evaluateOnNewDocument.call(init.page, expression);
       }),
@@ -334,10 +339,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       guard('cookies', async () => {
         const source = init.browser as { cookies?: () => Promise<unknown> };
         if (typeof source.cookies !== 'function') {
-          throw scrapeNotImplemented(
-            'cookies() on a CDP browser with no cookies() method',
-            'upgrade the launcher to a puppeteer-core that exposes browser.cookies(), or read them with page.evaluate("document.cookie")',
-          );
+          throw new NotImplementedError({
+            cause:
+              'cookies() on a CDP browser with no cookies() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes browser.cookies(), or read them with page.evaluate("document.cookie")',
+          });
         }
         return parse(cookieSchema, await source.cookies());
       }),
@@ -350,10 +356,10 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     // `try` — a synchronous `throw` jumps over the first of those entirely.
     download: (_options): Promise<ScrapeDownloadFile> =>
       Promise.reject(
-        scrapeNotImplemented(
-          'download() on the puppeteer driver',
-          'fetch the file inside the page — page.evaluate("fetch(url).then(r => r.text())") — or run this scrape on fixtureBrowser(), whose download() is complete',
-        ),
+        new NotImplementedError({
+          cause: 'download() on the puppeteer driver is not implemented by this driver',
+          fix: 'fetch the file inside the page — page.evaluate("fetch(url).then(r => r.text())") — or run this scrape on fixtureBrowser(), whose download() is complete',
+        }),
       ),
     frames: () =>
       guard('frames', () =>
@@ -383,10 +389,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         // `persistSession` stores what this answers, so an empty jar went out logged-out and was
         // saved as the session — both silently, while every other missing port method refuses.
         if (typeof init.browser.cookies !== 'function') {
-          throw scrapeNotImplemented(
-            'session() on a CDP browser with no cookies() method',
-            'upgrade the launcher to a puppeteer-core that exposes browser.cookies() — the HTTP leg and a persisted session both read the jar through it',
-          );
+          throw new NotImplementedError({
+            cause:
+              'session() on a CDP browser with no cookies() method is not implemented by this driver',
+            fix: 'upgrade the launcher to a puppeteer-core that exposes browser.cookies() — the HTTP leg and a persisted session both read the jar through it',
+          });
         }
         const jar = parse(cookieSchema, await init.browser.cookies());
         return {
@@ -407,10 +414,11 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
           // Refused rather than skipped: a restore that dropped the cookies opened the session
           // logged-out while the run believed it restored one.
           if (typeof init.browser.setCookie !== 'function') {
-            throw scrapeNotImplemented(
-              'restore() of cookies on a CDP browser with no setCookie() method',
-              'upgrade the launcher to a puppeteer-core that exposes browser.setCookie(), or set auth: { reuse: false } on the scrape() definition so no session is restored',
-            );
+            throw new NotImplementedError({
+              cause:
+                'restore() of cookies on a CDP browser with no setCookie() method is not implemented by this driver',
+              fix: 'upgrade the launcher to a puppeteer-core that exposes browser.setCookie(), or set auth: { reuse: false } on the scrape() definition so no session is restored',
+            });
           }
           await init.browser.setCookie(...session.cookies);
         }

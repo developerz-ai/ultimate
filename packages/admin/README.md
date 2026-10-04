@@ -464,4 +464,4 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `AdminPolicyMissingError` | `X_ADMIN_POLICY_MISSING` | `src/errors.ts` |
 | `AdminRepoUnboundError` | `X_ADMIN_REPO_UNBOUND` | `src/errors.ts` |
 | `DevDashboardInProdError` | `X_DEV_DASHBOARD_IN_PROD` | `src/errors.ts` |
-| `DevSourceUnavailableError` | `X_NOT_IMPLEMENTED` | `src/errors.ts` |
+| `DevSourceUnavailableError` (extends core's `NotImplementedError`) | `X_NOT_IMPLEMENTED` | `src/errors.ts` |

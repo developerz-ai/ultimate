@@ -10,6 +10,7 @@ import {
   argsFor,
   BUILD_ENTRY,
   BUILD_TARGETS,
+  BuildEntryMissingError,
   binaryArgs,
   buildCommand,
   buildResult,
@@ -67,6 +68,8 @@ test('a missing entry is refused by name, before anything is spawned', () => {
     expect(thrown.code).toBe('X_BUILD_ENTRY_MISSING');
     expect(thrown.cause).toContain('apps/web/server.ts');
     expect(thrown.fix).toContain('apps/web/server.ts');
+    // Declared beside its one thrower, never in a file split off `errors.ts` for its size.
+    expect(() => requireEntry(dir, 'binary')).toThrow(BuildEntryMissingError);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -161,7 +164,7 @@ test('an unknown target names the known ones and a working invocation', () => {
 /** An app root with the docker entry `x build --target docker` requires. */
 async function buildRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-build-run-'));
-  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // The docker target reads the manifest's build id, which names the app from its package.json.
   await Bun.write(
     join(dir, 'package.json'),

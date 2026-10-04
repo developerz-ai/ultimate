@@ -3,7 +3,12 @@
 // page. These tests are what keeps that contract from rotting silently.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
+import {
+  describeErrorCode,
+  ERROR_DOCS_URL,
+  hasErrorCode,
+  NotImplementedError,
+} from '@ultimat3/core';
 import {
   ADMIN_BORROWED_ERROR_CODES,
   ADMIN_ERROR_CODES,
@@ -12,6 +17,7 @@ import {
   AdminActionDuplicateError,
   AdminEntityUnknownError,
   AdminPolicyMissingError,
+  DevSourceUnavailableError,
 } from './errors';
 
 describe('ADMIN_ERROR_TITLES', () => {
@@ -101,5 +107,25 @@ describe('X_ADMIN_POLICY_MISSING pastes a permission, never the subject name', (
   // with no policy is the open door this code exists to refuse, so there is no escape to name.
   test('it offers no allow() escape hatch', () => {
     expect(missing('posts', 'resource').fix).not.toContain('allow(');
+  });
+});
+
+describe('DevSourceUnavailableError', () => {
+  // Its own class, because a panel catches exactly "this source is not wired" and nothing wider —
+  // but core's NotImplementedError underneath, because core is the one constructor of the code.
+  test('is core NotImplementedError, carrying the wiring call as its fix', () => {
+    const error = new DevSourceUnavailableError({ source: 'traces', panel: 'timeline' });
+    expect(error).toBeInstanceOf(NotImplementedError);
+    expect(error.code).toBe('X_NOT_IMPLEMENTED');
+    expect(error.fix).toBe('devDashboard({ sources: defaultDevSources({ hooks: { traces } }) })');
+  });
+
+  test('a caller-supplied wiring replaces the hooks phrasing whole', () => {
+    const error = new DevSourceUnavailableError({
+      source: 'authz + actors',
+      panel: 'policy',
+      wiring: '{ authz, actors }',
+    });
+    expect(error.fix).toBe('devDashboard({ sources: defaultDevSources({ authz, actors }) })');
   });
 });

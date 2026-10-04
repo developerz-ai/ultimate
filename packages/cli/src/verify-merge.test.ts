@@ -13,7 +13,7 @@ import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { thrownBy } from './thrown-by';
 import type { VerifyPart } from './verify-merge';
-import { mergeParts, parsePart } from './verify-merge';
+import { mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
 import { corpusHash, shardFiles } from './verify-shard';
 
 const DECLARED = ['lint', 'unit', 'live'];
@@ -157,6 +157,8 @@ describe('unit · reading a part', () => {
     expect(thrownBy(() => parsePart('a.json', '{"command":"build"}')).code).toBe(
       'X_VERIFY_MERGE_INPUT',
     );
+    // Declared beside the reader that raises it, never in a file split off for size.
+    expect(() => parsePart('a.json', '')).toThrow(VerifyMergeInputError);
   });
 
   test('a refusal and a gap are spelled for the entry that raised them', () => {
