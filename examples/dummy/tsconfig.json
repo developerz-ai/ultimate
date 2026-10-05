@@ -30,6 +30,7 @@
   },
   "include": [
     "app.config.ts",
+    "bin/**/*",
     "types/**/*",
     "apps/**/*",
     "guards/**/*",

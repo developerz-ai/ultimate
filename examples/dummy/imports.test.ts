@@ -17,7 +17,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { isolateDeclaredTags } from '@ultimat3/cache';
 import { Glob } from 'bun';
 
-const APP_ROOT = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
+const APP_ROOT = Bun.fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]$/, '');
 
 /**
  * Importing every module of the app declares the app's cache tags — `packages/db/src/tags.ts` calls
@@ -38,6 +38,15 @@ const modules = async (): Promise<readonly string[]> => {
   const found: string[] = [];
   for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: APP_ROOT, absolute: true })) {
     if (file.includes('/node_modules/') || isTest(file)) continue;
+    // `bin/*.ts` are the scripts `bun run setup` / `check` execute: importing one RUNS it (an
+    // install, `x setup`, a nested `x verify`). They are entry points, not modules of the app.
+    if (
+      file
+        .slice(APP_ROOT.length + 1)
+        .replaceAll('\\', '/')
+        .startsWith('bin/')
+    )
+      continue;
     found.push(file);
   }
   return found.sort();

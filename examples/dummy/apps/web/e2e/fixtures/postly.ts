@@ -14,7 +14,10 @@ import { allowHost, findChrome, openE2eBrowser, startE2eApp } from '@ultimat3/te
 export const fail = (message: string): never => expect.unreachable(message);
 
 /** The app root: `examples/dummy`, three directories above this file. */
-export const APP_ROOT = new URL('../../../../', import.meta.url).pathname.replace(/\/$/, '');
+export const APP_ROOT = Bun.fileURLToPath(new URL('../../../../', import.meta.url)).replace(
+  /[\\/]$/,
+  '',
+);
 
 /** Skipped only when this machine has no Chrome; `E2E_BROWSER_REQUIRED=1` refuses the skip. */
 export const noBrowser =

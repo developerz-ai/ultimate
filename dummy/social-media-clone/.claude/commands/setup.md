@@ -16,7 +16,7 @@ bun install
 x doctor --json
 x db migrate
 bun run scripts/db/seed.ts        # skip if the app has no seed yet
-bin/check
+bun run check
 ```
 
 Then boot it and **look at it**:

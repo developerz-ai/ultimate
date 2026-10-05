@@ -19,6 +19,9 @@ interface Step {
   readonly uses?: string;
   readonly if?: string;
   readonly run?: string;
+  readonly shell?: string;
+  readonly 'working-directory'?: string;
+  readonly 'continue-on-error'?: unknown;
   readonly env?: Readonly<Record<string, string>>;
   readonly with?: Readonly<Record<string, unknown>>;
 }
@@ -28,6 +31,10 @@ interface Job {
   readonly needs?: string | readonly string[];
   readonly if?: string;
   readonly 'runs-on'?: string;
+  readonly 'timeout-minutes'?: number;
+  readonly 'continue-on-error'?: unknown;
+  readonly defaults?: { readonly run?: { readonly shell?: string } };
+  readonly env?: Readonly<Record<string, string>>;
   readonly services?: unknown;
   readonly permissions?: unknown;
   readonly strategy?: {
@@ -282,12 +289,17 @@ describe('unit · ci.yml · what a red part prints', () => {
 });
 
 describe('unit · ci.yml · what the split may not change', () => {
-  test('free runners only', () => {
+  test('free runners only: ubuntu-latest, and windows-latest for the windows job alone', () => {
+    // `windows-latest` is free because the repository is public; it is admitted for the one job
+    // whose question is the platform, never as a second place to run a Linux job.
+    const allowed = (name: string): string =>
+      name === 'windows' ? 'windows-latest' : 'ubuntu-latest';
     const runners = Object.entries(ci.jobs ?? {}).map(([name, target]) => [
       name,
       target['runs-on'],
     ]);
-    expect(runners.filter(([, runner]) => runner !== 'ubuntu-latest')).toEqual([]);
+    expect(runners.filter(([name, runner]) => runner !== allowed(name ?? ''))).toEqual([]);
+    expect(job('windows')['runs-on']).toBe('windows-latest');
   });
 
   test('a push to main is keyed by SHA and never cancelled; a pull request supersedes itself', () => {
@@ -311,6 +323,7 @@ describe('unit · ci.yml · what the split may not change', () => {
       'scaffold-smoke',
       'container',
       'packages',
+      'windows',
     ]) {
       expect(job(name).needs, `${name} must not wait on another job`).toBeUndefined();
     }
@@ -379,5 +392,107 @@ describe('unit · ci.yml · the TLS replication suite runs in CI', () => {
     // Repo-relative, as every suite runs from the root; the directory is the one compose mounts.
     expect(env.get('TEST_TLS_ROOT_CERT')).toBe('docker/.tls/ca.crt');
     expect(listOf(tls['volumes'])).toContain('./.tls:/tls:ro');
+  });
+});
+
+describe('unit · ci.yml · the windows job runs in PowerShell, from a default-autocrlf checkout', () => {
+  // Plan 101 sweep 8 (W6): native Windows is a supported platform, and this job is the only thing
+  // that says so. Every step runs in pwsh so a bash dependency coming back is a red step, not a
+  // Git Bash that quietly ran it. Each unit path is `./`-prefixed: bare, `bun test` reads it as a
+  // substring filter, and `packages/core` also selects `examples/dummy/packages/core`.
+  const UNIT_SUBSET = [
+    './packages/core',
+    './packages/db/src/migrate.test.ts',
+    './packages/db/src/migration-ledger.test.ts',
+    './packages/policy',
+    './packages/render',
+    './scripts/lib',
+    './packages/cli/src/app-load.test.ts',
+    './packages/cli/src/drift.test.ts',
+    './packages/cli/src/app-boundaries.test.ts',
+    './packages/cli/src/path-segments.test.ts',
+    './packages/cli/src/templates/scaffold-gitattributes.test.ts',
+    './packages/testing/src/cdp-launch.test.ts',
+  ];
+  const windows = job('windows');
+  const steps = windows.steps ?? [];
+  const at = (needle: string): number => steps.findIndex((step) => text(step.run).includes(needle));
+  const testArgs = steps.flatMap((step) =>
+    [...text(step.run).matchAll(/^bun test --isolate (.+)$/gm)].flatMap((m) =>
+      (m[1] ?? '').split(' '),
+    ),
+  );
+
+  test('pwsh on every step, inside the 25-minute budget, with no needs', () => {
+    expect(windows.defaults?.run?.shell).toBe('pwsh');
+    expect(steps.filter((step) => step.shell !== undefined && step.shell !== 'pwsh')).toEqual([]);
+    expect(windows['timeout-minutes']).toBeGreaterThan(0);
+    expect(windows['timeout-minutes']).toBeLessThanOrEqual(25);
+  });
+
+  test('the checkout keeps the runner`s autocrlf, and every action is the composite or a SHA', () => {
+    const checkout = steps.find((step) => text(step.uses).startsWith('actions/checkout@'));
+    expect(Object.keys(checkout?.with ?? {})).toEqual(['persist-credentials']);
+    expect(steps.filter((step) => /autocrlf|core\.eol/.test(text(step.run)))).toEqual([]);
+    for (const step of steps.filter((s) => s.uses !== undefined)) {
+      expect(
+        step.uses === './.github/actions/setup' || /@[0-9a-f]{40}$/.test(text(step.uses)),
+      ).toBe(true);
+    }
+  });
+
+  test('the setup composite installs frozen, in pwsh on Windows and bash elsewhere', async () => {
+    const composite = Bun.YAML.parse(
+      await Bun.file(`${repoRoot()}/.github/actions/setup/action.yml`).text(),
+    ) as { readonly runs?: { readonly steps?: readonly Step[] } };
+    const runs = (composite.runs?.steps ?? []).filter((step) => step.run !== undefined);
+    const onWindows = runs.filter((step) => text(step.if) !== "runner.os != 'Windows'");
+    expect(onWindows.map((step) => step.shell)).toEqual(['pwsh']);
+    expect(onWindows.map((step) => text(step.if))).toEqual(["runner.os == 'Windows'"]);
+    expect([...new Set(runs.map((step) => text(step.run).trim()))]).toEqual([
+      'bun install --frozen-lockfile',
+    ]);
+    expect(
+      steps.some((step) => step.uses === './.github/actions/setup' && step.id === 'setup'),
+    ).toBe(true);
+  });
+
+  test('lint, typecheck and every unit path report on their own, whatever ran red before them', () => {
+    const own = expr("!cancelled() && steps.setup.outcome == 'success'");
+    for (const needle of ['bun run lint', 'bun run typecheck', 'bun test --isolate']) {
+      const matching = steps.filter((step) => text(step.run).includes(needle));
+      expect({ [needle]: matching.length > 0 }).toEqual({ [needle]: true });
+      for (const step of matching) expect(step.if).toBe(own);
+    }
+    expect(UNIT_SUBSET.filter((path) => !testArgs.includes(path))).toEqual([]);
+    expect(testArgs.filter((path) => !path.startsWith('./'))).toEqual([]);
+  });
+
+  test('every unit path is a real file or directory', async () => {
+    expect(testArgs.length).toBeGreaterThanOrEqual(UNIT_SUBSET.length);
+    const missing: string[] = [];
+    for (const path of testArgs) {
+      // `stat` answers for a directory too, where `exists()` is false.
+      const found = await Bun.file(`${repoRoot()}/${path.slice(2)}`)
+        .stat()
+        .catch(() => undefined);
+      if (found === undefined) missing.push(path);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test('the scaffold smoke runs in order: new, overrides, setup, check, binary, /healthz', () => {
+    const order = [
+      'x -- new',
+      'scripts/scaffold-smoke-overrides.ts',
+      'bun run setup',
+      'bun run check --json',
+      'build --target binary',
+      '/healthz',
+    ].map(at);
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The Windows binary is sweep 8b's (W7/W8): reported, not yet blocking.
+    expect(steps[at('/healthz')]?.['continue-on-error']).toBe(true);
   });
 });

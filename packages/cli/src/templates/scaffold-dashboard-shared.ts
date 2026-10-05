@@ -22,7 +22,7 @@ export const routeConfig = (load: string): string => `export const config = defi
   // toggle, provider, the ui runtime they share and the error registry are the rest. It was
   // 60.9kb before the framework stopped shipping solid-js twice and the i18n catalog with it
   // (issue #490), which is what put this at 64kb; 60kb is the figure the scaffold budgets held
-  // before that, kept rather than tightened so a Bun patch cannot red a first \`bin/check\`.
+  // before that, kept rather than tightened so a Bun patch cannot red a first \`bun run check\`.
   budget: { js: '60kb' },${load}
   meta: ({ t }) => ({
     title: t('app.dashboard.title'),

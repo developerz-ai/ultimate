@@ -1,6 +1,8 @@
 // The single subprocess boundary for the root scripts. One implementation, so every script times,
 // captures and reports a command the same way.
 
+// why: Bun ships no path API; the root is spelt with the host separator so Windows can open it.
+import { join } from 'node:path';
 import { ScriptError } from './script-error';
 
 export interface RunResult {
@@ -49,7 +51,11 @@ export async function run(
   };
 }
 
-export const repoRoot = (): string => new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+/**
+ * The checkout, as a path the host opens. Never a URL's `pathname`: that percent-encodes a space
+ * (`My%20Projects`) and answers `/C:/…` on Windows, and every gate script reads the tree from here.
+ */
+export const repoRoot = (): string => join(import.meta.dir, '..', '..');
 
 /**
  * The budget for a test that walks the WHOLE repo — `collectSourceFiles(repoRoot())`,

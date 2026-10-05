@@ -8,9 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "setup": "bin/setup",
+    "setup": "bun bin/setup.ts",
     "dev": "x dev",
-    "check": "bin/check",
+    "check": "bun bin/check.ts",
     "verify": "x verify",
     "typecheck": "tsc -b --pretty",
     "lint": "biome check .",

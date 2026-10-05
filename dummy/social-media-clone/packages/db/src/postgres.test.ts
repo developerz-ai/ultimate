@@ -12,7 +12,7 @@ import { database, postgresDriver } from '@ultimat3/entity';
 import { blocks, conversations, friendships, participants, users } from './schema';
 import { demo } from './seed';
 
-const MIGRATIONS = new URL('../migrations/', import.meta.url).pathname;
+const MIGRATIONS = Bun.fileURLToPath(new URL('../migrations/', import.meta.url));
 
 /** The 13 entities `client.ts` names, in the order `information_schema` answers. */
 const DECLARED_TABLES = [

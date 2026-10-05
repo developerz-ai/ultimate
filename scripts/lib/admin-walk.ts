@@ -2,6 +2,7 @@
 // may, find it in the list, edit it, delete it, and be refused as the role that may not. Pure over a `Fetcher`, so the
 // walk is proved against a fake app; `scripts/scaffold-admin.ts` is what boots the real one.
 
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import type { Finding } from './log';
 
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
@@ -234,6 +235,6 @@ export const adminFindings = (
     .map((step) => ({
       code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
       cause: `the scaffolded app's /admin/${walk.resource} failed "${step.name}": ${step.got}`,
-      fix: `cd ${dir} && bin/dev --port ${new URL(walk.base).port || '3000'}   # then, in a second shell: ${step.curl}`,
+      fix: `cd ${dir} && bun run dev --port ${renderFixShellArg(new URL(walk.base).port || '3000', '<port>')}   # then, in a second shell: ${step.curl}`,
       at: dir,
     }));

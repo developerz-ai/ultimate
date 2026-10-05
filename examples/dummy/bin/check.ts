@@ -1,0 +1,40 @@
+// The gate, in the shape `x new` writes it — a build and then a verify, because the `budgets` step
+// weighs `.x/build-stats.json` and `x build --target static` is its only writer. Without the build
+// the very first thing this app reports is X_BUDGET_UNMEASURED per route, which is a red that says
+// nothing about the app.
+//
+// CI runs the same two commands (`scripts/reference-app-gate.ts` builds, then verifies) and grades
+// the result against a ratchet (`scripts/lib/gated-apps.ts`), because a tracked app inside the
+// framework repo is graded on steps a scaffolded app has to pass outright. The steps are the same
+// either way. `bun run check` — Bun runs this file, so PowerShell, cmd and bash run the same gate.
+import { join } from 'node:path';
+
+const root = join(import.meta.dir, '..');
+const args = process.argv.slice(2);
+
+/** The app's own CLI, as `bunx x` resolves it, from the app root; resolves to its exit code. */
+const x = async (...argv: string[]): Promise<number> => {
+  const child = Bun.spawn([process.execPath, 'x', 'x', ...argv], {
+    cwd: root,
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  // The terminal already hands Ctrl-C to the child; this process only waits for its verdict. A
+  // SIGTERM is forwarded, so a CI timeout stops the gate instead of orphaning it mid-step.
+  const wait = (): void => {};
+  const stop = (): void => {
+    child.kill('SIGTERM');
+  };
+  process.on('SIGINT', wait);
+  process.on('SIGTERM', stop);
+  const code = await child.exited;
+  process.off('SIGINT', wait);
+  process.off('SIGTERM', stop);
+  return code;
+};
+
+// `--json` reaches BOTH or neither: one document on stdout is the contract, and a human renderer
+// from the build followed by the gate's JSON is neither.
+const json = args.some((arg) => arg === '--json' || arg === '-j') ? ['--json'] : [];
+const built = await x('build', '--target', 'static', ...json);
+if (built !== 0) process.exit(built);
+process.exit(await x('verify', ...args));

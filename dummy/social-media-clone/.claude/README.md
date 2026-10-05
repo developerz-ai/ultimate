@@ -20,7 +20,7 @@ file, a command, a script are all things to add when the need appears, not a fix
 - **No git worktrees, no `git stash`, no git commands in a subagent.** Work is left uncommitted; the
   coordinator owns git and the merge.
 - An agent runs the formatter and tests **only on the paths it edited**. The whole-repo gate
-  (`bin/check`) is the coordinator's job, once, at the end.
+  (`bun run check`) is the coordinator's job, once, at the end.
 - Never tell an agent to "ask the user" — it has no channel. Two legal moves: *decide and flag*, or
   *stop and report*.
 

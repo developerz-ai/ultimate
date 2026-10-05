@@ -6,7 +6,7 @@
 import type { GeneratedFile, NameSet } from './naming';
 
 const feature = (app: NameSet): string => `---
-description: Build or fix one thing in ${app.kebab} end to end — name the primitive, generate it, wire it inside the boundaries, gate it with \`bin/check\`.
+description: Build or fix one thing in ${app.kebab} end to end — name the primitive, generate it, wire it inside the boundaries, gate it with \`bun run check\`.
 argument-hint: <what you want built or fixed, plain language>
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Skill
 ---
@@ -16,7 +16,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Skill
 You are a senior engineer on **${app.kebab}**, an Ultimate app. Read \`AGENTS.md\` before designing
 anything — it is the short form of every rule below, and it wins where the two disagree.
 
-**Done means \`bin/check\` green.** A passing unit test is not done. A working \`x dev\` is not done.
+**Done means \`bun run check\` green.** A passing unit test is not done. A working \`x dev\` is not done.
 Report what you actually ran, never what you assume passed.
 
 ## Request
@@ -77,15 +77,15 @@ the filename never is. One interactive control on a 0kb page is an island: \`x g
 ## 4. Gate it
 
 \`\`\`sh
-bin/check               # the gate. green = shippable
-bin/check --json        # the same, machine-readable
+bun run check           # the gate. green = shippable
+bun run check --json    # the same, machine-readable
 \`\`\`
 
-\`bin/check\` is \`x build --target static\` and THEN \`x verify\`, and the order is the whole point:
+\`bun run check\` is \`x build --target static\` and THEN \`x verify\`, and the order is the whole point:
 the \`budgets\` step measures \`.x/build-stats.json\`, which only a build writes, so \`x verify\` on
 its own reports X_BUDGET_UNMEASURED on a tree that is fine. \`--json\` is forwarded to both halves;
 a machine consumer takes the last line. CI runs this same script — \`.github/workflows/ci.yml\` is
-\`bin/setup\` and then \`bin/check\`, nothing else.
+\`bun run setup\` and then \`bun run check\`, nothing else.
 
 Red is instructions, not a verdict: **every finding carries an executable \`fix:\` — run it verbatim
 before improvising**, and \`x errors explain <CODE>\` expands any code it names. Never narrow the gate
@@ -118,7 +118,7 @@ ISO code, never a float. Bun only.
 Primitive:  <which of the eight>    Slice: <dir>
 Generated:  <the x g invocations you ran>
 Changed:    <files>
-Gate:       bin/check ✓ | ✗ <failing steps>
+Gate:       bun run check ✓ | ✗ <failing steps>
 Deferred:   <what you did not do, and why>      [never omit this line]
 \`\`\`
 `;
@@ -172,7 +172,7 @@ slice it lives in. If it fits none, the design is wrong — say so here instead 
 - What to add, next to the source as \`<file>.test.ts\`. Command to run it.
 
 ## Done when
-- Acceptance criteria, ending in \`bin/check\` green.
+- Acceptance criteria, ending in \`bun run check\` green.
 
 ## Risks
 - Anything the executor must decide, and every claim in the ask the code disproves.
@@ -185,7 +185,7 @@ slice it lives in. If it fits none, the design is wrong — say so here instead 
 - No checkboxes. The plan is a map, not a tracker.
 - The plan must obey the app's own rules — one way to do each thing, generators over hand-written
   files, imports that never cross a surface boundary, a stable error code with a runnable \`fix:\` for
-  every new failure, and \`bin/check\` green as the last line of *Done when*.
+  every new failure, and \`bun run check\` green as the last line of *Done when*.
 
 ## Output
 
@@ -202,7 +202,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 # /verify
 
-Run \`bin/check\`.
+Run \`bun run check\`.
 
 It is \`x build --target static\` and then \`x verify\`, and it is THE gate — the one CI runs
 (\`.github/workflows/ci.yml\`) and the one \`README.md\` names. \`x verify\` alone is half of it:
@@ -213,7 +213,7 @@ Green: say so and stop.
 
 Red: fix every finding, then re-run until green. Each finding carries a stable code, a cause and an
 executable \`fix:\` — **run the \`fix:\` verbatim before improvising**, and use \`x errors explain <CODE>\`
-when the cause is not enough. \`bin/check --json\` gives the same steps machine-readably; \`x doctor\`
+when the cause is not enough. \`bun run check --json\` gives the same steps machine-readably; \`x doctor\`
 covers the case where the environment, not the code, is what is broken.
 
 Do not narrow the gate to make it pass. There is no \`--only\` and no \`--skip\`; disabling a lint rule,

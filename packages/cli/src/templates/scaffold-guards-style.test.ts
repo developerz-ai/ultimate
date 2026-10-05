@@ -17,7 +17,7 @@ import type { Finding } from '../output';
 import { guardFiles } from './guard';
 import { SHIPPED_GUARD_NAMES, scaffoldGuardFiles, shippedGuardFiles } from './scaffold-guards';
 
-const REPO = new URL('../../../..', import.meta.url).pathname.replace(/\/$/, '');
+const REPO = Bun.fileURLToPath(new URL('../../../..', import.meta.url)).replace(/[\\/]$/, '');
 const TOKENS = `${REPO}/packages/ui/src/tokens`;
 
 /** The five that read a stylesheet as text; the two that compile one are held by their own tests. */

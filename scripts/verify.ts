@@ -285,7 +285,7 @@ export const errorContract: HostCheck = async (root) => [
  * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
  * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
  * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
- * | `setupCommandFindings` | a page stating what a scaffolded app's `bin/setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-docs.ts` |
+ * | `setupCommandFindings` | a page stating what a scaffolded app's `bun run setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-bin.ts` |
  * | `llmsTxtFindings` | `llms.txt`'s package and wiki lists are generated — they were not, and `@ultimat3/notify` was missing | `listWorkspaces()`, `wiki/_Sidebar.md`, `wiki/Home.md` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:

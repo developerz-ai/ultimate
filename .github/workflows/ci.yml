@@ -9,9 +9,10 @@ name: ci
 # parts, and `verify`, their one verdict), does each tracked app still gate
 # (`reference-app-verify`), can a stranger scaffold an app that gates (`scaffold-smoke`), do the
 # deployable artifacts BUILD and RENDER (`container`), does a rolling upgrade on the scaffolded
-# chart drop a request (`deploy-proof`, main only), and is each package green and above its
-# coverage bar in isolation (`packages`). The last three each carry their own argument, above the
-# job.
+# chart drop a request (`deploy-proof`, main only), is each package green and above its
+# coverage bar in isolation (`packages`), and does any of it work on native Windows (`windows`,
+# the one runner that is not `ubuntu-latest`). The last four each carry their own argument, above
+# the job.
 #
 # There is still no `lint`, `typecheck`, `boundaries` or `test` job BESIDE the gate — that is the
 # second path axiom 1 forbids, and it once cost ~2.2 runner-minutes for checks the gate then ran
@@ -271,7 +272,7 @@ jobs:
           exit "$status"
 
   # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
-  # runner: BUILT (`x build --target static`, as a generated app's `bin/check` does, because
+  # runner: BUILT (`x build --target static`, as a generated app's `bun run check` does, because
   # `budgets` weighs what the build writes) and then run through the same 20-step gate a generated
   # app would, and this job BLOCKS on it. Independent of `verify`:
   # the framework gate and the app gate are two different contracts, checked separately — a red app
@@ -326,8 +327,8 @@ jobs:
 
   # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a dz-runner box
   # is an Ubuntu VM with bun and git, no docker and no services, and on a freshly scaffolded app it
-  # runs the app's own `bin/setup && bin/check`. This job runs those two scripts — the ones `x new`
-  # writes, spawned as a box spawns them — and holds the FIRST `bin/check` to green with no waiver
+  # runs the app's own `bun run setup && bun run check`. This job runs those two scripts — the ones `x new`
+  # writes, spawned as a box spawns them — and holds the FIRST `bun run check` to green with no waiver
   # and no repair round. A GitHub `ubuntu-latest` runner with bun, git and network is the closest
   # thing in this repo to that VM; it is not the VM, and the timings the job prints say so.
   #
@@ -358,7 +359,7 @@ jobs:
   #     (reproduced: `x db migrate` dies on `Cannot find module '@ultimat3/time'` from
   #     `node_modules/.bun/@ultimat3+jobs@file.../src/task.ts`), and it races on identical `file:`
   #     targets shared by many dependents. It is a bunfig rather than the `bun install
-  #     --linker=hoisted` this job used to run itself, because `bin/setup` now performs the install
+  #     --linker=hoisted` this job used to run itself, because `bun run setup` now performs the install
   #     and a second `bun install` in the other layout relays out the whole tree.
   #
   # TWO scaffolds, one runner each since 2026-10-01 — they share no state, and the second waited
@@ -412,19 +413,19 @@ jobs:
         with:
           path: ${{ runner.temp }}/${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
-      # THE CONTRACT, and the only step in this repo that runs it. `bin/setup` installs, generates
-      # and applies the first migration, SEEDS and writes the manifest; `bin/check` builds and then
+      # THE CONTRACT, and the only step in this repo that runs it. `bun run setup` installs, generates
+      # and applies the first migration, SEEDS and writes the manifest; `bun run check` builds and then
       # gates. Both are the scaffold's own scripts — no flag waives a step, and nothing runs a
       # printed `fix:` and tries again, because a box gets one pass.
       #
       # `budgets` is asserted GREEN here rather than allowed to stay red, which it was until this
       # change: `x verify` weighs `.x/build-stats.json` and the only writer is `x build --target
-      # static`, which is `bin/check`'s first line. Running the real script is what closed the
+      # static`, which is `bun run check`'s first line. Running the real script is what closed the
       # waiver — not a change to the budgets step.
       #
       # It prints per-step wall time for both commands and for all 20 gate steps, so the run is its
       # own measurement rather than something a PR body claims.
-      - name: bin/setup && bin/check, first pass, no waiver
+      - name: bun run setup && bun run check, first pass, no waiver
         run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
       # The generator sweep, over an app whose first run has already happened. All thirteen exit 0
       # even when what they emit cannot resolve an import, so this step is not the catch: the gate
@@ -434,18 +435,18 @@ jobs:
       # `GENERATORS` and a fourteenth generator is covered the day it lands.
       - name: every generator
         run: bun run scripts/scaffold-first-run.ts "$RUNNER_TEMP/$APP"
-      # The same two scripts again, and the second run is not a repeat: `bin/setup` applies the
+      # The same two scripts again, and the second run is not a repeat: `bun run setup` applies the
       # migration the generators earned (which is also what makes its own documented "idempotent,
-      # safe to re-run" a measurement), and `bin/check` gates 13 generators' output with the same
+      # safe to re-run" a measurement), and `bun run check` gates 13 generators' output with the same
       # no-waiver rule.
-      - name: bin/setup && bin/check, over every generator's output
+      - name: bun run setup && bun run check, over every generator's output
         run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
       # The one step here that opens a socket. Everything above typechecks and gates the files
       # `x g resource` wrote; none of it would notice an admin that mounted nothing, or mounted for
       # everybody. This boots the app as its developer does (`x dev`, embedded Postgres), creates a
       # row through the admin's own form as the `admin` role, finds it in the list, edits it,
       # deletes it, and is refused the list and the write as `member`. Last, because the table it
-      # writes to exists only once the `bin/setup` above has applied the generators' migration.
+      # writes to exists only once the `bun run setup` above has applied the generators' migration.
       # ~3 s, 2 s of it the boot (measured 2026-10-01, both scaffolds).
       - name: /admin serves the generated resource, to the admin role only
         run: bun run scripts/scaffold-admin.ts "$RUNNER_TEMP/$APP"
@@ -875,3 +876,152 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}
         run: bun run scripts/coverage-gate.ts --all --shard "$SHARD"
+
+  # Does the framework work on NATIVE Windows — PowerShell, no WSL — for a contributor and for an
+  # app developer? Plan 101 sweep 8 (docs/plans/2026/10/04/101-squeaky-clean-sweep/08-windows.md,
+  # W6). No other job can answer it: every one of them is `ubuntu-latest` and runs bash, so a `/`
+  # concatenated into a path, a CRLF in a hashed file or a `#!/usr/bin/env bash` script is invisible
+  # to all of them. `windows-latest` is free because the repository is public.
+  #
+  # THE RULES THIS JOB IS HELD TO (`scripts/ci-workflow-shape.test.ts`):
+  #
+  #   * `shell: pwsh` for every step. Git Bash ships on `windows-latest`, and a step that ran in it
+  #     would make a bash dependency look like Windows support. The setup composite has its own
+  #     pwsh install step for the same reason.
+  #   * The checkout keeps the runner's default `core.autocrlf=true`, never a forced LF: that is
+  #     what a contributor's clone gets, and `.gitattributes` is what has to make it LF (W1).
+  #   * Lint, typecheck and each unit path run whatever went red before them (`!cancelled()`), so
+  #     one run reports every finding — the rule `x verify` runs its own steps under.
+  #   * The unit subset is the PATH-HEAVY one, not the full suite: `windows-latest` is about twice
+  #     as slow and the budget is 25 minutes. It grows with each fix; a test that is truly
+  #     POSIX-only gets `skipIf(process.platform === 'win32')` with its reason, never a removal
+  #     from here. Every path is `./`-prefixed: bare, `bun test` reads it as a substring filter and
+  #     `packages/core` also selects `examples/dummy/packages/core`.
+  #
+  # `continue-on-error: true` and outside `verify`'s needs FOR NOW: the job lands first, red, so
+  # the sweep's other rows can watch it turn green (plan step 1). Once it is green it becomes
+  # required, and this paragraph and that line go in the same diff.
+  #
+  # The scaffold smoke is `scaffold-smoke`'s shape (overrides and the hoisted linker are its two
+  # CI-only lines, and its comment explains both), run once and through the scaffold's OWN
+  # `bun run setup` and `bun run check` — the commands a Windows developer types.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      APP: winapp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        id: setup
+      # W1: a CRLF checkout is every file in the tree to biome unless .gitattributes says LF.
+      - name: lint, from a default-autocrlf checkout
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun run lint
+      - name: typecheck
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun run typecheck
+      - name: unit · core
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/core
+      # W3: a CRLF migration must hash to the checksum its LF twin wrote.
+      - name: unit · db migrations
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/db/src/migrate.test.ts ./packages/db/src/migration-ledger.test.ts
+      - name: unit · policy
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/policy
+      - name: unit · render
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/render
+      - name: unit · scripts/lib
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./scripts/lib
+      - name: unit · cli paths, drift and the scaffold's .gitattributes
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts
+      - name: unit · browser discovery
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun test --isolate ./packages/testing/src/cdp-launch.test.ts
+      - name: x new winapp
+        id: new
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bun run x -- new "$env:APP" --dir "$env:RUNNER_TEMP"
+      - name: point the app's @ultimat3/* ranges at this repo's own packages
+        id: overrides
+        if: ${{ !cancelled() && steps.new.outcome == 'success' }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          bun run scripts/scaffold-smoke-overrides.ts "$env:RUNNER_TEMP/$env:APP"
+          Add-Content -Path "$env:RUNNER_TEMP/$env:APP/bunfig.toml" -Value "`n[install]`nlinker = `"hoisted`""
+      - name: bun run setup
+        id: app-setup
+        if: ${{ !cancelled() && steps.overrides.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/winapp
+        run: bun run setup
+      # `check`, not a bare `x verify`: it builds `--target static` first, and without that build
+      # `budgets` is X_BUDGET_UNMEASURED. `--json` is forwarded to both; the document goes to a
+      # file, because one megabyte on one line is what the Actions log drops.
+      - name: bun run check --json
+        id: check
+        if: ${{ !cancelled() && steps.app-setup.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/winapp
+        run: |
+          $doc = Join-Path $env:RUNNER_TEMP 'check.json'
+          bun run check --json > $doc
+          $status = $LASTEXITCODE
+          try {
+            $parsed = Get-Content -Raw $doc | ConvertFrom-Json
+            foreach ($step in @($parsed.steps)) {
+              $mark = if ($step.skipped) { '-' } elseif ($step.ok) { 'ok' } else { 'FAIL' }
+              "$mark $($step.name)  $($step.durationMs)ms"
+              foreach ($finding in @($step.findings)) {
+                if ($finding) { "    $($finding.code)`n      cause: $($finding.cause)`n      fix:   $($finding.fix)" }
+              }
+            }
+          } catch {
+            Get-Content $doc -Tail 40
+          }
+          exit $status
+      - name: x build --target binary
+        id: binary
+        if: ${{ !cancelled() && steps.check.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/winapp
+        # `--no-preflight`: the gate just ran, whole, one step above.
+        run: bun run x build --target binary --no-preflight
+      # The binary's own boot, and sweep 8b's to make green (W7: a Windows `--compile` binary's
+      # `import.meta.dir` is not `/$bunfs`; W8: the artifact is `.x/app.exe`). Reported here,
+      # never blocking, until then. Started from the app root, which a binary reads as its tree;
+      # `ULTIMATE_ENV=development` because the scaffold's signing keys are the shipped dev ones,
+      # which a production boot refuses.
+      - name: start the binary, GET /healthz, stop it
+        if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/winapp
+        env:
+          ULTIMATE_ENV: development
+          PORT: '3000'
+        run: |
+          $exe = @('.x/app.exe', '.x/app') | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { Write-Output '::error::no .x/app.exe or .x/app after x build --target binary'; exit 1 }
+          $log = Join-Path $env:RUNNER_TEMP 'app.log'
+          $err = Join-Path $env:RUNNER_TEMP 'app.err'
+          $app = Start-Process -FilePath (Resolve-Path $exe) -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError $err
+          $status = 0
+          $clock = [Diagnostics.Stopwatch]::StartNew()
+          while ($clock.Elapsed.TotalSeconds -lt 60 -and -not $app.HasExited) {
+            try {
+              $status = (Invoke-WebRequest -Uri 'http://127.0.0.1:3000/healthz' -UseBasicParsing -TimeoutSec 2).StatusCode
+              if ($status -eq 200) { break }
+            } catch { Start-Sleep -Milliseconds 500 }
+          }
+          "GET /healthz: $status after $([int]$clock.Elapsed.TotalSeconds) s"
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          Get-Content $log, $err -ErrorAction SilentlyContinue
+          if ($status -ne 200) { exit 1 }

@@ -117,8 +117,18 @@ runs:
         bun-version: '1.4.2'
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
+        # `~` is the runner's home on every OS (actions/cache expands it), and Bun's default
+        # install cache sits under it on Windows too: %USERPROFILE%\.bun\install\cache.
         path: ~/.bun/install/cache
         key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
         restore-keys: bun-${{ runner.os }}-
-    - run: bun install --frozen-lockfile
+    # One install, two shells, chosen by the runner's OS — a composite's `shell:` takes no
+    # expression. The `windows` job in ci.yml runs every step in PowerShell so that a bash
+    # dependency coming back fails it; Git Bash is on `windows-latest` and would hide one here.
+    # `scripts/ci-workflow-shape.test.ts` holds both steps to the same command.
+    - if: runner.os != 'Windows'
+      run: bun install --frozen-lockfile
       shell: bash
+    - if: runner.os == 'Windows'
+      run: bun install --frozen-lockfile
+      shell: pwsh

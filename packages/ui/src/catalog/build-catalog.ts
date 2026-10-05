@@ -5,8 +5,8 @@ import type { ComponentDoc } from './parse-component';
 import { parseComponents } from './parse-component';
 import { renderCatalog } from './render-catalog';
 
-const COMPONENTS_DIR = new URL('../components/', import.meta.url).pathname;
-export const CATALOG_PATH = new URL('../../CATALOG.md', import.meta.url).pathname;
+const COMPONENTS_DIR = Bun.fileURLToPath(new URL('../components/', import.meta.url));
+export const CATALOG_PATH = Bun.fileURLToPath(new URL('../../CATALOG.md', import.meta.url));
 
 /** Alphabetical by file, so the page's order is the order an agent scans for a name. */
 export async function collectComponents(): Promise<ComponentDoc[]> {

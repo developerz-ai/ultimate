@@ -23,7 +23,7 @@ export const LUCIDE_LATEST_URL = 'https://registry.npmjs.org/lucide-static/lates
 /** The tail of every cause about data the PIN published: why re-running alone cannot help. */
 const PIN_REPEATS = `lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this; \`--bump\` raises LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts to the latest release and regenerates`;
 
-export const GLYPHS_DIR = new URL('./glyphs/', import.meta.url).pathname;
+export const GLYPHS_DIR = Bun.fileURLToPath(new URL('./glyphs/', import.meta.url));
 
 /** `circle-alert` → `iconCircleAlert`. Prefixed because `delete`, `import` and `package` are icons
  * and reserved words — one uniform rule beats three exceptions an agent has to remember. */
@@ -170,7 +170,7 @@ export function moduleSource(name: string, glyph: IconGlyph): string {
 /** Biome owns formatting in this repo, generated files included — so the generator asks it rather
  * than imitating it, and a regenerated set never shows up as a lint diff. */
 async function format(): Promise<void> {
-  const biome = new URL('../../../../node_modules/.bin/biome', import.meta.url).pathname;
+  const biome = Bun.fileURLToPath(new URL('../../../../node_modules/.bin/biome', import.meta.url));
   if (!(await Bun.file(biome).exists())) {
     throw runtimeMissingError('the biome binary', 'bun install');
   }
@@ -235,7 +235,7 @@ async function bumpPin(): Promise<string> {
   const body: unknown = await response.json();
   const version =
     typeof body === 'object' && body !== null && 'version' in body ? String(body.version) : '';
-  const file = new URL(import.meta.url).pathname;
+  const file = import.meta.path;
   await Bun.write(file, withPin(await Bun.file(file).text(), version));
   return version;
 }

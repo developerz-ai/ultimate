@@ -20,7 +20,7 @@ import {
   zTokens,
 } from './tokens';
 
-const here = new URL('.', import.meta.url).pathname;
+const here = Bun.fileURLToPath(new URL('.', import.meta.url));
 
 async function scss(file: string): Promise<string> {
   return await Bun.file(`${here}${file}`).text();

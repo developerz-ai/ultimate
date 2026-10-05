@@ -7,7 +7,8 @@ import { compileScssFile, declaredClasses } from '../sass-probe-fixture';
 import { buttonClassKeys } from './button-classes';
 import { linkClasses } from './link-classes';
 
-const sheet = (name: string): string => new URL(`./${name}.module.scss`, import.meta.url).pathname;
+const sheet = (name: string): string =>
+  Bun.fileURLToPath(new URL(`./${name}.module.scss`, import.meta.url));
 
 describe('linkClasses', () => {
   test('a link with no appearance is a text link: accent, underlined on hover', () => {

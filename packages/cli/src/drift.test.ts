@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   checkSourceDrift,
   DB_PACKAGE,
+  hashSchemaSources,
   reconcileSchemaHash,
   recordedHashes,
   schemaHash,
@@ -303,6 +304,45 @@ describe('unit · entities outside packages/db are schema', () => {
       expect(await inFreshProcess(root, 'drift.schemaHash')).toBe(
         await inFreshProcess(root, 'drift.schemaHash'),
       );
+    });
+  });
+});
+
+// A Windows checkout reads the same tree through `\` separators and, under `core.autocrlf=true`,
+// CRLF text. The `.hash` sidecar is committed and compared on every OS, so both must fold away —
+// and an LF tree must keep hashing to what every sidecar already on disk recorded.
+describe('unit · the schema hash is the same on every OS', () => {
+  const REGISTRY = '{"entities":[]}';
+  // `seed2.ts` sorts before `seed/index.ts` under `\` and after it under `/`: the order is decided
+  // on the normalised path, or a Windows run walks the files in a different order.
+  const LF_TREE = [
+    {
+      path: 'packages/db/src/schema.ts',
+      text: 'export const posts = 1;\nexport const tags = 2;\n',
+    },
+    { path: 'packages/db/src/seed/index.ts', text: 'export const seed = [];\n' },
+    { path: 'packages/db/src/seed2.ts', text: 'export const more = [];\n' },
+  ];
+
+  test('an LF tree hashes to the value committed sidecars already hold', () => {
+    // Golden, computed with the pre-normalisation algorithm: moving it re-drifts every app.
+    expect(hashSchemaSources(REGISTRY, LF_TREE)).toBe('b7e26cfccfc512fc');
+  });
+
+  test('backslash paths and CRLF text hash like the LF tree', () => {
+    const windows = LF_TREE.map(({ path, text }) => ({
+      path: path.replaceAll('/', '\\'),
+      text: text.replaceAll('\n', '\r\n'),
+    })).sort((a, b) => (a.path < b.path ? -1 : 1));
+    expect(hashSchemaSources(REGISTRY, windows)).toBe('b7e26cfccfc512fc');
+  });
+
+  test('a CRLF file on disk hashes like its LF twin', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export const posts = 1;\nexport const tags = 2;\n');
+      const lf = await schemaHash(root);
+      await writeSchema(root, 'export const posts = 1;\r\nexport const tags = 2;\r\n');
+      expect(await schemaHash(root)).toBe(lf);
     });
   });
 });

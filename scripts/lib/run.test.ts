@@ -2,7 +2,13 @@
 // `packages/cli/src/exec.ts` makes at the same seam, and for the same reason — it used to be a
 // bare `RangeError`: no code, no `fix:`, nothing a `--json` reader can act on.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun ships no temp-directory native; the space-in-path case needs a throwaway checkout.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path API; the expected root is spelt with the host separator.
+import { join, resolve } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './run';
 import { ScriptError } from './script-error';
 
@@ -39,5 +45,35 @@ describe('unit · run()', () => {
     const result = await run(['bun', '-e', 'process.exit(3)'], { cwd: repoRoot() });
     expect(result.ok).toBe(false);
     expect(result.code).toBe(3);
+  });
+});
+
+describe('unit · repoRoot()', () => {
+  const temps: string[] = [];
+  afterAll(async () => {
+    for (const dir of temps.splice(0)) await rm(dir, { recursive: true, force: true });
+  });
+
+  test('is this checkout, as a filesystem path the host can open', async () => {
+    expect(repoRoot()).toBe(resolve(import.meta.dir, '..', '..'));
+    expect(await Bun.file(join(repoRoot(), 'package.json')).exists()).toBe(true);
+  });
+
+  /**
+   * `URL.pathname` percent-encodes a space and, on Windows, answers `/C:/…`: a checkout under
+   * `My Projects` sent every gate script looking for a directory named `My%20Projects`. The module
+   * is copied into a root with a space in it, because this checkout's own path has none.
+   */
+  test('a checkout path with a space is answered decoded, never with %20', async () => {
+    const temp = await mkdtemp(join(tmpdir(), 'repo-root-'));
+    temps.push(temp);
+    const root = join(temp, 'a checkout');
+    for (const name of ['run.ts', 'script-error.ts']) {
+      await Bun.write(join(root, 'scripts', 'lib', name), Bun.file(join(import.meta.dir, name)));
+    }
+    const copy: unknown = await import(join(root, 'scripts', 'lib', 'run.ts'));
+    const answer = (copy as { readonly repoRoot: () => string }).repoRoot();
+    expect(answer).not.toContain('%20');
+    expect(answer).toBe(root);
   });
 });

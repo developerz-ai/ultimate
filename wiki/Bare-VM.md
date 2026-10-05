@@ -7,18 +7,18 @@ git is what commits the scaffold, and `--no-git` is the form that skips it.
 ```sh
 bunx create-ultimate demo --no-git
 cd demo
-bin/setup
-bin/check
+bun run setup
+bun run check
 ```
 
 | Command | What it needs from the box |
 |---|---|
 | `bunx create-ultimate demo --no-git` | bun, and a network the npm registry answers on. `--no-git` skips `git init`, which is the form an automated provisioner uses; without it the scaffold is committed, and that is git's only job here |
 | `cd demo` | — |
-| `bin/setup` | bun. Six steps: `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` |
-| `bin/check` | bun. `x build --target static`, then `x verify` — the build first, because `budgets` weighs `.x/build-stats.json` and the build is that file's only writer |
+| `bun run setup` | bun. Six steps: `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` |
+| `bun run check` | bun. `x build --target static`, then `x verify` — the build first, because `budgets` weighs `.x/build-stats.json` and the build is that file's only writer |
 
-`x new` installs nothing, so `bin/setup` is not optional and `cd demo && bin/check` stops on
+`x new` installs nothing, so `bun run setup` is not optional and `cd demo && bun run check` stops on
 `X_BUILD_FAILED` naming `bun install` ([Installation](Installation)).
 
 ## Why no service is needed
@@ -42,7 +42,7 @@ write to the same engine the app then reads — no container to wait for, no por
 restart keeps the data. The module is an **optional peer resolved at first query, never at import**,
 so an image that only ever talks to a managed Postgres does not carry the WASM it will never load.
 `@electric-sql/pglite` is a `devDependencies` entry of the generated app, which is what puts it on
-the box during step 1 of `bin/setup`.
+the box during step 1 of `bun run setup`.
 
 **Its absence is a coded refusal, never a silent skip**: `X_DB_UNAVAILABLE`, whose `fix:` is
 `bun add @electric-sql/pglite, or set DATABASE_URL to a Postgres server and re-run` — a command the
@@ -54,7 +54,7 @@ question too: does the peer **resolve** from the app root — a resolve, never a
 loading it boots the WASM and takes the single-writer lock the next command needs. Red only where
 `DATABASE_URL` is unset *and* the peer is unresolvable ([CLI reference](CLI-Reference)).
 
-`bin/check`'s `live`, `job` and `e2e` steps need no service of their own in a generated app: the
+`bun run check`'s `live`, `job` and `e2e` steps need no service of their own in a generated app: the
 queue is Postgres (`SELECT … FOR UPDATE SKIP LOCKED`), the fanout is in-process, and both resolve
 through the table above.
 
@@ -80,12 +80,12 @@ warm Bun cache, `As of 2026-09-11`:
 | Measure | Default scaffold | `--no-example` |
 |---|---|---|
 | files written | 161 | 133 |
-| `bin/setup` | **6,802ms** | **5,135ms** |
-| `bin/check` | **5,389ms** | **3,909ms** |
-| the first `bin/check`'s verdict | **green, 20 of 20 steps**, `budgets` included | **green, 20 of 20 steps**, `budgets` included |
+| `bun run setup` | **6,802ms** | **5,135ms** |
+| `bun run check` | **5,389ms** | **3,909ms** |
+| the first `bun run check`'s verdict | **green, 20 of 20 steps**, `budgets` included | **green, 20 of 20 steps**, `budgets` included |
 
 The cache is the variable to watch, not the box: a **cold** first install takes the `bun install`
-inside `bin/setup` to **12.0s** on the same machine.
+inside `bun run setup` to **12.0s** on the same machine.
 
 And on a **free `ubuntu-latest` runner**, which is the measurement that speaks for a provisioned
 box — `ci.yml`'s `scaffold-smoke` job, running these same two scripts on a scaffold written outside
@@ -94,11 +94,11 @@ the checkout, `As of 2026-09-12`:
 | Measure | Default scaffold | `--no-example` |
 |---|---|---|
 | files written | 161 | 133 |
-| `bin/setup` | **6,665ms** | **5,994ms** |
-| `bin/check` | **7,279ms** | **4,886ms** |
-| the first `bin/check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |
+| `bun run setup` | **6,665ms** | **5,994ms** |
+| `bun run check` | **7,279ms** | **4,886ms** |
+| the first `bun run check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |
 
-`budgets` is green on that first pass on every one of those runs, because `bin/check` builds before
+`budgets` is green on that first pass on every one of those runs, because `bun run check` builds before
 it verifies — nothing is waived to get there, and no printed `fix:` is followed before the verdict
 is taken. The job prints the table itself, one row per command and one per gate step, so the run is
 its own measurement rather than a number this page asserts: read it from the job's log when you want

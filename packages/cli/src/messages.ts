@@ -163,24 +163,24 @@ const CATALOG = {
   'cli.manifest.wrote': 'manifest written to {path} ({routes} routes, {actions} actions)',
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
-  // `bin/setup` and nothing else: the scaffold ships it, `README.md` and `bin/check` both name it,
-  // and it is the only spelling that is right on a fresh clone — it installs, writes
-  // `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no migration, so the
-  // drift step is red until it has), migrates and seeds. The four-command line this replaced named
-  // `x dev` off a tree where nothing had installed the CLI yet, and skipped the seed entirely.
-  // `bin/dev`, never `x dev`: `bun install` links the binary into `./node_modules/.bin` and
-  // nowhere else, so the bare `x` this line printed is not on PATH in the shell it is pasted into
-  // (proved with `env -i PATH=… command -v x`). The scaffold's own `bin/` wrappers are the form
-  // that works from a fresh clone, and `bin/setup` already uses `bunx x` internally for this
-  // reason.
+  // `bun run setup` and nothing else: the scaffold ships it (`bin/setup.ts`), `README.md` and
+  // `bun run check` both name it, and it is the only spelling that is right on a fresh clone — it
+  // installs, writes `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no
+  // migration, so the drift step is red until it has), migrates and seeds. The four-command line
+  // this replaced named `x dev` off a tree where nothing had installed the CLI yet, and skipped the
+  // seed entirely.
+  // `bun run dev`, never `x dev`: `bun install` links the binary into `./node_modules/.bin` and
+  // nowhere else, so a bare `x` is not on PATH in the shell it is pasted into (proved with
+  // `env -i PATH=… command -v x`); `bun run` puts that directory on PATH for the script. And
+  // `bun run`, never a `bin/` path: Bun runs the line identically in PowerShell, cmd and bash.
   // `{cd}` is the resolved target as the caller's shell reaches it — `--dir` included, relative to
   // the cwd when under it, shell-quoted (`cmd-new.ts`'s `cdTarget`). `cd {name}` entered the wrong
   // directory, or none, whenever `--dir` put the app somewhere else.
-  'cli.new.done': 'created {name} — next: cd {cd} && bin/setup && bin/dev',
+  'cli.new.done': 'created {name} — next: cd {cd} && bun run setup && bun run dev',
   // `--dry-run`'s own summary: nothing landed, so "created" was a claim an agent branching on the
   // summary would act on. `{dir}` is the resolved target, `--dir` included.
   'cli.new.dryRun':
-    'would create {name} in {dir} — nothing written; after a real run: cd {cd} && bin/setup && bin/dev',
+    'would create {name} in {dir} — nothing written; after a real run: cd {cd} && bun run setup && bun run dev',
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.

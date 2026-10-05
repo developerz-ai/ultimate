@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-const COMPONENTS = new URL('.', import.meta.url).pathname;
+const COMPONENTS = Bun.fileURLToPath(new URL('.', import.meta.url));
 
 /** `import buttonStyles from './Button.module.scss'` — the binding, and the sheet it reads. */
 const SHEET_IMPORT = /import (\w+) from '\.\/([\w-]+\.module\.scss)'/g;

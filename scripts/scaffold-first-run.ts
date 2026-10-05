@@ -1,18 +1,19 @@
 #!/usr/bin/env bun
 
-// EVERY GENERATOR, run over an app whose `bin/setup` has already run. `bin/setup` is the documented
-// first run and CI now runs the real script (`scripts/scaffold-gate.ts`), so the three database
-// commands and the manifest write that used to be re-spelled here are gone: they were an
+// EVERY GENERATOR, run over an app whose `bun run setup` has already run. `bun run setup` is the
+// documented first run and CI now runs the real script (`scripts/scaffold-gate.ts`), so the three
+// database commands and the manifest write that used to be re-spelled here are gone: they were an
 // approximation of a script nobody executed, and two spellings of one sequence is the second path
-// axiom 1 forbids. What is left is the half `bin/setup` does not do and no other check reaches —
-// `x g` for every kind the CLI offers, then the migration those thirteen entities earn.
+// axiom 1 forbids. What is left is the half `bun run setup` does not do and no other check reaches
+// — `x g` for every kind the CLI offers, then the migration those thirteen entities earn.
 //
 // The generators all exit 0 even when what they emit cannot resolve an import, so this sweep is not
-// itself the catch: the `bin/check` that follows it is (`TS2307: Cannot find module '../repo'` was
-// invisible to every exit code in this job). This is what gives that gate something to typecheck.
+// itself the catch: the `bun run check` that follows it is (`TS2307: Cannot find module '../repo'`
+// was invisible to every exit code in this job). This is what gives that gate something to
+// typecheck.
 //
-// Takes a scaffolded app whose `bin/setup` has run and is not idempotent against a used one: `x g`
-// never clobbers, so a second run over the same directory is thirteen `X_GENERATE_CONFLICT`s.
+// Takes a scaffolded app whose `bun run setup` has run and is not idempotent against a used one:
+// `x g` never clobbers, so a second run over the same directory is thirteen `X_GENERATE_CONFLICT`s.
 //
 //   bun run scripts/scaffold-first-run.ts <app dir> [--json]
 
@@ -61,15 +62,16 @@ export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/
  * | 1 | `g <kind>` x 13 | every generator runs |
  * | 2 | `db gen "generated"` | `x db gen` against entities from EIGHT different generators in one diff — the only migration in CI written from generator output rather than from the scaffold's own example entity |
  *
- * Nothing APPLIES that migration here, deliberately: `bin/setup` runs `x db migrate`, and the
- * `scripts/scaffold-gate.ts` run after this sweep runs `bin/setup` again — which is also what makes
- * the script's own "idempotent, safe to re-run" claim a measurement rather than a comment.
+ * Nothing APPLIES that migration here, deliberately: `bun run setup` runs `x db migrate`, and the
+ * `scripts/scaffold-gate.ts` run after this sweep runs `bun run setup` again — which is also what
+ * makes the script's own "idempotent, safe to re-run" claim a measurement rather than a comment.
  *
  * What is NOT here, and where it went: `x db migrate` over the empty migrations directory, the
- * `x db gen "initial"` that follows it, and `x manifest` are `bin/setup`'s own lines, run from
- * `bin/setup` itself by `scripts/scaffold-gate.ts` before this sweep starts. The empty-directory
- * migrate in particular was never a step of the documented first run — `bin/setup` generates the
- * initial migration BEFORE it migrates — so re-spelling it here tested a path no app takes.
+ * `x db gen "initial"` that follows it, and `x manifest` are `bun run setup`'s own lines, run from
+ * `bun run setup` itself by `scripts/scaffold-gate.ts` before this sweep starts. The
+ * empty-directory migrate in particular was never a step of the documented first run —
+ * `bun run setup` generates the initial migration BEFORE it migrates — so re-spelling it here
+ * tested a path no app takes.
  */
 export const firstRunPlan = (): readonly FirstRunStep[] => [
   ...GENERATORS.map((kind) => ({

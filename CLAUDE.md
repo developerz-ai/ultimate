@@ -190,13 +190,14 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 
 ## CI
 
-Free runners (`ubuntu-latest`), never a paid one. Target under 5 minutes. One runner per unit
+Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public repo), never a paid one. Target under 5 minutes. One runner per unit
 ([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
 `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
 
 - `gate` — the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a
   verdict, and never a lint/typecheck job beside it.
 - `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
+- `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 
 Other workflows, each explained by its own header: `release.yml` (a **published** GitHub Release
 → npm via OIDC trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift`

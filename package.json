@@ -64,6 +64,7 @@
     "test:watch": "bun test --watch --isolate --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
     "typecheck": "tsc -b --pretty",
     "typecheck:clean": "tsc -b --clean",
+    "url-pathname": "bun run scripts/url-pathname.ts",
     "verify": "bun run scripts/verify.ts",
     "workspaces:list": "bun run scripts/list-workspaces.ts",
     "x": "bun run packages/cli/src/bin.ts"

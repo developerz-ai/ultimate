@@ -8,7 +8,7 @@ import { compileScssFile, declaredClasses } from '../sass-probe-fixture';
 import { BUTTON_CONTENT_KEYS, buttonClassKeys } from './button-classes';
 import { BUTTON_VARIANTS, SIZES, TONES } from './variants';
 
-const SHEET = new URL('./Button.module.scss', import.meta.url).pathname;
+const SHEET = Bun.fileURLToPath(new URL('./Button.module.scss', import.meta.url));
 
 describe('buttonClassKeys', () => {
   test('defaults to the primary, accent, medium button', () => {

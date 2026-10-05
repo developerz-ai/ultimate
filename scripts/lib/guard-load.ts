@@ -11,6 +11,7 @@
 
 import type { Finding } from './log';
 import { report } from './log';
+import { repoRoot } from './run';
 
 export interface LoadFailure {
   /** The module the runtime could not link or resolve, as it named it. */
@@ -64,11 +65,9 @@ const scriptName = (argv: readonly string[]): string => {
   return entry.replace(/^.*scripts\//, '').replace(/\.ts$/, '');
 };
 
-const repoRootOf = (): string => new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
-
 function reportLoadFailure(script: string, failure: LoadFailure): never {
   const json = process.argv.includes('--json');
-  const finding = loadFinding(script, failure, repoRootOf());
+  const finding = loadFinding(script, failure, repoRoot());
   return report({ ok: false, script, summary: `${script} did not run`, findings: [finding] }, json);
 }
 

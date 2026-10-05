@@ -1,11 +1,11 @@
 // The CI half of what `x new` writes: one workflow that runs the app's OWN two commands.
 //
 // Nothing under `templates/` emitted `.github` until this file, so every scaffolded app started
-// life with a gate that ran on exactly one machine — the author's. The two commands are `bin/setup`
-// and `bin/check` and NOT a restatement of their steps: a workflow that spelled out `bun install`,
-// `x db migrate`, `x build` and `x verify` is a second definition of the gate, free to drift from
-// the scripts a human runs, and axiom 1 has one way to do each thing. `bin/check` is also not a
-// synonym for `x verify` — it BUILDS first, and the build is what makes the gate's `budgets` step
+// life with a gate that ran on exactly one machine — the author's. The two commands are
+// `bun run setup` and `bun run check` and NOT a restatement of their steps: a workflow that spelled
+// out `bun install`, `x db migrate`, `x build` and `x verify` is a second definition of the gate,
+// free to drift from the scripts a human runs, and axiom 1 has one way to do each thing.
+// `bun run check` is also not a synonym for `x verify` — it BUILDS first, and the build is what makes the gate's `budgets` step
 // measurable rather than X_BUDGET_UNMEASURED.
 
 import { REQUIRED_BUN } from '../../app-root';
@@ -28,13 +28,13 @@ const ci = (app: NameSet): string => `name: ci
 # order, on a machine that has never seen this repository. A check that exists only in CI is one
 # nobody can reproduce locally, and a CI file that restates the gate's steps is a second gate.
 #
-# \`bin/check\` is \`x build --target static\` and THEN \`x verify\`. The build is not a convenience:
-# the gate's \`budgets\` step compares declared limits against measured bytes in
+# \`bun run check\` is \`x build --target static\` and THEN \`x verify\`. The build is not a
+# convenience: the gate's \`budgets\` step compares declared limits against measured bytes in
 # \`.x/build-stats.json\`, so a run with no build reports X_BUDGET_UNMEASURED. Run \`x verify\` here
 # instead and this workflow is red for a reason that has nothing to do with the commit.
 #
-# No \`services:\` block, deliberately — \`bin/setup\` brings up embedded Postgres in-process, so
-# there is nothing to provision and nothing to wait on. Add one the day this app needs a real
+# No \`services:\` block, deliberately — \`bun run setup\` brings up embedded Postgres in-process,
+# so there is nothing to provision and nothing to wait on. Add one the day this app needs a real
 # server, beside the \`DATABASE_URL\` that selects it.
 
 # EVERY push, not just the default branch's. \`x new\` runs a plain \`git init\` and takes whatever
@@ -74,16 +74,16 @@ jobs:
           # whoever took the app at its word. Never \`latest\`: a Bun minor landing unannounced is a
           # runtime change nobody chose.
           bun-version: '${REQUIRED_BUN}'
-      # Bun's download cache, keyed on the lockfile: \`bin/setup\`'s install then links from disk
-      # instead of fetching every package again on every run.
+      # Bun's download cache, keyed on the lockfile: \`bun run setup\`'s install then links from
+      # disk instead of fetching every package again on every run.
       - uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: bun-\${{ runner.os }}-\${{ hashFiles('bun.lock') }}
           restore-keys: bun-\${{ runner.os }}-
       # Two steps rather than one \`&&\`, so the log names which half failed and times each.
-      - run: bin/setup
-      - run: bin/check
+      - run: bun run setup
+      - run: bun run check
 `;
 
 /** The CI a new app is born with, in the order a reader meets it. */

@@ -24,14 +24,19 @@ X_BUN_VERSION: bun version is below the framework floor
 ## Create an app
 
 ```
-bunx create-ultimate myapp && cd myapp && bin/setup && x dev
+bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
 `create-ultimate` is a thin front for `x new`. Inside an existing workspace, use `x new` directly.
 
-**`bin/setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
+**PowerShell and cmd run the same commands.** `bun run setup` and `bun run check` run the app's
+`bin/setup.ts` and `bin/check.ts` — TypeScript that Bun executes, no bash and no WSL — and
+`bun run dev` is `x dev`. Windows PowerShell 5.1 has no `&&`: type the commands one per line there
+(PowerShell 7 and cmd take the line as written).
+
+**`bun run setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
 stops on `X_BUILD_FAILED` naming `bun install` (measured `As of 2026-08-23`; this page said
-otherwise until then). `bin/setup` is six steps, idempotent and safe to re-run:
+otherwise until then). `bun run setup` is six steps, idempotent and safe to re-run:
 
 | # | Step | Why it is in the script |
 |---|---|---|
@@ -70,9 +75,9 @@ What `x new` writes, and who owns it afterwards:
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
 | `AGENTS.md` / `CLAUDE.md` | **human-authored stubs** | short, terse. Ultimate never generates prose docs at runtime |
-| `.github/workflows/ci.yml` | generated | `bin/setup` then `bin/check`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
+| `.github/workflows/ci.yml` | generated | `bun run setup` then `bun run check`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
 | `docker/` | generated | dev compose + per-role prod compose + Dockerfile ([Deployment](Deployment)) |
-| `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bin/setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
+| `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bun run setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
 
 ## Typed env, validated at boot
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-// Enforce, as a gate step, that every page enumerating what a scaffolded app's `bin/setup` runs
-// enumerates the script `x new` actually writes. The list is DERIVED from the template that emits
-// it (`packages/cli/src/templates/scaffold-docs.ts`, `binSetup`), never restated here, so a step
-// added to or removed from that script makes the prose red on the same commit.
+// Enforce, as a gate step, that every page enumerating what a scaffolded app's `bun run setup`
+// runs enumerates the script `x new` actually writes. The list is DERIVED from the template that
+// emits it (`packages/cli/src/templates/scaffold-bin.ts`, `binSetup`), never restated here, so a
+// step added to or removed from that script makes the prose red on the same commit.
 //
 // The gap this closes: the six-step list is hand-copied into four pages — `wiki/Installation.md`
 // as a numbered table, `wiki/Getting-Started.md` and `wiki/Tutorial-01-First-App.md` as prose,
@@ -16,10 +16,10 @@
 // and a list can be wrong while its own count is right, which is the failure a count check alone
 // would wave through.
 //
-// What it deliberately does NOT do: report a command the block names that `bin/setup` does not run.
-// Those pages legitimately name neighbouring commands while explaining a step — `wiki/Installation.md`'s
-// sixth row cites `x verify`'s `manifest` step to say why `x manifest` is in the script — so that
-// rule would report prose that is correct. Stated rather than papered over.
+// What it deliberately does NOT do: report a command the block names that `bun run setup` does not
+// run. Those pages legitimately name neighbouring commands while explaining a step —
+// `wiki/Installation.md`'s sixth row cites `x verify`'s `manifest` step to say why `x manifest` is
+// in the script — so that rule would report prose that is correct. Stated rather than papered over.
 //
 //   bun run scripts/setup-commands.ts [--json]
 
@@ -32,8 +32,11 @@ import { repoRoot } from './lib/run';
 
 const SCRIPT = 'setup-commands';
 
-/** The template that writes the scaffold's `bin/setup`, and the only source of the list. */
-export const SETUP_TEMPLATE = 'packages/cli/src/templates/scaffold-docs.ts';
+/** The template that writes the scaffold's `bin/setup.ts`, and the only source of the list. */
+export const SETUP_TEMPLATE = 'packages/cli/src/templates/scaffold-bin.ts';
+
+/** How every page names the script: the one spelling that runs in PowerShell, cmd and bash. */
+export const SETUP_COMMAND = 'bun run setup';
 
 /**
  * `CONTRIBUTING.md` documents THIS repository's setup — `bun run setup`, `scripts/setup.ts`, which
@@ -43,15 +46,15 @@ export const SETUP_TEMPLATE = 'packages/cli/src/templates/scaffold-docs.ts';
 export const skipSetupPath = (path: string): boolean => path === 'CONTRIBUTING.md';
 
 /**
- * Lines of `binSetup()` that run something but are not one of its STEPS: the interpreter line, the
- * shell options, the `cd` into the app root, the Bun precondition (a refusal, not a step — the
- * pages that enumerate the script all start at `bun install`) and the closing `echo`. Five names,
- * listed rather than inferred, so a sixth arriving in the template shows up as a changed count
- * here and a human decides which it is.
+ * A STEP is a top-level call statement, one per line: `await x('db', 'seed');`, optionally behind a
+ * one-line guard — `if (!hasMigration()) await x('db', 'gen', 'initial');` IS the `x db gen` step,
+ * and the guard is why re-running the script is safe rather than a step of its own. Matched on the
+ * UNTRIMMED line, so a helper's indented body is never a step, and the closing `console.log` is a
+ * member call the name group cannot match.
  */
-const PREAMBLE = [/^set\s/, /^cd\s/, /^command -v\s/, /^echo\s/, /^#!/];
+const STEP = /^(?:if \(.*\) )?(?:await )?(\w+)\((.*)\);$/;
 
-/** One thing `bin/setup` does, in script order, named the way a page names it. */
+/** One thing `bun run setup` does, in script order, named the way a page names it. */
 export interface SetupStep {
   /** How prose cites it: `bun install`, `x db migrate`, `.env.development.local`. */
   readonly id: string;
@@ -59,45 +62,40 @@ export interface SetupStep {
   readonly line: string;
 }
 
-/** The body of `binSetup()` — everything between its backtick-quoted template literal. */
-export const setupBody = (template: string): string | undefined =>
-  template.match(/const binSetup = \(\): string => `([\s\S]*?)`;\n/)?.[1];
-
 /**
- * The steps, in the order the script runs them. `||` guards are unwrapped to the command they
- * guard: `ls packages/db/migrations/*.sql >/dev/null 2>&1 || bunx x db gen "initial"` IS the
- * `x db gen` step, and the guard is why it is idempotent rather than a step of its own.
+ * The body of `binSetup()` — everything between its backtick-quoted template literal. `\s*` after
+ * the `=` because Biome breaks the arrow onto its own line once the first line passes 100 columns.
  */
+export const setupBody = (template: string): string | undefined =>
+  template.match(/const binSetup =\s*\(\): string => `([\s\S]*?)`;\n/)?.[1];
+
+/** A call's single-quoted arguments, in order — `'db', 'migrate', ...rest` is `db`, `migrate`. */
+const quotedArgs = (args: string): readonly string[] =>
+  [...args.matchAll(/'([^']*)'/g)].flatMap((match) => match[1] ?? []);
+
+/** The id a page writes for one step call: the CLI's subcommand, Bun's, or the file it writes. */
+const stepId = (name: string, args: readonly string[]): string => {
+  if (name === 'x') {
+    const words: string[] = [];
+    for (const arg of args) {
+      if (!/^[a-z]+$/.test(arg) || words.length === 2) break;
+      words.push(arg);
+    }
+    return ['x', ...words].join(' ');
+  }
+  if (name === 'bun' && args[0] !== undefined) return `bun ${args[0]}`;
+  return args.findLast((arg) => arg.startsWith('.env.')) ?? name;
+};
+
+/** The steps, in the order the script runs them. */
 export function setupSteps(template: string): readonly SetupStep[] {
   const body = setupBody(template);
   if (body === undefined) return [];
-  const steps: SetupStep[] = [];
-  for (const raw of body.split('\n')) {
-    const line = raw.trim();
-    if (line.length === 0 || line.startsWith('#')) continue;
-    if (PREAMBLE.some((pattern) => pattern.test(line))) continue;
-    // The guarded half is the step; an unguarded line is its own.
-    const command = (line.split('||').at(-1) ?? line).trim();
-    const x = command.match(/bunx x ([a-z]+(?: [a-z]+)?)/);
-    if (x?.[1] !== undefined) {
-      steps.push({ id: `x ${x[1]}`, line });
-      continue;
-    }
-    if (command.startsWith('bun install')) {
-      steps.push({ id: 'bun install', line });
-      continue;
-    }
-    // The LAST `.env…` on the line, which is the redirect target. The first one is inside the
-    // `printf` body — "wins over .env.development" — so taking it named the committed file rather
-    // than the per-box one the step actually writes.
-    const env = [...command.matchAll(/(\.env\.[a-z.]+)/g)].at(-1);
-    if (env?.[1] !== undefined) {
-      steps.push({ id: env[1], line });
-      continue;
-    }
-    steps.push({ id: command.split(' ')[0] ?? command, line });
-  }
-  return steps;
+  return body.split('\n').flatMap((line) => {
+    const call = STEP.exec(line);
+    if (call?.[1] === undefined) return [];
+    return [{ id: stepId(call[1], quotedArgs(call[2] ?? '')), line: line.trim() }];
+  });
 }
 
 /**
@@ -116,7 +114,7 @@ const MAX_BLOCK_LINES = 40;
 const CONTINUES = /^\s*(\||[-*+]\s|\d+[.)]\s)/;
 
 /**
- * The lines a `bin/setup` mention owns: its own paragraph, plus the table or list it introduces
+ * The lines a `bun run setup` mention owns: its own paragraph, plus the table or list it introduces
  * across one blank line. `wiki/Installation.md` states the count in a paragraph and the steps in
  * the numbered table under it, so a line-scoped rule would see a count with no list and a list with
  * no count — two half-claims, neither checkable.
@@ -154,15 +152,15 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
 
 /**
  * The other thing this corpus counts in steps is the GATE — `x verify` runs 20 of them, and four
- * pages say so on a line that also mentions `bin/setup`. A line naming either the gate or
- * `bin/check` is left to `scripts/gate-steps.ts`, which owns that number; this rule would otherwise
- * report "20 steps" as a wrong answer to a question nobody asked it.
+ * pages say so on a line that also mentions `bun run setup`. A line naming either the gate or
+ * `bun run check` is left to `scripts/gate-steps.ts`, which owns that number; this rule would
+ * otherwise report "20 steps" as a wrong answer to a question nobody asked it.
  */
-const OTHER_SUBJECT = /x verify|bun run verify|bin\/check|the gate\b|VERIFY_STEP/i;
+const OTHER_SUBJECT = /x verify|bun run verify|bun run check|the gate\b|VERIFY_STEP/i;
 
-/** `six steps`, `6 steps` — on a line that is about `bin/setup` and about nothing else countable. */
+/** `six steps`, `6 steps` — on a line about `bun run setup` and about nothing else countable. */
 export function countClaims(line: string): readonly number[] {
-  if (!line.includes('bin/setup') || OTHER_SUBJECT.test(line)) return [];
+  if (!line.includes(SETUP_COMMAND) || OTHER_SUBJECT.test(line)) return [];
   const claims: number[] = [];
   for (const match of line.matchAll(/\b([a-z]+|\d+)\s+steps\b/gi)) {
     const token = (match[1] ?? '').toLowerCase();
@@ -240,10 +238,10 @@ export function checkSetupCommands(input: SetupCommandInput): readonly SetupGap[
         push({
           kind: 'count',
           at,
-          detail: `says bin/setup is ${String(claimed)} steps and the script runs ${String(expected.length)}`,
+          detail: `says bun run setup is ${String(claimed)} steps and the script runs ${String(expected.length)}`,
         });
       }
-      if (!line.includes('bin/setup')) continue;
+      if (!line.includes(SETUP_COMMAND)) continue;
       const rows = stepRows(blockAt(lines, index), steps);
       if (rows.length < ENUMERATION_MIN) continue;
       enumerations += 1;
@@ -253,7 +251,7 @@ export function checkSetupCommands(input: SetupCommandInput): readonly SetupGap[
         push({
           kind: 'missing',
           at,
-          detail: `lays bin/setup out as ${String(rows.length)} rows naming ${cited.join(', ')}, and the script also runs ${missing.join(', ')}`,
+          detail: `lays bun run setup out as ${String(rows.length)} rows naming ${cited.join(', ')}, and the script also runs ${missing.join(', ')}`,
         });
       }
     }
@@ -266,7 +264,7 @@ export function checkSetupCommands(input: SetupCommandInput): readonly SetupGap[
       kind: 'unscanned',
       at: 'wiki/',
       detail:
-        'no page lays bin/setup out as rows, so the list rule read nothing and reported green — check DOC_GLOBS in scripts/doc-commands.ts and stepRows in scripts/setup-commands.ts',
+        'no page lays bun run setup out as rows, so the list rule read nothing and reported green — check DOC_GLOBS in scripts/doc-commands.ts and stepRows in scripts/setup-commands.ts',
     });
   }
   if (counts === 0) {
@@ -274,7 +272,7 @@ export function checkSetupCommands(input: SetupCommandInput): readonly SetupGap[
       kind: 'unscanned',
       at: 'wiki/',
       detail:
-        'no page states how many steps bin/setup runs, so the count rule read nothing and reported green — check countClaims in scripts/setup-commands.ts',
+        'no page states how many steps bun run setup runs, so the count rule read nothing and reported green — check countClaims in scripts/setup-commands.ts',
     });
   }
   return gaps;
@@ -291,7 +289,7 @@ export const setupCommandFindingFor = (gap: SetupGap, steps: readonly SetupStep[
     : {
         code: 'X_DOC_SETUP_COMMAND_STALE',
         cause: `${gap.at} ${gap.detail}`,
-        fix: `make ${gap.at} state bin/setup's own sequence — ${steps.map((step) => step.id).join(', ')} — which is derived from binSetup() in ${SETUP_TEMPLATE}`,
+        fix: `make ${gap.at} state bun run setup's own sequence — ${steps.map((step) => step.id).join(', ')} — which is derived from binSetup() in ${SETUP_TEMPLATE}`,
         at: gap.at,
       };
 
@@ -310,7 +308,7 @@ const templateSource = async (root: string): Promise<string | undefined> => {
 const missingTemplate: SetupGap = {
   kind: 'unscanned',
   at: SETUP_TEMPLATE,
-  detail: `${SETUP_TEMPLATE} is not in this tree, so the sequence bin/setup runs could not be read and no page could be compared against it`,
+  detail: `${SETUP_TEMPLATE} is not in this tree, so the sequence bun run setup runs could not be read and no page could be compared against it`,
 };
 
 /** One read of the template, both answers off it — the gaps and the steps a finding names. */
@@ -341,8 +339,8 @@ if (import.meta.main) {
       script: SCRIPT,
       summary:
         gaps.length === 0
-          ? `every documented bin/setup list matches the ${String(steps.length)} steps the scaffold writes: ${steps.map((step) => step.id).join(', ')}`
-          : `${String(gaps.length)} page(s) describe a bin/setup this scaffold does not write`,
+          ? `every documented bun run setup list matches the ${String(steps.length)} steps the scaffold writes: ${steps.map((step) => step.id).join(', ')}`
+          : `${String(gaps.length)} page(s) describe a bun run setup this scaffold does not write`,
       findings: gaps.map((gap) => setupCommandFindingFor(gap, steps)),
       data: { steps: steps.map((step) => step.id) },
     },

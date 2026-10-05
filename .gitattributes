@@ -1,3 +1,27 @@
+# Every text file is LF, in the index and in the checkout, whatever `core.autocrlf` says. Git for
+# Windows defaults it to true: without this line a Windows clone is CRLF, Biome flags every file and
+# every byte-compared artifact (manifest, schema dump, migration checksum) reads as drift.
+* text=auto eol=lf
+
+# Binary, stated rather than detected: never line-ending converted, never textually diffed.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.wasm binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.tar binary
+
 # Generated, not authored. `linguist-generated` collapses these in GitHub diffs and keeps them out
 # of the language statistics; `-diff` stops git from producing a textual diff for them at all.
 #

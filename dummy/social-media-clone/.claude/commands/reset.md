@@ -11,7 +11,7 @@ Reset to a clean slate. Destructive — confirm the first item with me before ru
 4. `bun run scripts/db/seed.ts` — the deterministic fixture graph, including the `user/user` and
    `admin/admin` demo accounts.
 5. `x doctor --json` — every finding prints the exact command that fixes it. Fix them in order.
-6. `bin/check`
+6. `bun run check`
 
 Report the final state as a table: git clean yes/no, migrations applied, rows seeded, doctor
 findings remaining, gate green/red. If the gate is red, name the failing steps — do not summarize

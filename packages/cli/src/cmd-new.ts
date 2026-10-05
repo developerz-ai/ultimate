@@ -3,7 +3,6 @@
 // Interactive-free: every choice is a flag with a default, because an agent cannot answer prompts.
 
 import { existsSync } from 'node:fs';
-import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
@@ -18,7 +17,7 @@ import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
-import { appFiles, EXECUTABLE_FILES, names, repoFiles, resourceFiles } from './templates';
+import { appFiles, names, repoFiles, resourceFiles } from './templates';
 import { loadVersion } from './version-loader';
 
 export interface NewAppOptions {
@@ -154,13 +153,12 @@ export interface WrittenApp {
  * a migration whose snapshot never existed is what made the app's first two database commands
  * refuse each other — `x db migrate` naming `x db gen`, and `x db gen` refusing a sidecar version
  * control never had. The consequence is deliberate: `x verify`'s `drift` step is red on a pristine
- * scaffold until `x db gen "initial"` runs — which `bin/setup` does, and which is what
+ * scaffold until `x db gen "initial"` runs — which `bun run setup` does, and which is what
  * `cli.new.done` tells the author to run.
  */
 export async function writeNewApp(target: string, options: NewAppOptions): Promise<WrittenApp> {
   const files = planNewApp(options);
   for (const file of files) await Bun.write(join(target, file.path), file.contents);
-  for (const path of EXECUTABLE_FILES) await chmod(join(target, path), 0o755);
   return { dir: target, files: files.map((file) => file.path) };
 }
 

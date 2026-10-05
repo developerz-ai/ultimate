@@ -85,7 +85,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**This page states no file count, deliberately** — one template added moves it, and a number hand-copied onto four pages goes stale on three of them. `scripts/generator-counts.ts` is the single source: it re-derives both shapes from the CLI's own generators and, as a step of `x verify`'s `manifest` check, turns any page quoting a stale one red on the same commit. Two moves worth knowing about rather than counting: the scaffold gained `apps/web/app/auth/dev-actor.ts` and its test, because `hooks.authenticate` is the only place an actor can come from and a generated app configured none — so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start; and it gained `.github/workflows/ci.yml`, which runs `bin/setup && bin/check` on every push and pull request. Derive the number:
+**This page states no file count, deliberately** — one template added moves it, and a number hand-copied onto four pages goes stale on three of them. `scripts/generator-counts.ts` is the single source: it re-derives both shapes from the CLI's own generators and, as a step of `x verify`'s `manifest` check, turns any page quoting a stale one red on the same commit. Two moves worth knowing about rather than counting: the scaffold gained `apps/web/app/auth/dev-actor.ts` and its test, because `hooks.authenticate` is the only place an actor can come from and a generated app configured none — so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start; and it gained `.github/workflows/ci.yml`, which runs `bun run setup && bun run check` on every push and pull request. Derive the number:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -105,8 +105,8 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
 | `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
 | `docker/README.md` | how the two compose files differ |
-| `.github/workflows/ci.yml` | the generated app's own CI: `bin/setup` then `bin/check`, on push and pull request — the same two commands its `README.md` opens with |
-| `bin/setup`, `bin/dev`, `bin/check` | written executable (`0755`). `bin/check` is **`x build --target static` and then `x verify`**, not the gate alone: `budgets` compares declared limits against measured bytes in `.x/build-stats.json`, which only that build writes, so a gate run with no build ahead of it reports `X_BUDGET_UNMEASURED` on a brand-new app. `--json` is forwarded to both, and a reader takes the last line |
+| `.github/workflows/ci.yml` | the generated app's own CI: `bun run setup` then `bun run check`, on push and pull request — the same two commands its `README.md` opens with |
+| `bin/setup.ts`, `bin/check.ts` | TypeScript Bun runs, never shell — `package.json`'s `setup` and `check` scripts (`bun bin/<name>.ts`), so `bun run setup` and `bun run check` are the same commands in PowerShell, cmd and bash; `bun run dev` is `x dev` and needs no file. `bun run check` is **`x build --target static` and then `x verify`**, not the gate alone: `budgets` compares declared limits against measured bytes in `.x/build-stats.json`, which only that build writes, so a gate run with no build ahead of it reports `X_BUDGET_UNMEASURED` on a brand-new app. `--json` is forwarded to both, and a reader takes the last line |
 
 The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
 
@@ -476,7 +476,7 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 **And `x db gen` is that directory's only writer**, `As of 2026-08`. `x new` scaffolds no migration:
 a hand-written first file carried no `.snapshot.json` — the one artifact only the generator produces
 — so the app's first `x db migrate` and first `x db gen` refused each other. A pristine scaffold's
-first two commands are `x db gen "initial"` then `x db migrate` (`bin/setup` runs both), and until
+first two commands are `x db gen "initial"` then `x db migrate` (`bun run setup` runs both), and until
 the first has run, `x verify`'s `drift` step is red naming exactly that — **for an app that declares
 an entity**, since zero declared against zero recorded is agreement and `--no-example` is therefore
 green. A foreign key is
@@ -668,7 +668,7 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-p
 | `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`), `prebuilt` (the island store and compiled stylesheets, written to `node_modules/.cache/ultimate` — the app image's own `RUN` line; no gate, no subprocess, refuses `--tag` and `--out`). The list is `BUILD_TARGETS` in `packages/cli/src/cmd-build.ts` |
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target only |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
-| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bin/check` does. Not on `prebuilt`. `As of 22.7` |
+| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bun run check` does. Not on `prebuilt`. `As of 22.7` |
 
 A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, any of the three on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
 

@@ -322,7 +322,7 @@ describe('unit · the command: boot, walk, stop', () => {
     const result = await checkAdmin(dir, made);
     expect(result.ok).toBe(false);
     expect(result.summary).toBe(`1 of 8 admin step(s) failed in ${dir}`);
-    expect(result.findings?.[0]?.fix).toContain('bin/dev --port 4000');
+    expect(result.findings?.[0]?.fix).toContain('bun run dev --port 4000');
     expect(calls.stopped).toBe(1);
   });
 
@@ -372,7 +372,7 @@ describe('unit · the command: boot, walk, stop', () => {
   });
 
   // Plan 101 row S12: the directory is spliced into `bun run scripts/scaffold-first-run.ts <dir> &&
-  // (cd <dir> && bin/setup)`, a line pasted whole — so a path carrying shell syntax is single-quoted.
+  // (cd <dir> && bun run setup)`, a line pasted whole — so a path carrying shell syntax is single-quoted.
   test('a hostile directory never reaches the set-up command', async () => {
     const parent = await appDir([]);
     const dir = `${parent}/x$(touch pwned);y`;
@@ -381,22 +381,22 @@ describe('unit · the command: boot, walk, stop', () => {
     const fix = (await checkAdmin(dir, made)).findings?.[0]?.fix ?? '';
     // Single-quoted, so the hostile path is carried inert rather than lost (L5 of the 1c audit).
     expect(fix).toBe(
-      `bun run scripts/scaffold-first-run.ts '${dir}' && (cd '${dir}' && bin/setup)`,
+      `bun run scripts/scaffold-first-run.ts '${dir}' && (cd '${dir}' && bun run setup)`,
     );
     // A relative path, the common case, stays pasteable; a leading - never becomes a flag.
     const relative = (await checkAdmin('./does-not-exist', io(fakeApp().fetcher).made)).findings;
     expect(relative?.[0]?.fix).toBe(
-      'bun run scripts/scaffold-first-run.ts ./does-not-exist && (cd ./does-not-exist && bin/setup)',
+      'bun run scripts/scaffold-first-run.ts ./does-not-exist && (cd ./does-not-exist && bun run setup)',
     );
     const flag = (await checkAdmin('-rf', io(fakeApp().fetcher).made)).findings;
     expect(flag?.[0]?.fix).toBe(
-      "bun run scripts/scaffold-first-run.ts '<app dir>' && (cd '<app dir>' && bin/setup)",
+      "bun run scripts/scaffold-first-run.ts '<app dir>' && (cd '<app dir>' && bun run setup)",
     );
     // An ordinary temp directory still travels verbatim.
     const plain = await appDir(['actor', 'bin']);
     const plainFix = (await checkAdmin(plain, io(fakeApp().fetcher).made)).findings?.[0]?.fix;
     expect(plainFix).toBe(
-      `bun run scripts/scaffold-first-run.ts ${plain} && (cd ${plain} && bin/setup)`,
+      `bun run scripts/scaffold-first-run.ts ${plain} && (cd ${plain} && bun run setup)`,
     );
   });
 
@@ -405,12 +405,12 @@ describe('unit · the command: boot, walk, stop', () => {
     const hostile = 'x$(touch pwned);y';
     const noBin = await appDir(['manifest', 'actor'], hostile);
     expect((await checkAdmin(noBin, io(fakeApp().fetcher).made)).findings?.[0]?.fix).toBe(
-      `cd '${noBin}' && bin/setup`,
+      `cd '${noBin}' && bun run setup`,
     );
     const silent = await appDir(['manifest', 'actor', 'bin'], hostile);
     const { made } = io(fakeApp().fetcher, { refusals: Number.POSITIVE_INFINITY });
     expect((await checkAdmin(silent, made)).findings?.[0]?.fix).toBe(
-      `cd '${silent}' && bin/dev --port 4000`,
+      `cd '${silent}' && bun run dev --port 4000`,
     );
     expect(appDirWord('-rf')).toBe('<app dir>');
     expect(appDirWord('./my-app')).toBe('./my-app');

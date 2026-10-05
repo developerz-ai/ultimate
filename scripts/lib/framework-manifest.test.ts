@@ -37,7 +37,7 @@ function foldedByJson(value: unknown, path = '$'): readonly string[] {
 }
 
 const committed = (await Bun.file(
-  new URL('../../framework.manifest.json', import.meta.url).pathname,
+  Bun.fileURLToPath(new URL('../../framework.manifest.json', import.meta.url)),
 ).json()) as FrameworkManifest;
 
 /** Spelled out rather than derived, so a new top-level fact is a type error here and not a miss. */
@@ -58,7 +58,7 @@ describe('unit · the framework manifest hashes through @ultimat3/core, not a co
    */
   test('the file declares no serialiser of its own — a reintroduced local pair fails here', async () => {
     const source = await Bun.file(
-      new URL('./framework-manifest.ts', import.meta.url).pathname,
+      Bun.fileURLToPath(new URL('./framework-manifest.ts', import.meta.url)),
     ).text();
     expect(source).toContain("from '@ultimat3/core'");
     expect(source).toContain('canonicalJson');

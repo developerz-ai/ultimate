@@ -1,5 +1,5 @@
 // The human-authored half of what `x new` writes: the READMEs, the agent-facing convention files,
-// the bin/ shims and the optional dev compose. Separated from the config half so neither file has
+// the bin/ scripts and the optional dev compose. Separated from the config half so neither file has
 // to be scrolled to find the other — one file, one job applies to templates too. The image, its
 // ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
 // `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`; the one workflow is
@@ -8,6 +8,7 @@
 import { LINE_CEILING } from '../workspace-checks';
 import { githubFiles } from './github/ci.yml';
 import type { GeneratedFile, NameSet } from './naming';
+import { binFiles } from './scaffold-bin';
 import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
 
@@ -21,7 +22,7 @@ not exist — five of these had an empty column and were each measured green on 
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bin/check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request |
+| One gate | \`bun run check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
@@ -82,7 +83,7 @@ see, and the type already fires — measured, \`price: 19.99\` in a seed is
 \`TS2322: Type 'number' is not assignable to type 'MoneyInput'\`. A guard that pretended to check
 it would be worse than the type that really does.
 
-\`bin/check\` is the gate and \`x verify\` is only its second half: the first is
+\`bun run check\` is the gate and \`x verify\` is only its second half: the first is
 \`x build --target static\`, and the build is what writes the \`.x/build-stats.json\` the
 \`budgets\` step measures. Run \`x verify\` on a tree nobody has built and \`budgets\` is red with
 X_BUDGET_UNMEASURED — the gate reporting on a file that does not exist, not on your code.
@@ -93,8 +94,9 @@ here is generated from it. So the scaffold never clobbers a maintainer policy, t
 clobbers \`AGENTS.md\`, \`bin/\`, \`.claude/\` or \`.github/\`, and deleting either side leaves the
 other exactly as it was.
 
-Commands: \`bin/setup\`, \`bin/dev\`, \`bin/check\`, \`x g <primitive>\`, \`x g guard <name>\`,
-\`x db branch create <name>\`, \`x doctor\`.
+Commands: \`bun run setup\`, \`bun run dev\`, \`bun run check\`, \`x g <primitive>\`,
+\`x g guard <name>\`, \`x db branch create <name>\`, \`x doctor\`. \`setup\` and \`check\` are
+\`bin/*.ts\` files Bun runs, so all three are the same command in PowerShell, cmd and bash.
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
 `;
@@ -103,10 +105,10 @@ const claude = (app: NameSet): string => `# CLAUDE.md
 
 ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in the same order.
 
-- Gate: \`bin/check\` (add \`--json\` for machine output — it reaches both halves). It is
+- Gate: \`bun run check\` (add \`--json\` for machine output — it reaches both halves). It is
   \`x build --target static\` and then \`x verify\`; \`x verify\` alone leaves \`budgets\` with
-  nothing to measure. \`.github/workflows/ci.yml\` runs \`bin/setup && bin/check\` on every push
-  and pull request, so CI and your terminal run the same two commands.
+  nothing to measure. \`.github/workflows/ci.yml\` runs \`bun run setup && bun run check\` on
+  every push and pull request, so CI and your terminal run the same two commands.
 - \`.dz/\` belongs to the developerz.ai platform and is additive both ways: the scaffold writes
   nothing there, and nothing there is generated from this repo. Neither side clobbers the other.
 - Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
@@ -129,12 +131,12 @@ Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Post
 ## 🚀 Start
 
 \`\`\`sh
-bin/setup     # prerequisites, deps, env, the first migration, migrate, seed, the manifest
-bin/dev       # all roles in one process, embedded Postgres, /_x mounted
-bin/check     # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
+bun run setup   # prerequisites, deps, env, the first migration, migrate, seed, the manifest
+bun run dev     # all roles in one process, embedded Postgres, /_x mounted
+bun run check   # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
 \`\`\`
 
-\`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bin/setup\` runs
+\`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bun run setup\` runs
 \`x db gen "initial"\` for you on a fresh clone. Until it has, \`x verify\`'s \`drift\` step is red
 with \`X_DB_DRIFT\`, and that is the fix it names.
 
@@ -150,63 +152,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`packages/*\` | domain, db, i18n, ui, mcp |
 | \`app.config.ts\` | the one config file |
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
-| \`.github/workflows/ci.yml\` | \`bin/setup\` then \`bin/check\`, on push and pull request |
-`;
-
-const binSetup = (): string => `#!/usr/bin/env bash
-# Fresh clone to running. Idempotent: safe to re-run.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-command -v bun >/dev/null || { echo "X_BUN_MISSING: install bun — https://bun.sh"; exit 1; }
-bun install
-[ -f .env.development.local ] || printf '# per-box secrets, gitignored, wins over .env.development\\n' > .env.development.local
-# \`x db gen\` is the ONE writer of packages/db/migrations — the scaffold no longer hand-writes a
-# 0000_initial.sql, because a second writer is how the source and the ledger ended up disagreeing
-# about what "initial" meant. Guarded on the directory rather than on the generator being a no-op:
-# this script is documented idempotent, and the guard is what makes that true here.
-ls packages/db/migrations/*.sql >/dev/null 2>&1 || bunx x db gen "initial"
-bunx x db migrate "$@"
-# \`x db seed\`, never \`bun run\`: the CLI owns the connection, so this reaches the same embedded
-# PGlite the migration above just wrote to. A plain script goes through \`db()\`, which needs a
-# \`postgres:\` DATABASE_URL and so dies on a clone with no Postgres — one line after reporting a
-# successful migration.
-bunx x db seed
-# The file \`AGENTS.md\` line 3 tells an agent facts live in, and \`x dev\` prints the path of. It
-# is a projection of the loaded app, so \`x new\` cannot write it — node_modules does not exist
-# yet — and nothing else ever ran the command: after \`x new\`, \`bin/setup\` and all 13
-# generators, \`find . -name '*.manifest.json'\` returned nothing while \`x verify\` reported
-# \`\u2713 manifest\`. \`x verify\`'s manifest step now refuses its absence (X_MANIFEST_MISSING).
-bunx x manifest
-echo "setup complete — next: bin/dev"
-`;
-
-const binDev = (): string => `#!/usr/bin/env bash
-# Every role in one process: embedded Postgres, in-process NATS, S3 to a local dir.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-exec bunx x dev "$@"
-`;
-
-const binCheck = (): string => `#!/usr/bin/env bash
-# The gate. Same steps as CI, because a check that lives only in CI cannot be run locally.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-# The build FIRST, and not as a convenience: \`x verify\`'s budgets step compares declared limits
-# against measured bytes in .x/build-stats.json, so with no build it reports X_BUDGET_UNMEASURED and
-# the very first gate anyone runs on a brand-new app is red for a reason that has nothing to do with
-# their code. Cheap on a warm tree, and it makes "green" reachable from a fresh clone.
-#
-# \`--json\` is forwarded to BOTH, or the contract breaks: \`bin/check --json\` would otherwise print
-# the build's human renderer to stdout and then the gate's JSON, and a machine consumer reading one
-# document off stdout gets neither. Both commands emit one object; a reader takes the last line.
-build_flags=""
-for arg in "$@"; do
-  case "$arg" in --json|-j) build_flags="--json" ;; esac
-done
-# \`--no-preflight\`: the build's own preflight is x verify's first six steps (typecheck, lint,
-# boundaries, filesize, package-shape, errors), and the gate below runs them anyway — once is enough.
-bunx x build --target static --no-preflight $build_flags
-exec bunx x verify "$@"
+| \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run check\`, on push and pull request |
 `;
 
 const composeDev = (
@@ -264,9 +210,8 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'README.md', contents: readme(app) },
     { path: 'AGENTS.md', contents: agents(app) },
     { path: 'CLAUDE.md', contents: claude(app) },
-    { path: 'bin/setup', contents: binSetup() },
-    { path: 'bin/dev', contents: binDev() },
-    { path: 'bin/check', contents: binCheck() },
+    // The scripts `bun run setup` and `bun run check` run — TypeScript, so one file per OS.
+    ...binFiles(),
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
     // The harness half of the same job AGENTS.md does. It lands in the app's own repo rather than
     // in a global config, so it is visible in the scaffold's diff and deletable in one line.
@@ -278,6 +223,3 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     ...containerFiles(app),
   ];
 }
-
-/** Files that must be executable after `x new` writes them. */
-export const EXECUTABLE_FILES: readonly string[] = ['bin/setup', 'bin/dev', 'bin/check'];

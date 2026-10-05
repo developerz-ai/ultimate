@@ -12,9 +12,9 @@
     "bun": ">=1.4.2"
   },
   "scripts": {
-    "setup": "bin/setup",
-    "dev": "bin/dev",
-    "check": "bin/check",
+    "setup": "bun bin/setup.ts",
+    "dev": "x dev",
+    "check": "bun bin/check.ts",
     "build": "x build",
     "typecheck": "tsc -p . --pretty",
     "test": "bun test --isolate",

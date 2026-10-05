@@ -18,7 +18,7 @@ Ship the feature described in `$ARGUMENTS`.
    with an explicit IANA `tz`; a task only enqueues.
 6. **Ship the guard with the fix.** A rule that is not a build error does not exist. Climb as high as
    you can afford: type → assertion → contract test → `scripts/lint/<rule>.ts`.
-7. **Gate:** `bin/check`. Green means shippable. Never merge red.
+7. **Gate:** `bun run check`. Green means shippable. Never merge red.
 8. **PR.** One slice, one PR. Include the `## Live test` block with the commands that prove it.
 
 Stop and report if the work needs a file another agent holds, or if the right fix is outside the

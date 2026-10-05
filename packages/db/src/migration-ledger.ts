@@ -33,8 +33,14 @@ export interface LedgerRow {
   readonly duration_ms: number;
 }
 
+/**
+ * CRLF is folded to LF first: a Windows checkout under `core.autocrlf=true` reads the same migration
+ * as CRLF, and an image built from it must not refuse a database a Linux image migrated. LF input
+ * is hashed byte-for-byte as before, so no checksum already in a ledger moves. A lone `\r` is SQL.
+ */
 export function checksumOf(text: string): string {
-  return new Bun.CryptoHasher('sha256').update(text.trim()).digest('hex').slice(0, 32);
+  const lf = text.replaceAll('\r\n', '\n');
+  return new Bun.CryptoHasher('sha256').update(lf.trim()).digest('hex').slice(0, 32);
 }
 
 export function migrationChecksum(migration: Migration): string {

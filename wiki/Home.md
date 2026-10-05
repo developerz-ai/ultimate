@@ -25,10 +25,10 @@ The realtime restart numbers are **measured and committed**, in two halves that 
 Those facts are repeated on several pages because the wiki is plain markdown with no build step. Change them at the source first, then here: [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) owns milestone status, [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) owns the version, `scripts/bench/results/` owns the benchmark, and `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts) owns the `x verify` step list.
 
 ```bash
-bunx create-ultimate myapp && cd myapp && bin/setup && x dev
+bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
-`bin/setup` is the scaffold's own script, six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent. The app it writes needs **no Docker and no service** → [Bare VM](Bare-VM). **`x dev` straight after `cd` does not work**: `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and the boot stops on `X_BUILD_FAILED` naming `bun install`. Measured `As of 2026-08-23`; this page said otherwise until then → [Getting started](Getting-Started).
+`bun run setup` is the scaffold's own script, six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent. The app it writes needs **no Docker and no service** → [Bare VM](Bare-VM). **`x dev` straight after `cd` does not work**: `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and the boot stops on `X_BUILD_FAILED` naming `bun install`. Measured `As of 2026-08-23`; this page said otherwise until then → [Getting started](Getting-Started).
 
 | If you are | Read, in order |
 |---|---|

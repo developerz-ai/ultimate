@@ -55,7 +55,7 @@ const stamp = async (request, ctx, next) => {
   return new Response(response.body, { status: response.status, headers });
 };
 const storage = defineStorage({
-  disks: { appdisk: localDriver({ root: new URL('../../.app-disk', import.meta.url).pathname }) },
+  disks: { appdisk: localDriver({ root: Bun.fileURLToPath(new URL('../../.app-disk', import.meta.url)) }) },
   default: 'appdisk',
 });
 export const runtime = { middleware: [stamp], storage };

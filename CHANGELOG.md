@@ -14,7 +14,8 @@ that the framework could have fenced, and never strands work. Sweep 3 moves to B
 workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way. Sweep 5
 closes seven open issues across navigation, ui, the MCP catalog and the dev error page. Sweep 6
 holds the CLI, its guards, the test harness and CI to what they claim. Sweep 7 deletes trash and
-twins, and ships the guard that keeps each one gone.
+twins, and ships the guard that keeps each one gone. Sweep 8a makes native Windows (PowerShell, no
+WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job.
 
 ### Security
 
@@ -112,6 +113,11 @@ twins, and ships the guard that keeps each one gone.
 
 ### Changed
 
+- A scaffolded app's bash `bin/setup`, `bin/dev` and `bin/check` are replaced by `bin/setup.ts` and
+  `bin/check.ts`, run by Bun: `bun run setup`, `bun run dev` (`x dev`) and `bun run check` work the
+  same in PowerShell, cmd and bash. Existing apps: delete the three bash files, copy the two `.ts`
+  files from a fresh `x new`, and set `package.json` `setup` / `check` to `bun bin/setup.ts` /
+  `bun bin/check.ts` and `dev` to `x dev`. `x new` also writes a root `.gitattributes`.
 - core: `renderDeprecation`, `recordDeprecatedCall` and the `Deprecation*` types live in
   `@ultimat3/core`; `@ultimat3/action` and `@ultimat3/query` re-export the same names (removal in
   25.0.0). `assertEnvExample` is deprecated: the `.env.example` gate is `x verify`'s `manifest` step.
@@ -231,6 +237,12 @@ twins, and ships the guard that keeps each one gone.
 
 ### Fixed
 
+- Windows: every clone and every `x new` app checks out LF whatever `core.autocrlf` says (root
+  `.gitattributes`); migration checksums and the `x db gen` schema hash ignore CRLF versus LF and
+  path separators, so a Windows-built image never refuses a database a Linux one migrated (existing
+  checksums and sidecars do not change); `repoRoot()` and every module-relative path resolve
+  through `Bun.fileURLToPath`, so a Windows checkout or a checkout path with a space no longer
+  breaks the gate (`bun run url-pathname`, `X_URL_PATHNAME_AS_PATH`, keeps it so).
 - `testing`: the sealed network seals `WebSocket` and `Bun.connect` too (non-loopback hosts, the
   same allow-list as `fetch`), as the docs already claimed; offline refuses every dial, loopback
   included.

@@ -13,6 +13,7 @@ import {
   stepFinding,
   verdict,
 } from './scaffold-first-run';
+import { SETUP_TEMPLATE, setupSteps } from './setup-commands';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -40,7 +41,7 @@ const fakeRunner = (
   };
 };
 
-/** The commands `bin/setup` owns, so this plan may not re-spell one. Pinned to the template. */
+/** The commands `bun run setup` owns, so this plan may not re-spell one. Pinned to the template. */
 const SETUP_OWNS = ['db migrate', 'db seed', 'manifest'] as const;
 
 /**
@@ -66,29 +67,30 @@ describe('firstRunPlan', () => {
   });
 
   /**
-   * The duplication this file's own subject used to be. `bin/setup` — written by
-   * `templates/scaffold-docs.ts` and now RUN by `scripts/scaffold-gate.ts` — migrates, seeds and
+   * The duplication this file's own subject used to be. `bun run setup` — `bin/setup.ts`, written
+   * by `templates/scaffold-bin.ts` and RUN by `scripts/scaffold-gate.ts` — migrates, seeds and
    * writes the manifest; this plan re-spelled the first and the third, so CI ran an approximation
-   * of a script nobody executed. Derived from the template's bytes in both directions, so neither
-   * a command leaving `bin/setup` nor a command coming back here is a silent change.
+   * of a script nobody executed. Derived from the template's bytes (through the same reader the
+   * docs rule uses) in both directions, so neither a command leaving the script nor a command
+   * coming back here is a silent change.
    */
-  test('re-spells no command bin/setup already runs', async () => {
-    const template = await Bun.file(
-      `${repoRoot()}/packages/cli/src/templates/scaffold-docs.ts`,
-    ).text();
+  test('re-spells no command bun run setup already runs', async () => {
+    const steps = setupSteps(await Bun.file(`${repoRoot()}/${SETUP_TEMPLATE}`).text()).map(
+      (step) => step.id,
+    );
     for (const command of SETUP_OWNS) {
-      expect(template, `bin/setup no longer runs \`x ${command}\``).toContain(`bunx x ${command}`);
+      expect(steps, `bun run setup no longer runs \`x ${command}\``).toContain(`x ${command}`);
       const respelled = firstRunPlan().filter((step) => step.args.join(' ').startsWith(command));
       expect(
         respelled.map((step) => step.name),
-        `${command} is bin/setup's line`,
+        `${command} is bun run setup's line`,
       ).toEqual([]);
     }
   });
 
   // Eight of the thirteen generators emit an entity, and this is the only migration in CI written
   // from generator output rather than from the scaffold's own example entity. The apply is
-  // `bin/setup`'s, on the `scaffold-gate` run that follows this sweep.
+  // `bun run setup`'s, on the `scaffold-gate` run that follows this sweep.
   test('regenerates after the generators, as the plan’s last step', () => {
     expect(stepsAmong(['g entity', 'db gen generated'])).toEqual(['g entity', 'db gen generated']);
     expect(firstRunPlan().at(-1)?.name).toBe('db gen generated');

@@ -14,7 +14,7 @@ import type { Finding } from '../output';
 import { shippedGuardFiles } from './scaffold-guards';
 
 /** This repo's `@ultimat3/ui`, for a tree whose stylesheets `@use '@ultimat3/ui/tokens'`. */
-const UI_PACKAGE = new URL('../../../ui', import.meta.url).pathname;
+const UI_PACKAGE = Bun.fileURLToPath(new URL('../../../ui', import.meta.url));
 
 /** Make `@ultimat3/ui` resolve from `root`, as `bun install` would have. */
 export async function linkUi(root: string): Promise<void> {

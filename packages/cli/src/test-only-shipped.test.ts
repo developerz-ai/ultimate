@@ -14,7 +14,7 @@ import {
   TEST_EXCLUSION,
 } from './workspace-checks';
 
-const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '');
+const REPO_ROOT = Bun.fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '');
 
 const P: readonly ShippedPackage[] = [{ dir: 'p', entries: ['src/index.ts'] }];
 

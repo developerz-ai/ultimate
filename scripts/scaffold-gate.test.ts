@@ -1,22 +1,24 @@
 // The scaffold job ran `x verify` behind a `budgets` waiver and a fix-follow loop, so the question
 // it answered was "can a scaffold be repaired into a gate?" — not the one a dz-runner box asks,
-// which is `bin/setup && bin/check`, once, green. These pin that the replacement runs the app's own
+// which is `bun run setup && bun run check`, once, green. These pin that the replacement runs the app's own
 // two scripts and that it has no allowance left to hide behind.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun has no path resolve — the relative-directory case is asserted against the same call.
+import { resolve } from 'node:path';
 import type { ExecResult } from '@ultimat3/cli';
-import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { planNewApp, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { GateStep } from './reference-app-gate';
 import { parseSteps } from './reference-app-gate';
 import {
-  appScript,
-  CHECK_SCRIPT,
+  appDir,
+  CHECK_COMMAND,
   MEASURED_STEPS,
   reproduce,
   reproduceSetup,
   runScaffoldGate,
-  SETUP_SCRIPT,
+  SETUP_COMMAND,
   scaffoldFindings,
   setupFinding,
   stepTimings,
@@ -55,7 +57,7 @@ describe('unit · scaffoldFindings', () => {
     ]);
     expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_GATE_RED']);
     expect(findings[0]?.cause).toContain('typecheck, lint');
-    expect(findings[0]?.fix).toBe(`cd ${DIR} && ${SETUP_SCRIPT} && ${CHECK_SCRIPT} --json`);
+    expect(findings[0]?.fix).toBe(`cd ${DIR} && ${SETUP_COMMAND} && ${CHECK_COMMAND} --json`);
   });
 
   /**
@@ -74,7 +76,7 @@ describe('unit · scaffoldFindings', () => {
   });
 
   /**
-   * The hole a "not red" rule leaves open. `bin/check` spends a whole `x build --target static`
+   * The hole a "not red" rule leaves open. `bun run check` spends a whole `x build --target static`
    * ahead of the gate so `budgets` has an artifact to weigh; a `budgets` that reports SKIPPED is
    * red on neither side of that rule and means the build measured nothing.
    */
@@ -185,28 +187,26 @@ describe('unit · the two scripts, and what they cost', () => {
     };
   };
 
-  test('the app’s own bin/setup and bin/check run, in the app’s own directory, once each', async () => {
+  test('the app’s own setup and check run, in the app’s own directory, once each', async () => {
     const calls: { command: readonly string[]; cwd: string }[] = [];
     const run = await runScaffoldGate(
       DIR,
-      fakeExec(calls, (command) =>
-        command[0]?.endsWith(CHECK_SCRIPT) === true ? { stdout: table(green) } : {},
-      ),
+      fakeExec(calls, (command) => (command[2] === 'check' ? { stdout: table(green) } : {})),
     );
     expect(calls.map((call) => call.command)).toEqual([
-      [`${DIR}/${SETUP_SCRIPT}`],
-      [`${DIR}/${CHECK_SCRIPT}`, '--json'],
+      [process.execPath, 'run', 'setup'],
+      [process.execPath, 'run', 'check', '--json'],
     ]);
     expect(calls.every((call) => call.cwd === DIR)).toBe(true);
     expect(run.steps?.map((entry) => entry.name)).toEqual(['lint']);
   });
 
   /**
-   * `bin/check` on an app whose database was never migrated reports a red table describing the
+   * `bun run check` on an app whose database was never migrated reports a red table describing the
    * setup failure in steps that have nothing to do with it — so the failure is reported where it
    * happened, and the gate that cannot mean anything yet is not run at all.
    */
-  test('a red bin/setup short-circuits the gate and is its own finding', async () => {
+  test('a red bun run setup short-circuits the gate and is its own finding', async () => {
     const calls: { command: readonly string[]; cwd: string }[] = [];
     const run = await runScaffoldGate(
       DIR,
@@ -227,14 +227,14 @@ describe('unit · the two scripts, and what they cost', () => {
     const run = await runScaffoldGate(
       DIR,
       fakeExec(calls, (command) =>
-        command[0]?.endsWith(CHECK_SCRIPT) === true
+        command[2] === 'check'
           ? { stdout: `built static\n${table(green)}`, durationMs: 9770 }
           : { durationMs: 12051 },
       ),
     );
     expect(run.timings).toEqual([
-      { name: SETUP_SCRIPT, ms: 12051, ok: true },
-      { name: CHECK_SCRIPT, ms: 9770, ok: true },
+      { name: SETUP_COMMAND, ms: 12051, ok: true },
+      { name: CHECK_COMMAND, ms: 9770, ok: true },
       { name: 'lint', ms: 81, ok: true },
     ]);
   });
@@ -264,33 +264,41 @@ describe('unit · the two scripts, and what they cost', () => {
   });
 
   /**
-   * `x new --dir` accepts a relative path, and `exec` spawns with `cwd: dir` — so a relative
-   * `bin/setup` is looked for at `demoapp/demoapp/bin/setup` and the gate dies on
-   * X_CLI_UNEXPECTED instead of reporting a scaffold finding. Reported by review on #431.
+   * `x new --dir` accepts a relative path; resolved against a second relative one it was looked
+   * for at `demoapp/demoapp/…` and the gate died on X_CLI_UNEXPECTED instead of reporting a
+   * scaffold finding. Reported by review on #431.
    */
-  test('a relative app directory still spawns an absolute script path', () => {
-    expect(appScript('demoapp', SETUP_SCRIPT)).toBe(`${process.cwd()}/demoapp/${SETUP_SCRIPT}`);
-    expect(appScript(DIR, CHECK_SCRIPT)).toBe(`${DIR}/${CHECK_SCRIPT}`);
+  test('a relative app directory still runs from an absolute cwd', async () => {
+    expect(appDir('demoapp')).toBe(resolve(process.cwd(), 'demoapp'));
+    const calls: { command: readonly string[]; cwd: string }[] = [];
+    await runScaffoldGate(
+      'demoapp',
+      fakeExec(calls, () => ({})),
+    );
+    expect(calls.map((call) => call.cwd)).toEqual([resolve('demoapp'), resolve('demoapp')]);
   });
 });
 
 /**
- * The two commands this gate runs are the scaffold's, not this file's. If `templates/scaffold-docs.ts`
- * renames either one, CI would keep spawning a path `x new` no longer writes — and the job that
- * proves a bare VM can run them would be proving it against nothing.
+ * The two commands this gate runs are the scaffold's, not this file's. If `x new` stops writing a
+ * `setup` or `check` script — or points one at a file it no longer writes — CI would keep running
+ * a command the app does not have, and the job that proves a bare VM can run them would be proving
+ * it against nothing.
  */
-test('both scripts are paths the scaffold actually writes, pinned to the template', async () => {
-  const template = await Bun.file(
-    `${repoRoot()}/packages/cli/src/templates/scaffold-docs.ts`,
-  ).text();
-  const executables = template.match(/EXECUTABLE_FILES: readonly string\[\] = \[([^\]]+)\]/)?.[1];
-  expect(
-    executables,
-    'templates/scaffold-docs.ts no longer declares EXECUTABLE_FILES',
-  ).toBeDefined();
-  for (const script of [SETUP_SCRIPT, CHECK_SCRIPT]) {
-    expect(executables).toContain(`'${script}'`);
-    expect(template).toContain(`{ path: '${script}', contents:`);
+test('both commands are package.json scripts running files the scaffold writes', () => {
+  const files = planNewApp({ name: 'demoapp', example: true });
+  const manifest = files.find((file) => file.path === 'package.json')?.contents;
+  const scripts =
+    (
+      JSON.parse(typeof manifest === 'string' ? manifest : '{}') as {
+        scripts?: Record<string, string>;
+      }
+    ).scripts ?? {};
+  for (const command of [SETUP_COMMAND, CHECK_COMMAND]) {
+    const name = command.replace('bun run ', '');
+    const target = /^bun (bin\/\S+\.ts)$/.exec(scripts[name] ?? '')?.[1];
+    expect({ command, target }).toEqual({ command, target: `bin/${name}.ts` });
+    expect(files.some((file) => file.path === target)).toBe(true);
   }
 });
 

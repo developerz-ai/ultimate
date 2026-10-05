@@ -17,7 +17,7 @@ let loading: Promise<SassApi> | undefined;
  */
 function sassCompiler(): Promise<SassApi> {
   loading ??= import(
-    Bun.resolveSync('sass', new URL('../../render', import.meta.url).pathname)
+    Bun.resolveSync('sass', Bun.fileURLToPath(new URL('../../render', import.meta.url)))
   ) as Promise<SassApi>;
   return loading;
 }

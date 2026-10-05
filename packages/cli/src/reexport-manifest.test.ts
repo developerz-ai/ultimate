@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { isReExportManifest } from './reexport-manifest';
 
 /** The real subject: `packages/core/src/index.ts`, which is 514 lines of nothing but re-exports. */
-const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '');
+const REPO_ROOT = Bun.fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '');
 
 const MANIFEST = `
 // The public API of this package, and nothing else.
