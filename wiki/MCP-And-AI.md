@@ -120,18 +120,30 @@ grouped tool); `manage_resource` answers the inner tool's `structuredContent` by
 
 **What the model reads is compact.** A tool's text block is one-line JSON (the 2-space form until
 22.10 spent a third of a large answer on indentation). `list_resources` answers **plain text**, one
-line per action:
+line per resource and one per action, each fact said once where it is cheapest (`As of 2026-10`):
+
+| Rule | Rendered |
+|---|---|
+| a scope every action of a resource shares | once, on the resource line: `(scope posts)` |
+| a scope every action of one KIND shares | once, per kind: `(query scope posts:read; action scope posts:write)` |
+| any other scope, or an unscoped action among scoped ones | on the action itself: `(scope …)` |
+| kind | `(action)` only, from `destructive`; untagged = read-only query — never inferred from the name |
+| `confirms: true` | `(confirms)`, always on the action |
+| params | every required field, then optional ones to 4 fields / 100 chars, then `…`; an enum past 8 literals ends `\|…` |
 
 ```text
-2 resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas.
+2 resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas. Untagged = read-only query; (action) may write; (confirms) waits for a human; … = more in describe_resource.
 
-posts — Blog posts
-  listPosts (query) {status_eq?: string, limit?: integer} — Posts, filtered
-  publishPost (action; confirms; scope posts:write) {postId: string} — Publish a draft post
+org (scope app:use) — The organisation
+  transferOrg (action) {} — Transfer the org
+
+posts (query scope app:use; action scope posts:write) — Blog posts
+  listPosts {status_eq?: string|number|boolean, title_cont?: string, sort?: "createdAt"|"-createdAt", …} — Posts, filtered
+  publishPost (action; confirms) {postId: string} — Publish a draft post
 ```
 
-The same catalog as data, for a test: `mcp.server.catalog(caller)`. `describe_resource` stays
-compact JSON — a schema is JSON.
+The same catalog as data, for a test: `mcp.server.catalog(caller)` — every action keeps its own
+`scope` there. `describe_resource` stays compact JSON with the full schema — a schema is JSON.
 
 **Hold the standing surface to a number.** `tools/list` rides every step and `list_resources` sits
 in the transcript all session:

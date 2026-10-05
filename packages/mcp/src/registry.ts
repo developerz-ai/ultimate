@@ -131,9 +131,10 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
   /** Who may see and call this tool. Absent = everyone. See `McpVisibility`. */
   readonly visibleTo?: McpVisibility;
   /**
-   * Marks a tool that changes state. Drives the transport's rate-limit bucket and is
-   * asserted by tests over the dev server, so a new mutating tool cannot be metered as
-   * cheap read chatter by omission.
+   * Marks a tool that changes state. Drives the transport's rate-limit bucket and the meta
+   * catalog's `(action)` tag. Only `false` declares a read: an OMITTED flag counts as a write
+   * (`As of 2026-10`), as a projected action and an app tool already default — so a new mutating
+   * tool cannot be metered or listed as cheap read chatter by omission.
    */
   readonly destructive?: boolean;
   /**
@@ -309,7 +310,7 @@ export class ToolRegistry {
   verbClass(name: string): McpVerbClass {
     const tool = this.#tools.get(name);
     if (tool === undefined) return 'write';
-    return tool.destructive === true ? 'write' : 'read';
+    return tool.destructive === false ? 'read' : 'write';
   }
 }
 

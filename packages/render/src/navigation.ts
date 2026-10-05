@@ -103,7 +103,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   let rendered = withoutFragment(win.location.href);
   /** The URL a navigation in flight is fetching: a prefetch never asks for it a second time. */
   let navigatingTo: string | undefined;
-  /** The view transition still animating, which a press skips to the new page. */
+  /** The view transition still animating — skipped only for a click it swallowed (`onClick`). */
   let animating: RunningTransition | undefined;
   /** Between a press and its click: the focus the press gives a link is not a hover. */
   let pressed = false;
@@ -315,9 +315,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     pressed = true;
     pressedOverTransition = animating !== undefined;
     // A press is not a hover: the click it becomes navigates, and a guess on its heels is a
-    // second request for the same page. And a press during the animation skips to the new page.
+    // second request for the same page. A press alone never skips the running transition — that
+    // snapped every named element to its end mid-glide (#621); only the click below may.
     win.clearTimeout(intent);
-    animating?.skipTransition?.();
   };
   const onRelease = (): void => {
     pressed = false;
@@ -325,13 +325,15 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
 
   const onClick = (event: MouseEvent): void => {
     win.clearTimeout(intent);
-    // While a view transition paints, the browser hit-tests every press to `<html>`: the press
-    // skipped the animation (`onPress`), the release landed on the real element, and the click —
-    // aimed at their common ancestor — reached nothing. The visitor's first click after a swap was
-    // lost. It is given to the element under the pointer NOW, whatever it is: a link, a submit
-    // button, an island's own control.
+    // While a view transition paints, the browser hit-tests every press to `<html>` — Chrome does
+    // so whatever `pointer-events` the `::view-transition` overlay has — so the click reached
+    // nothing: the visitor's first click after a swap was lost. It is given to the element under
+    // the pointer, whatever it is: a link, a submit button, an island's own control. Only a
+    // skipped transition hit-tests the page, so the skip happens HERE, at the click, never at
+    // the press; when the animation already ended between the two, there is nothing to skip.
     if (pressedOverTransition && event.target === doc.documentElement) {
       pressedOverTransition = false;
+      animating?.skipTransition?.();
       const hit = doc.elementFromPoint(event.clientX, event.clientY);
       if (hit !== null && hit !== doc.documentElement && hit instanceof HTMLElement) hit.click();
       return;

@@ -219,7 +219,7 @@ defineAppMcp({
 
 | Tool | Answers |
 |---|---|
-| `list_resources` | PLAIN TEXT (`As of 22.10`; JSON until then): one line per resource, and under it one line per action — `  previewPayoutBatch (action; confirms; scope payouts:write) {batchId: string, note?: string} — <description>`. The same catalog as data: `server.catalog(caller)` (`MetaResource[]`, `undefined` for a flat caller); the renderer is `renderCatalog` |
+| `list_resources` | PLAIN TEXT (`As of 22.10`; JSON until then): one line per resource, and under it one line per action — `  previewPayoutBatch (action; confirms) {batchId: string, note?: string} — <description>`. Compact by rule, never by a character cut (`As of 2026-10`, #590): a scope every action of a resource shares — or every action of one kind, `query scope payouts:read; action scope payouts:write` — is said once on the resource line, and stays on each action otherwise; only `(action)` is tagged, untagged is a read-only query (from `destructive`, never the name); `oneLineParams` names every required field, then optional ones up to 4 fields / 100 characters, then `…`, and cuts an enum after 8 literals with `\|…`. The same catalog as data: `server.catalog(caller)` (`MetaResource[]`, per-action `scope` intact, `undefined` for a flat caller); the renderer is `renderCatalog` |
 | `describe_resource` | `{ resources: string[] }` (batched) → each action's full `inputSchema` |
 | `manage_resource` | `{ resource, action, params }` → the flat tool's answer, byte for byte |
 

@@ -11,6 +11,7 @@ import type { AccordionSection } from './accordion-view';
 import { accordionOpenIds } from './accordion-view';
 import type { HeadingLevel } from './heading-level';
 import { headingTag } from './heading-level';
+import { headingNode } from './heading-node';
 import { Icon } from './Icon';
 
 export interface AccordionItem extends AccordionSection {
@@ -39,7 +40,8 @@ export interface AccordionProps {
 export function Accordion(props: AccordionProps): JSX.Element {
   const base = useId('accordion');
   const open = accordionOpenIds(props.items, props.exclusive === true);
-  const Title = props.level === undefined ? 'span' : headingTag(props.level);
+  // Resolved once, so an off-scale level throws `X_UI_INVALID_VALUE` here as it always did.
+  const heading = props.level === undefined ? undefined : headingTag(props.level);
 
   return (
     <div class={cx(styles['accordion'], props.class)}>
@@ -53,7 +55,11 @@ export function Accordion(props: AccordionProps): JSX.Element {
         >
           <summary class={styles['summary']}>
             <Icon glyph={iconChevronDown} class={styles['marker']} size="sm" />
-            <Title class={styles['title']}>{item.title}</Title>
+            {heading === undefined ? (
+              <span class={styles['title']}>{item.title}</span>
+            ) : (
+              headingNode(heading, { class: styles['title'] }, () => item.title)
+            )}
           </summary>
           <div class={styles['panel']}>{item.panel}</div>
         </details>

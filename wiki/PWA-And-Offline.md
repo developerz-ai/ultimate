@@ -164,6 +164,11 @@ before it matches (`/en/precios` is `/precios` in English), and the worker match
 now gets every route once per routed locale — same strategy, same cache, its own precache revision.
 An offline navigation under `/en/` gets `/en/offline` when that is precached, else the default one.
 
+**A client-router visit is a navigation**, `As of 2026-10-05`. A `navigation.client` link fetches
+its page (`x-ultimate-navigation: soft`), which is no browser navigation, so offline it got an empty
+`503` and the tab landed on a `blob:` URL. The worker now answers it with the offline document; a
+`prefetch` still gets the `503`, so the offline page is never cached as a later click's answer.
+
 **Islands are precached only for precached pages**, `As of 22.3.3`. Every island chunk was precached,
 so a first anonymous visit downloaded every island the app has (~1 MB on notificado.co). Now a chunk
 is precached only when a precached page (or the offline document) boots it — the static export reads

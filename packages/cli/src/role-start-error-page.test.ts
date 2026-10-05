@@ -11,6 +11,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import type { Route } from '@ultimat3/http';
 import { clearRoutes } from '@ultimat3/render';
 import { errorPageSource } from './error-pages';
 import type { RunningRoles } from './role-start';
@@ -22,22 +23,38 @@ const ROOT = join(import.meta.dir, '..', '.roles-error-page-fixture');
 
 let running: RunningRoles | undefined;
 
-const startWebRole = async (): Promise<RunningRoles> =>
+const SECRET = 'connect ECONNREFUSED 10.0.0.7:5432';
+
+/** A route that fails on the server, so a 5xx is asked of the same started role as the 404. */
+const boom: Route = {
+  method: 'GET',
+  path: '/boom',
+  meta: { name: 'boom', auth: 'public' },
+  handler: () => {
+    throw new TypeError(SECRET);
+  },
+};
+
+// `dev` is the whole question: a container's binding asks the app's file for every status, read
+// once; `x dev`'s asks it for a 4xx only, read per request, and answers a 5xx with the overlay.
+const startWebRole = async (dev = false): Promise<RunningRoles> =>
   startRoles({
     roles: selectRoles('web'),
     port: 0,
     buildId: 'test',
     runtime: fixtureRuntime(ROOT),
     env: {},
-    routes: appRoutes({ buildId: 'test' }),
+    routes: [boom, ...appRoutes({ buildId: 'test' })],
     root: ROOT,
-    // A container's binding: `dev: false` is the whole question — a dev process answers with the
-    // overlay, which prints the cause, the fix and the stack.
-    http: { dev: false, hostname: 'localhost' },
+    http: { dev, hostname: 'localhost' },
   });
 
-const missingPage = async (): Promise<Response | undefined> =>
-  running?.server?.fetch(new Request('http://dev.test/nope', { headers: { accept: 'text/html' } }));
+const browserGet = async (path: string): Promise<Response | undefined> =>
+  running?.server?.fetch(
+    new Request(`http://dev.test${path}`, { headers: { accept: 'text/html' } }),
+  );
+
+const missingPage = (): Promise<Response | undefined> => browserGet('/nope');
 
 afterEach(async () => {
   await running?.stop();
@@ -85,5 +102,32 @@ describe('a browser that hits nothing, in production', () => {
         (css) => !csp.includes(new Bun.CryptoHasher('sha256').update(css).digest('base64')),
       ),
     ).toEqual([]);
+  });
+});
+
+// #492: the overlay answered every dev failure before the hook was read, so `perRequest` — the
+// reason `x dev` reads the file on every request — was unreachable, and an author never saw the
+// 404 page a visitor would.
+describe('a browser, under x dev', () => {
+  test("a 404 gets the app's own file, and an edit to it lands on the next request", async () => {
+    const first = '<!doctype html><title>ours</title><h1>Gone fishing</h1>';
+    const second = '<!doctype html><title>ours</title><h1>Back soon</h1>';
+    await Bun.write(join(ROOT, errorPageSource(404)), first);
+    running = await startWebRole(true);
+    const response = await missingPage();
+    expect(response?.status).toBe(404);
+    expect(await response?.text()).toBe(first);
+    await Bun.write(join(ROOT, errorPageSource(404)), second);
+    expect(await (await missingPage())?.text()).toBe(second);
+  });
+
+  test('a 500 is the overlay even when the app wrote a 500 page', async () => {
+    await Bun.write(join(ROOT, errorPageSource(500)), '<!doctype html><h1>We broke it</h1>');
+    running = await startWebRole(true);
+    const response = await browserGet('/boom');
+    expect(response?.status).toBe(500);
+    const body = (await response?.text()) ?? '';
+    expect(body).toContain(SECRET);
+    expect(body).not.toContain('We broke it');
   });
 });

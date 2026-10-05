@@ -2,7 +2,7 @@
 // the geometry has its own tests in `bar-chart-view.test.ts` and `sparkline-view.test.ts`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, nodesOf, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { BarChart } from './BarChart';
 import { Sparkline } from './Sparkline';
 
@@ -28,8 +28,32 @@ describe('BarChart', () => {
   });
 
   test('the axis reads the busiest value and the first and last keys', () => {
-    const texts = byTag(renderNodes(BarChart, { label: 'x', points }), 'text');
-    expect(texts.map((t) => t.props['children'])).toEqual([9, '2026-09-17', '2026-09-19']);
+    const labels = withAttr(renderNodes(BarChart, { label: 'x', points }), 'data-axis');
+    expect(labels.map((l) => [l.props['data-axis'], l.props['children']])).toEqual([
+      ['max', 9],
+      ['first', '2026-09-17'],
+      ['last', '2026-09-19'],
+    ]);
+  });
+
+  // #494: SVG <text> inside the viewBox scaled with the chart — 8px at 600 wide, a speck at 390 —
+  // so it was hidden below `sm`. HTML text keeps its type step at every width.
+  test('axis labels are HTML text beside the svg, never SVG text scaled by its viewBox', () => {
+    const nodes = renderNodes(BarChart, { label: 'x', points });
+    expect(byTag(nodes, 'text')).toHaveLength(0);
+    const labels = withAttr(nodes, 'data-axis');
+    expect(labels.map((l) => l.type)).toEqual(['span', 'span', 'span']);
+    const svg = one(byTag(nodes, 'svg'), 'chart');
+    const inSvg = withAttr(nodesOf(svg.props['children']), 'data-axis');
+    expect(inSvg).toHaveLength(0);
+  });
+
+  test('the root is a figure carrying the caller class; the svg inside it is the image', () => {
+    const nodes = renderNodes(BarChart, { label: 'x', points, class: 'mine' });
+    const figure = one(byTag(nodes, 'figure'), 'root');
+    expect(String(figure.props['class'])).toContain('mine');
+    expect(nodes[0]).toBe(figure);
+    expect(String(one(byTag(nodes, 'svg'), 'chart').props['class'])).not.toContain('mine');
   });
 
   test('a second series stacks one data-series rect per non-zero point, titled by its label', () => {
@@ -48,13 +72,21 @@ describe('BarChart', () => {
     expect(titles).toContain('a: failed 1');
     expect(titles).toContain('a: done 3');
     // The busiest STACK is the axis figure, not the busiest primary value.
-    expect(byTag(nodes, 'text')[0]?.props['children']).toBe(4);
+    expect(withAttr(nodes, 'data-axis', 'max')[0]?.props['children']).toBe(4);
+  });
+
+  test('one point names its key once — first and last are the same bar', () => {
+    const nodes = renderNodes(BarChart, { label: 'x', points: [{ key: 'only', value: 2 }] });
+    const keys = withAttr(nodes, 'data-axis').filter((l) => l.props['data-axis'] !== 'max');
+    expect(keys.map((l) => [l.props['data-axis'], l.props['children']])).toEqual([
+      ['first', 'only'],
+    ]);
   });
 
   test('no points draws no bars and no date labels', () => {
     const nodes = renderNodes(BarChart, { label: 'x', points: [] });
     expect(withAttr(nodes, 'data-bar')).toHaveLength(0);
-    expect(byTag(nodes, 'text')).toHaveLength(1);
+    expect(withAttr(nodes, 'data-axis')).toHaveLength(1);
   });
 });
 

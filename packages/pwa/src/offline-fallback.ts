@@ -4,6 +4,7 @@
  * requires it and `requireOfflineFallback` fails the build if it is missing.
  */
 
+import { CLIENT_NAVIGATION_HEADER } from '@ultimat3/core';
 import { PwaNoOfflineFallbackError } from './errors';
 import type { PersonalPages } from './pages-cache-source';
 
@@ -121,7 +122,9 @@ function placeholder(
  * a navigation, the `image`/`font` placeholders for those destinations (each only if the app
  * precached it), else a 503. `localePrefixes` are the non-default routed locales' URL segments: a
  * navigation under `/en/` tries `/en` + the offline document first, so an English visitor offline
- * is not handed the default locale's page.
+ * is not handed the default locale's page. A navigation is the browser's own (`mode`) or the client
+ * router's soft visit — a `fetch` carrying `CLIENT_NAVIGATION_HEADER: soft`, which otherwise got the
+ * bare 503 (#627). Its `prefetch` is a guess, not a visit: never answered with the offline page.
  */
 export function offlineFallbackSource(
   fallback: OfflineFallback,
@@ -135,9 +138,10 @@ const OFFLINE_DOC=${JSON.stringify(fallback.document)};
 const OFFLINE_IMAGE=${image};
 const OFFLINE_FONT=${font};
 const OFFLINE_LOCALES=${JSON.stringify(locales)};
+const OFFLINE_NAV_HEADER=${JSON.stringify(CLIENT_NAVIGATION_HEADER)};
 async function offlineFallback(req){
   const c=await caches.open(PRECACHE);
-  if(req.mode==='navigate'){
+  if(req.mode==='navigate'||req.headers.get(OFFLINE_NAV_HEADER)==='soft'){
     const seg=new URL(req.url).pathname.split('/')[1];
     if(OFFLINE_LOCALES.indexOf(seg)!==-1){const l=await c.match('/'+seg+OFFLINE_DOC);if(l)return l}
     const d=await c.match(OFFLINE_DOC);if(d)return d

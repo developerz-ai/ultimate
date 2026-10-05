@@ -275,7 +275,15 @@ export function responseVerdict(facts: ResponseFacts): ResponseVerdict {
     facts.build !== null && facts.nextBuild !== null && facts.build !== facts.nextBuild;
   // A GET refused for skew (409 before any route ran) or rendered by another build: load it.
   if (get && skewed) return load(facts.requested, 'another build');
-  if (!/^\s*text\/html\b/i.test(facts.contentType)) return { kind: 'hand-over' };
+  const html = /^\s*text\/html\b/i.test(facts.contentType);
+  // An error that is not a page (an offline service worker's empty 503, a JSON 404) is nothing to
+  // show — handed over, it became a `blob:` URL in the address bar. A GET is the browser's to
+  // load (a worker answers a real navigation with its offline page); a POST is never re-sent.
+  if (facts.status >= 400 && !html) {
+    const reason = 'an error answer that is not a page';
+    return get ? load(facts.requested, reason) : { kind: 'failed', reason };
+  }
+  if (!html) return { kind: 'hand-over' };
   // A POST answered in place IS the page the browser would have shown, whatever rendered it —
   // and when that is another principal's or build's, the caller stops trusting this tab
   // (`answerMovesTab`): every later navigation is a real load.

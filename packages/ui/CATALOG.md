@@ -103,7 +103,7 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 
 ### BarChart
 
-A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top), as static SVG. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. Geometry lives in `bar-chart-view.ts`.
+A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top): SVG bars, HTML axis labels. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. The labels sit outside the svg because text inside a viewBox scales with it — a speck at phone width. Geometry lives in `bar-chart-view.ts`.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -111,7 +111,7 @@ A bar chart of one series — clicks per day, signups per week — or two stacke
 | `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
 | `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
 | `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, read by each rect's `<title>`. Give them when a point carries `secondary`: a stacked bar with no name for its top is two numbers and no key. |
-| `class` | `string` | — |  |
+| `class` | `string` | — | Lands on the root `<figure>`, which holds the svg and its HTML axis labels. |
 
 ### Breadcrumb
 

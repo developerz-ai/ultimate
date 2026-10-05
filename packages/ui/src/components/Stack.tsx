@@ -28,22 +28,63 @@ const ALIGN: Readonly<Record<Align, string>> = {
 };
 
 export function Stack(props: StackProps): JSX.Element {
-  const Tag = props.as ?? 'div';
-  return (
-    <Tag
-      class={cx(
-        styles['stack'],
-        styles[`direction-${props.direction ?? 'column'}`],
-        props.wrap === true && styles['wrap'],
-        props.class,
-      )}
-      style={{
-        '--stack-gap': `var(--space-${props.gap ?? 4})`,
-        '--stack-align': ALIGN[props.align ?? 'stretch'],
-        '--stack-justify': ALIGN[props.justify ?? 'start'],
-      }}
-    >
-      {props.children}
-    </Tag>
-  );
+  const cls = (): string =>
+    cx(
+      styles['stack'],
+      styles[`direction-${props.direction ?? 'column'}`],
+      props.wrap === true && styles['wrap'],
+      props.class,
+    );
+  const style = (): JSX.CSSProperties => ({
+    '--stack-gap': `var(--space-${props.gap ?? 4})`,
+    '--stack-align': ALIGN[props.align ?? 'stretch'],
+    '--stack-justify': ALIGN[props.justify ?? 'start'],
+  });
+
+  // One intrinsic per case, never `const Tag = props.as; <Tag>`: the island build compiles a
+  // capitalised tag to `createComponent(Tag)` and calls the string (#488, `intrinsic-root.test.ts`).
+  switch (props.as ?? 'div') {
+    case 'ul':
+      return (
+        <ul class={cls()} style={style()}>
+          {props.children}
+        </ul>
+      );
+    case 'ol':
+      return (
+        <ol class={cls()} style={style()}>
+          {props.children}
+        </ol>
+      );
+    case 'nav':
+      return (
+        <nav class={cls()} style={style()}>
+          {props.children}
+        </nav>
+      );
+    case 'section':
+      return (
+        <section class={cls()} style={style()}>
+          {props.children}
+        </section>
+      );
+    case 'header':
+      return (
+        <header class={cls()} style={style()}>
+          {props.children}
+        </header>
+      );
+    case 'footer':
+      return (
+        <footer class={cls()} style={style()}>
+          {props.children}
+        </footer>
+      );
+    case 'div':
+      return (
+        <div class={cls()} style={style()}>
+          {props.children}
+        </div>
+      );
+  }
 }

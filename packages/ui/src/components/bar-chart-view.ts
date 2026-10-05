@@ -20,11 +20,12 @@ export interface BarRect {
 }
 
 /**
- * 600 × 128 at a 5:1-ish ratio, not 3:1: at dashboard width a taller box pushed the table — the
- * thing people came for — below the fold. `plot` is where bars live; the strip under it belongs
- * to the axis labels, which drawn ON the first and last bars were unreadable there.
+ * 600 × 108, nearly 6:1, not 3:1: at dashboard width a taller box pushed the table — the thing
+ * people came for — below the fold. `plot` is where bars live; `top` and the matching strip under
+ * it only keep the outer grid hairlines off the edge. The axis labels are HTML OUTSIDE the svg
+ * (issue 494) — inside a viewBox they scaled with it — so the box spends no strip on them.
  */
-export const BAR_CHART = { width: 600, top: 12, plot: 104, height: 128, gap: 3 } as const;
+export const BAR_CHART = { width: 600, top: 2, plot: 104, height: 108, gap: 3 } as const;
 
 /** Quarter lines. Four is what a reader can use to judge a bar's height without a y-axis. */
 export const GRID_STEPS = [0.25, 0.5, 0.75, 1] as const;
