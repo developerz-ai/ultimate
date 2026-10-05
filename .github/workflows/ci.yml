@@ -996,10 +996,16 @@ jobs:
         working-directory: ${{ runner.temp }}/winapp
         run: |
           $script = @'
-          const r = await Bun.build({ entrypoints: ['apps/web/app/post/post-form.island.tsx'], target: 'browser', minify: true, metafile: true, external: ['solid-js', 'solid-js/*'] });
+          const repo = process.env.GITHUB_WORKSPACE!.replaceAll('\\', '/');
+          const { solidDedupePlugin } = await import(`${repo}/packages/cli/src/island-solid-dedupe.ts`);
+          const { frameworkDedupePlugins } = await import(`${repo}/packages/cli/src/island-package-dedupe.ts`);
+          const { solidJsxPlugin } = await import(`${repo}/packages/cli/src/solid-loader.ts`);
+          const { islandStylesPlugin } = await import(`${repo}/packages/cli/src/island-styles.ts`);
+          const root = process.cwd();
+          const r = await Bun.build({ entrypoints: ['apps/web/app/post/post-form.island.tsx'], target: 'browser', minify: true, metafile: true, plugins: [solidDedupePlugin(root), ...frameworkDedupePlugins(root), solidJsxPlugin, islandStylesPlugin] });
           const out = Object.values(r.metafile!.outputs)[0]!;
           const rows = Object.entries(out.inputs).map(([k, v]) => [k, (v as { bytesInOutput: number }).bytesInOutput] as const).sort((a, b) => b[1] - a[1]);
-          for (const [k, b] of rows.slice(0, 60)) console.log(b, k);
+          for (const [k, b] of rows.slice(0, 90)) console.log(b, k);
           console.log('INPUTS', rows.length, 'TOTAL', r.outputs[0]!.size);
           '@
           Set-Content -Path diag.ts -Value $script
