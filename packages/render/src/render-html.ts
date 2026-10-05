@@ -4,7 +4,7 @@
  * component — `static` at build time, `ssr`/`stream` per request, all through `renderToHtml`.
  */
 
-import { renderThrowable } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import {
   IslandInvalidError,
   IslandNotHydratedError,
@@ -164,7 +164,9 @@ export async function renderComponent(
       // null-prototype object (`String()` raises) or an Error whose `message` getter does — and
       // this frame is the last thing between that and a build failure with no code at all.
       `rendering the component in ${file} threw: ${renderThrowable(error)}`,
-      `run \`bun test ${file.replace(/\.tsx?$/, '.test.ts')}\` to reproduce, then fix ${file}`,
+      // The route file is author text and `$(…)` is a legal name: screened where it enters the
+      // reproduce command (security audit of plan 101 sweep 1c).
+      `run \`bun test ${renderFixShellArg(file.replace(/\.tsx?$/, '.test.ts'), "'<the route's test file>'")}\` to reproduce, then fix ${file}`,
     );
   }
 }

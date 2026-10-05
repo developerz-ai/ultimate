@@ -8,6 +8,7 @@ import {
   finiteCount,
   isUltimateError,
   nanoid,
+  renderFixShellArg,
   renderThrowable,
   systemClock,
 } from '@ultimat3/core';
@@ -101,7 +102,7 @@ function decodedCredential(part: 'user' | 'password', raw: string): string {
     throw new ConfigInvalidError({
       cause: `the SMTP_URL ${part} holds a "%" that starts no percent-escape, so it cannot be decoded`,
       // `prompt`, so the credential reaches neither shell history nor this message.
-      fix: `percent-encode the ${part} and put the output in SMTP_URL: bun -e 'console.log(encodeURIComponent(prompt("${part}:") ?? ""))'`,
+      fix: `percent-encode the ${part} and put the output in SMTP_URL: bun -e 'console.log(encodeURIComponent(prompt("${renderFixShellArg(part, 'value')}:") ?? ""))'`,
       meta: { part },
     });
   }

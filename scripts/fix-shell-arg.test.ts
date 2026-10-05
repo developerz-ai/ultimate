@@ -10,6 +10,7 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   checkFixShellArgs,
+  fixParamsOf,
   fixShellArgFindingFor,
   fixShellArgGaps,
   fixShellArgSites,
@@ -57,6 +58,178 @@ describe('a substitution in command position', () => {
     expect(at('x verify; ${next}')).toEqual(['next']);
     expect(at('echo hi | ${next}')).toEqual(['next']);
     expect(at('export KEY="$(${next})"')).toEqual(['next']);
+  });
+});
+
+// Row S12 of plan 101: the storage drivers spliced a key, a prefix and a bucket into `aws s3api`
+// and `ls -ld` commands behind a sentence ("…, then reproduce with: aws s3api …"), and the guard saw
+// none of them — `aws`/`ls` were not command words, a `: ` did not open a segment, and the fix was
+// an ARGUMENT to a factory rather than a `fix:` key.
+describe('a command behind prose', () => {
+  test('a command opened by `: ` after a sentence is a command position', () => {
+    expect(
+      at("grant s3:DeleteObject to the app's role, then run: aws s3 rm s3://${bucket}/${key}"),
+    ).toEqual(['bucket', 'key']);
+    expect(
+      at('add .searchable() to a text() column of ${name}, then: x db gen "search ${name}"'),
+    ).toEqual(['name']);
+  });
+
+  test('aws, ls and df are command words', () => {
+    expect(at('aws s3api head-object --key ${key}')).toEqual(['key']);
+    expect(at('ls -ld ${root}')).toEqual(['root']);
+    expect(at('df -h ${root}')).toEqual(['root']);
+  });
+
+  test('an earlier prose substitution does not hide a later command one', () => {
+    expect(at('grant ${role} on the bucket, then reproduce with: aws s3 ls ${prefix}')).toEqual([
+      'prefix',
+    ]);
+  });
+
+  test('a `: ` with no command word behind it is still prose', () => {
+    expect(at('edit app.config.ts: add ${key} to the list')).toEqual([]);
+  });
+
+  test('a `: ` INSIDE a command does not end it', () => {
+    expect(at("curl -H 'accept: application/json' ${url}")).toEqual(['url']);
+  });
+});
+
+describe('a fix passed as an argument to a factory', () => {
+  const factory = [
+    'export const deleteFailed = (key: string, cause: unknown, fix: string): XError =>',
+    "  new XError({ code: 'X_BAD', cause: String(cause), fix });",
+  ].join('\n');
+  const call = (fix: string): string =>
+    ['try { go(); } catch (error) {', `  throw deleteFailed(key, error, \`${fix}\`);`, '}'].join(
+      '\n',
+    );
+
+  test('a parameter named fix makes the factory a fix sink, in the same file', () => {
+    const source = `${factory}\n${call('retry: aws s3api delete-object --key ${key}')}`;
+    const params = fixParamsOf([source]);
+    expect(scanFixShellArgs(PATH, source, params).map((site) => site.substitution)).toEqual([
+      'key',
+    ]);
+  });
+
+  test('and in another file, which is where the drivers call it from', () => {
+    const params = fixParamsOf([factory]);
+    const driver = call('then reproduce with: aws s3api delete-object --key ${key}');
+    expect(scanFixShellArgs('packages/x/src/driver.ts', driver, params)).toHaveLength(1);
+    // Without the first pass the same call is invisible — the gap this closes.
+    expect(scanFixShellArgs('packages/x/src/driver.ts', driver)).toEqual([]);
+  });
+
+  test('a screened argument to the sink is still screened', () => {
+    const params = fixParamsOf([factory]);
+    const driver = call('aws s3api delete-object --key ${renderFixShellArg(key, "\'<key>\'")}');
+    expect(scanFixShellArgs('packages/x/src/driver.ts', driver, params)).toEqual([]);
+  });
+
+  test('only the fix argument is read — a cause argument with a command shape is not', () => {
+    const params = fixParamsOf([factory]);
+    const driver = "throw deleteFailed(key, `aws s3 rm ${key}`, 'x verify');";
+    expect(scanFixShellArgs('packages/x/src/driver.ts', driver, params)).toEqual([]);
+  });
+});
+
+// An earlier substitution's BODY is code, not template text: its `(` cut the segment and its `,`
+// read as prose, so `${rule}` at `driver-s3.ts:237` sat behind `${renderFixShellArg(bucket, …)}`
+// unseen. The prefix is read with every earlier `${…}` body blanked.
+describe('an earlier substitution does not end the command', () => {
+  test('a `(` inside an earlier screened call does not cut the segment', () => {
+    expect(at('aws s3api put --bucket ${renderFixShellArg(bucket, "<b>")} --sse ${rule}')).toEqual([
+      'rule',
+    ]);
+  });
+
+  test('a `,` inside an earlier body is not a prose marker', () => {
+    expect(at('curl ${renderFixShellArg(url, "<u>")} -d ${body}')).toEqual(['body']);
+  });
+
+  test('a `#` inside an earlier body is not a shell comment', () => {
+    expect(at('x g route ${renderFixShellArg(a, "#")} ${b}')).toEqual(['b']);
+  });
+});
+
+// Security audit of plan 101 sweep 1c, M2: punctuation INSIDE a real command hid what followed it.
+describe('punctuation inside a command is not prose', () => {
+  test('a comma or a parenthesis inside quotes does not end the command', () => {
+    expect(at(`psql -c "select id, name from t where x = '\${raw}'"`)).toEqual(['raw']);
+    expect(at(`psql -c "select count(*) from t where id = '\${raw}'"`)).toEqual(['raw']);
+  });
+
+  test('a # inside a word is not a comment', () => {
+    expect(at('curl https://h/#/x ${raw}')).toEqual(['raw']);
+  });
+
+  test('an environment prefix and sudo are transparent', () => {
+    expect(at('FOO=1 x db migrate ${raw}')).toEqual(['raw']);
+    expect(at('DATABASE_URL=${raw} x db migrate')).toEqual(['raw']);
+    expect(at('sudo rm -rf ${dir}')).toEqual(['dir']);
+  });
+
+  test('an apostrophe inside a word is not a quote that hides the prose after it', () => {
+    expect(
+      at('x jobs show <id> --json prints the run\'s steps — a run whose "${step}" is foreign'),
+    ).toEqual([]);
+  });
+
+  test('prose punctuation OUTSIDE quotes still reads as prose', () => {
+    expect(at('x verify, then read ${detail}')).toEqual([]);
+    expect(at('x db gen (after editing ${file})')).toEqual([]);
+    expect(at('x verify   # then look at ${detail}')).toEqual([]);
+    expect(at('set FOO=${value} in app.config.ts')).toEqual([]);
+  });
+});
+
+describe('a constructor sink', () => {
+  test('`new XError(cause, fix)` is read at the fix argument', () => {
+    const declared = 'export class XError { constructor(cause: string, fix: string) {} }';
+    const source = 'throw new XError(`it broke`, `git mv -- ${src} ${dest}`);';
+    expect(
+      scanFixShellArgs(PATH, source, fixParamsOf([declared])).map((site) => site.substitution),
+    ).toEqual(['src', 'dest']);
+  });
+});
+
+describe('a sink is resolved per file', () => {
+  // Measured on the first run of the second pass: `cmd-doctor.ts` and `doctor-offline.ts` each
+  // declare a private `finding()`, with the fix at index 2 and index 1. Unioned across files, the
+  // CAUSE argument of one was read as the fix of the other.
+  test('a local declaration shadows a same-named export elsewhere', () => {
+    const elsewhere = 'export const finding = (cause: string, fix: string) => ({ cause, fix });';
+    const here = [
+      'const finding = (code: string, cause: string, fix: string) => ({ code, cause, fix });',
+      'finding(`X_PORT`, `x dev --port ${port} binds it`, `x verify`);',
+    ].join('\n');
+    expect(scanFixShellArgs(PATH, here, fixParamsOf([elsewhere]))).toEqual([]);
+  });
+
+  test('a module-private factory in another file is never a sink here', () => {
+    const elsewhere = 'const refused = (fix: string) => fix;';
+    expect(
+      scanFixShellArgs(PATH, 'refused(`x g route ${name}`);', fixParamsOf([elsewhere])),
+    ).toEqual([]);
+  });
+});
+
+describe('a value screened into a const first', () => {
+  test('a const bound to a screening call is screened where it is spliced', () => {
+    const source = [
+      'const uri = renderFixShellArg(`s3://${bucket}/${key}`, "\'<s3-uri>\'");',
+      fixLine('aws s3 cp ${uri} ${uri} --metadata-directive REPLACE'),
+    ].join('\n');
+    expect(scanFixShellArgs(PATH, source)).toEqual([]);
+  });
+
+  test('a const bound to anything else is not', () => {
+    const source = ['const uri = `s3://${bucket}/${key}`;', fixLine('aws s3 cp ${uri} .')].join(
+      '\n',
+    );
+    expect(scanFixShellArgs(PATH, source).map((site) => site.substitution)).toEqual(['uri']);
   });
 });
 

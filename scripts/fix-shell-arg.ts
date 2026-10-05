@@ -23,10 +23,16 @@
 // substitution — `x verify, then read ${detail}` is a sentence, and a rule that reds every sentence
 // is a rule an agent switches off.
 //
+// WHERE A FIX IS: a `fix:` key, a `const fix =`, and — the second pass, plan 101 row S12 — the
+// argument of any factory declaring a parameter named `fix`, in whichever file calls it. The
+// storage drivers handed `deleteFailed(…, fix)` an `aws s3api` command with a raw key in it and no
+// `fix:` key was ever in sight. A `const` bound to a screening call is screened where it is spliced.
+//
 // WHAT IT CANNOT SEE: a `fix:` assembled by a helper that returns the string, a value laundered
-// through a `const` two lines up, and a nested template inside a `${…}` — `maskLiterals` reads the
-// inner backtick as the outer template's close, which `scripts/error-render.ts` already names as a
-// gap belonging to `@ultimat3/cli`'s `ts-scan.ts`. A floor, not a proof.
+// through a `const` bound to anything but a screening call, a sink whose parameter has another name,
+// and a nested template inside a `${…}` — `maskLiterals` reads the inner backtick as the outer
+// template's close, which `scripts/error-render.ts` already names as a gap belonging to
+// `@ultimat3/cli`'s `ts-scan.ts`. A floor, not a proof.
 //
 //   bun run fix-shell-arg  ·  bun run scripts/fix-shell-arg.ts [--json] [--explain]
 //   bun run scripts/fix-shell-arg.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
@@ -39,6 +45,13 @@ import { maskToCode, valueEnd } from './error-render';
 import { corpus } from './lib/corpus';
 import { FIX_SHELL_ARG_PINS, FIX_SHELL_PINS_FILE } from './lib/fix-shell-arg-pins';
 import { commandPositionOf, isScreened } from './lib/fix-shell-arg-scan';
+import type { FixParams } from './lib/fix-shell-arg-sinks';
+import {
+  fixSpans,
+  NO_PARAMS,
+  screenedConsts,
+  fixParamsOf as sinkParamsOf,
+} from './lib/fix-shell-arg-sinks';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
@@ -52,9 +65,6 @@ const EXPLAIN = 'bun run scripts/fix-shell-arg.ts --explain --json lists every o
 /** Source the CLI EMITS rather than executes — a scaffolded app's own fix lines, not this tree's. */
 const TEMPLATE_ROOT = 'packages/cli/src/templates/';
 
-/** `fix:` as a property and `const fix =` as its assignment. The lookbehind rejects `e.fix`. */
-const FIX_KEY = /(?<![.\w$])fix\s*[:=]\s*/g;
-
 export interface FixShellArgSite {
   readonly path: string;
   readonly line: number;
@@ -64,20 +74,49 @@ export interface FixShellArgSite {
   readonly command: string;
 }
 
+export type { FixParams } from './lib/fix-shell-arg-sinks';
+
+/** The first pass, over raw sources: every exported factory taking a `fix`, and where it sits. */
+export const fixParamsOf = (sources: readonly string[]): FixParams =>
+  sinkParamsOf(
+    valueEnd,
+    sources.map((source) => maskToCode(source).code),
+  );
+
+/**
+ * The source with every `${…}` BODY blanked to `_` — the opposite of the mask. A body is code, and
+ * code read as template text lies: the `(` of an earlier `renderFixShellArg(` cut the segment, its
+ * `,` read as prose, and a `#` in a placeholder read as a shell comment. Newlines stay, so a line
+ * still opens where it did.
+ */
+function templateText(source: string, bodies: readonly { start: number; end: number }[]): string {
+  const out = source.split('');
+  for (const body of bodies) {
+    for (let i = body.start; i < body.end; i += 1) if (out[i] !== '\n') out[i] = '_';
+  }
+  return out.join('');
+}
+
 /** Every unscreened substitution in a command position in one file, in source order. */
-export function scanFixShellArgs(path: string, source: string): readonly FixShellArgSite[] {
+export function scanFixShellArgs(
+  path: string,
+  source: string,
+  params: FixParams = NO_PARAMS,
+): readonly FixShellArgSite[] {
   const mask = maskToCode(source);
+  const text = templateText(source, mask.substitutions);
+  const screened = screenedConsts(valueEnd, mask.code);
+  const seen = new Set<number>();
   const sites: FixShellArgSite[] = [];
-  for (const key of mask.code.matchAll(FIX_KEY)) {
-    const start = key.index + key[0].length;
-    const end = valueEnd(mask.code, start);
+  for (const [start, end] of fixSpans(valueEnd, mask.code, params)) {
     for (const one of mask.substitutions) {
-      if (one.start < start || one.end > end) continue;
+      if (one.start < start || one.end > end || seen.has(one.start)) continue;
+      seen.add(one.start);
       const body = mask.code.slice(one.start, one.end);
-      if (isScreened(body)) continue;
-      // The ORIGINAL source, not the mask: the mask has blanked the template text that decides it.
-      const opens = source.lastIndexOf('\n', one.start - 2) + 1;
-      const command = commandPositionOf(source.slice(opens, one.start - 2));
+      if (isScreened(body) || screened(body.trim(), one.start)) continue;
+      // The template TEXT, not the mask: the mask has blanked the text that decides it.
+      const opens = text.lastIndexOf('\n', one.start - 2) + 1;
+      const command = commandPositionOf(text.slice(opens, one.start - 2));
       if (command === undefined) continue;
       sites.push({ path, line: lineOf(mask.code, one.start), substitution: body.trim(), command });
     }
@@ -169,12 +208,23 @@ export const fixShellArgFindingFor = (gap: FixShellArgGap): Finding => {
 const shipped = (file: SourceFile): boolean =>
   !isTestPath(file.path) && !file.path.startsWith(TEMPLATE_ROOT);
 
-export const fixShellArgSites = async (root: string): Promise<readonly FixShellArgSite[]> =>
-  (await corpus(root, 'source'))
-    .filter(shipped)
-    .flatMap((file) => scanFixShellArgs(file.path, file.source));
+/**
+ * The sinks the last full scan found. Module state, deliberately: `SiteProbe.rescan` re-reads ONE
+ * file at the base ref, and a sink declared in another file is only known from the corpus pass.
+ * Rescanning without it would call every sink site "new since origin/main".
+ */
+let lastParams: FixParams = NO_PARAMS;
 
-const PROBE: SiteProbe<FixShellArgSite> = { rescan: scanFixShellArgs, line: (site) => site.line };
+export const fixShellArgSites = async (root: string): Promise<readonly FixShellArgSite[]> => {
+  const files = (await corpus(root, 'source')).filter(shipped);
+  lastParams = fixParamsOf(files.map((file) => file.source));
+  return files.flatMap((file) => scanFixShellArgs(file.path, file.source, lastParams));
+};
+
+const PROBE: SiteProbe<FixShellArgSite> = {
+  rescan: (path, source) => scanFixShellArgs(path, source, lastParams),
+  line: (site) => site.line,
+};
 
 export const fixShellArgGaps = async (root: string): Promise<readonly FixShellArgGap[]> =>
   newSitesFirst(

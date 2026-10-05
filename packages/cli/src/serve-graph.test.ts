@@ -68,11 +68,19 @@ const MIGRATE_CEILING = 615;
  * (`http/src/rate-limit-headers.ts`, `http/src/rate-limit-installed.ts`), and the live-query
  * delivery split (`realtime/src/live-deliver.ts`, `live-spend.ts`, `socket-defaults.ts`), and
  * `cli/src/trusted-hops.ts`, moved out of `role-start.ts` so the sync role reads the same hop count.
+ * raised 880 → 885, measured 885 (2026-10-05, plan 101 sweep 1c): the sync node's per-principal caps
+ * (`realtime/src/subscription-count.ts`, `principal-sockets.ts`) and three splits the 500-line
+ * ceiling forced (`live-reauth.ts` out of `live-query.ts`, `sync-actor-change.ts` out of
+ * `sync-node.ts`, `db/src/migration-ledger.ts` out of `migrate.ts`).
  */
-const SERVING_ROLE_CEILING = 880;
+const SERVING_ROLE_CEILING = 885;
 
-/** measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA). */
-const WEB_ROLE_CEILING = 975;
+/**
+ * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
+ * raised 975 → 980, measured 980 (2026-10-05, plan 101 sweep 1c): the same five modules named on
+ * `SERVING_ROLE_CEILING`, which every role carries.
+ */
+const WEB_ROLE_CEILING = 980;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

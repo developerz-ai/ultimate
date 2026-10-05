@@ -2,6 +2,7 @@
 // with a finding; this file owns the reading of one line of a `fix:` template. Text only, no policy.
 
 import { balancedClose } from './balanced-paren';
+import { readShell } from './shell-reading';
 
 /**
  * The command words a `fix:` line in this tree actually opens with. A closed list, deliberately:
@@ -36,6 +37,11 @@ export const COMMAND_WORDS: readonly string[] = [
   'cp',
   'sed',
   'chmod',
+  // Plan 101 row S12: the storage drivers' fixes reproduce a refusal with `aws s3api …`, `ls -ld`
+  // and `df`, and none of the three was a word this rule knew.
+  'aws',
+  'ls',
+  'df',
 ];
 
 /**
@@ -48,11 +54,37 @@ export const COMMAND_WORDS: readonly string[] = [
  */
 const COMMAND_SEGMENT = new RegExp(`^\\s*(${COMMAND_WORDS.join('|')})(?![\\w-])([^]*)$`);
 
-/** Between the command word and the substitution: any of these and the line is prose. */
-const PROSE_MARKERS = /[—(,]/;
+/**
+ * A sentence handing over to a command: `…, then reproduce with: aws s3api …`. Not a segment
+ * opener, because a `: ` also sits INSIDE commands (`curl -H 'accept: application/json'`) and
+ * cutting there would hide the argument after it. So it is a SECOND reading, asked only when it
+ * falls after the last real opener — and read with fresh quote state, because an apostrophe in the
+ * sentence before it (`the app's role`) is not a quote the command opened.
+ */
+const PROSE_HANDOVER = ': ';
 
-/** What opens a new shell segment: the template's own backtick, a pipe, a `;`, a `&&`, a `(`. */
-const SEGMENT_OPENERS = ['`', '|', ';', '&', '('];
+/** `NAME=value` and `sudo` in front of the command word are part of the command, not prose. */
+const TRANSPARENT = /^\s*(?:(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S)*|sudo)\s+)*/;
+
+/** A substitution that IS an assignment's value at the segment start: `DATABASE_URL=${url} x …`. */
+const ASSIGNMENT_VALUE = /^\s*(?:[A-Za-z_]\w*=\S*\s+)*[A-Za-z_]\w*=\S*$/;
+
+/** The command a segment opens — past any `NAME=value` / `sudo` — unless prose follows the word. */
+function commandOpening(segment: string): string | undefined {
+  if (ASSIGNMENT_VALUE.test(segment)) return 'an environment assignment';
+  const lead = TRANSPARENT.exec(segment)?.[0] ?? '';
+  const match = COMMAND_SEGMENT.exec(segment.slice(lead.length));
+  if (match === null) return undefined;
+  return readShell(match[2] as string).prose.length > 0 ? undefined : (match[1] as string);
+}
+
+/** The command opened by the last segment of `text`, read from `text`'s own start. */
+function lastSegmentCommand(text: string): { readonly command?: string; readonly opener: number } {
+  const reading = readShell(text);
+  if (reading.commented) return { opener: Number.POSITIVE_INFINITY };
+  const command = commandOpening(text.slice(reading.opener + 1));
+  return command === undefined ? { opener: reading.opener } : { command, opener: reading.opener };
+}
 
 /**
  * A substitution sitting DIRECTLY after a shell operator, which makes the value itself the command
@@ -80,9 +112,6 @@ const shellOperator = (prefix: string): boolean => {
   return !['"', "'", '`'].includes(before.at(-1) ?? '');
 };
 
-/** A `#` earlier on the line opens a shell comment, and nothing after one runs. */
-const commented = (prefix: string): boolean => prefix.includes('#');
-
 /**
  * The command word this substitution is an argument to, or `undefined` when the text in front of it
  * is not a command at all.
@@ -91,13 +120,16 @@ const commented = (prefix: string): boolean => prefix.includes('#');
  * mask, because the mask blanks a template's TEXT and the text is the whole question here.
  */
 export function commandPositionOf(prefix: string): string | undefined {
-  if (commented(prefix)) return undefined;
+  // The template's own backtick (or an escaped one, a markdown code span) opens the text; what
+  // stands before it is code, whose quotes are not the command's.
+  const text = prefix.slice(prefix.lastIndexOf('`') + 1);
+  const direct = lastSegmentCommand(text);
+  if (direct.opener === Number.POSITIVE_INFINITY) return undefined;
   if (shellOperator(prefix)) return 'a shell operator';
-  const openers = SEGMENT_OPENERS.map((one) => prefix.lastIndexOf(one));
-  const segment = prefix.slice(Math.max(...openers) + 1);
-  const match = COMMAND_SEGMENT.exec(segment);
-  if (match === null) return undefined;
-  return PROSE_MARKERS.test(match[2] as string) ? undefined : (match[1] as string);
+  if (direct.command !== undefined) return direct.command;
+  const handover = text.lastIndexOf(PROSE_HANDOVER);
+  if (handover <= direct.opener) return undefined;
+  return lastSegmentCommand(text.slice(handover + PROSE_HANDOVER.length)).command;
 }
 
 /**
@@ -118,9 +150,29 @@ export const SCREENING_CALLS: readonly string[] = [
   'renderFixLiteral',
   'shellInertIdentifier',
   'quoteArg',
+  // Plan 101 row S12. Each is a screen for a DOUBLE-QUOTED shell word: `JSON.stringify`, with a
+  // value carrying `$`, a backtick or `!` replaced by its placeholder. `migrationNameArg`
+  // (`packages/db/src/primary-key.ts`) for `x db gen "<name>"`, whose argument is a description
+  // with spaces no single-word screen can carry; `rerunFileArgs` (`packages/testing/src/registry-leak-error.ts`)
+  // for the leaked files a `bun test` re-run names. Each has a hostile-value test beside it.
+  'migrationNameArg',
+  'rerunFileArgs',
+  // `packages/render/src/registry.ts`'s POSIX single-quoter (`'\''` for a quote), behind `--`.
+  // Surfaced when constructor sinks were read (security audit of plan 101 sweep 1c, M1).
+  'shellQuote',
 ];
 
-const SCREENED = new RegExp(`^\\s*(?:${SCREENING_CALLS.join('|')})\\s*\\(`);
+const screenOpening = (calls: readonly string[]): RegExp =>
+  new RegExp(`^\\s*(?:${calls.join('|')})\\s*\\(`);
+
+const SCREENED = screenOpening(SCREENING_CALLS);
+
+/**
+ * The calls a `const` may be bound to and still vouch for its name wherever it is spliced. Not
+ * `renderFixLiteral`: its own doc (`packages/core/src/error-render.ts`) says it is not a shell
+ * screen, and a binding carries it away from the quoting context that made one call site sound.
+ */
+const SHELL_SCREENED = screenOpening(SCREENING_CALLS.filter((call) => call !== 'renderFixLiteral'));
 
 /**
  * Whether the substitution's own body is a call to one of the screening renderers, AND NOTHING
@@ -132,9 +184,14 @@ const SCREENED = new RegExp(`^\\s*(?:${SCREENING_CALLS.join('|')})\\s*\\(`);
  * b) + f(c)` ends in `)` too — which is why the call's own `(` is walked to its match and the
  * remainder has to be empty.
  */
-export const isScreened = (body: string): boolean => {
-  const head = SCREENED.exec(body);
+const screenedBy = (opening: RegExp, body: string): boolean => {
+  const head = opening.exec(body);
   if (head === null) return false;
   const close = balancedClose(body, (head[0] as string).length - 1);
   return close !== -1 && body.slice(close + 1).trim() === '';
 };
+
+export const isScreened = (body: string): boolean => screenedBy(SCREENED, body);
+
+/** `isScreened`, minus `renderFixLiteral` — the test a `const` binding has to pass. */
+export const isShellScreened = (body: string): boolean => screenedBy(SHELL_SCREENED, body);

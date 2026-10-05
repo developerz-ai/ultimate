@@ -2,6 +2,7 @@
 // machine. Split from `errors.ts` at the 500-line ceiling; the codes and their titles stay there,
 // because a registry with two homes is a registry that disagrees with itself.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { EntityError } from './errors';
 
 /**
@@ -15,7 +16,8 @@ export const searchUndeclared = (entityName: string): EntityError =>
   new EntityError({
     code: 'X_SEARCH_UNDECLARED',
     cause: `${entityName} has no searchable column, so there is no tsvector to match against`,
-    fix: `add .searchable() to a text() column of ${entityName}, then: x db gen "search ${entityName}"`,
+    // Screened where it enters the command: the line is pasted, and `$(…)` runs inside "…".
+    fix: `add .searchable() to a text() column of ${entityName}, then: x db gen "search ${renderFixShellArg(entityName, '<entity>')}"`,
   });
 
 /**

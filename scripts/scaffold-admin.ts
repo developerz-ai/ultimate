@@ -15,7 +15,7 @@
 //
 //   bun run scripts/scaffold-admin.ts <app dir> [--json]
 
-import { DEV_BINDING } from '@ultimat3/cli';
+import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
@@ -82,7 +82,9 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
       resource === undefined
         ? `${dir}/${MANIFEST} names no entity \`x g resource ${generatorName('resource')}\` wrote, so there is no admin screen to ask for`
         : `${dir}/${DEV_ACTOR} declares no DEV_ROLE_COOKIE, so no request can say which role it is`,
-      `bun run scripts/scaffold-first-run.ts ${dir} && (cd ${dir} && bin/setup)`,
+      // Quoted, not refused: `dir` is whatever path the caller handed this script, the line is pasted
+      // whole, and `./my-app` — the common case — has to stay pasteable. A leading `-` is a flag.
+      `bun run scripts/scaffold-first-run.ts ${quoteArg(dir.startsWith('-') ? '<app dir>' : dir)} && (cd ${quoteArg(dir.startsWith('-') ? '<app dir>' : dir)} && bin/setup)`,
       dir,
     );
   }

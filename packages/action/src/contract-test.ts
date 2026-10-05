@@ -5,7 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
-import { createContext, isUltimateError, logger } from '@ultimat3/core';
+import { createContext, isUltimateError, logger, renderFixShellArg } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { ActionDeniedError, ContractDriftError } from './errors';
 import { toOpenApiOperation } from './http';
@@ -95,13 +95,26 @@ function assertDocumented(target: AnyAction, name: string): void {
   const published = buildOpenApi({ actions }).paths[path];
   const owner = operationIdAt(published);
   if (owner === toOpenApiOperation(target).operationId) return;
-  throw new ContractDriftError(
+  throw documentedDrift(path, owner, name);
+}
+
+/**
+ * The refusal when the published document does not name this action at its route. `name` is
+ * whatever `.named()` was handed — nothing validates its alphabet — so it is screened where it
+ * enters the `x actions describe` command (security audit of plan 101 sweep 1c).
+ */
+export function documentedDrift(
+  path: string,
+  owner: string | undefined,
+  name: string,
+): ContractDriftError {
+  return new ContractDriftError(
     owner === undefined
       ? `OpenAPI document has no entry for ${path}`
       : `OpenAPI document serves ${path} as ${owner}, so ${name} is not in the published contract`,
     owner === undefined
       ? 'x verify --json   # the contract suite is a step of it'
-      : `x actions describe ${name} --json   # then rename it, or pin its own route with http: { path } in the ${name} definition`,
+      : `x actions describe ${renderFixShellArg(name, '<action>')} --json   # then rename it, or pin its own route with http: { path } in the ${name} definition`,
   );
 }
 

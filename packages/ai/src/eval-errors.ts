@@ -61,7 +61,9 @@ export class EvalBaselineInvalidError extends UltimateError {
     super({
       code: 'X_EVAL_BASELINE_INVALID',
       cause: `the recorded baseline ${input.path} ${input.problem}`,
-      fix: `ULTIMATE_EVAL_RECORD=1 x test eval to re-record ${input.path}`,
+      // The command is the record run; the path is named behind the `#`, where it is read and
+      // never run — `x test eval` takes no path, and a file name may carry `$(…)` (sweep 1c).
+      fix: `ULTIMATE_EVAL_RECORD=1 x test eval   # re-records ${input.path}`,
     });
   }
 }

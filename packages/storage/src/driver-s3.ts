@@ -9,6 +9,7 @@ import {
   EnvMissingError,
   finiteCount,
   NotImplementedError,
+  renderFixLiteral,
   renderFixShellArg,
   stringField,
 } from '@ultimat3/core';
@@ -227,14 +228,18 @@ function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptio
   }
   const sse = putOptions?.serverSideEncryption;
   if (sse === undefined) return;
-  const rule =
-    sse.algorithm === 'aws:kms'
-      ? `{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":"${sse.kmsKeyId ?? '<key-arn>'}"}`
-      : '{"SSEAlgorithm":"AES256"}';
+  // The key id is the caller's own option, spliced into single-quoted JSON: `renderFixLiteral`
+  // escapes the `"` and `\` JSON needs, and a `'` — the one byte live inside single quotes — makes
+  // it the placeholder rather than ending the argument (plan 101 row S12).
+  const keyId = sse.kmsKeyId?.includes("'") === false ? sse.kmsKeyId : undefined;
+  const bucketArg = renderFixShellArg(bucket, "'<bucket>'");
   throw new NotImplementedError({
     cause:
       'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption) is not implemented by this driver — set it bucket-wide with the command in fix, then drop serverSideEncryption from put()',
-    fix: `aws s3api put-bucket-encryption --bucket ${renderFixShellArg(bucket, "'<bucket>'")} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
+    fix:
+      sse.algorithm === 'aws:kms'
+        ? `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":${renderFixLiteral(keyId, '"<key-arn>"')}},"BucketKeyEnabled":true}]}'`
+        : `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'`,
   });
 }
 
@@ -434,7 +439,11 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           DRIVER_NAME,
           prefix,
           error,
-          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")}${prefix === '' ? '' : ` --prefix ${renderFixShellArg(prefix, "'<prefix>'")}`}`,
+          // Two whole lines rather than a ternary INSIDE one: each substitution is then a screen
+          // the fix-shell-arg guard can read as one.
+          prefix === ''
+            ? `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")}`
+            : `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --prefix ${renderFixShellArg(prefix, "'<prefix>'")}`,
         );
       }
       const objects: StorageListEntry[] = [];

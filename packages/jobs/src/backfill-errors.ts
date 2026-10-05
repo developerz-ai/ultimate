@@ -5,7 +5,7 @@
 // declared in ONE place; only the classes that throw them live here, beside `backfill-ledger.ts`,
 // `backfill-pending.ts` and `backfill-registry.ts`.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 
 /**
  * The seven backfill codes below all answer one question — "why is this sweep not running?" — and
@@ -64,7 +64,8 @@ export class BackfillEnvironmentError extends UltimateError {
       fix:
         target === undefined
           ? 'x db backfill --pending --json'
-          : `ULTIMATE_ENV=${target} x db backfill ${input.backfill} --write --json`,
+          : // Both are the declaration's own strings and the class is public: screened (sweep 1c).
+            `ULTIMATE_ENV=${renderFixShellArg(target, "'<environment>'")} x db backfill ${renderFixShellArg(input.backfill, "'<backfill>'")} --write --json`,
     });
   }
 }

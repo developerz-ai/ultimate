@@ -232,6 +232,7 @@ describe('database config carries only what something reads', () => {
 });
 
 describe('realtime section', () => {
+  const KEYS = ['enabled', 'maxSocketsPerActor', 'maxSubscriptionsPerActor', 'transport', 'urlEnv'];
   // Two fields have been deleted from this section for one reason. `heartbeatMs` was declared,
   // defaulted to 15_000 and read by NOTHING — the socket heartbeat is the client's own option and
   // the presence beat is derived from the TTL (`PresenceRegistry.heartbeatMs`). `tier` accepted
@@ -241,10 +242,10 @@ describe('realtime section', () => {
   // durable client store `createOpfsLocalStore` still refuses to build. Axiom 1: one knob, and it
   // has to be a knob. Deleted 2026-08-19 and 2026-08-23; this is what stops either coming back,
   // since a re-added field sails through `section()` unnoticed.
-  test('carries neither heartbeatMs nor tier — only the two fields something reads', () => {
+  test('carries neither heartbeatMs nor tier — only the fields something reads', () => {
     const config = defineConfig({ name: 'myapp' });
 
-    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'transport', 'urlEnv']);
+    expect(Object.keys(config.realtime).sort()).toEqual(KEYS);
     expect('heartbeatMs' in config.realtime).toBe(false);
     expect('tier' in config.realtime).toBe(false);
   });
@@ -258,7 +259,7 @@ describe('realtime section', () => {
       { realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
     );
 
-    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'transport', 'urlEnv']);
+    expect(Object.keys(config.realtime).sort()).toEqual(KEYS);
     expect(config.realtime.transport).toBe('nats');
   });
 });

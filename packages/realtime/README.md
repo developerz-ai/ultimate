@@ -273,6 +273,8 @@ wire.
 | inbound bytes per frame | 256 KiB | `createSyncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
 | inbound frames per socket | 64/s, burst 256 | `createSyncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
 | live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
+| live subscriptions per actor (anonymous: per resolved client address), across its sockets | 1,000 (`DEFAULT_MAX_PER_ACTOR`) | `new LiveQueryRegistry({ maxPerActor })`; the boot passes `realtime.maxSubscriptionsPerActor` | `X_SUBSCRIPTION_LIMIT` |
+| sockets per actor; an anonymous network (IPv4 exact, IPv6 /64) gets 8 × (`ANONYMOUS_SOCKET_MULTIPLIER`) — one NAT is many people | 16 (`DEFAULT_MAX_SOCKETS_PER_ACTOR`); 128 per anonymous network | `createSyncNode({ maxSocketsPerActor })`; the boot passes `realtime.maxSocketsPerActor` | `429 X_SOCKET_LIMIT` |
 | live subscriptions per tenant | unset | `new LiveQueryRegistry({ maxPerTenant, tenantOf })` — **both**, or it arms nothing | `X_SUBSCRIPTION_LIMIT` |
 | distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
 | how long one entry's SHARED snapshot read may hold its slot | 30s | `new LiveQueryRegistry({ readDeadlineMs })` | `X_TIMEOUT`, to that read's caller AND every subscriber joined to it |

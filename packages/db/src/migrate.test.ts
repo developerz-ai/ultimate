@@ -75,6 +75,26 @@ describe('migrate', () => {
     expect(client.texts.some((text) => text.includes('pg_advisory_unlock'))).toBe(true);
   });
 
+  // Plan 101 row S12: a migration's name is read off a file on disk and echoed into `x db gen "…"`.
+  test('a conflict screens the migration name it echoes into x db gen', () => {
+    const hostile: Migration = { ...addPosts, name: 'create $(touch pwned)' };
+    const edited: Migration = { ...hostile, up: 'create table "posts" ("id" uuid, "x" text);' };
+    let fix = '';
+    try {
+      auditLedger([ledgerRow({ checksum: migrationChecksum(hostile) })], [edited], '1.5.0');
+    } catch (error) {
+      fix = (error as { fix: string }).fix;
+    }
+    expect(fix).not.toContain('$(');
+    expect(fix).toStartWith('x db gen "<a migration name>"');
+    // And an ordinary name still travels.
+    try {
+      auditLedger([ledgerRow()], [{ ...addPosts, up: 'select 1;' }], '1.5.0');
+    } catch (error) {
+      expect((error as { fix: string }).fix).toStartWith('x db gen "fix create posts"');
+    }
+  });
+
   test('an edited applied migration is a conflict, not a silent no-op', () => {
     const edited: Migration = { ...addPosts, up: 'create table "posts" ("id" uuid, "x" text);' };
     expect(() => auditLedger([ledgerRow()], [edited], '1.5.0')).toThrow('X_MIGRATION_CONFLICT');

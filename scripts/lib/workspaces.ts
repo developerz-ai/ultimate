@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 // The leaf, not core's barrel: `bun run lockfile` reaches this module and must run while a package
 // is mid-edit (DX ledger #10).
-import { renderThrowable } from '../../packages/core/src/error-render';
+import { renderFixShellArg, renderThrowable } from '../../packages/core/src/error-render';
 import type { Finding } from './log';
 import { ScriptError } from './script-error';
 import { tierOf } from './tiers';
@@ -118,7 +118,8 @@ export async function requireWorkspaceManifest(
   throw new ScriptError({
     code: 'X_WORKSPACE_MANIFEST_UNREADABLE',
     cause: `${relativeTo} ${read.kind === 'absent' ? 'vanished between the glob and the read' : read.problem}, and every release tool in scripts/ enumerates the workspaces through this module`,
-    fix: `bun -e "console.log(await Bun.file('${relativeTo}').json())"   # prints the parse error; repair ${relativeTo} until it is a JSON object whose "name" and "version" are strings, then: bun run workspaces:list`,
+    // The path is a directory the glob matched; screened where it enters the pasted `bun -e`.
+    fix: `bun -e "console.log(await Bun.file('${renderFixShellArg(relativeTo, '<the package.json the cause names>')}').json())"   # prints the parse error; repair ${relativeTo} until it is a JSON object whose "name" and "version" are strings, then: bun run workspaces:list`,
   });
 }
 

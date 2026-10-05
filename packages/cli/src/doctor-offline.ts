@@ -9,6 +9,7 @@ import { loadApp } from './app-load';
 import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
 import { loadPwaArtifacts } from './pwa-artifacts';
+import { quoteArg } from './shell-quote';
 
 /** A route as this check reads one: the URL it answers, and the surface that answers it. */
 export interface NavigableRoute {
@@ -100,7 +101,7 @@ export function offlineFallbackFinding(fact: OfflineFallbackFact): Finding | und
   const name = GENERATABLE.exec(fallback)?.[1];
   return name === undefined
     ? finding(cause, `set pwa.offline.fallback in ${APP_CONFIG_FILE} to a path a route serves`)
-    : finding(cause, `x g route ${name} --surface site`);
+    : finding(cause, `x g route ${quoteArg(name)} --surface site`);
 }
 
 /**

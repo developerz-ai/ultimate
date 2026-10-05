@@ -62,6 +62,19 @@ describe('unit · the environment check', () => {
     expect(error?.cause).toContain('environments');
   });
 
+  // Security audit of plan 101 sweep 1c: the environment and the backfill name are the
+  // declaration's own strings, and the class is public — both ride into one pasted line.
+  test('a hostile environment or backfill name never reaches the command', () => {
+    const error = new BackfillEnvironmentError({
+      backfill: 'rewrite;rm -rf ~',
+      environment: 'test',
+      declared: ['$(touch pwned)'],
+    });
+    expect(error.fix).toBe(
+      "ULTIMATE_ENV='<environment>' x db backfill '<backfill>' --write --json",
+    );
+  });
+
   test('a public constructor handed no environments still answers with a runnable command', () => {
     // Unreachable through `checkBackfillEnvironment` — an empty list means every environment — but
     // the class is exported, and `ULTIMATE_ENV=undefined …` is not a command.

@@ -63,6 +63,8 @@ const ADDED_SINCE = [
   'X_SOCKET_ORIGIN_REFUSED',
   // Plan 101 (2026-10-02), slice 08: a write queued after its page changed principal is refused.
   'X_OFFLINE_QUEUE_ABANDONED',
+  // Plan 101 sweep 1c (S7/M3): one principal's sockets on a node, capped at the upgrade.
+  'X_SOCKET_LIMIT',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

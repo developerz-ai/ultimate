@@ -89,6 +89,25 @@ describe('listWorkspaces', () => {
     expect(failure.fix.startsWith('bun ')).toBe(true);
   });
 
+  // Security audit of plan 101 sweep 1c: the manifest path is a directory name the glob matched,
+  // and it rides into a `bun -e` the reader pastes.
+  test('a workspace directory carrying shell syntax never reaches the bun -e line', async () => {
+    const root = await tree({
+      'packages/core/package.json': '{"name":"@ultimat3/core","version":"9.0.0"}',
+      'packages/x$(touch pwned)/package.json': '{"name":',
+    });
+    const thrown = await listWorkspaces(root).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    const fix = (thrown as ScriptError).fix;
+    const [command] = fix.split('#');
+    expect(command).not.toContain('$(');
+    expect(command?.trim()).toBe(
+      `bun -e "console.log(await Bun.file('<the package.json the cause names>').json())"`,
+    );
+  });
+
   test('a readable tree still lists, sorted by tier then directory', async () => {
     const root = await tree({
       'packages/cli/package.json': '{"name":"@ultimat3/cli","version":"9.0.0"}',

@@ -68,6 +68,21 @@ describe('unpin', () => {
     }
   };
 
+  // Plan 101 row S12: the gated apps' directories are spliced into the `--unpin` usage line, and a
+  // fix is pasted whole — the prose list after the command included.
+  test('an app that is not gated is answered with a runnable line, every directory quoted', async () => {
+    const hostile = [appWith({ lint: 'x' }, 'apps/$(touch pwned)')];
+    const fix = (await unpin('/nonexistent', 'nope:lint', hostile)).findings?.[0]?.fix ?? '';
+    // Single-quoted rather than lost (L5 of the 1c audit): inert, and still the real name.
+    expect(fix).toBe(
+      "bun run scripts/reference-app-gate.ts --unpin 'apps/$(touch pwned):<step>' — the gated apps: 'apps/$(touch pwned)'",
+    );
+    const plain = (await unpin('/nonexistent', 'nope:lint', WORLD)).findings?.[0]?.fix;
+    expect(plain).toBe(
+      "bun run scripts/reference-app-gate.ts --unpin 'examples/dummy:<step>' — the gated apps: examples/dummy, dummy/social-media-clone",
+    );
+  });
+
   const target = WORLD[0];
   const unpinIn = (root: string, token: string) => unpin(root, token, WORLD);
 

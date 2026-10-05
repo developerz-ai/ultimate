@@ -367,6 +367,35 @@ describe('unit · the command: boot, walk, stop', () => {
     expect(cause).toContain('ECONNREFUSED');
   });
 
+  // Plan 101 row S12: the directory is spliced into `bun run scripts/scaffold-first-run.ts <dir> &&
+  // (cd <dir> && bin/setup)`, a line pasted whole — so a path carrying shell syntax is single-quoted.
+  test('a hostile directory never reaches the set-up command', async () => {
+    const parent = await appDir([]);
+    const dir = `${parent}/x$(touch pwned);y`;
+    await Bun.write(`${dir}/.keep`, '');
+    const { made } = io(fakeApp().fetcher);
+    const fix = (await checkAdmin(dir, made)).findings?.[0]?.fix ?? '';
+    // Single-quoted, so the hostile path is carried inert rather than lost (L5 of the 1c audit).
+    expect(fix).toBe(
+      `bun run scripts/scaffold-first-run.ts '${dir}' && (cd '${dir}' && bin/setup)`,
+    );
+    // A relative path, the common case, stays pasteable; a leading - never becomes a flag.
+    const relative = (await checkAdmin('./does-not-exist', io(fakeApp().fetcher).made)).findings;
+    expect(relative?.[0]?.fix).toBe(
+      'bun run scripts/scaffold-first-run.ts ./does-not-exist && (cd ./does-not-exist && bin/setup)',
+    );
+    const flag = (await checkAdmin('-rf', io(fakeApp().fetcher).made)).findings;
+    expect(flag?.[0]?.fix).toBe(
+      "bun run scripts/scaffold-first-run.ts '<app dir>' && (cd '<app dir>' && bin/setup)",
+    );
+    // An ordinary temp directory still travels verbatim.
+    const plain = await appDir(['actor', 'bin']);
+    const plainFix = (await checkAdmin(plain, io(fakeApp().fetcher).made)).findings?.[0]?.fix;
+    expect(plainFix).toBe(
+      `bun run scripts/scaffold-first-run.ts ${plain} && (cd ${plain} && bin/setup)`,
+    );
+  });
+
   test('a directory that is not a set-up scaffold is refused before anything boots', async () => {
     const cases: readonly (readonly [readonly ('manifest' | 'actor' | 'bin')[], string])[] = [
       [['actor', 'bin'], 'names no entity'],

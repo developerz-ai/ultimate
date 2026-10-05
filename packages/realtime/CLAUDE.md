@@ -57,7 +57,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   per-tenant count; `SocketRegistry` keeps `#byTopic`, changed only by `joinTopic`/`leaveTopic`.
   `reauthorize` calls `book.retenant(socket)`.
 - **A cap is a RESERVATION taken before the first await**: `SubscriptionBook.reserve(socket, sid)`
-  decides the sid claim, `maxPerSocket` and `maxPerTenant` in one synchronous step;
+  decides the sid claim, `maxPerSocket`, `maxPerTenant` and `maxPerActor` in one synchronous step;
   `ChannelHub.subscribe` does the same for its caps. Released in a `finally`, idempotently.
 - **Readiness AND the connection cap are functions on `UpgradeDeps`**, re-asked after
   `authenticate` (app code with an await) and right before `server.upgrade`. The recheck sheds with
