@@ -59,7 +59,7 @@ function recording(): {
     },
     'dev:test',
   );
-  if (tool === undefined) throw new TypeError('no ui.interact tool');
+  if (tool === undefined) expect.unreachable('no ui.interact tool');
   return { tool, asked };
 }
 

@@ -141,8 +141,26 @@ describe('--matrix', () => {
     );
     expect(cells.map((cell) => cell.viewport.width)).toContain(390);
     expect(cells.map((cell) => cell.viewport.width)).toContain(1440);
-    expect(cells[0]?.dir).toBe(join('root', 'es-co', 'light-390'));
+    expect(cells[0]?.dir).toBe(join('root', 'es-co', 'light-390x844'));
     // Every cell its own directory: two pictures can never overwrite each other.
+    expect(new Set(cells.map((cell) => cell.dir)).size).toBe(cells.length);
+  });
+
+  // `--viewport` replaces the phone-and-desktop pair, and a size is named WHOLE in the directory:
+  // two sizes sharing a width wrote one `light-390/` until the height joined the name.
+  test('--viewport sizes replace the default pair, each its own directory', () => {
+    const viewports = [
+      { width: 390, height: 844 },
+      { width: 390, height: 664 },
+      { width: 820, height: 1180 },
+    ];
+    const cells = planShotMatrix({ routes: ['/'], ...APP, themes: ['light'], viewports });
+    expect(cells.map((cell) => cell.viewport)).toEqual([...viewports, ...viewports]);
+    expect(cells.slice(0, 3).map((cell) => cell.dir)).toEqual([
+      join('root', 'es-co', 'light-390x844'),
+      join('root', 'es-co', 'light-390x664'),
+      join('root', 'es-co', 'light-820x1180'),
+    ]);
     expect(new Set(cells.map((cell) => cell.dir)).size).toBe(cells.length);
   });
 

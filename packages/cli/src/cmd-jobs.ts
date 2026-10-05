@@ -1,6 +1,6 @@
-// `x jobs ls|show|retry|cancel|rm|promote|pause|resume|drain` — introspect and recover the job queue, bound to
-// `@ultimat3/jobs`'s
-// own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only:
+// `x jobs ls|show|retry|cancel|rm|promote|pause|resume` — introspect and recover the job queue,
+// bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP report identically;
+// `drain` is planned (`cmd-planned.ts`) until a durable second driver ships. CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
 // `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
@@ -21,10 +21,10 @@ import {
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { DRAIN_TARGETS, jobsSpec } from './cmd-jobs-spec';
+import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
 import type { DrainOutcome } from './jobs-drain';
-import { drainJobs } from './jobs-drain';
 import { withJobDriver } from './jobs-driver';
 import {
   backfillToJson,
@@ -41,7 +41,7 @@ import { listJobs, retryJob, showJob } from './jobs-report';
 import { renderJobTable } from './jobs-table';
 import { msg } from './messages';
 import type { CommandResult } from './output';
-import { flagBool, flagString } from './parse';
+import { flagString } from './parse';
 
 export { DRAIN_TARGETS, JOBS_SUBCOMMANDS } from './cmd-jobs-spec';
 
@@ -62,7 +62,8 @@ function refuseMemoryTarget(): never {
     command: 'jobs',
     reason:
       'memory is a Map inside this process — the drain would ack every durable row and lose the copy when the command exits',
-    fix: 'x jobs drain --to redis --json   # or --to nats; --dry-run reports the plan and moves nothing',
+    // Never `x jobs drain …`: the subcommand is planned, and a fix naming it is a second error.
+    fix: 'x jobs ls --json   # the queue as it stands; memory is never a drain target',
   });
 }
 
@@ -131,11 +132,13 @@ function requireEnvUrl(env: CommandContext['env'], name: string, target: string)
 }
 
 /**
- * `redis`/`nats` are honest `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` — building one here is
- * fine even though every `enqueue` on it will fail; `drainJobs` reports that per record. What is
- * NOT fine is a target that accepts every enqueue and then vanishes, which is why `memory` is
- * refused first and by name rather than falling into the closed-set message below.
- * Exported so a test can drive the `--to`/env-var validation without a driver or a boot.
+ * PARKED with `drainResult` below, behind `plannedSubcommand('jobs', 'drain')` in `run`: `redis`
+ * and `nats` are `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs`, so every drain onto one leased the
+ * source batch for `DRAIN_LEASE_MS`, failed each enqueue and nacked it back — five minutes of a
+ * production queue no worker could claim from, for a move that could not happen. The body stays,
+ * tested, because the day a durable driver ships re-enabling it is deleting the planned row and
+ * one line in `run`, and the `memory` refusal is the lesson that must survive that day: a target
+ * that accepts every enqueue and then vanishes with the process loses every job it was handed.
  */
 export function buildDrainTarget(to: string | undefined, env: CommandContext['env']): JobDriver {
   if (to === 'memory') refuseMemoryTarget();
@@ -315,9 +318,9 @@ async function runPause(
  * design — so it carries no `X_*` finding. It still fails the command: `x jobs drain` is run to
  * empty a driver, and a partial move that exited 0 would read as "the queue is clear".
  *
- * Exported, and separate from the flag reading above it, because every target the flag now accepts
- * needs a server: a test can produce a real outcome from two drivers and render THAT, where
- * driving the whole command would need a redis or a nats to move anything at all.
+ * Parked with `buildDrainTarget` (see there). Exported so a test produces a real outcome from two
+ * memory drivers and renders THAT — the command path itself answers planned until a durable
+ * driver exists to move anything onto.
  */
 export function drainResult(outcome: DrainOutcome): CommandResult {
   const dryRun = outcome.dryRun;
@@ -354,15 +357,6 @@ export function drainResult(outcome: DrainOutcome): CommandResult {
   };
 }
 
-/** The move, then the render. The target is built ABOVE `withJobDriver` — see `run` below. */
-async function runDrain(
-  driver: JobDriver,
-  target: JobDriver,
-  ctx: CommandContext,
-): Promise<CommandResult> {
-  return drainResult(await drainJobs(driver, target, flagBool(ctx.args, 'dry-run')));
-}
-
 /** The subcommands that answer a `JobTrace`. `ls`, `rm`, `promote` and the rest read rows only. */
 const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel']);
 
@@ -371,13 +365,11 @@ export const jobsCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'ls';
-    // BEFORE `withJobDriver`, which boots the SOURCE queue and pings it. `--to` is a flag, so
-    // whether it names a durable driver is answerable with no server at all — and reading it
-    // inside meant `x jobs drain --to memory` on a box whose database is down reported the boot
-    // failure instead of `X_CLI_BAD_FLAG`, i.e. the operator repaired Postgres to be told the
-    // word they typed was refused by name. It also opens a connection to a target the command
-    // then refuses, which is a socket nothing closes.
-    const target = sub === 'drain' ? buildDrainTarget(flagString(ctx.args, 'to'), ctx.env) : null;
+    // BEFORE `withJobDriver`, which boots the source queue: the answer needs no server, so a box
+    // whose database is down gets it rather than the boot failure of a queue never to be used —
+    // and nothing is leased. `--to`/`--dry-run` stay declared so the parser lets every spelling
+    // of the subcommand reach this line instead of refusing a flag of something that exists.
+    if (sub === 'drain') throw plannedSubcommand('jobs', 'drain');
     // A TRACE is the queue row projected through the job's own declaration — its concurrency key,
     // its retry schedule — and a declaration exists in this process only once the app is loaded.
     // Unloaded, `show` answered `concurrencyKey: null` and `retryDelaysMs: []` for every job of
@@ -391,7 +383,6 @@ export const jobsCommand: CliCommand = {
       if (sub === 'rm') return runRm(driver, ctx);
       if (sub === 'promote') return runPromote(driver, ctx);
       if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub);
-      if (target !== null) return runDrain(driver, target, ctx);
       return runLs(driver, ctx);
     });
   },

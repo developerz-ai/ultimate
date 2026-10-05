@@ -83,7 +83,7 @@ export interface JobDriver {
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on all four. Switching is a config line plus `x jobs drain --to redis` for in-flight rows.
+Because `steps` is a driver member, step persistence works identically on all four. Switching is the `setJobDriver(…)` call at boot plus `x jobs drain --to redis` for in-flight rows — a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`): `redis` and `nats` are stubs, so there is nowhere durable to drain to.
 
 ## The pg claim loop
 

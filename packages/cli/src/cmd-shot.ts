@@ -23,7 +23,13 @@ import {
   refuseSweepWithRoute,
   refuseSweepWithState,
 } from './cmd-shot-island';
-import { MATRIX_DIR, matrixRoutes, planShotMatrix, runShotMatrix } from './cmd-shot-matrix';
+import {
+  MATRIX_DIR,
+  matrixRoutes,
+  planShotMatrix,
+  refuseMatrixWithComponent,
+  runShotMatrix,
+} from './cmd-shot-matrix';
 import { shotSpec } from './cmd-shot-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, MissingPositionalError } from './errors';
@@ -53,6 +59,7 @@ import {
   shotSummary,
   verdictJson,
 } from './shot-verdict';
+import { parseViewports, refuseViewportWithComponent, runShotViewports } from './shot-viewport';
 
 /** Kernel-picked by default: :3000 is usually another project's dev server, not a free port. */
 const DEFAULT_PORT = 0;
@@ -66,8 +73,7 @@ const DEFAULT_PORT = 0;
  */
 export const DEFAULT_SETTLE_MS = IDLE_HYDRATE_TIMEOUT_MS;
 
-// Re-exported, not re-declared: `cmd-shot.test.ts` and the island path both name them, and a
-// second declaration of a path or an allow-list rule is a second answer.
+// Re-exported, not re-declared: a second declaration of a path or a host rule is a second answer.
 export type { BootDevServer, ShotServer };
 export { allowHostsFrom, devServerFor, SHOT_DIR };
 
@@ -372,6 +378,7 @@ export const shotCommand: CliCommand = {
     const sweep = flagBool(ctx.args, 'all-islands');
     const matrix = flagBool(ctx.args, 'matrix');
     const cookies = readCookieFlag(flagString(ctx.args, 'cookie'));
+    const viewports = parseViewports(flagString(ctx.args, 'viewport'));
     const app = await loadShotLocales(root);
     const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
@@ -385,14 +392,9 @@ export const shotCommand: CliCommand = {
     }
     const component = sweep || (island !== undefined && island !== '');
     // The matrix photographs ROUTES; a component beside it is two subjects.
-    if (matrix && component) {
-      throw new BadFlagError({
-        flag: 'matrix',
-        command: 'shot',
-        reason: 'photographs every site route; --island and --all-islands photograph components',
-        fix: 'x shot --matrix --json',
-      });
-    }
+    if (matrix && component) refuseMatrixWithComponent();
+    // An island state declares its own size, so a size asked for beside one is a second answer.
+    if (component && viewports !== undefined) refuseViewportWithComponent();
     // An island is photographed in BOTH themes by the harness, which owns its `data-theme` and
     // carries no boot script — so a theme asked for beside one is a request nothing could honour.
     if (component && locale !== undefined) {
@@ -473,22 +475,24 @@ export const shotCommand: CliCommand = {
         locales: locale === undefined ? app.locales : [locale],
         defaultLocale: app.defaultLocale,
         ...(theme === undefined ? {} : { themes: [theme] }),
+        ...(viewports === undefined ? {} : { viewports }),
       });
       const outDir = shotOutDir(ctx.cwd, out, join(root, MATRIX_DIR));
       return runShotMatrix({ cells, outDir, boot, shoot: runShot, base });
     }
     const shown = locale ?? app.defaultLocale;
     const path = localizedShotPath(route, shown, app.defaultLocale);
-    return shotResult(
-      await runShot({
-        ...base,
-        route: path,
-        outDir: shotOutDir(ctx.cwd, out, join(root, SHOT_DIR, shotSlug(path))),
-        boot,
-        // Pinned whether or not `--locale` was given: the default locale, never the box's own.
-        acceptLanguage: shown,
-        ...(theme === undefined ? {} : { colorScheme: theme }),
-      }),
-    );
+    const single = {
+      ...base,
+      route: path,
+      // Pinned whether or not `--locale` was given: the default locale, never the box's own.
+      acceptLanguage: shown,
+      ...(theme === undefined ? {} : { colorScheme: theme }),
+    };
+    const outDir = shotOutDir(ctx.cwd, out, join(root, SHOT_DIR, shotSlug(path)));
+    if (viewports !== undefined) {
+      return runShotViewports({ viewports, outDir, boot, shoot: runShot, base: single });
+    }
+    return shotResult(await runShot({ ...single, outDir, boot }));
   },
 };

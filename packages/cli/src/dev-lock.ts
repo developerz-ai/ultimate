@@ -14,7 +14,7 @@
 // The lock file is what makes the second one nameable at all: nothing else in the process can tell
 // "another dev server owns this directory" from "the database is broken".
 
-import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
 import { exec, type Runner } from './exec';
@@ -241,33 +241,42 @@ export const isPortBound = (port: number, hostname: string): boolean => {
   }
 };
 
+/** A sibling of the lock, unique to this process and call, where its bytes are staged. */
+const stagingPath = (path: string): string =>
+  `${path}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
+
+const lockText = (lock: DevLock): string => `${JSON.stringify(lock, null, 2)}\n`;
+
 /**
  * Take the lock, or answer `false` because someone else holds it.
  *
- * `wx` is the whole mechanism: the create and the exclusivity are ONE syscall, so two boots racing
- * this cannot both come back `true`. A check followed by a write is what this replaces, and the
- * window between those two was seconds wide — `startDev` boots embedded Postgres, the queue, the
- * transport and the app's modules before anything was written down.
+ * Written whole to a staging file first, then `linkSync`ed into place: the link is the create AND
+ * the exclusivity in ONE syscall (`EEXIST` when the name is taken), so two boots racing this cannot
+ * both come back `true` — and the lock path never exists without its contents. It was `openSync(
+ * path, 'wx')` and THEN a write; a racing preflight that read the file between the two parsed an
+ * empty lock as stale, unlinked the live claim and took the slot itself.
  *
  * Only `EEXIST` is "someone else has it". Anything else — a read-only checkout, a `.x/` nobody may
  * write — is rethrown as it arrives: it is the same failure `writeLock` would have raised seconds
  * later, and inventing a code for it here would be a second answer to one condition.
  */
 function claimExclusive(path: string, lock: DevLock): boolean {
-  let fd: number;
+  const staged = stagingPath(path);
+  writeFileSync(staged, lockText(lock));
   try {
-    fd = openSync(path, 'wx');
+    linkSync(staged, path);
+    return true;
   } catch (error) {
     // Same rule as `isProcessAlive` above: read the field, never cast and dereference.
     if (stringField(error, 'code') === 'EEXIST') return false;
     throw error;
-  }
-  try {
-    writeFileSync(fd, `${JSON.stringify(lock, null, 2)}\n`);
   } finally {
-    closeSync(fd);
+    try {
+      unlinkSync(staged);
+    } catch {
+      // Already gone; the staging name is unique to this call, so nothing else can need it.
+    }
   }
-  return true;
 }
 
 /** Whatever is on disk right now, or `null` if it is absent or half-written. */
@@ -388,7 +397,12 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
  * with the address the server actually bound, which is the one field the preflight could not know.
  */
 export const writeLock = async (stateDir: string, lock: DevLock): Promise<void> => {
-  await Bun.write(lockPath(stateDir), `${JSON.stringify(lock, null, 2)}\n`);
+  // Staged and renamed over the claim, never rewritten in place: a truncate-then-write leaves an
+  // empty lock for an instant, and a preflight reading it then would clear a live claim as stale.
+  const path = lockPath(stateDir);
+  const staged = stagingPath(path);
+  writeFileSync(staged, lockText(lock));
+  renameSync(staged, path);
 };
 
 /** Remove it. Safe to call twice — shutdown paths overlap, and a throw here would mask the real one. */

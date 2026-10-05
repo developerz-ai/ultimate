@@ -12,6 +12,8 @@ import { frameworkVersion } from '@ultimat3/core';
 import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
+import type { SourceDigester, SourceStamp } from './island-sources';
+import { changedSource, isRecordableSource, sourceDigester, stampSources } from './island-sources';
 import { islandStylesheets } from './island-styles';
 import { PREBUILT_ISLANDS_DIR } from './serve-prebuilt-paths';
 
@@ -26,6 +28,8 @@ interface StoredChunk {
   readonly identity: string;
   /** The shared chunk URLs the entry loads, transitively (`IslandChunk.imports`). */
   readonly imports: readonly string[];
+  /** The files it was built from, hashed at write — rehashed at read (`island-sources.ts`). */
+  readonly sources: readonly SourceStamp[];
 }
 
 /** A shared chunk: no island of its own, verified by the same hash. */
@@ -33,6 +37,7 @@ interface StoredShared {
   readonly url: string;
   readonly identity: string;
   readonly importers: readonly string[];
+  readonly sources: readonly SourceStamp[];
 }
 
 interface StoreIndex {
@@ -58,6 +63,7 @@ export async function writeIslandStore(
   bundle: IslandBundle,
 ): Promise<readonly string[]> {
   const dir = join(root, ISLAND_STORE_DIR);
+  const digestOf = sourceDigester(root);
   const chunks: StoredChunk[] = [];
   const written: string[] = [];
   for (const chunk of bundle.chunks) {
@@ -69,13 +75,19 @@ export async function writeIslandStore(
       url: chunk.url,
       identity: contentHash(chunk.code),
       imports: chunk.imports,
+      sources: await stampSources(chunk.sources ?? [], digestOf),
     });
   }
   const shared: StoredShared[] = [];
   for (const chunk of bundle.shared) {
     await Bun.write(join(dir, chunkFile(chunk.url)), chunk.code);
     written.push(`${ISLAND_STORE_DIR}/${chunkFile(chunk.url)}`);
-    shared.push({ url: chunk.url, identity: contentHash(chunk.code), importers: chunk.importers });
+    shared.push({
+      url: chunk.url,
+      identity: contentHash(chunk.code),
+      importers: chunk.importers,
+      sources: await stampSources(chunk.sources ?? [], digestOf),
+    });
   }
   const stylesheets = islandStylesheets()
     .map((path) => relative(root, path).split(sep).join('/'))
@@ -97,8 +109,29 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 const stringsOf = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter(isString) : [];
 
-/** The index, narrowed field by field — a file on disk is input, never a trusted shape. */
-function parseIndex(value: unknown): StoreIndex | undefined {
+/**
+ * `undefined` when the field is absent or any entry is malformed or names a path outside the app:
+ * a store that cannot say what it was built from cannot be checked, which is stale — never
+ * "nothing to check".
+ */
+function stampsOf(value: unknown): readonly SourceStamp[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const stamps: SourceStamp[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) return undefined;
+    const { path, digest } = entry as Record<string, unknown>;
+    // A path the writer could not have recorded is refused before anything reads it.
+    if (!isString(path) || !isString(digest) || !isRecordableSource(path)) return undefined;
+    stamps.push({ path, digest });
+  }
+  return stamps;
+}
+
+/**
+ * The index, narrowed field by field — a file on disk is input, never a trusted shape. `unchecked`
+ * names an output that records no sources: a store written before they were recorded.
+ */
+function parseIndex(value: unknown): StoreIndex | { readonly unchecked: string } | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const record = value as Record<string, unknown>;
   const chunks = record['chunks'];
@@ -112,14 +145,18 @@ function parseIndex(value: unknown): StoreIndex | undefined {
     const { file, moduleId, url, identity, imports } = chunk;
     if (!isString(file) || !isString(moduleId) || !isString(url) || !isString(identity))
       return undefined;
-    parsed.push({ file, moduleId, url, identity, imports: stringsOf(imports) });
+    const sources = stampsOf(chunk['sources']);
+    if (sources === undefined) return { unchecked: url };
+    parsed.push({ file, moduleId, url, identity, imports: stringsOf(imports), sources });
   }
   const shared: StoredShared[] = [];
   for (const entry of Array.isArray(record['shared']) ? record['shared'] : []) {
     if (typeof entry !== 'object' || entry === null) return undefined;
-    const { url, identity, importers } = entry as Record<string, unknown>;
+    const { url, identity, importers, sources: listed } = entry as Record<string, unknown>;
     if (!isString(url) || !isString(identity)) return undefined;
-    shared.push({ url, identity, importers: stringsOf(importers) });
+    const sources = stampsOf(listed);
+    if (sources === undefined) return { unchecked: url };
+    shared.push({ url, identity, importers: stringsOf(importers), sources });
   }
   const sheets = record['stylesheets'];
   // Absent in a 22.3.2 store: read as none, and the boot builds when it matters (see below).
@@ -133,6 +170,18 @@ function parseIndex(value: unknown): StoreIndex | undefined {
   };
 }
 
+/** The first output with a recorded source that is gone or no longer hashes the same. */
+async function firstEdited(
+  outputs: readonly { readonly url: string; readonly sources: readonly SourceStamp[] }[],
+  digestOf: SourceDigester,
+): Promise<{ readonly url: string; readonly path: string } | undefined> {
+  for (const output of outputs) {
+    const path = await changedSource(output.sources, digestOf);
+    if (path !== undefined) return { url: output.url, path };
+  }
+  return undefined;
+}
+
 /** A verified store, or the one sentence saying why it cannot be served. */
 export type StoreRead =
   | { readonly bundle: IslandBundle; readonly stale?: undefined }
@@ -144,6 +193,11 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
   if (!(await file.exists())) return { stale: `no ${ISLAND_STORE_DIR}/${INDEX}` };
   const index = parseIndex(await file.json().catch(() => undefined));
   if (index === undefined) return { stale: `${ISLAND_STORE_DIR}/${INDEX} does not parse` };
+  if ('unchecked' in index) {
+    return {
+      stale: `${index.unchecked} records no checkable sources, so an edit since it was built would be unseen`,
+    };
+  }
   if (index.framework !== frameworkVersion() || index.bun !== Bun.version) {
     return {
       stale: `built by framework ${index.framework} on Bun ${index.bun}, serving ${frameworkVersion()} on Bun ${Bun.version}`,
@@ -153,6 +207,16 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
   const present = [...(await discoverIslands(root))];
   if (stored.join('\n') !== present.join('\n')) {
     return { stale: 'the stored islands are not the islands this app has' };
+  }
+  // Every recorded source first: a chunk whose bytes verify was still built from whatever the files
+  // said THEN. Only the recorded paths are read, each once, so a boot pays for the app's own island
+  // sources and nothing else.
+  const digestOf = sourceDigester(root);
+  const edited = await firstEdited([...index.chunks, ...index.shared], digestOf);
+  if (edited !== undefined) {
+    return {
+      stale: `${edited.path}, a source of ${edited.url}, changed since the store was built`,
+    };
   }
   const verified = async (entry: { readonly url: string; readonly identity: string }) => {
     const bytes = Bun.file(join(dir, chunkFile(entry.url)));

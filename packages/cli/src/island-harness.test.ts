@@ -174,10 +174,11 @@ describe('unit · the harness route serves one address and refuses only what it 
   const routes = islandHarnessRoutes({
     islands: () => islandBundle([chunk]),
     states: () => Promise.resolve([manifest]),
+    devUrl: () => 'http://localhost:3000',
   });
 
   const call = async (query: string): Promise<Response> => {
-    const url = new URL(`http://dev.test${ISLAND_HARNESS_PATH}${query}`);
+    const url = new URL(`http://localhost:3000${ISLAND_HARNESS_PATH}${query}`);
     const route = routes[0] as (typeof routes)[number];
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
     const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
@@ -223,8 +224,9 @@ describe('unit · the harness route serves one address and refuses only what it 
     const empty = islandHarnessRoutes({
       islands: () => islandBundle([]),
       states: () => Promise.resolve([manifest]),
+      devUrl: () => 'http://localhost:3000',
     });
-    const url = new URL(`http://dev.test${ISLAND_HARNESS_PATH}${target.query}`);
+    const url = new URL(`http://localhost:3000${ISLAND_HARNESS_PATH}${target.query}`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
     const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
     const response = await (empty[0] as (typeof empty)[number]).handler(

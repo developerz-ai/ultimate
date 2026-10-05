@@ -18,6 +18,18 @@ unitTest('TypeError and RangeError are the same rule', () => {
   expect(bareThrows(file("throw new RangeError('x');"))).toHaveLength(1);
 });
 
+unitTest('a throw with no `new` builds the same bare Error', () => {
+  expect(bareThrows(file("throw Error('no post');"))).toHaveLength(1);
+  expect(bareThrows(file("throw TypeError('x');"))).toHaveLength(1);
+});
+
+unitTest('every builtin Error class is the same rule', () => {
+  for (const name of ['SyntaxError', 'ReferenceError', 'EvalError', 'URIError', 'AggregateError']) {
+    expect(bareThrows(file(`throw new ${name}('x');`))).toHaveLength(1);
+  }
+  expect(bareThrows(file("throw new MyTypeError('x');"))).toEqual([]);
+});
+
 unitTest('an UltimateError subclass is what the rule asks for', () => {
   expect(bareThrows(file('throw new PostError(missingPost(id));'))).toEqual([]);
 });

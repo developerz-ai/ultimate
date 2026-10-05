@@ -281,7 +281,8 @@ describe('unit · replica identity full', () => {
         table: 'comments',
         name: 'replica identity full',
         detail:
-          'needs REPLICA IDENTITY FULL — a channel with params or a live query subscribes to it — ' +
+          // #518: a live query's `subscribes:` no longer asks for FULL, so the detail never says so.
+          'needs REPLICA IDENTITY FULL — a channel with params routes deletes by its old row — ' +
           'and no migration recorded it',
       },
     ]);

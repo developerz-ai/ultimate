@@ -13,6 +13,7 @@ import {
   islandStatesNames,
   parseIslandAddress,
 } from '@ultimat3/testing';
+import { hostRefusal } from './dev-dashboard-guard';
 import { harnessPage, ISLAND_HARNESS_PATH } from './island-harness';
 import type { IslandSource } from './island-routes';
 import { quoteArg } from './shell-quote';
@@ -38,6 +39,8 @@ const unflagged = (value: string, placeholder: string): string =>
 export interface HarnessRouteInput {
   readonly islands: IslandSource;
   readonly states: IslandStatesSource;
+  /** This dev server's URL, read per request — only what a refused Host's `fix:` line names. */
+  readonly devUrl: () => string;
 }
 
 /**
@@ -49,6 +52,10 @@ export interface HarnessRouteInput {
  * An island or a state this process does not know is the one case that IS refused, and it can only
  * mean the two processes disagree: `x shot` computed its picture list from the states files on disk
  * and this server was booted against an older set.
+ *
+ * Before any of that, the Host: this is a `/_x` route, so it answers a loopback Host only, exactly
+ * as the dashboard does (`hostRefusal`, `X_DEV_HOST_REFUSED`). Without it a DNS-rebinding page
+ * read an island rendered with its declared props — and imported states files — same-origin.
  */
 export function islandHarnessRoutes(input: HarnessRouteInput): readonly Route[] {
   return [
@@ -57,6 +64,8 @@ export function islandHarnessRoutes(input: HarnessRouteInput): readonly Route[] 
       path: ISLAND_HARNESS_PATH,
       meta: { name: 'dev._x.island', auth: 'public', tags: ['dev'] },
       handler: async (request: UltimateRequest): Promise<Response> => {
+        const misdirected = hostRefusal(request, input.devUrl());
+        if (misdirected !== undefined) return misdirected;
         const address = parseIslandAddress(request.url.search);
         const all = await input.states();
         const manifest = islandStatesMatching(all, address.island)[0];

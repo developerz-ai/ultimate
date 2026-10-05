@@ -41,6 +41,7 @@ is given; otherwise the row's work waits and the slice says so in its PR.
 | O-591 | idempotency answers at rest | `action/src/idempotency-postgres.ts:261-262` plaintext 24 h | (a) redact by key + `X_IDEMPOTENT_REPLAY_REDACTED`; (b) seal with core `seal.ts` | (a) — one redaction table | 02 D7 |
 | O-492 | `x dev` error pages | `http/src/stages.ts:377-407`; wiki says both | (a) 4xx → app page, 5xx → overlay; (b) overlay always, delete `perRequest` | (a) | 05 |
 | O-518 | `REPLICA IDENTITY FULL` on keyed `subscribes:` tables | `cli/src/db-subscribes.ts:80-86`, `schema-diff.ts:197` vs `wiki/Known-Gaps.md:43` | stop forcing FULL (keyed tables); migrate existing FULL → DEFAULT or leave; minor vs major | stop forcing; leave existing; **minor** | 06 |
+| O-518b | `subscribes:` after #518 | since sweep 6 the field grants nothing; only its own checks read it (`cli/src/db-subscribes.ts`, `query/src/subscribes.ts`) | keep as a checked declaration / remove in 25.0.0 | keep (a refusal-backed declaration costs nothing) | 12a |
 | O-506 | offline first paint | `realtime/src/boot.ts:30-48` | hold paint until booted (cap) / SW re-stamp / accept | hold paint | 09 |
 | O-507 | catch-up names its writes | HTTP catch-up has no write channel | response header / snapshot field / skip | none | 09 pt 2 |
 | O-491 | scaffold settings page | axiom 8 | close wontfix / switch scaffold to `ThemeToggle mode="select"` | close wontfix | 06 issue triage |

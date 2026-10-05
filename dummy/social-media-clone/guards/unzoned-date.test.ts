@@ -33,6 +33,23 @@ unitTest('the bare toLocaleString names the number exit, since a count matches i
   expect(dated[0]?.fix).not.toContain('Intl.NumberFormat');
 });
 
+unitTest('timeZoneName labels the zone, it does not choose one', () => {
+  const named = "at.toLocaleString('en-US', { timeZoneName: 'short' });";
+  expect(unzonedDates(file(named))).toHaveLength(1);
+  const shorthand =
+    "new Intl.DateTimeFormat('en-US', { timeZoneName: 'short', timeZone }).format(at);";
+  expect(unzonedDates(file(shorthand))).toEqual([]);
+});
+
+unitTest('toDateString and toTimeString name the zoned call', () => {
+  const date = unzonedDates(file('const shown = at.toDateString();'));
+  expect(date).toHaveLength(1);
+  expect(date[0]?.fix).toContain('toLocaleDateString(locale');
+  const time = unzonedDates(file('const shown = at.toTimeString();'));
+  expect(time).toHaveLength(1);
+  expect(time[0]?.fix).toContain('toLocaleTimeString(locale');
+});
+
 unitTest('a commented-out call is a note, not a call', () => {
   expect(unzonedDates(file("// at.toLocaleDateString('en-US');"))).toEqual([]);
 });

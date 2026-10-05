@@ -114,3 +114,6 @@ undefined/
 .error-pages-fixture/
 .live-routes-fixture/
 .roles-error-page-fixture/
+
+# Test TLS material `postgres-tls-certs` writes (docker/docker-compose.test.yml), private key included.
+docker/.tls/

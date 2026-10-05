@@ -1,8 +1,8 @@
 /**
  * The relations a live read is patched from: the one thing about a query that cannot be derived,
- * and the two assertions that keep the declaration honest. `x db gen` grants those relations
- * `REPLICA IDENTITY FULL`, so a name that has gone stale is worse than none — it grants it to the
- * wrong table and leaves the right one unable to produce a patch, in silence (#357).
+ * and the two assertions that keep the declaration honest — a stale name is a declaration its
+ * author reads as true. Since #518 `x db gen` grants these relations no `REPLICA IDENTITY FULL`:
+ * every entity is keyed, and a keyed table is correct on DEFAULT (`x db gen` validates the names).
  */
 
 import { QuerySubscribesDriftError, QuerySubscribesInvalidError } from './errors';

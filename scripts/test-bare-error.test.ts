@@ -30,6 +30,21 @@ describe('scanBareErrorThrows separates the verdict from the input', () => {
     expect(scanBareErrorThrows('packages/x/src/a.test.ts', 'throw ErrorLike(x);')).toEqual([]);
   });
 
+  test('every builtin Error class is the same bare verdict, with or without `new` (K19)', () => {
+    const classes = ['TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError'];
+    for (const name of [...classes, 'URIError', 'AggregateError']) {
+      expect(
+        scanBareErrorThrows('packages/x/src/a.test.ts', `throw new ${name}('x');`),
+      ).toHaveLength(1);
+      expect(scanBareErrorThrows('packages/x/src/a.test.ts', `throw ${name}('x');`)).toHaveLength(
+        1,
+      );
+    }
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', 'throw new MyTypeError(x);')).toEqual(
+      [],
+    );
+  });
+
   // The carve-out #132 said grep could not make. These are the code-under-test's INPUT, and
   // `packages/realtime/CLAUDE.md` blesses them: "the rule governs what this package throws, never
   // what a test hands it." A rule that reported these would ask for a rewrite that changes what the

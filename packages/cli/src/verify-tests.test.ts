@@ -43,7 +43,7 @@ const ctx = (workers: number): VerifyContext => ({ root, runner, workers });
 
 const stepFor = (name: string): VerifyStep => {
   const step = TEST_STEPS.find((candidate) => candidate.name === name);
-  if (step === undefined) throw new RangeError(`no ${name} step`);
+  if (step === undefined) expect.unreachable(`no ${name} step`);
   return step;
 };
 

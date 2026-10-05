@@ -128,7 +128,8 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
 /**
  * Spans end innermost-first, so a trace is only whole once its root arrives — which is also the
  * moment the request finished. Grouping by trace id and reporting only groups that have an HTTP
- * root is what keeps a half-finished request, and a job's spans, out of a panel about requests.
+ * root is what keeps a half-finished request out of a panel about requests; a trace whose root
+ * arrives and is NOT a request's is forgotten the moment it ends, so it never occupies a slot.
  */
 export function createTraceRecorder(options: { limit?: number } = {}): TraceRecorder {
   // `byTrace.size > NaN` is false on every pass, so an unchecked limit does not widen the buffer —
@@ -140,6 +141,14 @@ export function createTraceRecorder(options: { limit?: number } = {}): TraceReco
 
   const record = (span: ReadableSpan): void => {
     const traceId = span.context.traceId;
+    // A root that is not a request's — no parent, no HTTP facts — ends its trace, and the trace is
+    // a scheduler tick or a worker's job: not the panel's to show. Dropped here, not filtered at
+    // read time, because it would otherwise hold a slot until evicted, and idle background roles
+    // minting a few per second pushed every real request out of `/_x/timeline` within minutes.
+    if (span.parentSpanId === undefined && !isHttpRoot(span)) {
+      byTrace.delete(traceId);
+      return;
+    }
     const spans = byTrace.get(traceId);
     if (spans === undefined) {
       byTrace.set(traceId, [span]);

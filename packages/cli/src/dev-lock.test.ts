@@ -421,3 +421,55 @@ describe('clearLock', () => {
     }
   });
 });
+
+// K14: the claim used to be `openSync(path, 'wx')` and THEN a write. Between the two a racing
+// preflight read an empty file, parsed it as a stale lock, unlinked the live claim and took the
+// slot itself — two `x dev` on one `.x/pgdata`. Real processes, released together off one barrier,
+// because the window is between two syscalls and only separate processes can land inside it.
+describe('claim · racing claimers', () => {
+  const CLAIMERS = 12;
+  const ROUNDS = 2;
+
+  const claimer = (dir: string, barrier: string): string => `
+import { preflight } from ${JSON.stringify(join(import.meta.dir, 'dev-lock.ts'))};
+while (!(await Bun.file(${JSON.stringify(barrier)}).exists())) await Bun.sleep(1);
+let verdict = 'won';
+try {
+  await preflight({ stateDir: ${JSON.stringify(dir)}, port: 3000, hostname: 'localhost', portBound: () => false });
+} catch (error) {
+  verdict = 'refused:' + String((error as { code?: unknown }).code);
+}
+console.log(verdict);
+// Alive while the others decide: a winner that exited would read as a stale lock, legitimately.
+await Bun.sleep(800);
+`;
+
+  test('exactly one of many simultaneous claimers wins, every round', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const dir = scratch();
+      try {
+        const barrier = join(dir, 'go');
+        const script = join(dir, 'claim.ts');
+        writeFileSync(script, claimer(join(dir, '.x'), barrier));
+        const procs = Array.from({ length: CLAIMERS }, () =>
+          Bun.spawn([process.execPath, script], { stdout: 'pipe', stderr: 'pipe' }),
+        );
+        // Every child has started and is polling before the barrier drops.
+        await Bun.sleep(400);
+        writeFileSync(barrier, '');
+        const verdicts = await Promise.all(
+          procs.map(async (proc) => (await new Response(proc.stdout).text()).trim()),
+        );
+        await Promise.all(procs.map((proc) => proc.exited));
+        expect(verdicts.filter((verdict) => verdict === 'won')).toHaveLength(1);
+        expect(
+          verdicts
+            .filter((verdict) => verdict !== 'won')
+            .every((v) => v.startsWith('refused:X_DEV_')),
+        ).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  }, 60_000);
+});

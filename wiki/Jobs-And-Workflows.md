@@ -247,7 +247,7 @@ export const syncAccount = job({
 | `QueueStats.failed` | rows that ended `failed`: refused by a busy concurrency key, or exhausted on a `retry.deadLetter: false` job (settled `failed`, outcome `dropped` — that job used to be re-queued forever) |
 | a job whose worker dies on every attempt is dead-lettered | a lease that lapses on a row's FINAL attempt is settled `dead` by the next claim itself — `lastError` says the lease lapsed — and never handed out again. It reaches the dead-letter queue after `retry.attempts` claims; it used to take a worker per visibility timeout, forever. Logged `jobs.claim.exhausted`; `onSettled` is told `dead-lettered`, and `WorkerStats.deadLettered` counts it. A job declaring `retry.deadLetter: false` is buried `failed` instead and told `dropped` — the worker names those jobs to the claim; `x jobs drain`, which holds no registry, buries every such row `dead` |
 | settles are fenced on the claim | `{ workerId, claim }`: a body whose lease lapsed cannot settle, renew or report on the run that replaced it — whether another worker claimed it or the same one did. The miss is logged `jobs.settle.unowned` |
-| `x jobs drain` | settles the rows it moved without counting them: a moved job is not a completed one |
+| `x jobs drain` (planned) | settles the rows it moved without counting them: a moved job is not a completed one. The subcommand exits `X_NOT_IMPLEMENTED` `As of 2026-10`; the rule binds its parked body |
 | a scheduled occurrence fires in one statement | the watermark and the occurrence's jobs move together, so a crash between them cannot fire it twice |
 | remote "quiet this worker" | not shipped: SIGTERM drain is the mechanism, and the orchestrator owns process lifecycle |
 
@@ -364,9 +364,9 @@ Two implementations ship. Two more have **not shipped**, `As of 2026-08` — int
 
 **The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. The `redis` and `nats` stubs are real and throw `X_NOT_IMPLEMENTED` on every method; you reach them by constructing one and passing it to `setJobDriver`, never through config. Tracked as [issue #223](https://github.com/developerz-ai/ultimate/issues/223): the field is a declaration nothing reads, the same shape 4.0.0 deleted for `realtime.heartbeatMs` and `PrecacheAsset.critical`, and removing it is breaking — so it waits for the next major.
 
-**`x jobs drain --to` has no target that completes, `As of 2026-09`.** It takes `redis` or `nats`, and both are the stubs above: the drain constructs the target and fails on its first enqueue with `X_NOT_IMPLEMENTED`, having moved nothing and acked nothing.
+**`x jobs drain` is planned, `As of 2026-10`.** It exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs ls --json`, and returns when a durable second driver ships. Its two `--to` values, `redis` and `nats`, are the stubs above: until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — nothing moved, and no worker could claim those jobs meanwhile.
 
-**`memory` is refused by name** (`X_CLI_BAD_FLAG`). It was a target until 2026-09 and it was the one that appeared to work — `createMemoryDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited. Postgres is the source, never a `--to` value.
+**`memory` stays refused by name** (`X_CLI_BAD_FLAG`) in the parked drain body. It was a target until 2026-09 and it was the one that appeared to work — `createMemoryDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited. Postgres is the source, never a `--to` value.
 
 So there is no cross-driver migration procedure — and none is needed while `postgres` is the only driver that runs.
 

@@ -32,6 +32,7 @@ import { loadNavigation, pageNavigation } from './page-navigation';
 import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
+import type { PrerenderedPage, PrerenderReport } from './prerender-report';
 import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
 import { routeDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
@@ -48,9 +49,12 @@ import {
   serviceWorkerRegistration,
 } from './sw-artifacts';
 import { loadThemeMode, themeBoot } from './theme-boot';
+import { writeErrorLine } from './write-line';
 
+export type { PrerenderedPage, PrerenderReport } from './prerender-report';
 // Re-exported, never re-declared: `static-report.ts` owns the shape because the report on disk
-// carries it, and this file already imports that module.
+// carries it, and this file already imports that module. The report's own shapes are
+// `prerender-report.ts`'s, re-exported here for the same reason: callers ask this module.
 export type { UnmeasuredRoute };
 
 /**
@@ -73,59 +77,6 @@ export interface PrerenderOptions {
    * on a production build, because a placeholder canonical is one a search engine indexes.
    */
   readonly origin?: string;
-}
-
-export interface PrerenderedPage {
-  /** The DECLARED route, `/blog/:slug` — one route can write many pages, and the report groups them. */
-  readonly route: string;
-  /** The URL the page is served at — `/en/pricing` for a non-default locale. */
-  readonly path: string;
-  /** The locale the page was rendered in. */
-  readonly locale: string;
-  /** Relative to `out`, POSIX — under `<locale>/` for a non-default locale. */
-  readonly file: string;
-  readonly hash: string;
-  readonly bytes: number;
-}
-
-export interface PrerenderReport {
-  readonly out: string;
-  readonly buildId: string;
-  readonly pages: readonly PrerenderedPage[];
-  /**
-   * Every declared route that wrote no file, WITH the cause. A bare path list was the whole of
-   * #242: `.x/static/` held a partial site, the report said only which paths were missing, and a
-   * screenshot tool pointed at the directory filed "the island did not mount" against a route that
-   * had never been in the artifact. The reason is what tells an author whether an edit exists.
-   */
-  readonly skipped: readonly SkippedRoute[];
-  /**
-   * Routes whose budget this build could not weigh, with the reason. `X_BUDGET_UNMEASURED` is what
-   * the gate then reports for each; this is the half that says WHY, which a per-route finding read
-   * off a stats file cannot know.
-   */
-  readonly unmeasured: readonly UnmeasuredRoute[];
-  /** Where the measured stats landed, for the `budgets` gate step to read. */
-  readonly stats: string;
-  /** Where the emitted/skipped inventory landed, for `x build --target static` to read back. */
-  readonly report: string;
-  /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
-  readonly islands: readonly string[];
-  /** Surface stylesheets emitted, one file each — the CSS half of the same question. */
-  readonly styles: readonly string[];
-  /**
-   * What the service worker could not express, and what its precache manifest weighs too much of.
-   *
-   * `PrecacheManifest.warnings` had no reader anywhere in the tree — the precache budget was, in
-   * `wiki/Troubleshooting.md`'s own words, "a designed thing that is not one" (#390). An install
-   * that stalls on a bad connection is invisible on a laptop and fatal on a phone, so the number
-   * has to reach the build's own report. Empty for an app with no service worker.
-   */
-  readonly serviceWorkerWarnings: readonly string[];
-  /** What this build could not get right on its own — today, a production build with no origin. */
-  readonly warnings: readonly string[];
-  /** The origin every absolute URL in the export was built against — hand it to `siteSeo`. */
-  readonly origin: string;
 }
 
 /**
@@ -187,7 +138,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // Written to stderr as well as returned: an app's `prerender.ts` prints its report as ONE JSON
   // line on stdout, and a build that parses it must not meet a warning inside it.
   const warnings = originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin);
-  for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`);
+  for (const warning of warnings) writeErrorLine(`warning: ${warning}`);
   // After `loadApp`: `defineCatalogs()` configures the locales on the app's own import. The
   // default first, so every other pass writes beside a tree that already holds the unprefixed one.
   const locales = routedLocales();

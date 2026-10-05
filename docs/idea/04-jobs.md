@@ -126,7 +126,7 @@ export interface JobDriver {
 
 `leases` is the one optional member that **refuses** rather than degrades: without it a driver can only hold `concurrency.limit` per process, so `createWorker().start()` throws `X_JOB_CONCURRENCY_UNENFORCEABLE` naming every job that declared one. Every other absent member is a capability the worker runs without.
 
-Switching is a config line in `app.config.ts` plus a migration of in-flight rows (`x jobs drain --to redis`). Because `saveStep` / `loadSteps` are driver methods, step persistence works identically on all three.
+Switching is the `setJobDriver(…)` call at boot plus a migration of in-flight rows (`x jobs drain --to redis`) — planned `As of 2026-10`: no durable second driver ships, so `x jobs drain` exits `X_NOT_IMPLEMENTED`. Because `saveStep` / `loadSteps` are driver methods, step persistence works identically on all three.
 
 ## Scheduling
 

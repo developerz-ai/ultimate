@@ -2775,6 +2775,8 @@ Full detail: [PWA and offline](PWA-And-Offline).
 
 `x jobs drain --to` takes **`redis` \| `nats`**, and neither lands a job: both are interface-complete stubs that throw `X_NOT_IMPLEMENTED` on the first enqueue, having moved nothing. So **there is no driver migration to perform** `As of 2026-09`. Postgres is the source, never a `--to` value.
 
+**`x jobs drain` is planned since 2026-10** — correction to the paragraph above and the table below: it now exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs ls --json`. Until then a drain onto either stub leased the pending batch for five minutes, failed every enqueue and nacked it back. The procedure below stands for the day a durable driver ships; steps 2 and 3 answer planned until then.
+
 **`memory` is refused by name** (`X_CLI_BAD_FLAG`), `As of 2026-09`. It was a target until then, and it was the one that appeared to work: a `Map` inside the command's own process, so the drain acked every durable row off the source, reported `ok: true`, and lost the copy when the command exited. A target that dies with the command is not a migration.
 
 Nothing rehearses the procedure below today. It is written against the interface that already ships and applies unchanged the moment a driver does:

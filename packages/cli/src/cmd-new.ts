@@ -4,7 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { chmod } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { dedupe } from './cmd-generate';
 import { newSpec } from './cmd-new-spec';
@@ -101,6 +101,12 @@ export async function initRepository(runner: Runner, dir: string): Promise<Repos
   }
   return { initialized: true, committed: true, problem: null };
 }
+
+/** `path` relative to `cwd` when it lies under it, else absolute — never a `../../` walk. */
+const displayPath = (cwd: string, path: string): string => {
+  const rel = relative(cwd, path);
+  return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? path : rel;
+};
 
 /** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
@@ -218,9 +224,13 @@ export const newCommand: CliCommand = {
       return {
         ok: true,
         command: 'new',
-        summary: msg('cli.new.done', { name: app.kebab }),
+        summary: msg('cli.new.dryRun', { name: app.kebab, dir: target }),
         data: { dir: target, files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => msg('cli.file.added', { path: `${app.kebab}/${file.path}` })),
+        // Where each file WOULD land, as the caller would reach it: relative to the cwd, `--dir`
+        // included — `${app.kebab}/…` named the wrong place whenever `--dir` was set.
+        lines: files.map((file) =>
+          msg('cli.file.added', { path: displayPath(ctx.cwd, join(target, file.path)) }),
+        ),
       };
     }
     if (existsSync(target) && !flagBool(ctx.args, 'force')) {

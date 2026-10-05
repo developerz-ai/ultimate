@@ -4,6 +4,7 @@
 
 import { dispatch } from './dispatch';
 import { resolveLocalCli } from './local-cli';
+import { handOff } from './local-cli-handoff';
 import { cwdFromArgv } from './root-env';
 // The writes themselves are `write-line.ts`: `create-ultimate`'s entry point needs the identical
 // one, and a second copy of a note about pipe truncation is a second copy that drifts. Two sinks,
@@ -24,13 +25,8 @@ const local = resolveLocalCli({
 });
 if (local !== undefined) {
   writeErrorLine(`x: using the app's own @ultimat3/cli at ${local}`);
-  const child = Bun.spawn([process.execPath, local, ...Bun.argv.slice(2)], {
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-    env: Bun.env,
-  });
-  process.exit(await child.exited);
+  // Stop signals are forwarded and the child's code is ours: see local-cli-handoff.ts.
+  process.exit(await handOff([process.execPath, local, ...Bun.argv.slice(2)], Bun.env));
 }
 
 // `x dev` supervises a child that serves (`dev-supervisor.ts`): a save that reaches a module which

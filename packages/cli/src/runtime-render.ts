@@ -3,8 +3,6 @@
 // document (head + the route's component, the surface's CSS LINKED, `style-bundle.ts`), it never
 // decides what a mode means or what headers it earns.
 
-// why: Bun ships no path API; an island's file is its route file's directory joined to its `src`.
-import { posix } from 'node:path';
 import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx } from '@ultimat3/core';
@@ -21,17 +19,13 @@ import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3
 import { currentLocale, localeConfig } from '@ultimat3/i18n';
 import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
-  clientBootTags,
   clientPathStyleTags,
   clientPersistTags,
   clientScopeTag,
   clientSyncTags,
-  createIslandCollector,
   documentCarriesScope,
   headFromMeta,
   hydrateRuntime,
-  islandModuleId,
-  islandModuleIds,
   metaContextFor,
   renderHead,
   routeDataFor,
@@ -52,13 +46,13 @@ import {
   streamResult,
 } from '@ultimat3/render/server';
 import type { DocumentOptions } from './document-options';
-import { realtimeIslandFiles } from './island-realtime';
 import {
   type NavigationDocumentHead,
   navigationMetaOf,
   navigationTagsOf,
   principalRelocation,
 } from './page-navigation';
+import { bootScript, collectorFor } from './route-islands';
 import { attachedIsr } from './runtime-isr';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
@@ -202,46 +196,6 @@ export async function routeBody(
 }
 
 /**
- * One collector per RENDER, never module-global: two requests render different params, and a
- * shared collector would bill one page for the other's islands. `hydrate` comes off the route, so
- * an island never declares its own timing, and `resolve` is the build's — identity when nothing
- * built any, which fails at the first island by name rather than emitting an unusable entry.
- */
-/**
- * Realtime's page boot, as one deferred script — or nothing. Two conditions, both exact: the
- * document carries a principal scope (restoring persisted records and replaying queued writes are
- * per principal; a shareable document has neither), AND one of the islands this render emitted
- * reaches `@ultimat3/realtime` (a page whose islands never touch a record has nothing to restore
- * into and no write to replay). After the body, because which islands rendered is a fact the walk
- * just recorded; still before the hydration runtime, so it runs first among the deferred scripts.
- */
-function bootScript(
-  entry: RouteEntry,
-  islands: IslandCollector,
-  options: DocumentOptions,
-  scope: string | undefined,
-): string {
-  if (scope === undefined || options.sync === undefined) return '';
-  const rendered = new Set(islandModuleIds(islands.directives));
-  if (rendered.size === 0) return '';
-  // An island's module id is derived from its `src`, written relative to the page that renders it:
-  // each realtime island file, spelled from THIS page, is the id its directive would carry.
-  const pageDir = posix.dirname(entry.file);
-  const reaches = [...realtimeIslandFiles()].some((file) => {
-    const src = posix.relative(pageDir, file);
-    return rendered.has(islandModuleId(src.startsWith('.') ? src : `./${src}`));
-  });
-  return reaches ? renderHead(clientBootTags(options.sync)) : '';
-}
-
-const collectorFor = (entry: RouteEntry, options: DocumentOptions): IslandCollector =>
-  createIslandCollector({
-    file: entry.file,
-    hydrate: entry.config.hydrate,
-    ...(options.resolveIsland === undefined ? {} : { resolve: options.resolveIsland(entry.file) }),
-  });
-
-/**
  * Head + body for one route render. Exported because the build's prerenderer must emit the same
  * document `x dev` serves — two document builders is how a page that works in dev ships broken.
  */
@@ -280,12 +234,12 @@ async function documentFrom(
   );
 }
 
+/** Every mode but `isr`, which `renderIsr` answers: its `load` runs only when the store misses. */
 async function resultFor(
   entry: RouteEntry,
   request: DevRouteData,
   data: RouteData,
   options: DevRenderOptions,
-  isr: IsrController,
   ctx: Ctx,
 ): Promise<RenderResult> {
   const url = new URL(request.url);
@@ -298,22 +252,6 @@ async function resultFor(
       // names exactly one, and it earns the same content-hashed headers.
       const body = await documentFrom(entry, request, data, options);
       return { status, headers: staticHeaders(contentHash(body), options.buildId), body };
-    }
-    case 'isr': {
-      // `isrKey(url, locale)`, never `url.pathname`: the query is part of what was rendered — this
-      // route's own `meta` reads `data.url` — so two URLs differing only in their query are two
-      // documents. Keyed on the pathname alone, the first render answered every later query
-      // string (#171). Render owns the derivation so no second caller can invent another.
-      // The locale is the second dimension and it is `ctx.locale`, the answer the `locale` stage
-      // already negotiated for THIS request — never `currentLocale()`, which would read the same
-      // value through an ambient store the key does not need.
-      // `{ html, status }`, never the bare string: the entry stores the status beside the HTML
-      // and serves it on every hit, so a 404 under `isr` is a 404 for its whole TTL.
-      const served = await isr.serve(isrKey(url, ctx.locale), async () => ({
-        html: await documentFrom(entry, request, data, options),
-        status,
-      }));
-      return served.result;
     }
     case 'stream': {
       // The shell IS the component: nothing can yet mark a subtree as a hole. Solid's `Suspense`
@@ -482,6 +420,7 @@ async function renderEntry(
   isr: IsrController,
 ): Promise<Rendered> {
   const data: DevRouteData = { url: request.url.href, params: ctx.params };
+  if (entry.config.render === 'isr') return renderIsr(entry, data, ctx, options, isr);
   // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
   // object, so a route's `load` runs exactly once however its mode splits head from body.
   const loaded = await routeDataFor(entry.config, data);
@@ -490,10 +429,59 @@ async function renderEntry(
   // 3xx because a rendered document has no `Location`; this is the path that has one.
   const to = takeRedirect(ctx);
   if (to !== undefined) return { respond: () => loadRedirect(entry, to) };
-  const result = await resultFor(entry, data, loaded, options, isr, asCtx(ctx));
+  const result = await resultFor(entry, data, loaded, options, asCtx(ctx));
   if (entry.config.render !== 'static' || typeof result.body !== 'string') {
     return { respond: () => responseOf(result) };
   }
   const document: StaticResult = { ...result, body: result.body };
   return { document, respond: () => responseOf(document) };
+}
+
+/**
+ * Thrown out of an `isr` producer whose `load` redirected: a redirect is not a page, so nothing
+ * may be stored for it, and the throw is what keeps `isr.serve` from storing one. Not an error —
+ * the request it belongs to answers with the redirect.
+ */
+class IsrLoadRedirected {
+  readonly reason = 'the isr load redirected, so no page was generated';
+  constructor(readonly to: RedirectIntent) {}
+}
+
+/**
+ * `isr`: a store hit is answered WITHOUT `load`. Resolving it before the mode choice, as every
+ * other mode does, made each hit cost a full SSR's database work and kept only the HTML step
+ * cached. So `load` and its redirect live inside the producer, which runs on a miss and on a
+ * stale page's regeneration. A redirect drops whatever the store held for the key — a stale page
+ * whose regeneration redirects is answered once more from the stale copy, then never again.
+ */
+async function renderIsr(
+  entry: RouteEntry,
+  data: DevRouteData,
+  ctx: RequestContext,
+  options: DevRenderOptions,
+  isr: IsrController,
+): Promise<Rendered> {
+  // `isrKey(url, locale)`, never `url.pathname`: the query is part of what was rendered — `meta`
+  // reads `data.url` — so two URLs differing only in their query are two documents (#171). The
+  // locale is `ctx.locale`, the one the `locale` stage negotiated for THIS request.
+  const key = isrKey(new URL(data.url), asCtx(ctx).locale);
+  try {
+    // `{ html, status }`, never the bare string: the entry stores the status beside the HTML and
+    // serves it on every hit, so a 404 under `isr` is a 404 for its whole TTL.
+    const served = await isr.serve(key, async () => {
+      const loaded = await routeDataFor(entry.config, data);
+      const to = takeRedirect(ctx);
+      if (to !== undefined) {
+        isr.store().delete(key);
+        throw new IsrLoadRedirected(to);
+      }
+      const html = await documentFrom(entry, data, loaded, options);
+      return { html, status: routeStatusOf(loaded) };
+    });
+    return { respond: () => responseOf(served.result) };
+  } catch (thrown) {
+    if (!(thrown instanceof IsrLoadRedirected)) throw thrown;
+    const { to } = thrown;
+    return { respond: () => loadRedirect(entry, to) };
+  }
 }

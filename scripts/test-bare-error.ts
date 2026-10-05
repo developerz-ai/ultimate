@@ -41,9 +41,12 @@ const EXPLAIN = 'bun run scripts/test-bare-error.ts --explain --json lists every
  * arrived, and its `never` return narrows the variable so no cast is needed.
  *
  * `new` is optional: `throw Error('x')` constructs the same bare `Error`, and a rule that needed
- * the keyword was a rule one deleted word could step around.
+ * the keyword was a rule one deleted word could step around. Every builtin `Error` class is the
+ * same bare verdict — no code, no cause, nothing to run — so `throw new TypeError(…)` and its five
+ * siblings are one rule, the list the shipped `bare-error` guard reads too (K19).
  */
-const THROWN = /\bthrow\s+(?:new\s+)?Error\s*\(/g;
+const THROWN =
+  /\bthrow\s+(?:new\s+)?(Error|TypeError|RangeError|SyntaxError|ReferenceError|EvalError|URIError|AggregateError)\s*\(/g;
 
 /** The honest limit, stated rather than guessed at — see `bareErrorFindingFor`'s cause. */
 export interface BareErrorSite {

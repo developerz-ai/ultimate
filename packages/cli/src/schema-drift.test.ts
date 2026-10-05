@@ -262,8 +262,8 @@ describe('unit · replica identity a realtime declaration needs', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]?.code).toBe('X_DB_SCHEMA_UNMIGRATED');
       expect(findings[0]?.cause).toBe(
-        'table "comments" needs REPLICA IDENTITY FULL — a channel with params or a live query ' +
-          'subscribes to it — and no migration recorded it',
+        'table "comments" needs REPLICA IDENTITY FULL — a channel with params routes deletes by ' +
+          'its old row — and no migration recorded it',
       );
       expect(findings[0]?.fix).toBe('x db gen "record replica identity full"');
     });

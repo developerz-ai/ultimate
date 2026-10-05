@@ -1,7 +1,7 @@
-// The `subscribes:` half of #357, both directions: the tables that reach `x db gen` as
-// `replicaIdentityFull`, and the refusal for a declared name no entity's table matches — the check
-// only this tier can make, because it is the only one holding the manifest and the entity registry
-// at once. The end-to-end test asserts the emitted SQL, never that the call was made.
+// The tables that reach `x db gen` as `replicaIdentityFull` — a params channel's `records` tables,
+// and since #518 never a live query's `subscribes:` — and the refusal for a declared `subscribes:`
+// name no entity's table matches, the check only this tier can make because it alone holds the
+// manifest and the entity registry at once. The end-to-end test asserts the emitted SQL.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive remove, and a fixture tree left behind grows one directory per run.
@@ -41,7 +41,11 @@ afterEach(() => {
 beforeAll(clearPermissions);
 
 describe('unit · the tables a live query declares it is patched from', () => {
-  test('every declared name reaches the generator, deduped and sorted', () => {
+  // #518: every entity has a primary key (`entity()` refuses one without), and a live query over a
+  // keyed table is correct on DEFAULT identity — the shared window holds the whole row the
+  // in/out/delete decision needs (`realtime/src/pg-identity-window.live.test.ts`, real WAL). FULL
+  // on those tables bought nothing but every UPDATE and DELETE logging the whole old row.
+  test('a subscribed keyed table is not granted FULL — the declaration is validated, not granted', () => {
     const tables = new Set(['comments', 'posts']);
     expect(
       replicaIdentityTables(
@@ -51,18 +55,22 @@ describe('unit · the tables a live query declares it is patched from', () => {
           declared('publicPosts', null),
         ],
         tables,
+        [],
       ),
-    ).toEqual(['comments', 'posts']);
+    ).toEqual([]);
   });
 
   // A channel declared with params routes a DELETE by columns of the OLD row, which only FULL
-  // identity logs — and no `subscribes:` names its tables, so the grant never reached them.
-  test('the records tables of a params channel are granted FULL beside the subscribed ones', () => {
+  // identity logs — so its records tables are the ones the generator still grants, deduped and
+  // sorted, whether or not a live read also subscribes to them.
+  test('the records tables of a params channel are granted FULL, and only they', () => {
     const tables = new Set(['comments', 'notifications', 'posts']);
     expect(
-      replicaIdentityTables([declared('liveFeed', ['posts'])], tables, ['notifications', 'posts']),
+      replicaIdentityTables([declared('liveFeed', ['comments'])], tables, [
+        'posts',
+        'notifications',
+      ]),
     ).toEqual(['notifications', 'posts']);
-    // With no live read at all, the channel alone is enough to ask.
     expect(replicaIdentityTables([], tables, ['notifications'])).toEqual(['notifications']);
   });
 
@@ -113,7 +121,7 @@ describe('unit · the tables a live query declares it is patched from', () => {
   });
 });
 
-describe('unit · x db gen emits the ALTER the declaration asks for', () => {
+describe('unit · x db gen and a live query that subscribes', () => {
   const declareApp = (): void => {
     entity('subscribes_test_note', {
       table: 'subscribes_test_notes',
@@ -131,7 +139,10 @@ describe('unit · x db gen emits the ALTER the declaration asks for', () => {
     );
   };
 
-  test('the declared table gets its ALTER, recorded so the next run emits nothing', async () => {
+  // Additive by omission: no ALTER is emitted, and none is recorded, so an app already on FULL
+  // keeps it (`replica-identity.ts` never reverts one, and the drift step reads a recorded FULL
+  // nothing needs as agreement) while a new table is created on DEFAULT.
+  test('a subscribed table is created with no REPLICA IDENTITY FULL, and none is recorded', async () => {
     declareApp();
     const root = await tempRoot();
     const first = await generateAppMigration(root, { name: 'init' });
@@ -142,15 +153,13 @@ describe('unit · x db gen emits the ALTER the declaration asks for', () => {
     ).text();
     expect(sql).toContain('create table "subscribes_test_notes"');
     // The statement itself, not the call: an emitted ALTER is the only thing a database reads.
-    expect(sql).toContain('alter table "subscribes_test_notes" replica identity full;');
-    // Additive, so the migration must not have earned the destructive marker.
+    expect(sql).not.toContain('replica identity');
     expect(first.migration?.destructive).toBe(false);
 
-    // Recorded on the sidecar, which is what makes it a one-time statement.
     const snapshot = await Bun.file(
       `${root}/packages/db/migrations/${first.migration?.id ?? ''}.snapshot.json`,
     ).json();
-    expect(snapshot).toMatchObject({ tables: [{ replicaIdentityFull: true }] });
+    expect(snapshot).not.toMatchObject({ tables: [{ replicaIdentityFull: true }] });
 
     const second = await generateAppMigration(root, { name: 'again' });
     expect(second.outcome).not.toBe('generated');

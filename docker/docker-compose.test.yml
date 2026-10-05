@@ -21,7 +21,8 @@
 #     watch a server that will not start, run it attached: `docker compose -f
 #     docker/docker-compose.test.yml up postgres`.
 #
-# Every published port binds 127.0.0.1 — the credentials are in this file.
+# Every published port binds loopback (127.0.0.1; `postgres-tls` adds 127.0.0.2) — the credentials
+# are in this file.
 
 name: ultimate-test
 
@@ -79,6 +80,82 @@ services:
     image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     command: ['postgres', '-c', 'wal_level=logical']
     ports: ['127.0.0.1:5433:5432']
+
+  # The replicator's wire client over REAL TLS (`packages/realtime/src/pg-tls.live.test.ts`, #519):
+  # `sslmode=verify-full` against a private CA — the shape of every CNPG cluster — and the
+  # CopyBoth stream read through the upgraded socket. A server of its own because `ssl` is a server
+  # argument, logical because the suite opens a replication slot over the TLS connection.
+  #
+  # The ONE exception to "mounts no volume", and only for the certificate: the suite on the host
+  # has to read the CA the server's certificate chains to. `postgres-tls-certs` writes it, and the
+  # server's own pair, into docker/.tls/ (gitignored); the data directory is still a tmpfs. The
+  # key is copied to /tmp because Postgres refuses one that is not 0600 and owned by it, and a
+  # read-only bind can be neither.
+  postgres-tls:
+    <<: *postgres
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    depends_on:
+      postgres-tls-certs:
+        condition: service_completed_successfully
+    volumes: ['./.tls:/tls:ro']
+    entrypoint:
+      - sh
+      - -c
+      - install -o postgres -g postgres -m 600 /tls/server.crt /tls/server.key /tmp/ && exec docker-entrypoint.sh "$$@"
+      - postgres-tls
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tmp/server.crt
+      - -c
+      - ssl_key_file=/tmp/server.key
+    # 127.0.0.2 as well, still loopback: the suite's verify-full case dials a host the certificate
+    # does not name, and on Linux every 127/8 address is this machine — but only a bound one answers.
+    ports: ['127.0.0.1:5440:5432', '127.0.0.2:5440:5432']
+
+  # One shot, then exits 0 — `postgres-tls` starts only after it has. A CA and a server certificate
+  # for `localhost` and 127.0.0.1, the recipe in pg-tls.live.test.ts's header: two RSA keys, about
+  # a second, and an image of ~6 MB. The CA's KEY never leaves this container's tmpfs, so what
+  # lands on the host is two certificates and a test server's key. Kept while they still verify,
+  # because a second `up` must not re-key a server that is already running on the first pair;
+  # `rm -rf docker/.tls` starts over. Owned by whoever owns docker/, so a laptop can delete them.
+  postgres-tls-certs:
+    <<: *silent
+    image: alpine/openssl:3.5.9@sha256:59c5cb51e536d40587667229468b007a2a6cae1705397e59e5f7774c08b74029
+    volumes: ['.:/docker:ro', './.tls:/docker/.tls']
+    tmpfs: [/work]
+    working_dir: /work
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        out=/docker/.tls
+        if [ -s "$$out/server.key" ] \
+          && openssl verify -CAfile "$$out/ca.crt" "$$out/server.crt" >/dev/null 2>&1 \
+          && [ "$$(openssl x509 -noout -pubkey -in "$$out/server.crt")" = "$$(openssl pkey -pubout -in "$$out/server.key")" ]; then
+          exit 0
+        fi
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.crt -days 3650 \
+          -subj /CN=ultimate-test-ca 2>/dev/null
+        openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj /CN=localhost \
+          2>/dev/null
+        printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\n' > san.ext
+        openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+          -out server.crt -days 3650 -extfile san.ext 2>/dev/null
+        install -m 644 ca.crt server.crt "$$out/"
+        install -m 600 server.key "$$out/"
+        chown -R "$$(stat -c %u:%g /docker)" "$$out"
+    # `up --wait` reads no health from a container that has exited; this is what one that is still
+    # running reports, and it is true exactly when the server can start.
+    healthcheck:
+      test: ['CMD', 'test', '-s', '/docker/.tls/server.key']
+      interval: 1s
+      timeout: 3s
+      retries: 30
 
   # The shared cache tier's two Lua scripts are the only thing a real Redis answers differently
   # from a fake. No snapshot, no append-only file, and a log level that prints nothing.

@@ -9,11 +9,13 @@ import { escapeHtml } from '@ultimat3/core';
 import { routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import type { ShotRun } from './cmd-shot';
+import { BadFlagError } from './errors';
 import type { CommandResult } from './output';
 import { localizedShotPath } from './shot-locale';
 import type { ShotServer } from './shot-server';
 import { SHOT_DIR } from './shot-server';
 import type { ShotArtifacts } from './shot-verdict';
+import { viewportDir } from './shot-viewport';
 
 export const MATRIX_DIR = join(SHOT_DIR, 'matrix');
 export const MATRIX_INDEX = 'index.html';
@@ -21,7 +23,10 @@ export const MATRIX_INDEX = 'index.html';
 /** The two themes the boot honours from storage. */
 export const MATRIX_THEMES: readonly ('light' | 'dark')[] = ['light', 'dark'];
 
-/** A phone and a desktop, each with the height its class of device is photographed at. */
+/**
+ * A phone and a desktop, each with the height its class of device is photographed at. The default
+ * only: `x shot --matrix --viewport <w>x<h>[,…]` replaces the pair (`shot-viewport.ts`).
+ */
 export const MATRIX_VIEWPORTS: readonly { readonly width: number; readonly height: number }[] = [
   { width: 390, height: 844 },
   { width: 1440, height: 900 },
@@ -35,8 +40,18 @@ export interface MatrixCell {
   readonly viewport: { readonly width: number; readonly height: number };
   /** What the browser opens: the route, prefixed for a non-default locale. */
   readonly path: string;
-  /** Relative to the matrix directory: `<route-slug>/<locale>/<theme>-<width>`. */
+  /** Relative to the matrix directory: `<route-slug>/<locale>/<theme>-<width>x<height>`. */
   readonly dir: string;
+}
+
+/** The matrix photographs ROUTES; `--island`/`--all-islands` beside it is two subjects. */
+export function refuseMatrixWithComponent(): never {
+  throw new BadFlagError({
+    flag: 'matrix',
+    command: 'shot',
+    reason: 'photographs every site route; --island and --all-islands photograph components',
+    fix: 'x shot --matrix --json',
+  });
 }
 
 /** A route a matrix can photograph without inventing a parameter: no `:param`, no `*rest`. */
@@ -79,7 +94,8 @@ export function planShotMatrix(input: MatrixPlanInput): readonly MatrixCell[] {
             theme,
             viewport,
             path: localizedShotPath(route, locale, input.defaultLocale),
-            dir: join(slug(route), locale, `${theme}-${String(viewport.width)}`),
+            // The whole size, never the width alone: `--viewport 390x844,390x664` is two pictures.
+            dir: join(slug(route), locale, `${theme}-${viewportDir(viewport)}`),
           });
         }
       }
@@ -106,7 +122,7 @@ export function contactSheet(shots: readonly MatrixShot[]): string {
       .filter((shot) => shot.cell.route === route)
       .map((shot) => {
         const { locale, theme, viewport, path } = shot.cell;
-        const label = `${locale} · ${theme} · ${String(viewport.width)}px${shot.ok ? '' : ' · FAILED'}`;
+        const label = `${locale} · ${theme} · ${viewportDir(viewport)}${shot.ok ? '' : ' · FAILED'}`;
         return (
           `<figure${shot.ok ? '' : ' class="failed"'}><a href="${escapeHtml(shot.image)}">` +
           `<img src="${escapeHtml(shot.image)}" alt="${escapeHtml(`${path} ${label}`)}" loading="lazy" ` +
@@ -191,6 +207,7 @@ export async function runShotMatrix(run: MatrixRun): Promise<CommandResult> {
         locale: shot.cell.locale,
         theme: shot.cell.theme,
         width: shot.cell.viewport.width,
+        height: shot.cell.viewport.height,
         image: shot.image,
         ok: shot.ok,
       })),

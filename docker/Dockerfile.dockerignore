@@ -12,6 +12,8 @@
 # ULTIMATE_SECRETS_KEY is unset — so a baked copy boots the image on it and the platform's key is
 # never exercised.
 **/.secrets.key
+# And the test TLS server's key pair docker-compose.test.yml writes — never in a layer.
+docker/.tls
 
 node_modules
 **/node_modules

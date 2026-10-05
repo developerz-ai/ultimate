@@ -318,19 +318,83 @@ describe('unit · x jobs drain rendering', () => {
     );
     expect((await driver.introspect?.job(id))?.state).toBe('ready');
   });
+});
 
-  test('an unreachable target is a finding, not a throw', async () => {
-    const driver = createMemoryDriver();
-    await enqueue(driver, 'send-email');
+// `redis` and `nats` throw `X_NOT_IMPLEMENTED` on every method, so a drain onto either LEASED the
+// whole batch off the production queue for `DRAIN_LEASE_MS` (5 min), failed every enqueue and
+// nacked it back — five minutes in which no source worker could claim a job, for a command that
+// could never move one. `drain` is a planned subcommand until a durable second driver ships.
+describe('unit · x jobs drain is planned', () => {
+  test('drain --to redis refuses before leasing', async () => {
+    const memory = createMemoryDriver();
+    const id = await enqueue(memory, 'send-email');
+    let claims = 0;
+    const counted: JobDriver = {
+      ...memory,
+      claim: (options) => {
+        claims += 1;
+        return memory.claim(options);
+      },
+    };
 
-    const result = await runJobs(driver, {
+    const thrown: unknown = await runJobs(counted, {
       subcommand: 'drain',
       flags: { to: 'redis' },
       env: { REDIS_URL: 'redis://localhost:6379' },
-    });
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
 
-    expect(result.ok).toBe(false);
-    expect(result.findings?.[0]?.code).toBe('X_NOT_IMPLEMENTED');
+    expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect((thrown as { cause?: string }).cause).toBe(
+      'x jobs drain is not implemented in this build',
+    );
+    expect(claims).toBe(0);
+    const row = await memory.introspect?.job(id);
+    expect(row?.state).toBe('ready');
+    expect(row?.attempt).toBe(0);
+  });
+
+  test('every spelling of drain gets the same planned answer, --to memory and --dry-run included', async () => {
+    for (const flags of [{ to: 'memory' }, { to: 'nats', 'dry-run': true }, {}]) {
+      const thrown: unknown = await runJobs(createMemoryDriver(), {
+        subcommand: 'drain',
+        flags,
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
+    }
+  });
+
+  // ORDERING: the planned answer needs no server, so a box whose database is down must get it
+  // rather than the boot failure of a queue the command would never have used.
+  test('the planned answer arrives with no ambient driver, before any queue is booted', async () => {
+    resetJobDriver();
+    const thrown: unknown = await jobsCommand
+      .run(
+        contextFor(appRoot(), {
+          subcommand: 'drain',
+          flags: { to: 'redis' },
+          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none', REDIS_URL: 'redis://x:1' },
+        }),
+      )
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
+  });
+
+  test("its fix is the planned table's, a command this build ships", async () => {
+    const thrown: unknown = await runJobs(createMemoryDriver(), { subcommand: 'drain' }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect((thrown as { fix?: string }).fix).toStartWith('x jobs ls');
   });
 });
 
@@ -342,51 +406,21 @@ describe('unit · x jobs drain target', () => {
 
   // The bug: `--to memory` enqueued onto `createMemoryDriver()` — a Map inside THIS process — and
   // then acked every durable row off the source. Reproduced: source ready 1 -> 0, target ready 1
-  // in a driver nothing can reach, `ok: true`, and the copy gone at exit. A drain that loses the
-  // work it moved is the one outcome this command exists to prevent.
-  test('--to memory is refused by name, and the source keeps every job', async () => {
-    const driver = createMemoryDriver();
-    const id = await enqueue(driver, 'send-email');
-
-    const thrown: unknown = await runJobs(driver, {
-      subcommand: 'drain',
-      flags: { to: 'memory' },
-    }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+  // in a driver nothing can reach, `ok: true`, and the copy gone at exit. Held at the target
+  // builder, which is what a re-enabled drain reads `--to` through.
+  test('--to memory is refused by name, with a durable target in the fix', () => {
+    const thrown: unknown = (() => {
+      try {
+        return buildDrainTarget('memory', {});
+      } catch (error) {
+        return error;
+      }
+    })();
 
     expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
     expect((thrown as { cause?: string }).cause).toContain('this process');
-    // The fix names a target that survives the process, and the queue is exactly as it was.
-    expect((thrown as { fix?: string }).fix).toContain('x jobs drain --to redis');
-    expect((await driver.introspect?.job(id))?.state).toBe('ready');
-  });
-
-  // ORDERING, and it is the reason `buildDrainTarget` is called above `withJobDriver` rather than
-  // inside `runDrain`: with no ambient driver the callback boots the SOURCE queue and pings it, so
-  // the refusal a flag alone can answer arrived only after a database round trip — on a box whose
-  // database is down, `x jobs drain --to memory` reported the boot failure and the operator
-  // repaired Postgres to be told the word they typed is refused by name.
-  test('an invalid --to is refused with no ambient driver, before any queue is booted', async () => {
-    resetJobDriver();
-    const thrown: unknown = await jobsCommand
-      .run(
-        contextFor(appRoot(), {
-          subcommand: 'drain',
-          flags: { to: 'memory' },
-          // A database nothing answers on: `startQueue` cannot resolve against it, so a refusal
-          // read AFTER the boot is that connection's error and not this flag's.
-          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none' },
-        }),
-      )
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-
-    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
-    expect((thrown as { cause?: string }).cause).toContain('this process');
+    // A `fix:` naming the planned `x jobs drain` would hand its reader a second error.
+    expect((thrown as { fix?: string }).fix).not.toContain('x jobs drain');
   });
 
   test('memory is not one of the values the flag accepts', () => {

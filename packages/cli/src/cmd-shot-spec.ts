@@ -7,7 +7,7 @@ export const shotSpec: CommandSpec = {
   name: 'shot',
   summary: 'photograph one route, one island in a state it declares, or every island in the app',
   usage:
-    'x shot <route> [--locale <l>] [--theme light|dark] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--cookie <name=value>] [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
+    'x shot <route> [--locale <l>] [--theme light|dark] [--viewport 390x844,1440x900] | --matrix [<route>] | --island <name> [--state <id>] | --all-islands [--cookie <name=value>] [--expect-status 404] [--port 0] [--out <dir>] [--settle 2000] [--json]',
   requiresApp: true,
   flags: [
     { name: 'port', type: 'string', summary: 'dev port (0 lets the kernel pick a free one)' },
@@ -51,7 +51,15 @@ export const shotSpec: CommandSpec = {
       name: 'matrix',
       type: 'boolean',
       summary:
-        'every site route × locale × light/dark × 390/1440 px into .x/shot/matrix/, plus an index.html contact sheet',
+        'every site route × locale × light/dark × 390x844/1440x900 (or --viewport) into .x/shot/matrix/, plus an index.html contact sheet',
+    },
+    // One flag, read as a list, rather than a repeatable one: the parser keeps the last value of a
+    // repeated flag, so `--viewport a --viewport b` would photograph `b` alone and say nothing.
+    {
+      name: 'viewport',
+      type: 'string',
+      summary:
+        '<w>x<h>[,<w>x<h>] — a route once per size into <out>/<w>x<h>/; with --matrix, its sizes',
     },
     // A FLAG on `x shot` and never a second command: photographing a route and photographing a
     // component are one job with two subjects, and a parallel command would be the second path

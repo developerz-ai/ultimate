@@ -33,6 +33,15 @@ describe('a node: import with nothing saying why', () => {
     expect(found("import { join } from 'node:path/posix';")).toEqual(['node:path/posix']);
   });
 
+  test('the BARE spelling reaches the same builtin and owes the same why: (K17)', () => {
+    expect(found("import { readFileSync } from 'fs';")).toEqual(['fs']);
+    expect(found("import { readFile } from 'fs/promises';")).toEqual(['fs/promises']);
+    expect(found("const cp = require('child_process');")).toEqual(['child_process']);
+    expect(found("const h = await import('async_hooks');")).toEqual(['async_hooks']);
+    expect(found("import 'crypto';")).toEqual(['crypto']);
+    expect(found("// why: Bun has no fork()\nconst cp = require('child_process');")).toEqual([]);
+  });
+
   test('the finding names the token to write and gives a worked example', () => {
     const gaps = checkNodeImports({
       files: [{ path: 'packages/x/src/log.ts', source: "import { writeSync } from 'node:fs';" }],
@@ -140,6 +149,10 @@ describe('what the rule stays silent about', () => {
   test('a package specifier that merely starts with the letters is not a builtin', () => {
     expect(found("import { x } from 'nodemailer';")).toEqual([]);
     expect(found("import { x } from './node-imports';")).toEqual([]);
+    expect(found("import { x } from 'fsevents';")).toEqual([]);
+    expect(found("import { x } from './fs';")).toEqual([]);
+    expect(found("import { serve } from 'bun';")).toEqual([]);
+    expect(found("import { t } from '@ultimat3/path';")).toEqual([]);
   });
 });
 

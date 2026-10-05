@@ -13,8 +13,8 @@ import { findingFrom } from './output';
 export type ReplicaIdentityWanted = (tables: ReadonlySet<string>) => readonly string[];
 
 /**
- * The app's own answer: its live queries' `subscribes:` plus every params channel's `records`
- * tables, read off the registries `loadApp` filled. One function with `db-generate.ts`, so the gate
+ * The app's own answer: every params channel's `records` tables, with its live queries'
+ * `subscribes:` validated but never granted (#518), read off the registries `loadApp` filled. One function with `db-generate.ts`, so the gate
  * can never expect an identity the generator would not grant, or miss one it would.
  */
 export const appReplicaIdentity: ReplicaIdentityWanted = (tables) =>

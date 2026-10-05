@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
 import { cdpE2eSession } from './cdp-e2e-session';
-import { OFFLINE_FIRST_SCRIPT } from './cdp-offline-script';
+import { OFFLINE_FIRST_SCRIPT, RESTORE_ONLINE } from './cdp-offline-script';
 
 interface Call {
   readonly method: string;
@@ -13,13 +13,27 @@ interface Call {
   readonly sessionId: string | undefined;
 }
 
+/**
+ * How many `navigator.onLine` reads after a switch still answer the PREVIOUS state — Chrome applies
+ * the condition to a renderer asynchronously, which is the race #572 lost. `Infinity`: never flips.
+ */
+interface Lag {
+  readonly reads: number;
+}
+
 /** A connection that records every call and lets the test fire events at the session. */
-function fake(held: ReadonlySet<string> = new Set()): {
+function fake(
+  held: ReadonlySet<string> = new Set(),
+  lag: Lag = { reads: 0 },
+): {
   readonly connection: CdpConnection;
   readonly calls: Call[];
   emit(method: string, params: Record<string, unknown>): void;
 } {
   const calls: Call[] = [];
+  // Per session: what the page reports, what it will report once the lag runs out, and how many
+  // more reads still see the old answer.
+  const onLine = new Map<string, { now: boolean; next: boolean; stale: number }>();
   // A session in `held` answers nothing until it is released — Chrome's paused SharedWorker, whose
   // `Network.enable` measured unanswered for the whole 30 s deadline in a full `x verify`.
   const waiting = new Map<string, (() => void)[]>();
@@ -36,6 +50,20 @@ function fake(held: ReadonlySet<string> = new Set()): {
           }),
         );
         return Promise.resolve({ result: { targetId: 'tab-1' } });
+      }
+      if (sessionId !== undefined && method === 'Network.emulateNetworkConditions') {
+        const page = onLine.get(sessionId) ?? { now: true, next: true, stale: 0 };
+        onLine.set(sessionId, { ...page, next: params['offline'] !== true, stale: lag.reads });
+      }
+      if (
+        sessionId !== undefined &&
+        method === 'Runtime.evaluate' &&
+        params['expression'] === 'navigator.onLine'
+      ) {
+        const page = onLine.get(sessionId) ?? { now: true, next: true, stale: 0 };
+        const settled = page.stale <= 0 ? { ...page, now: page.next } : page;
+        onLine.set(sessionId, { ...settled, stale: page.stale - 1 });
+        return Promise.resolve({ result: { result: { type: 'boolean', value: settled.now } } });
       }
       if (sessionId !== undefined && held.has(sessionId)) {
         if (method === 'Runtime.runIfWaitingForDebugger') {
@@ -204,14 +232,78 @@ describe('cdpE2eSession', () => {
     );
     expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
     const restores = (): number =>
-      calls.filter((call) => call.method === 'Runtime.evaluate' && call.sessionId === 'tab-session')
-        .length;
+      calls.filter(
+        (call) =>
+          call.method === 'Runtime.evaluate' &&
+          call.sessionId === 'tab-session' &&
+          call.params['expression'] === RESTORE_ONLINE,
+      ).length;
     expect(restores()).toBe(1);
 
     refuse = false;
     await session.offline(true);
     await session.offline(false);
     expect(restores()).toBe(2);
+  });
+
+  // #572: `offline(true)` resolved once the condition was SENT, and a `fetch` fired on the next line
+  // raced the renderer applying it — on a slow runner the page was still online and the fetch got
+  // through. The switch is thrown only once every page READS the state it was switched to.
+  describe('offline() returns once every page reads the state it was switched to', () => {
+    const reads = (calls: readonly Call[], session: string): number =>
+      calls.filter(
+        (call) =>
+          call.method === 'Runtime.evaluate' &&
+          call.sessionId === session &&
+          call.params['expression'] === 'navigator.onLine',
+      ).length;
+
+    test('a page that applies the cut late is waited for, both ways', async () => {
+      const { connection, calls, emit } = fake(new Set(), { reads: 3 });
+      const session = await cdpE2eSession({ connection, loadTimeoutMs: 2_000 });
+      await session.newTab();
+      emit('Target.attachedToTarget', {
+        sessionId: 'second-session',
+        targetInfo: { type: 'page', targetId: 'tab-2' },
+      });
+      await settle();
+
+      await session.offline(true);
+      // Three stale reads, then the one that confirms — in EVERY page, not only the first.
+      expect(reads(calls, 'tab-session')).toBe(4);
+      expect(reads(calls, 'second-session')).toBe(4);
+
+      await session.offline(false);
+      expect(reads(calls, 'tab-session')).toBe(8);
+      expect(reads(calls, 'second-session')).toBe(8);
+    });
+
+    test('a page that never reads the switched state is a bounded X_CDP_TIMEOUT', async () => {
+      const { connection } = fake(new Set(), { reads: Number.POSITIVE_INFINITY });
+      const session = await cdpE2eSession({ connection, loadTimeoutMs: 300 });
+      await session.newTab();
+
+      const started = performance.now();
+      const thrown: unknown = await session.offline(true).then(
+        () => expect.unreachable('offline(true) resolved over a page that still reads online'),
+        (error: unknown) => error,
+      );
+      expect((thrown as { code?: string }).code).toBe('X_CDP_TIMEOUT');
+      expect((thrown as { cause?: string }).cause).toContain('navigator.onLine === false');
+      expect(performance.now() - started).toBeLessThan(2_000);
+    });
+
+    test('workers are not asked: navigator.onLine is a page`s to report', async () => {
+      const { connection, calls, emit } = fake();
+      const session = await cdpE2eSession({ connection, loadTimeoutMs: 500 });
+      emit('Target.attachedToTarget', {
+        sessionId: 'worker-session',
+        targetInfo: { type: 'shared_worker', targetId: 'w-1' },
+      });
+      await settle();
+      await session.offline(true);
+      expect(reads(calls, 'worker-session')).toBe(0);
+    });
   });
 
   test('every WebSocket and request the browser reports is logged, in order', async () => {

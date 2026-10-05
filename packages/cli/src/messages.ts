@@ -174,6 +174,10 @@ const CATALOG = {
   // that works from a fresh clone, and `bin/setup` already uses `bunx x` internally for this
   // reason.
   'cli.new.done': 'created {name} — next: cd {name} && bin/setup && bin/dev',
+  // `--dry-run`'s own summary: nothing landed, so "created" was a claim an agent branching on the
+  // summary would act on. `{dir}` is the resolved target, `--dir` included.
+  'cli.new.dryRun':
+    'would create {name} in {dir} — nothing written; after a real run: cd {name} && bin/setup && bin/dev',
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.

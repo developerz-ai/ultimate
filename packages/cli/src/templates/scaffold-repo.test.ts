@@ -60,6 +60,18 @@ describe('unit · the biome.json x new writes', () => {
   });
 });
 
+describe('unit · the biome.json x new writes · Bun-only rules', () => {
+  // A bare `'fs'` reaches the same builtin as `'node:fs'`, and Biome reports the bare spelling at
+  // `info` by default — exit 0, a rule nobody is asked to read. The framework's own config makes it
+  // an error; an app inherits the same convention on day one. Asserted on the PARSED config.
+  test('a bare Node builtin specifier is a lint error, not an info line', () => {
+    const config = JSON.parse(emitted('biome.json')) as {
+      readonly linter?: { readonly rules?: { readonly style?: Readonly<Record<string, unknown>> } };
+    };
+    expect(config.linter?.rules?.style?.['useNodejsImportProtocol']).toBe('error');
+  });
+});
+
 describe('unit · the tsconfig.json x new writes', () => {
   // `tsc -b` decided "up to date?" by comparing emitted OUTPUTS against inputs. With `noEmit` and no `composite`, the output it looks for is an
   // `app.config.js` that will never exist, so a scaffolded app re-typechecked from scratch on

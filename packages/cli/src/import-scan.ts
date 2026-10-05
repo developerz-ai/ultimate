@@ -43,11 +43,35 @@ export function scanRuntimeImports(file: ScannedFile): readonly string[] {
 }
 
 /**
+ * A type-position `import('…')` — `typeof import('@ultimat3/cli')`, `let x: import('a').B` — is no
+ * import statement, so the transpiler erases it whole and neither pass above sees it (K16: the tier
+ * rule passed one). Read off `masked`, the source with comments and string CONTENTS blanked and
+ * delimiters kept (`@ultimat3/core`'s `maskLiterals`): a match there is code, and the specifier is
+ * read back from `source` at the same offsets. Taken as an argument because this file is a leaf.
+ * A dynamic `import(x)` is reported too, which the runtime pass already holds — callers dedupe.
+ */
+const IMPORT_CALL = /(?<![\w$.])import\s*\(\s*(['"])/g;
+
+export function typePositionImports(source: string, masked: string): readonly string[] {
+  const found: string[] = [];
+  for (const match of masked.matchAll(IMPORT_CALL)) {
+    const quote = match[1] as string;
+    const open = match.index + match[0].length;
+    const close = masked.indexOf(quote, open);
+    if (close === -1) continue;
+    const specifier = source.slice(open, close);
+    if (specifier !== '' && !specifier.includes('\n')) found.push(specifier);
+  }
+  return found;
+}
+
+/**
  * Every specifier the file names, type-only ones included. Throws when the file does not parse —
  * a scan that answered `[]` there would read as a file importing nothing. The rewrite pass alone
- * is forgiving: a rewrite the parser refuses falls back to the runtime scan.
+ * is forgiving: a rewrite the parser refuses falls back to the runtime scan. Hand it `masked`
+ * (core's `maskLiterals(file.source)`) and a type-position `import('…')` is read as well.
  */
-export function scanAllImports(file: ScannedFile): readonly string[] {
+export function scanAllImports(file: ScannedFile, masked?: string): readonly string[] {
   const runtime = scanRuntimeImports(file);
   let typed: readonly string[] = [];
   try {
@@ -58,6 +82,7 @@ export function scanAllImports(file: ScannedFile): readonly string[] {
   } catch {
     typed = [];
   }
+  const inTypes = masked === undefined ? [] : typePositionImports(file.source, masked);
   // The rewritten pass first: it holds every import in SOURCE order, which callers report in.
-  return [...new Set([...typed, ...runtime])];
+  return [...new Set([...typed, ...inTypes, ...runtime])];
 }

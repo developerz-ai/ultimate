@@ -16,6 +16,7 @@ import { devPortFor } from './dev-port';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
+import { writeErrorLine } from './write-line';
 
 /** Set on the child: it serves, and a pinned save makes it exit for a restart. */
 export const DEV_CHILD_ENV = 'ULTIMATE_DEV_CHILD';
@@ -193,7 +194,7 @@ export function childRestart(
   return {
     options: {
       onRestart: (pins) => {
-        process.stderr.write(`${msg('cli.dev.restart', { reason: restartReason(root, pins) })}\n`);
+        writeErrorLine(msg('cli.dev.restart', { reason: restartReason(root, pins) }));
         leaving ??= 'restart';
         watched?.stopping(DEV_RESTART_EXIT_CODE);
         void drain('restart');

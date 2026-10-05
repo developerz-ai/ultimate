@@ -37,9 +37,14 @@ export interface CdpE2eSessionOptions {
 
 const POLL_MS = 50;
 
+/** What a page reports to its own code — the state a test's next `fetch` runs under. */
+const ON_LINE = 'navigator.onLine';
+
+const member = (from: unknown, key: string): unknown =>
+  typeof from === 'object' && from !== null ? (from as Record<string, unknown>)[key] : undefined;
+
 const field = (from: unknown, key: string): string | undefined => {
-  const value =
-    typeof from === 'object' && from !== null ? (from as Record<string, unknown>)[key] : undefined;
+  const value = member(from, key);
   return typeof value === 'string' ? value : undefined;
 };
 
@@ -147,6 +152,42 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     flatten: true,
   });
 
+  /** One page's `navigator.onLine`, or nothing while it cannot answer (a navigation in flight). */
+  const reportsOnLine = async (session: string): Promise<boolean | undefined> => {
+    const answer = await send(
+      'Runtime.evaluate',
+      { expression: ON_LINE, returnByValue: true },
+      session,
+    ).catch(() => undefined);
+    const value = member(member(answer?.result, 'result'), 'value');
+    return typeof value === 'boolean' ? value : undefined;
+  };
+
+  // #572. `offline()` SENDS the condition, and the renderer applies it when it gets to it: a `fetch`
+  // on the caller's next line raced that on a slow runner and went through under a switch the test
+  // had already thrown. So the switch is thrown when every page READS the state, and not before —
+  // never a fixed sleep, which is either too long everywhere or too short on the runner that
+  // matters. Bounded by the load budget, because a page mid-navigation answers only once it lands;
+  // a page that never reads it is a timeout naming the page, never a resolve the test trusts.
+  const confirmed = async (online: boolean): Promise<void> => {
+    const deadline = performance.now() + options.loadTimeoutMs;
+    let waiting = [...pageSessions].filter((session) => sessions.has(session));
+    while (waiting.length > 0) {
+      const answers = await Promise.all(
+        waiting.map(async (session) => [session, await reportsOnLine(session)] as const),
+      );
+      waiting = answers.filter(([, reads]) => reads !== online).map(([session]) => session);
+      if (waiting.length === 0) return;
+      if (performance.now() >= deadline) {
+        throw new CdpTimeoutError({
+          method: `${ON_LINE} === ${String(online)} in page session ${waiting.join(', ')}`,
+          timeoutMs: options.loadTimeoutMs,
+        });
+      }
+      await Bun.sleep(POLL_MS);
+    }
+  };
+
   const offline = async (enabled: boolean): Promise<void> => {
     cut = enabled;
     // Sequential, and a session that has gone away is dropped rather than taking the rest down.
@@ -168,6 +209,7 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
       await toggled.catch((error: unknown) => refused.push(error));
     }
     if (refused.length > 0) throw refused[0];
+    await confirmed(!enabled);
   };
 
   const attached = async (targetId: string): Promise<string> => {

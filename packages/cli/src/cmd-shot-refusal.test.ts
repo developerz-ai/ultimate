@@ -157,4 +157,26 @@ describe('unit · x shot refuses before it boots anything', () => {
     expect(String(error['cause'])).toContain('/no/such/chrome');
     expect(await startedADevServer()).toBe(false);
   });
+
+  // An island state declares its own size; a size beside a component is a second answer to it.
+  test('--viewport beside --island or --all-islands is refused, and nothing is started', async () => {
+    for (const argv of [
+      ['shot', '--island', 'settings', '--viewport', '390x844'],
+      ['shot', '--all-islands', '--viewport', '390x844'],
+    ]) {
+      const error = await thrownBy(() => shotCommand.run(contextFor(argv)));
+      expect(error['code']).toBe('X_CLI_BAD_FLAG');
+      expect(String(error['cause'])).toContain('--viewport');
+    }
+    expect(await startedADevServer()).toBe(false);
+  });
+
+  test('a malformed --viewport is refused before anything boots', async () => {
+    const error = await thrownBy(() =>
+      shotCommand.run(contextFor(['shot', '/', '--viewport', '390x844,big'])),
+    );
+    expect(error['code']).toBe('X_CLI_BAD_FLAG');
+    expect(String(error['cause'])).toContain('big');
+    expect(await startedADevServer()).toBe(false);
+  });
 });

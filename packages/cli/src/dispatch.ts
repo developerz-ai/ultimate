@@ -16,10 +16,14 @@ import { exitCodeFor, findingFrom, render } from './output';
 import type { ParsedArgs } from './parse';
 import { parseArgs, wantsJson } from './parse';
 import { commandFor, SPECS } from './registry';
-import { rootEnvAdditions } from './root-env';
+import { applyRootEnv, rootEnvChanges } from './root-env';
 
 export interface DispatchOptions {
   readonly argv: readonly string[];
+  /**
+   * The directory the PROCESS started in (`bin.ts` passes `process.cwd()`): `--cwd` resolves
+   * against it, and it is the only directory whose `.env*` Bun loaded on its own.
+   */
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly bunVersion: string;
@@ -122,16 +126,19 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     options.cwd,
     typeof args.flags.get('cwd') === 'string' ? String(args.flags.get('cwd')) : undefined,
   );
-  // The ROOT's `.env*`, not the cwd's: Bun loaded the cwd's at startup, and a command run from
-  // `apps/web` finds its root by walking up. Written into the process env too when that IS the env
-  // passed in, because a package reading `Bun.env` directly must see what the command sees.
-  const added = await rootEnvAdditions(cwd, options.env);
-  if (options.env === Bun.env) Object.assign(Bun.env, added);
+  // The ROOT's `.env*`, not the cwd's: Bun loaded the PROCESS cwd's at startup (`options.cwd`,
+  // before `--cwd` moved it), and a command run from `apps/web` finds its root by walking up.
+  // Applied to the process env too when that IS the env passed in (`applyRootEnv`), so a package
+  // reading `Bun.env` directly sees what the command sees — another app's keys removed included.
+  const env = applyRootEnv(
+    options.env,
+    await rootEnvChanges({ cwd, processCwd: options.cwd, env: options.env }),
+  );
   const ctx: CommandContext = {
     args: helpArgs,
     cwd,
     runner: options.runner ?? exec,
-    env: options.env === Bun.env ? options.env : { ...added, ...options.env },
+    env,
     bunVersion: options.bunVersion,
     ...(options.invocation === undefined ? {} : { invocation: options.invocation }),
   };

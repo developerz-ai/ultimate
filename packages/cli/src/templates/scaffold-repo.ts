@@ -295,7 +295,8 @@ const biome = (): string => `{
     "rules": {
       "preset": "recommended",
       "suspicious": { "noExplicitAny": "error" },
-      "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" }
+      "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" },
+      "style": { "useNodejsImportProtocol": "error" }
     }
   },
   "javascript": {

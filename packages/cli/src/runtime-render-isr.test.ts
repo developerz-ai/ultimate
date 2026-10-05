@@ -4,7 +4,7 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateGraph, tag } from '@ultimat3/cache';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
 import { createIsrController } from '@ultimat3/render/server';
 import { attachedIsr } from './runtime-isr';
@@ -13,6 +13,8 @@ import { appRoutes } from './runtime-render';
 const BUILD_ID = 'isr-under-test';
 const postTag = tag('post');
 let version = 1;
+let loads = 0;
+let redirectTo: string | undefined;
 
 function registerTagOnlyPage(): void {
   registerRoute({
@@ -34,6 +36,8 @@ const restoreGraph = isolateGraph();
 afterEach(() => {
   clearRoutes();
   version = 1;
+  loads = 0;
+  redirectTo = undefined;
 });
 
 afterAll(() => {
@@ -97,5 +101,87 @@ describe('unit · a tag bust reaches the ISR page', () => {
         .paths()
         .every((path) => isr.store().get(path)?.stale === false),
     ).toBe(true);
+  });
+});
+
+/** A route component's props are untyped: the version `load` returned, read without a cast. */
+const versionOf = (data: unknown): string =>
+  typeof data === 'object' && data !== null && 'version' in data ? String(data.version) : '?';
+
+/** A `ttl` isr page whose `load` counts its runs and redirects while `redirectTo` is set. */
+function registerLoadedPage(): void {
+  registerRoute<{ version: number }>({
+    file: 'apps/web/site/pricing/page.tsx',
+    component: (props) => h('p', {}, `version ${versionOf(props['data'])}`),
+    config: defineRoute<{ version: number }>({
+      render: 'isr',
+      revalidate: { ttl: '5m' },
+      offline: 'network-only',
+      hydrate: 'never',
+      budget: { js: '0kb' },
+      load: async () => {
+        loads += 1;
+        if (redirectTo !== undefined) setRedirect(redirectTo, 302);
+        return { version };
+      },
+      meta: () => ({ title: 'Pricing', description: 'an isr page with a load' }),
+    }),
+  });
+}
+
+describe('unit · an isr hit is a cache read, not a render (K3)', () => {
+  test('an isr hit does not run load', async () => {
+    registerLoadedPage();
+    const { isr, release } = attachedIsr({ buildId: BUILD_ID });
+    const server = serverOver(appRoutes({ buildId: BUILD_ID, isr }));
+    for (let i = 0; i < 5; i += 1) {
+      const response = await server.fetch(new Request('http://dev.test/pricing'));
+      expect(await response.text()).toContain('version 1');
+    }
+    release();
+    // One miss rendered the page; the four hits answered from the store without touching `load`.
+    expect(loads).toBe(1);
+    expect(isr.store().paths()).toHaveLength(1);
+  });
+
+  test("a load's redirect under isr is answered, never stored, and decided again next time", async () => {
+    registerLoadedPage();
+    const { isr, release } = attachedIsr({ buildId: BUILD_ID });
+    const server = serverOver(appRoutes({ buildId: BUILD_ID, isr }));
+    redirectTo = '/pricing-2026';
+    for (let i = 0; i < 2; i += 1) {
+      const response = await server.fetch(new Request('http://dev.test/pricing'));
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe('/pricing-2026');
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    }
+    expect(loads).toBe(2);
+    expect(isr.store().paths()).toHaveLength(0);
+    // The loader stops redirecting: the next request renders and stores the page.
+    redirectTo = undefined;
+    const page = await server.fetch(new Request('http://dev.test/pricing'));
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('version 1');
+    expect(isr.store().paths()).toHaveLength(1);
+    release();
+  });
+
+  test('a stale page whose regeneration redirects is dropped, so the next request redirects', async () => {
+    registerLoadedPage();
+    const { isr, release } = attachedIsr({ buildId: BUILD_ID });
+    const server = serverOver(appRoutes({ buildId: BUILD_ID, isr }));
+    expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
+    const [path] = isr.store().paths();
+    isr.markStale(path ?? '');
+    redirectTo = '/moved';
+    // The stale copy answers this one; the regeneration behind it finds the redirect.
+    expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
+    let status = 0;
+    for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+      status = (await server.fetch(new Request('http://dev.test/pricing'))).status;
+      if (status === 302) break;
+    }
+    expect(status).toBe(302);
+    release();
   });
 });

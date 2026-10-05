@@ -22,6 +22,7 @@
 import { join } from 'node:path';
 import { dirname, join as joinPosix, normalize } from 'node:path/posix';
 import { scanAllImports, scanRuntimeImports } from '../packages/cli/src/import-scan';
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { corpus } from './lib/corpus';
@@ -41,6 +42,8 @@ export interface SourceFile {
   /** Path relative to the repo root, POSIX separators. */
   readonly path: string;
   readonly source: string;
+  /** `maskLiterals(source)`, when the reader already holds it — the corpus masks each file once. */
+  readonly masked?: string;
 }
 
 export interface Violation {
@@ -81,7 +84,8 @@ export function targetPackage(fromFile: string, specifier: string): string | und
 /**
  * Every specifier the file names, type-only ones included — `import-scan.ts`'s `scanAllImports`,
  * the one scanner the CLI's workspace rule reads too. The tier rule applies to both halves: a
- * type-only edge still couples two packages' release cycles. Memoised per file OBJECT: the corpus
+ * type-only edge still couples two packages' release cycles, and so does a type-position
+ * `typeof import('@ultimat3/cli')`, read off the masked text. Memoised per file OBJECT: the corpus
  * hands every rule the same objects, and the ceiling and the floor both ask.
  */
 export function allImportsOf(file: SourceFile): readonly string[] {
@@ -89,7 +93,7 @@ export function allImportsOf(file: SourceFile): readonly string[] {
   if (hit !== undefined) return hit;
   let found: readonly string[];
   try {
-    found = scanAllImports(file);
+    found = scanAllImports(file, file.masked ?? maskLiterals(file.source));
   } catch {
     // A file the parser refuses is typecheck's to report; this rule reads what it can.
     found = [];

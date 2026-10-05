@@ -26,28 +26,43 @@
 // Shrink it with `bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]`, which lowers a count
 // to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
 
+// why: RAISED 2026-10-05 (plan 101 sweep 6, K19). The rule read only `Error`; it now reads every
+// builtin class — `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`, `EvalError`,
+// `URIError`, `AggregateError` — because a bare one of any of them carries no code, cause or fix.
+// The new sites were spot-checked in cli, http, realtime, core, jobs and mcp: what remained after
+// six verdicts became `expect.unreachable` are stubs throwing AT the subject — `fetch`'s
+// `TypeError('Failed to fetch')`, Proxy traps, a handler that blows up — the honest limit above.
+// Each raised row says so on its own line, which is what `bun run pin-raises` reads.
+
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-bare-error-pins.ts';
 
 export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
-  admin: 7,
+  action: 9, // why: 0 -> 9, the K19 class list; the new sites are stubs (input)
+  admin: 10, // why: 7 -> 10, the K19 class list; the new sites are stubs (input)
   ai: 18,
-  auth: 4,
-  cache: 3,
-  cli: 9,
-  core: 30,
-  db: 24,
-  entity: 17,
+  auth: 11, // why: 4 -> 11, the K19 class list; the new sites are stubs (input)
+  cache: 6, // why: 3 -> 6, the K19 class list; the new sites are stubs (input)
+  cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
+  core: 43, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
+  db: 34, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
+  entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)
   flags: 1,
-  http: 11,
-  jobs: 23,
-  mcp: 6,
-  query: 11,
-  realtime: 25,
-  render: 6,
+  http: 32, // why: 11 -> 32, the K19 class list; the new sites are stubs (input)
+  jobs: 33, // why: 23 -> 33, the K19 class list; the new sites are stubs (input)
+  mail: 5, // why: 0 -> 5, the K19 class list; the new sites are stubs (input)
+  mcp: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
+  notify: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
+  policy: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
+  pwa: 4, // why: 0 -> 4, the K19 class list; the new sites are stubs (input)
+  query: 12, // why: 11 -> 12, the K19 class list; the new sites are stubs (input)
+  realtime: 50, // why: 25 -> 50, the K19 class list; the new sites are stubs (input)
+  render: 15, // why: 6 -> 15, the K19 class list; the new sites are stubs (input)
+  schema: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
   scraping: 1,
+  scripts: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
   seo: 8,
-  testing: 19,
+  testing: 24, // why: 19 -> 24, the K19 class list; the new sites are stubs (input)
   time: 1,
-  ui: 6,
+  ui: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
 };

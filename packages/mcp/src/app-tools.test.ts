@@ -58,7 +58,7 @@ const textOf = (result: McpToolResult): string =>
 
 const byName = (tools: readonly AnyMcpTool[], name: string): AnyMcpTool => {
   const tool = tools.find((candidate) => candidate.name === name);
-  if (tool === undefined) throw new TypeError(`no tool "${name}" in ${tools.map((x) => x.name)}`);
+  if (tool === undefined) expect.unreachable(`no tool "${name}" in ${tools.map((x) => x.name)}`);
   return tool;
 };
 
