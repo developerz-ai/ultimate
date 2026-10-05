@@ -54,19 +54,29 @@ export class TimeError extends UltimateError {
  * A wall-clock field outside its range. Separate from `X_DST_*`, which are about times that
  * are legitimately absent or doubled — this one is a spec the caller got wrong.
  *
- * `calendar` is the one field that is not a number: a business calendar with no business day in
- * it (`business.ts`). Its repair is a different calendar, not a different integer, so it gets its
- * own fix — a branch here rather than a second factory, so the code keeps one constructor.
+ * A business calendar with no business day in it (`business.ts`) is the one refusal that is not
+ * about a number, and it has two causes with two different repairs, so the caller names which
+ * through `field`: `calendar.weekendDays` (the weekend covers the week — shorten it) or
+ * `calendar.holidays` (every remaining day is a holiday — remove some). A branch here rather than a
+ * second factory, so the code keeps one constructor. Each fix is a call that runs as written; the
+ * explanation is the cause's job.
  */
 export function scheduleInvalid(field: string, value: unknown, range: string): TimeError {
   // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
   // field or a config value as often as it is the `number` the in-package caller passes.
   const cause = `${field} must be ${range}, got ${renderCauseValue(value)}`;
-  if (field === 'calendar') {
+  if (field === 'calendar.weekendDays') {
     return new TimeError({
       code: 'X_SCHEDULE_INVALID',
       cause,
-      fix: 'addBusinessDays(at, days, { zone, weekendDays: [6, 7] })   # weekendDays are ISO 1-7: at least one weekday must be a business day, and not every one a holiday',
+      fix: "addBusinessDays(new Date(), 1, { zone: 'UTC', weekendDays: [6, 7] })",
+    });
+  }
+  if (field === 'calendar.holidays') {
+    return new TimeError({
+      code: 'X_SCHEDULE_INVALID',
+      cause,
+      fix: "addBusinessDays(new Date(), 1, { zone: 'UTC', holidays: [] })",
     });
   }
   return new TimeError({

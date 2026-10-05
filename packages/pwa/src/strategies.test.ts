@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RenderMode } from '@ultimat3/core';
 import { PwaStrategyExhaustedError } from './errors';
+import { pagesCacheSource } from './pages-cache-source';
 import type { PwaRoute, StrategyCache, StrategyEnv, StrategyName } from './strategies';
 import {
   cacheFirst,
@@ -286,10 +287,14 @@ describe('STRATEGY_FNS', () => {
  * gets, and the two must answer alike in every scenario, the failure ones included.
  */
 describe('emitted parity', () => {
-  // The emitted worker's `later` (`pages-cache-source.ts`), restated: it is spliced into a template
-  // there, not exported on its own, and its whole contract is this one line.
-  const LATER =
-    'function later(wait,p){const settled=p.catch(()=>{});if(wait)wait(settled);return settled}';
+  // The emitted worker's `later`, cut out of the SHIPPED source (`pagesCacheSource`, which splices
+  // it into every `sw.js`): restated here, the test would run a copy and pass after the real one
+  // changed. Both personal-page modes share it, so either mode's source carries the same line.
+  const LATER = (() => {
+    const line = /^function later\(wait,p\)\{.*\}$/m.exec(pagesCacheSource('never'))?.[0];
+    if (line === undefined) expect.unreachable('pagesCacheSource no longer emits later(wait,p)');
+    return line;
+  })();
 
   type Emitted = (
     req: Request,

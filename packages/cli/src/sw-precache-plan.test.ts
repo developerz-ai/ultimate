@@ -225,7 +225,6 @@ describe('the offline placeholders', () => {
   });
 
   test('none configured, nothing added', () => {
-    expect(plan([])).toEqual(plan([]));
     expect(plan([]).map((a) => a.url)).toEqual([HERO.url, OFFLINE_RETRY.url]);
   });
 });

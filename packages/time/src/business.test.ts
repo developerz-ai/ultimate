@@ -254,15 +254,21 @@ describe('a calendar with no business day in it refuses', () => {
     expect(codeOf(() => nextBusinessDay(monday, allWeekend))).toBe('X_SCHEDULE_INVALID');
   });
 
-  test('the cause says what is wrong with the calendar', () => {
-    let cause = '';
+  const refusal = (run: () => unknown): { cause: string; fix: string } => {
     try {
-      addBusinessDays(monday, 1, allWeekend);
+      run();
     } catch (error) {
-      cause = String((error as { cause?: unknown }).cause);
+      const { cause, fix } = error as { cause?: unknown; fix?: unknown };
+      return { cause: String(cause), fix: String(fix) };
     }
-    expect(cause).toContain('calendar');
+    return { cause: 'no-throw', fix: 'no-throw' };
+  };
+
+  test('an all-weekend calendar is told to shorten its weekend', () => {
+    const { cause, fix } = refusal(() => addBusinessDays(monday, 1, allWeekend));
+    expect(cause).toStartWith('calendar.weekendDays must be');
     expect(cause).toContain('at least one business day');
+    expect(fix).toContain('weekendDays: [6, 7]');
   });
 
   // Not the weekend this time: every business day the week leaves is a holiday, for longer than
@@ -275,6 +281,10 @@ describe('a calendar with no business day in it refuses', () => {
     }
     const calendar = { zone: BERLIN, weekendDays: [1, 2, 3, 4, 5, 6] as const, holidays: sundays };
     expect(codeOf(() => addBusinessDays(monday, 1, calendar))).toBe('X_SCHEDULE_INVALID');
+    // Its repair is fewer holidays — a shorter weekend could not help a calendar with one already.
+    const { cause, fix } = refusal(() => addBusinessDays(monday, 1, calendar));
+    expect(cause).toStartWith('calendar.holidays must be');
+    expect(fix).toContain('holidays: []');
   });
 
   test('one business day a week is still a calendar', () => {

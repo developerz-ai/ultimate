@@ -85,16 +85,23 @@ export function addBusinessDays(at: Instant, days: number, calendar: BusinessCal
   return landed;
 }
 
-/** The refusal for a calendar the loop above can never land in — all weekend, or all holiday. */
+/**
+ * The refusal for a calendar the loop above can never land in. Which list is at fault decides the
+ * repair: a weekend covering all seven days, or — the weekend leaving days — holidays covering them.
+ */
 function noBusinessDay(calendar: BusinessCalendar): TimeError {
+  const weekend = calendar.weekendDays ?? WEEKEND_SAT_SUN;
+  if (EVERY_WEEKDAY.every((day) => weekend.includes(day))) {
+    return scheduleInvalid(
+      'calendar.weekendDays',
+      weekend,
+      'ISO weekdays (1-7) that leave at least one business day',
+    );
+  }
   return scheduleInvalid(
-    'calendar',
-    {
-      zone: calendar.zone,
-      weekendDays: calendar.weekendDays ?? WEEKEND_SAT_SUN,
-      holidays: (calendar.holidays ?? []).length,
-    },
-    'a calendar with at least one business day',
+    'calendar.holidays',
+    (calendar.holidays ?? []).length,
+    'dates that leave at least one business day in any ten-year window (remove some of them)',
   );
 }
 
