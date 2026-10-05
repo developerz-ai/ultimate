@@ -18,7 +18,13 @@ import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultima
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { MAX_IMAGE_WIDTH, responsiveImage } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, resetStorage, variantKey } from '@ultimat3/storage';
+import {
+  DEFAULT_QUALITY,
+  defineStorage,
+  localDriver,
+  resetStorage,
+  variantKey,
+} from '@ultimat3/storage';
 import { ICON_SOURCE } from './icon-assets';
 import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
 import { STORAGE_READ_PERMISSION } from './runtime-storage';
@@ -226,6 +232,27 @@ describe('unit · dev assets · responsive variants', () => {
     // cache decision into a new 4xx an app has to learn about.
     expect(probeImage(new Uint8Array(await response.arrayBuffer())).width).toBe(7);
     expect(await storage.disk().exists(cached)).toBe(false);
+  });
+
+  // The width screen alone left `?q=` open: every quality from 1 to 100 is its own variant key, so
+  // a minted width times a hundred qualities times each format was still a hundred stored objects
+  // per URL the framework mints. seo never writes `?q=`, so only the default is worth storing.
+  test('a quality the framework never mints is served but never written to the disk', async () => {
+    const routes = assetRoutes({ root, storage });
+    const cached = variantKey(SOURCE_KEY, { width: 320, format: 'png', quality: 37 });
+
+    const response = await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=320&f=png&q=37`);
+    expect(response.status).toBe(200);
+    expect(probeImage(new Uint8Array(await response.arrayBuffer())).width).toBe(320);
+    expect(await storage.disk().exists(cached)).toBe(false);
+  });
+
+  test('the default quality spelled out is the default variant, and is stored', async () => {
+    const routes = assetRoutes({ root, storage });
+    const cached = variantKey(SOURCE_KEY, { width: 320, format: 'png' });
+
+    await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=320&f=png&q=${DEFAULT_QUALITY}`);
+    expect(await storage.disk().exists(cached)).toBe(true);
   });
 
   // `usableWidths` appends the SOURCE's own width when it is not one of `DEFAULT_WIDTHS`, so the

@@ -15,6 +15,7 @@ import {
   contentTypeNotAllowed,
   contentTypeUnrecognised,
   tooLarge,
+  xmlBodyUnreadable,
 } from './errors';
 import { HEIF_CONTAINER, ISO_BMFF_CONTAINER, ISO_BMFF_TYPES, sniffIsoBmff } from './iso-bmff';
 import { assertSafeKey } from './path';
@@ -151,7 +152,47 @@ function sniffText(bytes: Uint8Array): string | undefined {
   if (head.startsWith('<svg') || (head.startsWith('<?xml') && head.includes('<svg'))) {
     return 'image/svg+xml';
   }
+  if (head.startsWith('<')) return activeMarkupType(text) ?? 'text/plain';
   return 'text/plain';
+}
+
+/**
+ * `&#58;` and `&#x3a;` are `:` to an XML parser, so they are `:` to the scan below too. The digit
+ * run is UNBOUNDED because XML puts no cap on leading zeros (`&#x000000003a;` is `:`); the range is
+ * checked on the value instead, and a reference past U+10FFFF stays as written, as it is not a
+ * character a parser would produce.
+ */
+const decodeCharacterReferences = (text: string): string =>
+  text.replace(/&#(x[0-9a-f]+|[0-9]+);/gi, (whole, ref: string) => {
+    const hex = ref[0] === 'x' || ref[0] === 'X';
+    const digits = (hex ? ref.slice(1) : ref).replace(/^0+(?=.)/, '');
+    if (digits.length > (hex ? 6 : 7)) return whole;
+    const code = Number.parseInt(digits, hex ? 16 : 10);
+    return code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
+
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
+/** XHTML elements and XSLT output are pages; a DTD's entities can assemble either out of parts. */
+const PAGE_MARKERS = [
+  'http://www.w3.org/1999/xhtml',
+  'http://www.w3.org/1999/xsl/transform',
+  '<?xml-stylesheet',
+  '<!entity',
+] as const;
+
+/**
+ * Whether markup that looked like plain text is a document a browser RUNS — asked of the WHOLE
+ * body, never its head, because XML puts no rule on where a namespace is declared. Under
+ * `application/xml` a browser executes an XHTML-namespaced `<script>` anywhere in the tree, an
+ * SVG-namespaced element likewise, and an `<?xml-stylesheet?>` makes the document whatever HTML
+ * its XSLT emits. An internal `<!ENTITY>` subset is refused with them: an entity expands inside
+ * an attribute value, so it can build a namespace out of two halves no substring scan can see.
+ * A data document — a namespace of its own, no DTD, no stylesheet — stays plain text.
+ */
+function activeMarkupType(text: string): 'text/html' | 'image/svg+xml' | undefined {
+  const scanned = decodeCharacterReferences(text).toLowerCase();
+  if (PAGE_MARKERS.some((marker) => scanned.includes(marker))) return 'text/html';
+  return scanned.includes(SVG_NAMESPACE) ? 'image/svg+xml' : undefined;
 }
 
 /** `undefined` means "no rule recognised it", never "it is fine". */
@@ -228,6 +269,10 @@ function hasSignature(declared: string): boolean {
   );
 }
 
+/** `application/xml`, `text/xml` and every `+xml` suffix type (RFC 6839): what a browser parses as XML. */
+const isXmlType = (type: string): boolean =>
+  type === 'application/xml' || type === 'text/xml' || type.endsWith('+xml');
+
 /**
  * Throws the first violated constraint, in this order: key, size, type, checksum. The key comes
  * before the size because a key nothing may store makes the other three moot, and which
@@ -251,7 +296,13 @@ export function validateUpload(
     // says so and this branch read it the other way, so any body the sniffer bailed on (one
     // control byte, one non-UTF-8 sequence) skipped the guard entirely. Measured: an HTML
     // document with a trailing `0x01` was accepted as `image/png`.
+    //
+    // An XML type is refused the same way, though no signature names it: a browser decodes XML by
+    // its BOM or `encoding=` declaration (UTF-16, a legacy charset) and runs the XHTML or SVG it
+    // finds, so a body the sniffer could not read as UTF-8 text is one whose script it never saw.
+    // Plain text types (`text/csv`) stay accepted: a Latin-1 CSV is real, and nothing executes it.
     if (hasSignature(declared)) throw contentTypeUnrecognised(key, declared);
+    if (isXmlType(declared)) throw xmlBodyUnreadable(key, declared);
   } else if (!contentTypeMatches(declared, sniffed)) {
     throw contentTypeMismatch(key, declared, sniffed);
   }

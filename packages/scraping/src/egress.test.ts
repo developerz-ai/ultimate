@@ -47,6 +47,9 @@ const define = (over: Partial<ScrapeDefinition<Input, { id: string }>> = {}) =>
     tenant: 'none',
     allowHosts: ['shop.test'],
     clock: testClock(),
+    // An offline driver has no origin to ask: under the sealed network the read is unreachable,
+    // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
+    robots: { ignore: 'offline fixture, no origin to ask' },
     driver: fakeBrowser([{ url: URL_A, html: HTML }]),
     async run({ page }) {
       await page.goto(URL_A);
@@ -180,7 +183,7 @@ describe('unit · egress: on the definition reaches the driver as the session ex
         url === 'https://shop.test/robots.txt'
           ? moved('https://shop.test/static/robots.txt')
           : new Response('User-agent: *\nDisallow: /orders'),
-      () => runScrape(define(), runArgs({})),
+      () => runScrape(define({ robots: 'obey' }), runArgs({})),
     );
     expect(seen).toEqual(['https://shop.test/robots.txt', 'https://shop.test/static/robots.txt']);
     expect(outcome['code']).toBe('X_SCRAPE_ROBOTS_DISALLOWED');
@@ -189,14 +192,14 @@ describe('unit · egress: on the definition reaches the driver as the session ex
   test("the run's robots read never dials a redirect off its allowHosts", async () => {
     const { seen } = await robotsDuring(
       () => moved('http://10.0.0.7/robots.txt'),
-      () => runScrape(define(), runArgs({})),
+      () => runScrape(define({ robots: 'obey' }), runArgs({})),
     );
     expect(seen).toEqual(['https://shop.test/robots.txt']);
   });
 
   test('an offline session reports the exit, so the robots read leaves through it', async () => {
     const seen = await fetchesDuring(() =>
-      runScrape(define({ egress: () => EXIT }), runArgs({ exit: EXIT })),
+      runScrape(define({ robots: 'obey', egress: () => EXIT }), runArgs({ exit: EXIT })),
     );
     const robots = seen.find((entry) => String(entry['url']).endsWith('/robots.txt'));
     expect(robots?.['proxy']).toBe(EXIT);

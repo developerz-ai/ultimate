@@ -12,6 +12,7 @@ import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
 import { signInWithOAuth } from './oauth-login';
 import { codeOf, freshAuth, NOW, profile, tokens } from './oauth-login-fixture';
+import { loginFailed } from './rate-limit';
 
 let adapter: MemoryAdapter;
 let auth: Auth;
@@ -217,6 +218,48 @@ describe('signInWithOAuth', () => {
     expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
     // Opaque on this path: the caller has proven nothing about the address.
     await expect(denied).rejects.toThrow(/did not match an account/);
+  });
+
+  test('an unverified provider address never creates an account', async () => {
+    // The pre-hijack: an attacker signs in first with a provider that does not vouch for the
+    // address. Had that minted a user, the real owner's `register()` would collide, their
+    // verified-provider login would be refused as "never verified", and the attacker's identity
+    // would stay linked to an account the owner later claims.
+    const denied = signInWithOAuth(auth, {
+      profile: profile({ emailVerified: false }),
+      tokens: tokens(),
+    });
+    expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
+    const error = await denied.catch((thrown: unknown) => thrown);
+    // The same answer as the existing-account refusal — no oracle for "is this address taken?".
+    expect(isUltimateError(error) && error.cause).toBe(loginFailed().cause);
+    expect(isUltimateError(error) && error.meta?.['email']).toBeUndefined();
+    expect(await adapter.findUserByEmail('ada@example.com')).toBeNull();
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
+
+    // And the owner, arriving later through a provider that does vouch, gets their account.
+    const owner = await signInWithOAuth(auth, { profile: profile(), tokens: tokens() });
+    expect((await adapter.findUserByEmail('ada@example.com'))?.id).toBe(owner.actor.id);
+  });
+
+  test('an unverified provider address never attaches to an unverified account either', async () => {
+    await adapter.createUser({
+      id: 'user-1',
+      email: 'ada@example.com',
+      passwordHash: 'argon2id$…',
+      orgId: null,
+      roles: [],
+      createdAt: NOW,
+    });
+
+    const denied = signInWithOAuth(auth, {
+      profile: profile({ emailVerified: false }),
+      tokens: tokens(),
+    });
+    expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
+    await expect(denied).rejects.toThrow(/did not match an account/);
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
+    expect(await adapter.listAccounts('user-1')).toEqual([]);
   });
 
   test('a disabled user cannot come back in through an already-linked account', async () => {

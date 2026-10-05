@@ -8,6 +8,7 @@ import {
   finiteCount,
   NotImplementedError,
   type ResolveEnvironmentOptions,
+  renderFixShellArg,
   stringField,
   systemClock,
 } from '@ultimat3/core';
@@ -145,7 +146,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         DRIVER_NAME,
         key,
         error,
-        `make the disk root writable by this process, then retry: ls -ld ${root} && rm -f ${path}`,
+        // Screened: a key may carry `$(…)` and a root is configuration, and a fix: is pasted.
+        `make the disk root writable by this process, then retry: ls -ld ${renderFixShellArg(root, '<the disk root>')} && rm -f ${renderFixShellArg(path, '<the object file>')}`,
       );
     }
   };
@@ -318,7 +320,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
           DRIVER_NAME,
           prefix,
           error,
-          `make the disk root readable by this process, then retry: ls -ld ${root}`,
+          `make the disk root readable by this process, then retry: ls -ld ${renderFixShellArg(root, '<the disk root>')}`,
         );
       }
       keys.sort();

@@ -137,6 +137,10 @@ export interface SessionStore {
   getSession(id: string): Promise<AuthSession | null>;
   createSession(session: AuthSession): Promise<AuthSession>;
   updateSession(id: string, patch: SessionPatch): Promise<AuthSession | null>;
+  /**
+   * Remove one session and answer whether THIS call removed it, in one atomic step: `rotateSession`
+   * treats `true` as its claim on the id, so two concurrent deletes must not both answer `true`.
+   */
   deleteSession(id: string): Promise<boolean>;
   /** Returns how many were killed — the "sign out everywhere else" number shown to the user. */
   deleteOtherSessions(userId: string, keepSessionId: string): Promise<number>;

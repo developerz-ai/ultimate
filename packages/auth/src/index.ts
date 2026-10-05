@@ -323,6 +323,7 @@ export {
   idleSlideMs,
   listDevices,
   readSessionCookie,
+  remainingMaxAgeSeconds,
   revokeOtherSessions,
   revokeSession,
   rotateSession,

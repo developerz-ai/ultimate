@@ -92,6 +92,13 @@ export interface CreateSessionInput {
   readonly ip?: string | null | undefined;
   readonly userAgent?: string | null | undefined;
   readonly mfaSatisfied?: boolean | undefined;
+  /**
+   * The lifetime a rotation inherits. Absent means a new login: born now, ceiling one
+   * `absoluteTtlMs` away. Either way the ceiling is clamped to `createdAt + absoluteTtlMs` and
+   * `createdAt` to now, so an inherited value can only ever shorten a session — never buy it time.
+   */
+  readonly createdAt?: Date | undefined;
+  readonly absoluteExpiresAt?: Date | undefined;
 }
 
 /** `<id>.<secret>`: the id is the row key, the secret is the half that is hashed. */
@@ -108,12 +115,14 @@ export async function createSession(
   const now = runtime.clock.now();
   const id = randomToken(12);
   const secret = randomToken(32);
+  const born = Math.min(input.createdAt?.getTime() ?? now.getTime(), now.getTime());
+  const ceiling = born + runtime.policy.absoluteTtlMs;
   const session = await runtime.store.createSession({
     id,
     userId: input.userId,
     tokenHash: sha256Hex(secret),
-    createdAt: now,
-    absoluteExpiresAt: new Date(now.getTime() + runtime.policy.absoluteTtlMs),
+    createdAt: new Date(born),
+    absoluteExpiresAt: new Date(Math.min(input.absoluteExpiresAt?.getTime() ?? ceiling, ceiling)),
     lastSeenAt: now,
     ip: input.ip ?? null,
     userAgent: input.userAgent ?? null,
@@ -184,19 +193,37 @@ export async function verifySession(
 /**
  * Privilege change (role grant, MFA satisfied, password change) must not reuse the old id:
  * whoever already holds the old cookie would inherit the new privileges.
+ *
+ * A new id, never a new lifetime: `createdAt` and the absolute ceiling carry over. Minting them
+ * fresh let a session rotated often enough (a weekly role toggle) live forever, and hid it from
+ * `revokeSessionsCreatedBefore` — the sweep run after a leak, keyed on exactly that column.
  */
 export async function rotateSession(
   runtime: SessionRuntime,
   session: AuthSession,
   patch?: { readonly mfaSatisfied?: boolean | undefined },
 ): Promise<IssuedSession> {
-  await runtime.store.deleteSession(session.id);
+  // The delete IS the claim, in one atomic step — the `consumeRecoveryCode` contract. Ignoring its
+  // answer resurrected a session revoked between verify and rotate, and let two concurrent
+  // rotations fork one session into two live ones. Only the caller whose delete landed mints S'.
+  if (!(await runtime.store.deleteSession(session.id))) throw sessionUnknown();
   return await createSession(runtime, {
     userId: session.userId,
     ip: session.ip,
     userAgent: session.userAgent,
     mfaSatisfied: patch?.mfaSatisfied ?? session.mfaSatisfied,
+    createdAt: session.createdAt,
+    absoluteExpiresAt: session.absoluteExpiresAt,
   });
+}
+
+/**
+ * `Max-Age` for a cookie carrying `session`: the seconds left until its absolute ceiling, never
+ * below zero. A rotated session's cookie needs this rather than the policy's full TTL, or the
+ * client keeps the cookie for weeks after the server stopped honouring it.
+ */
+export function remainingMaxAgeSeconds(session: AuthSession, now: Date): number {
+  return Math.max(0, Math.floor((session.absoluteExpiresAt.getTime() - now.getTime()) / 1000));
 }
 
 export async function revokeSession(runtime: SessionRuntime, sessionId: string): Promise<boolean> {

@@ -258,6 +258,20 @@ export const contentTypeUnrecognised = (key: string, declared: string): StorageE
     meta: { key, declared },
   });
 
+/**
+ * The XML twin of `contentTypeUnrecognised`: no signature names an XML type, so "matches no known
+ * signature" would be false here. The finding is that the bytes are not UTF-8 text — UTF-16, a
+ * legacy charset, a control byte — so the screen for script-carrying markup never saw what a
+ * browser would decode. Same shipped code: what a client retries on is unchanged.
+ */
+export const xmlBodyUnreadable = (key: string, declared: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_TYPE_REJECTED',
+    cause: `"${key}" declares ${declared}, and its bytes are not readable UTF-8 text, so they cannot be screened for the script a browser would run from them`,
+    fix: `validateUpload({ key: ${renderFixLiteral(key, "'a/data.xml'")}, declaredContentType: ${renderFixLiteral(declared, "'application/xml'")}, bytes: new TextEncoder().encode(text) }, policy) — where text is the document decoded from its own charset (iconv -f UTF-16 -t UTF-8), with no byte-order mark and no control characters`,
+    meta: { key, declared },
+  });
+
 export const checksumMismatch = (key: string, declared: string, actual: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_CHECKSUM_MISMATCH',

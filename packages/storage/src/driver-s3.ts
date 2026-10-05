@@ -399,7 +399,8 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           DRIVER_NAME,
           safe,
           error,
-          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${options.bucket} --key ${safe}`,
+          // `isSafeKey` admits `$(…)`, a backtick and `;` — legal key bytes, live shell syntax.
+          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, '<bucket>')} --key ${renderFixShellArg(safe, '<key>')}`,
         );
       }
     },
@@ -433,7 +434,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           DRIVER_NAME,
           prefix,
           error,
-          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${options.bucket}${prefix === '' ? '' : ` --prefix ${prefix}`}`,
+          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, '<bucket>')}${prefix === '' ? '' : ` --prefix ${renderFixShellArg(prefix, '<prefix>')}`}`,
         );
       }
       const objects: StorageListEntry[] = [];

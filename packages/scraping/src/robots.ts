@@ -126,7 +126,20 @@ export interface RobotsGate {
   readonly ignoredBecause: string | undefined;
 }
 
-export type RobotsFetch = (robotsUrl: string) => Promise<string | undefined>;
+/**
+ * RFC 9309 §2.3.1.4: the file could not be obtained because of a server or network error — a 5xx,
+ * a 429, a refused connection, a deadline. The standard's answer is COMPLETE DISALLOW, and it is
+ * a different answer from `undefined` (a 4xx: the file is unavailable, so there are no rules).
+ * `unreachable` says why, for the log; nothing branches on its text.
+ */
+export interface RobotsUnreachable {
+  readonly unreachable: string;
+}
+
+/** The file's text, `undefined` for no file (no rules), or unreachable (no access). */
+export type RobotsAnswer = string | undefined | RobotsUnreachable;
+
+export type RobotsFetch = (robotsUrl: string) => Promise<RobotsAnswer>;
 
 export interface RobotsGateInit extends RobotsFetchInit {
   readonly policy: RobotsPolicy;
@@ -135,12 +148,24 @@ export interface RobotsGateInit extends RobotsFetchInit {
   readonly fetchText?: RobotsFetch | undefined;
 }
 
+/** What the gate holds per origin: the rules, or the standard's complete disallow. */
+type Verdict = RobotsRules | 'unreachable';
+
+const verdictOf = (answer: RobotsAnswer, agent: string): Verdict => {
+  if (answer === undefined) return { rules: [] };
+  if (typeof answer === 'string') return parseRobots(answer, agent);
+  return 'unreachable';
+};
+
 /**
  * One fetch of `/robots.txt` per ORIGIN per run, cached. A gate that re-fetched per navigation
  * would triple the request count of every scrape it protects.
  *
- * An origin whose robots.txt cannot be read is ALLOWED. That is the standard's own answer — a
- * missing file means no restrictions — and the alternative fails every run behind a flaky CDN.
+ * A MISSING robots.txt (a 4xx, a redirect chain past the cap) is no restrictions — the standard's
+ * own answer. An UNREACHABLE one (5xx, 429, a network error, a deadline, a read that rejects) is
+ * complete disallow (RFC 9309 §2.3.1.4), and is NOT cached: the next navigation to the origin asks
+ * again, so a run behind a flaky CDN recovers the moment the file answers instead of failing for
+ * the rest of the run — and an origin cannot shed its own rules by answering 503 once.
  */
 export function createRobotsGate(init: RobotsGateInit): RobotsGate {
   if (init.policy !== 'obey') {
@@ -148,7 +173,7 @@ export function createRobotsGate(init: RobotsGateInit): RobotsGate {
   }
   const agent = init.agent ?? DEFAULT_ROBOTS_AGENT;
   const read = init.fetchText ?? robotsFetcher(init);
-  const cache = new Map<string, Promise<RobotsRules>>();
+  const cache = new Map<string, Promise<Verdict>>();
   return {
     ignoredBecause: undefined,
     async assertAllowed(url: string): Promise<void> {
@@ -160,14 +185,27 @@ export function createRobotsGate(init: RobotsGateInit): RobotsGate {
       }
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
       const origin = parsed.origin;
-      let rules = cache.get(origin);
-      if (rules === undefined) {
-        rules = read(`${origin}/robots.txt`)
-          .then((text) => (text === undefined ? { rules: [] } : parseRobots(text, agent)))
-          .catch(() => ({ rules: [] }));
-        cache.set(origin, rules);
+      let pending = cache.get(origin);
+      if (pending === undefined) {
+        // A caller-supplied read that rejects has not produced a file, and "could not ask" is
+        // the unreachable case, not the missing one.
+        const fresh = read(`${origin}/robots.txt`).then(
+          (answer) => verdictOf(answer, agent),
+          (): Verdict => 'unreachable',
+        );
+        pending = fresh;
+        cache.set(origin, fresh);
+        // Concurrent navigations still share the one in-flight read; only a settled unreachable
+        // verdict is evicted, and only if no later read has replaced it.
+        void fresh.then((verdict) => {
+          if (verdict === 'unreachable' && cache.get(origin) === fresh) cache.delete(origin);
+        });
       }
-      if (!robotsAllows(await rules, `${parsed.pathname}${parsed.search}`)) {
+      const verdict = await pending;
+      if (
+        verdict === 'unreachable' ||
+        !robotsAllows(verdict, `${parsed.pathname}${parsed.search}`)
+      ) {
         throw robotsDisallowed(url, agent);
       }
     },

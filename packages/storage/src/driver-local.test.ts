@@ -299,3 +299,29 @@ describe('localDriver', () => {
     expect(await new Response(stream).text()).toBe('streamed');
   });
 });
+
+// A `fix:` is a command meant to be pasted. A disk root and a key are both strings `isSafeKey`
+// lets carry `$(…)`, so splicing them into `ls -ld … && rm -f …` handed the reader a command that
+// RUNS whatever the key says. `renderFixShellArg` carries an ordinary path and a placeholder
+// otherwise.
+describe('a refusal fix never splices a path into the shell', () => {
+  const HOSTILE = 'blocked$(touch pwned)';
+
+  test('a refused delete screens the key and the path', async () => {
+    await Bun.write(`${root}/${HOSTILE}/child.txt`, 'x');
+    const refused = await catchError(() => driver.delete(HOSTILE));
+    expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
+    const fix = (refused as StorageError).fix;
+    expect(fix).not.toContain('$(');
+    expect(fix).toContain(`ls -ld ${root}`);
+  });
+
+  test('a refused listing screens a hostile disk root', async () => {
+    const hostileRoot = `${root}/disk$(id)`;
+    await Bun.write(hostileRoot, 'a file where the root should be');
+    const onAFile = localDriver({ root: hostileRoot, signingSecret: 'test-secret' });
+    const refused = await catchError(() => onAFile.list());
+    expect(codeOf(refused)).toBe('X_STORAGE_LIST_FAILED');
+    expect((refused as StorageError).fix).not.toContain('$(');
+  });
+});

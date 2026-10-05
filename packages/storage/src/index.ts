@@ -94,6 +94,7 @@ export {
   signingSecretMissing,
   tooLarge,
   uploadFailed,
+  xmlBodyUnreadable,
 } from './errors';
 export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';

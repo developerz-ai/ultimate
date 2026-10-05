@@ -79,9 +79,19 @@ describe('unit · the gate', () => {
     expect(fetches).toBe(2);
   });
 
-  test('an unreadable robots.txt allows — a missing file means no restrictions', async () => {
-    const gate = createRobotsGate({ policy: 'obey', fetchText: () => Promise.reject(new Error()) });
+  test('a missing robots.txt allows — no file means no restrictions', async () => {
+    const gate = createRobotsGate({ policy: 'obey', fetchText: () => Promise.resolve(undefined) });
     expect(await codeOf(gate.assertAllowed('https://example.test/private'))).toBeUndefined();
+  });
+
+  test('an unreachable robots.txt refuses — RFC 9309 §2.3.1.4 is complete disallow', async () => {
+    const gate = createRobotsGate({
+      policy: 'obey',
+      fetchText: () => Promise.reject(new TypeError('unreachable')),
+    });
+    expect(await codeOf(gate.assertAllowed('https://example.test/public'))).toBe(
+      'X_SCRAPE_ROBOTS_DISALLOWED',
+    );
   });
 
   test('ignoring requires a written reason, and the gate carries it', async () => {

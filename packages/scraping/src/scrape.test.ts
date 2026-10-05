@@ -65,6 +65,9 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   clock: testClock(),
+  // An offline driver has no origin to ask: under the sealed network the read is unreachable,
+  // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
+  robots: { ignore: 'offline fixture, no origin to ask' },
   driver: fakeBrowser([{ url: URL_A, html: HTML }], {
     http: [{ url: API, method: 'GET', status: 200, body: '{"rows":[{"id":"3"}]}' }],
   }),

@@ -8,14 +8,14 @@
 // The exit is a RESOLVER, not a string: `scrape-run.ts` builds this gate as an argument to
 // `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
-import { finiteCount, readWithinLimit } from '@ultimat3/core';
+import { finiteCount, isUltimateError, readWithinLimit } from '@ultimat3/core';
 import type { HostRule } from './hosts';
 import type { ScrapeFetch } from './http';
 import { redirectHop } from './http-redirect';
 import { interceptVerdict } from './intercept';
 import type { HostResolve } from './pinned-host';
 import { dialTarget, resolveHost } from './pinned-host';
-import type { RobotsFetch } from './robots';
+import type { RobotsAnswer, RobotsFetch } from './robots';
 
 /**
  * A deadline is applied ALWAYS, proxy or no proxy, session or no session: the failure it prevents
@@ -80,8 +80,18 @@ const sameHost = (from: string, to: string): boolean => {
   }
 };
 
-/** The final hop's body under the cap, or `undefined` for a non-2xx answer. */
-const answerOf = async (response: Response, limit: number): Promise<string | undefined> => {
+/**
+ * RFC 9309 §2.3.1.4 names server errors; a 429 is the same condition spelled as a client status —
+ * the origin is shedding load, not reporting a missing file — and every major crawler reads it so.
+ */
+const isUnreachableStatus = (status: number): boolean => status >= 500 || status === 429;
+
+/** The final hop's body under the cap, unreachable for a 5xx/429, `undefined` for another non-2xx. */
+const answerOf = async (response: Response, limit: number): Promise<RobotsAnswer> => {
+  if (isUnreachableStatus(response.status)) {
+    await response.body?.cancel().catch(() => undefined);
+    return { unreachable: `status ${String(response.status)}` };
+  }
   if (!response.ok) return undefined;
   // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
   // multi-gigabyte robots.txt is a heap the worker never gets back.
@@ -90,21 +100,22 @@ const answerOf = async (response: Response, limit: number): Promise<string | und
 };
 
 /**
- * Reads `robotsUrl`, or answers `undefined` — which the gate reads as "no restrictions", the
- * standard's own answer for a file it cannot obtain. A deadline that fires, a body past the cap,
- * a 404 and a redirect off `allowHosts` are all the same answer on purpose: none of them is
- * evidence of a rule.
+ * Reads `robotsUrl`. Three answers, after RFC 9309 §2.3.1: the text; `undefined` when the file is
+ * UNAVAILABLE — a 4xx, a body past the cap, a redirect off `allowHosts` or past the hop cap, a
+ * host the pin refuses — which the gate reads as no rules; and `{ unreachable }` for a 5xx, a 429,
+ * a deadline, a cancellation or a network error, which the gate reads as complete disallow. A
+ * server that cannot answer is not a server that has no rules.
  */
 export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   const call: ScrapeFetch = init.fetch ?? fetch;
   const resolve = init.resolve ?? resolveHost;
-  // Both bounds are screened HERE, at construction, and both floors are 1 — because every way this
-  // read can fail is the same answer, `undefined`, which the gate reads as "no restrictions". A
+  // Both bounds are screened HERE, at construction, and both floors are 1 — because a bad bound
+  // turns into a failed read on every origin, and a read that fails is never evidence of a rule. A
   // `NaN` deadline throws a bare `TypeError` out of `AbortSignal.timeout` (measured: "Value NaN is
   // outside the range [0, 9007199254740991]") straight into the gate's own `.catch`, and a `NaN`
   // cap makes `readWithinLimit` refuse after the request already left. A zero of either is the
-  // same outcome spelled deliberately: an expired deadline and a cap every file is over. Robots
-  // enforcement off, for the whole run, with nothing in the log.
+  // same outcome spelled deliberately: an expired deadline and a cap every file is over — every
+  // origin refused, or (the cap) every origin unrestricted, for the whole run.
   const limit = finiteCount(
     'robotsFetcher',
     'maxBytes',
@@ -117,7 +128,7 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
     init.timeoutMs ?? DEFAULT_ROBOTS_TIMEOUT_MS,
     1,
   );
-  return async (robotsUrl: string): Promise<string | undefined> => {
+  return async (robotsUrl: string): Promise<RobotsAnswer> => {
     // Armed per read, not per gate: the gate is long-lived and reads once per origin, so a
     // deadline created alongside it would already have expired by the second origin.
     const deadline = AbortSignal.timeout(timeoutMs);
@@ -161,8 +172,13 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
         if (init.allowHosts === undefined && !sameHost(robotsUrl, next.url)) return undefined;
         url = next.url;
       }
-    } catch {
-      return undefined;
+    } catch (error) {
+      // The pin refusing an inward name is a POLICY answer about the host, and the navigation is
+      // refused by the same rule — it is not evidence the origin is down.
+      if (isUltimateError(error) && error.code === 'X_SCRAPE_HOST_BLOCKED') return undefined;
+      if (deadline.aborted) return { unreachable: 'timeout' };
+      if (init.signal?.aborted === true) return { unreachable: 'cancelled' };
+      return { unreachable: 'network' };
     }
   };
 }

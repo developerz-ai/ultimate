@@ -487,6 +487,12 @@ unauthenticated POST with any token cannot kill the victim's live link.
 | `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries |
 | `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires. A `passwordHash` change ends every OTHER session of that user (`sessionsRevoked`) — all of them when no session of theirs was passed, as in a reset |
 
+Rotation (`rotateSession`, and `updatePrivileges` through it) mints a new **id**, never a new
+lifetime: `createdAt` and `absoluteExpiresAt` carry over, so repeated grants cannot outlive the
+original ceiling and `revokeSessionsCreatedBefore` still catches a rotated session. The rotated
+cookie's `Max-Age` counts down to that ceiling. `createSession` accepts the same two instants and
+clamps them — `createdAt` to now, the ceiling to `createdAt + absoluteTtlMs` — so they only shorten.
+
 `reason` is a required argument on every revocation, for the reason `crossTenant()` requires one:
 an incident review asks who killed these sessions and why, and a `delete` with no line answers
 neither. Each one logs `auth.revocation` before it runs.
@@ -549,7 +555,10 @@ row would not be, and nothing does.
 
 ## Cookie
 
-`__Host-x_session`, set by `sessionCookie(token, policy)`.
+`__Host-x_session`, set by `sessionCookie(token, policy)`. A **rotated** session keeps its
+original ceiling, so its cookie takes the time left, not the full TTL:
+`sessionCookie(issued.token, policy, { maxAgeSeconds: remainingMaxAgeSeconds(issued.session, clock.now()) })`
+— what `updatePrivileges` already does for you.
 
 | Attribute | Attack it closes |
 |---|---|
@@ -712,6 +721,9 @@ JWT signed with the `.p8` key, which Apple expires every six months.
   the status alone there mints a session from a failed exchange.
 - An address is only linked to an existing account when **both** sides verified it (`link:
   'verified-email'`). Otherwise whoever registered the address first inherits the login.
+- An address the provider did **not** verify never creates an account either — it is the same
+  `loginFailed()` the taken-address case answers. Minting one is a pre-hijack: the owner's
+  `register()` then collides and their verified login is refused, with the attacker still linked.
 
 ## API keys — how an agent authenticates
 

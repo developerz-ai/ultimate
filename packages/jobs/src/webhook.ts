@@ -355,6 +355,32 @@ type Outcome =
       readonly retryAfterSeconds?: number;
     };
 
+/**
+ * The row's own headers, then the framework's — each SET, case-insensitively, over whatever the row
+ * said. An object spread cannot do this: `{ Host: 'evil.test', host: <pinned> }` keeps both keys and
+ * `fetch` joins them, so a row would reach another virtual host, change the content type, and ship
+ * a forged value inside the signature list. Going through `Headers` collapses every spelling of a
+ * name to one entry before the framework's value replaces it. Returned as a plain lowercase record,
+ * because an injected `WebhookFetch` has always been handed one.
+ *
+ * Inside the caller's `try`: a row header the platform refuses (a newline in a value) is the same
+ * failed attempt it always was, never a bare `TypeError` out of the job.
+ */
+function deliveryHeaders(
+  endpoint: WebhookEndpoint,
+  target: WebhookTarget,
+  signing: Parameters<typeof webhookHeaders>[0],
+): Record<string, string> {
+  const headers = new Headers(endpoint.headers);
+  // The name the pinned address is reached AS, so an endpoint cannot redirect the request to a
+  // different virtual host than the one it registered.
+  headers.set('host', target.host);
+  headers.set('content-type', WEBHOOK_CONTENT_TYPE);
+  // The signature and the event identity it covers: a row can never overwrite what it is proved by.
+  for (const [name, value] of Object.entries(webhookHeaders(signing))) headers.set(name, value);
+  return Object.fromEntries(headers.entries());
+}
+
 async function attemptDelivery(
   send: WebhookFetch,
   endpoint: WebhookEndpoint,
@@ -365,15 +391,7 @@ async function attemptDelivery(
   try {
     response = await send(target.url, {
       method: 'POST',
-      headers: {
-        ...endpoint.headers,
-        // The name the pinned address is reached AS — after the row's own headers, so an endpoint
-        // cannot redirect the request to a different virtual host than the one it registered.
-        host: target.host,
-        'content-type': WEBHOOK_CONTENT_TYPE,
-        // LAST, so an endpoint row's own headers can never overwrite the signature it is proved by.
-        ...webhookHeaders(signing),
-      },
+      headers: deliveryHeaders(endpoint, target, signing),
       ...(target.serverName === undefined ? {} : { tls: { serverName: target.serverName } }),
       body: signing.body,
       // Never followed: a 3xx would re-POST a body signed for one host to whatever the receiver

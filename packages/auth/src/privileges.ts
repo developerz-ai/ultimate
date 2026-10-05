@@ -5,7 +5,12 @@
 import type { AuthUser, UserPatch } from './adapter';
 import type { Auth } from './auth';
 import { authWriteFailed } from './errors';
-import { type IssuedSession, rotateSession, sessionCookie } from './session';
+import {
+  type IssuedSession,
+  remainingMaxAgeSeconds,
+  rotateSession,
+  sessionCookie,
+} from './session';
 
 /**
  * The fields whose change invalidates whatever the current cookie was issued under. `roles`,
@@ -63,24 +68,29 @@ export async function updatePrivileges(
   if (user === null) throw authWriteFailed('updateUser', 'x_users');
   if (changed.length === 0) return { user, changed, sessionsRevoked: 0 };
 
+  // Every OTHER session ends BEFORE the rotation, keyed on the caller's current id (which the
+  // rotation deletes anyway). Rotation refuses a session that is already gone, and a password
+  // change must not leave the lifted cookies it was made to kill alive because of that refusal.
+  let sessionsRevoked = 0;
+  if (credentialChanged) {
+    sessionsRevoked =
+      own === undefined
+        ? await auth.adapter.deleteSessionsForUser(userId)
+        : await auth.adapter.deleteOtherSessions(userId, own.id);
+  }
   const issued =
     own !== undefined && auth.sessions.policy.rotateOnPrivilegeChange
       ? await rotateSession(auth.sessions, own)
       : undefined;
-  let sessionsRevoked = 0;
-  if (credentialChanged) {
-    const keep = issued?.session.id ?? own?.id;
-    sessionsRevoked =
-      keep === undefined
-        ? await auth.adapter.deleteSessionsForUser(userId)
-        : await auth.adapter.deleteOtherSessions(userId, keep);
-  }
   if (issued === undefined) return { user, changed, sessionsRevoked };
   return {
     user,
     changed,
     sessionsRevoked,
     session: issued,
-    cookie: sessionCookie(issued.token, auth.sessions.policy),
+    // The rotated session keeps the old ceiling, so the cookie's `Max-Age` counts down to it too.
+    cookie: sessionCookie(issued.token, auth.sessions.policy, {
+      maxAgeSeconds: remainingMaxAgeSeconds(issued.session, auth.sessions.clock.now()),
+    }),
   };
 }

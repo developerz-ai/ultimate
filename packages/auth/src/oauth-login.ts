@@ -166,6 +166,12 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
       fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then ${restartAt(input.profile.provider)}`,
     });
   }
+  // The provider did not vouch for the address, so this caller has proven nothing about owning
+  // it. Minting the account anyway is the pre-hijack: the real owner's `register()` then collides,
+  // their verified-provider login is refused as "never verified", and the attacker's identity stays
+  // linked to the row they later claim. Answered exactly as `resolveUser` answers the same
+  // unverified address when it IS taken, so the two branches are no oracle for "is it taken?".
+  if (!input.profile.emailVerified) throw loginFailed();
   const grants = input.grants ?? {};
   if ((grants.roles ?? []).length === 0 && (grants.orgId ?? null) === null) {
     // Not an error — an app may genuinely want a roleless account until somebody approves it —
@@ -188,7 +194,6 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
     externalId: grants.externalId ?? null,
     createdAt: auth.clock.now(),
   });
-  if (!input.profile.emailVerified) return created;
   // `CreateUserInput` has no `emailVerifiedAt`, so the stamp is a required second write. Returning
   // `created` when it does not land would sign in a user whose row says unverified — and the next
   // login through this same provider would then refuse to link it at all.
@@ -199,7 +204,7 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
 
 /**
  * Resolve the identity to a user: an already-linked account first, then an existing account
- * with the same address, then a fresh user.
+ * with the same address, then a fresh user — and a fresh user only for a provider-verified address.
  *
  * An address alone is not proof of ownership on either side. Attaching a provider identity to a
  * local account that never verified its own email hands the login to whoever registered that
