@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6d2b9f0c8dc6d19915b164c4a786d0af6e6502dcf7b371b60f167f6e1c170497",
+  "buildId": "815e92d89c7771fcff57bd4501aa41b9fbada4d48966eb5c136556a3da6fb508",
   "tiers": {
     "0": [
       "core",
@@ -4278,6 +4278,11 @@
       "code": "X_UNREACHABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_URL_PATHNAME_AS_PATH",
+      "owner": "scripts",
+      "at": "scripts/url-pathname.ts"
     },
     {
       "code": "X_VALIDATION_FAILED",

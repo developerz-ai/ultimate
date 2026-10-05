@@ -439,7 +439,7 @@ describe('announce', () => {
  */
 describe('the live region is styled from a stylesheet, not by script', () => {
   const read = async (path: string): Promise<string> =>
-    await Bun.file(new URL(path, import.meta.url).pathname).text();
+    await Bun.file(new URL(path, import.meta.url)).text();
 
   // A STATEMENT, not the sentence above the constant that names what was removed: a comment
   // saying "never `region.style.cssText`" is the record of this fix and can never violate a CSP.

@@ -172,10 +172,12 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
     };
     const result = await newCommand.run(ctx);
     expect(result.ok).toBe(true);
-    // `bin/setup`, the script the scaffold writes and its README names — never a second spelling
-    // of the same steps. The four-command line this replaced ran `x dev` on a tree where nothing
-    // had installed the CLI (`X_BUILD_FAILED`) and never seeded.
-    expect(result.summary).toContain('bin/setup');
+    // `bun run setup`, the script the scaffold writes and its README names — never a second
+    // spelling of the same steps. The four-command line this replaced ran `x dev` on a tree where
+    // nothing had installed the CLI (`X_BUILD_FAILED`) and never seeded. And never a `bin/` path:
+    // a bash file there was the first thing PowerShell and cmd could not run.
+    expect(result.summary).toContain('&& bun run setup && bun run dev');
+    expect(result.summary).not.toContain('bin/');
     expect(result.summary).not.toContain('bun install');
   });
 });

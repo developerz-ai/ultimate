@@ -121,7 +121,7 @@ const i18nCatalog = (app: NameSet): string =>
     'site.home.secondary': 'Open the admin',
     'site.home.f1Title': 'One command to a running app',
     'site.home.f1Body':
-      'bin/setup installs, migrates and seeds; bin/dev runs every role in one process.',
+      'bun run setup installs, migrates and seeds; bun run dev runs every role in one process.',
     'site.home.f2Title': 'Policies, not flags',
     'site.home.f2Body':
       'Every route, action and query declares who may call it, and one system decides.',

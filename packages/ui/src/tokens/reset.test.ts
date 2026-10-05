@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
-const RESET = new URL('./reset.scss', import.meta.url).pathname;
-const DIALOG = new URL('../components/Dialog.tsx', import.meta.url).pathname;
+const RESET = Bun.fileURLToPath(new URL('./reset.scss', import.meta.url));
+const DIALOG = Bun.fileURLToPath(new URL('../components/Dialog.tsx', import.meta.url));
 
 describe('reset.scss', () => {
   test('locks body scroll behind a modal surface, which Dialog and Drawer both rely on', async () => {

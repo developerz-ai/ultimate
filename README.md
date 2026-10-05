@@ -42,17 +42,17 @@ Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **ei
 |---|---|---|
 | **small** — a weekend idea, a first app | not overkill: nothing to install, nothing to choose | `x new` asks **0** questions (all five flags defaulted), writes **196** files you never edit (**164** with `--no-example`; re-derived `As of 2026-10-03`, `bun run scripts/generator-counts.ts`), installs **104** packages, and reaches a running app in **4** commands with **0** env values supplied |
 | **large** — many teams, real traffic | the ladder, the tier boundaries and the 20-step gate are already in the beginner's app | the same `x verify`, the same primitives, the same image; climbing is `ROLE`, env and replica counts ([scale ladder](docs/idea/17-scale-ladder.md)) |
-| **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's own `bin/setup && bin/check` is **green on the first pass**, no waiver and no fix-follow, asserted on every push in CI; every red a model does reach names the command that clears it |
+| **the model you can afford** | enforced conventions and executable `fix:` lines are worth *more* the cheaper the model | a fresh scaffold's own `bun run setup && bun run check` is **green on the first pass**, no waiver and no fix-follow, asserted on every push in CI; every red a model does reach names the command that clears it |
 
 → [The range, in full, with every number's command](docs/idea/21-the-range.md)
 
 ## Run it
 
 ```sh
-bunx create-ultimate myapp && cd myapp && bin/setup && x dev
+bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
-`bin/setup` is six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent, and the app's own README names it too. **`x manifest` is one of them**: `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it (there is no `node_modules` yet), and `x verify`'s `manifest` step refuses its absence with `X_MANIFEST_MISSING`. **Not `x dev` straight after `cd`:** `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you need to `bun install`?"* (measured 2026-08-23; this file said otherwise until then).
+`bun run setup` is six steps — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent, and the app's own README names it too. **`x manifest` is one of them**: `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it (there is no `node_modules` yet), and `x verify`'s `manifest` step refuses its absence with `X_MANIFEST_MISSING`. **Not `x dev` straight after `cd`:** `x new` installs nothing, so the app has no `node_modules` and no `x` of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you need to `bun install`?"* (measured 2026-08-23; this file said otherwise until then).
 
 No Docker, no env scavenger hunt. Embedded Postgres, in-process NATS, S3 → a local directory, a seeded database, a working route and a dev dashboard at `/_x`.
 

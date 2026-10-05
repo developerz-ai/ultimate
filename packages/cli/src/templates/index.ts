@@ -40,7 +40,7 @@ export { claudeAgentFiles } from './scaffold-claude-agents';
 export { claudeCommandFiles } from './scaffold-claude-commands';
 export { containerFiles } from './scaffold-container';
 export { dashboardFiles } from './scaffold-dashboard';
-export { docsFiles, EXECUTABLE_FILES } from './scaffold-docs';
+export { docsFiles } from './scaffold-docs';
 export { entryFiles } from './scaffold-entries';
 export { errorPageFiles, PWA_COLORS } from './scaffold-errors';
 // The guards `x new` ships — `SHIPPED_GUARD_NAMES` is the list — distinct from `guardFiles` above,

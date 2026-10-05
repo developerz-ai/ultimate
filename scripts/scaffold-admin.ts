@@ -5,8 +5,8 @@
 // typechecks and gates the files `x g resource` wrote; none of them opened a socket, so an admin
 // that mounted nothing — or mounted for everybody — was green.
 //
-// Runs AFTER `scaffold-first-run.ts` and the `bin/setup` that applies its migration: the resource
-// is the one `x g resource` generated there, and its table has to exist.
+// Runs AFTER `scaffold-first-run.ts` and the `bun run setup` that applies its migration: the
+// resource is the one `x g resource` generated there, and its table has to exist.
 //
 // THE REFUSED ACTOR IS `member`, NOT "ANONYMOUS". A scaffolded app issues no session yet: its
 // `apps/web/app/auth/dev-actor.ts` answers every development request as a role named by a cookie,
@@ -90,7 +90,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
       resource === undefined
         ? `${dir}/${MANIFEST} names no entity \`x g resource ${generatorName('resource')}\` wrote, so there is no admin screen to ask for`
         : `${dir}/${DEV_ACTOR} declares no DEV_ROLE_COOKIE, so no request can say which role it is`,
-      `bun run scripts/scaffold-first-run.ts ${quoteArg(appDirWord(dir))} && (cd ${quoteArg(appDirWord(dir))} && bin/setup)`,
+      `bun run scripts/scaffold-first-run.ts ${quoteArg(appDirWord(dir))} && (cd ${quoteArg(appDirWord(dir))} && bun run setup)`,
       dir,
     );
   }
@@ -99,7 +99,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     return refused(
       `no x binary at ${appBin(dir)}`,
       `${appBin(dir)} does not exist, so the scaffolded app cannot be booted`,
-      `cd ${quoteArg(appDirWord(dir))} && bin/setup`,
+      `cd ${quoteArg(appDirWord(dir))} && bun run setup`,
       dir,
     );
   }
@@ -138,7 +138,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     return refused(
       `x dev did not answer in ${dir}`,
       `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms — the last dial at ${base}/admin: ${lastDial} — it printed: ${tail(output)}`,
-      `cd ${quoteArg(appDirWord(dir))} && bin/dev --port ${quoteArg(String(port))}`,
+      `cd ${quoteArg(appDirWord(dir))} && bun run dev --port ${quoteArg(String(port))}`,
       dir,
     );
   }

@@ -116,7 +116,7 @@ describe('unit · x new · writing into the parent directory', () => {
       for (const line of lines) expect(line).toContain(join('nested', 'demo-app', ''));
       expect(existsSync(join(parent, 'nested'))).toBe(false);
       // The follow-up is a command pasted in the caller's cwd: it enters where the app WOULD land.
-      expect(result.summary).toContain(`cd ${join('nested', 'demo-app')} && bin/setup`);
+      expect(result.summary).toContain(`cd ${join('nested', 'demo-app')} && bun run setup`);
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
@@ -126,12 +126,12 @@ describe('unit · x new · writing into the parent directory', () => {
     const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
     try {
       const plain = await newCommand.run(newContext(['new', 'demo-app', '--dry-run'], parent));
-      expect(plain.summary).toContain('cd demo-app && bin/setup');
+      expect(plain.summary).toContain('cd demo-app && bun run setup');
       const spaced = await newCommand.run(
         newContext(['new', 'demo-app', '--dir', 'my apps', '--no-git'], parent),
       );
       expect(spaced.ok).toBe(true);
-      expect(spaced.summary).toContain(`cd '${join('my apps', 'demo-app')}' && bin/setup`);
+      expect(spaced.summary).toContain(`cd '${join('my apps', 'demo-app')}' && bun run setup`);
       expect(existsSync(join(parent, 'my apps', 'demo-app', 'package.json'))).toBe(true);
     } finally {
       rmSync(parent, { recursive: true, force: true });

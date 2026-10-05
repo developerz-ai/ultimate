@@ -37,7 +37,7 @@ function appUrl(): string {
   if (url === undefined || url === '') {
     throw new EnvMissingError({
       cause: 'APP_URL is unset, so the typed client has no origin to post an action to',
-      fix: 'add APP_URL=http://localhost:3000 to .env (copy .env.example), then run: bin/dev',
+      fix: 'add APP_URL=http://localhost:3000 to .env (copy .env.example), then run: bun run dev',
     });
   }
   return url;

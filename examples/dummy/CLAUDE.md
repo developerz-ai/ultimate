@@ -18,9 +18,9 @@ excuse the other's red step. Idiom is decided here.)
 
 | Task | Command |
 |---|---|
-| setup | `bin/setup` (installs, writes `.env`, migrates, seeds) |
-| dev | `bin/dev` → `x dev` (web + sync + worker + scheduler, MCP on `ws://localhost:9229`) |
-| verify | `bin/check` → `x verify` — the only gate |
+| setup | `bun run setup` (installs, writes `.env`, migrates, seeds) |
+| dev | `bun run dev` → `x dev` (web + sync + worker + scheduler, MCP on `ws://localhost:9229`) |
+| verify | `bun run check` → `x verify` — the only gate |
 | migration | `x db gen "<message>"` then `x db migrate`. Never hand-write SQL |
 | seed | `x db seed dev` |
 | one test type | `x test unit\|contract\|live\|job\|e2e\|eval` |

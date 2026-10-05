@@ -33,7 +33,7 @@ fails to register. A blanket 404 means a module failed to load, not that a route
 ## Commands
 
 `x dev` · `x routes --json` · `x g route <path> --surface site|app` · `x g resource <name>` ·
-`bunx x test unit|contract|live|job|e2e` · `bin/check`
+`bunx x test unit|contract|live|job|e2e` · `bun run check`
 
 ## Boundaries, enforced
 

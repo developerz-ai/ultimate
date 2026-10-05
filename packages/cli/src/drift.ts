@@ -53,16 +53,39 @@ async function declaredSchemaJson(root: string): Promise<string> {
  */
 export async function schemaHash(root: string): Promise<string> {
   const glob = new Bun.Glob(SCHEMA_GLOB);
-  const paths: string[] = [];
+  const sources: SchemaSource[] = [];
   for await (const path of glob.scan({ cwd: root, absolute: false })) {
-    if (!path.includes('.test.')) paths.push(path);
+    if (path.includes('.test.')) continue;
+    sources.push({ path, text: await Bun.file(join(root, path)).text() });
   }
-  paths.sort();
+  return hashSchemaSources(await declaredSchemaJson(root), sources);
+}
+
+/** One file under `SCHEMA_GLOB`: its path relative to the app root, as the OS spelled it. */
+export interface SchemaSource {
+  readonly path: string;
+  readonly text: string;
+}
+
+/**
+ * The hash itself, pure. The sidecar is committed and compared on every OS, so what a checkout
+ * spells differently is folded away first: `\` separators (a Windows glob) become `/` BEFORE the
+ * sort — `seed2.ts` and `seed/index.ts` order differently under the two — and CRLF text (Git for
+ * Windows' `core.autocrlf=true`) becomes LF. An LF tree on POSIX is hashed exactly as before, so no
+ * sidecar already recorded moves.
+ */
+export function hashSchemaSources(schemaJson: string, sources: readonly SchemaSource[]): string {
+  const files = sources
+    .map(({ path, text }) => ({
+      path: path.replaceAll('\\', '/'),
+      text: text.replaceAll('\r\n', '\n'),
+    }))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(await declaredSchemaJson(root));
-  for (const path of paths) {
+  hasher.update(schemaJson);
+  for (const { path, text } of files) {
     hasher.update(path);
-    hasher.update(await Bun.file(join(root, path)).text());
+    hasher.update(text);
   }
   return hasher.digest('hex').slice(0, 16);
 }

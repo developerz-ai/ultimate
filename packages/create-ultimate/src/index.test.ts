@@ -158,8 +158,8 @@ describe('unit · create-ultimate · the page a maintainer reads', () => {
   });
 
   // `bun install` links `x` into `./node_modules/.bin` and nowhere else, so a bare `x dev` pasted
-  // into a fresh shell is `command not found` — the scaffold's own `bin/` wrappers are the form
-  // that works, and `bin/setup`'s last line already says `next: bin/dev`. The same rule
+  // into a fresh shell is `command not found` — `bun run <script>` is the form that works, and
+  // `bun run setup`'s last line already says `next: bun run dev`. The same rule
   // `scaffold-repo.test.ts` holds over the app's README, held here over the npm page, because this
   // is the first command anybody runs and nothing else was reading it.
   test('the Start block runs only commands a fresh shell has', async () => {

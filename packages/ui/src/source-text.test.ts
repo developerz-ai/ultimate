@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = Bun.fileURLToPath(new URL('..', import.meta.url));
 
 describe('package sources', () => {
   test('carry no raw NUL byte — write the `\\0` escape instead', async () => {

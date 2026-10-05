@@ -68,7 +68,7 @@ describe('unit · the boot tag and its CSP source come from one body', () => {
  */
 describe('unit · render and ui agree on the storage key', () => {
   test('THEME_STORAGE_KEY is one literal in both packages', async () => {
-    const theme = new URL('../../ui/src/theme/theme.ts', import.meta.url).pathname;
+    const theme = Bun.fileURLToPath(new URL('../../ui/src/theme/theme.ts', import.meta.url));
     const source = await Bun.file(theme).text();
     const declared = /export const THEME_STORAGE_KEY = '([^']+)'/.exec(source)?.[1];
     expect(declared).toBe(THEME_STORAGE_KEY);
@@ -76,7 +76,7 @@ describe('unit · render and ui agree on the storage key', () => {
   });
 
   test('the default attribute the boot stamps is the one ui reads', async () => {
-    const theme = new URL('../../ui/src/theme/theme.ts', import.meta.url).pathname;
+    const theme = Bun.fileURLToPath(new URL('../../ui/src/theme/theme.ts', import.meta.url));
     const source = await Bun.file(theme).text();
     const declared = /export const THEME_DEFAULT_ATTRIBUTE = `\$\{THEME_ATTRIBUTE\}-default`/;
     expect(declared.test(source)).toBe(true);

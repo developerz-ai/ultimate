@@ -12,11 +12,13 @@ import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { VerifyStepName } from '../verify-step';
 import type { GeneratedFile, NameSet } from './naming';
 import { titleCase } from './naming';
+import { BIN_SCRIPTS, binScript } from './scaffold-bin';
 import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
 import { domainPackageFiles } from './scaffold-domain-package';
 import { envExampleSource, envSchemaSource } from './scaffold-env';
 import { PWA_COLORS } from './scaffold-errors';
+import { rootGitattributesFile } from './scaffold-gitattributes';
 import { scaffoldGuardFiles } from './scaffold-guards';
 import { i18nFiles } from './scaffold-i18n';
 import { mcpPackageFiles } from './scaffold-mcp-package';
@@ -52,7 +54,7 @@ const SOLID_VERSION = '1.9.15';
 // `engines.bun` is `REQUIRED_BUN`, the floor the SHIPPED `x` enforces
 // (`packages/cli/src/app-root.ts`), and not a second literal. It was one: `>=1.3.0`, a whole minor
 // BELOW the CLI the app then runs, so on a box with Bun 1.3.x `bun install` succeeded and the very
-// next line of `bin/setup` died `X_BUN_VERSION: Bun 1.3.14 is older than the required 1.4.0` — a
+// next line of `bun run setup` died `X_BUN_VERSION: Bun 1.3.14 is older than the required 1.4.0` — a
 // floor admitting a runtime the app's own first command refuses. Interpolated, the two cannot
 // disagree; `scripts/bun-pin.test.ts` reads the emitted string as one more pin site, and
 // `github/ci.yml.ts` pins the workflow's Bun to the same constant.
@@ -70,9 +72,9 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "packages/*"
   ],
   "scripts": {
-    "setup": "bin/setup",
+    "setup": "${binScript(BIN_SCRIPTS.setup)}",
     "dev": "x dev",
-    "check": "bin/check",
+    "check": "${binScript(BIN_SCRIPTS.check)}",
     "verify": "x verify",
     "typecheck": "tsc -p . --pretty",
     "lint": "biome check .",
@@ -364,7 +366,7 @@ export const SCAFFOLD_COVERAGE_EXCLUDE: readonly CoverageExclude[] = [
   },
   {
     glob: 'apps/*/server.ts',
-    why: 'the container entry point: it boots the roles and lives as long as the process — bin/dev and the image exercise it',
+    why: 'the container entry point: it boots the roles and lives as long as the process — bun run dev and the image exercise it',
   },
   {
     glob: 'apps/*/prerender.ts',
@@ -470,6 +472,8 @@ export function repoFiles(
     { path: VERIFY_FLOOR_FILE, contents: verifyFloor(example) },
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
+    // Every text file LF whatever `core.autocrlf` says — a Windows checkout is otherwise CRLF.
+    rootGitattributesFile(),
     { path: '.env.development', contents: envDevelopment() },
     // Committed, and generated: `x env example` rewrites this file from `envSchema`, and the
     // gate's `manifest` step fails with X_ENV_EXAMPLE_DRIFT when the two stop agreeing. A

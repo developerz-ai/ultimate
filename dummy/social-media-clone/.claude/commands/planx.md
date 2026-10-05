@@ -45,7 +45,7 @@ One or two sentences: what, and why.
 1. [`01-<aspect>.md`](01-<aspect>.md) — one line, and the exclusive file set it owns.
 
 ## Done when
-- Verifiable acceptance criteria spanning the whole feature. `bin/check` green is necessary,
+- Verifiable acceptance criteria spanning the whole feature. `bun run check` green is necessary,
   never sufficient — name the behaviour a person can observe.
 
 ## Risks / open questions

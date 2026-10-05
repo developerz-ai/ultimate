@@ -12,7 +12,6 @@
 import { describe, expect, test } from 'bun:test';
 import { msg } from '../messages';
 import { names } from './naming';
-import { EXECUTABLE_FILES } from './scaffold-docs';
 import { repoFiles } from './scaffold-repo';
 
 interface BiomeConfig {
@@ -159,8 +158,8 @@ describe('unit · the bunfig.toml x new writes', () => {
 describe('unit · the first commands a scaffold tells its author to run exist on PATH', () => {
   // `bun install` links the `x` binary into `./node_modules/.bin` and nowhere else, so a bare
   // `x dev` pasted into a shell is `command not found` — proved with `env -i PATH=… command -v x`.
-  // The scaffold's own `bin/` wrappers are the form that works, and `bin/setup` already used
-  // `bunx x` internally for exactly this reason.
+  // `bun run <script>` is the form that works — Bun puts that directory on PATH for the script —
+  // and the `bin/*.ts` files spawn `bun x x` (bunx) for exactly this reason.
   //
   // Narrow on purpose, to the two places a line is COPIED AND RUN rather than read: the executable
   // scripts, and the README block headed "Start". A comment elsewhere saying "then x db gen" is
@@ -170,9 +169,9 @@ describe('unit · the first commands a scaffold tells its author to run exist on
   const linesOf = (path: string): readonly string[] => emitted(path).split('\n');
 
   test('no bin/ script invokes a bare `x`', () => {
-    const offenders = ['bin/setup', 'bin/dev', 'bin/check'].flatMap((path) =>
+    const offenders = ['bin/setup.ts', 'bin/check.ts'].flatMap((path) =>
       linesOf(path).flatMap((line, index) =>
-        RUNNABLE.test(line) && !line.includes('bunx x') && !line.trimStart().startsWith('#')
+        RUNNABLE.test(line) && !line.includes('bunx x') && !line.trimStart().startsWith('//')
           ? [`${path}:${index + 1}`]
           : [],
       ),
@@ -211,7 +210,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(pinned).toBeDefined();
 
     const root = (await Bun.file(
-      new URL('../../../../package.json', import.meta.url).pathname,
+      Bun.fileURLToPath(new URL('../../../../package.json', import.meta.url)),
     ).json()) as { devDependencies?: Record<string, string> };
     const ours = root.devDependencies?.['typescript'];
     expect(ours).toBeDefined();
@@ -230,7 +229,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
       dependencies?: Record<string, string>;
     };
     const root = (await Bun.file(
-      new URL('../../../../package.json', import.meta.url).pathname,
+      Bun.fileURLToPath(new URL('../../../../package.json', import.meta.url)),
     ).json()) as { devDependencies?: Record<string, string> };
     expect(root.devDependencies?.['solid-js']).toMatch(/^\d+\.\d+\.\d+$/);
     expect(scaffolded.dependencies?.['solid-js']).toBe(root.devDependencies?.['solid-js'] ?? '');
@@ -253,7 +252,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
 
     const rootFile = (name: string): Promise<unknown> =>
-      Bun.file(new URL(`../../../../${name}`, import.meta.url).pathname).json();
+      Bun.file(new URL(`../../../../${name}`, import.meta.url)).json();
     const root = (await rootFile('package.json')) as { devDependencies?: Record<string, string> };
     expect(root.devDependencies?.['@biomejs/biome']).toBe(pinned ?? '');
 
@@ -274,7 +273,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
       };
       const declared = manifest.devDependencies?.['@biomejs/biome'];
       expect({ app, declared: declared ?? pinned }).toEqual({ app, declared: pinned });
-      const config = new URL(`../../../../${app}/biome.json`, import.meta.url).pathname;
+      const config = Bun.fileURLToPath(new URL(`../../../../${app}/biome.json`, import.meta.url));
       const schema = (await Bun.file(config).exists())
         ? schemaOf(await Bun.file(config).json())
         : expected;
@@ -284,23 +283,32 @@ describe('unit · the first commands a scaffold tells its author to run exist on
 
   test('the line `x new` prints last names a command the author can run', () => {
     const done = msg('cli.new.done', { name: 'ledger-demo', cd: 'ledger-demo' });
-    expect(done).toContain('bin/setup');
-    expect(RUNNABLE.test(done.replace('bin/setup', ''))).toBe(false);
+    expect(done).toContain('bun run setup');
+    expect(RUNNABLE.test(done)).toBe(false);
   });
 
-  // `cmd-new.ts` chmods `EXECUTABLE_FILES` and NOTHING else, so a `bin/` script missing from that
-  // list is written 0644 and answers `Permission denied` the first time anyone runs it. Nothing
-  // would catch it: the scaffold gate runs `bin/setup` and `bin/check`, so `bin/dev` — the command
-  // `cli.new.done` and `README.md` both tell the author to run next — could ship unexecutable
-  // through a green gate. Derived from the emitted list rather than naming the three by hand, so
-  // a fourth script added tomorrow is covered by the act of emitting it.
-  test('every bin/ script x new writes is one cmd-new.ts makes executable', () => {
+  // A `bin/` file no `package.json` script runs is a second, undocumented way in; a script naming
+  // a file `x new` never wrote answers "Module not found" on the first command a newcomer types.
+  // Derived from the emitted list, so a third script added tomorrow is covered by emitting it.
+  test('every bin/ file x new writes is what a package.json script runs, and nothing else', () => {
     const emittedBin = repoFiles(names('ledger-demo'), '1.0.0', true)
       .map((file) => file.path)
       .filter((path) => path.startsWith('bin/'))
       .sort();
-    // A filter matching nothing would agree with an empty EXECUTABLE_FILES.
-    expect(emittedBin).toContain('bin/dev');
-    expect(emittedBin).toEqual([...EXECUTABLE_FILES].sort());
+    // A filter matching nothing would agree with a package.json naming no file.
+    expect(emittedBin).toContain('bin/setup.ts');
+    const scripts =
+      (JSON.parse(emitted('package.json')) as { scripts?: Record<string, string> }).scripts ?? {};
+    const run = Object.values(scripts)
+      .flatMap((line) => /^bun (bin\/\S+\.ts)$/.exec(line)?.[1] ?? [])
+      .sort();
+    expect(run).toEqual(emittedBin);
+    expect(scripts['dev']).toBe('x dev');
+  });
+
+  // Git for Windows checks out CRLF by default; the root `.gitattributes` is what keeps a Windows
+  // clone byte-identical to the one CI gates. Its contents are `scaffold-gitattributes.test.ts`'s.
+  test('x new writes the root .gitattributes', () => {
+    expect(emitted('.gitattributes')).toContain('* text=auto eol=lf');
   });
 });

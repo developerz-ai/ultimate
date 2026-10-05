@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-const SRC = new URL('..', import.meta.url).pathname;
+const SRC = Bun.fileURLToPath(new URL('..', import.meta.url));
 
 /** `const|let|var Name = <rhs>` — a capitalised local, the spelling JSX reads as a component. */
 const BINDING = /\b(?:const|let|var)\s+([A-Z]\w*)\s*(?::[^=;]+)?=\s*([^;]+)/g;

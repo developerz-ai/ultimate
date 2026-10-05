@@ -1,6 +1,6 @@
 # CI: the gate across parallel jobs
 
-`bin/check` (`x build --target static --no-preflight && x verify`) is the gate on a laptop: one
+`bun run check` (`x build --target static --no-preflight && x verify`) is the gate on a laptop: one
 process tree, bounded to a memory budget. On CI, where wall time is what a pull request waits on,
 the same gate splits across jobs — each step runnable on its own, the parallel test steps sharded —
 and one aggregate job folds the parts back into the one verdict. Green means exactly what the local
@@ -59,7 +59,7 @@ x verify --only unit --shard 2/4 --json > part-unit-2.json
 x verify merge parts/*.json --json
 ```
 
-Reads each part (the **last** JSON line of the file, so `bin/check --json` output works too) and
+Reads each part (the **last** JSON line of the file, so `bun run check --json` output works too) and
 answers the gate:
 
 - every step of the gate appears — `X_VERIFY_MERGE_INCOMPLETE` names a step no part ran;
@@ -152,5 +152,5 @@ has nothing to share on a one-job VM; `ULTIMATE_TEST_SLOTS=0` turns it off.
 
 `x build` runs the six static steps before it builds (typecheck, lint, boundaries, filesize,
 package-shape, errors) so a bare build never ships an artifact from a tree that does not typecheck.
-In a gate that runs those steps anyway, `--no-preflight` skips them — `bin/check` does, and so does
+In a gate that runs those steps anyway, `--no-preflight` skips them — `bun run check` does, and so does
 the `built` job above. The default stays safe.

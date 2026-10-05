@@ -7,8 +7,8 @@ and is always right. This file is hand-written and stays short.
 ## Before you start
 
 ```bash
-bin/setup     # once
-bin/dev       # dev server + MCP at ws://localhost:9229
+bun run setup # once
+bun run dev   # dev server + MCP at ws://localhost:9229
 ```
 
 Point your MCP client at the dev server. `routes.list`, `schema.describe`, `policies.list`,
@@ -17,7 +17,7 @@ Point your MCP client at the dev server. `routes.list`, `schema.describe`, `poli
 ## Before you finish
 
 ```bash
-bin/check     # x verify — typecheck, lint, boundaries, six test types, budgets, SEO, i18n
+bun run check # x verify — typecheck, lint, boundaries, six test types, budgets, SEO, i18n
 ```
 
 Green means shippable. Nothing else is a gate.

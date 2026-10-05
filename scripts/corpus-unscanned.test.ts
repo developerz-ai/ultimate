@@ -31,6 +31,7 @@ import { secretCompareFindings } from './secret-compare';
 import { spawnSites } from './spawn-timeout';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
+import { urlPathnameFindings } from './url-pathname';
 import { tierBoundaries } from './verify';
 
 /** Every guard that reads the tree, by the name its `bun run` alias carries. */
@@ -54,6 +55,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-fix-citations', testFixFindings],
+  ['url-pathname', urlPathnameFindings],
 ];
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {

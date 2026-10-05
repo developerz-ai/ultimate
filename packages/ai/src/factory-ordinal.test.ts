@@ -17,7 +17,7 @@ import { PRIMITIVE_FACTORIES } from '@ultimat3/core';
 const ORDINAL_CLAIM =
   /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b[^.\n]{0,40}\binstance\b[^.\n]{0,60}\b(factory\s+rule|rule)\b/i;
 
-const PACKAGE_ROOT = new URL('..', import.meta.url).pathname;
+const PACKAGE_ROOT = Bun.fileURLToPath(new URL('..', import.meta.url));
 
 async function prose(): Promise<readonly (readonly [string, string])[]> {
   const src = join(PACKAGE_ROOT, 'src');

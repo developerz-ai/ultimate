@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { compileScssFile } from '../sass-probe-fixture';
 
-const COMPONENTS = new URL('.', import.meta.url).pathname;
+const COMPONENTS = Bun.fileURLToPath(new URL('.', import.meta.url));
 
 /** A state selector that cannot match: `:disabled` after a pseudo-element or on a data flag. */
 const DEAD_DISABLED =

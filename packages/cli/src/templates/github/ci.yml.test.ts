@@ -80,17 +80,17 @@ describe('unit · the CI workflow x new writes', () => {
   // The contract this file exists for: the app's OWN scripts, in order, never a restatement of
   // their steps. A workflow that ran `bun install && x verify` would be green here and would be a
   // second gate free to drift from the one a human runs.
-  test('it runs bin/setup and then bin/check, and restates neither', () => {
+  test('it runs bun run setup and then bun run check, and restates neither', () => {
     expect(steps().flatMap((step) => (step.run === undefined ? [] : [step.run]))).toEqual([
-      'bin/setup',
-      'bin/check',
+      'bun run setup',
+      'bun run check',
     ]);
   });
 
-  // `x verify` is HALF of `bin/check`: without the build the `budgets` step has no
+  // `x verify` is HALF of `bun run check`: without the build the `budgets` step has no
   // `.x/build-stats.json` to measure and reports X_BUDGET_UNMEASURED. A workflow that named the
   // half would be red on a commit with nothing wrong in it.
-  test('the gate it runs is bin/check, never a bare x verify', () => {
+  test('the gate it runs is bun run check, never a bare x verify', () => {
     for (const run of steps().flatMap((step) => (step.run === undefined ? [] : [step.run])))
       expect(run.includes('x verify')).toBe(false);
   });
@@ -158,9 +158,9 @@ describe('unit · the CI workflow pays for each commit once', () => {
     expect(gate).toContain('github.event.pull_request.head.repo.full_name != github.repository');
   });
 
-  test('the install cache is keyed on the lockfile, and restored before bin/setup installs', () => {
+  test('the install cache is keyed on the lockfile, restored before bun run setup installs', () => {
     const cache = steps().findIndex((step) => step.uses?.startsWith('actions/cache@'));
-    const setup = steps().findIndex((step) => step.run === 'bin/setup');
+    const setup = steps().findIndex((step) => step.run === 'bun run setup');
     expect(cache).toBeGreaterThanOrEqual(0);
     expect(setup).toBeGreaterThan(cache);
     expect(String(steps()[cache]?.with?.['key'])).toContain("hashFiles('bun.lock')");

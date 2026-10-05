@@ -87,7 +87,7 @@ describe('unit · the offline assertion lands where the e2e step can find it', (
   test('the offline reload waits for the service worker to take control first', () => {
     // `offline()` cuts the network for EVERY realm, the worker's included, so the reload is served
     // by the worker's cache or by nothing. Going offline before the worker controlled the page was
-    // `net::ERR_INTERNET_DISCONNECTED` on a freshly scaffolded app's first `bin/check`.
+    // `net::ERR_INTERNET_DISCONNECTED` on a freshly scaffolded app's first `bun run check`.
     const body = contentsOf('blog', 'page.e2e.test.ts');
     const waits = body.indexOf('await page.waitForServiceWorker();');
     const goes = body.indexOf("await page.goto('/blog');");

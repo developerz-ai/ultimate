@@ -8,7 +8,7 @@ infer from the code.
 `../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `budgets` alone, and every
 other step must stay green. That table is the executable copy — read it, and
 `bun run ../../scripts/reference-app-gate.ts` re-derives the verdict (it builds first, as
-`bin/check` does), rather than trusting the sentence below it.
+`bun run check` does), rather than trusting the sentence below it.
 
 | Pinned step | Red today, and the repair |
 |---|---|
@@ -64,9 +64,9 @@ or a line in `docs/gotchas.md` — **never a bare `TODO`**.
 |---|---|---|
 | fast | `bunx x test unit --filter <text>` | after each edit |
 | scoped | `bunx x test <type>` | before you believe a slice works |
-| **the gate** | `bin/check` (= `x verify`, 20 steps) | once, before push, in the background |
+| **the gate** | `bun run check` (= `x verify`, 20 steps) | once, before push, in the background |
 
-**Do NOT reflexively run `bin/check`.** It is the pre-push gate, not the edit loop.
+**Do NOT reflexively run `bun run check`.** It is the pre-push gate, not the edit loop.
 
 ## Commands
 

@@ -33,7 +33,7 @@ import {
 const STALE_PEER = { '@ultimat3/action': '0.0.1' };
 const STALE_OPTIONAL = { '@ultimat3/db': '0.0.1' };
 
-const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '');
+const REPO_ROOT = Bun.fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '');
 
 let dir = '';
 

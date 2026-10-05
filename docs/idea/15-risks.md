@@ -47,7 +47,7 @@ The Bun bet buys `Bun.sql`, `Bun.redis`, `Bun.s3`, native WebSockets, the test r
 | **Long-running-process maturity is less proven than Node's** | memory growth under sustained load and edge-case GC behaviour are less battle-tested, and `sync` nodes are *designed* to run for days holding many sockets | **budget explicit memory-profiling work**: soak tests at milestone 6 and 11 (24h+ at target socket count, RSS tracked), leak assertions in the live test type, and per-role memory ceilings with a graceful restart rather than an OOM kill |
 | Some npm packages assume Node internals | occasional breakage | prefer web-standard libraries; the small dependency count makes this rare by construction |
 | Single-runtime risk | a Bun regression is a framework outage | pin exact versions, keep an upgrade branch with the full `x verify` suite, and never depend on undocumented internals |
-| Windows support is weaker | dev-machine friction | dev via WSL; CI and prod are Linux containers |
+| Windows support is weaker | dev-machine friction | native Windows (PowerShell, no WSL) is supported for contributing and app development, gated by `ci.yml`'s `windows` job on `windows-latest` (As of 2026-10, reporting and not yet required — plan 101 sweep 8); prod is Linux containers, on Docker Desktop for a Windows host |
 
 ## 4. Scope is credibly 3–4 products
 

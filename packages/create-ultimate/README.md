@@ -1,12 +1,12 @@
 # create-ultimate
 
 ```sh
-bunx create-ultimate myapp && cd myapp && bin/setup && bin/dev
+bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
 
-`bin/setup` is the scaffold's own script and it is not optional: `x new` writes files and installs
-nothing, so `x dev` on the tree it just wrote fails with `X_BUILD_FAILED`. The script installs the
-dependencies, writes `.env.development.local`, generates and applies the first migration, seeds,
+`bun run setup` is the scaffold's own script (`bin/setup.ts`, run by Bun — the same command in
+PowerShell, cmd and bash) and it is not optional: `x new` writes files and installs nothing, so
+`x dev` on the tree it just wrote fails with `X_BUILD_FAILED`. The script installs the dependencies, writes `.env.development.local`, generates and applies the first migration, seeds,
 and writes `x.manifest.json` — six commands, idempotent, so it is safe to re-run after every pull.
 
 Thin wrapper over `x new` — same templates, same flags, no second code path.

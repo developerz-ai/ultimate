@@ -34,7 +34,7 @@ describe('TONES', () => {
 describe('TONES <-> $tones', () => {
   test('the SCSS tone list that generates .tone-* classes matches TONES exactly', async () => {
     const source = await Bun.file(
-      new URL('../tokens/_colors.scss', import.meta.url).pathname,
+      Bun.fileURLToPath(new URL('../tokens/_colors.scss', import.meta.url)),
     ).text();
     const list = /\$tones:\s*\(([^)]*)\)/.exec(source);
     expect(list?.[1]).toBeDefined();

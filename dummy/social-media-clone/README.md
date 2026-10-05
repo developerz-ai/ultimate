@@ -5,9 +5,9 @@ Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Post
 ## 🚀 Start
 
 ```sh
-bin/setup     # prerequisites, deps, env, migrate, seed
-x dev         # all roles in one process, embedded Postgres, /_x mounted
-x verify      # the gate: typecheck, lint, boundaries, tests, drift, budgets
+bun run setup # prerequisites, deps, env, migrate, seed
+bun run dev   # all roles in one process, embedded Postgres, /_x mounted
+bun run check # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
 ```
 
 ## 🗺 Layout

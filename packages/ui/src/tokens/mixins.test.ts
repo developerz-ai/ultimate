@@ -9,7 +9,7 @@ import { hasErrorCode } from '@ultimat3/core';
 import '../errors';
 import { compileScss, scssRefusal } from '../sass-probe-fixture';
 
-const TOKENS = new URL('.', import.meta.url).pathname;
+const TOKENS = Bun.fileURLToPath(new URL('.', import.meta.url));
 const MIXINS = `${TOKENS}_mixins.scss`;
 
 /** One stylesheet using the token entry point exactly as an app does: `@use … as t`. */

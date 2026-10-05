@@ -71,6 +71,7 @@ servers a `services:` block cannot start.
 | `packages` | 2 | half the packages, each tested and covered alone |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
+| `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
 
 The pattern is the one `wiki/CI-Parallel-Gate.md` documents for an app: a matrix of parts, every
 part uploading its `--json` document, one job merging them.
@@ -96,6 +97,7 @@ services where it starts any (22 s + 8 s before this change, for two servers by 
 | `deploy-social-demo.yml` reads the demo app's own gate | same test: its `CHECK` is the matrix job's name for that app |
 | every tracked app has a runner | same test: the matrix is `GATED_APPS` |
 | a part starts only the services it exports URLs for | `scripts/test-services-shape.test.ts` |
+| `windows` is the one non-Ubuntu runner, pwsh on every step, ≤ 25 min | `scripts/ci-workflow-shape.test.ts` |
 
 ## Trade
 
@@ -117,6 +119,7 @@ real work measured in tens of seconds, never a five-second suite paying a minute
 | `reference-app-verify` | `deploy-social-demo.yml` | yes — the check is `reference-app-verify (<app>)`; the workflow reads `reference-app-verify (dummy/social-media-clone)` |
 | `scaffold-smoke` | docs and wiki, by job id | no — the id is unchanged; the checks are `scaffold-smoke (demoapp)` and `scaffold-smoke (bareapp)` |
 | `packages`, `container`, `deploy-proof` | none | ids unchanged |
+| `windows` | none yet; `required` once green | new, 2026-10-05 |
 | branch protection | none: `main` is unprotected and has no rulesets (`gh api repos/developerz-ai/ultimate/branches/main/protection` → 404, `As of 2026-10-01`) | — |
 
 If `main` is ever protected, the one required check is `verify`.
@@ -136,3 +139,17 @@ Measured on eight runs of 2026-10-03 (run 37101906027 among them), seconds per j
 
 The run's wall time is still `packages (2/2)` until `cli`'s coverage is split across processes
 (`scripts/coverage-gate.ts`), which is outside this change.
+
+## Windows, 2026-10-05
+
+Plan 101 sweep 8 (`docs/plans/2026/10/04/101-squeaky-clean-sweep/08-windows.md`, W6): native
+Windows — PowerShell, no WSL — is a supported platform, and a `windows-latest` job is what says
+so. Free, because the repository is public. It is not a part of the gate and not a job beside it
+in the sense this page forbids: its question is the platform, which no Ubuntu runner can answer.
+
+| Rule | Why |
+|---|---|
+| `shell: pwsh` on every step; the setup composite installs in pwsh on Windows | Git Bash ships on the image and would run a bash dependency in silence |
+| checkout with the runner's default `core.autocrlf` | that is a contributor's clone; `.gitattributes` has to make it LF |
+| a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare, `bun test packages/core` also selects `examples/dummy/packages/core` |
+| `continue-on-error: true`, outside `verify`'s `needs` | lands red first so the sweep's rows can watch it turn green; flipped to required in the diff that makes it green |

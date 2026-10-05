@@ -17,7 +17,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { isolateDeclaredTags } from '@ultimat3/cache';
 import { Glob } from 'bun';
 
-const APP_ROOT = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
+const APP_ROOT = Bun.fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]$/, '');
 
 /**
  * Importing every module of the app declares the app's cache tags — `packages/db/src/tags.ts` calls
