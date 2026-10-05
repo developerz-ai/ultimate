@@ -208,7 +208,7 @@ Nothing is a stub, and nothing is a `TODO`. The generated tests assert the invar
 lose quietly: a cross-org actor is denied before the handler runs, garbage input is rejected, the
 live query's SQL carries `order by` and `limit`, the job dedupes a replayed enqueue, the route stays
 inside its byte budget. The CLI's own gate writes the whole scaffold to a sandbox and compiles it
-with the real `tsc` against the real workspace packages — `packages/cli/src/scaffold-typecheck.ts` —
+with the real `tsc` against the real workspace packages — `packages/cli/src/scaffold-typecheck-fixture.ts` —
 and the only diagnostics it tolerates are pinned one occurrence at a time in `KNOWN_GAPS`, each
 owned by a framework package, never by a template, and each spendable only by the variant that
 pinned it.

@@ -182,6 +182,8 @@ export {
   usesDevCursorSecret,
 } from './cursor';
 export { compareDecimalText } from './decimal-order';
+export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
+export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { DevSecretsOptions } from './dev-secrets';
 export { assertNoDevSecretsOutsideLocal, CursorSecretDevError } from './dev-secrets';
 export type {

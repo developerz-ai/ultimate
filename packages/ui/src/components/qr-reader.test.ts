@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { applyMask, encodeQr, formatInfoBits } from './qr-matrix';
-import { formatCells, isFunctionModule, readQr, syndromesZero } from './qr-reader';
+import { formatCells, isFunctionModule, readQr, syndromesZero } from './qr-reader-fixture';
 
 /** A mutable copy of a symbol, with one module flipped per `[row, col]`. */
 const flipped = (text: string, cells: readonly (readonly [number, number])[]): boolean[][] => {

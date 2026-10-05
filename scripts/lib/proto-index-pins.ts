@@ -85,6 +85,6 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
   ui: {
     count: 4,
     reason:
-      'token and widget tables keyed by a semantic role. `fake-dom.ts:79` was one of the thirteen — `querySelectorAll("[constructor]")` matched every element — and is repaired.',
+      'token and widget tables keyed by a semantic role. `fake-dom-fixture.ts:79` was one of the thirteen — `querySelectorAll("[constructor]")` matched every element — and is repaired.',
   },
 };

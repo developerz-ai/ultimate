@@ -2,12 +2,13 @@
 // out before which, which keys travel together, which slot they hash to, and which lease each
 // join asks for. Every failure pinned here is one a report of `errors: []` cannot see — the tier
 // answers correctly to its caller and leaves the store in a state no later bust can repair.
-// The fake is a recorder (`redis-fake.ts`); what a script DOES is `redis.live.test.ts`'s subject.
+// The fake is a recorder (`redis-fake-fixture.ts`); what a script DOES is `redis.live.test.ts`'s
+// subject.
 
 import { describe, expect, test } from 'bun:test';
 import type { RedisLike } from './redis';
 import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
-import { fakeRedis, keysOf, slotTokenOf, tierFor } from './redis-fake';
+import { fakeRedis, keysOf, slotTokenOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 
 // Both halves of the shared tier's write and both halves of its bust are ORDERED, and the order

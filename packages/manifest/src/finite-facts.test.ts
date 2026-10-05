@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
-import { FIXTURE } from './diff-fixtures';
+import { FIXTURE } from './diff-fixture';
 import { manifestJson, verifyBuildId } from './emit';
 import type { Manifest } from './schema';
 

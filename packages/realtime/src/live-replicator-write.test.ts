@@ -19,7 +19,7 @@ import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { startLiveReplicator } from './live-replicator';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';

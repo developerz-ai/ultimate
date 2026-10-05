@@ -34,6 +34,12 @@ export type {
   ClientFlight,
   ClientFlightOptions,
   ClientRetry,
+  // The compat window a retirement gets — `@ultimat3/core`'s, re-exported here until 25.0.0.
+  // Versioning is NOT here and never will be: two versions of one action is two deployments
+  // behind one ingress (axiom 7). A plain `route` announces the same headers via renderDeprecation.
+  Deprecation,
+  DeprecationField,
+  DeprecationRender,
   FlightKeyOptions,
   FlightPlan,
   PgExecutor,
@@ -44,6 +50,8 @@ export {
   DEFAULT_CLIENT_RETRY,
   isSuperseded,
   isTransientFailure,
+  recordDeprecatedCall,
+  renderDeprecation,
 } from '@ultimat3/core';
 /**
  * `toBucket` is `@ultimat3/http`'s — http owns `Bucket` and the limiter maths, and `action` and
@@ -118,14 +126,6 @@ export type { ContractTest, ContractTestOptions } from './contract-test';
 export { anonymousCtx, contractTestsFor, policyTestStubFor } from './contract-test';
 export type { Api, ApiDef, ApiModule, ApiModules } from './define-api';
 export { defineApi } from './define-api';
-/**
- * The compat window a retirement gets. Versioning itself is NOT here and never will be: two
- * versions of one action side by side is two deployments behind one ingress (axiom 7), not a
- * router feature. `renderDeprecation` is exported so a plain `route` can announce the same pair
- * of headers the action projection does.
- */
-export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
-export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { IdempotencyConflictReason, IdempotencyKeyProblem, RemoteFailure } from './errors';
 export {
   ActionDeniedError,

@@ -27,7 +27,7 @@ import { MIGRATIONS_DIR } from './migrations';
 import { renderJson } from './output';
 import { flagBool, parseArgs } from './parse';
 import { SPECS } from './registry';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
   args: parseArgs(argv, SPECS),

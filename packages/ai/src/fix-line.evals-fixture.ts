@@ -5,7 +5,7 @@
  */
 
 import { defineEval } from './evals';
-import { fixLinePrompt } from './fix-line';
+import { fixLinePrompt } from './fix-line-fixture';
 import { exact } from './scorers';
 
 export const fixLineCases = [

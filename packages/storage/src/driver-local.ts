@@ -134,7 +134,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     oneAtATime(key, () => headObject(root, key));
   /** The same, settled against the bytes on disk — streamed through a hasher, never buffered. */
   const measured = (key: string): Promise<StorageListEntry | undefined> =>
-    oneAtATime(key, () => headObject(root, key, () => etagOfFile(root, key)));
+    oneAtATime(key, () => headObject(root, key, () => etagOfFile(root, key, registered)));
 
   /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
   const removeIfPresent = async (path: string, key: string): Promise<void> => {
@@ -206,13 +206,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       // renames is a pair in doubt this process has no need to meet.
       return oneAtATime(safe, async () => {
         const file = Bun.file(filePath(safe));
-        if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, safe);
+        if (!(await file.exists())) throw objectNotFound(registered, safe);
         if (file.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, file.size, maxGetBytes);
-        const bytes = await readObjectBytes(root, safe);
+        const bytes = await readObjectBytes(root, safe, registered);
         // Settled against the bytes this read ALREADY holds: hashed only for a sidecar-less object
         // or a pair in doubt, and then exactly once.
         const entry = await headObject(root, safe, () => etagOf(bytes));
-        if (entry === undefined) throw objectNotFound(DRIVER_NAME, safe);
+        if (entry === undefined) throw objectNotFound(registered, safe);
         return {
           object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
           bytes,
@@ -223,7 +223,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
       const safe = assertSafeKey(key);
       const file = Bun.file(filePath(safe));
-      if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, safe);
+      if (!(await file.exists())) throw objectNotFound(registered, safe);
       return file.stream();
     },
 
@@ -235,7 +235,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       // a torn source's borrowed type is a durable lie every later `get()` of the copy would
       // trust. The hash is streamed, and only for a sidecar-less source or a pair in doubt.
       const entry = await measured(source);
-      if (entry === undefined) throw objectNotFound(DRIVER_NAME, source);
+      if (entry === undefined) throw objectNotFound(registered, source);
       const sidecar: Sidecar = {
         contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
         etag: entry.etag,
@@ -252,7 +252,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         }),
       ).catch(async (error: unknown) => {
         // The source was deleted while this copy waited its turn on the destination.
-        if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(DRIVER_NAME, source);
+        if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(registered, source);
         throw error;
       });
       return {

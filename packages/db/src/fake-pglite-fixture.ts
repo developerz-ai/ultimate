@@ -1,6 +1,7 @@
 // Single responsibility: the PGlite driver fake the adapter tests record statements against.
-// Shared rather than copied for the same reason `fake-reservable.ts` is: the assertion in every
-// one of these tests is the recorded ORDER, and two copies of the recorder drift into two orders.
+// Shared rather than copied for the same reason `fake-reservable-fixture.ts` is: the assertion in
+// every one of these tests is the recorded ORDER, and two copies of the recorder drift into two
+// orders.
 
 import type { PgliteDriver, PgliteResult } from './pglite';
 

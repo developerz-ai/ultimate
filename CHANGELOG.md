@@ -13,7 +13,8 @@ Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: inter
 that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0
 workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way. Sweep 5
 closes seven open issues across navigation, ui, the MCP catalog and the dev error page. Sweep 6
-holds the CLI, its guards, the test harness and CI to what they claim.
+holds the CLI, its guards, the test harness and CI to what they claim. Sweep 7 deletes trash and
+twins, and ships the guard that keeps each one gone.
 
 ### Security
 
@@ -111,6 +112,24 @@ holds the CLI, its guards, the test harness and CI to what they claim.
 
 ### Changed
 
+- core: `renderDeprecation`, `recordDeprecatedCall` and the `Deprecation*` types live in
+  `@ultimat3/core`; `@ultimat3/action` and `@ultimat3/query` re-export the same names (removal in
+  25.0.0). `assertEnvExample` is deprecated: the `.env.example` gate is `x verify`'s `manifest` step.
+- 20 test-only modules in 10 packages are renamed `*-fixture.ts` and no longer ship in tarballs;
+  `package-shape` refuses a `src/` module only tests import under any other name
+  (`X_PACKAGE_TEST_ONLY_SHIPPED`).
+- `x verify --json`: a step may carry `warnings` (never failing, present on a pass, kept by
+  `x verify merge`); `filesize` lists files at 450–499 lines there. The terminal shows the count,
+  and `--verbose` the list.
+- chore: root `bin/setup`, `bin/check` and `bin/dev` are gone. Use `bun run setup`, `bun run verify`
+  and `bun run x -- <args>`; `bun run root-bin` keeps them gone (`X_ROOT_BIN_REINTRODUCED`).
+  `.mcp.json` is untracked (`.mcp.json.example` is the shared one).
+- scripts: the error-status backlog is split into `OFF_SOCKET` (decided, may grow) and `UNDECIDED`
+  (shrink-only, ratcheted); `new-error-code --off-socket` writes only the first.
+- guards: `bun run doc-paths` fails the `manifest` step on a published page naming a `packages/`,
+  `scripts/` or `docs/` path that does not exist (`X_DOC_PATH_DEAD`; a `**Historical:**` label
+  exempts its section). `bun run plan-status` holds every `docs/plans/**/status.yml` to the
+  template enum (`X_PLAN_STATUS_INVALID`).
 - `cli`: `x jobs drain` is planned and exits `X_NOT_IMPLEMENTED` before booting the queue or leasing
   a job; both `--to` targets were stubs, so a drain held production jobs for five minutes and moved
   none (K9).
@@ -212,6 +231,18 @@ holds the CLI, its guards, the test harness and CI to what they claim.
 
 ### Fixed
 
+- `testing`: the sealed network seals `WebSocket` and `Bun.connect` too (non-loopback hosts, the
+  same allow-list as `fetch`), as the docs already claimed; offline refuses every dial, loopback
+  included.
+- `storage`: `X_STORAGE_NOT_FOUND` names the registered disk, not the driver kind, for `s3` and
+  `local`.
+- `cli`, scripts: a stdout/stderr write that keeps answering `EAGAIN` retries at most 50
+  consecutive stalls with a 1–32 ms backoff, then drops the line and counts it; after a drop each
+  line gets one attempt until the reader drains again, and a half-written line is closed before the
+  next. A reader that never drains no longer hangs the command.
+- Docs: `RuntimeOverrides` is documented (wiki/Configuration.md), and so is `defineTheme()`'s
+  contrast refusal (#441, #442); every dead path in a package `CLAUDE.md`, the wiki and
+  `docs/architecture` is repointed; the fictional `tokens.ts` block is gone.
 - `cli`: `x --cwd <app>` run from another directory loads that app's `.env*` (K1), and root `.env`
   files parse as Bun reads them: multi-line quoted values (PEM keys), backticks, `#` comments, `\$`,
   `\r` in double quotes and bare carriage-return line endings (K2).

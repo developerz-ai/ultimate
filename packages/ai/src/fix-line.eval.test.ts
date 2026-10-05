@@ -7,8 +7,8 @@
  */
 
 import { expect, test } from 'bun:test';
-import { fixLinePrompt } from './fix-line';
-import { fixLineCases, fixLineEval } from './fix-line.evals';
+import { fixLineCases, fixLineEval } from './fix-line.evals-fixture';
+import { fixLinePrompt } from './fix-line-fixture';
 import { createGateway } from './gateway';
 import { EchoProvider } from './provider';
 

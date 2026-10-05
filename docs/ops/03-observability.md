@@ -37,7 +37,7 @@ exactly one emitter:
 | `channel_frames_dropped_total` | counter | none | the sync node, per channel frame a socket's backpressure dropped (`packages/realtime/src/socket.ts`) |
 | `channel_replay_gaps_total` | counter | none | the sync node, per `replay-gap` a socket took (`packages/realtime/src/channel-gaps.ts`) |
 | `channel_removals_skipped_total` | counter | none | the sync node, per channel record removal it could not route: the old row image lacked the channel's params, i.e. the table is not `REPLICA IDENTITY FULL` (`packages/realtime/src/channel-records.ts`). Logged as `channel.removal_skipped` with the channel and table |
-| `deprecated_calls_total` | counter | primitive, `name` | a call served by a declaration marked deprecated (`packages/action/src/deprecation.ts`) |
+| `deprecated_calls_total` | counter | primitive, `name` | a call served by a declaration marked deprecated (`packages/core/src/deprecation.ts`) |
 | `process_resident_memory_bytes`, `process_heap_used_bytes`, `process_heap_total_bytes`, `process_external_memory_bytes` | gauge | none | every role, read at scrape time (`packages/core/src/process-metrics.ts`) |
 | `process_cpu_seconds_total` | counter | none | every role, fed once a second; the boot's CPU is counted at start |
 | `process_event_loop_lag_seconds` | histogram | none | every role: how late a 1,000 ms timer fired, one sample a second |

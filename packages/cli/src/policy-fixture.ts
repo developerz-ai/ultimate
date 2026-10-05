@@ -1,6 +1,6 @@
 // The one policy declaration set both `x policy` test files run against. Shared rather than
-// copied, for the reason `thrown-by.ts` gives: every count in both files' assertions is read off
-// THIS set, so a second copy drifts and each file keeps passing while they stop agreeing.
+// copied, for the reason `thrown-by-fixture.ts` gives: every count in both files' assertions is
+// read off THIS set, so a second copy drifts and each file keeps passing while they stop agreeing.
 
 import { action, registerActions, t } from '@ultimat3/action';
 import { and, can, definePermissions, defineRoles } from '@ultimat3/policy';

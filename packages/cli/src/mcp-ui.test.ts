@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import { assertBudgetedRoute, matches, uiCapabilities } from './mcp-ui';
 import { ISLAND_PROBE } from './shot-verdict';
 

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { diffManifest } from './diff';
-import { fixtureManifest } from './diff-fixtures';
+import { fixtureManifest } from './diff-fixture';
 
 type Entity = NonNullable<ManifestSources['entities']>[number];
 type Column = Entity['columns'][number];

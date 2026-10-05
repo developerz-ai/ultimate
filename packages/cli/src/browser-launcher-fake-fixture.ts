@@ -4,7 +4,7 @@
 // cannot know it refuses by name rather than inventing: no layout box, and no accessibility tree.
 import { hostDecision, notImplemented } from '@ultimat3/core';
 import { CdpCallFailedError } from '@ultimat3/testing';
-import { queryHtml } from './browser-launcher-fake-html';
+import { queryHtml } from './browser-launcher-fake-html-fixture';
 import type {
   CaptureClip,
   ElementSnapshot,

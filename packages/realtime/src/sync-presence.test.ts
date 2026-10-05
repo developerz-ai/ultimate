@@ -12,7 +12,7 @@ import { type PresenceEvent, readPresence } from './channel-presence';
 import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-node';

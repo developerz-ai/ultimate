@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ImageDecodeFailedError, ImageUnsupportedError } from './errors';
-import { fixtureBytes, PNG_INTERLACED_8X8, PNG_PALETTE_4X1, PNG_RGBA_4X4 } from './fixtures';
+import { fixtureBytes, PNG_INTERLACED_8X8, PNG_PALETTE_4X1, PNG_RGBA_4X4 } from './image-fixture';
 import { decodeImage, encodeImage } from './png-pixels';
 import { probeImage } from './probe';
 import { createRaster, type Raster } from './raster';

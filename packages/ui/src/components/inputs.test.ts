@@ -4,7 +4,7 @@
 // than an attribute.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { FakeElement, installFakeDom } from '../fake-dom';
+import { FakeElement, installFakeDom } from '../fake-dom-fixture';
 import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { Input } from './Input';
 import { Radio } from './Radio';

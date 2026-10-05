@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DevHost, UiInspectInput, UiInspectResult } from '@ultimat3/mcp';
 import { devTools, UI_INSPECT_LIMITS } from '@ultimat3/mcp';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import { uiCapabilities } from './mcp-ui';
 import { capInspect } from './mcp-ui-inspect';
 import { ISLAND_PROBE } from './shot-verdict';

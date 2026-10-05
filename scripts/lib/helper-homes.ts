@@ -101,6 +101,16 @@ export const HELPER_HOMES: readonly HelperHome[] = [
     find: ({ stripped }) =>
       offsets(stripped, /\bresolveEnvironment\s*\([^)]*\)\s*===\s*(['"`])test\1\s*\?/g),
   },
+  {
+    helper: 'renderDeprecation',
+    home: 'packages/core/src/deprecation.ts',
+    // `stripped`: both signals are string CONTENTS — the RFC 8288 relation the successor link
+    // carries, and RFC 9745's `@<unix seconds>` Date. action and query each carried a twin of it.
+    find: ({ stripped }) => [
+      ...offsets(stripped, /\brel\s*=\s*\\?["']?successor-version\b/g),
+      ...offsets(stripped, /`@\$\{\s*Math\s*\.\s*floor\s*\(/g),
+    ],
+  },
 ];
 
 const finding = (file: HelperSource, rule: HelperHome, index: number): Finding => ({

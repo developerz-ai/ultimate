@@ -6,7 +6,7 @@
 // concurrently-running files, and an injected value cannot.
 
 import { describe, expect, test } from 'bun:test';
-import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
 import type { InterceptRules } from './intercept';

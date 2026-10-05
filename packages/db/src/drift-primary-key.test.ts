@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { diffSchema } from './drift';
-import { schema, table } from './drift-fixtures';
+import { schema, table } from './drift-fixture';
 import type { TableDescription } from './introspect';
 
 const keyed = (

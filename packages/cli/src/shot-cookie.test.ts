@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSessionInit } from './browser-launcher-port';
 import { runShot } from './cmd-shot';
 import { readCookieFlag, shotCookies } from './shot-cookie';

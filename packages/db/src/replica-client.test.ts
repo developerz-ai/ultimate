@@ -8,7 +8,7 @@ import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
 import { driverError } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
-import { reservableOver } from './fake-reservable';
+import { reservableOver } from './fake-reservable-fixture';
 import { replicatedClient } from './replica-client';
 import { withReplicaReads } from './replica-scope';
 import { sql } from './sql';

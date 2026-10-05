@@ -217,7 +217,7 @@ migration's snapshot and writes three files — `<id>.sql`, `<id>.snapshot.json`
 bunx x db gen "add todos"
 ```
 
-The 1.1.0 workaround this step used to carry (a hand-written `scripts/db-gen.ts`, and two manual
+The 1.1.0 workaround this step used to carry (a hand-written `db-gen.ts` script, and two manual
 edits to the emitted SQL) is gone: all three defects it worked around were fixed in 2.0.0, and
 `scaffold-smoke` in CI runs `x db gen` then `x db migrate` on a fresh scaffold on every push.
 

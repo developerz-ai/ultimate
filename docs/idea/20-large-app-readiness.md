@@ -141,7 +141,7 @@ The thesis is that one very large app can be built entirely inside Ultimate. Two
 
 **If closing the ship list above takes more than two new packages.** The audit's answer is `notify` and `search` — everything else is a factory over an existing primitive in an existing package. A third and fourth new package would mean the eight primitives do not span what a large product needs, and the primitive set, not the roadmap, is what needs revisiting.
 
-**If a real adopter's first week produces a `packages/platform/` the framework should have owned.** The estimate from both tracked apps was 8–12k lines — notifications, search, webhooks, exports, forms. That number is the metric.
+**If a real adopter's first week produces a `platform` package the framework should have owned.** The estimate from both tracked apps was 8–12k lines — notifications, search, webhooks, exports, forms. That number is the metric.
 
 **All five landed on 2026-08-24**, so the metric is now measurable rather than projected, and the warning it carried turned out to be the right one: *if it does not fall as the ship list lands, the gap was never the features; it was the boot that never called them.* Three of the defects found while shipping them were exactly that — a declaration nothing read:
 

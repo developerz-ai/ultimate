@@ -27,8 +27,8 @@ import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import type { StaticReport } from './static-report';
 import { STATIC_REPORT_FILE, writeStaticReport } from './static-report';
-import type { ThrownShape } from './thrown-by';
-import { thrownBy } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
+import { thrownBy } from './thrown-by-fixture';
 
 test('every build target has an entry, and `x new` writes every one of them', () => {
   const scaffolded = new Set(planNewApp({ name: 'entry-app', example: true }).map((f) => f.path));

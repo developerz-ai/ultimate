@@ -11,7 +11,7 @@ import {
   one,
   renderHtml,
   restoreFactory,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import { computedRow } from './registry';
 import type { AdminComputedColumn, AdminRenderer } from './resource-list';
 import type { WidgetContext } from './widget-value';

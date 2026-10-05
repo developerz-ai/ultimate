@@ -14,9 +14,8 @@ interface Entry {
 }
 
 export const SCRIPTS: readonly Entry[] = [
-  { command: 'bin/setup', does: 'fresh clone to running: bun install, env, git hooks' },
-  { command: 'bin/dev', does: 'run the CLI against the repo: bin/dev <x subcommand>' },
-  { command: 'bin/check', does: 'the gate — same steps as CI' },
+  { command: 'bun run setup', does: 'fresh clone to running: bun install, env, git hooks' },
+  { command: 'bun run x -- <args>', does: 'run the x CLI from source against this repo' },
   {
     command: 'bun run scripts/verify.ts',
     // Projected, never restated: the count said 16 while the step list and CLAUDE.md said 17.

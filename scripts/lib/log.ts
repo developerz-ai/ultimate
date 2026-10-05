@@ -1,4 +1,5 @@
 import { writeSync } from 'node:fs';
+import { backoffDelay } from '../../packages/core/src/backoff';
 
 // Output for the root scripts. Same rule as the CLI: one data shape, two renderers, `--json` on
 // every script — so the repo's own automation is as machine-readable as the framework it builds.
@@ -68,17 +69,84 @@ export function render(result: ScriptResult, json: boolean): string {
  * so the fix for the truncation crashed the whole gate on GitHub Actions, printing nothing at all
  * and leaving `x verify` looking like it had produced no output. The reader drains within
  * microseconds and the next attempt succeeds; treating "would block" as fatal is the bug.
+ *
+ * BOUNDED, though: a reader that never drains turned an unbounded retry into a script that never
+ * exits, spinning a core. `OUT_EAGAIN_ATTEMPTS` stalls in a row, each waiting longer (capped), then
+ * the text is dropped and counted (`droppedWrites()`). After a drop, stdout is DEGRADED — one
+ * attempt and no sleep per write until a byte arrives, or a dead reader costs ~1.5 s per line — and
+ * text dropped half-written makes the next arriving write open with `\n`. The same rule as
+ * `@ultimat3/cli`'s `writeAll`, kept as its own loop because that module imports the
+ * `@ultimat3/core` barrel, which every script here would then evaluate at startup; the curve is
+ * core's `backoff.ts` leaf.
  */
 export function writeOut(text: string): void {
-  const buffer = Buffer.from(text);
+  writeFully(Buffer.from(text));
+}
+
+/** Consecutive stalls one write may absorb before its text is dropped. Progress resets it. */
+export const OUT_EAGAIN_ATTEMPTS = 50;
+
+/** Core's one curve (the leaf, not the barrel), exponential and capped: 1, 2, 4 … 32 ms. */
+const backoffMs = (stall: number): number => backoffDelay({ attempt: stall, base: 1, max: 32 });
+
+/** `writeSync`'s shape on fd 1, so a test can hand in a pipe that is full forever. */
+export type StdoutWrite = (
+  fd: number,
+  buffer: Uint8Array,
+  offset: number,
+  length: number,
+) => number;
+
+let dropped = 0;
+/** The last write was dropped: the next gets one attempt. */
+let degraded = false;
+/** It was dropped HALF-written: the next write that arrives opens with the missing newline. */
+let torn = false;
+
+/** Writes this process dropped to a reader that never drained. */
+export const droppedWrites = (): number => dropped;
+
+const isEagain = (cause: unknown): boolean =>
+  typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'EAGAIN';
+
+/**
+ * Every byte to fd 1, or none past `OUT_EAGAIN_ATTEMPTS` stalls in a row — one while degraded.
+ * True when it all arrived.
+ */
+export function writeFully(
+  buffer: Uint8Array,
+  write: StdoutWrite = writeSync,
+  sleep: (ms: number) => void = Bun.sleepSync,
+): boolean {
+  const prefix = torn ? 1 : 0;
+  const bytes = prefix === 0 ? buffer : Buffer.concat([Uint8Array.of(0x0a), buffer]);
   let written = 0;
-  while (written < buffer.length) {
+  let stalls = 0;
+  while (written < bytes.length) {
+    let progress = 0;
     try {
-      written += writeSync(1, buffer, written, buffer.length - written);
+      progress = write(1, bytes, written, bytes.length - written);
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'EAGAIN') throw cause;
+      if (!isEagain(cause)) throw cause;
     }
+    if (progress > 0) {
+      written += progress;
+      stalls = 0;
+      degraded = false; // The reader drained: the full budget again.
+      continue;
+    }
+    stalls += 1;
+    if (stalls >= (degraded ? 1 : OUT_EAGAIN_ATTEMPTS)) {
+      dropped += 1;
+      degraded = true;
+      // Nothing written leaves a torn line torn; only the prefix written closes it cleanly.
+      if (written > 0) torn = written > prefix;
+      return false;
+    }
+    sleep(backoffMs(stalls));
   }
+  torn = false;
+  return true;
 }
 
 /** Print and exit. Scripts call this exactly once, at the end. */

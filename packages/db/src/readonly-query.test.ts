@@ -8,7 +8,7 @@ import { renderThrowable } from '@ultimat3/core';
 import type { DbClient, ReservableClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient } from './fake';
-import { reservableOver } from './fake-reservable';
+import { reservableOver } from './fake-reservable-fixture';
 import { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 
 describe('readOnlyQuery', () => {

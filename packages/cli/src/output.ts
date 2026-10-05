@@ -50,6 +50,12 @@ export interface StepResult {
    * coverage is `data.coverage.unit`), where `--json` and the terminal both always have it.
    */
   readonly output?: string;
+  /**
+   * Advice that does not fail the step — a file inside `filesize`'s band below the ceiling. Unlike
+   * `output`, carried by both renderers on a PASS too: advice a green run hides reaches nobody
+   * until it has become the failure it warns about. One line of text per warning.
+   */
+  readonly warnings?: readonly string[];
   /** Worker processes the step used; `1` means it ran serially. Absent for a non-test step. */
   readonly workers?: number;
   /** Why the width is what it is — `4 workers (budget 4.0 GB)`. */
@@ -230,6 +236,14 @@ export function renderHuman(result: CommandResult, verbose = false): string {
       `  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}${why(step)}`,
     );
     for (const finding of step.findings) out.push(renderFinding(finding, '      '));
+    // Escaped like every other line text reaches fd 1 through: a warning names a file path. A
+    // green terminal run shows the count, not the list: `filesize`'s band alone is ~150 lines,
+    // and a wall of advice on every run is read by nobody. `--json` always carries the list.
+    const warnings = step.warnings ?? [];
+    if (verbose) for (const warning of warnings) out.push(`      ! ${singleLine(warning)}`);
+    else if (warnings.length > 0) {
+      out.push(`      ! ${msg('cli.verify.warnings', { count: warnings.length })}`);
+    }
     // NOT escaped, and that is the one exception: `output` is this process's own captured
     // subprocess stdout — `bun test`'s colour is the reason a human reads it at all, and it is
     // already split on its real newlines rather than carrying them inside one entry.
@@ -256,6 +270,10 @@ export function renderJson(result: CommandResult, verbose = false): string {
     durationMs: step.durationMs,
     skipped: step.skipped === true,
     findings: step.findings,
+    // Never gated on `ok` or `--verbose`, unlike `output` below: see `StepResult.warnings`.
+    ...(step.warnings === undefined || step.warnings.length === 0
+      ? {}
+      : { warnings: [...step.warnings] }),
     ...(step.workers === undefined ? {} : { workers: step.workers }),
     ...(step.widthReason === undefined ? {} : { widthReason: step.widthReason }),
     ...(step.shard === undefined

@@ -1,9 +1,11 @@
 // Sealed network. Any egress a test did not explicitly mock or allow fails the test with the URL
 // and the line that fixes it. A test that quietly reaches the internet is a test that fails in CI
-// for reasons nobody can reproduce — so the default is "nothing gets out".
+// for reasons nobody can reproduce — so the default is "nothing gets out". Three dials are sealed:
+// `fetch` here, `WebSocket` and `Bun.connect` through `sealed-sockets.ts`, all behind one gate.
 
-import { isSelfOrigin } from '@ultimat3/core';
+import { classifyAddress, isSelfOrigin } from '@ultimat3/core';
 import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
+import { installSocketSeal } from './sealed-sockets';
 
 export type FetchLike = typeof globalThis.fetch;
 
@@ -24,6 +26,8 @@ interface SealState {
   readonly mocks: MockRoute[];
   readonly seen: string[];
   original: FetchLike | undefined;
+  /** `installSocketSeal`'s undo, held beside `original` so one unseal restores all three dials. */
+  restoreSockets: (() => void) | undefined;
   network: NetworkState;
 }
 
@@ -32,6 +36,7 @@ const state: SealState = {
   mocks: [],
   seen: [],
   original: undefined,
+  restoreSockets: undefined,
   network: 'online',
 };
 
@@ -57,10 +62,44 @@ const methodOf = (input: RequestInfo | URL, init: RequestInit | undefined): stri
   return 'GET';
 };
 
-/** Replace global fetch. Idempotent: sealing twice keeps the one original around. */
+/**
+ * A raw socket to THIS machine is not egress, whichever port: it is how a test reaches the
+ * scripted server it `Bun.listen`ed and the compose services the live suites run against, none of
+ * which announce through `markListening`. What fails unreproducibly in CI is the internet, and a
+ * loopback dial with nothing behind it fails the same way on every machine.
+ */
+const isThisMachine = (hostname: string): boolean => {
+  if (hostname.toLowerCase() === 'localhost') return true;
+  const kind = classifyAddress(hostname);
+  return kind === 'loopback' || kind === 'unspecified';
+};
+
+/** The socket dials' gate: the same allow-list, offline state and record as `fetch`. No mocks — a
+ *  socket test injects its transport (`connect`, `client`), it does not intercept the dial. */
+const socketRefusal = (url: string, method: string): Error | undefined => {
+  state.seen.push(url);
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return undefined; // Not a URL: the real constructor refuses it with its own SyntaxError.
+  }
+  // Offline before loopback, the order `fetch` checks in: offline cuts EVERY dial, this machine's
+  // included, or a socket would reach a host the same test's `fetch` is refused.
+  if (state.network !== 'online') {
+    return new NetworkOfflineError({ url, method, mode: state.network });
+  }
+  if (isThisMachine(target.hostname)) return undefined;
+  if (state.allowed.has(target.host)) return undefined;
+  return new NetworkSealedError({ url, method, allowed: [...state.allowed], transport: 'socket' });
+};
+
+/** Replace global fetch, `WebSocket` and `Bun.connect`. Idempotent: sealing twice keeps the one
+ *  set of originals around. */
 export function sealNetwork(): void {
   if (state.original !== undefined) return;
   state.original = globalThis.fetch;
+  state.restoreSockets = installSocketSeal(socketRefusal);
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = urlOf(input);
     state.seen.push(url);
@@ -98,6 +137,8 @@ export function unsealNetwork(): void {
   if (state.original === undefined) return;
   globalThis.fetch = state.original;
   state.original = undefined;
+  state.restoreSockets?.();
+  state.restoreSockets = undefined;
 }
 
 /** Whether the patch is installed. The `network` fixture seals before going offline, so that

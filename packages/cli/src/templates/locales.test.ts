@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { thrownBy } from '../thrown-by';
+import { thrownBy } from '../thrown-by-fixture';
 import { catalogPath, DEFAULT_LOCALES, resolveLocales } from './locales';
 
 describe('unit · the generated-catalog locale resolver', () => {

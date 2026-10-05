@@ -8,7 +8,7 @@ import {
   focusableWithin,
   nextRovingIndex,
 } from './a11y';
-import { FakeElement, installFakeDom, keydown } from './fake-dom';
+import { FakeElement, installFakeDom, keydown } from './fake-dom-fixture';
 import { MENU_ITEM_SELECTOR } from './roving';
 
 describe('nextRovingIndex', () => {

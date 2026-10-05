@@ -3,7 +3,7 @@ import { UnknownCommandError } from './errors';
 import type { CommandSpec } from './parse';
 import { flagBool, flagString, parseArgs } from './parse';
 import { SPECS as SPECS_SHIPPED } from './registry';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 const SPECS: readonly CommandSpec[] = [
   // `verify` really does declare no flags — narrowing the gate would make "green" mean whatever

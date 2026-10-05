@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, createLogger, UltimateError } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
 import type { CdpResolverRequest } from './cdp-resolver';
 import { testClock } from './clock';

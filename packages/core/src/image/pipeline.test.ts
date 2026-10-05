@@ -26,7 +26,7 @@ import {
   PNG_RGBA_4X4,
   SVG_120X45,
   WEBP_9X11,
-} from './fixtures';
+} from './image-fixture';
 import {
   blurDataUrl,
   canDecode,

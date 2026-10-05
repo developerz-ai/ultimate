@@ -16,7 +16,8 @@
 // `packages/http/src/error-map.ts` or a pin in `scripts/error-map-backlog.ts`, or the gate's
 // `errors` step is red with `X_ERROR_STATUS_MISSING` one command later. Exactly one of
 // `--status <n>` (it can answer a request: write the row) and `--off-socket` (it never does: write
-// the pin) is required there, because only the author knows which.
+// the pin into `OFF_SOCKET`, the decided list — never `UNDECIDED`, which only shrinks) is required
+// there, because only the author knows which.
 //
 // The throw site is still the author's: this registers the code and documents it, and the class or
 // factory that raises it is the edit only the author can make.
@@ -107,6 +108,31 @@ export function statusDecision(pkg: string, argv: readonly string[]): StatusDeci
   return { kind: 'row', status: parsed };
 }
 
+/** The literal `--off-socket` writes into: the DECIDED list, never the shrink-only `UNDECIDED`. */
+export const OFF_SOCKET_LITERAL = 'export const OFF_SOCKET';
+
+/**
+ * The pin, confined to `OFF_SOCKET`'s literal. `backlogPinIn` places a code in the first group of
+ * its package it meets, and the file holds TWO lists that share package names — given the whole
+ * file, a decided code would land in the undecided list the ratchet refuses to grow. A code either
+ * list already pins is refused against the whole file first.
+ */
+export function offSocketPinIn(backlog: string, path: string, input: NewErrorCode): string {
+  if (backlog.includes(`'${input.code}'`)) return backlogPinIn(backlog, path, input);
+  const start = backlog.indexOf(OFF_SOCKET_LITERAL);
+  const close = start < 0 ? -1 : backlog.indexOf('\n};', start);
+  if (close < 0) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_INVALID',
+      cause: `${path} has no \`${OFF_SOCKET_LITERAL}\` literal to pin ${input.code} in, so it is not the two-list backlog this generator writes`,
+      fix: `bun run scripts/error-map.ts --json   # after pinning ${input.code} under ${input.pkg} in OFF_SOCKET in ${path} by hand`,
+    });
+  }
+  const end = close + '\n};'.length;
+  const pinned = backlogPinIn(backlog.slice(start, end), path, input);
+  return `${backlog.slice(0, start)}${pinned}${backlog.slice(end)}`;
+}
+
 export interface Planned {
   readonly errorsPath: string;
   readonly errorsTs: string;
@@ -178,7 +204,7 @@ export async function planFiles(
       errorsTs,
       wiki,
       fixes,
-      status: { path, text: backlogPinIn(current, path, input) },
+      status: { path, text: offSocketPinIn(current, path, input) },
     };
   }
   // The table is composed by spread, which takes the last duplicate silently: a code another

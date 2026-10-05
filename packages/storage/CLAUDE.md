@@ -193,7 +193,7 @@ Gotchas:
   the secret, `isLocal()` and the refusal's environment all read `options.env ?? process.env`, so
   the boot's guard and the constructor it guards cannot answer from two tables.
   `driver-local-boot.test.ts` pins it by mutation.
-- **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
+- **The mounted read half is `@ultimat3/cli`'s `runtime-storage.ts`, not this package.** `GET
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be
   a second authz path. This package's contribution to that route is `assertSafeKey`,
@@ -250,7 +250,7 @@ Gotchas:
   (`X_CONFIG_INVALID`) — it could only mint under one of them. `@ultimat3/cli`'s
   `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
   `DEFAULT_SIGNED_URL_BASE` instead.
-- **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `dev-storage.ts` does.**
+- **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `runtime-storage.ts` does.**
   `isWithinOrg` alone refused every un-scoped key, so an app's own `brand/logo.png` was unreachable
   through a URL it had just signed. `isTenantScoped` is case-INSENSITIVE and `isWithinOrg` is not:
   `Org/o2/x` and `org/o2/x` are one file on APFS/NTFS, so the fold has to count as tenant-scoped

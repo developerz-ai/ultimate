@@ -11,7 +11,7 @@ import {
   LocalDiskUnsafeError,
   VerifyFailedError,
 } from './errors';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 describe('VerifyFailedError', () => {
   test('counts the failed steps and names every one of them', () => {

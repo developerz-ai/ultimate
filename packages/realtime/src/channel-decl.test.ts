@@ -8,7 +8,7 @@ import { recordProjection } from '@ultimat3/entity/record';
 import { type ChannelEntity, channel } from './channel-decl';
 import { channelRef } from './channel-ref';
 import { clearChannels } from './channel-registry';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 
 const posts = entity('channel_decl_posts', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 80 }) },

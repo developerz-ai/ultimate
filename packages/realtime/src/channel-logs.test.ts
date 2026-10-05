@@ -8,7 +8,7 @@ import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import { channel } from './channel-decl';
 import { ChannelLogs } from './channel-logs';
 import { clearChannels } from './channel-registry';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const posts = entity('channel_logs_posts', {

@@ -38,7 +38,7 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 const ROOT = join(import.meta.dir, '..', '.registries-fixture');
 const BROKEN = join(import.meta.dir, '..', '.registries-broken-fixture');

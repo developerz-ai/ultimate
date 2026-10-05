@@ -17,7 +17,7 @@ import {
   restoreFactory,
   shallowNodesOf,
   withAttr,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import type { AdminResource } from './resource';
 
 /**

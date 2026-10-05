@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isReservable } from './client';
-import { fakeDriver } from './fake-pglite';
+import { fakeDriver } from './fake-pglite-fixture';
 import {
   createPgliteClient,
   loadPgliteDriver,

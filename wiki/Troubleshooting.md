@@ -62,7 +62,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_BUDGET_EXCEEDED` on `js` | one import pulled a library into a surface | the error names the **import chain**; `x routes --json` for per-route budgets |
 | A `site/` route reports non-zero JS | a component with client state leaked into the static surface | move it to `app/`, or set `hydrate: 'never'` |
 | LCP or CLS regression | an unsized image or a late-loading font | `x routes --json` for the route's budget; images go through the pipeline, never a raw `<img>` |
-| `X_SEO_META_MISSING` | an indexable route's `meta` has no `title`, or no `description`. One code for both — `cause` names the field and the file | add it to the route's `meta`. Deleting a description is a build error, by design. Over-length is a different code, `X_SEO_META_TOO_LONG` (title > 60, description > 160). `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` are design-doc names that were never implemented ([Error codes](Error-Codes#names-used-in-the-design-docs)) |
+| `X_SEO_META_MISSING` | an indexable route's `meta` has no `title`, or no `description`. One code for both — `cause` names the field and the file | add it to the route's `meta`. Deleting a description is a build error, by design. Over-length is a different code, `X_SEO_META_TOO_LONG` (title > 60, description > 160). |
 | `X_ROUTE_META_MISSING` | a route has no `meta` at all | every route sets `render`, `offline`, `hydrate`, `meta` |
 | `X_CATALOG_MISSING_KEYS` | a key exists in one locale's catalog and not another | the cause lists key + locale; add the translation. There is no silent English fallback |
 | `⟦some.key⟧` rendered in the UI | the key is missing everywhere | add it to the default catalog; `x verify` fails until you do |

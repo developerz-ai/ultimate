@@ -21,7 +21,7 @@ import { I18N_SUBCOMMANDS, i18nCommand } from './cmd-i18n';
 import type { CommandContext } from './command';
 import { msg } from './messages';
 import { parseArgs } from './parse';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 let root = '';
 

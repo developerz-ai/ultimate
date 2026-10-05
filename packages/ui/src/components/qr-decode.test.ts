@@ -1,10 +1,10 @@
 // The claim `qr-encode.test.ts` cannot make: what `encodeQr` draws READS. An independent reader
-// (`qr-reader.ts`, sharing no code with the encoder) must recover the exact text, on a symbol
-// with no layout fault, at every version and every mask the encoder may pick.
+// (`qr-reader-fixture.ts`, sharing no code with the encoder) must recover the exact text, on a
+// symbol with no layout fault, at every version and every mask the encoder may pick.
 
 import { describe, expect, test } from 'bun:test';
 import { encodeQr } from './qr-matrix';
-import { readQr } from './qr-reader';
+import { readQr } from './qr-reader-fixture';
 
 const VECTORS: readonly (readonly [string, number])[] = [
   ['A', 1],

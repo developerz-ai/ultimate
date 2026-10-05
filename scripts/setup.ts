@@ -103,7 +103,7 @@ report(
     ok: findings.length === 0,
     script: 'setup',
     summary:
-      findings.length === 0 ? 'setup complete — next: bin/check' : 'setup could not complete',
+      findings.length === 0 ? 'setup complete — next: bun run verify' : 'setup could not complete',
     findings,
     lines,
     data: { bun: Bun.version, root },

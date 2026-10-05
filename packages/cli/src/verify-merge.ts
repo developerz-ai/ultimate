@@ -295,6 +295,8 @@ function mergeStep(
       .map((step) => step.output as string),
     ...(rider?.output === undefined ? [] : [rider.output]),
   ].join('\n');
+  // Every part's advice, once each and in the order the parts reported it.
+  const warnings = [...new Set(steps.flatMap((step) => step.warnings ?? []))];
   const skipped =
     sharded.length > 0 ? nothingRan && !required : steps.every((step) => step.skipped);
   return {
@@ -309,6 +311,7 @@ function mergeStep(
     ...(skipped ? { skipped: true } : {}),
     findings,
     ...(output.length === 0 ? {} : { output }),
+    ...(warnings.length === 0 ? {} : { warnings }),
     ...(tests === undefined ? {} : { tests }),
   };
 }

@@ -14,7 +14,7 @@ import {
   renderShallowNodes,
   restoreFactory,
   shallowNodesOf,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import { type ListLocation, listHref } from './list-request';
 import type { AdminPage } from './pagination';
 import type { AdminAction, AdminRow } from './registry';

@@ -8,7 +8,7 @@ import { channel } from './channel-decl';
 import { describeChannels } from './channel-describe';
 import { clearChannels, getChannel, registeredChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket } from './socket';
 
 afterAll(() => {

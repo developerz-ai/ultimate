@@ -89,6 +89,22 @@ describe('a second implementation of a helper with one home is refused', () => {
       helpersIn("export const t = `x = resolveEnvironment({ env }) === 'test' ? a : b;`;"),
     ).toEqual(['storeMode']);
   });
+
+  test('renderDeprecation, as a successor-version link or a structured-field Date', () => {
+    expect(helpersIn('headers.link = `<$' + '{path}>; rel="successor-version"`;')).toEqual([
+      'renderDeprecation',
+    ]);
+    expect(helpersIn("const h = { link: '</v2>; rel=successor-version' };")).toEqual([
+      'renderDeprecation',
+    ]);
+    expect(helpersIn('const d = `@$' + '{Math.floor(since / 1000)}`;')).toEqual([
+      'renderDeprecation',
+    ]);
+  });
+
+  test('a successor-version link named in prose is not a copy', () => {
+    expect(helpersIn('/** projected to a `rel="successor-version"` link */')).toEqual([]);
+  });
 });
 
 describe('what is never a copy', () => {
@@ -101,6 +117,7 @@ describe('what is never a copy', () => {
       readCookie: "header.split(';'); decodeURIComponent(raw);",
       PgExecutor: 'export interface PgExecutor {}',
       storeMode: "resolveEnvironment({ env }) === 'test' ? 'memory' : 'database'",
+      renderDeprecation: 'const link = \'</v2>; rel="successor-version"\';',
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

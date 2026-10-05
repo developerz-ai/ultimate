@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { hasErrorCode } from '@ultimat3/core';
 import '../errors';
-import { compileScss, scssRefusal } from '../sass-probe';
+import { compileScss, scssRefusal } from '../sass-probe-fixture';
 
 const TOKENS = new URL('.', import.meta.url).pathname;
 const MIXINS = `${TOKENS}_mixins.scss`;

@@ -7,7 +7,7 @@ import type { ChangeEvent } from './changefeed';
 import { channel } from './channel-decl';
 import { skippedRemovals, updatesFor } from './channel-records';
 import { clearChannels } from './channel-registry';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 
 const accounts = entity('channel_records_account', {
   table: 'legacy_accounts',

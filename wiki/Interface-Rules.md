@@ -160,9 +160,11 @@ is not announced by most screen readers. `AppShell` renders the regions server-s
 message is safe; the create-if-absent fallback in a tree with no shell is right from its second
 call onwards. Render `AppShell`.
 
-**A brand override is not contrast-checked.** `defineTheme()` validates channel *syntax* — three
-0–255 integers — and measures nothing. Write the test yourself; `contrastRatio`, `AA_TEXT` and
-`AA_LARGE` are exported from `@ultimat3/ui` for exactly this.
+**A brand override is contrast-checked where it is declared.** `defineTheme()` measures every pair
+in `CONTRAST_PAIRS` that the brand changed, either side, on the resolved palette — 4.5:1 text, 3:1
+the focus ring, 1.4:1 `line` — and throws `X_UI_CONTRAST_INSUFFICIENT` before rendering anything.
+Declared at module top level, a failing brand stops the app at import, not in review. Measure a
+candidate first with `contrastRatio` or `roleContrast` from `@ultimat3/ui` → [Theming](Theming).
 
 ## Toasts
 

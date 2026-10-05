@@ -277,6 +277,9 @@ async function runStep(
       skipped: nothingRan && !required,
       findings: [...outcome.findings, ...vanished],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
+      ...(outcome.warnings === undefined || outcome.warnings.length === 0
+        ? {}
+        : { warnings: outcome.warnings }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
       ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
       ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),

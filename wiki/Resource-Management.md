@@ -72,7 +72,7 @@ serializes them. `createTurnQueue()`'s `take()` hands out a `Turn`, and `using t
 queue.take()` gives the session back to the next waiter on every exit, exactly the shape
 `DbConnection` uses.
 
-The test double follows the same contract: `reservableOver()` (`packages/db/src/fake-reservable.ts`)
+The test double follows the same contract: `reservableOver()` (`packages/db/src/fake-reservable-fixture.ts`)
 wraps any `DbClient` in a `ReservableClient` whose `reserve()` returns a connection with the same
 idempotent `release()` / `[Symbol.dispose]` pairing, and counts reservations against releases — a
 test proving no leak asserts `pins.reserves === pins.releases` rather than reasoning about it.

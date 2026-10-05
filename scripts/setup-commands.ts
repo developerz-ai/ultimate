@@ -36,9 +36,9 @@ const SCRIPT = 'setup-commands';
 export const SETUP_TEMPLATE = 'packages/cli/src/templates/scaffold-docs.ts';
 
 /**
- * `CONTRIBUTING.md` documents THIS repository's `bin/setup` — `scripts/setup.ts`, which checks the
- * Bun version, installs and writes git hooks. Same filename, different script, and holding a page
- * about one to the other's step list is a finding on a sentence that is right.
+ * `CONTRIBUTING.md` documents THIS repository's setup — `bun run setup`, `scripts/setup.ts`, which
+ * checks the Bun version, installs and writes git hooks. A different script from the scaffold's,
+ * and holding a page about one to the other's step list is a finding on a sentence that is right.
  */
 export const skipSetupPath = (path: string): boolean => path === 'CONTRIBUTING.md';
 

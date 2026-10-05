@@ -184,9 +184,8 @@ export const env = defineEnv(envSchema);`;
  * author has no use for a comment about keys their config does not name.
  *
  * `tier` is the one that got through, and it says what the list was worth. It accepted
- * `'channels' | 'live-queries' | 'local-first'`, so `'local-first'` read as a durable client store
- * that does not exist (`createOpfsLocalStore` throws `X_NOT_IMPLEMENTED`) — silent, and shaped like
- * a capability. Which realtime tier an app is on is decided by what it DECLARES: a `channel()`
+ * `'channels' | 'live-queries' | 'local-first'`, and nothing read the value — silent, and shaped
+ * like a capability. Which realtime tier an app is on is decided by what it DECLARES: a `channel()`
  * topic, a `live: true` query, a local store. `scaffold-config.test.ts` no longer holds a list of
  * dead names to remember; it resolves every key path this literal writes against what `defineConfig`
  * really returns, so the fourteenth deletion fails there with no edit here.

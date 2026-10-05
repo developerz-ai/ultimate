@@ -345,7 +345,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // the test changing is a fix silently going untested; a file this test doesn't know about
     // starting to break means a hop that was silent has become real — either way, update this
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
-    // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
+    // `packages/cli/src/scaffold-typecheck-fixture.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
     // 22 as of 2026-08-24: 21, plus the one `scripts/test-setup.test.ts` now contributes.
     // 26 as of 2026-10-01: the sweep's handler writes `{ excerpt }` by primary key (2 more in

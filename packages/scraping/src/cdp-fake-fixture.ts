@@ -8,8 +8,8 @@
 //
 // Precedent: `packages/storage/src/driver-s3-fixture.ts` ships the same way.
 
-import type { FakeBrowserTarget } from './cdp-fake-target';
-import { fakeBrowserTarget } from './cdp-fake-target';
+import type { FakeBrowserTarget } from './cdp-fake-target-fixture';
+import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type {
   CdpBrowserLike,
   CdpFrameLike,

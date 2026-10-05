@@ -40,7 +40,7 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories. Same input → identical rows, identical UUIDs |
 | **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
-| **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix |
+| **Sealed network** | a `fetch`, a `new WebSocket(…)` or a `Bun.connect(…)` to anywhere not explicitly mocked or allowed **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix — the three dials share one gate, so the allow-list and `offline()` apply to all of them — `offline()` refuses a loopback dial too (`X_TEST_NETWORK_OFFLINE`). A dial that goes around those three globals (a `node:net` socket, `Bun.udpSocket`) is not sealed |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
 | **Ordered concurrency** | job workers in tests run deterministically; `runJobs()` drains the queue synchronously |
 | **Per-test reset** | before EVERY test, not every file, the preload puts the jobs event bus back (`installPerTestReset()`): an answer one test published never resumes the next test's waiting run, with or without `runJobs`. A test that never loaded `@ultimat3/jobs` pays nothing. `As of 2026-10` |

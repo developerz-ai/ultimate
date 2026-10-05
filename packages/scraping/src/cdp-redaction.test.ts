@@ -8,7 +8,7 @@ import { createContext, createLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { StorageDriver, StorageObject } from '@ultimat3/storage';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpLauncherLike } from './cdp-port';
 import { testClock } from './clock';
 import { remoteBrowser } from './driver-cdp';

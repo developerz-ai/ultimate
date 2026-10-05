@@ -11,7 +11,7 @@ import { REQUIRED_BUN } from './app-root';
 import { dedupe, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
 import type { GeneratedFile } from './templates';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 // `dedupe()` is where every `generate()` call and `x new`'s `planNewApp()` funnel their file list
 // through before a single byte reaches disk — so a generator's own template bug is caught here,

@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { NotImplementedError } from '@ultimat3/core';
-import { fakeBrowserTarget } from './cdp-fake-target';
+import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';

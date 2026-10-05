@@ -129,6 +129,22 @@ describe('unit · x verify --only is an iteration loop, never the gate', () => {
 // that did not apply as one that passed. At the framework root `job` and `eval` have no suite of
 // their own: "all 17 steps passed" over that is exactly the vacuous green the gate exists to
 // prevent, and it is only visible if the summary itself says which steps had nothing to run.
+describe("a step outcome's warnings reach the step result", () => {
+  test('carried on a pass, absent when the step has none', async () => {
+    const steps: readonly VerifyStep[] = [
+      {
+        name: 'filesize',
+        summary: 'size',
+        run: async () => ({ ok: true, findings: [], warnings: ['a.ts: 470 lines'] }),
+      },
+      { name: 'lint', summary: 'lint', run: async () => ({ ok: true, findings: [] }) },
+    ];
+    const result = await runVerify(steps, { root: '/nowhere', runner });
+    expect(result.steps?.map((step) => step.warnings)).toEqual([['a.ts: 470 lines'], undefined]);
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe('skips are counted apart from passes, and named', () => {
   const green: readonly VerifyStep[] = [
     { name: 'typecheck', summary: 'tsc', run: async () => ({ ok: true, findings: [] }) },

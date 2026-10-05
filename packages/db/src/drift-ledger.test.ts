@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { appTables, checkDrift, declaredSchema, expectedSchema } from './drift';
-import { schema, table } from './drift-fixtures';
+import { schema, table } from './drift-fixture';
 import { createRecordingClient } from './fake';
 import type { SchemaDescription } from './introspect';
 import type { LedgerRow, Migration } from './migrate';

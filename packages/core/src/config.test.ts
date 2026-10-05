@@ -238,9 +238,8 @@ describe('realtime section', () => {
   // the presence beat is derived from the TTL (`PresenceRegistry.heartbeatMs`). `tier` accepted
   // `'channels' | 'live-queries' | 'local-first'`, defaulted to `'channels'`, was documented with
   // per-value semantics, was set by both tracked apps — and was compared, branched on and
-  // dereferenced by nothing, so all three values were one behaviour and `'local-first'` promised a
-  // durable client store `createOpfsLocalStore` still refuses to build. Axiom 1: one knob, and it
-  // has to be a knob. Deleted 2026-08-19 and 2026-08-23; this is what stops either coming back,
+  // dereferenced by nothing, so all three values were one behaviour. Axiom 1: one knob, and it has
+  // to be a knob. Deleted 2026-08-19 and 2026-08-23; this is what stops either coming back,
   // since a re-added field sails through `section()` unnoticed.
   test('carries neither heartbeatMs nor tier — only the fields something reads', () => {
     const config = defineConfig({ name: 'myapp' });

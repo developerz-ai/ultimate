@@ -10,6 +10,7 @@ import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import {
   newErrorCode,
+  offSocketPinIn,
   STATUS_BACKLOG,
   STATUS_TABLE,
   STATUS_TABLE_MAX_TIER,
@@ -69,9 +70,35 @@ describe('the HTTP status is decided in the same edit', () => {
     // In money's own group: between its opening line and the first `],` after it.
     const [, after = ''] = backlog.split('\n  money: [');
     const [group = ''] = after.split('\n  ],');
-    expect(group).toContain("'X_MONEY_PROBE_ONLY',");
+    expect(group).toContain("'X_MONEY_PROBE_ONLY'");
     expect(transpiles(backlog)).toBe(true);
     expect(await read(dir, statusTableFor('money'))).not.toContain('X_MONEY_PROBE_ONLY');
+  });
+
+  test('--off-socket is a DECISION: it lands in OFF_SOCKET, never in the shrink-only UNDECIDED', async () => {
+    const dir = await fixtureRoot();
+    // money has a group in BOTH lists; `ai` has one only in UNDECIDED, so OFF_SOCKET opens one.
+    await mkdir(`${dir}/packages/ai/src`, { recursive: true });
+    await Bun.write(
+      `${dir}/packages/ai/src/errors.ts`,
+      "export const AI_TITLES = {\n  X_A: 'a',\n};\n",
+    );
+    await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--off-socket'));
+    const ai = money('X_AI_PROBE_ONLY', '--off-socket').with(2, 'ai');
+    await newErrorCode(dir, ai);
+    const written = await import(`${dir}/${STATUS_BACKLOG}`);
+    expect(written.OFF_SOCKET.money).toContain('X_MONEY_PROBE_ONLY');
+    expect(written.OFF_SOCKET.ai).toEqual(['X_AI_PROBE_ONLY']);
+    expect(written.UNDECIDED.money).not.toContain('X_MONEY_PROBE_ONLY');
+    expect(written.UNDECIDED.ai).not.toContain('X_AI_PROBE_ONLY');
+  });
+
+  test('a code UNDECIDED already pins is refused, not decided twice', async () => {
+    const dir = await fixtureRoot();
+    const pinned = 'X_ALLOCATION_INVALID';
+    expect(await refusal(newErrorCode(dir, money(pinned, '--off-socket')))).toBe(
+      'X_NEW_ERROR_CODE_EXISTS',
+    );
   });
 
   test('a one-line group and a package with no group yet both take the pin', async () => {
@@ -207,6 +234,10 @@ describe('the HTTP status is decided in the same edit', () => {
     expect(codeOf(() => backlogPinIn('export const B = 1;\n', 'b.ts', input))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
+    // A backlog with no OFF_SOCKET literal is not the two-list file: refused, never guessed at.
+    expect(
+      codeOf(() => offSocketPinIn('export const B = {\n  money: [],\n};\n', 'b.ts', input)),
+    ).toBe('X_NEW_ERROR_CODE_INVALID');
   });
 
   test('every package at or under the bound has a slice, and the composed table imports each one', async () => {

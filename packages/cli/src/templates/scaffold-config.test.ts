@@ -1,7 +1,8 @@
 // The `app.config.ts` `x new` writes, held to one rule: every key in it is a key `AppConfigInput`
 // still declares. Nothing asserted this file's CONTENTS before — `cmd-new.test.ts` proves it
-// exists and `scaffold-typecheck.ts` compiles `apps/`, not the config — so a key the framework
-// stopped reading could sit in every generated app indefinitely, which is exactly what happened.
+// exists and `scaffold-typecheck-fixture.ts` compiles `apps/`, not the config — so a key the
+// framework stopped reading could sit in every generated app indefinitely, which is exactly what
+// happened.
 //
 // The rule is DERIVED, not a list. It was a list — `installPrompt`, `afterSignInPath`, `modelEnv`,
 // hand-copied and hand-extended — and `realtime.tier` was deleted from `packages/core/src/config.ts`

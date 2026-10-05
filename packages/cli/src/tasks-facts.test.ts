@@ -12,7 +12,7 @@ import {
   parseCountFlag,
   taskShowFacts,
 } from './tasks-facts';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 /** The same words `cmd-tasks.ts` reads out of `cli.cron.*`, spelled out here so this file stays
  * a test of the cron math and not of the catalog — `cmd-tasks.test.ts` covers that wiring. */

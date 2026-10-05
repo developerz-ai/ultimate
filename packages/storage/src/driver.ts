@@ -112,11 +112,13 @@ export interface StorageDriver {
    */
   readonly signedUrlBase?: string | undefined;
   /**
-   * `defineStorage` tells the driver the key it was registered under, at boot, once. A driver that
-   * mints its own URLs hangs them off THAT, never off `name`: the mounted `/_storage/:disk/*key`
-   * route resolves the segment through the registry, so a disk registered as `uploads` whose URLs
-   * say `local` 404s every signature it just wrote. Optional — a driver with no URLs of its own
-   * (`s3`) needs none, and a third-party driver that ignores it keeps minting under `name`.
+   * `defineStorage` tells the driver the key it was registered under, at boot, once. Two readers:
+   * a driver that mints its own URLs hangs them off THAT, never off `name` — the mounted
+   * `/_storage/:disk/*key` route resolves the segment through the registry, so a disk registered
+   * as `uploads` whose URLs say `local` 404s every signature it just wrote — and every
+   * `X_STORAGE_NOT_FOUND`, whose `fix:` is `disk('<name>').list(…)`. `local`, `s3`
+   * and `memory` use it for both — their URLs and their not-found errors. Optional: a
+   * third-party driver that ignores it keeps minting and refusing under `name`.
    */
   registerAs?(diskName: string): void;
   put(key: string, body: StorageBody, options?: PutOptions): Promise<StorageObject>;

@@ -6,8 +6,8 @@
 // Its own file because `cdp-target.test.ts` is at the 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import { fakeCdpBrowser } from './cdp-fake';
-import { fakeBrowserTarget } from './cdp-fake-target';
+import { fakeCdpBrowser } from './cdp-fake-fixture';
+import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';

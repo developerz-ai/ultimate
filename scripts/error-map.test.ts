@@ -13,7 +13,7 @@ import {
   type StatusTableInput,
   statusGapFindingFor,
 } from './error-map';
-import { backlogCodes, ERROR_STATUS_BACKLOG } from './error-map-backlog';
+import { backlogCodes, ERROR_STATUS_BACKLOG, OFF_SOCKET, UNDECIDED } from './error-map-backlog';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 const at = (owner: string): string => `packages/${owner}/src/errors.ts`;
@@ -47,6 +47,10 @@ describe('unit · a framework code with no status row', () => {
     // The slice the row goes in: the composed table holds none.
     expect(found[0]?.fix).toContain('packages/http/src/error-map-tier-3.ts');
     expect(found[0]?.fix).toContain(BACKLOG_FILE);
+    // The pin it may take is a DECISION — `OFF_SOCKET` — never `UNDECIDED`, whose ratchet
+    // (`error-map-backlog.test.ts`) refuses a new entry.
+    expect(found[0]?.fix).toContain('the action group of OFF_SOCKET');
+    expect(found[0]?.fix).toContain('never UNDECIDED');
     // Points at the declaration, so "where does this come from?" is not a grep.
     expect(found[0]?.at).toBe(at('action'));
   });
@@ -84,6 +88,24 @@ describe('unit · the ratchet may only shrink', () => {
     expect(found[0]?.cause).toContain('409');
     expect(found[0]?.fix).toBe(
       `delete 'X_FIXTURE_ACTION' from the action group in ${BACKLOG_FILE}`,
+    );
+  });
+
+  test('a stale pin in the real lists names the list it sits in', () => {
+    const [undecided] = UNDECIDED['ai'] ?? [];
+    const [decided] = OFF_SOCKET['mcp'] ?? [];
+    if (undecided === undefined || decided === undefined) {
+      return expect.unreachable('the real lists hold an ai and an mcp group');
+    }
+    const fixOf = (one: string, owner: string): string | undefined =>
+      findings(
+        tree({ declared: [code(one, owner)], status: { [one]: 400 }, backlog: { [owner]: [one] } }),
+      )[0]?.fix;
+    expect(fixOf(undecided, 'ai')).toBe(
+      `delete '${undecided}' from the ai group of UNDECIDED in ${BACKLOG_FILE}`,
+    );
+    expect(fixOf(decided, 'mcp')).toBe(
+      `delete '${decided}' from the mcp group of OFF_SOCKET in ${BACKLOG_FILE}`,
     );
   });
 

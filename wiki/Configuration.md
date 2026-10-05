@@ -524,6 +524,55 @@ Two fields, and `ai.mcp` is where the app's own MCP surface is configured — th
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.
 
+## Runtime overrides — `apps/<app>/runtime.ts`
+
+The one place a deployment hands the framework a driver, a middleware or a plain route. Not a
+config key: an object, exported as `runtime` from `apps/<app>/runtime.ts`. `x dev` reads it, and so
+does `runRole` (the container boot) when its caller passed none — one chain in development and in
+production, never two.
+
+```ts
+// apps/web/runtime.ts
+import type { ServeOptions } from '@ultimat3/cli/serve';
+import type { Middleware } from '@ultimat3/http';
+
+// `ctx.headers` is merged into whatever response the route produces.
+const servedBy: Middleware = (request, ctx, next) => {
+  ctx.headers.set('x-served-by', 'web');
+  return next(request, ctx);
+};
+
+export const runtime: NonNullable<ServeOptions['runtime']> = { middleware: [servedBy] };
+```
+
+Every field is optional, and every field **replaces** the default the environment would have
+picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cli/src/runtime-overrides.ts`).
+
+| Field | Replaces |
+|---|---|
+| `jobs` | the queue driver every enqueue and every claim uses; installed as the ambient driver too, so the boot refuses a process where the two disagree |
+| `storage` | the `S3_ENDPOINT` / embedded-disk decision, whole: disks, default disk and all |
+| `mail` | the `SMTP_URL` / `RESEND_API_KEY` selection |
+| `transport` | the `NATS_URL` selection. Arrives connected and is **not** closed on stop — whoever built it owns its socket |
+| `purge` | the `CLOUDFLARE_*` / `FASTLY_*` selection behind the `cdn` cache tier |
+| `rateLimitStore` | the Postgres store the boot installs over its own pool. The store's scope decides `rateLimit.scope`; a `'process'` store is legal and warned about — every limit then applies once per replica |
+| `isrStore` | the per-process memory store for regenerated ISR pages (one per replica, so a purge tag reaches one of them) |
+| `middleware` | nothing — prepended to the request pipeline, outermost first |
+| `routes` | nothing — plain HTTP routes at paths no primitive projects to (an OAuth token endpoint, a feed with its own content type), mounted after the framework's routes and before the pages, through the whole pipeline |
+| `images` | `builtinImageDriver`, the `/media/*` transform |
+| `syncAuthenticate` | the adapter over the app's own `configureAuthenticator()` that authenticates a `sync` socket |
+
+### What middleware can and cannot see
+
+| Rule | Why |
+|---|---|
+| middleware wraps a **matched** route only | the router runs first (`packages/http/src/stages.ts`). An unmatched path is answered `404` (or `405` with `allow`) before any middleware runs, so middleware cannot rewrite, redirect or serve a URL that no route declares |
+| a redirect from a path nothing serves needs a route | declare a page or `route.ts` at the old path that answers the redirect, or add one to `runtime.routes` |
+| `/healthz` and `/readyz` never reach it | they are answered by the listener before the pipeline, so a draining or rate-limited process can still say what it is doing |
+| a `/<locale>/` prefix is stripped before the match | middleware sees the route the stripped path matched, never the prefix as a route of its own |
+
+Routes, their files and their render modes → [Routes and render modes](Routes-And-Render-Modes).
+
 ## Env vars
 
 One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`**, validated at boot. There is no `env.ts` — the one config file is also the one env gate. A missing or malformed key fails in **~40ms** with `X_ENV_MISSING`, every offender named in one error — never a 500 an hour later.
@@ -593,18 +642,21 @@ through 1.2.0; as of 2.0.0 it exports neither that nor `SeoEnvironment`, and its
 
 ## `.env.example` — a projection, never a second list
 
+```sh
+x env example        # writes .env.example from the app's envSchema
+```
+
 ```ts
-import { renderEnvExample, assertEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { renderEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
 
 await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.example'
-assertEnvExample(schema, await Bun.file(ENV_EXAMPLE_PATH).text()); // throws X_ENV_EXAMPLE_DRIFT
 ```
 
 `renderEnvExample(schema, { extras })` returns the whole file, deterministic in declaration order. Per key it writes the description, then an annotation line — `required|optional · <type or enum values> · secret · role a/b` — then `KEY=<example>`. **A `secret: true` key's example is always empty**, even when the declaration has a default. `extras` are appended as commented `# NAME=` lines.
 
-`assertEnvExample` throws `X_ENV_EXAMPLE_DRIFT` when the file is missing a declared key. Extra keys are reported but never fatal — an example may document more than the schema requires.
+**`x verify` holds the committed file to it**, on the `manifest` step: `.env.example` must be byte-for-byte the projection of `envSchema` in `app.config.ts`, so a moved description, default or required flag fails the gate as well as a missing key. A miss is `X_ENV_EXAMPLE_DRIFT`, missing keys named first; the fix is `x env example`. An app that exports no `envSchema` has nothing to project and the check is silent.
 
-**Nothing calls it for you.** There is no verify step, CLI command or boot hook that checks the example; call it from a test of your own → [Known gaps](Known-Gaps).
+`assertEnvExample(schema, text)` is the older, weaker check — key presence only, and nothing calls it. It is deprecated and removed in 25.0.0; the gate above is the one check.
 
 Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local` unless the mode is `test`. Mode is `production` or `test` verbatim, otherwise `development` — there is no `.env.staging`.
 

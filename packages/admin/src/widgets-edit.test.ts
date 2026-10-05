@@ -14,7 +14,7 @@ import {
   one,
   restoreFactory,
   withAttr,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never

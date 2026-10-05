@@ -6,13 +6,12 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
-import type { Actor, Ctx } from '@ultimat3/core';
+import type { Actor, Ctx, Deprecation } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
-import type { Deprecation } from './deprecation';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
 import type { ActionHttp } from './http-path';

@@ -20,7 +20,7 @@ import { msg } from './messages';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
 import { registerPolicyFixture } from './policy-fixture';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 const ROOT = join(import.meta.dir, '..', '.policy-fixture');
 const BROKEN = join(import.meta.dir, '..', '.policy-broken-fixture');

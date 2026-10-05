@@ -95,6 +95,7 @@ docs/idea/      what and why — the design spec
 docs/architecture/  how it's built — internals
 docs/ops/       running an app for real — PaaS → Compose → K8s, secrets, observability, runbooks
 docs/history/   why things are the way they are — decision records moved out of this file
+docs/plans/     dated execution plans; status.yml per plan
 wiki/           the reference manual, the only public documentation surface (synced to the GitHub wiki)
 scripts/        setup, verify, guards, manifest, release, bench
 docker/         Dockerfile + compose + helm

@@ -6,13 +6,19 @@
 // the host-check seam `boundaries` already uses for the tier table.
 //
 // THE RULE: every declared `X_*` code owned by a tier <= 4 package either has a row, or is pinned
-// in `error-map-backlog.ts`. The pin list may shrink and may never grow — see that file for why
-// the classification is recorded rather than derived.
+// in `error-map-backlog.ts` — `OFF_SOCKET` (decided, may grow) or `UNDECIDED` (shrink-only). See
+// that file for why the classification is recorded rather than derived.
 //
 //   bun run scripts/error-map.ts [--json]
 
 import { ERROR_STATUS } from '@ultimat3/http';
-import { backlogCodes, backlogGroupOf, ERROR_STATUS_BACKLOG } from './error-map-backlog';
+import {
+  backlogCodes,
+  backlogGroupOf,
+  ERROR_STATUS_BACKLOG,
+  OFF_SOCKET,
+  UNDECIDED,
+} from './error-map-backlog';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -102,11 +108,24 @@ export function checkStatusTable(input: StatusTableInput): readonly StatusGap[] 
   return gaps.sort(byCode);
 }
 
+/**
+ * Which of the two pin lists holds a code, spelled for a `fix:` — "the ai group of UNDECIDED". A
+ * fixture's pin is in neither real list and keeps the plain "the ai group".
+ */
+const groupOf = (code: string, owner: string): string => {
+  const list = OFF_SOCKET[owner]?.includes(code)
+    ? 'OFF_SOCKET'
+    : UNDECIDED[owner]?.includes(code)
+      ? 'UNDECIDED'
+      : undefined;
+  return list === undefined ? `the ${owner} group` : `the ${owner} group of ${list}`;
+};
+
 const missingFinding = (gap: StatusGap): Finding => ({
   code: 'X_ERROR_STATUS_MISSING',
   cause: `${gap.code} is owned by @ultimat3/${gap.owner} (tier ${tierOf(gap.owner)}) and has no row in ${ERROR_MAP_FILE}, so a request carrying it answers 500 and pages the on-call`,
   // The SLICE, never the composed table: `error-map.ts` holds no rows of its own.
-  fix: `add \`${gap.code}: <status>,\` to ${statusTableFor(gap.owner)} (a slice of ERROR_STATUS in ${ERROR_MAP_FILE}), or add '${gap.code}' to the ${gap.owner} group in ${BACKLOG_FILE} if it can never reach a request`,
+  fix: `add \`${gap.code}: <status>,\` to ${statusTableFor(gap.owner)} (a slice of ERROR_STATUS in ${ERROR_MAP_FILE}), or, if it can never reach a request, add '${gap.code}' to the ${gap.owner} group of OFF_SOCKET in ${BACKLOG_FILE} with the reason above it — never UNDECIDED, which only shrinks`,
   at: gap.at,
 });
 
@@ -116,7 +135,7 @@ const pinnedFinding = (gap: StatusGap): Finding => ({
     gap.status === undefined
       ? `${gap.code} is pinned in ${BACKLOG_FILE} but no tier <= ${HTTP_STATUS_MAX_TIER} package declares it any more`
       : `${gap.code} is pinned in ${BACKLOG_FILE} and ${ERROR_MAP_FILE} now maps it to ${gap.status} — a pin nobody removes is a pin nobody reads`,
-  fix: `delete '${gap.code}' from the ${gap.owner} group in ${BACKLOG_FILE}`,
+  fix: `delete '${gap.code}' from ${groupOf(gap.code, gap.owner)} in ${BACKLOG_FILE}`,
   at: gap.at,
 });
 

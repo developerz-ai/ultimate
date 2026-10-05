@@ -15,7 +15,7 @@ import type { ChannelRecordsFrame } from './channel-wire';
 import { InProcessTransport } from './fanout';
 // The wire's row — what a change event carries — so a test row is one the feed could deliver.
 import type { Row } from './json';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const posts = entity('channel_seq_posts', {

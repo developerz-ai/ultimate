@@ -21,7 +21,7 @@ import {
   readType,
   sampleFiles,
 } from './test-select';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 const SPEC: CommandSpec = {
   name: 'test',

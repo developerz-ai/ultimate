@@ -133,7 +133,8 @@ describe('a registry kept as frozen declarations, not titles', () => {
     expect(codes).toContain("    X_SCHEMA_PROBE: { title: 'a probe' },\n  });");
     expect(transpiles(codes)).toBe(true);
     expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
-    expect(await read(dir, STATUS_BACKLOG)).toContain("    'X_SCHEMA_PROBE',\n  ],");
+    // schema has no OFF_SOCKET group yet, so the pin opens one — never schema's UNDECIDED group.
+    expect(await read(dir, STATUS_BACKLOG)).toContain("  schema: ['X_SCHEMA_PROBE'],\n};");
   });
 
   test('a title past 100 columns wraps the way Biome writes the entry', async () => {

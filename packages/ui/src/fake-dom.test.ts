@@ -3,7 +3,7 @@
 // `Element.getAttribute` gives for a name that happens to be an `Object.prototype` member: `null`.
 
 import { describe, expect, test } from 'bun:test';
-import { FakeElement } from './fake-dom';
+import { FakeElement } from './fake-dom-fixture';
 
 describe('unit · FakeElement.getAttribute reads own keys, never the prototype chain', () => {
   // `this.attrs` is a `{...spread}`, so `attrs['constructor']` answered with the `Object` FUNCTION

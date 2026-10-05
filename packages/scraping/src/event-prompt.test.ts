@@ -8,7 +8,7 @@ import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { createMemoryEventBus } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { PromptRequest } from './auth';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike } from './cdp-port';
 import type { TestScrapeClock } from './clock';
 import { testClock } from './clock';

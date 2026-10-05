@@ -47,7 +47,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`SQL_JOBS_TABLE` is the ONE install point** for every durable table (`x_jobs`, `x_job_*`, `x_backfills`,
   `x_outbox`, `x_scheduler_*`). A NEW table is also a name in
   `packages/cli/src/framework-schema.ts`. A shipped table grows by `alter table ... add column if
-  not exists`. Its comments carry NO apostrophes and NO semicolons (`dev-queue.ts` splits on `;`; `driver-pg-sql.test.ts` checks
+  not exists`. Its comments carry NO apostrophes and NO semicolons (it splits on `;`; `driver-pg-sql.test.ts` checks
   quote parity).
 - **`claim({ queues: [] })` is REFUSED by every driver** (`assertClaimQueues`,
   `X_JOB_CLAIM_QUEUES_EMPTY`); the memory driver's reads are `async` so a refusal rejects on both.

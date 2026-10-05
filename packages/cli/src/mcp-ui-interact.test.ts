@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from '@ultimat3/core';
 import type { UiInteractInput } from '@ultimat3/mcp';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotPage } from './browser-launcher-port';
 import { uiCapabilities } from './mcp-ui';
 import { ACTIVE_FIELD_TYPE, interactRoute, parseSteps, stepsHash } from './mcp-ui-interact';
