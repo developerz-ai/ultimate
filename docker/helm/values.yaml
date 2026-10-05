@@ -1,6 +1,10 @@
 # One image for every role; `role` is the only difference between the workloads below.
+#
+# `repository` is a PLACEHOLDER: the framework publishes no app image, so set the registry path your
+# CI pushes YOUR app to — `x deploy --method helm --image <repository>:<tag>` sets both keys with
+# `--set-string`. An empty repository is a render error naming this key, never a pod pulling `:<tag>`.
 image:
-  repository: ghcr.io/developerz-ai/ultimate-app
+  repository: registry.example.com/your-app
   tag: ""            # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 

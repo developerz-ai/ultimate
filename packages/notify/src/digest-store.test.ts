@@ -19,12 +19,19 @@ const ids = (events: readonly NotifyEvent<unknown>[]) =>
 describe('memory digest store', () => {
   test('an append after a window closed opens a second window and keeps the first', async () => {
     const store = createMemoryDigestStore();
-    const first = await store.append({ slot, event: event('e1'), windowMs: 100, now: new Date(0) });
+    const first = await store.append({
+      slot,
+      event: event('e1'),
+      windowMs: 100,
+      now: new Date(0),
+      appender: 'run-e1',
+    });
     const second = await store.append({
       slot,
       event: event('e2'),
       windowMs: 100,
       now: new Date(150),
+      appender: 'run-e2',
     });
     expect(first).toEqual({ opened: true, endsAt: 100 });
     expect(second).toEqual({ opened: true, endsAt: 250 });
@@ -36,12 +43,19 @@ describe('memory digest store', () => {
 
   test('a flush whose owner crashed is collected by the next window’s drain', async () => {
     const store = createMemoryDigestStore();
-    await store.append({ slot, event: event('e1'), windowMs: 100, now: new Date(0) });
+    await store.append({
+      slot,
+      event: event('e1'),
+      windowMs: 100,
+      now: new Date(0),
+      appender: 'run-e1',
+    });
     const second = await store.append({
       slot,
       event: event('e2'),
       windowMs: 100,
       now: new Date(150),
+      appender: 'run-e2',
     });
     // Window one's flush never ran; window two's drain takes both, oldest first.
     expect(ids(await store.drain(slot, second.endsAt))).toEqual(['e1', 'e2']);
@@ -49,12 +63,19 @@ describe('memory digest store', () => {
 
   test('appends inside one window share it', async () => {
     const store = createMemoryDigestStore();
-    const first = await store.append({ slot, event: event('e1'), windowMs: 100, now: new Date(0) });
+    const first = await store.append({
+      slot,
+      event: event('e1'),
+      windowMs: 100,
+      now: new Date(0),
+      appender: 'run-e1',
+    });
     const again = await store.append({
       slot,
       event: event('e2'),
       windowMs: 100,
       now: new Date(50),
+      appender: 'run-e2',
     });
     expect(again).toEqual({ opened: false, endsAt: first.endsAt });
     expect(ids(await store.drain(slot, first.endsAt))).toEqual(['e1', 'e2']);

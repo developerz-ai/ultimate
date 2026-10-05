@@ -27,9 +27,18 @@ spec:
     matchLabels:
       app.kubernetes.io/instance: {{ $.Release.Name }}
       app.kubernetes.io/component: {{ $role }}
+  {{/*
+  The replicator is Recreate, never a rolling update: one pod per database holds the replication
+  slot's advisory lock, so a surged pod can only stand by, unready, and maxUnavailable: 0 never
+  terminates the holder it is waiting on — every rollout stalled. Recreate lets the holder go first.
+  */}}
   strategy:
+    {{- if eq $role "replicator" }}
+    type: Recreate
+    {{- else }}
     type: RollingUpdate
     rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+    {{- end }}
   template:
     metadata:
       labels:

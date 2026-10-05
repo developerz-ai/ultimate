@@ -55,6 +55,19 @@ describe('memoryWebhookLedger', () => {
     expect(await ledger.record(attempt({ ok: false }))).toBe(1);
   });
 
+  test('isDisabled answers what disable wrote, and a repeated disable keeps the first reason', async () => {
+    const ledger = memoryWebhookLedger();
+    expect(await ledger.isDisabled('ep_1')).toBe(false);
+    await ledger.disable('ep_1', '3 consecutive failed deliveries');
+    await ledger.disable('ep_1', '4 consecutive failed deliveries');
+
+    expect(await ledger.isDisabled('ep_1')).toBe(true);
+    expect(await ledger.isDisabled('ep_2')).toBe(false);
+    expect(ledger.disabled().get('ep_1')).toBe('3 consecutive failed deliveries');
+    ledger.reset();
+    expect(await ledger.isDisabled('ep_1')).toBe(false);
+  });
+
   test('a ring that holds nothing is refused where it is written', () => {
     for (const maxAttempts of [0, -1, 1.5, Number.NaN]) {
       let thrown: unknown;

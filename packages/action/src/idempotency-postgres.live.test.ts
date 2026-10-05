@@ -5,7 +5,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw } from '@ultimat3/db';
+import { createPostgresClient, raw, sql, withTransaction } from '@ultimat3/db';
+import { withIdempotency } from './idempotency';
 import { postgresUnderTest, RECLAIM_MS, type TxHarness, txHarness } from './idempotency-tx-fixture';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -119,6 +120,29 @@ describe.skipIf(!hasPostgres)('live · postgres · idempotency settles in the ha
     expect(await harness.charges()).toEqual(['retry']);
     expect(await harness.statusOf(KEY)).toBe('settled');
   });
+
+  // #591: the row is what an operator, a backup and a read replica see for a day. The secret must
+  // not be in it in any form, and the replay of an answer that lost one is refused.
+  for (const bound of [false, true]) {
+    test(`a secret answer rests redacted (${bound ? 'in a transaction' : 'autocommit'}) and refuses its replay`, async () => {
+      const once = (value: unknown) =>
+        withIdempotency(harness.store, KEY, { id: 'same-payload' }, () => Promise.resolve(value));
+      const first = bound
+        ? await withTransaction(() => once({ id: 'k1', apiKey: 'sk_live_plain' }), { client })
+        : await once({ id: 'k1', apiKey: 'sk_live_plain' });
+      expect(first).toEqual({ value: { id: 'k1', apiKey: 'sk_live_plain' }, replayed: false });
+
+      const rows = await client.query<{ value: string; redacted: boolean }>(
+        sql`select value::text as value, redacted from x_idempotency where key = ${KEY}`,
+      );
+      expect(rows[0]?.redacted).toBe(true);
+      expect(JSON.parse(rows[0]?.value ?? 'null')).toEqual({ id: 'k1', apiKey: '[redacted]' });
+      expect(rows[0]?.value).not.toContain('sk_live_plain');
+
+      const replay = await once({ id: 'never-run' }).catch((error: unknown) => error);
+      expect(codeOf(replay)).toBe('X_IDEMPOTENT_REPLAY_REDACTED');
+    });
+  }
 
   test('autocommit, unchanged: the settle is its own statement and a retry replays', async () => {
     await harness.chargeAutocommit(KEY, 'ch_1');

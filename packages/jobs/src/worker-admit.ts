@@ -76,8 +76,10 @@ export function createAdmission(options: AdmissionOptions): Admit {
       try {
         await shed(job, queue, limiter.blockedBy(key) ?? 'unknown');
       } catch (error) {
-        // The nack itself failed: the jobs BEHIND it go back before the round reports.
-        await handBack(driver, behind, back);
+        // The nack itself failed, so THIS job went nowhere either: it goes back with the jobs
+        // behind it, one more best-effort try, before the round reports. Left out, it sat
+        // `running` until its lease lapsed — an attempt spent on a body that never started.
+        await handBack(driver, [job, ...behind], back);
         throw error;
       }
       return { kind: 'waiting' };
@@ -128,7 +130,9 @@ export function createAdmission(options: AdmissionOptions): Admit {
       const keyed = grant.key === undefined ? '' : `, key ${grant.key}`;
       await shed(job, queue, `job concurrency (${grant.limit}${keyed})`);
     } catch (error) {
-      await handBack(driver, behind, back);
+      // This job too, for the reason above. A refusal that DID settle before throwing is safe to
+      // repeat: every nack is fenced on `running` and the claim, so a settled row ignores it.
+      await handBack(driver, [job, ...behind], back);
       throw error;
     }
     return { kind: 'waiting' };

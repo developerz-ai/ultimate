@@ -145,8 +145,8 @@ describe('a settlement is fenced on the reservation still being in flight', () =
   test('a late settle cannot overwrite a record another settlement already wrote', async () => {
     const store = new MemoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 }, reservation.record.id);
-    await store.settle('k', { runs: 2 }, reservation.record.id);
+    await store.settle('k', { runs: 1 }, reservation.record.id, false);
+    await store.settle('k', { runs: 2 }, reservation.record.id, false);
 
     expect((await store.get('k'))?.value).toEqual({ runs: 1 });
   });
@@ -154,7 +154,7 @@ describe('a settlement is fenced on the reservation still being in flight', () =
   test('a late failure cannot turn a settled record into a failed one', async () => {
     const store = new MemoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 }, reservation.record.id);
+    await store.settle('k', { runs: 1 }, reservation.record.id, false);
     await store.fail(
       'k',
       { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
@@ -169,7 +169,7 @@ describe('a settlement is fenced on the reservation still being in flight', () =
   test('the first settlement of an in-flight reservation still lands', async () => {
     const store = new MemoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 }, reservation.record.id);
+    await store.settle('k', { runs: 1 }, reservation.record.id, false);
 
     expect((await store.get('k'))?.status).toBe('settled');
   });
@@ -201,7 +201,7 @@ describe('a settlement is fenced on the reservation that produced it', () => {
 
   test('a straggler cannot settle a reservation it no longer owns', async () => {
     const { store, first, second } = await reclaimed();
-    await store.settle('k', { from: 'first' }, first);
+    await store.settle('k', { from: 'first' }, first, false);
 
     const record = await store.get('k');
     expect(record?.status).toBe('in-flight');
@@ -210,7 +210,7 @@ describe('a settlement is fenced on the reservation that produced it', () => {
 
   test('the reservation that DOES own the record still settles', async () => {
     const { store, second } = await reclaimed();
-    await store.settle('k', { from: 'second' }, second);
+    await store.settle('k', { from: 'second' }, second, false);
 
     expect((await store.get('k'))?.value).toEqual({ from: 'second' });
   });
@@ -238,8 +238,14 @@ describe('a settlement is fenced on the reservation that produced it', () => {
  */
 describe('a replayed output is parsed, on every store', () => {
   class WireStore extends MemoryIdempotencyStore {
-    override settle(key: string, value: unknown, reservationId: string): Promise<void> {
-      return super.settle(key, JSON.parse(JSON.stringify(value ?? null)), reservationId);
+    override settle(
+      key: string,
+      value: unknown,
+      reservationId: string,
+      redacted: boolean,
+    ): Promise<void> {
+      const wire: unknown = JSON.parse(JSON.stringify(value ?? null));
+      return super.settle(key, wire, reservationId, redacted);
     }
   }
 

@@ -226,7 +226,7 @@ describe('isPolicyDenial', () => {
 });
 
 describe('the refusals with a fixed next step', () => {
-  test('X_REPLICATOR_SLOT_HELD names the holder only when one is known, and always the scale fix', () => {
+  test('X_REPLICATOR_SLOT_HELD names the holder only when one is known, and always the x dev rerun', () => {
     const known = new ReplicatorSlotHeldError({ key: '42', holder: 'pid 7' });
     const unknown = new ReplicatorSlotHeldError({ key: '42' });
     expect(known.cause).toBe(
@@ -235,7 +235,8 @@ describe('the refusals with a fixed next step', () => {
     expect(unknown.cause).toBe(
       'advisory lock 42 is held — one database has exactly one replicator',
     );
-    expect(unknown.fix).toContain('--replicas=1');
+    expect(unknown.fix.startsWith('x dev --role replicator')).toBe(true);
+    expect(unknown.fix).not.toContain('kubectl');
   });
 });
 

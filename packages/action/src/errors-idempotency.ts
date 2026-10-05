@@ -172,3 +172,20 @@ export class IdempotencyReservationLostError extends UltimateError {
     });
   }
 }
+
+/**
+ * A replay of a settled answer that had a field redacted at rest. Refused, never served: the
+ * stored copy holds `[redacted]` where the first caller got a credential, and handing that back
+ * as "the answer" is a silent wrong value. The first attempt RAN — a fresh key runs it again, so
+ * the fix names reading its effect as the way to recover the result.
+ */
+export class IdempotentReplayRedactedError extends UltimateError {
+  constructor(key: string) {
+    super({
+      code: 'X_IDEMPOTENT_REPLAY_REDACTED',
+      cause: `the answer stored for idempotency key "${key}" had a secret-named field redacted when it settled, so it cannot be replayed faithfully`,
+      fix: "x actions describe '<action>' --json   # the call already ran and showed its secret once — read its effect with a query; a new Idempotency-Key runs it again (a second credential)",
+      meta: { key, replayed: true },
+    });
+  }
+}

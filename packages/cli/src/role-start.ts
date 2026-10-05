@@ -44,7 +44,7 @@ import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
 import { startLiveFeed } from './runtime-live-feed';
 import { pgExecutorFor } from './runtime-queue';
-import type { RunningServices } from './runtime-services';
+import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
 import { syncConnectSources } from './sync-url';
@@ -251,7 +251,11 @@ function assertOneJobDriver(runtime: RunningServices): void {
 
 export async function startRoles(options: StartRolesOptions): Promise<RunningRoles> {
   // `realtime.enabled` read here, before anything binds: a refusal leaves nothing to unwind.
-  const selected = rolesUnderRealtime(options.roles, options.runtime.realtime);
+  const selected = rolesUnderRealtime(
+    options.roles,
+    options.runtime.realtime,
+    (options.http ?? DEV_BINDING).dev,
+  );
   assertOneJobDriver(options.runtime);
   // Roles bind sockets in order, so a role that fails to start has to release the ones before it.
   // Without this a failed `sync` leaves the web server bound and unreachable by any caller.
@@ -290,12 +294,23 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // own port and a listening server cannot be handed one, while the neighbouring-port refusals
     // are only the right answer once the web port's own has been given.
     const prepared = selected.includes('sync') ? await prepareSync(options) : null;
-    // One rollback entry, kept current — two would stop the node twice out of a failed boot.
+    // One rollback entry, kept current — two would stop the node twice out of a failed boot. It
+    // goes on the list AFTER the server's, because the list is also the stop order (newest
+    // first): the node's listener closes before the web server drains, as it always has. The
+    // window between — `startWeb` refusing — releases the prepared node itself.
     let releaseSync = prepared?.stop ?? null;
+    let server: ServerHandle | null;
+    try {
+      server = selected.includes('web') ? startWeb(options, prepared?.mount) : null;
+    } catch (error) {
+      await releaseSync?.().catch(() => undefined);
+      throw error;
+    }
+    if (server !== null) {
+      const web = server;
+      started.push(() => web.stop());
+    }
     if (prepared !== null) started.push(async () => await releaseSync?.());
-
-    const server = selected.includes('web') ? startWeb(options, prepared?.mount) : null;
-    if (server !== null) started.push(() => server.stop());
 
     const sync: RunningSync | null =
       prepared === null ? null : await prepared.listen(server === null ? null : server.url());
@@ -363,6 +378,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
           services: options.runtime.services,
           env: options.env,
           transport: options.runtime.transport,
+          dev: binding.dev,
         })
       : null;
     if (replicator !== null) started.push(() => replicator.stop());
@@ -395,24 +411,15 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       liveBridge: live.bridge,
       liveRegistry: sync?.registry ?? null,
       async stop() {
-        // Reverse boot order, so the slot is released before the bus it published to closes.
-        live.stop();
-        await replicator?.stop();
-        await scheduler?.stop();
-        // Before the worker, so nothing publishes into a queue whose consumer has already gone —
-        // and AWAITED, because a pass is a `driver.enqueue` followed by a `markPublished`. Dropped,
-        // this returns between the two and the lines below close the pool under the row it was
-        // about to mark: re-published next boot at best, a rejection against a closed pool at worst.
-        // The session first: a notification arriving after this wakes a loop that is about to stop.
-        await wake?.stop();
-        await relay?.stop();
-        await worker?.stop('x dev stopped');
-        await sync?.stop();
-        await server?.stop();
-        // Last: a scrape taken while the roles above drain is the one that explains the drain.
-        metrics.stop();
-        // After every role that could spend from it.
-        restoreLimits();
+        // `started` IS the stop list, in boot order: released newest first — the live feed, the
+        // replicator (so the slot is released before the bus it published to closes), the
+        // scheduler, the wake session, the relay (awaited: a pass is an enqueue then a
+        // `markPublished`, and a pool closed between the two re-publishes next boot), the worker,
+        // the sync node, the server, the metrics listener (a scrape taken mid-drain explains the
+        // drain) and, after every role that could spend from it, the rate-limit store. EVERY step
+        // runs: one rejection used to skip the rest. One list, so the rollback and the stop cannot
+        // drift apart.
+        await releaseOrThrow(started);
       },
     };
   } catch (error) {

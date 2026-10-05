@@ -97,8 +97,11 @@ export const config = defineRoute({
    * sheets are retired, a finished older view transition no longer forgets the running one, and
    * `<a href="#">` and an unparsable href stay the browser's. The other +198 B is the router's
    * growth on main between 22.8.1's statement and this slice (19,071 → 19,269 B), unstated until now.
+   * raised 59kb → 60kb, measured 60,437 B (2026-10-05, plan 101 sweep 2; the reference-app gate's
+   * `x build --target static`): +90 B for the client-side action error registry, which now carries
+   * `X_IDEMPOTENT_REPLAY_REDACTED` (#591) so a refused replay renders its own title and fix.
    */
-  budget: { js: '59kb' },
+  budget: { js: '60kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

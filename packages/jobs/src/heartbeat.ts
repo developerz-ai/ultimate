@@ -98,6 +98,11 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     // request per tick onto the connection that is already the thing failing.
     if (renewing) return;
     renewing = true;
+    // Stamped BEFORE the call: the driver writes the new lease at the statement, so the window it
+    // bought starts no later than this. Stamped at the reply instead, a slow answer would stretch
+    // this process's view of the lease past the server's by the reply's latency — and a second
+    // worker re-claims the row while this one still believes it holds it.
+    const sentAt = now();
     try {
       const held = await options.driver.heartbeat(claimed.id, {
         visibilityTimeoutMs,
@@ -121,14 +126,14 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       }
       // Asked again AFTER the call, because a renewal that SUCCEEDS late is still late: an
       // event-loop stall or a driver that answered at the end of a connect timeout can land this
-      // past the window it was renewing, and `renewedAt = now()` there would restart the clock on
+      // past the window it was renewing, and renewing there would restart the clock on
       // a lease the queue has already re-delivered — the loss hidden by the very call meant to
       // prevent it.
       if (lapsed()) {
         reportLost();
         return;
       }
-      renewedAt = now();
+      renewedAt = sentAt;
     } catch (error) {
       // One failed renewal is not a lost lease: there is a whole visibility window left to land
       // the next one, and the default interval gives three tries inside it. Say it at warn and

@@ -7,6 +7,12 @@ import type { Row } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, AnyAction } from './action';
 import type { ClientMethod } from './client';
+import type {
+  IdempotencyRecord,
+  IdempotencyReservation,
+  IdempotencyScope,
+  IdempotencyStore,
+} from './idempotency';
 import type { ActionJobHandle } from './job-handle';
 import type { LocalTable } from './mutator';
 
@@ -58,4 +64,27 @@ export type _LocalTableIsTheStoreTxShape = Assert<
 /** Addressed by KEY: an insert names the key its server twin answers under, never a column. */
 export type _LocalInsertTakesTheKey = Assert<
   Equals<Parameters<LocalTable['insert']>, [key: string, row: Row]>
+>;
+
+/**
+ * #591: a store written before answers were redacted at rest drops `settle`'s `redacted` flag and
+ * would replay `[redacted]` as the answer. A required 4th PARAMETER cannot refuse it — TypeScript
+ * accepts an implementation with fewer parameters — so the store DECLARES it keeps the flag
+ * (`keepsRedaction: true`), and a pre-25 store without the declaration is a build error here.
+ */
+interface PreRedactionStore {
+  readonly scope?: IdempotencyScope | undefined;
+  reserve(key: string, requestHash: string): Promise<IdempotencyReservation>;
+  settle(key: string, value: unknown, reservationId: string): Promise<void>;
+  release(key: string): Promise<void>;
+  get(key: string): Promise<IdempotencyRecord | undefined>;
+}
+
+export type _APreRedactionStoreIsNotAStore = Assert<
+  Equals<PreRedactionStore extends IdempotencyStore ? true : false, false>
+>;
+
+/** …and `settle`'s flag is required of every CALLER, so a wrapping store cannot drop it either. */
+export type _SettleRequiresTheRedactedFlag = Assert<
+  Equals<Parameters<IdempotencyStore['settle']>['length'], 4>
 >;

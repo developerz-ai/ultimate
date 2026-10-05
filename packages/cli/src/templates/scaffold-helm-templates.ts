@@ -29,11 +29,13 @@ every object would be ${app.kebab}-${app.kebab}-web.
 
 {{/*
 repository:tag, and NOT a single "image" string: x deploy --method helm passes
---set image.repository=... --set image.tag=..., because replacing the map with a string makes
-every workload below fail on .repository and deploy nothing.
+--set-string image.repository=... --set-string image.tag=..., because replacing the map with a
+string makes every workload below fail on .repository and deploy nothing. toString on both halves:
+a plain --set image.tag=1234567 is an int64, which printf renders as %!s(int64=1234567).
 */}}
 {{- define "${app.kebab}.image" -}}
-{{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- $repository := required "image.repository is empty — set it to the registry path your CI pushes the app image to: --set-string image.repository=ghcr.io/<org>/<app>, or x deploy --method helm --image ghcr.io/<org>/<app>:<tag>" .Values.image.repository -}}
+{{- printf "%s:%s" (toString $repository) (toString (default .Chart.AppVersion .Values.image.tag)) -}}
 {{- end -}}
 
 {{- define "${app.kebab}.labels" -}}
@@ -66,7 +68,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
 {{- $envPort = sub (int $cfg.port) 1 -}}
 {{- end -}}
 - name: {{ $role }}
-  image: {{ include "${app.kebab}.image" $root }}
+  image: {{ include "${app.kebab}.image" $root | quote }}
   imagePullPolicy: {{ $root.Values.image.pullPolicy }}
   securityContext: {{- toYaml $root.Values.securityContext | nindent 4 }}
   env:
@@ -194,9 +196,18 @@ spec:
     matchLabels:
       app.kubernetes.io/instance: {{ $.Release.Name }}
       app.kubernetes.io/component: {{ $role }}
+  {{/*
+  The replicator is Recreate, never a rolling update: one pod per database holds the replication
+  slot's advisory lock, so a surged pod can only stand by, unready, and maxUnavailable: 0 never
+  terminates the holder it is waiting on — every rollout stalled. Recreate lets the holder go first.
+  */}}
   strategy:
+    {{- if eq $role "replicator" }}
+    type: Recreate
+    {{- else }}
     type: RollingUpdate
     rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+    {{- end }}
   template:
     metadata:
       labels:

@@ -742,6 +742,35 @@ jobs:
             || fail "networkPolicy.enabled ignored" "networkPolicy.enabled=false still rendered a NetworkPolicy. fix: see docker/helm/templates/networkpolicy.yaml."
           echo "ok: per-role Secret, bounded /tmp, one NetworkPolicy per role with only its own ports"
 
+      # Does every workload name an image a registry can serve, and can the replicator roll? (plan
+      # 101, sweep 2 D8/D10/D11). Three holes, each once shipped:
+      #
+      #   - an all-digit tag (a build number) is an int64 to `--set`, and `printf "%s"` rendered
+      #     `app:%!s(int64=1234567)` into every workload: ImagePullBackOff behind `--wait`;
+      #   - the replicator rolled with `maxSurge: 1, maxUnavailable: 0`: the surged pod can only stand
+      #     by unready while the holder of the slot's lock is never terminated, so every rollout stalled;
+      #   - an empty `image.repository` rendered `:<tag>`, a reference nothing can pull.
+      - name: the image reference survives a numeric tag, the replicator recreates, a repository is required
+        run: |
+          set -euo pipefail
+          fail() { echo "::error title=$1::$2"; exit 1; }
+          helm template app docker/helm --set image.tag=1234567 --set roles.replicator.enabled=true > /tmp/numeric.yaml
+          if grep -q '%!' /tmp/numeric.yaml; then
+            fail "numeric image tag mangled" "image.tag=1234567 rendered $(grep -m1 'image:' /tmp/numeric.yaml | xargs). fix: wrap both halves in toString in the 'ultimate.image' helper in docker/helm/templates/_helpers.tpl."
+          fi
+          images="$(grep -c 'image: "[^"]*:1234567"$' /tmp/numeric.yaml || true)"
+          recreate="$(grep -c '^ *type: Recreate$' /tmp/numeric.yaml || true)"
+          echo "images at :1234567=${images} Recreate=${recreate}"
+          [ "$images" -gt 0 ] || fail "numeric image tag lost" "no workload rendered image :1234567. fix: see the 'ultimate.image' helper in docker/helm/templates/_helpers.tpl."
+          [ "$recreate" = 1 ] || fail "replicator strategy" "${recreate} Deployments render strategy Recreate with the replicator enabled; expected exactly 1, the replicator. fix: keep the eq \$role \"replicator\" branch of strategy in docker/helm/templates/deployments.yaml."
+          if out="$(helm template app docker/helm --set image.repository= 2>&1)"; then
+            fail "image.repository not required" "the chart rendered with image.repository empty, so every pod pulls ':<tag>'. fix: keep the required() in the 'ultimate.image' helper in docker/helm/templates/_helpers.tpl."
+          fi
+          case "$out" in *"image.repository is empty"*) ;;
+            *) fail "image.repository refusal" "an empty image.repository failed without naming the key: ${out}. fix: see the required() message in docker/helm/templates/_helpers.tpl." ;;
+          esac
+          echo "ok: numeric tag renders as a string, only the replicator recreates, an empty repository is refused"
+
   # The rolling restart, PERFORMED — milestone 11's proof. `container` renders the chart; nothing
   # there can say whether an upgrade drops a request, because that is a property of a running
   # cluster: endpoint removal racing SIGTERM, the readiness grace, keep-alive connections held by

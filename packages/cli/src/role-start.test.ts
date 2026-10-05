@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { METRICS_PATH } from '@ultimat3/core';
 import type { OutboxRecord, OutboxStore } from '@ultimat3/jobs';
 import { job, t, task } from '@ultimat3/jobs';
+import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
 import type { RunningRoles } from './role-start';
 import { DEV_ROLES, SELECTABLE_ROLES, selectRoles, startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
@@ -291,5 +292,87 @@ describe('unit · x dev --role', () => {
     ).rejects.toThrow();
 
     blocker.stop(true);
+  });
+
+  /**
+   * The stop path is a list where every step runs, not a chain of awaits: the replicator rethrows a
+   * refused close ON PURPOSE (a slot kept open is a standby that can never take it), and that one
+   * rejection skipped every stop after it — relay abandoned mid-pass, the server still bound, the
+   * metrics listener still open, the rate-limit store still installed. The first failure is still
+   * the one the caller gets.
+   *
+   * The scheduler stands in for the replicator: a replicator needs a walsender, and the step that
+   * rejects is not what is under test — that the steps after it still run is. `stop` is read off
+   * the object when the step runs, which is the seam.
+   */
+  test('a rejecting replicator stop still stops the server and metrics', async () => {
+    let metricsStopped = false;
+    const started = await startRoles({
+      roles: selectRoles('web,scheduler'),
+      port: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      env: {},
+      routes: [],
+      metrics: {
+        url: 'http://127.0.0.1:1',
+        stop: () => {
+          metricsStopped = true;
+        },
+      },
+    });
+    const refusal = new ReplicatorSlotHeldError({ key: 'x:replicator:test' });
+    const scheduler = started.scheduler ?? expect.unreachable('no scheduler started');
+    const stopScheduler = scheduler.stop.bind(scheduler);
+    scheduler.stop = async () => {
+      await stopScheduler();
+      throw refusal;
+    };
+
+    let thrown: unknown;
+    try {
+      await started.stop();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(refusal);
+    expect(started.server?.state()).toBe('stopped');
+    expect(metricsStopped).toBe(true);
+  });
+
+  /**
+   * The stop order `x dev` and a container have always had: the sync node's own listener closes
+   * BEFORE the web server drains, so no client is handed a fresh patch stream by a process whose
+   * pages are going away. One unwind list for rollback and stop must not reorder it.
+   */
+  test('the sync node stops before the web server', async () => {
+    const started = await startRoles({
+      roles: selectRoles('web,sync'),
+      port: 0,
+      metricsPort: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      env: {},
+      routes: [],
+    });
+    running = started;
+    const server = started.server ?? expect.unreachable('no web server started');
+    const syncOrigin = (started.syncUrl ?? expect.unreachable('no sync node')).replace(
+      /^ws/,
+      'http',
+    );
+    let syncAnsweredDuringServerStop: boolean | undefined;
+    const stopServer = server.stop.bind(server);
+    server.stop = async () => {
+      syncAnsweredDuringServerStop = await fetch(syncOrigin).then(
+        () => true,
+        () => false,
+      );
+      await stopServer();
+    };
+    await started.stop();
+    running = undefined;
+    expect(syncAnsweredDuringServerStop).toBe(false);
   });
 });

@@ -39,6 +39,8 @@ create table if not exists x_idempotency (
 create index if not exists x_idempotency_created_at_idx on x_idempotency (created_at);
 
 alter table x_idempotency add column if not exists tx_bound boolean not null default false;
+
+alter table x_idempotency add column if not exists redacted boolean not null default false;
 `;
 
 /**
@@ -62,18 +64,19 @@ on conflict (key) do update
        status       = 'in-flight',
        value        = null,
        failure      = null,
+       redacted     = false,
        tx_bound     = excluded.tx_bound,
        created_at   = now()
  where x_idempotency.created_at < now() - make_interval(secs => $4::double precision)
     or (x_idempotency.status = 'in-flight'
         and x_idempotency.tx_bound
         and x_idempotency.created_at < now() - make_interval(secs => $6::double precision))
-returning key, id, request_hash, status, value, failure,
+returning key, id, request_hash, status, value, failure, redacted,
           (extract(epoch from created_at) * 1000)::bigint as created_at
 `;
 
 export const SQL_IDEMPOTENCY_GET = `
-select key, id, request_hash, status, value, failure,
+select key, id, request_hash, status, value, failure, redacted,
        (extract(epoch from created_at) * 1000)::bigint as created_at
   from x_idempotency
  where key = $1
@@ -93,13 +96,15 @@ select key, id, request_hash, status, value, failure,
  * the refusal observable: an update matching no row is indistinguishable from one that matched.
  */
 export const SQL_IDEMPOTENCY_SETTLE = `
-update x_idempotency set status = 'settled', value = $2::jsonb, failure = null
+update x_idempotency set status = 'settled', value = $2::jsonb, failure = null,
+       redacted = $4::boolean
  where key = $1 and id = $3::uuid and status = 'in-flight'
 returning key
 `;
 
 export const SQL_IDEMPOTENCY_FAIL = `
-update x_idempotency set status = 'failed', value = null, failure = $2::jsonb
+update x_idempotency set status = 'failed', value = null, failure = $2::jsonb,
+       redacted = false
  where key = $1 and id = $3::uuid and status = 'in-flight'
 returning key
 `;
@@ -117,6 +122,8 @@ interface IdempotencyRow {
   readonly status: string;
   readonly value: unknown;
   readonly failure: unknown;
+  /** Absent on a row read by a statement that predates the column — read as `false`. */
+  readonly redacted?: boolean | undefined;
   /** `bigint`, which every Postgres client hands back as a string. */
   readonly created_at: number | string;
 }
@@ -220,6 +227,7 @@ export function postgresIdempotencyStore(
 
   return {
     scope: 'shared',
+    keepsRedaction: true,
     windowMs,
 
     async reserve(key, requestHash): Promise<IdempotencyReservation> {
@@ -258,8 +266,10 @@ export function postgresIdempotencyStore(
       };
     },
 
-    async settle(key, value, reservationId): Promise<void> {
-      const params = [key, JSON.stringify(value ?? null), reservationId];
+    // `value` is the resting copy `withIdempotency` redacted; `redacted` is kept beside it so the
+    // replay is refused by a column, never by searching the stored JSON for a marker string.
+    async settle(key, value, reservationId, redacted): Promise<void> {
+      const params = [key, JSON.stringify(value ?? null), reservationId, redacted];
       const tx = boundTx();
       if (tx === undefined) {
         fenced(await exec.query(SQL_IDEMPOTENCY_SETTLE, params), key, reservationId, 'settle');
@@ -338,6 +348,7 @@ function toRecord(row: IdempotencyRow): IdempotencyRecord {
     status: row.status,
     value: row.value,
     ...(failure === undefined ? {} : { failure }),
+    ...(row.redacted === true ? { redacted: true } : {}),
     createdAt: Number(row.created_at),
   };
 }

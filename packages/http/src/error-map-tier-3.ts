@@ -91,4 +91,6 @@ export const TIER_3_ERROR_STATUS = {
   X_JOB_NOT_FOUND: 404,
   // @ultimat3/realtime — one principal holds too many sockets on this node
   X_SOCKET_LIMIT: 429,
+  // @ultimat3/action — an idempotent replay would return a field redacted at rest
+  X_IDEMPOTENT_REPLAY_REDACTED: 409,
 } satisfies Readonly<Record<string, number>>;

@@ -345,9 +345,12 @@ name it was never told about: `password` / `passphrase` anywhere, `secret` as th
 `…token` that is not a dedupe or paging key (`resetToken`, `githubToken`, `NPM_TOKEN`), key
 material by its qualifier (`signingKey`, `masterKey`, `accessKeyId`), a value that embeds a
 credential (`connectionString`, `dsn`, `databaseUrl`), the one-time codes
-(`totpCode`, `recoveryCode`) and a stored hash of any of them (`passwordHash`, `tokenHash`,
-`keyHash`). It deliberately leaves `idempotencyToken`, a paging token, `maxTokens` and an error
-`code` readable — a redacted field is one an operator cannot correlate on.
+(`totpCode`, `recoveryCode`), session and bearer material (`credentials`, `jwt`, `bearer`,
+`cookie`, `sessionId`, `sessionKey`, `privateKeyPem`), card data (`cvv`, `cvc`, a whole-word `pin`
+such as `cardPin` or `pinCode`) and a stored hash of any of them (`passwordHash`, `tokenHash`,
+`keyHash`). `@ultimat3/action` also asks it before storing an idempotent answer. It deliberately
+leaves `idempotencyToken`, a paging token, `maxTokens`, an error `code`, `spinner`, `isPinned`,
+`sessionStart` and `cookieName` readable — a redacted field is one an operator cannot correlate on.
 
 `LOG_LEVEL` is refused when it is not one of `LOG_LEVELS` (lowercase), exactly as
 `createLogger({ level })` refuses it; unset or empty is `info`.

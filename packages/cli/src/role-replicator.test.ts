@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { readinessChecks } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import type { Transport } from '@ultimat3/realtime/server';
+import type { Replicator, ReplicatorStats, Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import {
   REPLICATOR_READINESS_CHECK,
@@ -56,7 +56,7 @@ describe('x dev --role replicator', () => {
     declarePost();
     let thrown: unknown;
     try {
-      await startReplicator({ services: embedded, env: {}, transport });
+      await startReplicator({ services: embedded, env: {}, transport, dev: true });
     } catch (error) {
       thrown = error;
     }
@@ -69,7 +69,7 @@ describe('x dev --role replicator', () => {
   test('an app with no entities is refused: the feed would match nothing', async () => {
     let thrown: unknown;
     try {
-      await startReplicator({ services: external, env: ENV, transport });
+      await startReplicator({ services: external, env: ENV, transport, dev: true });
     } catch (error) {
       thrown = error;
     }
@@ -84,6 +84,7 @@ describe('x dev --role replicator', () => {
         services: external,
         env: { ...ENV, REPLICATION_SLOT: 'Not An Identifier' },
         transport,
+        dev: true,
       }),
     ).rejects.toThrow(/not a lower-case postgres identifier/);
   });
@@ -95,6 +96,7 @@ describe('x dev --role replicator', () => {
         services: external,
         env: { ...ENV, REPLICATION_URL: 'postgres://repl:x@localhost:5432/other' },
         transport,
+        dev: true,
       }),
     ).rejects.toThrow(/REPLICATION_URL names/);
   });
@@ -144,7 +146,7 @@ describe('x dev --role replicator', () => {
 
     let thrown: unknown;
     try {
-      await startReplicator({ services: external, env: ENV, transport });
+      await startReplicator({ services: external, env: ENV, transport, dev: true });
     } catch (error) {
       thrown = error;
     }
@@ -162,7 +164,9 @@ describe('x dev --role replicator', () => {
     entity('comment', { columns: { id: uuid().primaryKey(), body: text() } });
     // Proven through the refusal path rather than a live connection: with entities registered the
     // role gets past its own preflight and fails only on the database that is not there.
-    await expect(startReplicator({ services: external, env: ENV, transport })).rejects.toThrow();
+    await expect(
+      startReplicator({ services: external, env: ENV, transport, dev: true }),
+    ).rejects.toThrow();
   });
 });
 
@@ -185,5 +189,151 @@ describe('the replicator readiness check', () => {
     }
     // Unregistered with the role: a stopped replicator must not hold a pod's readiness red.
     expect(Object.hasOwn(readinessChecks(), REPLICATOR_READINESS_CHECK)).toBe(false);
+  });
+});
+
+/**
+ * A replicator that answers `start()` from a script: `false` is "another process holds the lock",
+ * which is the one outcome the role decides about. The feed and the lock behind a real one are
+ * proved in `@ultimat3/realtime`; what is pinned here is what the ROLE does with the answer.
+ */
+const scripted = (answers: readonly boolean[]) => {
+  let calls = 0;
+  let stops = 0;
+  let pumping = false;
+  const stats: ReplicatorStats = {
+    published: 0,
+    skipped: 0,
+    outOfOrder: 0,
+    restarts: 0,
+    failure: null,
+  };
+  const replicator: Replicator = {
+    start: async () => {
+      const answer = answers[Math.min(calls, answers.length - 1)] ?? false;
+      calls += 1;
+      pumping = answer;
+      return answer;
+    },
+    stop: async () => {
+      stops += 1;
+      pumping = false;
+    },
+    get running() {
+      return pumping;
+    },
+    lastLsn: () => null,
+    stats: () => stats,
+    // The real one is jittered and seconds long; the loop's shape is what is under test.
+    retryDelayMs: () => 1,
+  };
+  return {
+    replicator,
+    create: () => replicator,
+    calls: () => calls,
+    stops: () => stops,
+  };
+};
+
+const until = async (condition: () => boolean, label: string): Promise<void> => {
+  for (let tick = 0; tick < 200; tick += 1) {
+    if (condition()) return;
+    await Bun.sleep(1);
+  }
+  expect.unreachable(`timed out waiting for ${label}`);
+};
+
+describe('losing the advisory lock', () => {
+  test('an x dev boot that loses the lock refuses with X_REPLICATOR_SLOT_HELD', async () => {
+    declarePost();
+    const fake = scripted([false]);
+    let thrown: unknown;
+    try {
+      await startReplicator({
+        services: external,
+        env: ENV,
+        transport,
+        dev: true,
+        create: fake.create,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeUltimateError('X_REPLICATOR_SLOT_HELD');
+  });
+
+  /**
+   * A container that threw here crash-looped, and under the chart's rolling update the old holder
+   * is never terminated while the new pod is unready — so every helm rollout stalled. The loser
+   * stays up, `/readyz` false, and keeps asking for the slot until the holder lets go.
+   */
+  test('a container boot that loses the lock stays up and unready', async () => {
+    declarePost();
+    const fake = scripted([false, false, true]);
+    const running = await startReplicator({
+      services: external,
+      env: ENV,
+      transport,
+      dev: false,
+      create: fake.create,
+    });
+    try {
+      expect(readinessChecks()[REPLICATOR_READINESS_CHECK]).toBe('failing');
+      await until(() => fake.calls() >= 3, 'the standby to ask again');
+      expect(readinessChecks()[REPLICATOR_READINESS_CHECK]).toBe('ok');
+    } finally {
+      await running.stop();
+    }
+    expect(fake.stops()).toBe(1);
+    expect(Object.hasOwn(readinessChecks(), REPLICATOR_READINESS_CHECK)).toBe(false);
+  });
+
+  test('a stopped standby asks for the slot no more', async () => {
+    declarePost();
+    const fake = scripted([false]);
+    const running = await startReplicator({
+      services: external,
+      env: ENV,
+      transport,
+      dev: false,
+      create: fake.create,
+    });
+    await until(() => fake.calls() >= 2, 'the standby to ask again');
+    await running.stop();
+    const asked = fake.calls();
+    await Bun.sleep(10);
+    expect(fake.calls()).toBe(asked);
+  });
+
+  test('container refusal names ROLE, not x dev', async () => {
+    declarePost();
+    let thrown: unknown;
+    try {
+      await startReplicator({ services: embedded, env: {}, transport, dev: false });
+    } catch (error) {
+      thrown = error;
+    }
+    if (thrown === undefined) expect.unreachable('the embedded database was not refused');
+    const said = `${(thrown as { cause: string }).cause} ${(thrown as { fix: string }).fix}`;
+    expect(said).toContain('ROLE=replicator');
+    expect(said).toContain('DATABASE_URL');
+    // Pasted from its first character (`bun run scripts/fix-prose.ts`): the env, then the command.
+    expect((thrown as { fix: string }).fix).toMatch(/^DATABASE_URL=\S+ ROLE=replicator bun /);
+    expect(said).not.toContain('x dev');
+    expect(said).not.toContain('--role');
+  });
+
+  test('a container with no entities is refused without naming x dev', async () => {
+    let thrown: unknown;
+    try {
+      await startReplicator({ services: external, env: ENV, transport, dev: false });
+    } catch (error) {
+      thrown = error;
+    }
+    if (thrown === undefined) expect.unreachable('an empty entity list was not refused');
+    const said = `${(thrown as { cause: string }).cause} ${(thrown as { fix: string }).fix}`;
+    expect(said).toContain('x g entity');
+    expect(said).not.toContain('x dev');
+    expect(said).not.toContain('--role');
   });
 });

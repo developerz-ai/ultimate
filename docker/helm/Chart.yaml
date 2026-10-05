@@ -2,9 +2,10 @@ apiVersion: v2
 name: ultimate
 description: One image, N roles. Per-role deployments and autoscalers for an Ultimate app.
 type: application
-# Both track the framework's lockstep version. `appVersion` is the default image tag
-# (values.yaml `image.tag: ""`), so 0.0.1 named a tag that has never existed for any release — a
-# fresh `helm install` with the shipped values pulled `ultimate-app:0.0.1` and got ImagePullBackOff.
+# Both track the framework's lockstep version. `appVersion` is the default image TAG
+# (values.yaml `image.tag: ""`) of the repository the operator sets in `image.repository` — the
+# framework publishes no app image, so the shipped repository is a placeholder and an install
+# names its own registry path (`x deploy --method helm --image` sets both keys).
 #
 # `scripts/release.ts` rewrites both on every release through `setChartVersions` — a chart is not a
 # workspace, so the manifest loop cannot reach it and the script writes it by path instead. Never

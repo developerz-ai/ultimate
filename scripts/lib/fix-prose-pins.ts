@@ -33,7 +33,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   policy: 6,
   pwa: 11,
   query: 16,
-  realtime: 46,
+  realtime: 45,
   render: 48,
   schema: 7,
   scraping: 54,

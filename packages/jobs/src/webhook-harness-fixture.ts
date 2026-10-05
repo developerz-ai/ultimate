@@ -27,8 +27,10 @@ interface Sent {
 export interface Harness {
   readonly ledger: MemoryWebhookLedger;
   readonly sent: Sent[];
-  answer: () => Promise<Response>;
-  run(attempt?: number): Promise<unknown>;
+  /** How the receiver answers. Handed the request, so a test can hold it open on its signal. */
+  answer: (init: RequestInit) => Promise<Response>;
+  /** One attempt. `over` is the ctx the worker would hand it — its signal is the attempt's. */
+  run(attempt?: number, over?: Ctx): Promise<unknown>;
   readonly handle: ReturnType<typeof webhook>;
 }
 
@@ -58,7 +60,8 @@ export const harness = (
   const state = {
     ledger,
     sent,
-    answer: (): Promise<Response> => Promise.resolve(new Response('ok', { status: 200 })),
+    answer: (_init: RequestInit): Promise<Response> =>
+      Promise.resolve(new Response('ok', { status: 200 })),
   };
 
   const definition: WebhookDefinition = {
@@ -77,7 +80,7 @@ export const harness = (
         : { topic: over.topic ?? 'orders.paid', body: '{"amount":100}' },
     fetch: (url, init) => {
       sent.push({ url, init });
-      return state.answer();
+      return state.answer(init);
     },
   };
 
@@ -85,7 +88,7 @@ export const harness = (
   return {
     ...state,
     handle,
-    run: (attempt = 1): Promise<unknown> =>
+    run: (attempt = 1, over: Ctx = ctx): Promise<unknown> =>
       handle.run({
         input: { endpointId: 'ep_1', eventId: 'evt_1' },
         step: createStepRunner({
@@ -93,7 +96,7 @@ export const harness = (
           jobName: definition.name,
           store: createMemoryStepStore(),
         }).step,
-        ctx,
+        ctx: over,
         attempt,
         finalAttempt: false,
         progress: () => undefined,
@@ -103,7 +106,7 @@ export const harness = (
     get answer() {
       return state.answer;
     },
-    set answer(next: () => Promise<Response>) {
+    set answer(next: (init: RequestInit) => Promise<Response>) {
       state.answer = next;
     },
   } as Harness;

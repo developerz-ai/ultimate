@@ -138,6 +138,7 @@ export {
   IdempotencyReplayedFailureError,
   IdempotencyReservationLostError,
   IdempotencyStatusUnknownError,
+  IdempotentReplayRedactedError,
   InputInvalidError,
   MutatorNotIdempotentError,
   OutputInvalidError,

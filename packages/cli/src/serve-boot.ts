@@ -16,7 +16,7 @@ import { warnIfIdempotencyProcessScoped } from './runtime-idempotency-scope';
 import { warnUnsealedMfaSecrets } from './runtime-mfa-warning';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
-import { startServices } from './runtime-services';
+import { releaseOrThrow, startServices } from './runtime-services';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import { adoptPrebuiltStyles, reportBootBuilds, watchBootBuilds } from './serve-prebuilt';
@@ -181,13 +181,18 @@ async function bootRoles(boot: {
     running,
     runtime,
     async stop() {
-      await running.stop();
-      // After the server drained: a bust landing mid-drain still marks the pages it is serving.
-      web?.release();
-      await runtime.stop();
-      // Last: the exporters outlive the roles they were recording, so the drain's own spans and
-      // the final counter snapshot still have somewhere to go.
-      stopOtlp();
+      // Every step runs and the first failure is rethrown (`releaseOrThrow`): a refused role stop
+      // used to leave the services, the PGlite lock and the exporter behind it. Listed in boot
+      // order, released newest first — the roles; then the web surface, after the server drained
+      // (a bust landing mid-drain still marks the pages it is serving); then the services; LAST
+      // the exporter, so the drain's own spans and the final counter snapshot still have
+      // somewhere to go.
+      await releaseOrThrow([
+        stopOtlp,
+        () => runtime.stop(),
+        () => web?.release(),
+        () => running.stop(),
+      ]);
     },
   };
 }

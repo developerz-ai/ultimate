@@ -301,6 +301,20 @@ async function release(steps: readonly (() => void | Promise<void>)[]): Promise<
   return failures;
 }
 
+/**
+ * Every STOP path's form of `release`: every step runs, newest first, and the FIRST failure is
+ * rethrown — it is the cause, the rest its consequences. The one helper for this process's stops
+ * (`startServices`, `startRoles`, `bootServing`, `x dev`): a chain of `await`s with no `try`
+ * skipped every step after one rejection, and the replicator rejects a refused close on purpose.
+ * Steps are listed in BOOT order, as an unwind list is.
+ */
+export async function releaseOrThrow(
+  steps: readonly (() => void | Promise<void>)[],
+): Promise<void> {
+  const failures = await release(steps);
+  if (failures.length > 0) throw failures[0];
+}
+
 export async function startServices(
   services: DevServices,
   env: Env,
@@ -450,8 +464,7 @@ export async function startServices(
       // the FIRST failure is rethrown because it is the cause and the rest are its consequences,
       // and every step still runs, so a refused shutdown never leaks into the next boot.
       async stop() {
-        const failures = await release(started);
-        if (failures.length > 0) throw failures[0];
+        await releaseOrThrow(started);
       },
     };
   } catch (error) {

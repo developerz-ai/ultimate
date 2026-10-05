@@ -186,6 +186,9 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
         // One in flight at a time, on the connection that is already the thing failing.
         if (renewing) return;
         renewing = true;
+        // Stamped BEFORE the call, as `heartbeat.ts` does: the store dates the new expiry at the
+        // statement, so a slow reply must not stretch this worker's view past it.
+        const sentAt = now();
         try {
           const renewed = await options.leases.renew(slot, options.ttlMs);
           if (timer.stopped()) return;
@@ -194,7 +197,7 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
           if (renewed === false) return reportLost('not-ours');
           // A renewal that lands LATE is still late: the slot may already be another worker's.
           if (lapsed()) return reportLost('expired');
-          renewedAt = now();
+          renewedAt = sentAt;
         } catch (error) {
           // One failed renewal is not a lost slot: the TTL gives the interval several tries.
           logger.warn('jobs.worker.slot-renewal-failed', {

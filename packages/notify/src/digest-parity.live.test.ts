@@ -26,8 +26,15 @@ const event = (key: string, at = 0): NotifyEvent<unknown> => ({
 });
 const keys = (events: readonly NotifyEvent<unknown>[]): readonly string[] =>
   events.map((one) => one.key);
-const append = (store: DigestStore, key: string, now: number, on: DigestSlot = slot) =>
-  store.append({ slot: on, event: event(key, now), windowMs: 100, now: new Date(now) });
+/** One run per event key unless a test names the run: a replay is the SAME appender again. */
+const append = (
+  store: DigestStore,
+  key: string,
+  now: number,
+  on: DigestSlot = slot,
+  appender = `run-${key}`,
+) =>
+  store.append({ slot: on, event: event(key, now), windowMs: 100, now: new Date(now), appender });
 
 type Sql = InstanceType<typeof Bun.SQL>;
 let sql: Sql | undefined;
@@ -123,6 +130,31 @@ for (const [name, fresh] of STORES) {
       expect(await store.drain(slot, 110)).toEqual([event('e1', 10)]);
       expect(keys(await store.drain(other, 120))).toEqual(['x1']);
     });
+
+    test('a replayed append answers what the first one did and lands its event once', async () => {
+      const store = await fresh();
+      expect(await append(store, 'e1', 0)).toEqual({ opened: true, endsAt: 100 });
+      expect(await append(store, 'e2', 10)).toEqual({ opened: false, endsAt: 100 });
+      // The step that appended re-runs whole: both appenders arrive a second time.
+      expect(await append(store, 'e1', 20)).toEqual({ opened: true, endsAt: 100 });
+      expect(await append(store, 'e2', 30)).toEqual({ opened: false, endsAt: 100 });
+      expect(keys(await store.drain(slot, 100))).toEqual(['e1', 'e2']);
+    });
+
+    test('a replay after its window closed answers that window, never a new one', async () => {
+      const store = await fresh();
+      await append(store, 'e1', 0);
+      expect(await append(store, 'e2', 150)).toEqual({ opened: true, endsAt: 250 });
+      expect(await append(store, 'e1', 160)).toEqual({ opened: true, endsAt: 100 });
+      expect(keys(await store.drain(slot, 250))).toEqual(['e1', 'e2']);
+    });
+
+    test('a drained window forgets its appenders: the same run in a later window opens it', async () => {
+      const store = await fresh();
+      await append(store, 'e1', 0);
+      await store.drain(slot, 100);
+      expect(await append(store, 'e1', 150)).toEqual({ opened: true, endsAt: 250 });
+    });
   });
 }
 
@@ -146,4 +178,48 @@ describe.skipIf(url === undefined)('postgres digest store, what a heap cannot do
     const drained = await createPgDigestStore({ executor: executor() }).drain(slot, 100);
     expect([...keys(drained)].sort()).toEqual(['a', 'b', 'c', 'd']);
   });
+
+  test('two executions of ONE appender at once (a lapsed lease) land its event once', async () => {
+    await sql?.unsafe('truncate x_notify_digests', []);
+    if (sql === undefined) return expect.unreachable('beforeAll opened no database');
+    // The first execution's insert is held uncommitted, so the second one's statement starts — and
+    // takes its snapshot, in which `prior` finds nothing — before the first row is visible to it.
+    const held = await sql.reserve();
+    try {
+      await held.unsafe('begin', []);
+      const inTx: PgExecutor = {
+        query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+          [...(await held.unsafe(text, values.map(bound)))] as R[],
+      };
+      expect(await append(createPgDigestStore({ executor: inTx }), 'e1', 0)).toEqual({
+        opened: true,
+        endsAt: 100,
+      });
+      const racing = append(createPgDigestStore({ executor: executor() }), 'e1', 0);
+      await waitForLockWait();
+      await held.unsafe('commit', []);
+      expect(await racing).toEqual({ opened: true, endsAt: 100 });
+    } finally {
+      held.release();
+    }
+    const rows = await sql.unsafe('select appended_by from x_notify_digests', []);
+    expect([...rows]).toEqual([{ appended_by: ['run-e1'] }]);
+    expect(keys(await createPgDigestStore({ executor: executor() }).drain(slot, 100))).toEqual([
+      'e1',
+    ]);
+  });
 });
+
+/** Until a backend in the probe database is blocked on a lock — the racing statement, waiting. */
+const waitForLockWait = async (): Promise<void> => {
+  for (let poll = 0; poll < 100; poll += 1) {
+    const [row] = await (sql?.unsafe(
+      `select count(*)::int as waiting from pg_stat_activity
+       where datname = '${PROBE_DB}' and wait_event_type = 'Lock'`,
+      [],
+    ) ?? []);
+    if ((row as { waiting: number } | undefined)?.waiting) return;
+    await Bun.sleep(20);
+  }
+  expect.unreachable('the racing append never blocked on the held insert');
+};

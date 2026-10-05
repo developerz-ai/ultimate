@@ -196,6 +196,29 @@ describe('a lease that lapses is named', () => {
     expect(harness.renewals()).toBe(1);
   });
 
+  test('a slow renewal restarts the window from when it was SENT, as the server does', async () => {
+    // The server stamps the new lease at the statement, not at the reply. A renewal sent at 10 s
+    // whose answer lands at 29 s bought a lease ending at 40 s; counting from the reply would have
+    // this worker believe in 59 s, running on for 19 s beside the worker that re-claimed it.
+    const interval = 10_000;
+    let slow = true;
+    const harness = held((clock) => {
+      if (slow) clock.advance(19_000);
+      slow = false;
+      return Promise.resolve();
+    });
+
+    harness.clock.advance(interval);
+    await harness.heartbeat.renew();
+    expect(harness.heartbeat.lost()).toBe(false);
+    // The server's expiry (10 s + 30 s) plus one interval: the next renewal must see it gone.
+    harness.clock.set(interval + VISIBILITY_MS + interval);
+    await harness.heartbeat.renew();
+
+    expect(harness.heartbeat.lost()).toBe(true);
+    expect(harness.renewals()).toBe(1);
+  });
+
   test('a renewal that lands after the loss does not revive the lease', async () => {
     let land = (): void => undefined;
     const harness = held(

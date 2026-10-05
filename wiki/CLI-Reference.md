@@ -737,7 +737,7 @@ new pods serve and the workers already draining the queue perform them. The `bac
 `x db backfill --all --write --json` and exits. Steps run sequentially and stop
 at the first non-zero exit; the `fix` is that step's command, so you can rerun it directly for full
 output. `helm` is one `helm upgrade --install <release> docker/helm [--namespace <ns>] --wait
---timeout <timeout> --output json --set image.repository=… --set image.tag=…` against the chart
+--timeout <timeout> --output json --set-string image.repository=… --set-string image.tag=…` against the chart
 **`x new` writes**. **It waits**, `As of 2026-09-23`: without `--wait` the command exited 0 the
 moment the API server accepted the objects, and helm's own 5m default failed an upgrade whose
 migrate hook was still applying a long migration. `--json` reports helm's own verdict as

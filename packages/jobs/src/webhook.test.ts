@@ -223,6 +223,31 @@ describe('an endpoint that keeps failing stops taking deliveries', () => {
     expect(one.ledger.disabled().size).toBe(0);
   });
 
+  test('disable is called once, and a disabled endpoint opens no socket', async () => {
+    // The endpoint row never says `disabled` here — `disableAfter` writes only the ledger, and a
+    // ledger verdict nobody asks for again is an endpoint that keeps receiving POSTs.
+    const one = harness({ disableAfter: 2 });
+    one.answer = () => Promise.resolve(new Response('boom', { status: 500 }));
+    let disables = 0;
+    const disable = one.ledger.disable.bind(one.ledger);
+    Object.assign(one.ledger, {
+      disable: (endpointId: string, reason: string) => {
+        disables += 1;
+        return disable(endpointId, reason);
+      },
+    });
+
+    await codeOf(() => one.run(1));
+    expect(await codeOf(() => one.run(2))).toBe('X_WEBHOOK_ENDPOINT_DISABLED');
+    for (const attempt of [3, 4, 5]) {
+      expect(await codeOf(() => one.run(attempt))).toBe('X_WEBHOOK_ENDPOINT_DISABLED');
+    }
+
+    expect(disables).toBe(1);
+    expect(one.sent).toHaveLength(2);
+    expect(one.ledger.attempts()).toHaveLength(2);
+  });
+
   test('a disabled endpoint is never fetched at all', async () => {
     const one = harness({ endpoint: { ...ENDPOINT, disabled: true } });
     expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_ENDPOINT_DISABLED');

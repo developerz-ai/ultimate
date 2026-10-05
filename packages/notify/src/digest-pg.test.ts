@@ -35,7 +35,13 @@ const recording = (answer: (call: Call) => readonly unknown[], calls: Call[]): P
 });
 
 const append = (executor: PgExecutor) =>
-  createPgDigestStore({ executor }).append({ slot, event, windowMs: 60_000, now: NOW });
+  createPgDigestStore({ executor }).append({
+    slot,
+    event,
+    windowMs: 60_000,
+    now: NOW,
+    appender: 'run-1:ana',
+  });
 
 describe('unit · postgres digest store', () => {
   test('the row the upsert answers is the bucket: opened, and the close time as epoch ms', async () => {
@@ -54,6 +60,7 @@ describe('unit · postgres digest store', () => {
       JSON.stringify([event]),
       endsAt,
       NOW,
+      'run-1:ana',
     ]);
   });
 
@@ -110,6 +117,27 @@ describe('unit · postgres digest store', () => {
     expect(SQL_NOTIFY_DIGEST_APPEND).toContain(
       'on conflict (recipient, notifier, channel, group_key) where not sealed',
     );
+  });
+});
+
+describe('unit · postgres digest replay', () => {
+  test('`appended_by` arrives by `alter … add column`, so a table that shipped without it upgrades', () => {
+    const create = SQL_NOTIFY_DIGESTS_TABLE.slice(0, SQL_NOTIFY_DIGESTS_TABLE.indexOf(');'));
+    expect(create).not.toContain('appended_by');
+    expect(SQL_NOTIFY_DIGESTS_TABLE).toContain(
+      "alter table x_notify_digests add column if not exists appended_by text[] not null default '{}'",
+    );
+  });
+
+  test('a replay is matched on ANY window of the slot, sealed included, before anything is written', () => {
+    expect(SQL_NOTIFY_DIGEST_APPEND).toContain('and $8::text = any(appended_by)');
+    expect(SQL_NOTIFY_DIGEST_APPEND).not.toContain('not sealed and $8');
+    expect(SQL_NOTIFY_DIGEST_APPEND).toContain('where not exists (select 1 from prior)');
+  });
+
+  test('a twin execution of the same appender never joins the window its twin committed', () => {
+    const update = SQL_NOTIFY_DIGEST_APPEND.slice(SQL_NOTIFY_DIGEST_APPEND.indexOf('do update'));
+    expect(update).toContain('and not ($8::text = any(x_notify_digests.appended_by))');
   });
 });
 

@@ -301,8 +301,20 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         const event = { notifier: 'post.commented', key: 'k', params: {}, at: new Date(now) };
         // Closed a day ago, never drained; and one that closed a second ago.
         const day = 24 * 60 * 60 * 1000;
-        await digest.append({ slot: slot('ada'), event, windowMs: 1000, now: new Date(now - day) });
-        await digest.append({ slot: slot('bo'), event, windowMs: 1000, now: new Date(now - 2000) });
+        await digest.append({
+          slot: slot('ada'),
+          event,
+          windowMs: 1000,
+          now: new Date(now - day),
+          appender: 'run-ada',
+        });
+        await digest.append({
+          slot: slot('bo'),
+          event,
+          windowMs: 1000,
+          now: new Date(now - 2000),
+          appender: 'run-bo',
+        });
 
         const report = await runSweep();
 

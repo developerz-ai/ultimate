@@ -122,6 +122,7 @@ export function createWorker(options: WorkerOptions): Worker {
       workerId,
       visibilityTimeoutMs,
       heartbeatIntervalMs,
+      pollIntervalMs,
       drain: drainSignal.signal,
       ...(options.clock === undefined ? {} : { clock: options.clock }),
       ...(options.schedule === undefined ? {} : { schedule: options.schedule }),

@@ -551,8 +551,19 @@ can reach. Same argument `timing-safe-equal.ts` makes for itself.
 | the endpoint is never checkpointed | a `step.run` output lands in `x_job_steps`, and the endpoint carries the secret |
 | every attempt is recorded **before** the throw | a failure the ledger cannot see is a failure the consecutive count cannot see, which is an endpoint that never gets disabled |
 | a `Retry-After` the receiver names is honoured | `X_WEBHOOK_DELIVERY_THROTTLED` carries `meta.retryAfterSeconds`, which the nack waits out (clamped by `retry.maxDelay`) rather than guessing a curve against an answer it already has |
+| `WebhookLedger.isDisabled(endpointId)` is asked before every socket, beside the row's own `disabled` | `disableAfter` writes only the ledger: a verdict nobody asks for again is an endpoint that keeps receiving POSTs. Answer it from the column your `disable` sets |
+| the deadline and a lost lease abort `fetch`; a failure that abort caused writes no ledger row | the nack behind them hands the job to another worker at once, so a request left open is a duplicate delivery, and an abandoned attempt's failure would count toward `disableAfter` |
+| the DRAIN never aborts a POST already on the wire; it stops one not yet sent | torn down, the job goes to the next pod, which re-POSTs the same event on every deploy. Finished, it is recorded like any other outcome — a real failure during the drain included |
 | re-enabling is always yours | an endpoint the framework un-disabled on its own is a retry loop with no end |
 | `WebhookLedger` is a seam, not a table | retention is seven years for one business and thirty days for the next, so shipping a schema would ship one of those answers |
+
+**Set `timeout` below the drain budget.** A webhook has no timeout unless you declare one, and a
+POST on the wire when SIGTERM lands runs until the receiver answers. With a `timeout`, a drained
+request is still torn down at the attempt's deadline — where `executeJob` hands the job on — and
+writes no ledger row. Without one, the only bound is `configureLifecycle({ deadlineMs })`, 25 s by
+default: past it the worker logs `jobs.worker.drain-abandoned` and exits, and the row comes back
+only when its lease lapses, as a COUNTED attempt the receiver may already have processed.
+`timeout: '10s'` against the default budget ends every drained delivery inside it.
 
 ## The deadline cancels
 
