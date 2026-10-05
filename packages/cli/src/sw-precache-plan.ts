@@ -7,6 +7,7 @@ import type { PrecacheAsset, PwaRoute } from '@ultimat3/pwa';
 import { strategyFor } from '@ultimat3/pwa';
 import type { RouteDescriptor } from '@ultimat3/render';
 import type { IslandBundle } from './island-bundle';
+import { parseHashedAssetUrl } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 
 /**
@@ -94,6 +95,12 @@ export interface PrecacheAssetInput {
   readonly scripts: readonly { readonly url: string; readonly bytes: number }[];
   /** The offline document's path: its islands ride the precache whatever its own route says. */
   readonly fallback: string;
+  /**
+   * `pwa.offline.image` / `pwa.offline.font`: the worker answers a failed image or font request
+   * from the PRECACHE only, so a placeholder nothing precached is a branch that matches nothing.
+   * `buildId` is the revision of one whose bytes this build cannot hash — the offline document's.
+   */
+  readonly placeholders?: { readonly urls: readonly string[]; readonly buildId: string };
 }
 
 /**
@@ -140,12 +147,35 @@ export function precacheAssets(input: PrecacheAssetInput): readonly PrecacheAsse
   for (const chunk of input.islands.chunks) {
     if (wanted.has(chunk.url)) for (const url of chunk.imports) wanted.add(url);
   }
-  return [
+  const chunks: PrecacheAsset[] = [
     ...input.islands.chunks.filter((chunk) => wanted.has(chunk.url)),
     ...input.islands.shared.filter((chunk) => wanted.has(chunk.url)),
     ...input.styles.chunks,
     ...input.scripts,
-  ]
-    .map((chunk) => ({ url: chunk.url, revision: chunk.url, bytes: chunk.bytes }))
-    .sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
+  ].map((chunk) => ({ url: chunk.url, revision: chunk.url, bytes: chunk.bytes }));
+  return [...chunks, ...placeholderAssets(input, new Set(chunks.map((chunk) => chunk.url)))].sort(
+    (a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0),
+  );
+}
+
+/**
+ * The placeholders on the offline document's terms (`buildPrecacheManifest`'s `fallback` entry):
+ * never refused here — this pass cannot see the site assets, and the worker installs entry by
+ * entry, so a URL that 404s costs that entry and the branch falls through to the 503 — and
+ * stamped with the build id unless the URL is content-addressed, which is its own revision. Bytes
+ * unknown count 0, as the offline document's do. A chunk already listed keeps its own entry.
+ */
+function placeholderAssets(
+  input: PrecacheAssetInput,
+  listed: ReadonlySet<string>,
+): PrecacheAsset[] {
+  const out = new Map<string, PrecacheAsset>();
+  const placeholders = input.placeholders;
+  if (placeholders === undefined) return [];
+  for (const url of placeholders.urls) {
+    if (listed.has(url) || out.has(url)) continue;
+    const hashed = parseHashedAssetUrl(url) !== undefined;
+    out.set(url, { url, revision: hashed ? url : placeholders.buildId, bytes: 0 });
+  }
+  return [...out.values()];
 }

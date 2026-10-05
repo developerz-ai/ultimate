@@ -118,7 +118,13 @@ export class PgConnection {
       // trips exactly on servers whose default is not already 3. A server that refuses one
       // answers `ErrorResponse` during startup, so the replicator fails to boot with the server's
       // own words — never a warning that a feed then goes on mis-sorting behind.
-      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
+      //
+      // `TimeZone=UTC` is the one pin libpqwalreceiver does not send, and it closes the same hole
+      // from the other side: a `timestamptz` is written in the SESSION's zone, so a server, database
+      // or role default like `America/New_York` writes a pre-1883 instant at its LMT offset,
+      // `-04:56:02`. The decoder reads that too, but UTC text is the one form with no ambient zone
+      // in it — and a client option outranks every server-side default, `ALTER ROLE … SET` included.
+      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
     };
     if (options.replication !== undefined) parameters['replication'] = options.replication;
     // A handshake fails on ordinary conditions — no password, an ErrorResponse, an EOF — and on

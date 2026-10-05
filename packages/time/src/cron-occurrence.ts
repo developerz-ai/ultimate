@@ -3,6 +3,7 @@
  * converted once with `fromZoned` so DST gaps and overlaps resolve correctly.
  */
 
+import { finiteCount } from '@ultimat3/core';
 import { type CronExpression, matchesDay, parseCronOnce } from './cron-parse';
 import { cronInvalid } from './errors';
 import { fromEpochMs, type Instant } from './instant';
@@ -190,17 +191,23 @@ function walk(
   );
 }
 
-/** The next `count` occurrences, each strictly after the previous one. */
+/**
+ * The next `count` occurrences, each strictly after the previous one.
+ *
+ * `count` is screened because it bounds the loop: `NaN` answered `[]` — "no occurrences" — `2.5`
+ * ran three times, and `Infinity` pushed until the process ran out of memory.
+ */
 export function nextCronOccurrences(
   expression: string | CronExpression,
   zone: TimeZone,
   after: Instant,
   count: number,
 ): Instant[] {
+  const total = finiteCount('nextCronOccurrences', 'count', count, 0);
   const cron = parseCronOnce(expression);
   const results: Instant[] = [];
   let cursor = after;
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < total; index += 1) {
     cursor = nextCronOccurrence(cron, zone, cursor);
     results.push(cursor);
   }

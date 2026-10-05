@@ -88,7 +88,8 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   `MemoryBudgetStore` has no window and no eviction (eviction is a ceiling bypass); a counter back
   at zero is deleted.
 - **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
-  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>`. `callLedger` is required on
+  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an `undefined`/`null`/`''`
+  org — the `orgless` test `query`'s cache uses). `callLedger` is required on
   `Gateway`; `hive()` asks `installedGateway()` so a hive of plain actions needs none.
 - **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
   (`createGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that

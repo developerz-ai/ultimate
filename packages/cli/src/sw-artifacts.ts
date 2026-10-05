@@ -187,6 +187,10 @@ export function serviceWorkerArtifacts(
         styles: input.styles,
         scripts: input.scripts ?? [],
         fallback,
+        placeholders: {
+          urls: [pwa.offline.image, pwa.offline.font].filter((url): url is string => url !== null),
+          buildId: input.buildId,
+        },
       }),
     },
     input.buildId,

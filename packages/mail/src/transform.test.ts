@@ -105,6 +105,41 @@ test('a result whose getter throws is a failed transform, and the throw names no
   expect(memory.sent).toHaveLength(0);
 });
 
+/**
+ * The describing of a throw ran INSIDE the catch that codes it: `instanceof` runs a `Proxy`'s
+ * `getPrototypeOf` trap and `.name` is a getter, so a value that fights being read escaped `send()`
+ * as its own raw throw, uncoded, instead of `X_MAIL_TRANSFORM_FAILED`.
+ */
+test('an exotic throwable still fails as X_MAIL_TRANSFORM_FAILED', async () => {
+  class Nameless extends Error {
+    override get name(): string {
+      throw new TypeError('name getter');
+    }
+  }
+  const trapped = new Proxy(
+    {},
+    {
+      getPrototypeOf: () => {
+        throw new TypeError('prototype trap');
+      },
+    },
+  );
+  for (const thrown of [new Nameless('x'), trapped]) {
+    setMailTransform(() => {
+      throw thrown;
+    });
+    const failure = await send(trackedMail, { name: 'Ada' }, TO).catch((error: unknown) => error);
+    expect(isUltimateError(failure) ? failure.code : 'not an UltimateError').toBe(
+      'X_MAIL_TRANSFORM_FAILED',
+    );
+    // The KIND is still reported from the closed list — an Error subclass whose name will not read
+    // is still "an Error", and a value that will not be examined is reported by its typeof alone.
+    const cause = isUltimateError(failure) ? failure.cause : '';
+    expect(cause).toContain(thrown === trapped ? '(object)' : '(an Error)');
+  }
+  expect(memory.sent).toHaveLength(0);
+});
+
 test('a transform that breaks the subject header is refused by the header gate', async () => {
   setMailTransform((r) => ({ ...r, subject: 'Hi\r\nBcc: evil@x.test' }));
   expect(await codeOf(send(trackedMail, { name: 'Ada' }, TO))).toBe('X_MAIL_HEADER_INVALID');

@@ -6,6 +6,14 @@ import { fuse, MemoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
+/** Deliberately NOT normalised: magnitude must not decide the order. `pg-vector.live.test.ts` holds the twin. */
+const UNNORMALISED = [
+  // Inserted first and sorting first by id, so only a `NaN`-aware comparator puts it last.
+  { id: 'blank', text: 'blank', vector: Float32Array.from([0, 0, 0, 0]) },
+  { id: 'long', text: 'long', vector: Float32Array.from([10, 10, 0, 0]) },
+  { id: 'aligned', text: 'aligned', vector: Float32Array.from([1, 0.05, 0, 0]) },
+] as const;
+
 /**
  * Three documents where the embedding and the words disagree, which is the case hybrid
  * search exists for: the doc that literally contains the error code is NOT the one the
@@ -139,6 +147,44 @@ describe('scope', () => {
       .scoped({ allow: { kind: ['guide', 'error'] } })
       .scoped({ allow: { kind: ['error'] } });
     expect(narrowed.scope.allow).toEqual({ kind: ['error'] });
+  });
+});
+
+/**
+ * pgvector's `<=>` is cosine distance and the search scores `1 - distance`, so the production
+ * order ignores magnitude. The memory store scored a raw dot product, which is cosine only for
+ * unit vectors: a long vector pointing the wrong way outranked a short one pointing the right way,
+ * and dev and prod returned the same search in different orders. The same corpus is asserted
+ * against a live pgvector in `pg-vector.live.test.ts`.
+ */
+describe('pg parity', () => {
+  test('memory search ranks by cosine, not magnitude (pg parity)', async () => {
+    const store = new MemoryVectorStore({ dimension: 4 });
+    await store.upsert(UNNORMALISED);
+    const hits = await store.search(Float32Array.from([2, 0, 0, 0]), 10);
+    expect(hits.map((hit) => hit.id)).toEqual(['aligned', 'long', 'blank']);
+    expect(hits[0]?.score).toBeCloseTo(1 / Math.sqrt(1.0025), 5);
+    expect(hits[1]?.score).toBeCloseTo(Math.SQRT1_2, 5);
+    // Cosine against a zero-norm vector is 0/0. pgvector answers `NaN` and float8 orders `NaN`
+    // above every number, so `order by distance` puts the row LAST — the memory store does too.
+    expect(hits[2]?.score).toBeNaN();
+  });
+
+  test('unscoped hybrid keeps same-id rows of two tenants apart', async () => {
+    // pg fuses on `group by "tenant", "id"`. Fusing on `id` alone summed globex's ranks into acme's
+    // row and dropped globex's — a merged score for a document neither tenant has.
+    const store = new MemoryVectorStore({ dimension: 4 });
+    const row = { id: 'a', text: 'invoice policy', vector: vec(1, 0, 0, 0) };
+    await store.scoped({ tenant: 'acme' }).upsert([{ ...row, metadata: { owner: 'acme' } }]);
+    await store.scoped({ tenant: 'globex' }).upsert([{ ...row, metadata: { owner: 'globex' } }]);
+    const hits = await store.hybrid({ query: 'invoice', vector: vec(1, 0, 0, 0), k: 10 });
+    expect(hits.map((hit) => hit.metadata['owner']).sort()).toEqual(['acme', 'globex']);
+    expect(hits.map((hit) => hit.id)).toEqual(['a', 'a']);
+    // The two rows hold ranks 1 and 2 in both lists, so between them they carry 2/61 + 2/62 and
+    // neither alone can exceed 2/61 — the merged row held all of it.
+    const [first, second] = hits.map((hit) => hit.score);
+    expect((first ?? 0) + (second ?? 0)).toBeCloseTo(2 / 61 + 2 / 62, 10);
+    expect(Math.max(first ?? 0, second ?? 0)).toBeLessThanOrEqual(2 / 61 + 1e-12);
   });
 });
 

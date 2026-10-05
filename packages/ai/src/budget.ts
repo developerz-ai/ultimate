@@ -101,11 +101,22 @@ export interface BudgetKeys {
 }
 
 export function budgetKeysFor(actor: Actor): BudgetKeys {
+  const orgId: string | null | undefined = actor.orgId;
   return {
     actorKey: `actor:${actor.kind}:${actor.id}`,
-    ...(actor.orgId === undefined ? {} : { orgKey: `org:${actor.orgId}` }),
+    ...(orgless(orgId) ? {} : { orgKey: `org:${orgId}` }),
   };
 }
+
+/**
+ * "Inside no org", in all three spellings `orgId` arrives in: it is a value off the wire (a decoded
+ * session row, an app's adapter), so `null` and `''` reach here despite core's
+ * `string | undefined`. Testing `undefined` alone turned the other two into the real keys `org:null`
+ * and `org:` — ONE org window shared by every org-less caller in the deployment. The same predicate
+ * as `@ultimat3/query`'s `cache.ts`, restated because that one is module-private.
+ */
+const orgless = (orgId: string | null | undefined): boolean =>
+  orgId === undefined || orgId === null || orgId === '';
 
 /**
  * What `reserve` debited, so `record` can reconcile it against the provider's real counts and

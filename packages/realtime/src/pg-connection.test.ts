@@ -62,7 +62,7 @@ describe('open — startup packet', () => {
       application_name: 'ultimate-replicator',
       replication: 'database',
       // The output formats the WAL decoder assumes — asserted for what they are one test down.
-      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
+      options: '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
     });
     const withoutReplication = new FakeStream();
     await openTrusted(withoutReplication);
@@ -79,7 +79,9 @@ describe('open — startup packet', () => {
    * text, `compareValues` falls through to string comparison, and one edit to one column moves
    * its row to the top of every `orderBy('createdAt','desc')` feed for every subscriber. The
    * session is the only place that can be decided once, and postgres' OWN logical-replication
-   * client pins exactly these three (`libpqwalreceiver.c`).
+   * client pins the first three (`libpqwalreceiver.c`). `TimeZone=UTC` is ours: a non-UTC server
+   * default writes a pre-standard-time instant at a seconds offset (`-04:56:02`), and UTC text is
+   * the one form with no ambient zone in it (`pg-connection.live.test.ts` holds it on a server).
    */
   test('pins the output formats the WAL decoder assumes, on every session it opens', async () => {
     for (const extra of [{ replication: 'database' } as const, {}]) {
@@ -87,7 +89,7 @@ describe('open — startup packet', () => {
       await openTrusted(stream, extra);
       const params = decodeStartup(writeAt(stream, 0)).params;
       expect(params['options']).toBe(
-        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3',
+        '-c datestyle=ISO -c intervalstyle=postgres -c extra_float_digits=3 -c TimeZone=UTC',
       );
     }
   });

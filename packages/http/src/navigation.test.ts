@@ -4,6 +4,7 @@
 // nothing will ask it again. Failure cases first: they are the evidence GETs this exists for.
 
 import { describe, expect, test } from 'bun:test';
+import { nextAfterSignIn } from './auth-redirect';
 import { defineHttpConfig } from './config';
 import { locationFor, navigationGate, redirectForRouter } from './navigation';
 import { redirect } from './response';
@@ -199,5 +200,90 @@ describe('through the pipeline', () => {
     expect(ran).toEqual(['/go']);
     // A browser's own request is untouched.
     expect((await hit('/go')).status).toBe(302);
+  });
+});
+
+// A same-origin target whose PATHNAME starts `//` was emitted as `//evil.test/phish` — and the
+// router resolves `x-ultimate-location` against the page (`new URL(location, url)`,
+// `@ultimat3/render`'s navigation-fetch) and assigns the result to `window.location`. A
+// scheme-relative path is another host. The redirect a document load follows was safe all along
+// (`Location: /.//evil.test` resolves on this origin); only the router hand-over leaked.
+describe('a same-origin target never reaches the router as a scheme-relative path', () => {
+  const SIGNIN = new URL('https://app.test/signin');
+  /** What the router does with the header, the way `navigation-fetch.ts` does it. */
+  const clientLands = (header: string | null): string => new URL(header ?? '', SIGNIN).href;
+  const SPELLINGS = [
+    '/.//evil.test/phish',
+    '/..//evil.test/phish',
+    '/%2e//evil.test/phish',
+    '/%2E%2E//evil.test/phish',
+    '/a/..//evil.test/phish',
+    '/./\\evil.test/phish',
+    '/.\\/evil.test/phish',
+  ];
+
+  test.each(SPELLINGS)(
+    'locationFor(%p) stays on this origin once the router resolves it',
+    (target) => {
+      expect(new URL(clientLands(locationFor(target, SIGNIN))).origin).toBe('https://app.test');
+    },
+  );
+
+  test.each(SPELLINGS)(
+    '?next=%p, signed in and handed to the router, lands on this origin',
+    (raw) => {
+      const next = nextAfterSignIn(raw, '/dashboard');
+      const out = redirectForRouter(
+        new Request(SIGNIN, { method: 'POST', headers: soft }),
+        redirect(next, 303),
+        SIGNIN,
+      );
+      expect(out?.status).toBe(204);
+      expect(new URL(clientLands(out?.headers.get('x-ultimate-location') ?? null)).origin).toBe(
+        'https://app.test',
+      );
+    },
+  );
+
+  test('a request path that is itself `//…` is handed back as a path on this origin', () => {
+    const odd = new URL('https://app.test//evil.test/phish');
+    const answer = navigationGate(new Request(odd, { headers: soft }), 'GET', odd, undefined);
+    const header = answer?.headers.get('x-ultimate-location') ?? null;
+    expect(new URL(clientLands(header)).origin).toBe('https://app.test');
+    expect(new URL(clientLands(header)).pathname).toBe('//evil.test/phish');
+  });
+
+  // The whole server, and a handler that redirects to a caller-influenced path WITHOUT
+  // `nextAfterSignIn` — the shape every other `setRedirect`/`redirect` caller could take.
+  test('through the pipeline, a handler redirecting to `/.//evil.test` hands the router this origin', async () => {
+    const server = createServer({
+      routes: [
+        {
+          method: 'POST',
+          path: '/signin',
+          meta: { name: 'signin', auth: 'public' },
+          handler: () => redirect('/.//evil.test/phish', 303),
+        },
+      ],
+      role: 'web',
+      config: defineHttpConfig({ dev: true, buildId: 'b', rateLimit: { scope: 'process' } }),
+    });
+    const answer = await server.fetch(
+      new Request('https://app.test/signin', { method: 'POST', headers: soft }),
+    );
+    expect(answer.status).toBe(204);
+    const header = answer.headers.get('x-ultimate-location');
+    expect(new URL(clientLands(header)).origin).toBe('https://app.test');
+  });
+
+  test('a legitimate deep link with a query and a fragment still round-trips untouched', () => {
+    const next = nextAfterSignIn('/inbox/42?tab=unread&q=a%26b#reply', '/dashboard');
+    expect(next).toBe('/inbox/42?tab=unread&q=a%26b#reply');
+    const out = redirectForRouter(
+      new Request(SIGNIN, { method: 'POST', headers: soft }),
+      redirect(next, 303),
+      SIGNIN,
+    );
+    expect(out?.headers.get('x-ultimate-location')).toBe('/inbox/42?tab=unread&q=a%26b#reply');
   });
 });

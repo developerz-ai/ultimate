@@ -3,6 +3,7 @@
 // every retry all carry the transformed bytes. An app adds an open pixel or rewrites its own links
 // here; the framework only guarantees WHEN it runs, what it sees, and that a failure never ships.
 
+import { stringField } from '@ultimat3/core';
 import type { MailMessage } from './driver';
 import { transformFailed } from './errors';
 import { assertHeaderSafe } from './header-safety';
@@ -98,11 +99,20 @@ function asRendered(value: unknown): MailRendered | undefined {
 
 /**
  * What KIND of value was thrown, from a closed list — never its message and never its `name`,
- * which are the app's strings and may carry a recipient address.
+ * which are the app's strings and may carry a recipient address. TOTAL, because it runs inside the
+ * catch that codes the failure: `instanceof` runs a `Proxy`'s `getPrototypeOf` trap and `.name` is a
+ * getter, and either throwing there escaped `send()` uncoded. `typeof` alone cannot throw.
  */
 const KNOWN_ERRORS = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
 
 function describe(error: unknown): string {
-  if (error instanceof Error) return KNOWN_ERRORS.has(error.name) ? error.name : 'an Error';
-  return typeof error;
+  let isError: boolean;
+  try {
+    isError = error instanceof Error;
+  } catch {
+    return typeof error;
+  }
+  if (!isError) return typeof error;
+  const name = stringField(error, 'name');
+  return name !== undefined && KNOWN_ERRORS.has(name) ? name : 'an Error';
 }

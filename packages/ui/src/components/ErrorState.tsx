@@ -2,7 +2,13 @@
 // code, cause, fix. Identical text in the CLI, the overlay, and `--json` is the
 // whole point of the error contract — this component must not paraphrase.
 
-import { describeErrorCode, isUltimateError, renderCauseValue } from '@ultimat3/core';
+import {
+  describeErrorCode,
+  isUltimateError,
+  renderCauseValue,
+  renderFixShellArg,
+  stringField,
+} from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
@@ -30,20 +36,31 @@ interface ErrorParts {
 }
 
 export function errorParts(error: unknown): ErrorParts {
-  if (isUltimateError(error)) {
+  // Every field through `stringField`, never `error.code`: a getter or a `Proxy` trap on the value
+  // throws during the READ, and this is the component that renders an error — its throw replaced
+  // the screen reporting one with a blank tree. A field that will not read falls back to the
+  // registry's answer for the code, so the code itself survives whatever else is unreadable.
+  const code = isUltimateError(error) ? stringField(error, 'code') : undefined;
+  if (code !== undefined) {
+    const known = describeErrorCode(code);
     return {
-      code: error.code,
-      title: error.title,
-      cause: error.cause,
-      fix: error.fix,
-      docs: error.docs,
+      code,
+      // The error's own `title` first: a remote code this realm never registered carries the
+      // server's title there (`remoteTitle`), and the registry would only humanise the code.
+      title: stringField(error, 'title') ?? known.title,
+      cause: stringField(error, 'cause') ?? renderCauseValue(error),
+      // Screened: the code came off a value the app (or a wire) built, and a fix is pasted into a
+      // shell. The placeholder is single-quoted so it is inert there, never a `<` redirection.
+      fix:
+        stringField(error, 'fix') ??
+        `x errors explain ${renderFixShellArg(code, "'<the code above>'")}`,
+      docs: stringField(error, 'docs') ?? known.docs,
     };
   }
-  // `props.error` is any thrown value, so `String()` ran the app's own `toString` — and this is the
-  // component that RENDERS an error, so its throw replaced the screen that was reporting one with a
-  // blank tree. Laundering it through a local `message` is exactly what `scripts/error-render.ts`
-  // says it cannot see, which is why this one shipped.
-  const message = error instanceof Error ? error.message : renderCauseValue(error);
+  // `props.error` is any thrown value, so `String()` ran the app's own `toString`. Laundering it
+  // through a local `message` is exactly what `scripts/error-render.ts` says it cannot see, which
+  // is why this one shipped.
+  const message = thrownMessage(error) ?? renderCauseValue(error);
   // Title and docs come from core's registry, never a hand-copy: this screen must read exactly
   // as `x errors explain X_INTERNAL` does, and there is one docs URL for every code.
   const described = describeErrorCode('X_INTERNAL');
@@ -57,6 +74,16 @@ export function errorParts(error: unknown): ErrorParts {
     fix: 'throw an UltimateError subclass where this failed — new UltimateError({ code, cause, fix }) — so this screen renders that code and its fix instead of X_INTERNAL',
     docs: described.docs,
   };
+}
+
+/** An `Error`'s own message, or `undefined` when it is not one or will not be read. */
+function thrownMessage(error: unknown): string | undefined {
+  try {
+    // `instanceof` runs a `Proxy`'s `getPrototypeOf` trap, so the test is inside the guard too.
+    return error instanceof Error ? stringField(error, 'message') : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function ErrorState(props: ErrorStateProps): JSX.Element {

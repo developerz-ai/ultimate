@@ -76,7 +76,7 @@ export class HashEmbedder implements Embedder {
 
   constructor(input: HashEmbedderInput = {}) {
     // Floored at 1: `new Float32Array(NaN)` is a vector of LENGTH ZERO, so every embedding is
-    // empty, `cosine` answers 0 for every pair, and the ranking collapses with nothing thrown —
+    // empty, `cosine` answers `NaN` for every pair, and the ranking collapses with nothing thrown —
     // the silent relevance collapse this file's own header says the dimension exists to catch.
     this.dimension = finiteCount('HashEmbedder', 'dimension', input.dimension ?? 256, 1);
   }
@@ -112,7 +112,7 @@ function hashOf(text: string): number {
   return Number.parseInt(fingerprint(text).slice(0, 8), 16);
 }
 
-/** L2 normalise in place so cosine similarity reduces to a dot product. */
+/** L2 normalise in place, so every embedder hands a store unit vectors whatever its scale. */
 export function normalize(vector: Float32Array): Float32Array {
   let sum = 0;
   for (const value of vector) sum += value * value;
@@ -122,10 +122,25 @@ export function normalize(vector: Float32Array): Float32Array {
   return vector;
 }
 
-/** Dot product. Correct as cosine only for normalised vectors — which `normalize` ensures. */
+/**
+ * Cosine similarity — pgvector's `1 - (a <=> b)`, computed the way pgvector computes it, so the dev
+ * store and production rank alike. A bare dot product was cosine only for unit vectors, and a
+ * store accepts whatever an app upserts. A zero-norm side is `0 / 0`: `NaN`, as pgvector answers,
+ * never a `0` that would rank a vector with no direction above every opposed one. Clamped to
+ * [-1, 1] as pgvector clamps, so float error never reports a similarity past identical.
+ */
 export function cosine(a: Float32Array, b: Float32Array): number {
-  let sum = 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
   const length = Math.min(a.length, b.length);
-  for (let i = 0; i < length; i += 1) sum += (a[i] ?? 0) * (b[i] ?? 0);
-  return sum;
+  for (let i = 0; i < length; i += 1) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    normA += x * x;
+    normB += y * y;
+  }
+  const similarity = dot / Math.sqrt(normA * normB);
+  return similarity > 1 ? 1 : similarity < -1 ? -1 : similarity;
 }

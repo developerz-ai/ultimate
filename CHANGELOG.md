@@ -10,10 +10,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
 Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
-that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0 workarounds.
+that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0
+workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way.
 
 ### Security
 
+- `pwa`, `core`: `pwa.offline.fallback`, `.image` and `.font` must be paths on this origin. `//host`,
+  `/\host` and absolute URLs are refused at config load (`X_CONFIG_INVALID`) and at build
+  (`X_PWA_NO_OFFLINE_FALLBACK`), where a `//host/offline` fallback was precached and served as the
+  app's offline page.
 - `mcp`: a `defineAppMcp({ scopes })` map that leaves a projected tool unnamed no longer leaves
   that tool open to every token. Boot refuses with the new `X_MCP_SCOPE_UNCOVERED`, and MCP and
   `bearerMount` expose the same set for the same map (S1).
@@ -83,6 +88,13 @@ that the framework could have fenced, and never strands work. Sweep 3 moves to B
 - `scripts/fix-shell-arg`: the guard now reads a command after `: `, knows `aws`, `ls` and `df`,
   scans the `fix` argument of exported factories at every call site, and no longer reads an earlier
   `${…}` body as template text. The sites it newly saw are fixed rather than pinned (S12).
+- `http`: open redirect closed for client-router navigations. A dot segment could hide a `//` in a
+  path: `?next=/.//evil.test/phish` (and `/..//`, `/%2e//`, `/a/..//`, `/./\`) passed
+  `nextAfterSignIn` as a same-origin path. `locationFor` then wrote its pathname `//evil.test/phish`
+  into `x-ultimate-location`, and the router followed it to the other host after a real sign-in.
+  `nextAfterSignIn` now returns the normalised path, query and fragment, and refuses one whose
+  pathname starts `//`. `locationFor` writes such a same-origin pathname as `/.//…`, which covers
+  every `setRedirect`/`redirect` caller. A plain document load was never affected.
 
 ### Changed
 
@@ -154,6 +166,34 @@ that the framework could have fenced, and never strands work. Sweep 3 moves to B
   and test compose images are digest-pinned and watched by Dependabot.
 
 ### Fixed
+
+- `http`: `nextAfterSignIn` no longer decodes `?next=` a second time, so `?q=a%26b` lands as
+  `?q=a%26b` and `100%25done` no longer falls back. Any C0 or DEL character falls back (a NUL was a
+  500), and a non-ASCII destination is percent-encoded so the `Location` header is valid (C1).
+- `http`: the production error page's `code` and `request` labels are catalog keys
+  (`errors.page.code`, `errors.page.request`) (C2).
+- `time`: `nextCronOccurrences` refuses a `count` that is not a whole number ≥ 0 (`X_INVARIANT`)
+  instead of returning `[]` for `NaN`, three for `2.5`, or never returning for `Infinity` (C3).
+  `addBusinessDays` / `nextBusinessDay` refuse a calendar with no business day
+  (`X_SCHEDULE_INVALID`, with its own fix) instead of returning a weekend day or holiday (C4).
+- `ai`: `MemoryVectorStore` ranks by true cosine as pgvector does, so magnitude no longer decides
+  dev order; `cosine()` returns real cosine and `NaN` (ranked last) for a zero-norm vector (C5). An
+  unscoped `hybrid` fuses on `(tenant, id)`, so two tenants' same-id rows stay apart (C6). Both
+  stores break ties by `id` in search, text search and hybrid ranks.
+- `ai`: an OpenAI-format `"refusal": ""` is not a refusal on the non-streamed path either (C7).
+  `budgetKeysFor` gives no org key when `orgId` is `undefined`, `null` or `''`, so org-less callers
+  no longer share one `org:` window (C8).
+- `pwa`: `pwa.offline.font` reaches `sw.js`, and both the image and font placeholders are precached
+  beside the offline document, so their fallbacks answer offline (C10). The in-process strategies
+  answer what the emitted worker answers: a cache write is handed to `waitUntil`, so a failed write
+  costs the copy and never the response, and the emitted stale-while-revalidate rejects like its
+  siblings when it has nothing to answer (C11).
+- `mail`, `ui`: a thrown value whose getters or prototype trap throw fails as
+  `X_MAIL_TRANSFORM_FAILED` and still renders in `<ErrorState>` instead of escaping uncoded; the
+  fallback `x errors explain` fix screens the code (C12).
+- `realtime`: every replication session pins `TimeZone=UTC`, and a `timestamptz` written with a
+  seconds offset (`-04:56:02`) decodes to the same `Date` as the repository row instead of raw text
+  (C13).
 
 - `scripts`, `ui`, `core` tests: the Bun 1.4.0 workarounds are gone. A barrel is built as its own
   entry (#276, fixed upstream in 1.4.1), and island and barrel builds must match byte for byte with no

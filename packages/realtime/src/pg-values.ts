@@ -33,13 +33,20 @@ export type PhysicalRow = { [key: string]: PhysicalValue };
 /**
  * `2026-08-09 12:00:00.123456+00` -> the ISO-8601 form `new Date` is specified to accept.
  *
- * Postgres writes a space between the date and the clock, an offset that may be `+00`, `+0530` or
- * `+05:30`, and as many fractional digits as the column's precision. `Date` holds milliseconds, so
- * the fraction is TRUNCATED to three — which is what the driver does on the repository side, so
- * both readers of one column land on the same instant.
+ * Postgres writes a space between the date and the clock, an offset that may be `+00`, `+0530`,
+ * `+05:30` or — for an instant before its zone adopted standard time, a zone's LMT — `-04:56:02`,
+ * and as many fractional digits as the column's precision. `Date` holds milliseconds, so the
+ * fraction is TRUNCATED to three — which is what the driver does on the repository side, so both
+ * readers of one column land on the same instant.
+ *
+ * Seconds only ever follow a colon-separated minute (`EncodeTimezone` in postgres' `datetime.c`),
+ * so `-0456:02` is not a spelling this matches.
  */
 const TIMESTAMP =
-  /^(\d{4,6})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}(?::?\d{2})?)?$/;
+  /^(\d{4,6})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}(?:\d{2}|:\d{2}(?::\d{2})?)?)?$/;
+
+/** `±HH`, `±HHMM`, `±HH:MM`, `±HH:MM:SS` — the zone group of `TIMESTAMP`, taken apart. */
+const OFFSET = /^([+-])(\d{2}):?(\d{2})?:?(\d{2})?$/;
 
 /**
  * `undefined` for a text this decoder does not describe — `infinity`, a BC date, a non-ISO
@@ -61,18 +68,26 @@ function toInstant(text: string): Date | undefined {
   if (parts === null) return undefined;
   const [, year, month, day, hour, minute, second, fraction, zone] = parts;
   const millis = fraction === undefined ? '000' : `${fraction.slice(1)}000`.slice(0, 3);
-  const parsed = new Date(
-    `${year}-${month}-${day}T${hour}:${minute}:${second}.${millis}${offsetOf(zone)}`,
-  );
+  const offset = offsetMillis(zone);
+  if (offset === undefined) return undefined;
+  // Read the wall clock as UTC, then move it by the offset: `Date` has no spelling for a seconds
+  // offset, so handing it the zone would leave an LMT instant as text while the driver, which
+  // reads the binary form, hands the repository its `Date`.
+  const wall = Date.parse(`${year}-${month}-${day}T${hour}:${minute}:${second}.${millis}Z`);
+  if (Number.isNaN(wall)) return undefined;
+  const parsed = new Date(wall - offset);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-/** `+05` and `+0530` are offsets postgres writes and `Date` does not read; `±HH:MM` is both. */
-function offsetOf(zone: string | undefined): string {
-  if (zone === undefined || zone === 'Z') return 'Z';
-  if (zone.length === 3) return `${zone}:00`;
-  if (zone.length === 5) return `${zone.slice(0, 3)}:${zone.slice(3)}`;
-  return zone;
+/** East of UTC is positive. `undefined` for a minute or second past 59 — not an offset at all. */
+function offsetMillis(zone: string | undefined): number | undefined {
+  if (zone === undefined || zone === 'Z') return 0;
+  const parts = OFFSET.exec(zone);
+  if (parts === null) return undefined;
+  const [, sign, hours, minutes = '00', seconds = '00'] = parts;
+  if (Number(minutes) > 59 || Number(seconds) > 59) return undefined;
+  const magnitude = (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000;
+  return sign === '-' ? -magnitude : magnitude;
 }
 
 const HEX = /^[0-9a-fA-F]*$/;

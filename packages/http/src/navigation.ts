@@ -39,7 +39,8 @@ const WEB_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:']);
  * whenever a redirect target is caller-influenced. Such a target — and one that will not parse —
  * answers the REQUESTED url instead, as a path: a document load of it re-runs the route, and the
  * browser's own redirect handling refuses what this refused. Total, never a throw: it runs in the
- * `response` stage, after the handler.
+ * `response` stage, after the handler. A same-origin pathname is never emitted starting `//`
+ * (`hostlessPath`).
  */
 export function locationFor(target: string, base: URL): string {
   const requested = `${base.pathname}${base.search}${base.hash}`;
@@ -47,7 +48,18 @@ export function locationFor(target: string, base: URL): string {
   const resolved = new URL(target, base);
   if (!WEB_PROTOCOLS.has(resolved.protocol)) return requested;
   if (resolved.origin !== base.origin) return target;
-  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  return `${hostlessPath(resolved.pathname)}${resolved.search}${resolved.hash}`;
+}
+
+/**
+ * A pathname that starts `//` — `/.//evil.test`, `/..//evil.test`, a request for `//evil.test` —
+ * is a path on THIS origin only while the URL keeps its host. Emitted alone it is a
+ * scheme-relative reference, and the router resolves it to another host and assigns that to
+ * `window.location`. `/.` in front is how WHATWG URL serialisation keeps a host-less `//` path a
+ * path; it resolves back to the same pathname, so nothing legitimate changes.
+ */
+function hostlessPath(pathname: string): string {
+  return pathname.startsWith('//') ? `/.${pathname}` : pathname;
 }
 
 /** "Load this with a real navigation" — never stored anywhere, it answers one request. */

@@ -5,6 +5,7 @@ import type { PwaRoute, StrategyCache, StrategyEnv, StrategyName } from './strat
 import {
   cacheFirst,
   MODE_STRATEGY,
+  NETWORK_SOURCE,
   networkFirst,
   networkOnly,
   STRATEGY_FN_NAMES,
@@ -274,4 +275,145 @@ describe('STRATEGY_FNS', () => {
     expect(STRATEGY_FNS['stale-while-revalidate']).toBe(staleWhileRevalidate);
     expect(STRATEGY_FNS['network-only']).toBe(networkOnly);
   });
+});
+
+/**
+ * The emitted worker's half, RUN — not grepped. `STRATEGY_SOURCE` is what ships in `sw.js`; the
+ * functions above are the in-process twins an app calls and the rest of this file tests. A name
+ * match proved nothing: the twins had drifted (the TS half awaited `cache.put`, so a quota failure
+ * or a slow body held the answer; the emitted SWR answered `Response.error()` where every other
+ * strategy rejects). Each source is evaluated with `new Function` over the same fake the TS twin
+ * gets, and the two must answer alike in every scenario, the failure ones included.
+ */
+describe('emitted parity', () => {
+  // The emitted worker's `later` (`pages-cache-source.ts`), restated: it is spliced into a template
+  // there, not exported on its own, and its whole contract is this one line.
+  const LATER =
+    'function later(wait,p){const settled=p.catch(()=>{});if(wait)wait(settled);return settled}';
+
+  type Emitted = (
+    req: Request,
+    cn: string,
+    fb: (() => Promise<Response>) | undefined,
+    wait: (p: Promise<unknown>) => void,
+    pre: Promise<Response | undefined> | undefined,
+  ) => Promise<Response>;
+
+  function emitted(name: StrategyName, cache: StrategyCache, network: () => Promise<Response>) {
+    const make = new Function(
+      'openCache',
+      'fetch',
+      `${LATER}\n${NETWORK_SOURCE}\n${STRATEGY_SOURCE[name]}\nreturn ${STRATEGY_FN_NAMES[name]};`,
+    ) as (open: () => Promise<StrategyCache>, fetch: () => Promise<Response>) => Emitted;
+    return make(async () => cache, network);
+  }
+
+  interface Scenario {
+    readonly label: string;
+    readonly cached?: string;
+    readonly network: 'ok' | 'not-found' | 'down';
+    readonly preload?: boolean;
+    readonly fallback?: boolean;
+    readonly put?: 'ok' | 'rejects' | 'never-settles';
+  }
+
+  type Answer = { status: number; body: string } | 'rejected' | 'held';
+
+  interface Observed {
+    readonly answer: Answer;
+    readonly stored: string | null;
+    readonly fetched: number;
+  }
+
+  const URL_ = 'https://x.test/parity';
+  const tick = (ms: number): Promise<'held'> =>
+    new Promise((resolve) => setTimeout(() => resolve('held'), ms));
+
+  function world(scenario: Scenario) {
+    const store = new Map<string, Response>();
+    if (scenario.cached !== undefined) store.set(URL_, new Response(scenario.cached));
+    let fetched = 0;
+    const waits: Promise<unknown>[] = [];
+    const cache: StrategyCache = {
+      match: async (request) => store.get(request.url)?.clone(),
+      put: (request, response) => {
+        if (scenario.put === 'rejects') return Promise.reject(new TypeError('QuotaExceededError'));
+        if (scenario.put === 'never-settles') return new Promise<void>(() => undefined);
+        store.set(request.url, response);
+        return Promise.resolve();
+      },
+    };
+    const network = (): Promise<Response> => {
+      fetched += 1;
+      if (scenario.network === 'down') return Promise.reject(new TypeError('Failed to fetch'));
+      return Promise.resolve(
+        scenario.network === 'ok' ? new Response('fresh') : new Response('nope', { status: 404 }),
+      );
+    };
+    const fallback =
+      scenario.fallback === true ? async () => new Response('offline page') : undefined;
+    const preload =
+      scenario.preload === true ? Promise.resolve(new Response('preloaded')) : undefined;
+    const observe = async (run: Promise<Response>): Promise<Observed> => {
+      const answer = await Promise.race<Answer>([
+        run.then(
+          async (r) => ({ status: r.status, body: await r.text() }),
+          () => 'rejected' as const,
+        ),
+        tick(50),
+      ]);
+      await Promise.race([Promise.all(waits), tick(20)]);
+      const kept = store.get(URL_);
+      return { answer, stored: kept === undefined ? null : await kept.clone().text(), fetched };
+    };
+    return { cache, network, fallback, preload, waits, observe };
+  }
+
+  async function viaTs(name: StrategyName, scenario: Scenario): Promise<Observed> {
+    const w = world(scenario);
+    const env: StrategyEnv = {
+      open: async () => w.cache,
+      fetch: w.network,
+      wait: (p) => w.waits.push(p),
+    };
+    return w.observe(
+      STRATEGY_FNS[name](new Request(URL_), env, {
+        cacheName: 'test',
+        ...(w.fallback === undefined ? {} : { fallback: w.fallback }),
+        ...(w.preload === undefined ? {} : { preload: w.preload }),
+      }),
+    );
+  }
+
+  async function viaEmitted(name: StrategyName, scenario: Scenario): Promise<Observed> {
+    const w = world(scenario);
+    const fn = emitted(name, w.cache, w.network);
+    return w.observe(fn(new Request(URL_), 'test', w.fallback, (p) => w.waits.push(p), w.preload));
+  }
+
+  const SCENARIOS: readonly Scenario[] = [
+    { label: 'cached, network up', cached: 'stale', network: 'ok' },
+    { label: 'nothing cached, network up', network: 'ok' },
+    { label: 'nothing cached, network answers 404', network: 'not-found' },
+    { label: 'cached, network down', cached: 'stale', network: 'down' },
+    { label: 'nothing cached, network down, a fallback', network: 'down', fallback: true },
+    { label: 'nothing cached, network down, no fallback', network: 'down' },
+    { label: 'a navigation preload answers first', network: 'ok', preload: true },
+    { label: 'the cache copy rejects (quota)', cached: 'stale', network: 'ok', put: 'rejects' },
+    { label: 'the cache copy rejects, nothing cached', network: 'ok', put: 'rejects' },
+    { label: 'the cache copy never settles', network: 'ok', put: 'never-settles' },
+  ];
+
+  for (const name of STRATEGY_NAMES) {
+    test.each(SCENARIOS.map((s) => [s.label, s] as const))(
+      `each emitted strategy answers what its TS twin answers: ${name}, %s`,
+      async (_label, scenario) => {
+        const ts = await viaTs(name, scenario);
+        const shipped = await viaEmitted(name, scenario);
+        expect(ts).toEqual(shipped);
+        // Neither half may hold the answer behind the copy, or lose the answer to it.
+        expect(ts.answer).not.toBe('held');
+      },
+    );
+  }
 });

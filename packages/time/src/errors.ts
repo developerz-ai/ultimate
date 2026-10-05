@@ -53,13 +53,25 @@ export class TimeError extends UltimateError {
 /**
  * A wall-clock field outside its range. Separate from `X_DST_*`, which are about times that
  * are legitimately absent or doubled — this one is a spec the caller got wrong.
+ *
+ * `calendar` is the one field that is not a number: a business calendar with no business day in
+ * it (`business.ts`). Its repair is a different calendar, not a different integer, so it gets its
+ * own fix — a branch here rather than a second factory, so the code keeps one constructor.
  */
 export function scheduleInvalid(field: string, value: unknown, range: string): TimeError {
+  // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
+  // field or a config value as often as it is the `number` the in-package caller passes.
+  const cause = `${field} must be ${range}, got ${renderCauseValue(value)}`;
+  if (field === 'calendar') {
+    return new TimeError({
+      code: 'X_SCHEDULE_INVALID',
+      cause,
+      fix: 'addBusinessDays(at, days, { zone, weekendDays: [6, 7] })   # weekendDays are ISO 1-7: at least one weekday must be a business day, and not every one a holiday',
+    });
+  }
   return new TimeError({
     code: 'X_SCHEDULE_INVALID',
-    // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
-    // field or a config value as often as it is the `number` the in-package caller passes.
-    cause: `${field} must be ${range}, got ${renderCauseValue(value)}`,
+    cause,
     fix: `pass an integer in ${range} for ${field} — wall-clock fields are not wrapped or clamped, because a silently shifted schedule is worse than a failed one`,
   });
 }

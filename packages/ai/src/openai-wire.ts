@@ -104,7 +104,10 @@ export function parseChatCompletion(raw: unknown, provider: string): ChatAnswer 
   const choice = asRecord(Array.isArray(record['choices']) ? record['choices'][0] : undefined);
   if (choice === undefined) throw malformed(provider, 'the response carried no choices');
   const message = asRecord(choice['message']) ?? {};
-  const refusal = typeof message['refusal'] === 'string' ? message['refusal'] : undefined;
+  // Non-empty, as the stream decides it: a gateway that always serialises the field sends
+  // `"refusal": ""` beside a real answer, and that body must not refuse here and answer streamed.
+  const declined = message['refusal'];
+  const refusal = typeof declined === 'string' && declined !== '' ? declined : undefined;
   const finish = parseFinishReason(choice['finish_reason']);
   return {
     text: typeof message['content'] === 'string' ? message['content'] : '',

@@ -78,6 +78,85 @@ describe('errorParts', () => {
 });
 
 /**
+ * A getter, or a `Proxy` trap, on the error itself. `errorParts` read `error.code`/`.cause`/`.fix`
+ * and `error.message` as plain properties, so a value that throws while being READ blanked the
+ * screen that was reporting it — the same hole as a hostile `toString`, one property earlier.
+ */
+describe('an error whose fields throw when read', () => {
+  const trap = (target: object, field: string): object =>
+    new Proxy(target, {
+      get(held, key, receiver) {
+        if (key === field) throw new TypeError(`${field} getter`);
+        return Reflect.get(held, key, receiver);
+      },
+    });
+  const coded = (): UltimateError =>
+    new UltimateError({ code: 'X_ID_INVALID', cause: 'not a uuid', fix: 'parseId()' });
+
+  test('an Error with a throwing message getter still renders X_INTERNAL', () => {
+    class Unreadable extends Error {
+      override get message(): string {
+        throw new TypeError('message getter');
+      }
+    }
+    let parts: ReturnType<typeof errorParts> | undefined;
+    expect(() => {
+      parts = errorParts(new Unreadable());
+    }).not.toThrow();
+    expect(parts?.code).toBe('X_INTERNAL');
+    expect(parts?.cause.length).toBeGreaterThan(0);
+  });
+
+  test('a coded error whose cause will not read keeps its code, title and fix', () => {
+    const error = coded();
+    const parts = errorParts(trap(error, 'cause'));
+    expect(parts.code).toBe('X_ID_INVALID');
+    expect(parts.title).toBe(error.title);
+    expect(parts.fix).toBe('parseId()');
+    expect(parts.cause.length).toBeGreaterThan(0);
+  });
+
+  test('a coded error whose fix will not read gets the explain command as its fix', () => {
+    expect(errorParts(trap(coded(), 'fix')).fix).toBe('x errors explain X_ID_INVALID');
+  });
+
+  test('a hostile code never reaches the explain command verbatim', () => {
+    // `isUltimateError` is a brand check, so a Proxy over a real error can answer any `code` — and
+    // the fallback fix is pasted into a shell. `;` would end `x errors explain` and run the rest.
+    const hostile = new Proxy(coded(), {
+      get(held, key, receiver) {
+        if (key === 'code') return 'X_A; rm -rf ~';
+        if (key === 'fix') throw new TypeError('fix getter');
+        return Reflect.get(held, key, receiver);
+      },
+    });
+    const fix = errorParts(hostile).fix;
+    expect(fix).not.toContain('rm -rf');
+    expect(fix).toBe("x errors explain '<the code above>'");
+  });
+
+  test('a coded error whose code will not read is X_INTERNAL, never a throw', () => {
+    let parts: ReturnType<typeof errorParts> | undefined;
+    expect(() => {
+      parts = errorParts(trap(coded(), 'code'));
+    }).not.toThrow();
+    expect(parts?.code).toBe('X_INTERNAL');
+  });
+
+  test('a remote title off the wire still reaches the screen', () => {
+    // Sweep 3's `remoteTitle`: a code this realm never registered renders the server's title, and
+    // reading fields defensively must not drop it back to the humanised fallback.
+    const remote = new UltimateError({
+      code: 'X_SOME_SERVER_ONLY_CODE',
+      cause: 'refused upstream',
+      fix: 'retry later',
+      remoteTitle: 'the server titled this',
+    });
+    expect(errorParts(remote).title).toBe('the server titled this');
+  });
+});
+
+/**
  * The other half — which strings the component RENDERS, as opposed to which ones `errorParts`
  * computes. The translator outside a request is the loud-miss one, so a resolved key comes out as
  * uiString('ui.error.title'): that is the assertion. A key rendered as its own English text would mean the

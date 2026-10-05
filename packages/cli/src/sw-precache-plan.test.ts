@@ -9,6 +9,7 @@ import type { PwaArtifacts } from './pwa-artifacts';
 import { styleBundleOf } from './style-bundle';
 import type { RenderedDocument, ServiceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerArtifacts } from './sw-artifacts';
+import { precacheAssets } from './sw-precache-plan';
 
 const pwa: PwaArtifacts = {
   body: '{}',
@@ -180,5 +181,51 @@ describe('every route, once per routed locale', () => {
     });
     expect(built?.source).not.toContain('^/en/');
     expect(built?.source).toContain('const OFFLINE_LOCALES=[];');
+  });
+});
+
+/**
+ * `pwa.offline.image` / `.font` are what the worker answers a failed image or font request with —
+ * read from the PRECACHE only (`offlineFallbackSource`). Nothing put them there, so both branches
+ * matched nothing unless the offline document happened to name the file. They ride the precache
+ * now, on the offline document's own terms: no refusal for a URL this build cannot see (it cannot
+ * see the site assets), the build id as the revision unless the URL is content-addressed.
+ */
+describe('the offline placeholders', () => {
+  const plan = (placeholders: readonly string[]) =>
+    precacheAssets({
+      routes: ROUTES,
+      documents: new Map(),
+      locales: LOCALES,
+      islands: islandBundle([HERO, OFFLINE_RETRY, KYC, WIZARD, NAMED]),
+      styles: styleBundleOf([]),
+      scripts: [],
+      fallback: '/offline',
+      placeholders: { urls: placeholders, buildId: 'build-1' },
+    });
+
+  test('a configured image and font appear in the precache manifest', () => {
+    const assets = plan(['/icons/offline.png', '/assets/fonts/fallback.0a1b2c3d.woff2']);
+    expect(assets).toContainEqual({ url: '/icons/offline.png', revision: 'build-1', bytes: 0 });
+    // A content-hashed site asset IS its revision: same bytes, no re-download on the next deploy.
+    expect(assets).toContainEqual({
+      url: '/assets/fonts/fallback.0a1b2c3d.woff2',
+      revision: '/assets/fonts/fallback.0a1b2c3d.woff2',
+      bytes: 0,
+    });
+  });
+
+  test('deduped: one URL configured twice, or already precached as a chunk, is one entry', () => {
+    const assets = plan(['/offline.svg', '/offline.svg', HERO.url]);
+    expect(assets.filter((a) => a.url === '/offline.svg')).toHaveLength(1);
+    // The chunk's own entry wins — it carries real bytes and a content revision.
+    expect(assets.filter((a) => a.url === HERO.url)).toEqual([
+      { url: HERO.url, revision: HERO.url, bytes: HERO.bytes },
+    ]);
+  });
+
+  test('none configured, nothing added', () => {
+    expect(plan([])).toEqual(plan([]));
+    expect(plan([]).map((a) => a.url)).toEqual([HERO.url, OFFLINE_RETRY.url]);
   });
 });

@@ -65,3 +65,26 @@ describe('scheduleInvalid renders a value it does not control', () => {
     );
   });
 });
+
+// A calendar is not a wall-clock field, and the field fix ("pass an integer in … for calendar")
+// read as nonsense for it. The calendar refusal opens with the call that repairs it.
+describe('scheduleInvalid gives a calendar its own fix', () => {
+  const error = scheduleInvalid('calendar', {}, 'a calendar with at least one business day');
+
+  test('the fix opens with a pasteable call, not a sentence about integers', () => {
+    expect(error.fix).toStartWith('addBusinessDays(at, days, { zone, weekendDays: [6, 7] })');
+    expect(error.fix).toContain('not every one a holiday');
+    expect(error.fix).not.toContain('integer');
+  });
+
+  test('the code and the cause are the ones every other field gets', () => {
+    expect(error.code).toBe('X_SCHEDULE_INVALID');
+    expect(error.cause).toBe('calendar must be a calendar with at least one business day, got {}');
+  });
+
+  test('a wall-clock field keeps its own fix', () => {
+    expect(scheduleInvalid('slot.hour', 25, 'an integer 0-23').fix).toStartWith(
+      'pass an integer in an integer 0-23 for slot.hour',
+    );
+  });
+});

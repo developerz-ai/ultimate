@@ -182,9 +182,9 @@ export class RemoteEmbedder implements Embedder {
   }
 
   /**
-   * L2 normalised on the way in, like every other embedder here, so `cosine` stays a dot
-   * product. Providers already return unit vectors, which makes this a no-op — but "already"
-   * is a property of today's provider, not of the interface.
+   * L2 normalised on the way in, like every other embedder here, so a vector's scale is never the
+   * provider's choice. Providers already return unit vectors, which makes this a no-op — but
+   * "already" is a property of today's provider, not of the interface.
    */
   private vectorOf(raw: unknown, position: number): Float32Array {
     if (!Array.isArray(raw))

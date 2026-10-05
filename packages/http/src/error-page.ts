@@ -165,11 +165,11 @@ export function renderErrorPage(input: ErrorPageInput): string {
     <p class="lede">${escapeHtml(t(`errors.${copy.group}.body`, copy.vars))}</p>
     <p>${link(hrefFor(copy, input), t(`errors.${copy.group}.action`))}</p>
     <dl>
-      <dt>code</dt><dd>${escapeHtml(singleLine(input.code))}</dd>${
+      <dt>${escapeHtml(t('errors.page.code'))}</dt><dd>${escapeHtml(singleLine(input.code))}</dd>${
         input.requestId === undefined
           ? ''
           : `
-      <dt>request</dt><dd>${escapeHtml(singleLine(input.requestId))}</dd>`
+      <dt>${escapeHtml(t('errors.page.request'))}</dt><dd>${escapeHtml(singleLine(input.requestId))}</dd>`
       }
     </dl>
   </section>

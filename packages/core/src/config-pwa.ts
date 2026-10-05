@@ -173,10 +173,20 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
   // `pwa.enabled` means an installable app, and an installable app that shows the browser's error
   // page offline is the failure the whole block exists to prevent, so this is required rather
   // than optional: the alternative is two meanings for one switch (axiom 1).
+  // Same origin, too: `//host/offline` and `/\host/offline` start with `/` and are still another
+  // host, which the worker would precache and serve as this app's offline page.
   const fallback: unknown = pwa.offline?.fallback;
-  if (typeof fallback !== 'string' || !fallback.startsWith('/')) {
+  if (!isSameOriginPath(fallback)) {
     issues.push(
-      `pwa.offline.fallback is required when pwa.enabled is true and must be an absolute route path like "/offline", and is ${describeValue(fallback)}`,
+      `pwa.offline.fallback is required when pwa.enabled is true and must be an absolute route path on this origin like "/offline", and is ${describeValue(fallback)}`,
+    );
+  }
+  for (const key of ['image', 'font'] as const) {
+    const placeholder: unknown = pwa.offline?.[key];
+    if (placeholder === undefined || placeholder === null || isSameOriginPath(placeholder))
+      continue;
+    issues.push(
+      `pwa.offline.${key} must be a path on this origin like "/offline.svg", and is ${describeValue(placeholder)}`,
     );
   }
   const personal: unknown = pwa.offline?.personalPages;
@@ -232,4 +242,14 @@ function manifestIssues(pwa: PwaConfig, issues: string[]): void {
       );
     }
   }
+}
+
+/** A path on this origin: a leading `/`, and not `//` or `/\`, which a browser reads as another host. */
+function isSameOriginPath(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.startsWith('/') &&
+    !value.startsWith('//') &&
+    !value.startsWith('/\\')
+  );
 }

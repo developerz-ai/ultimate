@@ -237,3 +237,49 @@ describe('businessDaysBetween walks calendar dates, not a chain of instants', ()
     expect(businessDaysBetween(monday, thursday, { zone: APIA })).toBe(-1);
   });
 });
+
+// The loop's guard used to RETURN when it ran out — `localDay(origin, offset)`, a weekend day
+// handed back as if it were the business day asked for. A calendar with no business day in it has
+// no answer, and saying so is the only answer that cannot be scheduled against.
+describe('a calendar with no business day in it refuses', () => {
+  const monday = fromIso('2026-03-16T09:00:00Z');
+  const allWeekend = { zone: BERLIN, weekendDays: [1, 2, 3, 4, 5, 6, 7] as const };
+
+  test('addBusinessDays names the calendar, in either direction', () => {
+    expect(codeOf(() => addBusinessDays(monday, 1, allWeekend))).toBe('X_SCHEDULE_INVALID');
+    expect(codeOf(() => addBusinessDays(monday, -3, allWeekend))).toBe('X_SCHEDULE_INVALID');
+  });
+
+  test('nextBusinessDay refuses instead of returning a weekend day', () => {
+    expect(codeOf(() => nextBusinessDay(monday, allWeekend))).toBe('X_SCHEDULE_INVALID');
+  });
+
+  test('the cause says what is wrong with the calendar', () => {
+    let cause = '';
+    try {
+      addBusinessDays(monday, 1, allWeekend);
+    } catch (error) {
+      cause = String((error as { cause?: unknown }).cause);
+    }
+    expect(cause).toContain('calendar');
+    expect(cause).toContain('at least one business day');
+  });
+
+  // Not the weekend this time: every business day the week leaves is a holiday, for longer than
+  // the walk's guard looks. Only the guard can see this one, so it is the guard that must refuse.
+  test('a calendar whose every business day is a holiday refuses at the guard', () => {
+    const sundays: string[] = [];
+    for (let day = 0; day < 12 * 366; day += 7) {
+      // 2026-03-22 is a Sunday; UTC date arithmetic, then formatted as the local date it names.
+      sundays.push(new Date(Date.UTC(2026, 2, 22 + day)).toISOString().slice(0, 10));
+    }
+    const calendar = { zone: BERLIN, weekendDays: [1, 2, 3, 4, 5, 6] as const, holidays: sundays };
+    expect(codeOf(() => addBusinessDays(monday, 1, calendar))).toBe('X_SCHEDULE_INVALID');
+  });
+
+  test('one business day a week is still a calendar', () => {
+    const sundaysOnly = { zone: BERLIN, weekendDays: [1, 2, 3, 4, 5, 6] as const };
+    const landed = toZoned(addBusinessDays(monday, 2, sundaysOnly), BERLIN);
+    expect([landed.weekday, landed.day]).toEqual([7, 29]);
+  });
+});

@@ -207,7 +207,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   entity table, or `ALTER … ADD TABLE` the missing; never a DROP, never `FOR ALL TABLES`.
 - **TLS is libpq's `sslmode`** (`pg-tls.ts`): only `verify-*` verify; the runtime never rejects,
   `judgeHandshake` decides; the raw socket is DEAF after `upgradeTLS`.
-- **Every session pins `datestyle=ISO`, `intervalstyle=postgres`, `extra_float_digits=3`**.
+- **Every session pins `datestyle=ISO`, `intervalstyle=postgres`, `extra_float_digits=3`, `TimeZone=UTC`**.
 - A change lsn is `<16 hex commit position><8 hex row position>`; never order by one half, a wall
   time or a counter.
 - Slot, publication and entity names match `[a-z_][a-z0-9_]*` before interpolation — a security

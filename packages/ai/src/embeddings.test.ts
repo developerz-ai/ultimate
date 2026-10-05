@@ -3,7 +3,7 @@
  * it cannot see: a constructor option defaulted with `??`, and a bare default PARAMETER.
  *
  * Neither failure raised anything. `dimension: NaN` makes `new Float32Array(NaN)` a vector of
- * length ZERO, so every embedding is empty and `cosine` answers 0 for every pair — the silent
+ * length ZERO, so every embedding is empty and `cosine` answers `NaN` for every pair — the silent
  * relevance collapse this file's own header says the declared dimension exists to catch.
  * `embedBatched(…, 0)` never advances `i`: measured under `timeout 10`, it issued the same empty
  * batch forever and was killed, having returned nothing.
@@ -62,6 +62,16 @@ describe('the maths the two bounds protect', () => {
     const a = normalize(Float32Array.from([1, 0]));
     expect(cosine(a, a)).toBeCloseTo(1);
     expect(tokenize('X_DB_DRIFT v2!')).toEqual(['x', 'db', 'drift', 'v2']);
+  });
+
+  test('cosine ignores magnitude, and a zero vector has none: NaN, as pgvector answers', () => {
+    // A dot product scored `[10, 10]` against `[2, 0]` at 20; the angle says 0.707.
+    expect(cosine(Float32Array.from([2, 0]), Float32Array.from([10, 10]))).toBeCloseTo(
+      Math.SQRT1_2,
+      6,
+    );
+    expect(cosine(Float32Array.from([3, 0]), Float32Array.from([-7, 0]))).toBe(-1);
+    expect(cosine(Float32Array.from([0, 0]), Float32Array.from([1, 0]))).toBeNaN();
   });
 });
 
