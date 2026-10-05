@@ -11,6 +11,17 @@ const streamOf = (chunks: readonly Uint8Array[]): ReadableStream<Uint8Array> =>
     },
   });
 
+const DISALLOWED = 'X_SCRAPE_ROBOTS_DISALLOWED';
+
+const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
+  try {
+    await promise;
+    return undefined;
+  } catch (thrown) {
+    return (thrown as { code?: string }).code;
+  }
+};
+
 const bodyResponse = (body: ReadableStream<Uint8Array>, status = 200): Response =>
   new Response(body, { status });
 
@@ -28,8 +39,8 @@ describe('unit · the default robots.txt read', () => {
   test('a hung origin gives up on the deadline instead of parking the run forever', async () => {
     const read = robotsFetcher({ timeoutMs: 25, fetch: hangingFetch });
     const started = performance.now();
-    // Unreadable ALLOWS, which is this gate's documented answer — the point is that it answers.
-    expect(await read('https://slow.test/robots.txt')).toBeUndefined();
+    // A deadline is a network failure, never "no file": RFC 9309 §2.3.1.4 reads it as disallow.
+    expect(await read('https://slow.test/robots.txt')).toEqual({ unreachable: 'timeout' });
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 
@@ -38,7 +49,7 @@ describe('unit · the default robots.txt read', () => {
     const read = robotsFetcher({ signal: controller.signal, fetch: hangingFetch });
     const pending = read('https://slow.test/robots.txt');
     controller.abort();
-    expect(await pending).toBeUndefined();
+    expect(await pending).toEqual({ unreachable: 'cancelled' });
   });
 
   test('a robots.txt past the cap is abandoned, never held in full', async () => {
@@ -67,7 +78,7 @@ describe('unit · the default robots.txt read', () => {
     expect(await read('https://ok.test/robots.txt')).toBe(text);
   });
 
-  test('a non-2xx answer reads as "no restrictions"', async () => {
+  test('a 4xx answer reads as "no restrictions"', async () => {
     const read = robotsFetcher({
       fetch: () => Promise.resolve(bodyResponse(streamOf([]), 404)),
     });
@@ -109,9 +120,84 @@ describe('unit · the gate takes the deadline without a fetchText injected', () 
       fetch: hangingFetch,
     });
     const started = performance.now();
-    await gate.assertAllowed('https://slow.test/one');
-    await gate.assertAllowed('https://slow.test/two');
+    expect(await codeOf(gate.assertAllowed('https://slow.test/one'))).toBe(DISALLOWED);
+    expect(await codeOf(gate.assertAllowed('https://slow.test/two'))).toBe(DISALLOWED);
     expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
+
+// RFC 9309 §2.3.1.3–4: a file that is UNAVAILABLE (4xx) means no rules; a file that is
+// UNREACHABLE (5xx, a network error, a deadline) means complete disallow. Reading both as "no
+// rules" let an origin shed its own robots.txt under load and be crawled in full for the run.
+describe('unit · an unreachable robots.txt disallows, an unavailable one allows', () => {
+  const answering =
+    (status: number): ScrapeFetch =>
+    () =>
+      Promise.resolve(new Response('User-agent: *\nAllow: /', { status }));
+
+  test('a 503 answer refuses every path on the origin', async () => {
+    expect(await robotsFetcher({ fetch: answering(503) })('https://down.test/robots.txt')).toEqual({
+      unreachable: 'status 503',
+    });
+    const gate = createRobotsGate({ policy: 'obey', fetch: answering(503) });
+    expect(await codeOf(gate.assertAllowed('https://down.test/anything'))).toBe(DISALLOWED);
+    expect(await codeOf(gate.assertAllowed('https://down.test/'))).toBe(DISALLOWED);
+  });
+
+  test('a 429 is the origin shedding load, not a missing file', async () => {
+    const gate = createRobotsGate({ policy: 'obey', fetch: answering(429) });
+    expect(await codeOf(gate.assertAllowed('https://busy.test/page'))).toBe(DISALLOWED);
+  });
+
+  test('a thrown fetch refuses', async () => {
+    const thrown: ScrapeFetch = () => Promise.reject(new TypeError('connection refused'));
+    expect(await robotsFetcher({ fetch: thrown })('https://gone.test/robots.txt')).toEqual({
+      unreachable: 'network',
+    });
+    const gate = createRobotsGate({ policy: 'obey', fetch: thrown });
+    expect(await codeOf(gate.assertAllowed('https://gone.test/page'))).toBe(DISALLOWED);
+  });
+
+  test('a 404 and a 410 allow', async () => {
+    for (const status of [404, 410, 403]) {
+      const gate = createRobotsGate({ policy: 'obey', fetch: answering(status) });
+      expect(await codeOf(gate.assertAllowed('https://plain.test/page'))).toBeUndefined();
+    }
+  });
+
+  test('an unreachable answer is not cached: the origin is asked again and can recover', async () => {
+    let calls = 0;
+    const flaky: ScrapeFetch = () => {
+      calls += 1;
+      return Promise.resolve(
+        new Response('User-agent: *\nDisallow: /private', {
+          status: calls === 1 ? 503 : 200,
+        }),
+      );
+    };
+    const gate = createRobotsGate({ policy: 'obey', fetch: flaky });
+    expect(await codeOf(gate.assertAllowed('https://flaky.test/page'))).toBe(DISALLOWED);
+    expect(await codeOf(gate.assertAllowed('https://flaky.test/page'))).toBeUndefined();
+    expect(await codeOf(gate.assertAllowed('https://flaky.test/private'))).toBe(DISALLOWED);
+    expect(await codeOf(gate.assertAllowed('https://flaky.test/again'))).toBeUndefined();
+    // Readable once, then cached for the run as before.
+    expect(calls).toBe(2);
+  });
+
+  test('a caller-supplied read that rejects refuses rather than allowing', async () => {
+    const gate = createRobotsGate({
+      policy: 'obey',
+      fetchText: () => Promise.reject(new TypeError('dns')),
+    });
+    expect(await codeOf(gate.assertAllowed('https://custom.test/page'))).toBe(DISALLOWED);
+  });
+
+  test('a caller-supplied read may answer unreachable itself', async () => {
+    const gate = createRobotsGate({
+      policy: 'obey',
+      fetchText: () => Promise.resolve({ unreachable: 'upstream cache said 502' }),
+    });
+    expect(await codeOf(gate.assertAllowed('https://custom.test/page'))).toBe(DISALLOWED);
   });
 });
 

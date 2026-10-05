@@ -178,7 +178,15 @@ export {
   pageErrorEntry,
   RESOURCE_TYPES,
 } from './rings';
-export type { RobotsFetch, RobotsGate, RobotsGateInit, RobotsPolicy, RobotsRules } from './robots';
+export type {
+  RobotsAnswer,
+  RobotsFetch,
+  RobotsGate,
+  RobotsGateInit,
+  RobotsPolicy,
+  RobotsRules,
+  RobotsUnreachable,
+} from './robots';
 export { createRobotsGate, parseRobots, robotsAllows } from './robots';
 export type { RobotsFetchInit } from './robots-fetch';
 export {

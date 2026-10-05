@@ -84,6 +84,15 @@ Both legs replay from **one** fixture directory (`fixtureBrowser(dir)`), so a hy
 login, session handoff, HTTP bulk fetch — is tested end to end. Both legs apply the same robots
 gate, offline included.
 
+The robots gate follows RFC 9309 §2.3.1: a `4xx` robots.txt is **unavailable** (no rules); a `5xx`,
+a network error or the deadline is **unreachable**, which refuses every path on the origin
+(`X_SCRAPE_ROBOTS_DISALLOWED`) and is not cached. A `429` is a `4xx` the RFC calls unavailable; this
+gate treats it as unreachable anyway — our stricter policy, since a server that is rate-limiting
+the crawler has not said "no rules". A hand-written `fetchText` answers the text,
+`undefined` (no file) or `{ unreachable: '<why>' }` — `RobotsAnswer`. An offline scrape declares
+`robots: { ignore: 'offline fixture' }`: under the sealed test network its robots read is
+unreachable.
+
 ## A session a service is built on
 
 One connection, one run at a time, on its own exit, in a browser rented for that run — with a

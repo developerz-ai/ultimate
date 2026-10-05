@@ -171,6 +171,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
   `privileges.ts`), never patch the row. A `passwordHash` change also ends every OTHER session of
   that user (`deleteOtherSessions`), or all of them when the caller passed no session of theirs.
+  **A new id, never a new lifetime**: rotation carries `createdAt` and `absoluteExpiresAt` over
+  (`createSession` clamps both, so they only shorten), and the rotated cookie's `Max-Age` is
+  `remainingMaxAgeSeconds` — `session-rotation.test.ts` pins both adapters.
 - **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it
   (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `createFlightGate`, the
   refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point

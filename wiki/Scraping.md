@@ -181,7 +181,17 @@ A collapsed run is **not recorded**. Three broken runs at 2 rows would make the 
 
 Ignoring robots takes a written reason: `robots: { ignore: 'contract with the operator, ticket OPS-441' }`. A bare `false` is a decision with no author.
 
-The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. A redirect is followed one hop at a time, at most `MAX_ROBOTS_REDIRECTS` (5, RFC 9309's floor), each hop asked of `allowHosts` first — a hop off the list is never requested. (`robotsFetcher` / `createRobotsGate` called with no `allowHosts` follow only a hop on the starting hostname — `http:` → `https:`, a moved path.) An unreadable robots.txt, or one behind a redirect off the list, reads as **no restrictions**, which is the standard's own answer and the reason the deadline matters.
+The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. A redirect is followed one hop at a time, at most `MAX_ROBOTS_REDIRECTS` (5, RFC 9309's floor), each hop asked of `allowHosts` first — a hop off the list is never requested. (`robotsFetcher` / `createRobotsGate` called with no `allowHosts` follow only a hop on the starting hostname — `http:` → `https:`, a moved path.) What the read answers decides the run, after the "access results" rules of RFC 9309 (`As of 2026-10`):
+
+| The read | Means | The gate |
+|---|---|---|
+| `2xx` | the file | its rules, cached for the run |
+| `4xx` (not `429`), a body past the cap, a redirect off the list or past the hop cap | **unavailable** | no restrictions, cached for the run |
+| `5xx`, `429`, a refused connection, the deadline, the run cancelled, a `fetchText` that rejects | **unreachable** | complete disallow — every path on the origin is `X_SCRAPE_ROBOTS_DISALLOWED` — and **not** cached: the next navigation asks again, so the run recovers when the file answers |
+
+`429` is the one row that is **our policy, not the RFC's**: RFC 9309 calls every `4xx` unavailable, `429` included. Ultimate refuses on it because a server rate-limiting the crawler has not said "no rules" — stricter than the RFC requires, never looser.
+
+A hand-written `fetchText` answers the text, `undefined` (no file) or `{ unreachable: '<why>' }`.
 
 Robots patterns are **walked**, not compiled — a wildcard-dense rule from a scraped site is linear rather than catastrophic backtracking on the worker's only thread.
 
@@ -418,7 +428,7 @@ Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup c
 
 `fakeBrowser` and `fixtureBrowser` never touch the network. An unrecorded page or request **throws** rather than falling through, so a green suite cannot be secretly live.
 
-**One request escapes that, and it is the robots read.** Under the default `robots: 'obey'`, an offline driver still fires a real `fetch` at `https://<host>/robots.txt` before the first navigation — the gate is built in `scrape-run.ts` and knows nothing about which driver `open()` will return. Measured again `As of 2026-08-20`: one egress per origin per run. Under `bun test` the sealed network's refusal is swallowed by the fetcher's `catch`, which the gate reads as "no restrictions" — green either way, which is the whole problem. Declare `robots: { ignore: 'offline fixture' }` on an offline scrape until it is closed → [Known gaps](Known-Gaps).
+**One request escapes that, and it is the robots read.** Under the default `robots: 'obey'`, an offline driver still fires a real `fetch` at `https://<host>/robots.txt` before the first navigation — the gate is built in `scrape-run.ts` and knows nothing about which driver `open()` will return. Measured again `As of 2026-08-20`: one egress per origin per run. Under `bun test` the sealed network refuses it, and a refused read is **unreachable**, so the run fails `X_SCRAPE_ROBOTS_DISALLOWED` on its first navigation — the leak is now loud rather than green. Declare `robots: { ignore: 'offline fixture' }` on an offline scrape until it is closed → [Known gaps](Known-Gaps).
 
 ## What it does not do
 

@@ -413,3 +413,34 @@ describe('an explicitly null s3 bound is refused, never defaulted', () => {
     );
   });
 });
+
+// `isSafeKey` accepts `$(…)`, a backtick and `;` — they are legal object-key bytes — so the key,
+// the prefix and the bucket are screened where they enter the `aws s3api` command a fix: hands
+// the reader to paste.
+describe('a refusal fix never splices a key, a prefix or a bucket into the shell', () => {
+  test('a refused delete screens the key', async () => {
+    const key = 'org/org-1/$(touch pwned).txt';
+    const fake = new FakeS3Client();
+    fake.store.set(key, { bytes: bytesOf('c') });
+    fake.failDeleteFor = key;
+    const driver = s3Driver({ bucket: 'b', client: fake });
+    const refused = (await catchError(() => driver.delete(key))) as StorageError;
+    expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
+    expect(refused.fix).not.toContain('$(');
+    // Quoted: a bare `<key>` is read by the shell as a redirection from a file named `key`.
+    expect(refused.fix).toContain("aws s3api delete-object --bucket b --key '<key>'");
+  });
+
+  test('a refused listing screens the prefix', async () => {
+    const fake = new FakeS3Client();
+    fake.failListWith = Object.assign(new Error('denied'), {
+      name: 'S3Error',
+      code: 'AccessDenied',
+    });
+    const driver = s3Driver({ bucket: 'b', client: fake });
+    const refused = (await catchError(() => driver.list({ prefix: 'org/`id`;' }))) as StorageError;
+    expect(codeOf(refused)).toBe('X_STORAGE_LIST_FAILED');
+    expect(refused.fix).not.toContain('`id`');
+    expect(refused.fix).toContain("aws s3api list-objects-v2 --bucket b --prefix '<prefix>'");
+  });
+});

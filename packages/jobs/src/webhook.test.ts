@@ -9,9 +9,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   backoffDelay,
-  type Ctx,
-  createContext,
-  frozenClock,
   isUltimateError,
   statedDelayMs,
   WEBHOOK_SIGNATURE_HEADER,
@@ -20,117 +17,19 @@ import { getJob, isJobHandle, resetJobs } from './job';
 import { retrySchedule } from './retry';
 import { createStepRunner } from './steps';
 import { createMemoryStepStore } from './steps-memory';
-import { type WebhookDefinition, type WebhookEndpoint, webhook } from './webhook';
-import { type MemoryWebhookLedger, memoryWebhookLedger } from './webhook-ledger';
-
-const SECRET = 'whsec_never_leaks';
-const NOW_MS = 1_700_000_000_000;
-
-const ctx: Ctx = createContext();
-
-const ENDPOINT: WebhookEndpoint = {
-  id: 'ep_1',
-  url: 'https://hooks.partner.test/inbox?token=leaks-if-rendered',
-  secret: SECRET,
-};
-
-interface Sent {
-  readonly url: string;
-  readonly init: RequestInit;
-}
-
-interface Harness {
-  readonly ledger: MemoryWebhookLedger;
-  readonly sent: Sent[];
-  answer: () => Promise<Response>;
-  run(attempt?: number): Promise<unknown>;
-  readonly handle: ReturnType<typeof webhook>;
-}
-
-let sequence = 0;
-
-/** A public address the harness resolves every hostname to, unless a test says otherwise. */
-const PUBLIC_IP = '93.184.215.14';
-
-const harness = (
-  over: {
-    endpoint?: WebhookEndpoint | null;
-    topic?: string;
-    disableAfter?: number;
-    resolve?: (hostname: string) => Promise<readonly string[]>;
-    allowPrivate?: boolean;
-    env?: Readonly<Record<string, string | undefined>>;
-  } = {},
-): Harness => {
-  sequence += 1;
-  const ledger = memoryWebhookLedger();
-  const sent: Sent[] = [];
-  const state = {
-    ledger,
-    sent,
-    answer: (): Promise<Response> => Promise.resolve(new Response('ok', { status: 200 })),
-  };
-
-  const definition: WebhookDefinition = {
-    name: `partner-hooks-${sequence}`,
-    tenant: 'none',
-    ledger,
-    clock: frozenClock(NOW_MS),
-    ...(over.disableAfter === undefined ? {} : { disableAfter: over.disableAfter }),
-    resolve: over.resolve ?? (() => Promise.resolve([PUBLIC_IP])),
-    ...(over.allowPrivate === undefined ? {} : { allowPrivate: over.allowPrivate }),
-    ...(over.env === undefined ? {} : { env: over.env }),
-    endpoint: () => (over.endpoint === undefined ? ENDPOINT : over.endpoint),
-    event: ({ eventId }) =>
-      eventId === 'evt_missing'
-        ? null
-        : { topic: over.topic ?? 'orders.paid', body: '{"amount":100}' },
-    fetch: (url, init) => {
-      sent.push({ url, init });
-      return state.answer();
-    },
-  };
-
-  const handle = webhook(definition);
-  return {
-    ...state,
-    handle,
-    run: (attempt = 1): Promise<unknown> =>
-      handle.run({
-        input: { endpointId: 'ep_1', eventId: 'evt_1' },
-        step: createStepRunner({
-          runId: `run-${sequence}`,
-          jobName: definition.name,
-          store: createMemoryStepStore(),
-        }).step,
-        ctx,
-        attempt,
-        finalAttempt: false,
-        progress: () => undefined,
-        jobId: `job-${sequence}`,
-        runId: `run-${sequence}`,
-      }),
-    get answer() {
-      return state.answer;
-    },
-    set answer(next: () => Promise<Response>) {
-      state.answer = next;
-    },
-  } as Harness;
-};
-
-const codeOf = async (run: () => Promise<unknown>): Promise<string> => {
-  try {
-    await run();
-  } catch (error) {
-    return isUltimateError(error) ? error.code : 'not-an-ultimate-error';
-  }
-  return 'delivered';
-};
+import {
+  codeOf,
+  ctx,
+  ENDPOINT,
+  harness,
+  PUBLIC_IP,
+  resetHarness,
+  SECRET,
+} from './webhook-harness-fixture';
 
 beforeEach(() => {
   resetJobs();
-  sequence = 0;
+  resetHarness();
 });
 
 describe('the factory', () => {
@@ -191,23 +90,6 @@ describe('a delivery that lands', () => {
     expect(record?.status).toBe(200);
     expect(record?.endpointId).toBe('ep_1');
     expect(record?.error).toBeUndefined();
-  });
-
-  test('an endpoint row carries its own headers and can never overwrite the signature', async () => {
-    // An endpoint row is app data. If a row could set `x-ultimate-webhook-signature`, then whoever
-    // can write that table can make a delivery say it was signed by something it was not.
-    const one = harness({
-      endpoint: {
-        ...ENDPOINT,
-        headers: { 'x-partner-key': 'abc', [WEBHOOK_SIGNATURE_HEADER]: 't=1,v1=forged' },
-      },
-    });
-    await one.run();
-
-    const headers = one.sent[0]?.init.headers as Record<string, string>;
-    expect(headers['x-partner-key']).toBe('abc');
-    expect(headers[WEBHOOK_SIGNATURE_HEADER]).toStartWith('t=1700000000,v1=');
-    expect(headers[WEBHOOK_SIGNATURE_HEADER]).not.toBe('t=1,v1=forged');
   });
 
   test('nothing durable carries the secret', async () => {

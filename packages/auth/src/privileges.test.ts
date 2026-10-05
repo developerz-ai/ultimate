@@ -9,7 +9,7 @@ import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
 import { updatePrivileges } from './privileges';
-import { createSession, type IssuedSession } from './session';
+import { createSession, type IssuedSession, type SessionRuntime } from './session';
 
 const START = 1_700_000_000_000;
 
@@ -180,5 +180,105 @@ describe('a changed password ends the sessions issued under the old one', () => 
     const result = await updatePrivileges(auth, 'alice', { roles: ['admin'] }, issued.session);
     expect(result.sessionsRevoked).toBe(0);
     expect(await adapter.listSessions('alice')).toHaveLength(3);
+  });
+});
+
+/**
+ * The failure case first: every rotation used to mint a session with a fresh 30-day ceiling and a
+ * cookie whose `Max-Age` restarted at 30 days, so a role toggled weekly kept one login alive forever.
+ */
+describe('a privilege change rotates the id, never the lifetime', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  test('repeated grants cannot carry a session past its original ceiling', async () => {
+    const clock = frozenClock(START);
+    const adapter = new MemoryAdapter();
+    const auth = defineAuth({ adapter, clock });
+    await adapter.createUser({
+      id: 'alice',
+      email: 'alice@corp.test',
+      passwordHash: 'argon2-hash',
+      orgId: 'org-1',
+      roles: ['member'],
+      createdAt: new Date(START),
+    });
+    const first = await createSession(auth.sessions, { userId: 'alice' });
+    const ceiling = first.session.absoluteExpiresAt;
+
+    let current = first.session;
+    for (const [day, role] of [
+      [6, 'admin'],
+      [12, 'member'],
+      [29, 'admin'],
+    ] as const) {
+      clock.set(START + day * DAY);
+      const result = await updatePrivileges(auth, 'alice', { roles: [role] }, current);
+      if (result.session === undefined) expect.unreachable('a role change did not rotate');
+      current = result.session.session;
+      expect(current.absoluteExpiresAt).toEqual(ceiling);
+      expect(current.createdAt).toEqual(first.session.createdAt);
+      // The client drops the cookie when the server would, not 30 days after the last grant.
+      const remaining = Math.floor((ceiling.getTime() - (START + day * DAY)) / 1000);
+      expect(result.cookie).toContain(`Max-Age=${remaining};`);
+    }
+  });
+});
+
+describe('a privilege change on a session that is already gone', () => {
+  test('refuses to resurrect it, and a password change still ends every other session', async () => {
+    const { auth, adapter, issued } = await setup();
+    await createSession(auth.sessions, { userId: 'alice' });
+    await createSession(auth.sessions, { userId: 'alice' });
+    // Signed out on another tab between this request's verify and its password change.
+    await adapter.deleteSession(issued.session.id);
+
+    const thrown = await updatePrivileges(
+      auth,
+      'alice',
+      { passwordHash: 'new-hash' },
+      issued.session,
+    ).catch((error: unknown) => error);
+    expect(String(thrown)).toContain('X_UNAUTHENTICATED');
+    // The lifted cookies the password change was made to kill are dead all the same.
+    expect(await adapter.listSessions('alice')).toEqual([]);
+  });
+});
+
+/**
+ * A login that lands while the password change is in flight — after the early sweep, before the
+ * rotation finishes — was minted under the OLD password and must not survive the change.
+ */
+describe('a session minted mid-change does not outlive the password change', () => {
+  class InFlightLogin extends MemoryAdapter {
+    runtime: SessionRuntime | undefined;
+    override async deleteSession(id: string): Promise<boolean> {
+      const runtime = this.runtime;
+      this.runtime = undefined;
+      // The rotation's claim is the step between the two sweeps: a concurrent login lands here.
+      if (runtime !== undefined) await createSession(runtime, { userId: 'alice' });
+      return await super.deleteSession(id);
+    }
+  }
+
+  test('the final sweep ends it, keeps the replacement, and counts both sweeps', async () => {
+    const adapter = new InFlightLogin();
+    const auth = defineAuth({ adapter, clock: frozenClock(START) });
+    await adapter.createUser({
+      id: 'alice',
+      email: 'alice@corp.test',
+      passwordHash: 'old',
+      orgId: null,
+      roles: [],
+      createdAt: new Date(START),
+    });
+    const own = await createSession(auth.sessions, { userId: 'alice' });
+    await createSession(auth.sessions, { userId: 'alice' });
+    adapter.runtime = auth.sessions;
+
+    const result = await updatePrivileges(auth, 'alice', { passwordHash: 'new' }, own.session);
+
+    const live = await adapter.listSessions('alice');
+    expect(live.map((session) => session.id)).toEqual([result.session?.session.id ?? '']);
+    expect(result.sessionsRevoked).toBe(2);
   });
 });

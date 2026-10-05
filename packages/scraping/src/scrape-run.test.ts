@@ -69,6 +69,9 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   clock: testClock(),
+  // An offline driver has no origin to ask: under the sealed network the read is unreachable,
+  // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
+  robots: { ignore: 'offline fixture, no origin to ask' },
   driver: fakeBrowser([{ url: URL_A, html: HTML }]),
   async run({ page }) {
     await page.goto(URL_A);
@@ -262,7 +265,10 @@ describe('unit · the robots read exits through the SAME proxy the session diall
     // through the proxy — and an origin reachable ONLY through the proxy read as "no robots.txt",
     // which `robots.ts` turns into allow-everything.
     const seen = await readsDuring(() =>
-      runScrape(define({ driver: proxiedFake('http://exit:8080') }), runArgs('org-1')),
+      runScrape(
+        define({ robots: 'obey', driver: proxiedFake('http://exit:8080') }),
+        runArgs('org-1'),
+      ),
     );
     const robots = seen.find((entry) => String(entry['url']).endsWith('/robots.txt'));
     expect(robots?.['url']).toBe('https://shop.test/robots.txt');
@@ -270,7 +276,7 @@ describe('unit · the robots read exits through the SAME proxy the session diall
   });
 
   test('a run with no proxy dials none — a `proxy` key is never invented', async () => {
-    const seen = await readsDuring(() => runScrape(define(), runArgs('org-1')));
+    const seen = await readsDuring(() => runScrape(define({ robots: 'obey' }), runArgs('org-1')));
     const robots = seen.find((entry) => String(entry['url']).endsWith('/robots.txt'));
     expect(robots).toBeDefined();
     expect('proxy' in (robots ?? {})).toBe(false);

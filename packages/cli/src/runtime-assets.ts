@@ -11,7 +11,7 @@ import { applyCacheHeaders } from '@ultimat3/http';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery, usableWidths } from '@ultimat3/seo';
 import type { ImageTransform, Storage, VariantFormat } from '@ultimat3/storage';
-import { isTenantScoped, isVariantFormat, variantKey } from '@ultimat3/storage';
+import { DEFAULT_QUALITY, isTenantScoped, isVariantFormat, variantKey } from '@ultimat3/storage';
 import { faviconRoute } from './favicon';
 // The icon matrix's source, its base path and its renderer live in their own module so that
 // `pwa-artifacts.ts` — which this file imports for the manifest route — can reach them without
@@ -68,6 +68,15 @@ const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
  */
 const isMintableWidth = (width: number | undefined, intrinsic: number): boolean =>
   width === undefined || usableWidths(intrinsic, DEFAULT_WIDTHS).includes(width);
+
+/**
+ * The same question for `?q=`. `@ultimat3/seo` never writes a quality into a variant URL, so the
+ * framework mints exactly one — the default — and `variantKey` already spells the default and an
+ * absent one as the same key. Every other value from 1 to 100 was its own stored object per
+ * minted width per format: a hundred writes a caller drives with a loop. Served, never stored.
+ */
+const isMintableQuality = (quality: number | undefined): boolean =>
+  quality === undefined || quality === DEFAULT_QUALITY;
 
 const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint): Response =>
   applyCacheHeaders(
@@ -146,7 +155,11 @@ async function transformedVariant(
     ...(query.format === undefined ? {} : { format: query.format }),
     ...(query.quality === undefined ? {} : { quality: query.quality }),
   });
-  if (cached !== undefined && isMintableWidth(query.width, intrinsic)) {
+  if (
+    cached !== undefined &&
+    isMintableWidth(query.width, intrinsic) &&
+    isMintableQuality(query.quality)
+  ) {
     await disk.put(cached, variant.bytes, { contentType: variant.contentType });
   }
   return imageResponse(variant.bytes, variant.contentType, cache);

@@ -8,7 +8,40 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
+Sweep 1 is security. The behaviour changes under **Changed** are security fixes, so they ship in a
+minor instead of waiting for 25.0.0.
+
+### Security
+
+- `auth`: a first OAuth sign-in whose provider address is unverified no longer creates an account
+  that owns that address. It is the same `X_UNAUTHENTICATED` as every other refused login (S3).
+- `auth`: rotating a session (`rotateSession`, `updatePrivileges`) keeps its `createdAt` and
+  absolute ceiling, and the rotated cookie's `Max-Age` is the time left. Repeated privilege changes
+  can no longer keep a session alive forever, and `revokeSessionsCreatedBefore` reaches rotated
+  sessions. New export `remainingMaxAgeSeconds` (S5).
+- `auth`: `rotateSession` claims the old session atomically. A session revoked between verify and
+  rotation is refused (`X_UNAUTHENTICATED`) instead of resurrected, and two concurrent rotations
+  leave one live session, not two. A password change still ends every other session.
+- `scraping`: an unreachable `/robots.txt` (5xx, 429, network error, timeout) refuses the origin
+  with `X_SCRAPE_ROBOTS_DISALLOWED` and is not cached, per RFC 9309 §2.3.1.4. A 4xx still means no
+  rules (S9).
+- `jobs`: webhook endpoint headers, in any letter case, can no longer override `host`,
+  `content-type` or the signature (S10).
+- `storage`: XML whose markup is XHTML, SVG or XSLT, or which declares an internal `<!ENTITY>`, is
+  refused under `application/xml` / `text/xml` (S11). Under any XML content type, a body that is
+  not readable UTF-8 text (UTF-16, a control byte) is refused, and zero-padded character
+  references are decoded before the markup screen. New export `xmlBodyUnreadable`.
+- `storage`: a refusal's `fix:` line screens the key, prefix, bucket and path before splicing them
+  into a shell command (S12, storage half).
+- `cli`: `/media` stores a variant only for the framework-minted quality; any other `?q=` is
+  served but never written to disk (S8).
+
+### Changed
+
+- `scraping`: an offline test (`fakeBrowser`, `fixtureBrowser`) must declare
+  `robots: { ignore: '…' }`. Under `bun test`, the sealed network's refusal of the robots read is
+  now a refused scrape instead of a silent allow.
 
 ## 24.0.0 - 2026-10-04
 
