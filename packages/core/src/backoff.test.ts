@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { backoffDelay } from './backoff';
+import { backoffDelay, jitterStatedDelay } from './backoff';
 
 /** A seeded roll, so every number below is exact rather than a range. */
 const roll = (value: number) => (): number => value;
@@ -137,5 +137,28 @@ describe('backoffDelay reproduces the formula it replaces', () => {
     });
     expect(equal).toBe(2_000);
     expect(full).toBe(0);
+  });
+});
+
+describe('jitterStatedDelay', () => {
+  test('the stated wait is a FLOOR, and the spread on top is at most half of it', () => {
+    expect(jitterStatedDelay(1_000, 60_000, () => 0)).toBe(1_000);
+    expect(jitterStatedDelay(1_000, 60_000, () => 0.5)).toBe(1_250);
+    expect(jitterStatedDelay(1_000, 60_000, () => 0.999_999)).toBe(1_499);
+  });
+
+  test('the cap bounds the spread, never the floor', () => {
+    expect(jitterStatedDelay(30_000, 10_000, () => 0.5)).toBe(35_000);
+    expect(jitterStatedDelay(30_000, 10_000, () => 0)).toBe(30_000);
+  });
+
+  test('a burst every member of which was told Retry-After: 1 does not wake in lockstep', () => {
+    const rolls = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
+    const wakes = rolls.map((roll) => jitterStatedDelay(1_000, 2_000, () => roll));
+    expect(new Set(wakes).size).toBe(rolls.length);
+    for (const wake of wakes) {
+      expect(wake).toBeGreaterThanOrEqual(1_000);
+      expect(wake).toBeLessThan(1_500);
+    }
   });
 });

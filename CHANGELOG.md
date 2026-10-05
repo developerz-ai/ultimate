@@ -10,7 +10,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
 Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
-that the framework could have fenced, and never strands work.
+that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0 workarounds.
 
 ### Security
 
@@ -128,7 +128,36 @@ that the framework could have fenced, and never strands work.
 - `realtime`: `X_REPLICATOR_SLOT_HELD` is thrown only under `x dev`. A container replicator that
   loses the lock stays up unready and takes over when it frees.
 
+- **BREAKING** every package: `engines.bun` is `>=1.4.2`, and `x` / `x doctor` refuse Bun 1.4.0 and 1.4.1
+  with `X_BUN_VERSION`. CI, the release job, the framework image and a scaffolded app's image all run
+  exactly 1.4.2; `scripts/bun-pin.test.ts` refuses any pin that names another patch.
+- `core`, `http`, `action`, `realtime`: Bun 1.4.2 honours a `sideEffects` array (1.4.0 read any array as
+  `false`), so the arrays now say only what a browser needs. `@ultimat3/http` declares one
+  (`["./src/error-titles.ts"]`), which keeps 11.5 kB of server code out of every island that calls an
+  action; core no longer lists `context.ts`, `lifecycle-errors.ts` or `secrets-errors.ts`
+  (≈5.3 kB per island); `action`, `realtime` and `http` keep their titles in a titles-only
+  `error-titles.ts`. A module with an import-time effect left unlisted on purpose is a
+  `SIDE_EFFECTS_BY_USE` row (`X_SIDE_EFFECTS_BY_USE_STALE`).
+- `core`: in the browser, a refusal whose code this realm has no title for takes the problem body's
+  `title` (a trimmed string, at most 120 characters), and a 429 or 503 that states `Retry-After` is
+  classified `retry-after` and waits that delay as a floor plus a spread of up to half again, so a
+  shedding server's constant `Retry-After: 1` no longer brings a burst back in lockstep. A stated
+  `0` or a past date counts as no statement. The wait between attempts settles at once on the
+  caller's abort or a superseding call, and holds no gate slot. A remote title drops control and
+  format characters and is cut at 120 code points. New exports `retryAfterSecondsOf`,
+  `MAX_RETRY_AFTER_SECONDS`, `remoteTitleOf`, `MAX_REMOTE_TITLE_LENGTH`, `jitterStatedDelay`;
+  `UltimateErrorInit` gains `remoteTitle`; a `decodeError` receives the stated delay as an optional
+  third argument. `jobs`' webhook throttle and `X_RATE_LIMITED` deferral use the same spread.
+- `@types/bun` 1.4.2, `@biomejs/biome` 2.5.15 (scaffolded apps too), `lefthook` 2.1.14 (the newest
+  past the 14-day cooldown; it runs an install script), `sass` 1.105.1. The release job installs
+  with `--ignore-scripts`, so no dependency code runs beside the npm publishing identity. The dev
+  and test compose images are digest-pinned and watched by Dependabot.
+
 ### Fixed
+
+- `scripts`, `ui`, `core` tests: the Bun 1.4.0 workarounds are gone. A barrel is built as its own
+  entry (#276, fixed upstream in 1.4.1), and island and barrel builds must match byte for byte with no
+  rename or shaker tolerance (#354: 0 flaps in 192 build pairs and 576 barrel builds on 1.4.2).
 
 - `http`: an open websocket no longer holds shutdown to the drain deadline. A later `accept` hook
   runs at once (11 ms, was 25 s), so the worker stops claiming and `close` hooks get their time. A

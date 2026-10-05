@@ -6,6 +6,7 @@
 
 import type { ClientFlight, ClientRetry } from './client-flight';
 import { problemError, transportFailed } from './client-problem';
+import { retryAfterSecondsOf } from './client-retry-after';
 import { onRescope } from './client-scope';
 import { scopeChanged } from './client-scope-error';
 import type { UltimateError } from './errors';
@@ -46,8 +47,14 @@ export interface TransportRequest {
   readonly onEnvelope?: ((envelope: RecordEnvelope) => void) | undefined;
   /** Sees every response before its body is read — a header check may throw its own refusal. */
   readonly onResponse?: ((response: Response) => void | Promise<void>) | undefined;
-  /** A non-2xx answer as the caller's own error; `undefined` falls back to the shared decode. */
-  readonly decodeError?: ((status: number, text: string) => UltimateError | undefined) | undefined;
+  /**
+   * A non-2xx answer as the caller's own error; `undefined` falls back to the shared decode.
+   * `retryAfterSeconds` is the delay the answer's `Retry-After` named (`retryAfterSecondsOf`),
+   * for a decoder to classify with `retryForStatus` and carry as `meta.retryAfterSeconds`.
+   */
+  readonly decodeError?:
+    | ((status: number, text: string, retryAfterSeconds?: number) => UltimateError | undefined)
+    | undefined;
   /** Default `globalThis.fetch`, read at call time — never captured at module scope. */
   readonly fetchImpl?: FetchLike | undefined;
 }
@@ -79,8 +86,13 @@ export async function dispatch(
     // Read as TEXT once: a body is a single-use stream, and the failure path wants it too.
     const text = response.status === 204 ? '' : await onTheWire(req, read, () => response.text());
     if (!response.ok) {
+      const stated = retryAfterSecondsOf(
+        response.headers.get('retry-after'),
+        response.headers.get('date'),
+      );
       throw (
-        req.decodeError?.(response.status, text) ?? problemError(response.status, text, req.url)
+        req.decodeError?.(response.status, text, stated) ??
+        problemError(response.status, text, req.url, stated)
       );
     }
     return { text, enveloped: response.headers.get(RECORDS_HEADER) === '1' };

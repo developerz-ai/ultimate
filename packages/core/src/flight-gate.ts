@@ -35,7 +35,12 @@ export interface FlightGateOptions {
 }
 
 export interface FlightGate {
-  run<T>(work: () => Promise<T>): Promise<T>;
+  /**
+   * `signal` makes a QUEUED wait cancellable: on abort the waiter leaves the queue and the call
+   * rejects with the abort's reason. Once a slot is handed over the work runs; the signal is then
+   * the work's own business.
+   */
+  run<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T>;
   /** Running right now. */
   readonly active: number;
   /** Waiting for a slot right now. A count that does not fall back to 0 is a leak. */
@@ -74,7 +79,8 @@ export function createFlightGate(
     subject,
   });
 
-  const acquire = async (): Promise<void> => {
+  const acquire = async (signal: AbortSignal | undefined): Promise<void> => {
+    if (signal?.aborted === true) throw signal.reason;
     if (active < maxConcurrent) {
       active += 1;
       return;
@@ -85,8 +91,20 @@ export function createFlightGate(
       const current = state();
       throw options?.overflow?.(current) ?? gateOverloaded(current);
     }
-    await new Promise<void>((resume) => {
-      waiters.push(resume);
+    // A waiter that only stored its resolver could not be taken back: a superseded or abandoned
+    // call stayed pending and kept its queue place until a slot reached it. The abort removes it.
+    await new Promise<void>((resume, refuse) => {
+      const onAbort = (): void => {
+        const at = waiters.indexOf(waiter);
+        if (at !== -1) waiters.splice(at, 1);
+        refuse(signal?.reason);
+      };
+      const waiter = (): void => {
+        signal?.removeEventListener('abort', onAbort);
+        resume();
+      };
+      waiters.push(waiter);
+      signal?.addEventListener('abort', onAbort, { once: true });
     });
   };
 
@@ -103,8 +121,8 @@ export function createFlightGate(
     get queued(): number {
       return waiters.length;
     },
-    async run<T>(work: () => Promise<T>): Promise<T> {
-      await acquire();
+    async run<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+      await acquire(signal);
       try {
         return await work();
       } finally {

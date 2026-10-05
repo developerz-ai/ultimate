@@ -21,12 +21,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   link). `packages/cli/src/realtime-browser-barrel.test.ts` bundles a `useLive`-only entry;
   `barrel-split.test.ts` refuses a name exported from both. `./boot` and `./sync-worker` are the page
   boot and the SharedWorker entry.
-- **`errors.ts` is the code table plus the client-reachable refusals**; `realtime-error.ts` holds
-  the base class alone (an `extends` must not read it in a TDZ) and `replication-errors.ts` the
-  Postgres ones. Every name is still exported from `./errors`. A browser path loads `page-errors.ts`,
-  never the table (`page-errors-bundle.test.ts`).
-- **`sideEffects` is the ARRAY `["./src/errors.ts"]`**, never `false` (drops `registerErrorCodes()`)
-  and never absent. `bun run side-effects` is the check.
+- **`error-titles.ts` holds the codes, titles and `registerErrorCodes()`**; `errors.ts` the server
+  refusals, `page-errors.ts` the browser ones, `realtime-error.ts` the base class (TDZ),
+  `replication-errors.ts` Postgres. All re-exported from `./errors`. A hook's chunk never loads
+  `errors.ts` (`page-errors-bundle.test.ts`).
+- **`sideEffects` is `["./src/error-titles.ts"]`**, imported bare by the barrel (`refusalError` and
+  `page-errors.ts` title by code); never `false` or absent.
 - **Every `@ultimat3/realtime/<subpath>` written in shipped source must be a key of `exports`**,
   comments included — `fix-specifier.test.ts`.
 - A browser file imports core from `@ultimat3/core/page` (`packages/core/src/page-bundle.test.ts`).

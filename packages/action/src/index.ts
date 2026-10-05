@@ -7,6 +7,12 @@
  * framework died; there is exactly one here, structurally.
  */
 
+// Imported bare, and the one module `sideEffects` lists: a browser that rebuilds a SERVER's refusal
+// (`problemError`, by code) constructs nothing from `errors.ts`, and still has to render the title
+// this package registered. `SIDE_EFFECTS_ANCHORS` carries the argument and `bun run side-effects`
+// enforces it.
+import './error-titles';
+
 /**
  * Flight control for the typed client, and OPT-IN by construction: `client.ts` names `ClientFlight`
  * as a TYPE only, so a caller that never mentions `createClientFlight` pays nothing for the fence,

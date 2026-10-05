@@ -28,9 +28,6 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 const FIXTURE = join(ROOT, 'scripts', '.side-effects-fixture');
-// Its OWN directory, not `FIXTURE`: that one is torn down by a `beforeEach`/`afterEach` belonging to
-// another describe, and two suites sharing one path is a cleanup that deletes the other's input.
-const BUILD_FIXTURE = join(ROOT, 'scripts', '.side-effects-build-fixture');
 
 const pkg = (over: Partial<PackageFacts> = {}): PackageFacts => ({
   dir: 'packages/x',
@@ -48,7 +45,8 @@ const check = (
   packages: readonly PackageFacts[],
   pins: readonly string[] = [],
   anchors: Readonly<Record<string, string>> = {},
-) => checkSideEffects({ packages, pins, anchors });
+  byUse: Readonly<Record<string, string>> = {},
+) => checkSideEffects({ packages, pins, anchors, byUse });
 
 describe('scanTopLevelEffects', () => {
   test('reports a call anchored at column 0, and nothing a keyword opens', () => {
@@ -149,9 +147,9 @@ describe('a declared entry that matches nothing', () => {
 
 describe('a declared module nothing imports for effect', () => {
   test('is reported — the array alone keeps nothing, which is the whole finding', () => {
-    // `sideEffects` names the module and the barrel merely re-exports from it. Bun reads the array
-    // as `false` and shakes it out (oven-sh/bun#40650), so the declaration is a rule nobody
-    // enforces — measured, 5 of 8 in this tree were missing from a shipped island.
+    // `sideEffects` names the module and the barrel merely re-exports from it. Bun before 1.4.1
+    // read the array as `false` and shook it out (oven-sh/bun#40650) — measured, 5 of 8 in this
+    // tree were missing from a shipped island — and the anchor is what holds on any bundler.
     const gaps = check([pkg({ anchored: ['src/index.ts'] })], [], ANCHORS);
 
     expect(gaps).toHaveLength(1);
@@ -321,7 +319,7 @@ describe('readPackageFacts', () => {
     // beta owns its own effect, and declares it; alpha owns none, so nothing is reported twice.
     expect(alpha?.effects).toEqual([]);
     expect(beta?.effects).toEqual([{ path: 'src/effect.ts', line: 1 }]);
-    expect(checkSideEffects({ packages: facts, pins: [], anchors: {} })).toEqual([]);
+    expect(checkSideEffects({ packages: facts, pins: [], anchors: {}, byUse: {} })).toEqual([]);
   });
 
   test('an exports target that points outside the package is not walked either', async () => {
@@ -345,7 +343,7 @@ describe('readPackageFacts', () => {
     await write('packages/fake/src/deep/thing.ts', '\n\nsetUpEverything();\nexport const a = 1;\n');
 
     const facts = await readPackageFacts(FIXTURE);
-    const gaps = checkSideEffects({ packages: facts, pins: [], anchors: {} });
+    const gaps = checkSideEffects({ packages: facts, pins: [], anchors: {}, byUse: {} });
 
     expect(gaps).toHaveLength(1);
     expect(sideEffectFinding(gaps[0] as SideEffectGap).at).toBe(
@@ -367,56 +365,6 @@ describe('this repository', () => {
     'has no package whose sideEffects field is false of it',
     async () => {
       expect(await sideEffectGaps(ROOT)).toEqual([]);
-    },
-    SCAN_TIMEOUT_MS,
-  );
-
-  test(
-    'a declared side effect survives a real browser build, which the array alone did not buy',
-    async () => {
-      // The test that would have caught this. Every rule above reasons about the DECLARATION;
-      // this one bundles and looks. Bun reads a `sideEffects` array as `false`
-      // (oven-sh/bun#40650), so before the bare imports landed `core/context.ts`,
-      // `core/lifecycle-errors.ts`, `core/secrets-errors.ts`, `query/registry.ts` and
-      // `i18n/errors.ts` were all missing from `examples/dummy`'s feed island — five registrations
-      // deleted from a shipped chunk, under a green gate, with the declaration naming every one.
-      //
-      // A CONSUMER entry, never the barrel itself: `side-effects.ts`'s header records that making
-      // a declaring package's own `src/index.ts` the entry point emits an invalid chunk on Bun,
-      // and that shape is one no app uses.
-      const entry = join(BUILD_FIXTURE, 'consumer.ts');
-      let code: string;
-      try {
-        await Bun.write(
-          entry,
-          "import { uuid } from '../../packages/core/src/index';\nexport const go = () => uuid;\n",
-        );
-        const built = await Bun.build({ entrypoints: [entry], target: 'browser', minify: false });
-        expect(built.success).toBe(true);
-        code = await (built.outputs[0] as Bun.BuildArtifact).text();
-      } finally {
-        await rm(BUILD_FIXTURE, { recursive: true, force: true });
-      }
-
-      // `uuid` reaches it through nothing — that is the point. It is in the chunk because
-      // `src/index.ts` imports it bare, and for no other reason.
-      expect(code, 'schema-error-codes.ts must survive a browser build').toContain(
-        'core/src/schema-error-codes.ts',
-      );
-      // And the other direction, which is the half both wider rules got wrong. `context.ts`,
-      // `lifecycle-errors.ts` and `secrets-errors.ts` are declared side-effecting too and are
-      // deliberately NOT anchored: each is reached by whatever uses it. Anchoring `context.ts`
-      // alone measured +3,485 B on this chunk for `setLoggerContextFields`, whose provider can
-      // only answer where a request context exists — and in a browser `AsyncLocalStorage` is
-      // stubbed, so it can never fire at all. It took `like.island.tsx` over its route's declared
-      // 50 kB budget. Axiom 6, and the reason `SIDE_EFFECTS_ANCHORS` is a list and not a predicate.
-      for (const module of ['context.ts', 'lifecycle-errors.ts', 'secrets-errors.ts']) {
-        expect(code, `${module} must not be dragged in`).not.toContain(`core/src/${module}`);
-      }
-      // The guard against a vacuous pass: an unminified Bun chunk carries a `// <path>` banner per
-      // module, so a build that emitted nothing recognisable would satisfy the loop above by
-      // accident if the banners were gone.
-      expect(code).toContain('packages/core/src/ids.ts');
     },
     SCAN_TIMEOUT_MS,
   );

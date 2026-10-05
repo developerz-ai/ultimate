@@ -5,11 +5,8 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": [
-    "./src/context.ts",
     "./src/core-error-codes.ts",
-    "./src/lifecycle-errors.ts",
-    "./src/schema-error-codes.ts",
-    "./src/secrets-errors.ts"
+    "./src/schema-error-codes.ts"
   ],
   "repository": {
     "type": "git",
@@ -33,7 +30,7 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

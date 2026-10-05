@@ -38,6 +38,20 @@ const workflowPins = (yaml: string): string[] =>
 const imagePins = (dockerfile: string): string[] =>
   [...dockerfile.matchAll(/^FROM oven\/bun:([^\s@]+)/gm)].map((match) => match[1] ?? '');
 
+/**
+ * The exact tag a Dockerfile says its digest was read from — "The digest is `oven/bun:1.4.2-slim`'s".
+ * The tag on the `FROM` line names only the series, and a digest cannot be read back offline, so
+ * the recorded tag is the one place an image site states the patch it builds on.
+ */
+const recordedDigestTags = (dockerfile: string): { patch: string; variant: string }[] =>
+  // `\\?`: the scaffold's Dockerfile is read as the template literal it is written in.
+  [...dockerfile.matchAll(/digest is \\?`oven\/bun:(\d+\.\d+\.\d+)-(slim|alpine)\\?`/g)].map(
+    (match) => ({
+      patch: match[1] ?? '',
+      variant: match[2] ?? '',
+    }),
+  );
+
 /** Every external `FROM` image (a stage name is not one) that carries no `@sha256:` digest. */
 const unpinnedBases = (dockerfile: string): string[] => {
   const stages = [...dockerfile.matchAll(/^FROM\s+(?:--\S+\s+)*\S+\s+AS\s+(\S+)/gim)].map((match) =>
@@ -63,10 +77,10 @@ const appDockerfiles = (): readonly string[] =>
     .sort();
 
 /** `scripts/setup.ts`'s contributor floor, read as source rather than imported: the module installs. */
-const requiredBunSeries = (source: string): string => {
+const requiredBun = (source: string): string => {
   const found = /const REQUIRED_BUN = \[(\d+), (\d+), (\d+)\] as const;/.exec(source);
   expect(found, 'REQUIRED_BUN not found in scripts/setup.ts').not.toBeNull();
-  return `${found?.[1]}.${found?.[2]}`;
+  return `${found?.[1]}.${found?.[2]}.${found?.[3]}`;
 };
 
 /**
@@ -75,10 +89,10 @@ const requiredBunSeries = (source: string): string => {
  * emitted `bun test --isolate`, a flag Bun added in 1.3.13. A user on a runtime the CLI declared
  * supported got an unknown-flag failure and an `x doctor` that called the runtime fine.
  */
-const cliFloorSeries = (source: string): string => {
+const cliFloor = (source: string): string => {
   const found = /export const REQUIRED_BUN = '(\d+)\.(\d+)\.(\d+)';/.exec(source);
   expect(found, 'REQUIRED_BUN not found in packages/cli/src/app-root.ts').not.toBeNull();
-  return `${found?.[1]}.${found?.[2]}`;
+  return `${found?.[1]}.${found?.[2]}.${found?.[3]}`;
 };
 
 /**
@@ -99,7 +113,7 @@ const enginesFloors = async (): Promise<Record<string, string>> => {
       engines?: { bun?: string };
     };
     const declared = manifest.engines?.bun;
-    if (declared !== undefined) found[path] = seriesOf(declared.replace(/^[^\d]*/, ''));
+    if (declared !== undefined) found[path] = declared.replace(/^[^\d]*/, '');
   }
   return found;
 };
@@ -127,7 +141,7 @@ const scaffoldEnginesFloor = (): string => {
     JSON.parse(typeof emitted === 'string' ? emitted : '{}') as { engines?: { bun?: string } }
   ).engines?.bun;
   expect(declared, "the scaffold's root package.json declares no engines.bun").toBeDefined();
-  return seriesOf((declared ?? '').replace(/^[^\d]*/, ''));
+  return (declared ?? '').replace(/^[^\d]*/, '');
 };
 
 /**
@@ -149,7 +163,7 @@ const typesFloor = async (): Promise<string> => {
   expect(declared, '@types/bun must be pinned exactly — a range re-opens the skew').toMatch(
     /^\d+\.\d+\.\d+$/,
   );
-  return seriesOf(declared ?? '');
+  return declared ?? '';
 };
 
 describe('the Bun series is pinned once, in agreement', () => {
@@ -159,10 +173,12 @@ describe('the Bun series is pinned once, in agreement', () => {
     const frameworkImage = await slurp('docker/Dockerfile');
     const appImage = await slurp('packages/cli/src/templates/scaffold-container.ts');
     const setupScript = await slurp('scripts/setup.ts');
-    const cliFloor = cliFloorSeries(await slurp('packages/cli/src/app-root.ts'));
-    const scaffoldEngines = scaffoldEnginesFloor();
-    const typesSeries = await typesFloor();
-    const engines = await enginesFloors();
+    const cliSeries = seriesOf(cliFloor(await slurp('packages/cli/src/app-root.ts')));
+    const scaffoldEngines = seriesOf(scaffoldEnginesFloor());
+    const typesSeries = seriesOf(await typesFloor());
+    const engines = Object.fromEntries(
+      Object.entries(await enginesFloors()).map(([path, floor]) => [path, seriesOf(floor)]),
+    );
     // A glob matching nothing would agree with every other pin.
     expect(Object.keys(engines).length).toBeGreaterThanOrEqual(42);
 
@@ -191,8 +207,8 @@ describe('the Bun series is pinned once, in agreement', () => {
       frameworkImage: frameworkTags.map(seriesOf),
       appImage: appTags.map(seriesOf),
       trackedApps: tracked,
-      contributorFloor: requiredBunSeries(setupScript),
-      cliFloor,
+      contributorFloor: seriesOf(requiredBun(setupScript)),
+      cliFloor: cliSeries,
       // The app `x new` writes must accept the `x` it is handed: the generated floor is the CLI's
       // floor, not a floor of its own, and a scaffold below it is an app whose own `bin/setup`
       // cannot run.
@@ -217,6 +233,44 @@ describe('the Bun series is pinned once, in agreement', () => {
       new Set(every).size,
       `the Bun series disagrees across pins: ${JSON.stringify(found)}`,
     ).toBe(1);
+  });
+
+  // The series test above passes with CI on 1.4.0, `@types/bun` at 1.4.1 and both images on a
+  // 1.4.2 digest — the exact state of `main` on 2026-10-04, when the images had been building on a
+  // patch CI never ran. A pin names the patch somebody measured (`.github/actions/setup/action.yml`),
+  // so every site that CAN name a patch must name that one: the floors because a floor is a claim
+  // about a runtime somebody tested, the types because they decide which API surface typecheck
+  // believes in, and each image by recording which exact tag its digest was read from.
+  test('every site that names a patch names the one CI runs', async () => {
+    const ci = workflowPins(await slurp('.github/actions/setup/action.yml'))[0] ?? '';
+    expect(ci, 'the CI pin must name the measured patch, not a series').toMatch(/^\d+\.\d+\.\d+$/);
+
+    const patches: Record<string, string> = {
+      release: workflowPins(await slurp('.github/workflows/release.yml'))[0] ?? '',
+      contributorFloor: requiredBun(await slurp('scripts/setup.ts')),
+      cliFloor: cliFloor(await slurp('packages/cli/src/app-root.ts')),
+      scaffoldEngines: scaffoldEnginesFloor(),
+      types: await typesFloor(),
+    };
+    for (const [path, floor] of Object.entries(await enginesFloors())) patches[path] = floor;
+    for (const [image, path] of [
+      ['frameworkImage', 'docker/Dockerfile'],
+      ['appImage', 'packages/cli/src/templates/scaffold-container.ts'],
+    ] as const) {
+      const source = await slurp(path);
+      const recorded = recordedDigestTags(source);
+      expect(recorded, `${path} must record the one exact tag its digest is`).toHaveLength(1);
+      const variants = new Set(imagePins(source).map((tag) => tag.replace(SERIES, '')));
+      expect([...variants], `${path} FROMs disagree on the image variant`).toEqual([
+        `-${recorded[0]?.variant ?? ''}`,
+      ]);
+      patches[image] = recorded[0]?.patch ?? '';
+    }
+
+    const disagreeing = Object.fromEntries(
+      Object.entries(patches).filter(([, patch]) => patch !== ci),
+    );
+    expect(disagreeing, `every patch-naming site must name CI's ${ci}`).toEqual({});
   });
 
   // A series (`1.4.x`) or an exact patch (`1.4.0`); never `latest`, never a bare major. The exact

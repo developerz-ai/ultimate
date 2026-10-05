@@ -8,35 +8,21 @@
 // registry along — which is why the runtime slot is its own module and why the ceiling below is
 // small enough to notice it coming back.
 //
-// **The parity half is a MODULE LIST, not a byte allowance, `As of 2026-08-25`.** It compared byte
-// counts against a hand-copied `BUN_SHAKE_FLAP_BYTES = 512`, measured when Bun 1.4.0's
-// non-deterministic drop of `@ultimat3/core`'s `schema-error-codes.ts` — a module core's own
-// `sideEffects` array NAMES — cost 377 B. That module then grew a `registerErrorRetry` table, the
-// drop became 1,116 B, and the assertion started failing on a loaded machine (issues #273, #276):
-// reproduced as 1 red in 12 serial runs under load, and the drop is load-correlated, so it passes
-// on an idle laptop and reds on a free CI runner. The number it allowed was also the wrong SHAPE:
-// a 51-byte source change planted between the two builds moved the minified chunk by 47 B, which
-// that assertion waved through and this one fails on. A measured constant describing somebody else's
-// non-determinism goes stale in silence, and 512 B was already wider than any retention difference
-// a subpath export could repair — `useUi` alone is 14 kB and `moneyText` 25 kB.
+// **The parity half is a MODULE LIST and the code behind it, never a byte allowance.** It compared
+// byte counts against a hand-copied `BUN_SHAKE_FLAP_BYTES = 512`, which a 51-byte source change
+// planted between the two builds slipped under. `Bun.build` with `minify: false` emits one
+// `// <path>` banner per retained module and strips every source comment, so the retained module
+// SET is readable off the artifact itself: the two paths must retain the same modules and, once
+// the banners are out, the same bytes.
 //
-// `Bun.build` with `minify: false` emits one `// <path>` banner per retained module and strips
-// every source comment, so the retained module SET is readable off the artifact itself and the
-// drop is a NAMED module instead of a number. Same set on both sides: the two chunks must be
-// byte-identical once the banners are out, which they are — measured, to the character, for both
-// exports. Different sets: they must differ by that one module and by nothing else. Stronger than
-// the allowance it replaces in both directions, since that one waved through any difference under
-// 512 B whatever caused it. Measured 2026-08-25 over 240 pairs across six concurrent processes:
-// 19 flapped, 221 equal, 0 failures in either branch — and with one extra module planted on the
-// barrel side, 144 pairs, every one red, in whichever branch it landed in.
-//
-// **The dropped module's TITLES cannot discriminate here, which is where this differs from
-// `examples/dummy/apps/web/island-bytes.test.ts`.** `SCHEMA_ERROR_CODE_TITLES` is a deliberate
-// duplicate of `SCHEMA_ERROR_CODES` in `@ultimat3/schema`, and `@ultimat3/money` puts schema in the
-// `moneyText` graph — so all four titles are in the chunk whether core's module survived or not
-// (measured: a shaken 33,876 B chunk carrying every one of them). A predicate reading `true` on
-// both sides of a flap sends the pair to the equality branch and fails it: 3 reds in 240 pairs.
-
+// **No flap branch, `As of 2026-10-05` (issue #354).** Until Bun 1.4.1 the shaker dropped
+// `@ultimat3/core`'s `schema-error-codes.ts` — a module core's own `sideEffects` array NAMES —
+// from some builds and not others (oven-sh/bun#40650: an array read as `false`), so a pair whose
+// module sets differed by exactly that module and what only it reaches was tolerated. Measured on
+// Bun 1.4.2 (`744846f8`), this file's own `chunkOf` in two batches of 12 concurrent processes,
+// both exports, 2 pairs a round: **288 pairs, 0 differing module sets, 0 differing code**, and the
+// module retained in all 576 builds. The same comparison measured 19 flaps in 240 pairs on 1.4.0.
+// So any difference is now the retention regression this file exists to catch.
 //
 // **The third claim is the scaffold's one island, `As of 2026-09-19` (issue #490).** `<UiProvider>
 // <ThemeToggle mode="toggle" /></UiProvider>` measured 62,463 B minified under CI's own `file:`
@@ -69,32 +55,6 @@ import { join, relative, resolve } from 'node:path';
  */
 const TMP_ROOT = join(import.meta.dir, '..', '.tmp');
 const FIXTURE_DIR = join(TMP_ROOT, `barrel-bytes-${process.pid}`);
-
-/** The module Bun 1.4.0's tree-shaker answers differently from one build to the next. */
-const SHAKEN_MODULE = resolve(import.meta.dir, '..', '..', 'core', 'src', 'schema-error-codes.ts');
-
-/**
- * The flap's whole FOOTPRINT: the module above, and what only that module reaches.
- *
- * A LIST, `As of 2026-08-27`, and it was one path. `schema-error-codes.ts` imports
- * `SCHEMA_ERROR_CODES` from `@ultimat3/schema` — the `core -> schema` edge declared 2026-08-26 —
- * so dropping it also drops `packages/schema/src/error-codes.ts` (until 2026-09-29 the declarations
- * sat in `errors.ts`, beside `SchemaError`), which nothing else in a `useUi` graph
- * reaches. The difference is then TWO modules, and an assertion spelled `toEqual([SHAKEN_MODULE])`
- * failed on a flap it was written to allow: reproduced once in an eight-way `x test unit` shard,
- * green on the same file run alone and green on the rerun, which is this test's own documented
- * load correlation wearing a new shape.
- *
- * A LIST rather than a widened byte allowance, for the reason the header already gives: what may
- * differ is a NAMED set of modules, so a genuine retention regression is still one unexpected path
- * away from red. Adding an entry here is a claim that the module is reachable ONLY through the
- * shaken one, and the test below proves each entry is a real file rather than a stale path.
- */
-const SHAKEN_FOOTPRINT: readonly string[] = [
-  SHAKEN_MODULE,
-  resolve(import.meta.dir, '..', '..', 'schema', 'src', 'error-codes.ts'),
-];
-const CORE_MANIFEST = resolve(import.meta.dir, '..', '..', 'core', 'package.json');
 
 /** `packages/<name>` — the directory a retained module's path is refused or allowed by. */
 const packageDir = (name: string): string => `${resolve(import.meta.dir, '..', '..', name)}/`;
@@ -248,18 +208,6 @@ describe('the @ultimat3/ui barrel', () => {
     expect(bytes).toBeLessThanOrEqual(SETTER_CEILING_BYTES);
   }, 30_000);
 
-  test('the module the shaker drops is a real file its own package declares side-effectful', async () => {
-    // Both halves of the discriminator's premise. A rename makes the parity test below answer
-    // "same set" forever and go quietly back to comparing whatever the shaker felt like doing.
-    expect(await Bun.file(SHAKEN_MODULE).exists()).toBe(true);
-    const manifest = (await Bun.file(CORE_MANIFEST).json()) as { sideEffects?: readonly string[] };
-    expect(manifest.sideEffects ?? []).toContain('./src/schema-error-codes.ts');
-    // Every entry of the footprint too: a stale path there widens the allowance to nothing real
-    // while reading as a rule still in force, which is the `sideEffects` lesson in this file's own
-    // header applied to this file.
-    for (const path of SHAKEN_FOOTPRINT) expect(await Bun.file(path).exists()).toBe(true);
-  });
-
   /**
    * The subpath-exports question, decided by measurement instead of by intuition: if the barrel
    * retained what a deep path does not, the barrel's module list would hold it and the deep path's
@@ -286,29 +234,11 @@ describe('the @ultimat3/ui barrel', () => {
       expect(barrel.modules).toContain(own);
       expect(deep.modules).toContain(own);
 
-      // The difference decides the branch, not the shaken module's presence: dropping it also drops
-      // what only it reaches, so the two sides can agree about `SHAKEN_MODULE` and still differ.
-      const difference = [
-        ...barrel.modules.filter((path) => !deep.modules.includes(path)),
-        ...deep.modules.filter((path) => !barrel.modules.includes(path)),
-      ];
-      if (difference.length === 0) {
-        // The shaker answered the same way for both, so the two paths owe the same modules AND the
-        // same bytes — no allowance, because there is nothing left for one to differ by. The list
-        // is asserted first so a retention failure names its module instead of printing 25 kB.
-        expect(barrel.modules).toEqual(deep.modules);
-        expect(barrel.code.length).toBe(deep.code.length);
-        expect(barrel.code).toBe(deep.code);
-        return;
-      }
-      // It answered differently, and then the flap's own footprint is the WHOLE difference. Any
-      // other module riding along is the retention regression this file exists to catch, and it
-      // fails here rather than hiding under a byte budget. A mismatched pair has no byte statement
-      // to make, which is why the equality branch above is what holds a second difference.
-      const unexpected = difference.filter((path) => !SHAKEN_FOOTPRINT.includes(path));
-      expect(`modules outside the known shaker flap: ${unexpected.join(', ')}`).toBe(
-        'modules outside the known shaker flap: ',
-      );
+      // No tolerance: both paths owe the same modules AND the same bytes. The list is asserted
+      // first so a retention failure names its module instead of printing 25 kB.
+      expect(barrel.modules).toEqual(deep.modules);
+      expect(barrel.code.length).toBe(deep.code.length);
+      expect(barrel.code).toBe(deep.code);
     },
     30_000,
   );

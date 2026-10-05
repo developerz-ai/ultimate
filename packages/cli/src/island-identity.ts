@@ -24,14 +24,16 @@ export function stripDebugId(code: string): string {
 /**
  * The chunk's identity, computed from what went IN rather than from what came out.
  *
- * `Bun.build` is not byte-deterministic under `minify`. Measured on 1.4.0, one entry point, no
- * source file touched: a 131,589-byte island alternated between two outputs of IDENTICAL length
- * differing only in minified identifier names (`var ca=Object.defineProperty` against
- * `var la=…`) — roughly one build in ten, which is a race in the renamer and not anything a caller
- * can order. Hashing that output made the URL flap: ten distinct `session-console-*.js` names in
- * ten minutes, so a service worker's precache manifest named a chunk that already 404ed and a
- * browser's `immutable` cache never hit on a 131 kB download. Twelve consecutive builds hash
- * identically here.
+ * `Bun.build` was not byte-deterministic under `minify` before 1.4.1 (oven-sh/bun#40657). Measured
+ * on 1.4.0, one entry point, no source file touched: a 131,589-byte island alternated between two
+ * outputs of IDENTICAL length differing only in minified identifier names
+ * (`var ca=Object.defineProperty` against `var la=…`) — roughly one build in ten, a race in the
+ * renamer and not anything a caller can order. Hashing that output made the URL flap: ten distinct
+ * `session-console-*.js` names in ten minutes, so a service worker's precache manifest named a
+ * chunk that already 404ed and a browser's `immutable` cache never hit on a 131 kB download.
+ * Fixed upstream in 1.4.1; on 1.4.2, 192 child-process build pairs of `examples/dummy`'s islands
+ * under 12- and 16-way contention emitted one byte string per island (2026-10-05, issue #354), and
+ * `island-bytes.test.ts` now demands byte identity outright.
  *
  * `sourcesContent`, hashed per file and SORTED, so the identity is independent of the order the
  * bundler happened to visit the graph in. The PATHS are deliberately not in it: they are absolute
@@ -41,12 +43,13 @@ export function stripDebugId(code: string): string {
  * version are, because both decide the emitted bytes while no source file moves — an upgrade must
  * mint a new URL rather than leave a stale chunk pinned in a browser for a year.
  *
- * What this gives up, stated plainly: the URL is source-addressed, not byte-addressed, so two
- * processes building the same sources can serve two byte-strings at one URL. They are the same
- * program under different local identifier names. That is the trade a nondeterministic bundler
- * forces, and the alternative — `minify: { identifiers: false }`, which IS deterministic — was
- * measured at 193,590 bytes against 131,649, +47% raw and +20% gzipped, on every island of every
- * app. Delete this the day `Bun.build` is deterministic.
+ * What this gives up, stated plainly: the URL is source-addressed, not byte-addressed. On a Bun
+ * with the renamer race (< 1.4.1) two processes building the same sources served two byte-strings
+ * at one URL — the same program under different local identifier names — and the alternative,
+ * `minify: { identifiers: false }`, was +47% raw and +20% gzipped. The `engines` floor is now past
+ * the fix, so the reason this function exists is gone; it is kept for now because moving every
+ * island URL to a content hash re-keys every browser cache and every precache manifest, which is a
+ * change of its own to make deliberately (issue #354's follow-up), not a comment edit.
  */
 export function graphHash(file: string, map: string): string {
   const parsed: unknown = JSON.parse(map);

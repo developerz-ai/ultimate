@@ -1,34 +1,30 @@
 #!/usr/bin/env bun
-// Two rules, and the second exists because the first was resting on something untrue.
+// Two rules, and both are about what a bundler that HONOURS the array does with it.
 //
 // 1. A package's `sideEffects` field must be TRUE of the package. A module that runs a statement at
-//    import time and is reachable from `exports` has to be listed; an entry matching no file on
-//    disk is a claim that has stopped being true.
-// 2. A module the array names must also be ANCHORED — an entry itself, or bare-imported by one.
+//    import time and is reachable from `exports` has to be listed — unless `SIDE_EFFECTS_BY_USE`
+//    names it, below — and an entry matching no file on disk is a claim that has stopped being true.
+// 2. A registrar the array names must also be ANCHORED — an entry itself, or bare-imported by one.
 //
-// **This header said "Bun honours the field" until 2026-08-27, and it does not.** Bun reads any
-// `sideEffects` ARRAY as if it were `false` and shakes the named module away regardless
-// (oven-sh/bun#40650, reduced to four files with no `@ultimat3/*`, deterministic on 1.4.0,
-// 1.4.1-canary and 1.3.14 alike; esbuild keeps it on the same input). So rule 1 was enforcing a
-// declaration nothing read: measured on `examples/dummy`'s feed island, 5 of the 8 declared effects
-// in this tree — `core/context.ts`, `core/lifecycle-errors.ts`, `core/secrets-errors.ts`,
-// `query/registry.ts`, `i18n/errors.ts` — were simply missing from the chunk, which is exactly the
-// `registerErrorCodes()` deletion the rule exists to prevent, happening under a green gate.
+// What a listed module MEANS, measured on Bun 1.4.2: it is kept in every chunk that reaches its
+// package's barrel, whether or not anything uses it. An unlisted module is kept, effect and all,
+// exactly when one of its bindings is used. So the array is the list of effects that must survive
+// with NO binding used, and listing anything else is bytes for nothing.
 //
-// Rule 2 is what actually holds it: a bare `import './errors';` is a statement rather than a
-// binding, so no shaker has a reason to drop it, on any bundler. The array STAYS — rollup, webpack
-// and esbuild do honour it, and `@ultimat3/*` are published packages their consumers bundle — so
-// this is additive and costs those consumers nothing. Real price, measured: +4,166 B on
-// `feed.island.tsx` and +4,162 B on `like.island.tsx` (both still inside the 60 kB route budget),
-// and 0 B on the two islands that reach none of these packages.
+// **Bun before 1.4.1 honoured none of it**: any ARRAY read as `false` (oven-sh/bun#40650, reduced
+// to four files with no `@ultimat3/*`; esbuild kept the module on the same input). Measured then on
+// `examples/dummy`'s feed island, 5 of the 8 declared effects in this tree were missing from the
+// chunk, under a green gate. Rule 2 is what held it on that Bun and holds it on any bundler: a bare
+// `import './errors';` is a statement rather than a binding. Real price, measured then: +4,166 B on
+// `feed.island.tsx` and +4,162 B on `like.island.tsx`. Fixed upstream in 1.4.1; the array is
+// honoured now, which is what made `SIDE_EFFECTS_BY_USE` necessary — see its own comment.
 //
 //
-// Hazard a reader will hit, measured on Bun 1.4.0 and NOT this rule's doing: a package that
-// declares `sideEffects` at all — an array or `false` — emits an INVALID chunk when its own
-// `src/index.ts` is the entry point of a `Bun.build({ target: 'browser' })`, an `export { … }`
-// clause naming identifiers whose declarations were shaken out. Bundling the barrel the way a
-// consumer does (a module that imports or re-exports it) is unaffected, and that is the shape
-// every app uses. `@ultimat3/schema` with a one-line `sideEffects: false` reproduces it.
+// A hazard of Bun 1.4.0, NOT this rule's doing, fixed in 1.4.1 (oven-sh/bun#40578, issue #276): a
+// package declaring `sideEffects` at all emitted an INVALID chunk when its own `src/index.ts` was
+// the entry point of a browser `Bun.build` — an `export { … }` clause naming shaken declarations.
+// On 1.4.2 `packages/schema/src/index.ts` as the entry builds and loads. The build test in
+// `side-effects.test.ts` still bundles a CONSUMER, because that is the shape every app uses.
 //
 //   bun run scripts/side-effects.ts [--json]
 //   bun run scripts/side-effects.ts --explain [--json]     # the array this tree measures, per package
@@ -80,7 +76,6 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
   'packages/db',
   'packages/entity',
   'packages/flags',
-  'packages/http',
   'packages/jobs',
   'packages/mail',
   'packages/manifest',
@@ -92,6 +87,33 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
   'packages/storage',
   'packages/testing',
 ];
+
+/**
+ * Modules that run something at import time and are deliberately NOT in their package's array:
+ * the effect serves only the module's own bindings, so it must be kept exactly when one is used —
+ * which is what an unlisted module gets from a bundler that honours the array. Listed, each one is
+ * kept in every chunk that merely reaches the barrel: measured 2026-10-05 on Bun 1.4.2, the three
+ * together cost **~5.4 kB on every core-reaching island** of `examples/dummy`
+ * (`contact-sales.island.tsx` 37,933 → 32,371 B), and `scripts/side-effects.test.ts` builds a chunk
+ * to hold them out.
+ *
+ * A list and not a predicate, for the reason `SIDE_EFFECTS_ANCHORS` is one: whether anything needs
+ * the effect WITHOUT the bindings is a question about readers elsewhere, which no scan of the module
+ * can answer. That is why `action`'s and `realtime`'s titles live in a LISTED `error-titles.ts`,
+ * anchored by the barrel, while the classes in `errors.ts` are unlisted: `refusalError` rebuilds a
+ * sync node's refusal by code and `realtime`'s `page-errors.ts` constructs codes the titles module
+ * registers without importing it — and the other packages' `errors.ts` stay listed until each is
+ * split the same way. `X_SIDE_EFFECTS_BY_USE_STALE` refuses a row that the array also lists, that names a
+ * module running nothing at import, or that an entry imports bare (unlisted, that import is dropped).
+ */
+export const SIDE_EFFECTS_BY_USE: Readonly<Record<string, string>> = Object.freeze({
+  'packages/core/src/context.ts':
+    "installs the logger's context provider, which answers only inside a context — and only this module's own runWithContext / withChildContext can open one. In a browser AsyncLocalStorage is stubbed, so the provider can never answer at all.",
+  'packages/core/src/lifecycle-errors.ts':
+    'registers X_LIFECYCLE_DRAINED, raised only through lifecycleDrained() in this same module, at server boot — never an HTTP answer a browser decodes.',
+  'packages/core/src/secrets-errors.ts':
+    'registers the X_SECRETS_* titles beside the constructors secrets-store.ts imports; the codes are raised by the secrets file and the CLI, never in an HTTP answer a browser decodes.',
+});
 
 /**
  * A statement keyword can open a line at column 0 without the line being an effect. Everything else
@@ -108,6 +130,7 @@ export type SideEffectGapKind =
   | 'missing'
   | 'pin-stale'
   | 'anchor-stale'
+  | 'by-use-stale'
   | 'unscanned';
 
 export interface SideEffectGap {
@@ -116,6 +139,8 @@ export interface SideEffectGap {
   /** The module or the entry the gap is about; empty for `missing` and `unscanned`. */
   readonly subject: string;
   readonly line?: number;
+  /** Why a `by-use-stale` row no longer holds — three different edits, so the cause names one. */
+  readonly reason?: string;
 }
 
 export interface SideEffectInput {
@@ -128,6 +153,8 @@ export interface SideEffectInput {
    * every fixture check reports all three real anchors as stale.
    */
   readonly anchors: Readonly<Record<string, string>>;
+  /** `SIDE_EFFECTS_BY_USE` in production — a parameter for the same reason `anchors` is one. */
+  readonly byUse: Readonly<Record<string, string>>;
 }
 
 /**
@@ -154,6 +181,7 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
     const entries = pkg.declared === false ? [] : pkg.declared;
     for (const effect of pkg.effects) {
       if (entries.some((entry) => entryMatches(entry, effect.path))) continue;
+      if (Object.hasOwn(input.byUse, `${pkg.dir}/${effect.path}`)) continue;
       gaps.push({ kind: 'undeclared', dir: pkg.dir, subject: effect.path, line: effect.line });
     }
     for (const entry of entries) {
@@ -188,6 +216,7 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
       gaps.push({ kind: 'anchor-stale', dir: PINS_FILE, subject: anchor });
     }
   }
+  gaps.push(...staleByUse(input));
   // A pin nobody removes is a pin nobody reads — the ratchet only ratchets if it shrinks on its own.
   const silent = new Set(
     input.packages.filter((one) => one.declared === undefined).map((one) => one.dir),
@@ -198,16 +227,41 @@ export function checkSideEffects(input: SideEffectInput): readonly SideEffectGap
   return gaps;
 }
 
+/** The reason a `SIDE_EFFECTS_BY_USE` row no longer holds, or `undefined` while it does. */
+function byUseProblem(row: string, packages: readonly PackageFacts[]): string | undefined {
+  const pkg = packages.find((one) => row.startsWith(`${one.dir}/`));
+  const path = pkg === undefined ? '' : row.slice(pkg.dir.length + 1);
+  if (pkg === undefined || !pkg.effects.some((effect) => effect.path === path)) {
+    return 'it runs nothing at import time any more (or is gone), so the row exempts nothing';
+  }
+  const entries = pkg.declared === false || pkg.declared === undefined ? [] : pkg.declared;
+  if (entries.some((entry) => entryMatches(entry, path))) {
+    return `${pkg.dir}/package.json lists it in "sideEffects" too, and the array wins: the module is kept in every chunk that reaches the barrel — delete it from the array, or delete this row`;
+  }
+  if (pkg.anchored.includes(path)) {
+    return `an entry of ${pkg.dir} imports it bare, and a bare import of a module the array does not list is dropped by a bundler that honours the array — list it in ${pkg.dir}/package.json and delete this row`;
+  }
+  return undefined;
+}
+
+const staleByUse = (input: SideEffectInput): readonly SideEffectGap[] =>
+  Object.keys(input.byUse).flatMap((row) => {
+    const problem = byUseProblem(row, input.packages);
+    return problem === undefined
+      ? []
+      : [{ kind: 'by-use-stale' as const, dir: PINS_FILE, subject: row, reason: problem }];
+  });
+
 const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>> = {
   undeclared: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNDECLARED',
-    cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
+    cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — if only the module's own bindings need the effect, add a SIDE_EFFECTS_BY_USE row in ${PINS_FILE} saying why; otherwise merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
     fix: `{ "sideEffects": ["./${gap.subject}"] }`,
     at: `${gap.dir}/${gap.subject}:${String(gap.line ?? 1)}`,
   }),
   unanchored: (gap) => ({
     code: 'X_SIDE_EFFECTS_UNANCHORED',
-    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it: Bun reads any sideEffects ARRAY as false and shakes the module out anyway (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island — add the import below to ${gap.dir}/src/index.ts: a bare import is in the module graph unconditionally, on every bundler, and costs nothing where the array was already honoured`,
+    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it in a chunk that uses none of its bindings, and something else reads what it registers — Bun before 1.4.1 read any sideEffects ARRAY as false (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island. Add the import below to ${gap.dir}/src/index.ts: a bare import is in the module graph unconditionally, on every bundler`,
     fix: `import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';`,
     at: `${gap.dir}/package.json`,
   }),
@@ -219,7 +273,7 @@ const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Findi
   }),
   missing: (gap) => ({
     code: 'X_SIDE_EFFECTS_MISSING',
-    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one, and it is NOT a claim that Bun then keeps the named modules: it does not (oven-sh/bun#40650), which is what X_SIDE_EFFECTS_UNANCHORED is for. Copy this package's array from the command into ${gap.dir}/package.json, then \`bun run scripts/side-effects.ts --unpin ${gap.dir}\``,
+    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one; X_SIDE_EFFECTS_UNANCHORED is what keeps a registrar on every bundler, and SIDE_EFFECTS_BY_USE exempts an effect only its own bindings need. Copy this package's array from the command into ${gap.dir}/package.json, then \`bun run scripts/side-effects.ts --unpin ${gap.dir}\``,
     fix: 'bun run side-effects --explain --json',
     at: `${gap.dir}/package.json`,
   }),
@@ -228,6 +282,12 @@ const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Findi
     cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force — delete that row, or point it at the module it was written for`,
     fix: 'grep -n SIDE_EFFECTS_ANCHORS scripts/lib/side-effects-scan.ts',
     at: 'scripts/lib/side-effects-scan.ts',
+  }),
+  'by-use-stale': (gap) => ({
+    code: 'X_SIDE_EFFECTS_BY_USE_STALE',
+    cause: `SIDE_EFFECTS_BY_USE names ${gap.subject}, and ${gap.reason ?? 'the row no longer holds'}`,
+    fix: 'grep -n -A16 "SIDE_EFFECTS_BY_USE" scripts/side-effects.ts',
+    at: PINS_FILE,
   }),
   'pin-stale': (gap) => ({
     code: 'X_SIDE_EFFECTS_PIN_STALE',
@@ -250,6 +310,7 @@ export const sideEffectGaps = async (root: string): Promise<readonly SideEffectG
     packages: await readPackageFacts(root),
     pins: SIDE_EFFECTS_UNDECLARED,
     anchors: SIDE_EFFECTS_ANCHORS,
+    byUse: SIDE_EFFECTS_BY_USE,
   });
 
 /** What this repo contributes to `x verify`'s `unit` step, through `side-effects.test.ts`. */
@@ -263,7 +324,9 @@ export const explainSideEffects = async (
   Object.fromEntries(
     (await readPackageFacts(root)).map((pkg) => [
       pkg.dir,
-      pkg.effects.map((effect) => `./${effect.path}`),
+      pkg.effects
+        .filter((effect) => !Object.hasOwn(SIDE_EFFECTS_BY_USE, `${pkg.dir}/${effect.path}`))
+        .map((effect) => `./${effect.path}`),
     ]),
   );
 

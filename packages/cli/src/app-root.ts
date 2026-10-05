@@ -20,10 +20,14 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * the gate's dominant step, with `x doctor` reporting the runtime as fine. `--parallel` arrived in
  * the same release and is emitted now, so the floor may never fall below that patch.
  *
- * `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI pins
- * `1.4.x`, both images build on `oven/bun:1.4-*`, and the per-worker database rests on
- * `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4.0 and on nothing older. `scripts/bun-pin.test.ts`
- * holds this to the same series as every other pin.
+ * A 1.4 patch rather than `1.3.13` because a floor is a claim about a runtime somebody TESTED: CI
+ * pins one exact patch, both images build on that patch's `oven/bun:1.4-*` digest, and the
+ * per-worker database rests on `BUN_TEST_WORKER_ID`'s numbering, probed on 1.4 and on nothing older.
+ * It moved 1.4.0 → 1.4.2 with CI's pin (plan 2026/10/04/101, sweep 3): from then on 1.4.0 was a
+ * runtime nothing here ran, and the bundler defects fixed in 1.4.1 (oven-sh/bun#40578, #40650,
+ * #40657) change what `x build` emits. `scaffold-repo.ts` and the scaffold's CI read this constant,
+ * so a new app's `engines.bun` and its CI runtime move with it. `scripts/bun-pin.test.ts` holds it
+ * to the exact patch CI runs.
  *
  * **Lowering it to 1.3.14 was tried on 2026-08-27 and refused**, and the argument for trying was
  * sound — `--isolate` and `--parallel` are 1.3.13 features, no package here calls a 1.4-only API
@@ -34,7 +38,7 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * declared supported would hang on graceful shutdown the moment its database went away. The full
  * measurement is in `.github/actions/setup/action.yml`; read it before lowering this.
  */
-export const REQUIRED_BUN = '1.4.0';
+export const REQUIRED_BUN = '1.4.2';
 
 export interface AppRoot {
   readonly dir: string;

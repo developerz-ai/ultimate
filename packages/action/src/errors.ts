@@ -9,13 +9,18 @@ import {
   deniedCallerFix,
   ERROR_DOCS_URL,
   hasErrorCode,
-  registerErrorCodes,
   renderFixShellArg,
   retryForStatus,
   UltimateError,
+  withStatedDelay,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
+// The titles are `error-titles.ts`, imported bare: this module is then side-effect-free and the
+// array does not list it, so a chunk keeps only the classes it constructs, and a chunk that
+// constructs one still registers every title first — anchored by use. The barrel imports it bare
+// too, for the browser that rebuilds a SERVER's refusal by code and constructs nothing from here.
+import './error-titles';
 
 // Re-exported, not re-declared: the idempotency failures moved to their own file when this
 // one reached the line ceiling, and every importer still reads them from `./errors`.
@@ -30,50 +35,6 @@ export {
   IdempotentReplayRedactedError,
   MutatorNotIdempotentError,
 } from './errors-idempotency';
-
-/**
- * Titles for the framework-wide code table — every one of them owned by this package.
- * `X_INPUT_INVALID` and `X_RPC_FAILED` are action's: an action is where an input schema is
- * enforced and where the typed client speaks, and `@ultimat3/query` only throws them.
- * Authz codes are absent on purpose — `ActionDeniedError` re-uses the policy decision's code.
- */
-const OWNED_TITLES: Readonly<Record<string, string>> = {
-  X_ACTION_DUPLICATE: 'two actions are registered under one name',
-  X_AUDIT_SINK_FAILED: 'an audited action ran and the audit sink refused its record',
-  X_AUDIT_SINK_MISSING: 'an action declares audit: true and no audit sink is installed',
-  X_ACTION_DEPRECATION_INVALID: 'an action declares a deprecation whose dates cannot be rendered',
-  X_ACTION_PATH_DUPLICATE: 'two actions derive one HTTP path',
-  X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
-  X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
-  X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
-  X_CONTRACT_DRIFT: 'client and server disagree about the contract',
-  X_IDEMPOTENCY_CONFLICT: 'idempotency key reused with a different payload or still in flight',
-  X_IDEMPOTENCY_KEY_INVALID: 'an Idempotency-Key was sent that cannot identify one request',
-  X_IDEMPOTENCY_NOT_SHARED:
-    'idempotency is declared fleet-wide and the installed store is per-process',
-  X_IDEMPOTENCY_REPLAYED_FAILURE:
-    'a retried Idempotency-Key replays a first attempt that failed after it may have committed',
-  X_IDEMPOTENCY_STATUS_UNKNOWN: 'an idempotency record holds a status this build cannot read',
-  X_INPUT_INVALID: 'input failed schema validation',
-  X_MUTATOR_CLOCK_MISSING:
-    "a mutator declares conflict: 'last-write-wins' and its entity has no number clock column",
-  X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
-  X_RPC_FAILED: 'an RPC call failed without a problem+json body',
-  X_ACTION_HTTP_PATH_INVALID: "an action's pinned http.path is not a static lowercase path",
-  X_ACTION_PATH_STYLE_INVALID: "defineApi's http.pathStyle is not a known style",
-  X_OPENAPI_CONFIG_INVALID: "defineApi's openapi block cannot produce a valid document",
-  X_ACTION_PATH_DERIVED_EARLY: 'a path was derived before pathStyle changed',
-  X_MUTATOR_NOT_IDEMPOTENT: 'a mutator is declared without idempotent: true',
-  X_IDEMPOTENCY_RESERVATION_LOST:
-    "an idempotent action's reservation was taken over before its transaction could settle it",
-  X_IDEMPOTENT_REPLAY_REDACTED: 'an idempotent replay would return a field redacted at rest',
-};
-
-// One unconditional call: a presence guard would turn "another package claims one of these codes"
-// from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.
-registerErrorCodes(
-  Object.fromEntries(Object.entries(OWNED_TITLES).map(([code, title]) => [code, { title }])),
-);
 
 /** Thrown when a projection needs a name the action does not have yet. */
 export class ActionUnregisteredError extends UltimateError {
@@ -296,6 +257,13 @@ export interface RemoteFailure {
    * so an island reads `error.meta.sessionId` where it used to run a regex over `cause`.
    */
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
+  /**
+   * The document's `title`, already read by core's `remoteTitleOf` — used only when this bundle
+   * registered no title for `code`, which is every http refusal in an island.
+   */
+  readonly title?: string | undefined;
+  /** The delay the answer's `Retry-After` named, in seconds (core's `retryAfterSecondsOf`). */
+  readonly retryAfterSeconds?: number | undefined;
 }
 
 /** A link, not a string the server happened to put in a field the overlay renders as an href. */
@@ -348,19 +316,27 @@ export class RemoteActionError extends UltimateError {
       // this build may never have heard of. `UltimateError` otherwise fills `retry` from
       // `retryFor(code)`, which fails closed — so a 503 out of a typed call announced itself as
       // `terminal` on the one field the framework promises a client never has to infer.
-      retry: retryForStatus(failure.code, failure.status),
-      meta: {
-        // The server's declared keys FIRST, so the four this class owns win a collision: a server
-        // meta naming `status` would otherwise overwrite the one a report reads the HTTP status
-        // from, and `origin: 'remote'` is what marks the code as one this bundle never declared.
-        ...failure.meta,
-        origin: 'remote',
-        action: failure.action,
-        status: failure.status,
-        // Absent rather than `undefined`: `meta` is rendered into `--json` and the error reporter,
-        // and a null member reads as "the server sent an empty list" rather than "it sent none".
-        ...(failure.issues === undefined ? {} : { issues: failure.issues }),
-      },
+      // A 429 or 503 that stated a delay is `retry-after` whoever registered the code, and the
+      // delay rides on `meta.retryAfterSeconds`, the one key core's `statedDelayMs` reads.
+      retry: retryForStatus(failure.code, failure.status, failure.retryAfterSeconds),
+      remoteTitle: failure.title,
+      // Core's `withStatedDelay`, the rule `problemError` applies too: a `retryAfterSeconds` off the
+      // body is dropped and only the header's is carried — the server never writes one there.
+      meta: withStatedDelay(
+        {
+          // The server's declared keys FIRST, so the four this class owns win a collision: a
+          // server meta naming `status` would otherwise overwrite the one a report reads the HTTP
+          // status from, and `origin: 'remote'` marks the code as one this bundle never declared.
+          ...failure.meta,
+          origin: 'remote',
+          action: failure.action,
+          status: failure.status,
+          // Absent rather than `undefined`: `meta` is rendered into `--json` and the error
+          // reporter, and a null member reads as "the server sent an empty list".
+          ...(failure.issues === undefined ? {} : { issues: failure.issues }),
+        },
+        failure.retryAfterSeconds,
+      ),
     });
     this.status = failure.status;
   }

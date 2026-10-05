@@ -248,7 +248,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `createRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
-| `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling; the codes and titles stay there, one registry |
+| `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling |
+| `error-titles.ts` | the owned codes, their titles and the two `retry-after` classes, registered at import — the one module `sideEffects` lists, imported bare by the barrel and `errors.ts`. Server realm only: a browser reads an http refusal's title off the body and its delay off `Retry-After` (core's decoders), so no http module rides into an island |
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |

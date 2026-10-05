@@ -5,15 +5,17 @@
 // secrets — because each is one subject spread over a dozen modules. Every name they carry is
 // still written out below: `export *` would make the contract something a reader has to resolve.
 
-// Anchored on purpose, and NOT by the `sideEffects` array: Bun reads any array as `false` and drops
-// the module regardless (oven-sh/bun#40650). This module registers @ultimat3/schema's error TITLES,
-// because schema is tier 0 and cannot register its own — and what reads them is `UltimateError`'s
-// constructor, which never imports this file. Shaken out, every X_VALIDATION_FAILED renders
-// untitled in the browser with nothing to say why. `SIDE_EFFECTS_ANCHORS` carries the argument and
-// `bun run side-effects` enforces it. `context.ts`, `lifecycle-errors.ts` and `secrets-errors.ts`
-// are declared side-effecting too and are deliberately NOT anchored: each is reached by whatever
-// uses it, and anchoring `context.ts` alone measured +3,485 B on a browser chunk for a provider a
-// browser can never fire.
+// Anchored on purpose, and not by the `sideEffects` array alone: Bun before 1.4.1 read any array as
+// `false` and dropped the module regardless (oven-sh/bun#40650), and a bare import holds on every
+// bundler — the array still lists both, because one that honours it drops a bare import of a module
+// it does not list. This module registers @ultimat3/schema's error TITLES, because schema is tier 0
+// and cannot register its own — and what reads them is `UltimateError`'s constructor, which never
+// imports this file. Shaken out, every X_VALIDATION_FAILED renders untitled in the browser with
+// nothing to say why. `SIDE_EFFECTS_ANCHORS` carries the argument and `bun run side-effects`
+// enforces it. `context.ts`, `lifecycle-errors.ts` and `secrets-errors.ts` also run something at
+// import and are neither anchored NOR listed: only their own bindings need the effect, so they ride
+// along exactly where they are used. Listed, Bun 1.4.2 kept all three in every chunk reaching this
+// barrel, ~5.4 kB an island (`SIDE_EFFECTS_BY_USE` in `scripts/side-effects.ts`).
 import './core-error-codes';
 import './schema-error-codes';
 
@@ -49,7 +51,7 @@ export { type AsyncContext, asyncContext } from './async-context';
 /** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
 export type { AsyncState } from './async-state';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
-export { backoffDelay } from './backoff';
+export { backoffDelay, jitterStatedDelay } from './backoff';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
@@ -80,6 +82,9 @@ export {
   splitWords,
 } from './client-paths';
 export type { TransportFailure } from './client-problem';
+export { MAX_REMOTE_TITLE_LENGTH, remoteTitleOf, withStatedDelay } from './client-problem';
+/** What a decoder reads off a refusal: the stated `Retry-After`, and the body's display title. */
+export { MAX_RETRY_AFTER_SECONDS, retryAfterSecondsOf } from './client-retry-after';
 /**
  * The browser seam (plan 101): ONE HTTP function, the records envelope it decodes, the per-tab
  * page handle records land in, and the principal fence every client layer subscribes to.

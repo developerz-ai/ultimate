@@ -58,3 +58,16 @@ updates:
     labels: [dependencies, docker]
     commit-message:
       prefix: 'chore(docker)'
+
+  # The `docker` ecosystem reads Dockerfiles only; the compose files pin their service images by
+  # digest beside the tag too (scripts/test-services-shape.test.ts), and a pin nothing moves rots.
+  - package-ecosystem: docker-compose
+    directories: ['/docker']
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: 'chore(docker)'

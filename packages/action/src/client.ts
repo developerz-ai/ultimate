@@ -28,6 +28,7 @@ import {
   FRAMEWORK_CODE,
   isJsonObject,
   problemOf,
+  remoteTitleOf,
 } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
@@ -132,8 +133,11 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   const url = `${options.baseUrl.replace(/\/+$/, '')}${path}`;
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
-  const decodeError = (status: number, text: string): UltimateError | undefined =>
-    toUltimateError(text, status, name);
+  const decodeError = (
+    status: number,
+    text: string,
+    retryAfterSeconds?: number,
+  ): UltimateError | undefined => toUltimateError(text, status, name, retryAfterSeconds);
   // Erased at the wire seam; the response type is this action's by construction.
   return (input, callOptions = {}) =>
     clientTransport({
@@ -197,7 +201,12 @@ function assertSameBuild(
  * code a query gets for the same failure. `X_RPC_FAILED` was this branch until 21.0.0; the code
  * stays registered (shipped codes never change) and nothing in the framework throws it now.
  */
-function toUltimateError(text: string, status: number, name: string): UltimateError | undefined {
+function toUltimateError(
+  text: string,
+  status: number,
+  name: string,
+  retryAfterSeconds: number | undefined,
+): UltimateError | undefined {
   // `problemOf` is total — a gateway's HTML, an empty body and a truncated stream all answer `{}`,
   // which carries no `code` and therefore falls through to the transport's decode.
   const body = problemOf(text);
@@ -207,6 +216,9 @@ function toUltimateError(text: string, status: number, name: string): UltimateEr
     action: name,
     status,
     code,
+    // Core's reader, so an island titles an http refusal it never loaded the table for.
+    title: remoteTitleOf(body['title']),
+    retryAfterSeconds,
     // Parsed, never taken: `body` is whatever answered the request. A list this build cannot read
     // is dropped rather than repaired, and `cause` below still carries every rejection in it.
     issues: issuesFromWire(body['issues']),

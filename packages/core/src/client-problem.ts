@@ -11,6 +11,33 @@ import type { ErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
 import { isJsonObject } from './json-object';
 
+/**
+ * The longest remote title a client renders. Every framework title is well under it; a body that
+ * sends more is not a title, and the overflow is cut rather than trusted.
+ */
+export const MAX_REMOTE_TITLE_LENGTH = 120;
+
+/**
+ * A problem document's `title`, as untrusted DISPLAY text: a non-blank string of at most
+ * `MAX_REMOTE_TITLE_LENGTH` code points, control and format characters removed, or nothing. It reaches every renderer as text — `<ErrorState>` writes
+ * it as a JSX text node, the terminal and `--json` as a string — and `UltimateError` makes it one
+ * line, so no markup or second log line rides in on it. Used only where this realm registered no
+ * title for the code (`UltimateErrorInit.remoteTitle`).
+ */
+export function remoteTitleOf(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  // Control characters become a space and format characters (`\p{Cf}`: bidi overrides, isolates,
+  // zero-width joiners) are dropped BEFORE the cap, so the cap is the length shown — escaping a
+  // newline after cutting rendered two characters for one — and the cut is by CODE POINT, so it
+  // never leaves half a surrogate pair.
+  const shown = value
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/ {2,}/g, ' ');
+  const title = Array.from(shown.trim()).slice(0, MAX_REMOTE_TITLE_LENGTH).join('').trim();
+  return title === '' ? undefined : title;
+}
+
 /** An absolute HTTP(S) link, or nothing: a server's `docs` is data and may be `javascript:`. */
 const HTTP_URL = /^https?:\/\/[^\s]+$/;
 
@@ -19,15 +46,23 @@ const HTTP_URL = /^https?:\/\/[^\s]+$/;
  * marked `origin: 'remote'` — the code may be one this bundle never registered. Anything else is
  * a proxy or a gateway answering instead of the app.
  */
-export function problemError(status: number, text: string, url: string): UltimateError {
+export function problemError(
+  status: number,
+  text: string,
+  url: string,
+  retryAfterSeconds?: number,
+): UltimateError {
   const body = problemOf(text);
   const code = body['code'];
+  // The delay a 429 or 503 named, under core's ONE spelling (`statedDelayMs` reads it), so the
+  // flight waits what the responder said whether or not this realm registered the code.
+  const stated = retryAfterSeconds === undefined ? {} : { retryAfterSeconds };
   if (typeof code !== 'string' || !FRAMEWORK_CODE.test(code)) {
     return transportFailed(
       'status',
       `${url} answered HTTP ${status} without a problem+json body naming a framework code`,
-      retryForStatus('X_CLIENT_TRANSPORT_FAILED', status),
-      { url, status },
+      retryForStatus('X_CLIENT_TRANSPORT_FAILED', status, retryAfterSeconds),
+      { url, status, ...stated },
     );
   }
   const docs = [body['docs'], body['type']].find(
@@ -37,11 +72,32 @@ export function problemError(status: number, text: string, url: string): Ultimat
     code,
     cause: text1(body['cause']) ?? text1(body['detail']) ?? `${url} failed with HTTP ${status}`,
     fix: text1(body['fix']) ?? `x errors explain ${renderFixShellArg(code, '<code>')} --json`,
-    retry: retryForStatus(code, status),
-    // The server's declared keys FIRST, so the three this decoder owns win a collision.
-    meta: { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+    remoteTitle: remoteTitleOf(body['title']),
+    retry: retryForStatus(code, status, retryAfterSeconds),
+    // The server's declared keys FIRST, so the ones this decoder owns win a collision.
+    meta: withStatedDelay(
+      { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+      retryAfterSeconds,
+    ),
     ...(docs === undefined ? {} : { docs }),
   });
+}
+
+/**
+ * A remote error's `meta` with the delay the HEADER stated, and only that: a `retryAfterSeconds`
+ * copied off the problem body is dropped first. The framework's server never writes one there —
+ * `registerProblemMeta` refuses framework codes, and an error carrying the key gets a
+ * `Retry-After` header from `@ultimat3/http` (exposed cross-origin by its CORS default) — so a body
+ * value is never the server's statement, and it must not drive a wait `statedDelayMs` reads. The
+ * one rule for both decoders: this one and `@ultimat3/action`'s `RemoteActionError`.
+ */
+export function withStatedDelay(
+  meta: Readonly<Record<string, unknown>>,
+  retryAfterSeconds: number | undefined,
+): Record<string, unknown> {
+  // Object rest copies own keys with CreateDataProperty, so a parsed `__proto__` stays a plain key.
+  const { retryAfterSeconds: _fromTheBody, ...kept } = meta;
+  return retryAfterSeconds === undefined ? kept : { ...kept, retryAfterSeconds };
 }
 
 /**

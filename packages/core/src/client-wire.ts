@@ -81,9 +81,22 @@ export function problemOf(text: string): Record<string, unknown> {
   return isJsonObject(body) ? body : {};
 }
 
+/** The statuses whose `Retry-After` names a delay to wait (RFC 9110 §10.2.3), and no others. */
+const RETRY_AFTER_STATUSES: ReadonlySet<number> = new Set([429, 503]);
+
 /**
  * The classification a failure off the wire carries, or `undefined` to leave the code's own
- * standing. The STATUS decides only when nobody has declared one for the code: a 503 is the
+ * standing.
+ *
+ * A 429 or 503 that STATED a delay (`retryAfterSeconds`, read off `Retry-After` by
+ * `retryAfterSecondsOf`) is `retry-after` by status: the header is the responder's own word, and
+ * a browser often never loaded the package that registered the code's class — before this, a 429
+ * from `@ultimat3/http` read as `retryable` in an island and was retried on the backoff curve
+ * instead of after the delay it named. A registered class yields to it, because `retryable` says
+ * less than a stated delay — except `terminal`, which is somebody's decision that the same call
+ * fails forever, and a header does not overrule that.
+ *
+ * Otherwise the STATUS decides only when nobody has declared one for the code: a 503 is the
  * canonical "send it again", but `X_NOT_IMPLEMENTED` behind a 501 and a config fault behind a 500
  * are permanent answers somebody already gave, and a status that overrode them would have a client
  * hammer a service that will refuse it identically forever.
@@ -92,7 +105,18 @@ export function problemOf(text: string): Record<string, unknown> {
  * so before this every 502 out of a typed client read as "never try again", on the one field the
  * framework promises a client never has to infer.
  */
-export function retryForStatus(code: string, status: number): ErrorRetry | undefined {
-  if (declaredErrorRetry(code) !== undefined) return undefined;
+export function retryForStatus(
+  code: string,
+  status: number,
+  retryAfterSeconds?: number,
+): ErrorRetry | undefined {
+  const declared = declaredErrorRetry(code);
+  if (
+    retryAfterSeconds !== undefined &&
+    RETRY_AFTER_STATUSES.has(status) &&
+    declared !== 'terminal'
+  )
+    return 'retry-after';
+  if (declared !== undefined) return undefined;
   return isRetryableStatus(status) ? 'retryable' : undefined;
 }

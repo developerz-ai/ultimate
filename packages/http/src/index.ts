@@ -1,6 +1,12 @@
 // The public surface of @ultimat3/http. Explicit, never `export *`: what is not
 // listed here is an implementation detail and may change without a major bump.
 
+// Imported bare, and the one module `sideEffects` lists: the codes' titles and the `retry-after`
+// class of a 429 and a 503 are read by `UltimateError`, which never imports this module — so a
+// server realm that reaches the barrel registers them whatever it constructs. `SIDE_EFFECTS_ANCHORS`
+// carries the argument and `bun run side-effects` enforces it.
+import './error-titles';
+
 export type { PgExecutor, RenderMode } from '@ultimat3/core';
 // The wire format is `@ultimat3/core`'s and is RE-EXPORTED, never re-declared: it is one module at
 // the tier both halves can reach, because `@ultimat3/jobs` signs a delivery, this package verifies

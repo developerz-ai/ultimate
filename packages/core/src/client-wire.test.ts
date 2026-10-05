@@ -85,3 +85,21 @@ describe('retryForStatus', () => {
     expect(retryForStatus('X_APP_UNDECLARED', 404)).toBeUndefined();
   });
 });
+
+describe('retryForStatus with a stated Retry-After', () => {
+  test('a 429 or 503 that names a delay is retry-after, registered here or not', () => {
+    expect(retryForStatus('X_SOMEWHERE_ELSES_CODE', 429, 2)).toBe('retry-after');
+    expect(retryForStatus('X_SOMEWHERE_ELSES_CODE', 503, 2)).toBe('retry-after');
+    // A registered `retryable` says less than the header does: the delay is the more specific word.
+    expect(retryForStatus('X_TIMEOUT', 503, 2)).toBe('retry-after');
+  });
+
+  test('no header, or another status, keeps the rule it had', () => {
+    expect(retryForStatus('X_SOMEWHERE_ELSES_CODE', 429)).toBe('retryable');
+    expect(retryForStatus('X_SOMEWHERE_ELSES_CODE', 500, 2)).toBe('retryable');
+  });
+
+  test('a code somebody declared terminal stays terminal, whatever the header says', () => {
+    expect(retryForStatus('X_NOT_IMPLEMENTED', 503, 2)).toBeUndefined();
+  });
+});

@@ -1,7 +1,7 @@
 // Every refusal a rate limit produces: the 429 a caller is answered with, and the six declaration
 // faults the boot refuses. Split from `errors.ts` at the 500-line ceiling, on the seam it already
-// had. The codes and their TITLES stay there, which is the one registry — `registerErrorCodes`
-// must see them all in a single call.
+// had. The codes, their TITLES and the `retry-after` class are `error-titles.ts`'s, the one
+// registry — `registerErrorCodes` must see them all in a single call.
 import { HttpError } from './errors';
 
 /**
