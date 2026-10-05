@@ -23,13 +23,13 @@ ROLE=replicator myapp
 | `worker` | env → DB pool → one pool per `WORKER_QUEUES` entry | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain |
 | `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` per round is both the renewal and the standby retry | SIGTERM, or a round where the lease is not this holder's |
 | `migrate` | env → DB → advisory lock → apply → post-migrate drift check | none | none | after apply — **exit 0 or non-zero, run-once** |
-| `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM, or lock held elsewhere |
+| `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM — a lock held elsewhere is a standby (`/readyz` 503, re-asking on a backoff), never an exit |
 
 Rules that keep this honest:
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - `web` and `sync` are interchangeable to the load balancer except for protocol.
-- `replicator` and `migrate` **exit non-zero with a typed error** rather than running degraded when their lock is held. `scheduler` is the exception by design: a node that does not hold the lease stays up as a warm standby and retries every round.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. `scheduler` and `replicator` containers stand by instead: a node that does not hold the lease or lock stays up — the replicator unready — and retries, the scheduler every round, the replicator on a jittered backoff.
 - Any role can be co-located in one process for dev — role isolation is simulated, never skipped.
 - Every role runs the same image and the same `x.manifest.json`, so the build ID is identical across the fleet.
 

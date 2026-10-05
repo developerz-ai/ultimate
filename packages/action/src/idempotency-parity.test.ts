@@ -170,6 +170,18 @@ for (const [name, build] of STORES) {
       );
     });
 
+    test('a cyclic answer settles on both stores and its replay is refused', async () => {
+      const answer: Record<string, unknown> = { id: 'k1' };
+      answer['self'] = answer;
+      expect(await once(answer)).toEqual({ value: answer, replayed: false });
+      const stored = await under.store.get(KEY);
+      expect(stored?.status).toBe('settled');
+      expect(stored?.value).toEqual({ id: 'k1', self: '[redacted]' });
+      expect(codeOf(await once(null).catch((error: unknown) => error))).toBe(
+        'X_IDEMPOTENT_REPLAY_REDACTED',
+      );
+    });
+
     test('an answer with no secret key replays exactly as before', async () => {
       const answer = { charged: 'ch_1', amount: { minor: 1250, currency: 'EUR' }, tags: ['a'] };
       await once(answer);

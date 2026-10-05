@@ -143,9 +143,28 @@ describe('restingAnswer', () => {
     expect(restingAnswer(answer).value).toBe(answer);
   });
 
-  test('a cycle does not recurse forever', () => {
+  // A cycle FAILS CLOSED: kept, it made the Postgres store's `JSON.stringify` throw after the
+  // handler committed (record stuck in flight, a raw TypeError to the caller) while the memory
+  // store accepted it. Redacted, both stores keep the same serializable copy and refuse the replay.
+  test('a cycle is cut to [redacted], flagged, and the copy serializes', () => {
     const answer: Record<string, unknown> = { id: 'a' };
     answer['self'] = answer;
+    const resting = restingAnswer(answer);
+    expect(resting).toEqual({ value: { id: 'a', self: '[redacted]' }, redacted: true });
+    expect(() => JSON.stringify(resting.value)).not.toThrow();
+  });
+
+  test('a cycle through an array is cut too', () => {
+    const list: unknown[] = ['x'];
+    list.push({ back: list });
+    const resting = restingAnswer({ list });
+    expect(resting.redacted).toBe(true);
+    expect(JSON.stringify(resting.value)).toBe('{"list":["x",{"back":"[redacted]"}]}');
+  });
+
+  test('a value repeated as SIBLINGS is repetition, not a cycle — kept, unflagged', () => {
+    const shared = { n: 1 };
+    const answer = { a: shared, b: shared };
     expect(restingAnswer(answer)).toEqual({ value: answer, redacted: false });
   });
 });

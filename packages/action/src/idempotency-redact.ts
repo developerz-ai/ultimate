@@ -35,7 +35,9 @@ interface WalkState {
  * So a value with a callable `toJSON`, a `Map`, a `Set`, a class instance or a `Date` subclass is
  * `[redacted]` and the record flagged — its replay is refused, which is the honest answer for an
  * answer this walk could not judge. An own getter is read ONCE and the subtree copied, so the
- * serializer reads the value that was judged, not a fresh one. `toJSON` is never called.
+ * serializer reads the value that was judged, not a fresh one. `toJSON` is never called. A CYCLE
+ * is cut the same way — its back-reference becomes `[redacted]` — so both stores keep one
+ * serializable copy; a value repeated as siblings is not a cycle and is kept.
  */
 export function restingAnswer(value: unknown): RestingAnswer {
   const state: WalkState = { redacted: false };
@@ -68,7 +70,9 @@ function walk(value: unknown, depth: number, ancestors: Set<object>, state: Walk
   if (typeof value !== 'object' || value === null) return value;
   if (isSecret(value)) return redact(state);
   if (isPlainDate(value)) return value;
-  if (ancestors.has(value)) return value;
+  // A back-reference fails closed: kept, `JSON.stringify` throws in the Postgres store after the
+  // handler committed, while the memory store would accept it — two answers for one record.
+  if (ancestors.has(value)) return redact(state);
   const array = Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype;
   if (hasToJson(value) || !(array || isPlainObject(value))) return redact(state);
   if (depth >= IDEMPOTENCY_REDACT_MAX_DEPTH) return redact(state);

@@ -26,7 +26,7 @@ ROLE=replicator myapp
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock — a container that loses it stays up, `/readyz` 503, and takes over when the holder goes (`x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD` instead) |
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
-- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`), and `x dev --role replicator` refuses (`X_REPLICATOR_SLOT_HELD`). A `scheduler` or `replicator` container that does not hold its lease or lock stays up as a standby — unready, retrying — rather than running degraded or double-delivering.
 - **There is no `ROLE=all`.** Those six names are the whole set; anything else is `X_ROLE_UNKNOWN` at boot. For dev, `x dev` co-locates `web`, `sync`, `worker` and `scheduler` in one process — role isolation is simulated, not skipped, and `--role` opts the `replicator` in.
 
 `PORT` selects the bind port, default `3000`. Empty or whitespace falls back to the default; anything else must be an integer in 0–65535 or the process refuses with `X_PORT_INVALID` rather than quietly binding 3000 and failing the platform's health probe with nothing in the log that names the cause. The production entry is the scaffolded `apps/web/server.ts` → [CLI reference](CLI-Reference).

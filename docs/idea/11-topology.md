@@ -27,7 +27,7 @@ Rules that keep this honest:
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - `sync` and `web` are interchangeable from the load balancer's perspective except for protocol.
-- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`), and `x dev --role replicator` refuses (`X_REPLICATOR_SLOT_HELD`). A `scheduler` or `replicator` container that does not hold its lease or lock stays up as a standby — unready, retrying — rather than running degraded or double-delivering.
 - Any role can be co-located in one process for dev ([`13-dx.md`](./13-dx.md)) — role isolation is simulated, not skipped.
 
 ## Health endpoints
