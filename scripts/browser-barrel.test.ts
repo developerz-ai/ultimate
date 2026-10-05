@@ -132,22 +132,16 @@ const fixture = (name: string, source: string): Promise<Chunk> =>
 const barrelPath = (name: string): string => join(repoRoot(), 'packages', name, 'src/index.ts');
 
 /**
- * A barrel is bundled the way an app consumes it — through a module that re-exports it — and never
- * as `Bun.build`'s own entry point.
+ * A barrel is bundled as `Bun.build`'s own entry point — `packages/<name>/src/index.ts`, nothing
+ * in front of it.
  *
- * That is a **Bun 1.4.0 defect**, not a fact about these barrels: an entry module that declares
- * nothing of its own and is covered by a `sideEffects` field which does not NAME it is shaken down
- * to its export clause alone. `@ultimat3/core` built directly is 6,089 bytes of
- * `export { ACTOR_KINDS, … };` with not one declaration behind it, and `bun run` on it answers
- * `"ACTOR_KINDS" is not declared in this file`. Reproduced at two files and one line of
- * package.json — `sideEffects: false`, `[]`, or any array not naming the entry — identically on
- * the `browser`, `bun` and `node` targets. `export *` in the entry, one local declaration in the
- * entry, or naming the entry in `sideEffects` each make the chunk whole again.
- *
- * The wrapper RESTORES what this file claims rather than weakening it: the graph, the bundler and
- * the evaluation are the same, and the direct chunk had nothing in it for the specifier assertion
- * to be true OF. The defect is pinned as a negative control below, so the day Bun fixes it this
- * file reds and says the wrapper can go.
+ * Until Bun 1.4.1 that build was broken (#276, oven-sh/bun#40578): an entry module declaring
+ * nothing of its own, under a `sideEffects` field that did not NAME it, was shaken to its
+ * `export { … }` clause alone, so `@ultimat3/core` answered `"ACTION_PATH_PREFIX" is not declared
+ * in this file` and every assertion here had an empty chunk to be true of. This file bundled
+ * through a re-exporting wrapper instead and pinned the defect as a negative control; the control
+ * redded on 1.4.2, the wrapper went with it. `and the chunk carries the code` below is what keeps
+ * the build non-vacuous now.
  */
 const built = new Map<string, Promise<Chunk>>();
 
@@ -163,7 +157,7 @@ const built = new Map<string, Promise<Chunk>>();
 const barrelChunk = (name: string): Promise<Chunk> => {
   const held = built.get(name);
   if (held !== undefined) return held;
-  const chunk = fixture(`barrel-${name}`, `export * from ${JSON.stringify(barrelPath(name))};\n`);
+  const chunk = browserChunk(barrelPath(name));
   built.set(name, chunk);
   return chunk;
 };
@@ -232,41 +226,6 @@ describe('the harness can fail', () => {
       expect(await evaluationError(chunk)).toContain('undefined is not a constructor');
       // And the barrel as it stands does not, so the graft is what moved the answer.
       expect(await evaluationError(await barrelChunk('db'))).toBeUndefined();
-    },
-    BUILD_TIMEOUT_MS,
-  );
-
-  /**
-   * The workaround `barrelChunk` exists for, proved on a package of two files rather than
-   * asserted about a real one — so it stays true whichever `sideEffects` the tree's own
-   * package.json files carry this week.
-   *
-   * It is a PIN on a Bun 1.4.0 defect: when this test reds, Bun shakes an entry-point barrel
-   * correctly and `barrelChunk` can go back to building `packages/<name>/src/index.ts` directly.
-   */
-  test(
-    'a re-export-only barrel built as its OWN entry point is shaken to an export clause, and nothing else',
-    async () => {
-      const root = await mkdtemp(join(tmpdir(), 'ultimate-shake-'));
-      // The whole trigger: the entry declares nothing of its own, and `sideEffects` does not name it.
-      await Bun.write(
-        join(root, 'package.json'),
-        '{ "name": "shake", "type": "module", "sideEffects": false }\n',
-      );
-      await Bun.write(join(root, 'src/a.ts'), 'export const a = 1;\n');
-      await Bun.write(join(root, 'src/index.ts'), "export { a } from './a';\n");
-
-      const direct = await browserChunk(join(root, 'src/index.ts'));
-      expect(bodyOf(direct)).toBe('');
-      expect(await evaluationError(direct)).toContain('is not declared in this file');
-
-      // The same two files reached through a re-exporting module: whole, and it evaluates.
-      const wrapped = await fixture(
-        'shake-wrapped',
-        `export * from ${JSON.stringify(join(root, 'src/index.ts'))};\n`,
-      );
-      expect(bodyOf(wrapped)).toContain('a = 1');
-      expect(await evaluationError(wrapped)).toBeUndefined();
     },
     BUILD_TIMEOUT_MS,
   );
@@ -356,7 +315,8 @@ describe.each([...BARRELS])('a browser bundle of @ultimat3/%s', (name) => {
   /**
    * Non-vacuity, and it is not hypothetical: an EMPTY chunk satisfies the specifier assertion
    * above by having nothing in it, which is exactly what building these barrels as entry points
-   * produced. Both halves of this file's claim need a chunk that carries the barrel's code.
+   * produced on Bun 1.4.0 (#276). Both halves of this file's claim need a chunk that carries the
+   * barrel's code.
    */
   test(
     'and the chunk carries the code, not just the names of it',
@@ -390,11 +350,12 @@ test(
 );
 
 describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
+  // The same build `barrelChunk` holds for the run, so a refusal reds HERE, with the bundler's
+  // output, and the test below never builds it a second time.
   test(
     'bundles for the browser at all',
     async () => {
-      const built = await browserBuild(barrelPath(name));
-      expect(built.ok ? '' : built.output).toBe('');
+      expect((await barrelChunk(name)).text).not.toBe('');
     },
     BUILD_TIMEOUT_MS,
   );

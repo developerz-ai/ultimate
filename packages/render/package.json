@@ -32,7 +32,7 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -44,6 +44,6 @@
     "@ultimat3/http": "24.0.0",
     "@ultimat3/i18n": "24.0.0",
     "@ultimat3/seo": "24.0.0",
-    "sass": "1.104.0"
+    "sass": "1.105.1"
   }
 }

@@ -241,3 +241,80 @@ describe('the concurrency ceiling', () => {
     ).toBe('rows');
   });
 });
+
+/** Whether `promise` settles within `ms` of real time — a wait that cannot be cancelled never does. */
+async function settledWithin<T>(promise: Promise<T>, ms: number): Promise<T | 'still waiting'> {
+  return Promise.race([promise, Bun.sleep(ms).then(() => 'still waiting' as const)]);
+}
+
+/** Lets the first attempt fail and the loop reach its wait. */
+const reachTheWait = (): Promise<void> => Bun.sleep(5);
+
+describe('the wait between attempts', () => {
+  test('a bump during the wait settles the call at once, not when the timer fires', async () => {
+    const clock = manualClock();
+    let calls = 0;
+    const plan: FlightPlan<string> = {
+      key: undefined,
+      abortable: true,
+      run: () => {
+        calls += 1;
+        return Promise.reject(gateway());
+      },
+    };
+    const flight = createClientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
+
+    const pending = flight.run(plan).catch((caught: unknown) => caught);
+    await reachTheWait();
+    flight.bump();
+
+    const outcome = await settledWithin(pending, 50);
+    expect(outcome).toBeUltimateError('X_SUPERSEDED');
+    expect(calls).toBe(1);
+  });
+
+  test("the caller's own abort during the wait settles the call at once — a write's too", async () => {
+    const clock = manualClock();
+    const caller = new AbortController();
+    let calls = 0;
+    const plan: FlightPlan<string> = {
+      key: undefined,
+      abortable: false,
+      signal: caller.signal,
+      run: () => {
+        calls += 1;
+        return Promise.reject(gateway());
+      },
+    };
+    const flight = createClientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
+
+    const pending = flight.run(plan).catch((caught: unknown) => caught);
+    await reachTheWait();
+    caller.abort();
+
+    const outcome = await settledWithin(pending, 50);
+    expect(outcome).toBeInstanceOf(DOMException);
+    expect((outcome as DOMException).name).toBe('AbortError');
+    expect(calls).toBe(1);
+  });
+
+  test('the gate slot is free during the wait, so another call proceeds instead of being refused', async () => {
+    const clock = manualClock();
+    const flight = createClientFlight({
+      retry: { attempts: 2 },
+      schedule: clock.schedule,
+      limit: { maxConcurrent: 1, maxQueued: 0 },
+    });
+    const waiting = flight.run(flaky(1, gateway));
+    await reachTheWait();
+    expect(flight.active).toBe(0);
+
+    const other = await flight.run(flaky(0, gateway)).catch((caught: unknown) => caught);
+    expect(other).toBe('rows');
+
+    clock.fireAll();
+    expect(await waiting).toBe('rows');
+    expect(flight.active).toBe(0);
+    expect(flight.queued).toBe(0);
+  });
+});

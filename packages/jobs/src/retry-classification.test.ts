@@ -144,14 +144,29 @@ describe('nextRetryForError', () => {
     }
   });
 
-  test('retry-after replaces the delay, clamped by maxDelay, and never the ceiling', () => {
+  test('retry-after replaces the delay, its floor clamped by maxDelay, and never the ceiling', () => {
     const named = coded('X_TEST_CLASSIFY_AFTER', { meta: { retryAfterSeconds: 30 } });
     const absurd = coded('X_TEST_CLASSIFY_AFTER', { meta: { retryAfterSeconds: 86_400 } });
 
-    expect(nextRetryForError(policy, 1, named).delayMs).toBe(30_000);
-    expect(nextRetryForError(policy, 1, absurd).delayMs).toBe(60_000);
+    expect(nextRetryForError(policy, 1, named, () => 0).delayMs).toBe(30_000);
+    expect(nextRetryForError(policy, 1, absurd, () => 0).delayMs).toBe(60_000);
     // Said nothing about when: the policy's own backoff, not a guess of our own.
     expect(nextRetryForError(policy, 1, coded('X_TEST_CLASSIFY_AFTER')).delayMs).toBe(1_000);
+  });
+
+  test("a stated delay is a floor plus core's spread, so throttled deliveries do not wake together", () => {
+    // An HTTP-date makes every delivery to one receiver state the SAME instant; the spread is what
+    // keeps them from all knocking at it — core's `jitterStatedDelay`, the rule a rate-limit
+    // deferral uses too.
+    const named = coded('X_TEST_CLASSIFY_AFTER', { meta: { retryAfterSeconds: 30 } });
+    const jittered: RetryPolicy = { ...policy, jitter: true };
+    expect(nextRetryForError(jittered, 1, named, () => 0.5).delayMs).toBe(37_500);
+    const wakes = [0.1, 0.3, 0.6, 0.9].map(
+      (roll) => nextRetryForError(jittered, 1, named, () => roll).delayMs,
+    );
+    expect(new Set(wakes).size).toBe(4);
+    // `jitter: false` is the policy's own decision, honoured: the bare floor.
+    expect(nextRetryForError(policy, 1, named, () => 0.5).delayMs).toBe(30_000);
   });
 
   test('a stated delay is ignored on a code that is not retry-after', () => {

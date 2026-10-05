@@ -28,7 +28,7 @@ import { uiPackageFiles } from './scaffold-ui-package';
  * config as out of date on every `bun run lint`. A formatter is a build input — a range that floats
  * is a `lint` step whose verdict depends on the day the app was installed.
  */
-const BIOME_VERSION = '2.5.8';
+const BIOME_VERSION = '2.5.15';
 
 /**
  * The checker a scaffolded app typechecks with, and it must not lag the one the FRAMEWORK is built

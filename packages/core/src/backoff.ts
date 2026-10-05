@@ -70,3 +70,19 @@ export function backoffDelay(options: BackoffOptions): number {
   if (options.jitter === 'equal') return Math.round(capped / 2 + (capped / 2) * roll());
   return Math.round(capped);
 }
+
+/**
+ * The wait after a responder STATED one: the stated delay as a FLOOR, plus a spread in
+ * `[0, min(wait / 2, cap))`. The ONE rule for a named delay — `retryDecision`'s `retry-after`
+ * path and `@ultimat3/jobs`' rate-limit deferral and webhook throttle all take it. A floor because
+ * waking before the responder said is refused again; a spread because a shedding server tells a
+ * whole burst `Retry-After: 1`, and a burst that waits exactly that replays in lockstep every
+ * second, as does every delivery handed one HTTP-date. `cap` bounds only the spread.
+ */
+export function jitterStatedDelay(
+  waitMs: number,
+  capMs: number,
+  random: Random = Math.random,
+): number {
+  return waitMs + Math.floor(random() * Math.min(waitMs / 2, capMs));
+}

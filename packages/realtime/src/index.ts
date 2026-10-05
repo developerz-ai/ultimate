@@ -3,6 +3,12 @@
 // Nothing here reaches `nats`, a Postgres socket or the sync node; those are `./server`, and
 // `packages/cli/src/realtime-browser-barrel.test.ts` is the build error that keeps them apart.
 
+// Imported bare, and the one module `sideEffects` lists: a page rebuilds a sync node's refusal by
+// code (`refusalError`) and `page-errors.ts` constructs codes from it without importing it, so
+// every chunk reaching this barrel registers the titles. `SIDE_EFFECTS_ANCHORS` carries the
+// argument and `bun run side-effects` enforces it.
+import './error-titles';
+
 // ---- the client's one stateless piece, reusable against an app's own store ----------------------
 export { applyPatches, orderAfterPatches } from './apply-patches';
 // ---- channels: the declaration is the only way to spell a topic, and the frames it rides --------

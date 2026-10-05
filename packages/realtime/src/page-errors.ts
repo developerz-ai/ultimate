@@ -1,9 +1,8 @@
 // The refusals a BROWSER can reach — the page store, the hooks, the socket's wire check, the local
-// store. Apart from `errors.ts` for bytes: that module registers the whole code table at import,
-// and an island that renders one record has no use for sixty titles. The codes stay in `errors.ts`
-// (its `registerErrorCodes()` is what `package.json`'s `sideEffects` names, anchored by the
-// barrel); in a browser that loaded no table a code titles itself from its name, and `code`,
-// `cause` and `fix` — what a reader acts on — are unchanged. This module runs nothing at import.
+// store. Apart from `errors.ts` for bytes: that module holds the sync node's refusal classes, which
+// no island constructs. The codes and their titles are `error-titles.ts` (the module
+// `package.json`'s `sideEffects` names, imported bare by the barrel), so a code constructed here is
+// titled wherever the barrel was reached. This module runs nothing at import.
 
 import { renderFixShellArg } from '@ultimat3/core/page';
 import { RealtimeError } from './realtime-error';

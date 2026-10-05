@@ -381,8 +381,8 @@ describe('the process-wide logger, in a runtime with no process', () => {
     '',
   ].join('\n');
 
-  /** Bundled through a re-exporting wrapper, the way an app consumes the barrel — never with
-   * `index.ts` as the entry, which Bun 1.4.0 shakes down to its export clause (#276). */
+  /** A fixture entry that reaches the barrel and exports what `RUNNER` calls — the entry carries
+   * the probe, so it is a module of its own rather than `index.ts`. */
   async function chunkOf(name: string, source: string): Promise<string> {
     const root = await dir;
     const entry = join(root, `${name}.entry.ts`);

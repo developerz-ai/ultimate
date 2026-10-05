@@ -43,6 +43,8 @@
 # The tag names the series for the reader; the digest is what builds. A tag is a pointer its
 # publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
 # docker ecosystem moves the digest together with the tag.
+# The digest is `oven/bun:1.4.2-slim`'s (`docker buildx imagetools inspect`, 2026-10-05), the
+# patch CI pins in .github/actions/setup/action.yml; `scripts/bun-pin.test.ts` holds the two equal.
 FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS manifests
 WORKDIR /src
 COPY . .

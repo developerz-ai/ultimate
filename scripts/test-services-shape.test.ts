@@ -140,7 +140,7 @@ describe('unit · test services · one S3 server, wherever this repo starts one'
       [`x new → ${DEV}`]: regionsOf(typeof scaffolded === 'string' ? scaffolded : ''),
     };
 
-    expect(s3).toMatch(/^versity\/versitygw:v\d+\.\d+\.\d+$/);
+    expect(s3).toMatch(/^versity\/versitygw:v\d+\.\d+\.\d+(@sha256:[0-9a-f]{64})?$/);
     // The region `Bun.S3Client` signs for when an app sets no S3_REGION: a gateway started with
     // any other refuses that app's first upload.
     for (const [at, regions] of Object.entries(gatewayRegions)) {
@@ -173,6 +173,33 @@ describe('unit · test services · no compose file this repo ships starts MinIO'
       ).not.toContain('minio');
     }
   });
+});
+
+describe('unit · test services · every image is a tag pinned by digest', () => {
+  // A tag is a pointer its publisher can move: the same commit could start a different server
+  // tomorrow. The tag stays for the reader; the multi-arch index digest is what runs.
+  const PINNED = /^[a-z0-9][a-z0-9./_-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$/;
+
+  for (const file of [COMPOSE, 'docker/docker-compose.dev.yml']) {
+    test(file, async () => {
+      const specs = Object.entries(
+        (
+          Bun.YAML.parse(await Bun.file(`${root}/${file}`).text()) as {
+            services?: Readonly<Record<string, Service>>;
+          }
+        ).services ?? {},
+      );
+      // A file that parses to no services agrees with the rule below it.
+      expect(specs.length).toBeGreaterThan(0);
+      const unpinned = specs
+        .filter(([, spec]) => !PINNED.test(spec.image ?? ''))
+        .map(([name, spec]) => `${name}: ${spec.image ?? '(no image)'}`);
+      expect(
+        unpinned,
+        `${file}: pin each as name:tag@sha256:<digest> — \`docker buildx imagetools inspect <name:tag>\` prints the index digest`,
+      ).toEqual([]);
+    });
+  }
 });
 
 describe('unit · test services · a suite finds each one where it was started', () => {

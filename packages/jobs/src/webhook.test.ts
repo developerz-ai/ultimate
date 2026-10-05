@@ -167,6 +167,58 @@ describe('a delivery that does not land', () => {
     expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_DELIVERY_FAILED');
   });
 
+  test('an HTTP-date retry-after is read against the receivers own Date header', async () => {
+    // Core's one reader (`retryAfterSecondsOf`): the receiver's clock against the receiver's clock,
+    // so this worker's skew never shortens or stretches the wait it was given.
+    const one = harness();
+    one.answer = () =>
+      Promise.resolve(
+        new Response('slow down', {
+          status: 503,
+          headers: {
+            date: 'Wed, 21 Oct 2015 07:27:00 GMT',
+            'retry-after': 'Wed, 21 Oct 2015 07:28:30 GMT',
+          },
+        }),
+      );
+    let thrown: unknown;
+    try {
+      await one.run();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_WEBHOOK_DELIVERY_THROTTLED');
+    expect(statedDelayMs(thrown)).toBe(90_000);
+  });
+
+  test('a retry-after date already past is unstated: the ordinary backoff, not an instant retry', async () => {
+    const one = harness();
+    one.answer = () =>
+      Promise.resolve(
+        new Response('slow down', {
+          status: 503,
+          headers: {
+            date: 'Wed, 21 Oct 2015 07:27:00 GMT',
+            'retry-after': 'Wed, 21 Oct 2015 07:00:00 GMT',
+          },
+        }),
+      );
+    expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_DELIVERY_FAILED');
+  });
+
+  test('a retry-after that is neither form is ignored, never guessed at', async () => {
+    for (const header of ['soon', '-5', '1.5', '0', 'Wed, 21 Oct 2015 07:28:30 GMT']) {
+      // `0` states no schedule at all: read as stated it would burn every attempt at once.
+      // The last one is a valid date with no Date header beside it: no clock to measure it by.
+      const one = harness();
+      one.answer = () =>
+        Promise.resolve(
+          new Response('slow down', { status: 429, headers: { 'retry-after': header } }),
+        );
+      expect(await codeOf(() => one.run())).toBe('X_WEBHOOK_DELIVERY_FAILED');
+    }
+  });
+
   test('a transport failure records status null and never renders the throwable raw', async () => {
     const one = harness();
     // A foreign error is the code under test's INPUT, never this test's verdict.

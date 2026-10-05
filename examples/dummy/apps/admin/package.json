@@ -9,7 +9,7 @@
     ".": "./app/admin/admin.ts"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ../../tsconfig.json",

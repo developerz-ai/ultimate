@@ -1,10 +1,11 @@
 /**
  * The idempotency failures, split out of `errors.ts` at its line ceiling. One subclass per
- * stable code, exactly as there — the codes and their titles stay in `errors.ts`'s one
+ * stable code, exactly as there — the codes and their titles stay in `error-titles.ts`'s one
  * `registerErrorCodes` call, because a second registration is how two modules end up deciding a
- * title by load order.
+ * title by load order. Imported bare, so constructing one of these registers its title first.
  */
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
+import './error-titles';
 // Type-only: `idempotency.ts` imports the classes below, and a runtime edge here would close the
 // cycle. `verbatimModuleSyntax` is what makes that guarantee mechanical.
 import type { IdempotencyFailure } from './idempotency';

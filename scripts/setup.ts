@@ -10,11 +10,11 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 
-// A floor on CONTRIBUTORS to this repo. It tracks the series CI runs
-// (`.github/actions/setup/action.yml`, `1.4.x`), because that is the only thing this check can
-// usefully say: a contributor whose Bun differs from CI's is not running the gate CI runs, and on
-// 2026-08-20 that gap merged a red PR behind a green local `bun run verify`. Matching the pin is
-// the whole point; a floor a series away from it blesses a machine that agrees with nothing here.
+// A floor on CONTRIBUTORS to this repo. It is the exact patch CI runs
+// (`.github/actions/setup/action.yml`), because that is the only thing this check can usefully
+// say: a contributor whose Bun differs from CI's is not running the gate CI runs, and on 2026-08-20
+// that gap merged a red PR behind a green local `bun run verify`. Matching the pin is the whole
+// point; a floor below it blesses a machine that agrees with nothing here.
 //
 // The paragraph that stood here called this a DIFFERENT question from `engines.bun` and argued that
 // one should stay `>=1.3.0` — two `REQUIRED_BUN` constants, deliberately holding different numbers.
@@ -24,11 +24,11 @@ import { repoRoot, run } from './lib/run';
 // floor nobody can compare against another floor drifts in whichever direction the last edit
 // pushed it, which is axiom 3, and `scripts/bun-pin.test.ts` is what makes one number safe.
 //
-// Whether `1.4.0` is too HIGH — `--isolate` is a 1.3.13 feature and no package here calls a
+// Whether a 1.4 floor is too HIGH — `--isolate` is a 1.3.13 feature and no package here calls a
 // 1.4-only API — was tried on 2026-08-27 and refused on a measured Bun 1.3.14 shutdown hang. The
 // evidence lives in `.github/actions/setup/action.yml`; do not re-derive it, and do not lower this
 // constant without reading it.
-const REQUIRED_BUN = [1, 4, 0] as const;
+const REQUIRED_BUN = [1, 4, 2] as const;
 
 const bunTooOld = (version: string): boolean => {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);

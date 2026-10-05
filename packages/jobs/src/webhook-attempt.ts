@@ -10,6 +10,7 @@ import {
   isRetryableStatus,
   isUltimateError,
   renderThrowable,
+  retryAfterSecondsOf,
   webhookHeaders,
 } from '@ultimat3/core';
 import { JobTimeoutError } from './errors';
@@ -33,9 +34,6 @@ export type WebhookFetch = (
 /** The one content type a delivery announces. The BODY is the app's; how it is framed is not. */
 export const WEBHOOK_CONTENT_TYPE = 'application/json';
 
-/** `Retry-After` in seconds. The HTTP-date form is ignored on purpose — see `retryAfterSeconds`. */
-const RETRY_AFTER_SECONDS = /^\d{1,7}$/;
-
 /** What of a `WebhookEndpoint` an attempt reads. Never the secret: that is inside `signing`. */
 export interface DeliveryEndpoint {
   readonly id: string;
@@ -52,12 +50,14 @@ export type Outcome =
       readonly retryAfterSeconds?: number;
     };
 
-/** `Retry-After: 120`. The HTTP-date form needs the receiver's clock, which is what we do not trust. */
-const retryAfterSeconds = (response: Response): number | undefined => {
-  const header = response.headers.get('retry-after');
-  if (header === null || !RETRY_AFTER_SECONDS.test(header.trim())) return undefined;
-  return Number(header.trim());
-};
+/**
+ * The receiver's `Retry-After`, through core's one reader: delta-seconds as before, and now the
+ * HTTP-date form too, measured against the SAME response's `Date` — the receiver's clock against
+ * the receiver's clock, which is what made the date safe to read without trusting ours. Capped at
+ * a day, and the nack clamps it to the policy's `maxDelay` on top.
+ */
+const retryAfterSeconds = (response: Response): number | undefined =>
+  retryAfterSecondsOf(response.headers.get('retry-after'), response.headers.get('date'));
 
 /**
  * The row's own headers, then the framework's — each SET, case-insensitively, over whatever the row

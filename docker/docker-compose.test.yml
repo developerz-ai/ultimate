@@ -60,12 +60,15 @@ x-postgres: &postgres
     timeout: 3s
     retries: 60
 
+# Each image is its tag — the series, for the reader — pinned to that series' multi-arch index
+# digest, which is what runs: a tag is a pointer its publisher can move. Held by
+# scripts/test-services-shape.test.ts; Dependabot's docker-compose ecosystem moves tag and digest.
 services:
   # pgvector, not stock postgres: `@ultimat3/ai`'s PgVectorStore is the only production vector
   # path, and `pg-vector.live.test.ts` refuses to skip when the extension is missing.
   postgres:
     <<: *postgres
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
     ports: ['127.0.0.1:5432:5432']
 
   # A second server because `wal_level` is a server argument: the logical-replication feed's live
@@ -73,7 +76,7 @@ services:
   # share a server with a replication slot that pins a database open.
   postgres-logical:
     <<: *postgres
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     command: ['postgres', '-c', 'wal_level=logical']
     ports: ['127.0.0.1:5433:5432']
 
@@ -81,7 +84,7 @@ services:
   # from a fake. No snapshot, no append-only file, and a log level that prints nothing.
   redis:
     <<: *silent
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     command: ['redis-server', '--save', '', '--appendonly', 'no', '--loglevel', 'nothing']
     tmpfs: [/data]
     ports: ['127.0.0.1:6379:6379']
@@ -96,7 +99,7 @@ services:
   # tmpfs; `-l /dev/null` is the only quiet a nats-server has.
   nats:
     <<: *silent
-    image: nats:2.11-alpine
+    image: nats:2.11-alpine@sha256:e4bf19f15fd3218814a4e3c9e0064e1334bd8aa20d5984b9f1a0afd084f8cc00
     command: ['-js', '-sd', '/data', '-m', '8222', '-l', '/dev/null']
     tmpfs: [/data]
     ports: ['127.0.0.1:4222:4222']
@@ -112,7 +115,7 @@ services:
   # this server and not the four it was measured against: docs/history/test-services.md.
   s3:
     <<: *silent
-    image: versity/versitygw:v1.8.0
+    image: versity/versitygw:v1.8.0@sha256:30292fc2eeacc67a36993b01f7a7a5e3361a19cced0e80c1d71cfa2a4b0a2499
     environment:
       VGW_BACKEND: posix
       VGW_BACKEND_ARG: /data

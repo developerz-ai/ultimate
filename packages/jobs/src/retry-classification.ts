@@ -3,7 +3,13 @@
 // The backoff arithmetic stays in ./retry — nothing here recomputes a delay `nextRetry` owns.
 
 import type { ErrorRetry } from '@ultimat3/core';
-import { classifyThrown, isUltimateError, renderThrowable, statedDelayMs } from '@ultimat3/core';
+import {
+  classifyThrown,
+  isUltimateError,
+  jitterStatedDelay,
+  renderThrowable,
+  statedDelayMs,
+} from '@ultimat3/core';
 import { finiteDurationMs } from './clock';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
 import { backoffDelayMs, DEFAULT_RETRY, nextRetry } from './retry';
@@ -65,10 +71,16 @@ export function nextRetryForError(
 
   const stated = statedDelayMs(error);
   if (stated === undefined) return { ...decision, stoppedBy: undefined, classification };
-  // Clamped by the policy's own ceiling, which is what `maxDelay` is for: a responder naming a
-  // day is still a responder this deployment has not agreed to wait a day for.
+  // The floor is clamped by the policy's own ceiling, which is what `maxDelay` is for: a responder
+  // naming a day is still a responder this deployment has not agreed to wait a day for. The spread
+  // on top is core's `jitterStatedDelay` — the one rule for a named delay — because an HTTP-date
+  // hands every delivery to one receiver the SAME instant, and waking them together is the herd.
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
-  return { ...decision, delayMs: Math.min(stated, cap), stoppedBy: undefined, classification };
+  // `jitter: false` is the policy's own decision and is honoured: the bare floor.
+  const floor = Math.min(stated, cap);
+  const jittered = (policy.jitter ?? DEFAULT_RETRY.jitter) === true;
+  const delayMs = jittered ? jitterStatedDelay(floor, cap, random) : floor;
+  return { ...decision, delayMs, stoppedBy: undefined, classification };
 }
 
 /**
@@ -99,7 +111,7 @@ export function rateLimitDeferralMs(
   if (!isUltimateError(error) || error.code !== RATE_LIMITED) return undefined;
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
   const wait = statedDelayMs(error) ?? Math.min(backoffDelayMs(policy, attempt), cap);
-  return wait + Math.floor(random() * Math.min(wait / 2, cap));
+  return jitterStatedDelay(wait, cap, random);
 }
 
 /**

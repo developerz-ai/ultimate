@@ -3,7 +3,13 @@
 // nothing in the tree consulted it before deciding to try again, so four packages each shipped
 // their own loop and only `@ultimat3/jobs`' asked the classification at all.
 
-import { type BackoffCurve, backoffDelay, type JitterMode, type Random } from './backoff';
+import {
+  type BackoffCurve,
+  backoffDelay,
+  type JitterMode,
+  jitterStatedDelay,
+  type Random,
+} from './backoff';
 import { systemClock } from './clock';
 import { classifyThrown, type ErrorRetry, statedDelayMs } from './error-retry';
 import { finiteCount, finiteOption } from './finite-option';
@@ -13,7 +19,11 @@ export interface RetryPolicy {
   readonly attempts: number;
   /** The first delay, in ms. */
   readonly base: number;
-  /** Ceiling for any single delay, in ms — a `retry-after` the responder named included. */
+  /**
+   * Ceiling for any single delay, in ms. A `retry-after` the responder named is clamped to it
+   * too, and then gets its spread on top — at most half again, so a burst told one delay does
+   * not wake together (`jitterStatedDelay`).
+   */
   readonly max: number;
   /**
    * Required, unlike `backoffDelay`'s, and that is the point: a retry loop with no jitter is the
@@ -92,9 +102,19 @@ export function retryDecision(
   const stated = classification === 'retry-after' ? statedDelayMs(error) : undefined;
   return {
     retry: true,
-    // Clamped by the policy's own ceiling, which is what `max` is for: a responder naming a day is
-    // still a responder this deployment has not agreed to wait a day for.
-    delayMs: stated === undefined ? computed : Math.min(stated, policy.max),
+    // The stated delay is a FLOOR plus a spread (`jitterStatedDelay`), never the bare number: a
+    // shedding server tells a whole burst `Retry-After: 1`, and waiting exactly that replays the
+    // burst in lockstep every second. The floor is clamped by the policy's own ceiling, which is
+    // what `max` is for — a responder naming a day is still a responder this deployment has not
+    // agreed to wait a day for — and the spread on top is at most half of it.
+    // `jitter: 'none'` is honoured here too — the caller's one decision, for a test or a printable
+    // schedule — and only that mode gets the bare floor.
+    delayMs:
+      stated === undefined
+        ? computed
+        : policy.jitter === 'none'
+          ? Math.min(stated, policy.max)
+          : jitterStatedDelay(Math.min(stated, policy.max), policy.max, random),
     attempt,
     nextAttempt: attempt + 1,
     classification,

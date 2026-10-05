@@ -2,7 +2,7 @@
 // Stable code + cause + exact fix command, rendered identically in the terminal, the browser
 // overlay and `--json`. Never throw a bare Error anywhere in the framework.
 
-import { describeErrorCode } from './error-codes';
+import { describeErrorCode, hasErrorCode } from './error-codes';
 import {
   isThrownError,
   renderCauseValue,
@@ -48,6 +48,14 @@ export interface UltimateErrorInit {
   readonly retry?: ErrorRetry | undefined;
   /** The underlying thrown value, when this error wraps one. */
   readonly sourceError?: unknown;
+  /**
+   * A title off the WIRE — a problem document's `title` — used only when this realm registered
+   * none for `code`. A browser rebuilds a server's refusal by code and may never have loaded the
+   * package that titles it; the registry still wins wherever it has an answer, so a server can
+   * never retitle a code this realm owns. Untrusted display text: the decoder caps it, and the
+   * constructor makes it one line like every other field.
+   */
+  readonly remoteTitle?: string | undefined;
 }
 
 export interface UltimateErrorJSON {
@@ -111,7 +119,8 @@ export class UltimateError extends Error {
     // Escaping at construction is the one place that covers all of them, and it is what #97 called
     // the real answer. `singleLine` is idempotent, so a call site that already escaped is unharmed.
     const code = singleLine(init.code);
-    const title = singleLine(described.title);
+    const remote = init.remoteTitle !== undefined && !hasErrorCode(init.code);
+    const title = singleLine(remote ? (init.remoteTitle ?? described.title) : described.title);
     const cause = singleLine(init.cause);
     // `message` carries the cause because it is the ONLY field a runtime prints when an
     // error escapes uncaught — a worker log, a CI transcript, a stack trace. A message of

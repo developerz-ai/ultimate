@@ -175,14 +175,46 @@ describe('retry', () => {
         return 'ok';
       },
       policy,
-      { sleep: timer.sleep },
+      { sleep: timer.sleep, random: () => 0 },
     );
     expect(answer).toBe('ok');
     expect(runs).toBe(2);
     expect(timer.slept).toEqual([7_000]);
   });
 
-  test("a stated delay is clamped by the policy's own ceiling", async () => {
+  test('the stated delay is a floor plus a spread, so a shed burst does not replay in lockstep', async () => {
+    const shed = (): UltimateError =>
+      coded('X_APP_THROTTLED', { retry: 'retry-after', meta: { retryAfterSeconds: 2 } });
+    const jittered = { ...policy, jitter: 'full' } as const;
+    expect(retryDecision(jittered, 1, shed(), () => 0).delayMs).toBe(2_000);
+    expect(retryDecision(jittered, 1, shed(), () => 0.5).delayMs).toBe(2_500);
+    const clients = [0.1, 0.4, 0.7, 0.9].map((roll) =>
+      retryDecision(jittered, 1, shed(), () => roll),
+    );
+    expect(new Set(clients.map((one) => one.delayMs)).size).toBe(4);
+    // `jitter: 'none'` is the caller's decision, honoured: the bare floor, for a printable schedule.
+    expect(retryDecision(policy, 1, shed(), () => 0.5).delayMs).toBe(2_000);
+  });
+
+  test('the spread counts against the time budget before anything sleeps', async () => {
+    const timer = recorder();
+    const refusal = coded('X_APP_THROTTLED', {
+      retry: 'retry-after',
+      meta: { retryAfterSeconds: 2 },
+    });
+    await expect(
+      retry(
+        async () => {
+          throw refusal;
+        },
+        { ...policy, jitter: 'full', timeBudgetMs: 2_200 },
+        { sleep: timer.sleep, random: () => 0.5, now: () => 0 },
+      ),
+    ).rejects.toBe(refusal);
+    expect(timer.slept).toEqual([]);
+  });
+
+  test("a stated delay's floor is clamped by the policy's own ceiling", async () => {
     const timer = recorder();
     await retry(
       async (attempt) => {
@@ -195,7 +227,7 @@ describe('retry', () => {
         return 'ok';
       },
       policy,
-      { sleep: timer.sleep },
+      { sleep: timer.sleep, random: () => 0 },
     );
     expect(timer.slept).toEqual([30_000]);
   });

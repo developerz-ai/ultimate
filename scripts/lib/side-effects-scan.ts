@@ -65,11 +65,12 @@ export function topLevelEffects(source: string): readonly TopLevelEffect[] {
  * shakes them out breaks something with nothing anywhere to say why. Each must be bare-imported by
  * one of its package's entries; `X_SIDE_EFFECTS_UNANCHORED` is the refusal.
  *
- * **The `sideEffects` array is not what keeps them** — Bun reads any array as `false` and drops the
- * named module regardless (`oven-sh/bun#40650`, reduced to four files with no `@ultimat3/*`,
- * deterministic on 1.4.0, 1.4.1-canary and 1.3.14; esbuild keeps it on the same input). The array
- * still ships, because rollup, webpack and esbuild do honour it and these are packages other people
- * bundle — it is just not the thing enforcing anything here.
+ * **The `sideEffects` array is not what keeps them.** Bun before 1.4.1 read any array as `false`
+ * and dropped the named module regardless (`oven-sh/bun#40650`, reduced to four files with no
+ * `@ultimat3/*`, deterministic on 1.4.0, 1.4.1-canary and 1.3.14; esbuild kept it on the same
+ * input). Fixed upstream in 1.4.1 — the four-file reduction keeps the module on 1.4.2 — but the
+ * anchor stays the enforcement: it holds on any bundler, honouring the array or not, and the array
+ * ships for the rollup, webpack and esbuild users who bundle these packages too.
  *
  * **A list and not a predicate, for the reason `FLOOR_ABOVE` is one.** Two rules were tried and each
  * was measurably wrong. "Anchor every declared module" put `@ultimat3/core`'s `context.ts` in every
@@ -82,13 +83,19 @@ export function topLevelEffects(source: string): readonly TopLevelEffect[] {
  *
  * The discriminator neither predicate could see: a package's own `errors.ts` registers titles for
  * errors whose CONSTRUCTORS live in that same file, so importing the constructor imports the
- * registration — anchored by use, and an anchor would be pure weight. The three below register on
+ * registration — anchored by use, and an anchor would be pure weight. The rows below register on
  * behalf of a module that does not import them, which is why nothing anchors them by accident.
+ * `action` and `realtime` joined 2026-10-05: a browser rebuilds a server's refusal BY CODE
+ * (`problemError`, `refusalError`) and constructs none of their classes, so their titles moved out of
+ * `errors.ts` into an anchored `error-titles.ts` and the classes stopped riding along. `http` joined
+ * the same day for its SERVER realm; a browser takes an http refusal's title off the problem body.
  *
- * Measured: anchoring exactly these three costs **0 B** on all four of `examples/dummy`'s islands,
+ * Measured: anchoring the first three costs **0 B** on all four of `examples/dummy`'s islands,
  * and it makes the retention DETERMINISTIC — the `schema-error-codes.ts` flap that
- * `island-bytes.test.ts` and `barrel-bytes.test.ts` both work around went from 12 flaps in 60 pairs
- * (1.4.0) and 28 in 60 (1.3.14) to **0 in 60 on 1.4.0, 1.3.14 and 1.4.1-canary alike**.
+ * `island-bytes.test.ts` and `barrel-bytes.test.ts` used to tolerate went from 12 flaps in 60 pairs
+ * (1.4.0) and 28 in 60 (1.3.14) to **0 in 60 on 1.4.0, 1.3.14 and 1.4.1-canary alike**. On 1.4.2
+ * (2026-10-05, issue #354) it stayed 0 — 192 island pairs, 288 barrel pairs, under contention — and
+ * both tests' flap branches are deleted: either now fails outright if the module moves.
  */
 export const SIDE_EFFECTS_ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   'packages/core/src/core-error-codes.ts':
@@ -97,6 +104,12 @@ export const SIDE_EFFECTS_ANCHORS: Readonly<Record<string, string>> = Object.fre
     "registers @ultimat3/schema's error titles, because schema is tier 0 and cannot register its own. What READS them is UltimateError's constructor, which never imports this module — so a shaken build renders every X_VALIDATION_FAILED untitled, in the browser, with nothing to say why.",
   'packages/i18n/src/framework.ts':
     'registers the framework catalog that `t()` falls back to. `t()` is a different module and does not import this one, so without the anchor every framework string renders as its ⟦key⟧ placeholder.',
+  'packages/action/src/error-titles.ts':
+    "registers @ultimat3/action's error titles. What reads them in a browser is core's problemError, rebuilding a server's refusal by code, and it never imports this module — so without the anchor an island that called rpc() renders X_INPUT_INVALID untitled.",
+  'packages/realtime/src/error-titles.ts':
+    "registers @ultimat3/realtime's error titles. refusalError rebuilds a sync node's refusal by code and page-errors.ts constructs realtime codes, and neither imports this module — so without the anchor a page renders every realtime refusal untitled.",
+  'packages/http/src/error-titles.ts':
+    "registers @ultimat3/http's error titles and the retry-after class of X_RATE_LIMITED and X_OVERLOADED. UltimateError reads both and never imports this module, so a server realm — x errors list, the problem document, a job retrying an http call — renders the code untitled and classifies a 429 terminal without the anchor. A browser does not need it: core's decoders read the body title and the Retry-After header.",
   'packages/query/src/registry.ts':
     "calls registerPrimitiveRegistrar('query', …), which @ultimat3/core's registrar table reads on behalf of `x` and the manifest. Nothing that registers a query imports this module for a binding.",
 });

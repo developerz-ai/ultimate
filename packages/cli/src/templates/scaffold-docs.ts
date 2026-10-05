@@ -243,7 +243,7 @@ services:
   # the region a request was signed for, and an app that sets no S3_REGION signs for \`auto\` — so
   # that is this gateway's region. A server for a laptop; production is any S3-compatible endpoint.
   s3:
-    image: versity/versitygw:v1.8.0
+    image: versity/versitygw:v1.8.0@sha256:30292fc2eeacc67a36993b01f7a7a5e3361a19cced0e80c1d71cfa2a4b0a2499
     environment:
       VGW_BACKEND: posix
       VGW_BACKEND_ARG: /data

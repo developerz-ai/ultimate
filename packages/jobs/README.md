@@ -550,7 +550,7 @@ can reach. Same argument `timing-safe-equal.ts` makes for itself.
 | `redirect: 'manual'` | following a 3xx would re-POST a body signed for one host to whatever the receiver named |
 | the endpoint is never checkpointed | a `step.run` output lands in `x_job_steps`, and the endpoint carries the secret |
 | every attempt is recorded **before** the throw | a failure the ledger cannot see is a failure the consecutive count cannot see, which is an endpoint that never gets disabled |
-| a `Retry-After` the receiver names is honoured | `X_WEBHOOK_DELIVERY_THROTTLED` carries `meta.retryAfterSeconds`, which the nack waits out (clamped by `retry.maxDelay`) rather than guessing a curve against an answer it already has |
+| a `Retry-After` the receiver names is honoured | `X_WEBHOOK_DELIVERY_THROTTLED` carries `meta.retryAfterSeconds`, which the nack waits out — read by core's `retryAfterSecondsOf` (delta-seconds, or an HTTP-date against the response's own `Date`; `0` or a past date is unstated), clamped by `retry.maxDelay`, plus core's `jitterStatedDelay` spread so deliveries handed one instant do not wake together |
 | `WebhookLedger.isDisabled(endpointId)` is asked before every socket, beside the row's own `disabled` | `disableAfter` writes only the ledger: a verdict nobody asks for again is an endpoint that keeps receiving POSTs. Answer it from the column your `disable` sets |
 | the deadline and a lost lease abort `fetch`; a failure that abort caused writes no ledger row | the nack behind them hands the job to another worker at once, so a request left open is a duplicate delivery, and an abandoned attempt's failure would count toward `disableAfter` |
 | the DRAIN never aborts a POST already on the wire; it stops one not yet sent | torn down, the job goes to the next pod, which re-POSTs the same event on every deploy. Finished, it is recorded like any other outcome — a real failure during the drain included |
@@ -970,7 +970,7 @@ exactly as it had before.
 | Thrown | What the queue does |
 |---|---|
 | a `terminal` code (`X_SCRAPE_AUTH_FAILED`, a validation fault, a permission denial) | dead-lettered on the attempt it happened, `attempt` recorded, remaining attempts unspent — a rotated password retried five times is five more wrong passwords at a site that locks the account after three |
-| a `retry-after` code (`X_RATE_LIMITED`, `X_OVERLOADED`) | retried at the time the responder NAMED — `meta.retryAfterSeconds`, clamped by the policy's `maxDelay` — instead of the backoff. Still an attempt, still under the ceiling |
+| a `retry-after` code (`X_RATE_LIMITED`, `X_OVERLOADED`) | retried at the time the responder NAMED — `meta.retryAfterSeconds`, clamped by the policy's `maxDelay`, plus core's `jitterStatedDelay` spread unless `jitter: false` — instead of the backoff. Still an attempt, still under the ceiling |
 | a `retryable` code (`X_TIMEOUT`, `X_DRAINING`) | the backoff schedule above, unchanged |
 | an **unclassified** code, or anything that is not an `UltimateError` | the backoff schedule above, unchanged. Most codes are unclassified and `retryFor` answers `terminal` for all of them, so reading that would have stopped every transient retry in every app |
 

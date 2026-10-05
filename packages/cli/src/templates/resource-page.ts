@@ -12,15 +12,17 @@ import { LINE_WIDTH } from './wrap';
 
 /**
  * The page's JS budget — MEASURED, never a ceiling picked to pass. `x build --target static` on a
- * fresh `x new` app with `x g resource widget`, Bun 1.4.0 (CI's pin), 2026-10-01: 58,522 B — the
- * form island 57,667 + the `visible` hydration runtime 855. 64kb is 65,536: the headroom is Bun's
- * own movement on one source — a patch release that keeps core's declared modules measured +3.0 kB
- * on the scaffold's theme island, and the tree-shaker flaps by up to 1.1 kB between runs. An app
+ * fresh `x new` app with `x g resource widget` under CI's `file:` links, Bun 1.4.2 (CI's pin),
+ * 2026-10-05: 59,679 B — the form island 58,824 + the `visible` hydration runtime 855 (57,667 + 855
+ * on 1.4.0). 64kb is 65,536: the headroom is Bun's own movement on one source between releases —
+ * 1.4.0 → 1.4.2 moved this island +1,157 B, and a patch release that keeps core's declared modules
+ * measured +3.0 kB on the scaffold's theme island. Two builds of one source are
+ * byte-identical since 1.4.1 (issue #354), so no headroom is held for run-to-run movement. An app
  * that adds per-document scripts (`navigation: { client: [...] }` charges its router, ~18 kB, to
  * every `app/` page) is over it on its first build, and `nextSteps` sends the author there.
  */
 export const RESOURCE_PAGE_BUDGET = '64kb';
-export const RESOURCE_PAGE_MEASURED = '58,522 B';
+export const RESOURCE_PAGE_MEASURED = '59,679 B';
 
 /** How the page reaches a string — the same rule `route.ts` states, for the same issue (#249). */
 const catalogImport = (module: string | undefined): string =>

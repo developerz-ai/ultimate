@@ -101,8 +101,13 @@ export const config = defineRoute({
    * island root once (so the client router can re-run it over a swapped body) and core's transport
    * announcing every write (`onClientWrite`), which is what empties a router's prefetch cache. This
    * page ships no router: `site/` did not opt into client navigation.
+   * raised 22kb → 23kb, measured 23,329 B (2026-10-05, plan 101 sweep 3; Bun 1.4.2,
+   * `x build --target static`): +1,076 B over 22,253 for core's remote-refusal decoding, so the
+   * contact form's `rpc` titles any refusal from the problem body and waits the server's stated
+   * `Retry-After` on a 429/503, without shipping `@ultimat3/http` (whose undeclared `sideEffects`
+   * had carried 11.5 kB of server code into this island until this sweep declared them).
    */
-  budget: { js: '22kb' },
+  budget: { js: '23kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

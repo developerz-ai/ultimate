@@ -32,6 +32,8 @@ const dockerfile = (
 # from the file itself, and without it the frozen install cannot find what the lockfile names.
 # The tag names the series for the reader; the digest is what builds — a tag is a pointer its
 # publisher can move. Dependabot's docker ecosystem moves the digest together with the tag.
+# The digest is \`oven/bun:1.4.2-alpine\`'s, the patch the framework that wrote this file was
+# tested on — the same patch as \`engines.bun\` in package.json.
 FROM oven/bun:1.4-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS manifests
 WORKDIR /app
 COPY . .

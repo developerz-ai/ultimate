@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a2f86ae1d508379d5b1ef3a6d45208b5a4a40741b187fdc39d5dbdb76ab6aed0",
+  "buildId": "851c506bf7871f73b48b4fc24203aeb13d4f67b40aa52e93323b9ac30d01dcb1",
   "tiers": {
     "0": [
       "core",
@@ -247,22 +247,22 @@
     {
       "code": "X_ACTION_DEPRECATION_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_DUPLICATE",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_FOREIGN",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_HTTP_PATH_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors-http.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_JOB_UNBRIDGED",
@@ -272,27 +272,27 @@
     {
       "code": "X_ACTION_PATH_DERIVED_EARLY",
       "owner": "action",
-      "at": "packages/action/src/errors-http.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_PATH_DUPLICATE",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_PATH_STYLE_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors-http.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_POLICY_MISSING",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ACTION_UNREGISTERED",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_ADMIN_ACTION_DUPLICATE",
@@ -497,12 +497,12 @@
     {
       "code": "X_AUDIT_SINK_FAILED",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_AUDIT_SINK_MISSING",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_AUTH_LIMITER_NOT_SHARED",
@@ -557,7 +557,7 @@
     {
       "code": "X_BEARER_MOUNT_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_BENCH_CLAIM_STALE",
@@ -567,7 +567,7 @@
     {
       "code": "X_BODY_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_BOUNDARY_APP_TO_API",
@@ -672,7 +672,7 @@
     {
       "code": "X_BUILD_SKEW",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_BUN_VERSION",
@@ -777,7 +777,7 @@
     {
       "code": "X_CHANNEL_DECLARATION_INVALID",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_CHANNEL_LITERAL",
@@ -887,7 +887,7 @@
     {
       "code": "X_CONTRACT_DRIFT",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_CORPUS_UNSCANNED",
@@ -897,7 +897,7 @@
     {
       "code": "X_CORS_CONFIG_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_COVERAGE_BELOW",
@@ -942,12 +942,12 @@
     {
       "code": "X_CSP_DIRECTIVE_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_CSRF_BLOCKED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_CURRENCY_INVALID",
@@ -982,7 +982,7 @@
     {
       "code": "X_CURSOR_STALE",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_CURSOR_VALUE_UNSUPPORTED",
@@ -1467,7 +1467,7 @@
     {
       "code": "X_ERROR_STATUS_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_ERROR_STATUS_MISSING",
@@ -1642,7 +1642,7 @@
     {
       "code": "X_FRAME_RATE_LIMIT",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_FRAMEWORK_SCHEMA_FAILED",
@@ -1767,22 +1767,22 @@
     {
       "code": "X_IDEMPOTENCY_CONFLICT",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENCY_KEY_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENCY_NOT_SHARED",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENCY_REPLAYED_FAILURE",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENCY_REQUIRED",
@@ -1792,17 +1792,17 @@
     {
       "code": "X_IDEMPOTENCY_RESERVATION_LOST",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENCY_STATUS_UNKNOWN",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IDEMPOTENT_REPLAY_REDACTED",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_IMAGE_DECODE_FAILED",
@@ -1867,7 +1867,7 @@
     {
       "code": "X_INPUT_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_INSTANT_INVALID",
@@ -2022,17 +2022,17 @@
     {
       "code": "X_LIVE_CLIENT_MISSING",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LIVE_QUERY_UNKNOWN",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LIVE_REPLICA_IDENTITY",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LIVE_ROUTE_NO_ISLAND",
@@ -2042,12 +2042,12 @@
     {
       "code": "X_LIVE_ROW_UNIDENTIFIED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LIVE_SERVER_RENDER",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LLM_OUTPUT_INVALID",
@@ -2077,7 +2077,7 @@
     {
       "code": "X_LOCAL_STORE_UNAVAILABLE",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_LOCALE_INVALID",
@@ -2297,7 +2297,7 @@
     {
       "code": "X_METHOD_NOT_ALLOWED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_METRIC_CARDINALITY",
@@ -2377,12 +2377,12 @@
     {
       "code": "X_MUTATOR_CLOCK_MISSING",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_MUTATOR_NOT_IDEMPOTENT",
       "owner": "action",
-      "at": "packages/action/src/errors-idempotency.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_N_PLUS_ONE_QUERY",
@@ -2417,7 +2417,7 @@
     {
       "code": "X_NO_REQUEST",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_NODE_IMPORT_PIN_STALE",
@@ -2522,12 +2522,12 @@
     {
       "code": "X_OFFLINE_QUEUE_ABANDONED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_OPENAPI_CONFIG_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors-http.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_OTLP_ENDPOINT_INVALID",
@@ -2552,12 +2552,12 @@
     {
       "code": "X_OUTPUT_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_OVERLOADED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_PACKAGE_DUPLICATED",
@@ -2587,7 +2587,7 @@
     {
       "code": "X_PATH_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_PERMISSION_BORROWED",
@@ -2617,12 +2617,12 @@
     {
       "code": "X_PIPELINE_FINALIZE_FAILED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_PIPELINE_NO_RESPONSE",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_POLICY_CLAUSE_EMPTY",
@@ -2667,7 +2667,7 @@
     {
       "code": "X_PROBLEM_META_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_PROTO_CHAIN_INDEX",
@@ -2692,7 +2692,7 @@
     {
       "code": "X_PROTOCOL_VERSION",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_PUBLISH_LIST_INCOMPLETE",
@@ -2772,7 +2772,7 @@
     {
       "code": "X_QUERY_NOT_SUBSCRIBABLE",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_QUERY_POLICY_MISSING",
@@ -2807,42 +2807,42 @@
     {
       "code": "X_RATE_LIMIT_BUCKET_CONFLICT",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_BUCKET_UNBOUND",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_NOT_SHARED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_SCOPE_UNSET",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_STORE_UNAVAILABLE",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_LIMITED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_RATE_MISSING",
@@ -2872,17 +2872,17 @@
     {
       "code": "X_REALTIME_TOPOLOGY",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REALTIME_UNINSTALLED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REBASE_CONFLICT",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_RECORD_KEY_MISSING",
@@ -2892,7 +2892,7 @@
     {
       "code": "X_RECORD_REJECTED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REFERENCE_APP_NO_FLOOR",
@@ -2977,22 +2977,22 @@
     {
       "code": "X_REPLICATION_FAILED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REPLICATION_PROTOCOL",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REPLICATION_TLS",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REPLICATOR_SLOT_HELD",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_REPO_CLIENT_PINNED",
@@ -3047,7 +3047,7 @@
     {
       "code": "X_ROUTE_CONFLICT",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_ROUTE_DUPLICATE",
@@ -3087,7 +3087,7 @@
     {
       "code": "X_ROUTE_NOT_FOUND",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_ROUTE_OFFLINE_MISSING",
@@ -3112,7 +3112,7 @@
     {
       "code": "X_RPC_FAILED",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_RUNTIME_DRIVER_SPLIT",
@@ -3482,7 +3482,7 @@
     {
       "code": "X_SERVER_NOT_STARTED",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_SERVICE_DUPLICATE",
@@ -3560,6 +3560,11 @@
       "at": "scripts/side-effects.ts"
     },
     {
+      "code": "X_SIDE_EFFECTS_BY_USE_STALE",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
       "code": "X_SIDE_EFFECTS_ENTRY_STALE",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
@@ -3612,22 +3617,22 @@
     {
       "code": "X_SOCKET_AUTH_UNAVAILABLE",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SOCKET_LIMIT",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SOCKET_ORIGIN_REFUSED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SOCKET_UNAUTHENTICATED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SPAWN_TIMEOUT_PIN_STALE",
@@ -3787,12 +3792,12 @@
     {
       "code": "X_SUBSCRIPTION_ID_TAKEN",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SUBSCRIPTION_LIMIT",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_SUPERSEDED",
@@ -3812,7 +3817,7 @@
     {
       "code": "X_SYNC_UNCONFIGURED",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_TELEMETRY_SAMPLER_ARG_INVALID",
@@ -4112,17 +4117,17 @@
     {
       "code": "X_TOPIC_FORBIDDEN",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_TRANSPORT_PROTOCOL",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_TRANSPORT_UNAVAILABLE",
       "owner": "realtime",
-      "at": "packages/realtime/src/errors.ts"
+      "at": "packages/realtime/src/error-titles.ts"
     },
     {
       "code": "X_TRUST_2FA_REQUIRED",
@@ -4142,7 +4147,7 @@
     {
       "code": "X_TRUST_PROXY_UNSET",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_TRUST_PUBLISHER_FAILED",
@@ -4372,12 +4377,12 @@
     {
       "code": "X_WEBHOOK_SIGNATURE_INVALID",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_WEBHOOK_SIGNATURE_STALE",
       "owner": "http",
-      "at": "packages/http/src/errors.ts"
+      "at": "packages/http/src/error-titles.ts"
     },
     {
       "code": "X_WIKI_TABLE_MALFORMED",

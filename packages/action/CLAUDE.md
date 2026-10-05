@@ -27,7 +27,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection |
 | `path-style-miss.ts` | `explainActionPathMiss` — `@ultimat3/http`'s `hooks.explainMiss`: a POST under the style this app does not serve is `X_CONTRACT_DRIFT` naming the one it does |
 | `api-declaration.ts` | `defineApi({ http, openapi })` held process-wide for the boot and `x manifest` |
-| `errors-http.ts` | the three HTTP-declaration refusals (codes registered in `errors.ts`) |
+| `errors-http.ts` | the three HTTP-declaration refusals |
+| `error-titles.ts` | every code's title, the one `registerErrorCodes` |
 | `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
 | `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
@@ -205,7 +206,10 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   Net against the pre-transport figure: +977 B, about the envelope decoder's size. `As of 2026-10-01`
   `rpc` is 19,671 B (19,490 B before the document's path-style stamp was read: +181 B, +45 gzipped)
   and `rpc` + `createClientFlight` 25,954 B.
-- **The `sideEffects` array is load-bearing**: `errors.ts` runs `registerErrorCodes` at import. Never `false`.
+- **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
+  titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
+  not. An http refusal needs no http module: core's decoders take its title off the body and its
+  `retry-after` off the header (`rpc-refusal.test.ts`).
 
 ## Invariants — idempotency
 

@@ -6,8 +6,10 @@
  * authorize or execute on its own. One authz system, structurally.
  */
 
-// Anchored on purpose, and NOT by the `sideEffects` array: Bun reads any array as `false` and drops
-// the module regardless (oven-sh/bun#40650). `registerPrimitiveRegistrar('query', …)` here is read
+// Anchored on purpose, and not by the `sideEffects` array alone: Bun before 1.4.1 read any array as
+// `false` and dropped the module regardless (oven-sh/bun#40650), and a bare import holds on every
+// bundler. The array still lists it, because a bundler that honours the array drops a bare import
+// of a module it does not list. `registerPrimitiveRegistrar('query', …)` here is read
 // by @ultimat3/core's registrar table on behalf of `x` and the manifest, and nothing that registers
 // a query imports this module for a binding. `SIDE_EFFECTS_ANCHORS` carries the argument and
 // `bun run side-effects` enforces it.

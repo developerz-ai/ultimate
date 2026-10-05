@@ -1,10 +1,12 @@
 /**
  * The refusals of the HTTP declaration an app makes about its actions: a pinned `http.path`, the
  * app's `pathStyle`, and the `openapi` block. Split from `errors.ts` at its ceiling; the codes and
- * titles stay registered there, one registry.
+ * titles are registered in `error-titles.ts`, one registry, imported bare so constructing one of
+ * these registers its title first.
  */
 
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
+import './error-titles';
 
 export class ActionHttpPathInvalidError extends UltimateError {
   constructor(input: { name: string; path: unknown; reason: string }) {

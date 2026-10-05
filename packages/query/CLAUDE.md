@@ -128,8 +128,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **`@ultimat3/query/client` is the read client without the barrel** — `client.ts` and `naming.ts`
   import core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
-  titles table in the graph or past 11 kB; `client-subpath.test.ts` pins the specifier. Byte figures
-  (`As of 2026-10-02`, browser, minified): barrel `queryClient` 25,237 B; `./client` 11,012 B.
+  titles table in the graph or past 12 kB; `client-subpath.test.ts` pins the specifier. Byte figures
+  (browser, minified): barrel `queryClient` 25,237 B (`As of 2026-10-02`); `./client` 11,886 B
+  (`As of 2026-10-05`, +874 B: core reads a refusal's `Retry-After` and body title).
 - **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
   `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
   answer. No `rows:` is byte-identical on the wire.

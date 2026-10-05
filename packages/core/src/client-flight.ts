@@ -93,6 +93,11 @@ export interface FlightPlan<T> {
   readonly abortable: boolean;
   /** One attempt. `signal` is the flight's own — a caller's signal never reaches here. */
   run(signal: AbortSignal | undefined, attempt: number): Promise<T>;
+  /**
+   * The CALLER's signal, read for one thing: an abort during the wait between attempts settles the
+   * call at once, a write's included. `run` gets the flight's own signal as before.
+   */
+  readonly signal?: AbortSignal | undefined;
   /** Overrides the flight's policy for this one call. */
   readonly retry?: ClientRetry | undefined;
   /**
@@ -172,6 +177,50 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
     options.limit === undefined ? undefined : createFlightGate(options.limit, { subject });
   const live = new Set<AbortController>();
 
+  /**
+   * The wait between attempts, raced against the flight's signal (`bump()`, the deadline) and the
+   * caller's. Uncancellable, a bump at 50 ms settled `X_SUPERSEDED` only when a one-second wait
+   * ran out; now it settles at once, with the abort's own reason, and the timer is let go.
+   */
+  const waitFor = (ms: number, signals: readonly (AbortSignal | undefined)[]): Promise<void> => {
+    const live = signals.filter((one): one is AbortSignal => one !== undefined);
+    const fired = live.find((one) => one.aborted);
+    if (fired !== undefined) return Promise.reject(fired.reason);
+    if (live.length === 0) return sleep(ms);
+    return new Promise<void>((resolve, reject) => {
+      let cancel: (() => void) | undefined;
+      const stop = (): void => {
+        for (const one of live) one.removeEventListener('abort', onAbort);
+      };
+      const onAbort = (event: Event): void => {
+        stop();
+        cancel?.();
+        reject((event.target as AbortSignal).reason);
+      };
+      const done = (): void => {
+        stop();
+        resolve();
+      };
+      for (const one of live) one.addEventListener('abort', onAbort, { once: true });
+      // The flight's own scheduler is cancellable, so an abandoned wait leaves no timer behind; an
+      // injected `sleep` is a test's, raced and simply never awaited again.
+      if (options.sleep === undefined) cancel = schedule(done, ms);
+      else
+        options.sleep(ms).then(done, (error: unknown) => {
+          stop();
+          reject(error);
+        });
+    });
+  };
+
+  /**
+   * One attempt holds a gate slot; the WAIT between attempts does not. Held across the sleep, a
+   * call backing off from a 503 kept the ceiling's only slot and a second call was refused
+   * `X_FLIGHT_GATE_OVERLOADED` for work nobody was doing. Re-acquired for the next attempt.
+   */
+  const once = <T>(plan: FlightPlan<T>, signal: AbortSignal | undefined, count: number) =>
+    gate === undefined ? plan.run(signal, count) : gate.run(() => plan.run(signal, count));
+
   const attempt = async <T>(plan: FlightPlan<T>, signal: AbortSignal | undefined): Promise<T> => {
     const policy: RetryPolicy = {
       ...DEFAULT_CLIENT_RETRY,
@@ -188,7 +237,7 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
     const answer = await retry<T | typeof STOPPED>(
       async (count) => {
         try {
-          return await plan.run(signal, count);
+          return await once(plan, signal, count);
         } catch (error) {
           if (sendAgain(error)) throw error;
           stopped = { error };
@@ -197,7 +246,7 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
       },
       policy,
       {
-        sleep,
+        sleep: (ms) => waitFor(ms, [signal, plan.signal]),
         ...(options.random === undefined ? {} : { random: options.random }),
         ...(options.now === undefined ? {} : { now: options.now }),
       },
@@ -272,8 +321,9 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
 
     run<T>(plan: FlightPlan<T>): Promise<T> {
       const issued = fence.generation();
-      const work = (): Promise<T> =>
-        gate === undefined ? dispatch(plan) : gate.run(() => dispatch(plan));
+      // The gate is taken per ATTEMPT, inside `dispatch` (`once`), so a wait between attempts holds
+      // no slot.
+      const work = (): Promise<T> => dispatch(plan);
       // The single flight sits OUTSIDE the gate: a joiner takes no slot, so dedup relieves the
       // ceiling instead of queueing behind it. Keyed by GENERATION too: `bump()` aborts the old
       // flights, but each holds its key until its rejection settles, and a same-key read issued

@@ -1,8 +1,8 @@
 // An island that reads one record must not carry realtime's whole code table. Measured on the
 // artifact: `Bun.build` with `minify: false` writes one `// <path>` banner per retained module, so
-// the retained SET is read off the chunk and a regression names its file — `errors.ts` (the table
-// and its `registerErrorCodes()`) must be absent, and `page-errors.ts` (the refusals a browser can
-// reach, titled from the table only where one was loaded) present in its place.
+// the retained SET is read off the chunk and a regression names its file — `errors.ts` (the sync
+// node's refusal classes) must be absent, and `page-errors.ts` (the refusals a browser can reach,
+// titled through `error-titles.ts`, which the barrel imports bare) present in its place.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no directory-removal API, and the fixture directory is this process's own.

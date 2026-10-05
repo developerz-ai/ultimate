@@ -107,17 +107,19 @@ describe('the browser path to the page seam', () => {
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
   // browser hook uses — is the ceiling a realtime island can reach through this path.
   //
-  // measured: 15,470 B (2026-09-28), against 16,384. It was 14,888 at the tip before this change
-  // (14,070 on 2026-09-22). why: +582 B, client navigation's seam — `client-writes.ts`
-  // (`onClientWrite`, which `clientTransport` fires after every write so the router's prefetch
-  // cache is emptied) and the four `CLIENT_NAVIGATION_*` header names the router and
-  // `@ultimat3/http`'s gate share. The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 16 kB (15,470 B as of 2026-09-28)', async () => {
+  // measured: 16,878 B (2026-10-05, Bun 1.4.2), against 17,408. It was 16,004 at the tip before
+  // this change (15,470 on 2026-09-28). why: +874 B, what a browser reads off an http refusal it
+  // never loaded the package for — `client-retry-after.ts` (the one `Retry-After` reader), the
+  // `retry-after` rule in `retryForStatus`, `remoteTitleOf` + `UltimateError`'s `remoteTitle` (the
+  // problem body's title for an unregistered code) — and the retry wait `bump()` and the caller's
+  // abort can now end. That is what let `@ultimat3/http`'s 11.5 kB leave every action island.
+  // The next whole kilobyte above the measurement.
+  test('the whole entry reaches no titles table and stays under 17 kB (16,878 B as of 2026-10-05)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(16_384);
+    expect(bytes).toBeLessThan(17_408);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

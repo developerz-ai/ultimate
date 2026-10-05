@@ -54,8 +54,13 @@ describe('@ultimat3/query/client in a browser', () => {
     expect(modules.filter(isTitlesTable)).toEqual([]);
   }, 60_000);
 
-  test('stays under 11 kB minified (10,210 B as of 2026-09-22)', async () => {
+  // measured: 11,886 B (2026-10-05, Bun 1.4.2), against 12,288. It was 11,012 at the tip before
+  // this change. why: +874 B, core's decoders reading an http refusal off the wire — the
+  // `Retry-After` reader (`client-retry-after.ts`) and the `retry-after` rule in `retryForStatus`,
+  // so a read refused with a 429 waits the delay the server named, and the problem body's `title`
+  // for a code this realm never registered (`remoteTitleOf`). The next whole kilobyte above it.
+  test('stays under 12 kB minified (11,886 B as of 2026-10-05)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(11_264);
+    expect(bytes).toBeLessThan(12_288);
   }, 60_000);
 });

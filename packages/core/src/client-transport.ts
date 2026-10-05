@@ -44,6 +44,8 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
               ? flight.keyFor(req.url, { signal: req.signal, fresh: req.fresh })
               : undefined,
             abortable: read,
+            // The caller's own signal ends a WAIT between attempts; each attempt already reads it.
+            signal: req.signal,
             // A stream is read once, so a second attempt re-sends a body that is already spent —
             // and fails as the network would, until the attempts run out. One attempt, always.
             retry: req.rawBody instanceof ReadableStream ? ONCE : req.retry,

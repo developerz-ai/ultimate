@@ -42,7 +42,8 @@ const RENDER_PACKAGE = '@ultimat3/render';
  * `Bun.plugin` ignores `onResolve` outright — the callback never fires, from module scope or from
  * a `--preload`, and a virtual namespace never resolves — and ignores `resolveDir` on an `onLoad`
  * result. Neither seam can carry the resolution, so the specifier must. Revisit if Bun wires
- * either: an `onResolve` hook would leave every compiled module byte-identical.
+ * either: an `onResolve` hook would leave every compiled module byte-identical. Upstream:
+ * https://github.com/oven-sh/bun/issues/40579.
  *
  * The fallback is the status quo, for the one frame that cannot answer: inside a
  * `bun build --compile` binary `import.meta.url` is `file:///$bunfs/root/<name>` and
