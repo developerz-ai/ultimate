@@ -59,6 +59,22 @@ describe('one status.yml', () => {
     expect(codes('status: complete\nslices:\n  - {file: 01-a.md, status: complete}\n')).toEqual([]);
   });
 
+  test('a slices value that is present but not a list is refused rather than skipped', () => {
+    for (const slices of ['done', '{file: 01-a.md, status: complete}', '3']) {
+      const findings = statusFindings(PATH, `status: complete\nslices: ${slices}\n`);
+      expect(findings.map((f) => f.code)).toEqual(['X_PLAN_STATUS_INVALID']);
+      expect(findings[0]?.cause).toContain('slices');
+      expect(findings[0]?.cause).toContain('not a list');
+      expect(findings[0]?.fix).toContain(`in ${PATH}`);
+    }
+  });
+
+  test('slices absent or empty (`slices:` with nothing under it) is no slices, not an error', () => {
+    expect(codes('status: complete\n')).toEqual([]);
+    expect(codes('status: complete\nslices:\n')).toEqual([]);
+    expect(codes('status: complete\nslices: []\n')).toEqual([]);
+  });
+
   test('YAML that does not parse is refused rather than skipped', () => {
     expect(codes('status: [complete\n')).toEqual(['X_PLAN_STATUS_INVALID']);
   });

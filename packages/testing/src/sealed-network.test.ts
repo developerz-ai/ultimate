@@ -148,6 +148,19 @@ describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
     expect((await socketRefusal(dialInvalid))?.code).toBe('X_TEST_NETWORK_OFFLINE');
   });
 
+  test('offline closes a loopback socket too, the same order fetch checks in', async () => {
+    // Offline first, loopback second — as `fetch` does. A loopback pass ahead of the offline
+    // check let `new WebSocket('ws://localhost:1')` through while `fetch` to the same host threw.
+    setNetworkState('offline');
+    expect((await socketRefusal(() => new WebSocket('ws://localhost:1')))?.code).toBe(
+      'X_TEST_NETWORK_OFFLINE',
+    );
+    const dialLoopback = () =>
+      Bun.connect({ hostname: '127.0.0.1', port: 1, socket: { data() {} } });
+    expect((await socketRefusal(dialLoopback))?.code).toBe('X_TEST_NETWORK_OFFLINE');
+    expect((await refusalOf('http://localhost:1/'))?.code).toBe('X_TEST_NETWORK_OFFLINE');
+  });
+
   test('loopback is this machine, not egress: a Bun.listen server is reachable', async () => {
     const server = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
     try {

@@ -84,10 +84,12 @@ const socketRefusal = (url: string, method: string): Error | undefined => {
   } catch {
     return undefined; // Not a URL: the real constructor refuses it with its own SyntaxError.
   }
-  if (isThisMachine(target.hostname)) return undefined;
+  // Offline before loopback, the order `fetch` checks in: offline cuts EVERY dial, this machine's
+  // included, or a socket would reach a host the same test's `fetch` is refused.
   if (state.network !== 'online') {
     return new NetworkOfflineError({ url, method, mode: state.network });
   }
+  if (isThisMachine(target.hostname)) return undefined;
   if (state.allowed.has(target.host)) return undefined;
   return new NetworkSealedError({ url, method, allowed: [...state.allowed], transport: 'socket' });
 };

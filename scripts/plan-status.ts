@@ -64,7 +64,18 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
   if (typeof doc['status'] !== 'string' || !ALLOWED.has(doc['status'])) {
     findings.push(invalid(path, 'status', doc['status']));
   }
-  const slices = Array.isArray(doc['slices']) ? doc['slices'] : [];
+  // Absent, or `slices:` with nothing under it (YAML null), is a plan with no slices yet. Anything
+  // else that is not a list would skip every slice check while reading as a pass.
+  const raw = doc['slices'];
+  if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
+    findings.push({
+      code: 'X_PLAN_STATUS_INVALID',
+      cause: `${path} slices is ${shown(raw)}, which is not a list, so no slice status in it was checked`,
+      fix: `bun run plan-status --json   # after making slices in ${path} a list of { file, status } rows`,
+      at: path,
+    });
+  }
+  const slices: readonly unknown[] = Array.isArray(raw) ? raw : [];
   slices.forEach((slice: unknown, index) => {
     const row = isRecord(slice) ? slice : {};
     const name = typeof row['file'] === 'string' ? row['file'] : `#${String(index + 1)}`;

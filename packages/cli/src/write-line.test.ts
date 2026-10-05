@@ -3,7 +3,7 @@
 // load-bearing test spawns a child and reads the pipe — the in-process runner's fd 1 is not a
 // thing a test may redirect without taking the whole runner down with it.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
@@ -112,6 +112,101 @@ describe('writeAll under EAGAIN', () => {
   const eagain = (): never => {
     throw Object.assign(new Error('write EAGAIN'), { code: 'EAGAIN' });
   };
+  /** A reader that drains: takes every byte handed to it, and records them. */
+  const sink =
+    (into: number[] = []) =>
+    (_fd: number, data: Uint8Array, offset: number, length: number) => {
+      into.push(...data.subarray(offset, offset + length));
+      return length;
+    };
+
+  // The module's degraded/torn state is process-wide, as a real pipe's is. A drained write is the
+  // one thing that clears it, so each test starts from a reader that just drained.
+  beforeEach(() => {
+    writeAll(1, Buffer.from('x\n'), sink(), () => {});
+  });
+
+  test('after a drop, a reader that still never drains costs ONE attempt and no sleep', () => {
+    writeAll(1, Buffer.from('first\n'), eagain, () => {});
+    let attempts = 0;
+    const naps: number[] = [];
+    const before = droppedLineCount();
+    const ok = writeAll(
+      1,
+      Buffer.from('second\n'),
+      () => {
+        attempts += 1;
+        return eagain();
+      },
+      (ms) => naps.push(ms),
+    );
+    expect(ok).toBe(false);
+    expect(attempts).toBe(1);
+    expect(naps).toEqual([]);
+    expect(droppedLineCount()).toBe(before + 1);
+  });
+
+  test('a write that arrives clears degraded mode: the next stall gets the full budget again', () => {
+    writeAll(1, Buffer.from('first\n'), eagain, () => {});
+    expect(writeAll(1, Buffer.from('drained\n'), sink(), () => {})).toBe(true);
+    let attempts = 0;
+    writeAll(
+      1,
+      Buffer.from('third\n'),
+      () => {
+        attempts += 1;
+        return eagain();
+      },
+      () => {},
+    );
+    expect(attempts).toBe(EAGAIN_ATTEMPTS);
+  });
+
+  test('degraded mode is per fd: a drop on fd 1 leaves fd 2 its full budget', () => {
+    writeAll(1, Buffer.from('first\n'), eagain, () => {});
+    let attempts = 0;
+    writeAll(
+      2,
+      Buffer.from('other fd\n'),
+      () => {
+        attempts += 1;
+        return eagain();
+      },
+      () => {},
+    );
+    expect(attempts).toBe(EAGAIN_ATTEMPTS);
+    writeAll(2, Buffer.from('x\n'), sink(), () => {});
+  });
+
+  test('a line dropped half-written is terminated before the next line, never glued to it', () => {
+    let calls = 0;
+    const out: number[] = [];
+    // Three bytes arrive, then the reader stops for good: half a line is on the pipe.
+    writeAll(
+      1,
+      Buffer.from('abcdef\n'),
+      (_fd, data, offset) => {
+        calls += 1;
+        if (calls > 3) return eagain();
+        out.push(data[offset] ?? -1);
+        return 1;
+      },
+      () => {},
+    );
+    expect(writeAll(1, Buffer.from('next\n'), sink(out), () => {})).toBe(true);
+    expect(Buffer.from(out).toString()).toBe('abc\nnext\n');
+    // Terminated once: the line after that one starts clean.
+    const after: number[] = [];
+    writeAll(1, Buffer.from('later\n'), sink(after), () => {});
+    expect(Buffer.from(after).toString()).toBe('later\n');
+  });
+
+  test('a line dropped with nothing written leaves no stray newline behind', () => {
+    writeAll(1, Buffer.from('lost\n'), eagain, () => {});
+    const out: number[] = [];
+    writeAll(1, Buffer.from('next\n'), sink(out), () => {});
+    expect(Buffer.from(out).toString()).toBe('next\n');
+  });
 
   test('a pipe that answers EAGAIN forever still returns, after the bounded attempts', () => {
     let attempts = 0;

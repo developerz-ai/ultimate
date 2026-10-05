@@ -38,6 +38,12 @@ export function entryPatternsOf(manifest: unknown): readonly string[] {
 // shipped `import type` names. One pattern for `from '.'`, `import('.')` and `import '.'`, relative
 // specifiers only: over-matching an importer only ever clears a module, never flags one.
 const RELATIVE = /(?:\bfrom|\bimport)\s*\(?\s*(['"])(\.\.?\/[^'"]*)\1/g;
+/**
+ * A template-literal `import(\`./drivers/${n}\`)`: the static head up to the first `${` names a
+ * DIRECTORY prefix, and any module under it may be the one loaded. With no `${` the closing
+ * backtick ends it and it is an ordinary specifier.
+ */
+const TEMPLATE = /\bimport\s*\(\s*`(\.\.?\/[^`$]*)(\$\{|`)/g;
 /** A file named in a string — `join(import.meta.dir, 'probe.ts')`, `new URL('./worker.ts', …)`. */
 const NAMED = /['"`/]([\w.-]+\.tsx?)['"`]/g;
 
@@ -53,6 +59,18 @@ function onCommentLine(text: string, index: number): boolean {
   while (text[at] === ' ' || text[at] === '\t') at += 1;
   const head = text.slice(at, at + 2);
   return head === '//' || head === '/*' || head.startsWith('*');
+}
+
+/** `from`'s directory joined with a relative `head`, `.` and `..` folded; a trailing `/` kept. */
+function prefixFrom(from: string, head: string): string {
+  const parts = from.split('/').slice(0, -1);
+  const segments = head.split('/');
+  const last = segments.pop() ?? '';
+  for (const segment of segments) {
+    if (segment === '..') parts.pop();
+    else if (segment !== '.' && segment !== '') parts.push(segment);
+  }
+  return `${parts.join('/')}/${last}`;
 }
 
 const isFixture = (path: string): boolean => path.endsWith(FIXTURE_SUFFIX);
@@ -72,14 +90,29 @@ function referrersOf(sources: ReadonlyMap<string, string>): {
   const host: ClosureHost = { read: (path) => sources.get(path), alias: () => undefined };
   const imports = new Map<string, Set<string>>();
   const named = new Map<string, Set<string>>();
+  const prefixes: { readonly prefix: string; readonly from: string }[] = [];
   for (const [from, text] of sources) {
     for (const match of text.matchAll(RELATIVE)) {
       if (onCommentLine(text, match.index)) continue;
       const target = resolveSpec(host, from, match[2] ?? '');
       if (target !== undefined && target !== from) add(imports, target, from);
     }
+    for (const match of text.matchAll(TEMPLATE)) {
+      if (onCommentLine(text, match.index)) continue;
+      const head = match[1] ?? '';
+      if (match[2] === '`') {
+        const target = resolveSpec(host, from, head);
+        if (target !== undefined && target !== from) add(imports, target, from);
+      } else prefixes.push({ prefix: prefixFrom(from, head), from });
+    }
     for (const match of text.matchAll(NAMED)) {
       if (!onCommentLine(text, match.index)) add(named, match[1] ?? '', from);
+    }
+  }
+  // Few computed imports in any repo, so a scan of every path per prefix costs nothing measurable.
+  for (const { prefix, from } of prefixes) {
+    for (const path of sources.keys()) {
+      if (path !== from && path.startsWith(prefix)) add(imports, path, from);
     }
   }
   return { imports, named };

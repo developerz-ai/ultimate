@@ -232,12 +232,14 @@ twins, and ships the guard that keeps each one gone.
 ### Fixed
 
 - `testing`: the sealed network seals `WebSocket` and `Bun.connect` too (non-loopback hosts, the
-  same allow-list and offline state as `fetch`), as the docs already claimed.
+  same allow-list as `fetch`), as the docs already claimed; offline refuses every dial, loopback
+  included.
 - `storage`: `X_STORAGE_NOT_FOUND` names the registered disk, not the driver kind, for `s3` and
   `local`.
 - `cli`, scripts: a stdout/stderr write that keeps answering `EAGAIN` retries at most 50
-  consecutive stalls with a 1–32 ms backoff, then drops the line and counts it; a reader that never
-  drains no longer hangs the command.
+  consecutive stalls with a 1–32 ms backoff, then drops the line and counts it; after a drop each
+  line gets one attempt until the reader drains again, and a half-written line is closed before the
+  next. A reader that never drains no longer hangs the command.
 - Docs: `RuntimeOverrides` is documented (wiki/Configuration.md), and so is `defineTheme()`'s
   contrast refusal (#441, #442); every dead path in a package `CLAUDE.md`, the wiki and
   `docs/architecture` is repointed; the fictional `tokens.ts` block is gone.

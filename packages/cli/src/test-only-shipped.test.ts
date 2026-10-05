@@ -21,6 +21,9 @@ const P: readonly ShippedPackage[] = [{ dir: 'p', entries: ['src/index.ts'] }];
 const tree = (files: Readonly<Record<string, string>>): ReadonlyMap<string, string> =>
   new Map(Object.entries(files));
 
+/** A `${name}` placeholder, spelled so the fixture source carries it literally. */
+const hole = (name: string): string => `\${${name}}`;
+
 const paths = (sources: ReadonlyMap<string, string>, packages = P): readonly string[] =>
   testOnlyModules(sources, packages).map((module) => module.path);
 
@@ -50,6 +53,44 @@ describe('testOnlyModules', () => {
       });
       expect(paths(sources)).toEqual([]);
     }
+  });
+
+  // A computed specifier names a DIRECTORY prefix, not a file: every module under it may be the one
+  // loaded at runtime, so every one is shipped-imported. Over-matching can only clear a module.
+  test('a template-literal dynamic import references every module under its static prefix', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': `export const load = (n: string) => import(\`./drivers/${hole('n')}\`);\nexport const x = 1;\n`,
+      'packages/p/src/drivers/pg.ts': 'export const pg = 1;\n',
+      'packages/p/src/drivers/nested/mysql.ts': 'export const mysql = 1;\n',
+      'packages/p/src/fake.ts': 'export const fake = 1;\n',
+      'packages/p/src/a.test.ts':
+        "import { pg } from './drivers/pg';\nimport { mysql } from './drivers/nested/mysql';\nimport { fake } from './fake';\n",
+    });
+    // `fake.ts` is outside the prefix and stays reported: the prefix is a directory, not the tree.
+    expect(paths(sources)).toEqual(['packages/p/src/fake.ts']);
+  });
+
+  test('a template prefix resolves relative to its file, `..` included, and partial names', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': "export { load } from './lib/load';\n",
+      'packages/p/src/lib/load.ts': `export const load = (n: string) => import(\`../drivers/driver-${hole('n')}.ts\`);\n`,
+      'packages/p/src/drivers/driver-pg.ts': 'export const pg = 1;\n',
+      'packages/p/src/drivers/other.ts': 'export const other = 1;\n',
+      'packages/p/src/a.test.ts':
+        "import { pg } from './drivers/driver-pg';\nimport { other } from './drivers/other';\n",
+    });
+    expect(paths(sources)).toEqual(['packages/p/src/drivers/other.ts']);
+  });
+
+  test('a template import with no interpolation is an ordinary import', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': 'export const load = () => import(`./fake`);\n',
+      'packages/p/src/fake.ts': 'export const fake = 1;\n',
+      'packages/p/src/other.ts': 'export const other = 1;\n',
+      'packages/p/src/a.test.ts':
+        "import { fake } from './fake';\nimport { other } from './other';\n",
+    });
+    expect(paths(sources)).toEqual(['packages/p/src/other.ts']);
   });
 
   test('an import inside a comment is not an importer', () => {

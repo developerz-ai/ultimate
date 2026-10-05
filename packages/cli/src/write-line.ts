@@ -26,7 +26,9 @@ import { backoffDelay, stringField } from '@ultimat3/core';
  * microseconds, so it is retried — but BOUNDED: a reader that never drains (a stopped `| less`, a
  * wedged parent) turned the unbounded retry into a command that never exits, spinning a core.
  * `EAGAIN_ATTEMPTS` consecutive stalls, each waiting longer (capped), then the line is dropped and
- * counted (`droppedLineCount()`): one lost line beats a process that cannot finish.
+ * counted (`droppedLineCount()`): one lost line beats a process that cannot finish. After a drop
+ * the fd is DEGRADED: each later line gets one attempt and no sleep, or a never-draining reader
+ * would cost ~1.5 s per line forever. Any byte arriving clears it.
  */
 function writeTo(fd: 1 | 2, line: string): void {
   writeAll(fd, Buffer.from(`${line}\n`));
@@ -46,12 +48,31 @@ export type WriteSync = (fd: number, buffer: Uint8Array, offset: number, length:
 
 let dropped = 0;
 
+/**
+ * Per fd, because fd 1 and fd 2 are two readers. `degraded`: the last line was dropped, so the next
+ * gets one attempt. `torn`: it was dropped HALF-written, so the next line that arrives opens with
+ * the newline the torn one never got — otherwise the two glue into one unparseable line.
+ */
+const pipes = new Map<number, { degraded: boolean; torn: boolean }>();
+
+const pipeOf = (fd: number): { degraded: boolean; torn: boolean } => {
+  let pipe = pipes.get(fd);
+  if (pipe === undefined) {
+    pipe = { degraded: false, torn: false };
+    pipes.set(fd, pipe);
+  }
+  return pipe;
+};
+
+const NEWLINE = 0x0a;
+
 /** Lines this process dropped to a reader that never drained. */
 export const droppedLineCount = (): number => dropped;
 
 /**
- * Write every byte of `buffer` to `fd`, or drop it after `EAGAIN_ATTEMPTS` stalls in a row.
- * Returns whether it all arrived. A write of zero bytes is a stall too, so no path spins.
+ * Write every byte of `buffer` to `fd`, or drop it after `EAGAIN_ATTEMPTS` stalls in a row — one
+ * stall while the fd is degraded. Returns whether it all arrived. A write of zero bytes is a stall
+ * too, so no path spins.
  */
 export function writeAll(
   fd: number,
@@ -59,12 +80,15 @@ export function writeAll(
   write: WriteSync = writeSync,
   sleep: (ms: number) => void = Bun.sleepSync,
 ): boolean {
+  const pipe = pipeOf(fd);
+  const prefix = pipe.torn ? 1 : 0;
+  const bytes = prefix === 0 ? buffer : Buffer.concat([Uint8Array.of(NEWLINE), buffer]);
   let written = 0;
   let stalls = 0;
-  while (written < buffer.length) {
+  while (written < bytes.length) {
     let progress = 0;
     try {
-      progress = write(fd, buffer, written, buffer.length - written);
+      progress = write(fd, bytes, written, bytes.length - written);
     } catch (cause) {
       // `stringField`, never a cast plus a property read — the rule `metrics-endpoint.ts` states
       // and `caught-value-reads.test.ts` enforces. Here it is also the difference between
@@ -74,15 +98,20 @@ export function writeAll(
     if (progress > 0) {
       written += progress;
       stalls = 0;
+      pipe.degraded = false; // The reader drained: it gets the full budget again.
       continue;
     }
     stalls += 1;
-    if (stalls >= EAGAIN_ATTEMPTS) {
+    if (stalls >= (pipe.degraded ? 1 : EAGAIN_ATTEMPTS)) {
       dropped += 1;
+      pipe.degraded = true;
+      // Nothing written leaves a torn line torn; only the prefix written closes it cleanly.
+      if (written > 0) pipe.torn = written > prefix;
       return false;
     }
     sleep(backoffMs(stalls));
   }
+  pipe.torn = false;
   return true;
 }
 
