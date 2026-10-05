@@ -37,21 +37,47 @@ export interface TextProps {
 }
 
 export function Text(props: TextProps): JSX.Element {
-  const Tag = props.as ?? 'span';
-
+  const cls = (): string =>
+    cx(styles['text'], styles[`tone-${props.tone ?? 'default'}`], props.class);
   // Size and weight are set only when asked for: unset means inherit, so <Text>
   // inside a heading or a caption does not silently reset to the body scale.
-  return (
-    <Tag
-      class={cx(styles['text'], styles[`tone-${props.tone ?? 'default'}`], props.class)}
-      style={{
-        ...(props.size === undefined ? {} : { '--text-scale': `var(--text-${props.size})` }),
-        ...(props.weight === undefined
-          ? {}
-          : { '--text-strength': `var(--weight-${props.weight})` }),
-      }}
-    >
-      {props.children}
-    </Tag>
-  );
+  const style = (): JSX.CSSProperties => ({
+    ...(props.size === undefined ? {} : { '--text-scale': `var(--text-${props.size})` }),
+    ...(props.weight === undefined ? {} : { '--text-strength': `var(--weight-${props.weight})` }),
+  });
+
+  // One intrinsic per case, never `const Tag = props.as; <Tag>`: the island build compiles a
+  // capitalised tag to `createComponent(Tag)` and calls the string (#488, `intrinsic-root.test.ts`).
+  switch (props.as ?? 'span') {
+    case 'p':
+      return (
+        <p class={cls()} style={style()}>
+          {props.children}
+        </p>
+      );
+    case 'div':
+      return (
+        <div class={cls()} style={style()}>
+          {props.children}
+        </div>
+      );
+    case 'strong':
+      return (
+        <strong class={cls()} style={style()}>
+          {props.children}
+        </strong>
+      );
+    case 'em':
+      return (
+        <em class={cls()} style={style()}>
+          {props.children}
+        </em>
+      );
+    case 'span':
+      return (
+        <span class={cls()} style={style()}>
+          {props.children}
+        </span>
+      );
+  }
 }

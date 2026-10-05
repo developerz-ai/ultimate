@@ -21,20 +21,56 @@ export interface CardProps {
 }
 
 export function Card(props: CardProps): JSX.Element {
-  const Tag = props.as ?? 'div';
-  return (
-    <Tag
-      class={cx(
-        styles['card'],
-        styles[`elevation-${props.elevation ?? 'sm'}`],
-        props.interactive === true && styles['interactive'],
-        props.class,
-      )}
-      style={{ '--card-padding': `var(--space-${props.padding ?? 5})` }}
-    >
-      {props.header === undefined ? null : <div class={styles['header']}>{props.header}</div>}
-      <div class={styles['body']}>{props.children}</div>
-      {props.footer === undefined ? null : <div class={styles['footer']}>{props.footer}</div>}
-    </Tag>
-  );
+  const cls = (): string =>
+    cx(
+      styles['card'],
+      styles[`elevation-${props.elevation ?? 'sm'}`],
+      props.interactive === true && styles['interactive'],
+      props.class,
+    );
+  const style = (): JSX.CSSProperties => ({
+    '--card-padding': `var(--space-${props.padding ?? 5})`,
+  });
+  const header = (): JSX.Element =>
+    props.header === undefined ? null : <div class={styles['header']}>{props.header}</div>;
+  const body = (): JSX.Element => <div class={styles['body']}>{props.children}</div>;
+  const footer = (): JSX.Element =>
+    props.footer === undefined ? null : <div class={styles['footer']}>{props.footer}</div>;
+
+  // One intrinsic per case, never `const Tag = props.as; <Tag>`: the island build compiles a
+  // capitalised tag to `createComponent(Tag)` and calls the string (#488, `intrinsic-root.test.ts`).
+  switch (props.as ?? 'div') {
+    case 'article':
+      return (
+        <article class={cls()} style={style()}>
+          {header()}
+          {body()}
+          {footer()}
+        </article>
+      );
+    case 'section':
+      return (
+        <section class={cls()} style={style()}>
+          {header()}
+          {body()}
+          {footer()}
+        </section>
+      );
+    case 'li':
+      return (
+        <li class={cls()} style={style()}>
+          {header()}
+          {body()}
+          {footer()}
+        </li>
+      );
+    case 'div':
+      return (
+        <div class={cls()} style={style()}>
+          {header()}
+          {body()}
+          {footer()}
+        </div>
+      );
+  }
 }

@@ -18,7 +18,7 @@ import {
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
-import { oneLineParams, renderCatalog } from './meta-surface';
+import { renderCatalog } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult } from './registry';
 import { createMcpServer, type McpServer } from './server';
@@ -171,7 +171,7 @@ describe('meta surface — refusals first', () => {
     const server = appServer();
     expect(server.catalog(metaMember())?.map((r) => r.name)).toEqual(['posts']);
     const listed = resultText(await server.handle(call('list_resources'), metaMember()));
-    expect(listed).toInclude('\nposts — ');
+    expect(listed).toInclude('\nposts (');
     expect(listed).not.toInclude('org');
 
     const hidden = await server.handle(manage('org', 'transferOrg'), metaMember());
@@ -349,12 +349,16 @@ describe('meta surface — the constant catalog', () => {
     const text = resultText(await server.handle(call('list_resources'), metaOwner()));
     // The wire form is plain text, one line per action; the same facts as data via `catalog`.
     expect(text).toBe(renderCatalog(server.catalog(metaOwner()) ?? []));
-    expect(text).toInclude(
-      '\n  publishPost (action; confirms) {postId: string} — Publish a draft post',
-    );
-    expect(text).toInclude(
-      '\norg — The organisation\n  transferOrg (action) {} — Transfer the org',
-    );
+    // Unscoped tools: nothing to hoist. `listPosts` is untagged — a query is the default.
+    expect(text.split('\n').slice(1)).toEqual([
+      '',
+      'org — The organisation',
+      '  transferOrg (action) {} — Transfer the org',
+      '',
+      'posts — Blog posts',
+      '  listPosts {status_eq?: string|number|boolean, title_cont?: string, sort?: "createdAt"|"-createdAt", …} — Posts, filtered',
+      '  publishPost (action; confirms) {postId: string} — Publish a draft post',
+    ]);
     expect(server.catalog(metaOwner())).toEqual([
       {
         name: 'org',
@@ -372,7 +376,7 @@ describe('meta surface — the constant catalog', () => {
             kind: 'query',
             description: 'Posts, filtered',
             params:
-              'status_eq?: string|number|boolean, title_cont?: string, sort?: "createdAt"|"-createdAt", cursor?: string, limit?: integer',
+              'status_eq?: string|number|boolean, title_cont?: string, sort?: "createdAt"|"-createdAt", …',
           },
           {
             name: 'publishPost',
@@ -406,13 +410,13 @@ describe('meta surface — the constant catalog', () => {
     ]);
   });
 
-  test('oneLineParams cuts a long hint and points at describe_resource', () => {
-    const properties = Object.fromEntries(
-      Array.from({ length: 40 }, (_, i) => [`field${i}`, { type: 'string' as const }]),
+  test("list_resources over a scoped app hoists each kind's shared scope onto the resource", async () => {
+    const text = resultText(await appServer().handle(call('list_resources'), metaOwner()));
+    expect(text).toInclude(
+      '\nposts (query scope app:use; action scope posts:write) — Blog posts\n  listPosts {',
     );
-    const hint = oneLineParams({ type: 'object', properties });
-    expect(hint.length).toBeLessThan(300);
-    expect(hint).toContain('describe_resource');
+    expect(text).toInclude('\n  publishPost (action) {postId: string} — Publish a draft post');
+    expect(text).toInclude('\norg (scope app:use) — The organisation\n  transferOrg (action) {}');
   });
 });
 

@@ -110,7 +110,8 @@ honoured. A GET query and a url-encoded body carry every line break as CRLF, as 
 | `204` + `x-ultimate-location`, same origin | followed as the router's next request (at most 5 hops), or loaded when it names the URL just asked for |
 | `204` + `x-ultimate-location`, another origin | the browser goes there |
 | an empty `204` | nothing: the browser stays, as it does for a `204` navigation |
-| not a page (a PDF, a zip, JSON) | handed to the browser **from the bytes already received**: saved under its `Content-Disposition` name when `attachment`, shown otherwise. Never asked for again |
+| a 2xx that is not a page (a PDF, a zip, JSON) | handed to the browser **from the bytes already received**: saved under its `Content-Disposition` name when `attachment`, shown otherwise. Never asked for again |
+| a 4xx/5xx that is not a page (an offline service worker's empty `503`, a JSON `404`) | a GET: a full load of the URL asked for — the one answer the router asks for again, since there is nothing to show (`As of 2026-10-05`). A POST: `ultimate:navigation-error`, never re-sent |
 | a POST answered in place with a page | swapped in: it cannot be repeated. When it was rendered for ANOTHER principal or build (a sign-in that renders instead of redirecting), every tab's cache is emptied and this tab stops swapping: every later link and form is a real document load |
 | a page from another surface, build or principal where no framework server answered (a static host) | a full load |
 
@@ -160,9 +161,10 @@ In one order, so no frame is unstyled and no island runs twice:
 
 Inside `document.startViewTransition` when the browser has it and `prefers-reduced-motion` is not
 `reduce`. Style the transition with the standard `::view-transition-*` pseudo-elements. While it
-animates the browser hit-tests every press to `<html>`, so a press skips the animation to the new
-page and its click is given to the element under the pointer (`As of 22.8.1`): the visitor's first
-click after a swap is never lost.
+animates the browser hit-tests every press to `<html>` (Chrome does whatever `pointer-events` the
+overlay has), so a click that lands there skips the animation and is given to the element under the
+pointer: the visitor's first click after a swap is never lost. A bare press — a touch that scrolls,
+a long press — never skips it, so named elements finish their glide (`As of 2026-10-05`).
 
 ## History, scroll, focus
 

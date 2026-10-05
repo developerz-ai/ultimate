@@ -76,6 +76,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   That 404 SPENDS the token's allowance (once; a served call is charged in the handler), so a
   token cannot walk the cut for free.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
+- **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
+  when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
 
 ## Rules — the pipeline
 

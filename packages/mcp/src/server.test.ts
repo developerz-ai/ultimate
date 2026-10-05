@@ -46,6 +46,8 @@ const scopeGated: AnyMcpTool = {
     additionalProperties: false,
   },
   scope: 'db:read',
+  // A declared read: only `destructive: false` earns the read bucket.
+  destructive: false,
   async handle(args) {
     return textResult(`limit=${String(args['limit'])}`);
   },

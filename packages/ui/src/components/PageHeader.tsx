@@ -6,6 +6,7 @@ import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import { Breadcrumb, type BreadcrumbItem } from './Breadcrumb';
 import { type HeadingLevel, headingTag } from './heading-level';
+import { headingNode } from './heading-node';
 import styles from './PageHeader.module.scss';
 
 export interface PageHeaderProps {
@@ -24,7 +25,9 @@ export interface PageHeaderProps {
 }
 
 export function PageHeader(props: PageHeaderProps): JSX.Element {
-  const Heading = headingTag(props.level ?? 1);
+  // Resolved once, so an off-scale level throws `X_UI_INVALID_VALUE` here as it always did.
+  const heading = headingTag(props.level ?? 1);
+  const title = (): string => props.title;
 
   return (
     <header class={cx(styles['pageHeader'], props.class)}>
@@ -33,7 +36,7 @@ export function PageHeader(props: PageHeaderProps): JSX.Element {
         <div class={styles['titles']}>
           {props.media === undefined ? null : <div class={styles['media']}>{props.media}</div>}
           <div class={styles['text']}>
-            <Heading class={styles['title']}>{props.title}</Heading>
+            {headingNode(heading, { class: styles['title'] }, title)}
             {props.description === undefined ? null : (
               <p class={styles['description']}>{props.description}</p>
             )}

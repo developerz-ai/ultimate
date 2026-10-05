@@ -64,6 +64,38 @@ export function Page() {
   return <main><p>{\`tagged \${String(Reflect.get(globalThis, '__xIsrProbe') ?? 0)}\`}</p></main>;
 }
 `,
+  // #541: a CSS module's class names are hashed from its compiled CSS, so a save moves the hash —
+  // and the page (which reaches the sheet through a component) and the island chunk (which imports
+  // it itself) must both serve the new one, or the markup names classes no rule matches.
+  'apps/web/app/styled/pill.module.scss': `.pill { color: red; }
+`,
+  'apps/web/app/styled/pill-view.tsx': `import styles from './pill.module.scss';
+export function PillView(props: { readonly children: unknown }) {
+  return <section class={styles['pill']}>{props.children}</section>;
+}
+`,
+  'apps/web/app/styled/pill.island.tsx': `import styles from './pill.module.scss';
+export function mount(el: HTMLElement): void {
+  el.className = styles['pill'] ?? '';
+}
+`,
+  'apps/web/app/styled/page.tsx': `import { defineRoute, island } from '@ultimat3/render';
+import { PillView } from './pill-view';
+
+const Pill = island({ src: './pill.island.tsx' });
+
+export const config = defineRoute({
+  render: 'ssr',
+  hydrate: 'visible',
+  offline: 'runtime',
+  budget: { js: '60kb' },
+  meta: () => ({ title: 'Styled', description: 'A page and an island sharing a CSS module' }),
+});
+
+export function Page() {
+  return <main><PillView><Pill>inert</Pill></PillView></main>;
+}
+`,
   'apps/web/app/greet/service.ts': `export const greeting = (): string => 'greeting one';
 `,
   'apps/web/app/greet/queries.ts': `import { allow } from '@ultimat3/policy';
@@ -214,6 +246,29 @@ describe('unit · x dev serves the save', () => {
       expect(await page('/deep')).toContain('deep one');
       expect(await save(file, 'deep one', 'deep two')).toBe(file);
       expect(await page('/deep')).toContain('deep two');
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  test(
+    'an edited .module.scss moves the hash on the page and in the island chunk alike',
+    async () => {
+      const file = 'apps/web/app/styled/pill.module.scss';
+      const hashes = async (): Promise<{ page: string; island: string }> => {
+        const html = await page('/styled');
+        const entry = /data-x-entry="(?<url>[^"]+)"/.exec(html)?.groups?.['url'] ?? 'no-entry';
+        const chunk = await page(entry);
+        const hashOf = (text: string): string => /pill_[0-9a-f]{8}/.exec(text)?.[0] ?? 'no-class';
+        return { page: hashOf(html), island: hashOf(chunk) };
+      };
+      const before = await hashes();
+      expect(before.page).toMatch(/^pill_[0-9a-f]{8}$/);
+      expect(before.island).toBe(before.page);
+      expect(await save(file, 'color: red', 'color: blue')).toBe(file);
+      const after = await hashes();
+      expect(after.page).toMatch(/^pill_[0-9a-f]{8}$/);
+      expect(after.page).not.toBe(before.page);
+      expect(after.island).toBe(after.page);
     },
     BOOT_TIMEOUT_MS,
   );

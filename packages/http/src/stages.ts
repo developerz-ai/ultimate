@@ -375,7 +375,15 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // never handed a page. Which of the two a browser gets is the ENVIRONMENT — the overlay
       // prints the cause, the fix and the stack, which is what a visitor may never see.
       if (acceptsHtml(request.raw)) {
-        if (config.dev) {
+        // A 4xx is not a defect to debug, it is a page a visitor will see, so dev asks for the
+        // app's own file first (#492, O-492). A 5xx keeps the overlay, and so does a 4xx the app
+        // has no file for: in dev the diagnostic beats the framework's generic page.
+        // A throw from the hook is caught by `recoverWith` and degrades to the problem document.
+        const override =
+          config.dev && facts.status >= 500
+            ? undefined
+            : await hooks.errorPage?.(facts.status, ctx);
+        if (config.dev && override === undefined) {
           // Asked for inside the branch, never above it: the overlay is the only surface a notice
           // has, so a production process — or an agent that asked for json — must not pay a
           // diagnostic's per-request cost to produce findings nothing will render.
@@ -401,10 +409,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
             ...(seconds === undefined ? {} : { retryAfterSeconds: seconds }),
             signInPath: config.signInPath,
           },
-          // The app's own file, read per request by whoever mounted the hook. A throw here is
-          // caught by `recoverWith` and degrades to the problem document, which is the answer a
-          // page whose renderer failed can still give.
-          { override: await hooks.errorPage?.(facts.status, ctx), headers: retryAfter },
+          { override, headers: retryAfter },
         );
       }
       return problem(error, {

@@ -365,3 +365,39 @@ describe('N1/N2 — an answer that cannot be asked for again is shown, and the t
     expect(answerMovesTab(answer({ method: 'POST', nextBuild: null }))).toBe(false);
   });
 });
+
+// #627: an offline service worker answers the router's fetch with an empty 503 — no HTML, so the
+// old order handed it over as a `blob:` URL the tab then navigated to. An error that is not a page
+// is not something to show: a GET is the browser's to load (the worker serves its offline page to
+// a real navigation), a POST is never re-sent.
+describe('responseVerdict — an error answer that is not a page is never handed over', () => {
+  test.each([
+    ['an empty 503 (an offline service worker)', 503, ''],
+    ['a JSON 404', 404, 'application/json'],
+    ['a plain-text 500', 500, 'text/plain; charset=utf-8'],
+  ])('%s: a GET is loaded by the browser', (_name, status, contentType) => {
+    expect(responseVerdict(answer({ status, contentType, nextSurface: null }))).toEqual({
+      kind: 'load',
+      url: 'https://app.test/plazos',
+      reason: 'an error answer that is not a page',
+    });
+  });
+
+  test.each([503, 404, 500])('a %d that is not a page: a POST fails, never re-sent', (status) => {
+    expect(
+      responseVerdict(answer({ method: 'POST', status, contentType: 'application/json' })),
+    ).toEqual({ kind: 'failed', reason: 'an error answer that is not a page' });
+  });
+
+  test('a 2xx that is not a page (a download) is still handed over, GET and POST', () => {
+    for (const method of ['GET', 'POST'] as const) {
+      expect(
+        responseVerdict(answer({ method, status: 200, contentType: 'application/zip' })),
+      ).toEqual({ kind: 'hand-over' });
+    }
+  });
+
+  test('an HTML error page is still swapped in, never re-requested', () => {
+    expect(responseVerdict(answer({ status: 503 }))).toEqual({ kind: 'swap' });
+  });
+});

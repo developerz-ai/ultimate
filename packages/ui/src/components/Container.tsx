@@ -17,13 +17,50 @@ export interface ContainerProps {
 }
 
 export function Container(props: ContainerProps): JSX.Element {
-  const Tag = props.as ?? 'div';
-  return (
-    <Tag
-      class={cx(styles['container'], styles[`size-${props.size ?? 'lg'}`], props.class)}
-      style={{ '--container-gutter': `var(--space-${props.gutter ?? 4})` }}
-    >
-      {props.children}
-    </Tag>
-  );
+  const cls = (): string =>
+    cx(styles['container'], styles[`size-${props.size ?? 'lg'}`], props.class);
+  const style = (): JSX.CSSProperties => ({
+    '--container-gutter': `var(--space-${props.gutter ?? 4})`,
+  });
+
+  // One intrinsic per case, never `const Tag = props.as; <Tag>`: the island build compiles a
+  // capitalised tag to `createComponent(Tag)` and calls the string (#488, `intrinsic-root.test.ts`).
+  switch (props.as ?? 'div') {
+    case 'main':
+      return (
+        <main class={cls()} style={style()}>
+          {props.children}
+        </main>
+      );
+    case 'section':
+      return (
+        <section class={cls()} style={style()}>
+          {props.children}
+        </section>
+      );
+    case 'article':
+      return (
+        <article class={cls()} style={style()}>
+          {props.children}
+        </article>
+      );
+    case 'header':
+      return (
+        <header class={cls()} style={style()}>
+          {props.children}
+        </header>
+      );
+    case 'footer':
+      return (
+        <footer class={cls()} style={style()}>
+          {props.children}
+        </footer>
+      );
+    case 'div':
+      return (
+        <div class={cls()} style={style()}>
+          {props.children}
+        </div>
+      );
+  }
 }

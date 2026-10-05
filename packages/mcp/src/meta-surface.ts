@@ -268,29 +268,71 @@ export function schemaOf(tool: AnyMcpTool): JsonSchema {
  * every quote — a staff catalog measured 32.5k characters — and `JSON.parse` was never its reader's
  * job: the model's is. Same facts, same order; `describe_resource` stays JSON because a schema is.
  *
+ * Every per-action tag costs once per action, so each is stated where it is cheapest and still
+ * exact (#590): a scope shared by every action of the resource — or of one kind — is said once on
+ * the resource line (`hoistScopes`); only `action` is tagged, because untagged means `query` and
+ * the header says so. The kind comes from `destructive` (`headOf`), never from the name.
+ *
  * ```text
- * cases — Court cases of the account.
- *   listCases (query) {radicado?: string} — List the account's cases.
- *   closeCase (action; confirms; scope cases:write) {id: string} — Close a case.
+ * cases (scope cases) — Court cases of the account.
+ *   listCases {radicado?: string} — List the account's cases.
+ *   closeCase (action; confirms) {id: string} — Close a case.
  * ```
  */
 export function renderCatalog(resources: readonly MetaResource[]): string {
   if (resources.length === 0) return 'No resources are available to this caller.';
   const lines = [
-    `${resources.length} resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas.`,
+    `${resources.length} resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas. Untagged = read-only query; (action) may write; (confirms) waits for a human; … = more in describe_resource.`,
   ];
   for (const resource of resources) {
-    lines.push('', `${resource.name} — ${oneLine(resource.description)}`);
+    const hoisted = hoistScopes(resource.actions);
+    const said = hoisted.line === '' ? '' : ` (${hoisted.line})`;
+    lines.push('', `${resource.name}${said} — ${oneLine(resource.description)}`);
     for (const action of resource.actions) {
       const tags = [
-        action.kind,
+        ...(action.kind === 'action' ? ['action'] : []),
         ...(action.confirms === true ? ['confirms'] : []),
-        ...(action.scope === undefined ? [] : [`scope ${action.scope}`]),
-      ].join('; ');
-      lines.push(`  ${action.name} (${tags}) {${action.params}} — ${oneLine(action.description)}`);
+        ...(action.scope === undefined || hoisted.kinds.has(action.kind)
+          ? []
+          : [`scope ${action.scope}`]),
+      ];
+      const tagged = tags.length === 0 ? '' : ` (${tags.join('; ')})`;
+      lines.push(`  ${action.name}${tagged} {${action.params}} — ${oneLine(action.description)}`);
     }
   }
   return lines.join('\n');
+}
+
+/**
+ * The scopes said once on the resource line, and the kinds whose actions no longer repeat theirs.
+ * One scope for every action → `scope cases`. Otherwise per kind, because a token split into
+ * `cases:read` / `cases:write` is the common shape: `query scope cases:read; action scope
+ * cases:write`. A kind is hoisted only when EVERY action of it carries the SAME scope — one
+ * unscoped action among scoped ones must not inherit a gate the registry does not enforce.
+ * Computed over what THIS caller sees: the catalog is per caller.
+ */
+function hoistScopes(actions: readonly MetaAction[]): {
+  readonly line: string;
+  readonly kinds: ReadonlySet<MetaAction['kind']>;
+} {
+  const all = sharedScope(actions);
+  if (all !== undefined) return { line: `scope ${all}`, kinds: new Set(['query', 'action']) };
+  const parts: string[] = [];
+  const kinds = new Set<MetaAction['kind']>();
+  for (const kind of ['query', 'action'] as const) {
+    const scope = sharedScope(actions.filter((action) => action.kind === kind));
+    if (scope === undefined) continue;
+    parts.push(`${kind} scope ${scope}`);
+    kinds.add(kind);
+  }
+  return { line: parts.join('; '), kinds };
+}
+
+/** The scope every action carries, or `undefined` when there is none, one lacks it or two differ. */
+function sharedScope(actions: readonly MetaAction[]): string | undefined {
+  const first = actions[0]?.scope;
+  if (first === undefined) return undefined;
+  return actions.every((action) => action.scope === first) ? first : undefined;
 }
 
 /** A description authored across lines is still one catalog line. */
@@ -299,9 +341,9 @@ const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 function headOf(tool: AnyMcpTool): Omit<MetaAction, 'params'> {
   return {
     name: tool.name,
-    // `=== true`, as `ToolRegistry.verbClass` meters it: an omitted `destructive` is a read in the
-    // rate limiter, so listing it as an action gave one tool two answers.
-    kind: tool.destructive === true ? 'action' : 'query',
+    // `=== false`, as `ToolRegistry.verbClass` meters it — one answer per tool. An omitted flag is
+    // an action: the header's "untagged = read-only query" holds only for a DECLARED read.
+    kind: tool.destructive === false ? 'query' : 'action',
     description: tool.description,
     ...(tool.confirms === true ? { confirms: true } : {}),
     ...(tool.scope === undefined ? {} : { scope: tool.scope }),
@@ -312,31 +354,54 @@ function sorted<V>(map: ReadonlyMap<string, V>): readonly [string, V][] {
   return [...map.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** Past this, the hint says "see describe_resource" instead of pretending to be complete. */
-const HINT_MAX = 240;
+/** Fields a hint names before `…` — every required one is named regardless. */
+const HINT_FIELDS = 4;
+/** Optional fields stop being added once the hint is this long; required ones never stop. */
+const HINT_MAX = 100;
+/** Literals an enum hint names before `|…`. */
+const HINT_LITERALS = 8;
 
 /**
  * `name: type` per property, `?` when optional, an enum as its literals — the hint
  * `list_resources` carries so a common call needs no `describe_resource` round-trip.
+ *
+ * Cut by FIELDS, never by characters (#590): a character cut sliced `limit?: integer` into
+ * `limit?: i…`. Every required field is named, in declared order, because a call without one
+ * fails; optional fields follow until `HINT_FIELDS` names or `HINT_MAX` characters, and a trailing
+ * `…` says some were left out. `describe_resource` always has the full schema.
  */
 export function oneLineParams(schema: JsonSchema): string {
   const required = new Set(schema.required ?? []);
-  const parts = Object.entries(schema.properties ?? {}).map(
-    ([key, child]) => `${key}${required.has(key) ? '' : '?'}: ${typeHint(child)}`,
-  );
-  const line = parts.join(', ');
-  if (line.length <= HINT_MAX) return line;
-  return `${line.slice(0, HINT_MAX - 1)}… (describe_resource has the rest)`;
+  const fields = Object.entries(schema.properties ?? {}).map(([key, child]) => ({
+    required: required.has(key),
+    text: `${key}${required.has(key) ? '' : '?'}: ${typeHint(child)}`,
+  }));
+  const named = new Set(fields.filter((field) => field.required));
+  let length = [...named].reduce((sum, field) => sum + field.text.length + 2, 0);
+  for (const field of fields) {
+    if (field.required) continue;
+    if (named.size >= HINT_FIELDS || length + field.text.length > HINT_MAX) break;
+    named.add(field);
+    length += field.text.length + 2;
+  }
+  const parts = fields.filter((field) => named.has(field)).map((field) => field.text);
+  return named.size < fields.length ? [...parts, '…'].join(', ') : parts.join(', ');
 }
 
 function typeHint(schema: JsonSchema): string {
-  if (schema.enum !== undefined) return schema.enum.map((v) => JSON.stringify(v)).join('|');
+  if (schema.enum !== undefined) return literals(schema.enum.map((v) => JSON.stringify(v)));
   if (schema.const !== undefined) return JSON.stringify(schema.const);
-  if (schema.anyOf !== undefined) return schema.anyOf.map(typeHint).join('|');
+  if (schema.anyOf !== undefined) return literals(schema.anyOf.map(typeHint));
   if (schema.type === 'array') {
     if (schema.items === undefined) return 'array';
     const item = typeHint(schema.items);
     return item.includes('|') ? `(${item})[]` : `${item}[]`;
   }
   return schema.type ?? 'any';
+}
+
+/** A union cut at an alternative, never inside one. */
+function literals(alternatives: readonly string[]): string {
+  if (alternatives.length <= HINT_LITERALS) return alternatives.join('|');
+  return [...alternatives.slice(0, HINT_LITERALS), '…'].join('|');
 }

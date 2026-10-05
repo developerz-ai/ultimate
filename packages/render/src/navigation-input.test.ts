@@ -1,6 +1,7 @@
-// The controller under REAL input over the fake DOM: a press is not a hover, a click the view
-// transition aimed at `<html>` reaches the element under the pointer, and no guess is sent for the
-// page a navigation is already fetching. Chrome: `client-navigation-input.e2e.test.ts`.
+// The controller under REAL input over the fake DOM: a press is not a hover, a press alone never
+// skips a running view transition (#621), a click the transition aimed at `<html>` skips it and
+// reaches the element under the pointer, and no guess is sent for the page a navigation is already
+// fetching. Chrome: `client-navigation-input.e2e.test.ts`.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { answers, click, fire, page, stopRouter, tab } from './navigation-controller-fixture';
 import { type FakeDocument, type FakeElement, htmlAnswer, settle } from './navigation-dom-fixture';
@@ -21,7 +22,7 @@ describe('real input', () => {
     expect(calls).toEqual(['GET /b prefetch']);
   });
 
-  test('a click the transition aimed at <html> is given to the element under the pointer', async () => {
+  test('a click the transition aimed at <html> skips it and reaches the element under the pointer', async () => {
     let skipped = 0;
     const { win, doc } = tab({ '/b': answers.b });
     doc.startViewTransition = (update) => {
@@ -41,7 +42,15 @@ describe('real input', () => {
     const link = doc.getElementById('to-c') as FakeElement;
     doc.underPointer = link;
     fire(doc, 'pointerdown', doc.documentElement);
+    // A bare press — a touch that scrolls, a long press — leaves the animation running.
+    expect(skipped).toBe(0);
+    fire(doc, 'pointercancel', doc.documentElement);
+    fire(doc, 'pointerdown', doc.documentElement);
     fire(win, 'click', doc.documentElement, { clientX: 5, clientY: 5 });
+    expect([skipped, link.clicks]).toEqual([1, 1]);
+    // A click that reached a real element is the page's own: nothing is skipped or re-sent.
+    fire(doc, 'pointerdown', link);
+    fire(win, 'click', link, { clientX: 5, clientY: 5 });
     expect([skipped, link.clicks]).toEqual([1, 1]);
     // Nothing under the pointer but the page itself: nothing to give it to.
     doc.underPointer = null;
@@ -74,6 +83,8 @@ describe('real input', () => {
     finish[0]?.();
     await settle();
     fire(doc, 'pointerdown', doc.documentElement);
+    expect(skipped).toEqual([]);
+    fire(win, 'click', doc.documentElement, { clientX: 5, clientY: 5 });
     expect(skipped).toEqual(['C']);
   });
 

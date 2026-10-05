@@ -367,14 +367,23 @@ route** → throw → error page; **the route exists and says "not found"** → 
 ## Error pages
 
 A browser that hits a failure in a production process gets the framework's error page — the
-status, the code, the request id, and nothing off the throwable. `x dev` still answers with the
-overlay, which prints the cause, the fix and the stack. Until `As of 2026-08-23` a production
-browser got `problem+json` with the internal `cause` and the author-facing `fix:` in it.
+status, the code, the request id, and nothing off the throwable. Until `As of 2026-08-23` a
+production browser got `problem+json` with the internal `cause` and the author-facing `fix:` in it.
+
+| status | `x dev` | production |
+|---|---|---|
+| 4xx, app file present | the app's file | the app's file |
+| 4xx, no app file | the overlay — cause, fix, stack | the framework's page |
+| 5xx | the overlay, always | the app's file, else the framework's page |
+
+A 4xx in dev is the page a visitor will see, so it is the one the author sees; a 5xx is a defect,
+and the overlay is how dev debugs one. An agent (`accept: application/json`) gets `problem+json`
+in both.
 
 | | |
 |---|---|
 | a page that exists and answers 404 | not this page at all — `withStatus(404, data)` in the loader renders the route's own component with the status ([above](#a-route-that-answers-a-status)); the error page is for a **throw** |
-| override, one per status | `apps/web/site/errors/<status>.html` — served byte for byte, read per request, exact status match only |
+| override, one per status | `apps/web/site/errors/<status>.html` — served byte for byte, exact status match only; read per request under `x dev` (drop a file into the running server), once per status in a container |
 | static export | `404.html` is written by `x build --target static`, the app's file if present |
 | copy | the `errors.*` keys of the i18n catalog — an app translates or overrides by declaring them |
 | footer | links to the Ultimate repository and developerz.ai; an override replaces the whole page |

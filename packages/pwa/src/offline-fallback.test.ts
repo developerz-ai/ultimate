@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CLIENT_NAVIGATION_HEADER } from '@ultimat3/core';
 import { PwaNoOfflineFallbackError } from './errors';
 import { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
 
@@ -122,7 +123,13 @@ describe('requireOfflineFallback', () => {
    * here over a fake precache, never grepped: a name in the source proves nothing about the branch.
    */
   describe('the emitted handler, run', () => {
-    type Handler = (req: { mode: string; destination: string; url: string }) => Promise<Response>;
+    interface FakeRequest {
+      readonly mode: string;
+      readonly destination: string;
+      readonly url: string;
+      readonly headers?: Headers;
+    }
+    type Handler = (req: FakeRequest) => Promise<Response>;
 
     function handler(source: string, precached: Readonly<Record<string, string>>): Handler {
       const caches = {
@@ -133,10 +140,12 @@ describe('requireOfflineFallback', () => {
           },
         }),
       };
-      return new Function('caches', 'PRECACHE', `${source}\nreturn offlineFallback;`)(
+      const run = new Function('caches', 'PRECACHE', `${source}\nreturn offlineFallback;`)(
         caches,
         'x-precache-test',
       ) as Handler;
+      // A worker's request always carries headers; a case that names none sends none.
+      return (req) => run({ headers: new Headers(), ...req });
     }
 
     const precached = {
@@ -190,6 +199,27 @@ describe('requireOfflineFallback', () => {
         url: 'https://x.test/a.woff2',
       });
       expect(font.status).toBe(503);
+    });
+
+    // #627: the client router's soft navigation is a `fetch` (mode `cors`), not a browser
+    // navigation — offline it got the bare 503, which the tab then showed as a `blob:` URL. The
+    // router's own header marks it a navigation; a prefetch (a guess) is not one, or the offline
+    // page would be cached as the answer to a later click.
+    test('a soft navigation from the client router is answered with the offline document', async () => {
+      const fallback = requireOfflineFallback({ fallback: '/offline' });
+      const run = handler(offlineFallbackSource(fallback, ['en']), precached);
+      const visit = (url: string, purpose: string) =>
+        run({
+          mode: 'cors',
+          destination: '',
+          url,
+          headers: new Headers({ [CLIENT_NAVIGATION_HEADER]: purpose }),
+        });
+      const soft = await visit('https://x.test/casos', 'soft');
+      expect([soft.status, await soft.text()]).toEqual([200, 'offline page']);
+      expect((await visit('https://x.test/casos', 'prefetch')).status).toBe(503);
+      const bare = await run({ mode: 'cors', destination: '', url: 'https://x.test/casos' });
+      expect(bare.status).toBe(503);
     });
   });
 });

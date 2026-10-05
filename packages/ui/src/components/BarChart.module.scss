@@ -1,6 +1,13 @@
 @use '../tokens' as t;
 
 .chart {
+  display: grid;
+  gap: t.space(1);
+  inline-size: 100%;
+  margin: 0;
+}
+
+.plot {
   display: block;
   inline-size: 100%;
   block-size: auto;
@@ -44,13 +51,20 @@
 .axis {
   @include t.data-text;
 
-  // SVG text scales with the chart: below `sm` these shrink to unreadable specks, and an
-  // unreadable label is noise. Every bar still carries its `<title>`.
-  display: none;
-  font-size: t.rem(8px);
-  fill: t.role('fg-muted');
+  // HTML text, outside the viewBox: it keeps this step at every chart width (issue 494).
+  font-size: t.text(xs);
+  line-height: t.leading(tight);
+  color: t.role('fg-muted');
+}
 
-  @include t.respond-to(sm) {
-    display: block;
-  }
+// The busiest value, over the top grid line's end.
+.max {
+  justify-self: end;
+}
+
+// The first and last keys, under the first and last bars.
+.keys {
+  display: flex;
+  justify-content: space-between;
+  gap: t.space(2);
 }

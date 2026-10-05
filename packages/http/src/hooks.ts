@@ -40,12 +40,13 @@ export interface ServerHooks {
   /**
    * The app's OWN error page for a status, served byte for byte, or `undefined` to render the
    * framework's. A seam and not a config value because the answer lives on a disk this package
-   * cannot see: `@ultimat3/cli` reads `apps/web/site/errors/<status>.html`, per request, so a file
-   * dropped into a running server takes effect without a restart — the rule `/favicon.ico`
-   * already follows for the same class of file.
+   * cannot see: `@ultimat3/cli` reads `apps/web/site/errors/<status>.html` — per request under
+   * `x dev`, so a file dropped into a running server takes effect without a restart (the rule
+   * `/favicon.ico` already follows), and once per status in a container.
    *
-   * Consulted only on the production HTML path: a dev process answers a browser with the overlay,
-   * and an agent gets the problem document in both.
+   * Asked on the HTML path only — an agent gets the problem document in both environments. In
+   * production for every status; in dev for a 4xx alone (the page a visitor will see), with the
+   * overlay when it answers `undefined`. A dev 5xx is always the overlay and never asks.
    */
   readonly errorPage?: (
     status: number,

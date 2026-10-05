@@ -11,7 +11,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
 Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
 that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0
-workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way.
+workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way. Sweep 5
+closes seven open issues across navigation, ui, the MCP catalog and the dev error page.
 
 ### Security
 
@@ -98,6 +99,18 @@ workarounds. Sweep 4 makes two implementations of one seam answer the same input
 
 ### Changed
 
+- `ui`: `BarChart` renders a `<figure>` wrapping `<svg role="img">`; `class` now lands on the figure,
+  not the svg. Axis labels are HTML text that stays readable at every width (no longer hidden below
+  `sm`), and the svg box is 600×108, was 600×128 (#494).
+- `mcp`: `list_resources` is compact by rule. A scope shared by every action of a resource, or of one
+  kind, is said once on the resource line; only `(action)` is tagged (untagged is a read-only query);
+  param hints list every required field, then optional ones up to 4 fields / 100 characters, then
+  `…`, and a long enum is cut between values. A 65-action catalog measures 11,585 characters, was
+  13,361. `describe_resource` and `server.catalog()` are unchanged (#590).
+- `mcp`: a raw MCP tool that leaves out `destructive` is billed to the write rate-limit bucket and
+  listed as `(action)`; only `destructive: false` is a read, as projected actions and app tools
+  already default. Set `destructive: false` on a hand-registered read tool to keep it in the read
+  bucket.
 - `mcp`: **an app whose `scopes:` map leaves any projected tool out now fails to boot** with
   `X_MCP_SCOPE_UNCOVERED`. This includes tools added through `include: 'exposed'` and hand-written
   tools such as `whoami`. List each one under a scope.
@@ -166,6 +179,20 @@ workarounds. Sweep 4 makes two implementations of one seam answer the same input
   and test compose images are digest-pinned and watched by Dependabot.
 
 ### Fixed
+
+- `render`, `pwa`: offline, a client-router click no longer lands on a `blob:` URL. An error answer
+  that is not a page is a full load for a GET and `ultimate:navigation-error` for a POST, and the
+  service worker serves the offline document to the router's soft navigations (#627).
+- `render`: a press during a view transition (a touch that scrolls, a long press) no longer snaps
+  named elements to their end state; only a click the transition sent to `<html>` skips it, so the
+  click reaches the element under the pointer (#621).
+- `ui`: `Card`, `Text`, `Container`, `Grid`, `Section`, `Stack`, `PageHeader` and `Accordion` no
+  longer throw `e is not a function` when mounted in an island; no component renders a tag chosen at
+  runtime, which `intrinsic-root.test.ts` refuses (#488).
+- `http`: under `x dev`, a 4xx serves the app's own `apps/web/site/errors/<status>.html`, read per
+  request; a 5xx, or a 4xx with no app file, keeps the overlay (#492).
+- `cli`: a regression test pins that a `.module.scss` edit under `x dev` moves the class hash on the
+  page and in the island chunk alike (#541).
 
 - `http`: `nextAfterSignIn` no longer decodes `?next=` a second time, so `?q=a%26b` lands as
   `?q=a%26b` and `100%25done` no longer falls back. Any C0 or DEL character falls back (a NUL was a

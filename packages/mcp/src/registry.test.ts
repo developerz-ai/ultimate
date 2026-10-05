@@ -254,11 +254,16 @@ describe('ToolRegistry.verbClass', () => {
     expect(registry.verbClass('nope')).toBe('write');
   });
 
-  test('destructive true is write, everything else is read', () => {
+  test('only destructive false is read: true and an OMITTED flag both bill the write bucket', () => {
     const registry = new ToolRegistry();
-    registry.registerAll([tool({ name: 'reads' }), tool({ name: 'writes', destructive: true })]);
+    registry.registerAll([
+      tool({ name: 'reads', destructive: false }),
+      tool({ name: 'writes', destructive: true }),
+      tool({ name: 'unsaid' }),
+    ]);
     expect(registry.verbClass('reads')).toBe('read');
     expect(registry.verbClass('writes')).toBe('write');
+    expect(registry.verbClass('unsaid')).toBe('write');
   });
 });
 
