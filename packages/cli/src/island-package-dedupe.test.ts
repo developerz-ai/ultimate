@@ -132,6 +132,8 @@ describe('unit · the plugin is installed only where a nested copy exists', () =
     await rm(NESTED, { recursive: true, force: true });
     await symlink(ALPHA, NESTED, process.platform === 'win32' ? 'junction' : 'dir');
     expect(hasNestedFrameworkCopies(APP)).toBe(false);
-    expect(frameworkDedupePlugins(APP)).toEqual([]);
+    expect(frameworkDedupePlugins(APP, 'linux')).toEqual([]);
+    // Windows junctions are not folded by Bun, so there it is installed whatever the tree holds.
+    expect(frameworkDedupePlugins(APP, 'win32')).toHaveLength(1);
   });
 });

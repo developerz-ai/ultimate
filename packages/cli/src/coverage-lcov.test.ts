@@ -33,6 +33,11 @@ const LCOV = [
 ].join('\n');
 
 describe('parseLcov', () => {
+  test('a Windows SF path is keyed with / like the source walk', () => {
+    const records = parseLcov('TN:\nSF:apps\\web\\app\\a.ts\nDA:1,1\nLF:1\nLH:1\nend_of_record\n');
+    expect(records.map((record) => record.file)).toEqual(['apps/web/app/a.ts']);
+  });
+
   test('one record per SF, with its counts and every DA line', () => {
     const records = parseLcov(LCOV);
     expect(records.map((record) => record.file)).toEqual([

@@ -123,6 +123,14 @@ export function hasNestedFrameworkCopies(root: string): boolean {
 }
 
 /** The plugin list entry: the dedupe when a nested copy exists, nothing otherwise. */
-export function frameworkDedupePlugins(root: string): readonly BunPlugin[] {
-  return hasNestedFrameworkCopies(root) ? [frameworkDedupePlugin(root)] : [];
+export function frameworkDedupePlugins(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): readonly BunPlugin[] {
+  // Windows always: a `file:` install there links packages through junctions Bun does not fold,
+  // so the same file is reached under two spellings — the windows job's `/posts` shipped 80.2kb
+  // against Linux's 60kb with only the nested-copy check deciding.
+  return platform === 'win32' || hasNestedFrameworkCopies(root)
+    ? [frameworkDedupePlugin(root)]
+    : [];
 }
