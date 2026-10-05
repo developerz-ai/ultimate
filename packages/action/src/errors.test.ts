@@ -4,13 +4,14 @@
 // NAME belongs in the cause, which is what finds the file; the PERMISSION's shape belongs in the fix.
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, ERROR_DOCS_URL } from '@ultimat3/core';
+import { describeErrorCode, ERROR_DOCS_URL, statedDelayMs } from '@ultimat3/core';
 import {
   ActionDuplicateError,
   ActionPolicyMissingError,
   ActionUnregisteredError,
   IdempotencyConflictError,
   InputInvalidError,
+  RemoteActionError,
   RpcFailedError,
 } from './errors';
 
@@ -67,5 +68,32 @@ describe('unit · X_RPC_FAILED pastes a command a hostile name cannot run throug
     expect(error.fix).not.toContain('$(');
     expect(error.fix).toContain('x actions describe <action-name> --json');
     expect(error.cause).toContain('evil.sh');
+  });
+});
+
+describe('unit · RemoteActionError states a delay only from the header', () => {
+  // Core's rule, the one `problemError` applies: the server never puts `retryAfterSeconds` in a
+  // problem body (framework meta is operator-only), so a body value is dropped, never the wait.
+  const failure = {
+    action: 'createPost',
+    status: 429,
+    code: 'X_REMOTE_ONLY_CODE',
+    cause: 'c',
+    fix: 'f',
+    meta: { retryAfterSeconds: 3_600, sessionId: 's-1' },
+  };
+
+  test('a body retryAfterSeconds with no header is dropped; the other declared keys stay', () => {
+    const error = new RemoteActionError(failure);
+    expect(error.meta?.['retryAfterSeconds']).toBeUndefined();
+    expect(error.meta?.['sessionId']).toBe('s-1');
+    expect(statedDelayMs(error)).toBeUndefined();
+    expect(error.retry).toBe('retryable');
+  });
+
+  test('the header value is the one carried', () => {
+    const error = new RemoteActionError({ ...failure, retryAfterSeconds: 2 });
+    expect(error.meta?.['retryAfterSeconds']).toBe(2);
+    expect(error.retry).toBe('retry-after');
   });
 });

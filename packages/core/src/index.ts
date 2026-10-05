@@ -82,7 +82,7 @@ export {
   splitWords,
 } from './client-paths';
 export type { TransportFailure } from './client-problem';
-export { MAX_REMOTE_TITLE_LENGTH, remoteTitleOf } from './client-problem';
+export { MAX_REMOTE_TITLE_LENGTH, remoteTitleOf, withStatedDelay } from './client-problem';
 /** What a decoder reads off a refusal: the stated `Retry-After`, and the body's display title. */
 export { MAX_RETRY_AFTER_SECONDS, retryAfterSecondsOf } from './client-retry-after';
 /**

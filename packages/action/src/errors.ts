@@ -12,6 +12,7 @@ import {
   renderFixShellArg,
   retryForStatus,
   UltimateError,
+  withStatedDelay,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
@@ -319,21 +320,23 @@ export class RemoteActionError extends UltimateError {
       // delay rides on `meta.retryAfterSeconds`, the one key core's `statedDelayMs` reads.
       retry: retryForStatus(failure.code, failure.status, failure.retryAfterSeconds),
       remoteTitle: failure.title,
-      meta: {
-        // The server's declared keys FIRST, so the four this class owns win a collision: a server
-        // meta naming `status` would otherwise overwrite the one a report reads the HTTP status
-        // from, and `origin: 'remote'` is what marks the code as one this bundle never declared.
-        ...failure.meta,
-        origin: 'remote',
-        action: failure.action,
-        status: failure.status,
-        // Absent rather than `undefined`: `meta` is rendered into `--json` and the error reporter,
-        // and a null member reads as "the server sent an empty list" rather than "it sent none".
-        ...(failure.issues === undefined ? {} : { issues: failure.issues }),
-        ...(failure.retryAfterSeconds === undefined
-          ? {}
-          : { retryAfterSeconds: failure.retryAfterSeconds }),
-      },
+      // Core's `withStatedDelay`, the rule `problemError` applies too: a `retryAfterSeconds` off the
+      // body is dropped and only the header's is carried — the server never writes one there.
+      meta: withStatedDelay(
+        {
+          // The server's declared keys FIRST, so the four this class owns win a collision: a
+          // server meta naming `status` would otherwise overwrite the one a report reads the HTTP
+          // status from, and `origin: 'remote'` marks the code as one this bundle never declared.
+          ...failure.meta,
+          origin: 'remote',
+          action: failure.action,
+          status: failure.status,
+          // Absent rather than `undefined`: `meta` is rendered into `--json` and the error
+          // reporter, and a null member reads as "the server sent an empty list".
+          ...(failure.issues === undefined ? {} : { issues: failure.issues }),
+        },
+        failure.retryAfterSeconds,
+      ),
     });
     this.status = failure.status;
   }

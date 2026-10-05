@@ -75,9 +75,29 @@ export function problemError(
     remoteTitle: remoteTitleOf(body['title']),
     retry: retryForStatus(code, status, retryAfterSeconds),
     // The server's declared keys FIRST, so the ones this decoder owns win a collision.
-    meta: { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url, ...stated },
+    meta: withStatedDelay(
+      { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+      retryAfterSeconds,
+    ),
     ...(docs === undefined ? {} : { docs }),
   });
+}
+
+/**
+ * A remote error's `meta` with the delay the HEADER stated, and only that: a `retryAfterSeconds`
+ * copied off the problem body is dropped first. The framework's server never writes one there —
+ * `registerProblemMeta` refuses framework codes, and an error carrying the key gets a
+ * `Retry-After` header from `@ultimat3/http` (exposed cross-origin by its CORS default) — so a body
+ * value is never the server's statement, and it must not drive a wait `statedDelayMs` reads. The
+ * one rule for both decoders: this one and `@ultimat3/action`'s `RemoteActionError`.
+ */
+export function withStatedDelay(
+  meta: Readonly<Record<string, unknown>>,
+  retryAfterSeconds: number | undefined,
+): Record<string, unknown> {
+  // Object rest copies own keys with CreateDataProperty, so a parsed `__proto__` stays a plain key.
+  const { retryAfterSeconds: _fromTheBody, ...kept } = meta;
+  return retryAfterSeconds === undefined ? kept : { ...kept, retryAfterSeconds };
 }
 
 /**

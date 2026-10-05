@@ -318,3 +318,78 @@ describe('the wait between attempts', () => {
     expect(flight.queued).toBe(0);
   });
 });
+
+describe('a retry attempt queued at the gate', () => {
+  /** A plan that holds its slot until `release()` — the call a queued retry waits behind. */
+  function holding(): FlightPlan<string> & { release: () => void } {
+    let done: (() => void) | undefined;
+    return {
+      key: undefined,
+      abortable: false,
+      release: () => done?.(),
+      run: () =>
+        new Promise<string>((resolve) => {
+          done = () => resolve('held');
+        }),
+    };
+  }
+
+  /** A read that fails once, so its second attempt is the one that queues. */
+  function failsOnce(signal?: AbortSignal): FlightPlan<string> {
+    let calls = 0;
+    return {
+      key: undefined,
+      abortable: signal === undefined,
+      ...(signal === undefined ? {} : { signal }),
+      run: () => {
+        calls += 1;
+        return calls === 1 ? Promise.reject(gateway()) : Promise.resolve('rows');
+      },
+    };
+  }
+
+  async function queuedBehind(signal?: AbortSignal) {
+    const clock = manualClock();
+    const flight = createClientFlight({
+      retry: { attempts: 2 },
+      schedule: clock.schedule,
+      limit: { maxConcurrent: 1, maxQueued: 1 },
+    });
+    const retrying = flight.run(failsOnce(signal)).catch((caught: unknown) => caught);
+    await reachTheWait();
+    const holder = holding();
+    const held = flight.run(holder);
+    clock.fireAll();
+    await reachTheWait();
+    expect(flight.queued).toBe(1);
+    return { flight, retrying, holder, held };
+  }
+
+  test('bump() removes it from the queue and settles it at once; the slot holder runs on', async () => {
+    const { flight, retrying, holder, held } = await queuedBehind();
+    flight.bump();
+    expect(await settledWithin(retrying, 50)).toBeUltimateError('X_SUPERSEDED');
+    expect(flight.queued).toBe(0);
+    // The holder is a write, so the bump never aborts it: it keeps its slot and finishes, and its
+    // answer is then fenced like every call issued before the bump.
+    expect(flight.active).toBe(1);
+    holder.release();
+    expect(await held.catch((caught: unknown) => caught)).toBeUltimateError('X_SUPERSEDED');
+    expect(flight.active).toBe(0);
+  });
+
+  test("the caller's abort removes it too, and the next call takes the queue place", async () => {
+    const caller = new AbortController();
+    const { flight, retrying, holder, held } = await queuedBehind(caller.signal);
+    caller.abort();
+    const outcome = await settledWithin(retrying, 50);
+    expect((outcome as DOMException).name).toBe('AbortError');
+    expect(flight.queued).toBe(0);
+    const next = flight.run(flaky(0, gateway));
+    expect(flight.queued).toBe(1);
+    holder.release();
+    expect(await held).toBe('held');
+    expect(await next).toBe('rows');
+    expect(flight.active).toBe(0);
+  });
+});

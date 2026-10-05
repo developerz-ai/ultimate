@@ -107,14 +107,14 @@ describe('the browser path to the page seam', () => {
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
   // browser hook uses — is the ceiling a realtime island can reach through this path.
   //
-  // measured: 16,878 B (2026-10-05, Bun 1.4.2), against 17,408. It was 16,004 at the tip before
-  // this change (15,470 on 2026-09-28). why: +874 B, what a browser reads off an http refusal it
+  // measured: 16,975 B (2026-10-05, Bun 1.4.2), against 17,408. It was 16,004 at the tip before
+  // this change (15,470 on 2026-09-28). why: +971 B, what a browser reads off an http refusal it
   // never loaded the package for — `client-retry-after.ts` (the one `Retry-After` reader), the
   // `retry-after` rule in `retryForStatus`, `remoteTitleOf` + `UltimateError`'s `remoteTitle` (the
-  // problem body's title for an unregistered code) — and the retry wait `bump()` and the caller's
-  // abort can now end. That is what let `@ultimat3/http`'s 11.5 kB leave every action island.
+  // problem body's title for an unregistered code) — and the retry wait and a queued gate slot that `bump()`
+  // and the caller's abort can now end. That is what let `@ultimat3/http`'s 11.5 kB leave every action island.
   // The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 17 kB (16,878 B as of 2026-10-05)', async () => {
+  test('the whole entry reaches no titles table and stays under 17 kB (16,975 B as of 2026-10-05)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);

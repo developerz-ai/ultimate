@@ -218,8 +218,13 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
    * call backing off from a 503 kept the ceiling's only slot and a second call was refused
    * `X_FLIGHT_GATE_OVERLOADED` for work nobody was doing. Re-acquired for the next attempt.
    */
-  const once = <T>(plan: FlightPlan<T>, signal: AbortSignal | undefined, count: number) =>
-    gate === undefined ? plan.run(signal, count) : gate.run(() => plan.run(signal, count));
+  const once = <T>(plan: FlightPlan<T>, signal: AbortSignal | undefined, count: number) => {
+    if (gate === undefined) return plan.run(signal, count);
+    // The queued wait for a slot ends on the same two signals the wait between attempts does.
+    const signals = [signal, plan.signal].filter((one): one is AbortSignal => one !== undefined);
+    const cancel = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    return gate.run(() => plan.run(signal, count), cancel);
+  };
 
   const attempt = async <T>(plan: FlightPlan<T>, signal: AbortSignal | undefined): Promise<T> => {
     const policy: RetryPolicy = {

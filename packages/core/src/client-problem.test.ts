@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { MAX_REMOTE_TITLE_LENGTH, problemError } from './client-problem';
 import { clientTransport } from './client-transport';
+import { statedDelayMs } from './error-retry';
 import { retryDecision } from './retry';
 
 const URL = '/api/posts';
@@ -95,5 +96,25 @@ describe('problemError — the stated delay', () => {
       retry: 'retry-after',
       meta: { retryAfterSeconds: 3 },
     });
+  });
+});
+
+describe('problemError — a delay only the header may state', () => {
+  // The framework's server never puts `retryAfterSeconds` in a problem body: `registerProblemMeta`
+  // refuses framework codes, and whenever an error carries the key `@ultimat3/http` writes the
+  // `Retry-After` header from it (exposed cross-origin by its CORS default). A body value is
+  // therefore never the server's statement — and it must not drive the wait.
+  test('a body retryAfterSeconds with no header is dropped, and states nothing', () => {
+    const error = problemError(429, refusal({ meta: { retryAfterSeconds: 3_600 } }), URL);
+    expect(error.meta?.['retryAfterSeconds']).toBeUndefined();
+    expect(statedDelayMs(error)).toBeUndefined();
+    // And it cannot flip an unregistered code's class: no header, so the status rule alone.
+    expect(error.retry).toBe('retryable');
+  });
+
+  test('the header wins over a body value, which is never copied', () => {
+    const error = problemError(429, refusal({ meta: { retryAfterSeconds: 3_600 } }), URL, 2);
+    expect(error.meta?.['retryAfterSeconds']).toBe(2);
+    expect(error.retry).toBe('retry-after');
   });
 });
