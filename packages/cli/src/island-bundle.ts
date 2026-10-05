@@ -34,6 +34,8 @@ import {
   realtimeIslandEntry,
 } from './island-realtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
+import type { SourcePaths } from './island-sources';
+import { sourcesOnDisk } from './island-sources';
 import { islandStylesPlugin } from './island-styles';
 import { hasPathSegment } from './path-segments';
 import { quoteArg } from './shell-quote';
@@ -71,6 +73,8 @@ export interface IslandChunk {
    * beyond `bytes`, what a precached page must carry with it. Empty for an island sharing nothing.
    */
   readonly imports: readonly string[];
+  /** The files on disk it was built from (`island-sources.ts`). Absent on a chunk not built here. */
+  readonly sources?: SourcePaths;
 }
 
 /** A module two or more islands import, served once beside them. */
@@ -81,6 +85,7 @@ export interface SharedChunk {
   readonly bytes: number;
   /** The islands (app-root-relative) that load it — for a finding that names what an author edits. */
   readonly importers: readonly string[];
+  readonly sources?: SourcePaths;
 }
 
 export interface IslandBundle {
@@ -198,9 +203,10 @@ async function buildAll(
       logs: built.logs.map((log) => String(log)).join('; '),
     });
   }
-  const linked = linkOutputs(await builtOutputs(files, built.outputs));
-  const chunks = entryChunks(files, linked);
-  return { chunks, shared: sharedChunks(chunks, linked) };
+  const sources = new Map<string, SourcePaths>();
+  const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
+  const chunks = entryChunks(files, linked, sources);
+  return { chunks, shared: sharedChunks(chunks, linked, sources) };
 }
 
 /**
@@ -242,8 +248,10 @@ const withoutExtension = (file: string): string =>
 
 /** Every code output paired with its source map's inputs and, for an entry, its island. */
 async function builtOutputs(
+  root: string,
   files: readonly string[],
   artifacts: readonly Bun.BuildArtifact[],
+  sourcePaths: Map<string, SourcePaths>,
 ): Promise<readonly BuiltOutput[]> {
   const byStem = new Map(files.map((file) => [withoutExtension(file), file]));
   const maps = new Map<string, string>();
@@ -256,7 +264,9 @@ async function builtOutputs(
     const key = outputKey(artifact.path);
     const file = artifact.kind === 'entry-point' ? byStem.get(withoutExtension(key)) : undefined;
     const map = maps.get(`${artifact.path}.map`);
-    const sources = map === undefined ? undefined : sourcesContentOf(JSON.parse(map), true);
+    const parsed: unknown = map === undefined ? undefined : JSON.parse(map);
+    const sources = parsed === undefined ? undefined : sourcesContentOf(parsed, true);
+    sourcePaths.set(key, await sourcesOnDisk(root, parsed));
     if (sources === undefined || (artifact.kind === 'entry-point' && file === undefined)) {
       throw new IslandBuildFailedError({
         file: file ?? key,
@@ -277,6 +287,7 @@ async function builtOutputs(
 function entryChunks(
   files: readonly string[],
   linked: readonly LinkedFile[],
+  sources: ReadonlyMap<string, SourcePaths>,
 ): readonly IslandChunk[] {
   const shared = new Map(
     linked
@@ -312,6 +323,7 @@ function entryChunks(
       // different files at one address. `bytes` is measured on THAT code, never on this build's.
       ...stableChunk(file, entry.identity, entry.code),
       imports: closure(entry.imports),
+      sources: sources.get(entry.path) ?? [],
     });
   }
   return chunks;
@@ -321,6 +333,7 @@ function entryChunks(
 function sharedChunks(
   chunks: readonly IslandChunk[],
   linked: readonly LinkedFile[],
+  sources: ReadonlyMap<string, SourcePaths>,
 ): readonly SharedChunk[] {
   const out: SharedChunk[] = [];
   for (const one of linked) {
@@ -333,6 +346,7 @@ function sharedChunks(
         .filter((chunk) => chunk.imports.includes(url))
         .map((chunk) => chunk.file)
         .sort(),
+      sources: sources.get(one.path) ?? [],
     });
   }
   return out.sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));

@@ -42,7 +42,8 @@
         "noNonNullAssertion": "error",
         "noDefaultExport": "error",
         "useImportType": "error",
-        "useExportType": "error"
+        "useExportType": "error",
+        "useNodejsImportProtocol": "error"
       },
       "suspicious": {
         "noExplicitAny": "error"

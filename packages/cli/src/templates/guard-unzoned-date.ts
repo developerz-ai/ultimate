@@ -25,8 +25,29 @@ import type { Finding, Guard } from '@ultimat3/cli';
 /** The app owns the codes its own conventions raise — this one is named for the guard. */
 const CODE = '${CODE}';
 
-/** Every call whose output depends on a zone. The \`(\` is the start of the argument list. */
-const FORMATTER = /(?:\\.toLocale(?:Date|Time)?String|Intl\\.DateTimeFormat)\\s*\\(/g;
+/**
+ * Every call whose output depends on a zone. The \`(\` is the start of the argument list.
+ * \`.toDateString()\` / \`.toTimeString()\` take no options at all: always the host's zone.
+ */
+const FORMATTER =
+  /(?:\\.toLocale(?:Date|Time)?String|\\.to(?:Date|Time)String|Intl\\.DateTimeFormat)\\s*\\(/g;
+
+/**
+ * A \`timeZone\` KEY — written \`timeZone: z\`, the shorthand \`{ timeZone }\`, or quoted
+ * \`{ 'timeZone': z }\`, which is the same property. A substring test read \`timeZoneName\`, which
+ * only labels the zone the host already chose, as a zone. A quoted key takes only \`:\` — a
+ * quoted \`'timeZone',\` is a string in a list, not an option.
+ */
+const ZONED = /\\btimeZone\\s*[:,}]|(['"])timeZone\\1\\s*:/;
+
+/**
+ * The zoned call that replaces a formatter with no zone option. A \`Map\`, not an object: an
+ * object literal's prototype answers \`toLocaleString\`, and the bare call would read as one.
+ */
+const ZONED_FORM: ReadonlyMap<string, string> = new Map([
+  ['toDateString', 'toLocaleDateString'],
+  ['toTimeString', 'toLocaleTimeString'],
+]);
 
 export interface SourceFile {
   /** App-root-relative POSIX path, so the finding names the file an author opens. */
@@ -72,19 +93,24 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
     const text = blank(file.source);
     for (const match of text.matchAll(FORMATTER)) {
       const open = match.index + match[0].length - 1;
-      if (argumentsOf(text, open).includes('timeZone')) continue;
+      if (ZONED.test(argumentsOf(text, open))) continue;
       const line = lineOf(text, match.index);
       // The bare \`.toLocaleString(\` is ALSO \`Number.prototype.toLocaleString\`, and a regex cannot
       // tell a count from a date. The match stands — a date formatted this way is the defect this
       // guard exists for — but the fix names the number exit too, because \`{ timeZone }\` is not
       // one: a number ignores it, and an author following the fix verbatim would ship a lie.
       const bare = match[0].trim() === '.toLocaleString(';
+      const called = match[0].replaceAll(/[.(\\s]/g, '');
+      const zoned = ZONED_FORM.get(called);
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} calls \${match[0].trim()}) with no timeZone — it formats in whatever zone the process happens to run in, so one row reads as two different days across two containers\`,
-        fix: bare
-          ? \`in \${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify\`
-          : \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify\`,
+        fix:
+          zoned !== undefined
+            ? \`\${called}() has no zone option — in \${file.path} call \${zoned}(locale, { timeZone: 'UTC' }) instead — then: x verify\`
+            : bare
+              ? \`in \${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify\`
+              : \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify\`,
         at: file.path,
       });
     }
@@ -141,6 +167,30 @@ unitTest('the bare toLocaleString names the number exit, since a count matches i
   // The dated forms are unambiguous and keep the zone-only fix.
   const dated = unzonedDates(file("at.toLocaleDateString('en-US');"));
   expect(dated[0]?.fix).not.toContain('Intl.NumberFormat');
+});
+
+unitTest('timeZoneName labels the zone, it does not choose one', () => {
+  const named = "at.toLocaleString('en-US', { timeZoneName: 'short' });";
+  expect(unzonedDates(file(named))).toHaveLength(1);
+  const shorthand =
+    "new Intl.DateTimeFormat('en-US', { timeZoneName: 'short', timeZone }).format(at);";
+  expect(unzonedDates(file(shorthand))).toEqual([]);
+});
+
+unitTest('a quoted key is the same key, and a quoted timeZoneName is still only a label', () => {
+  expect(unzonedDates(file("at.toLocaleString('en-US', { 'timeZone': 'UTC' });"))).toEqual([]);
+  expect(unzonedDates(file('at.toLocaleString("en-US", { "timeZone": zone });'))).toEqual([]);
+  const label = "at.toLocaleString('en-US', { 'timeZoneName': 'short' });";
+  expect(unzonedDates(file(label))).toHaveLength(1);
+});
+
+unitTest('toDateString and toTimeString name the zoned call', () => {
+  const date = unzonedDates(file('const shown = at.toDateString();'));
+  expect(date).toHaveLength(1);
+  expect(date[0]?.fix).toContain('toLocaleDateString(locale');
+  const time = unzonedDates(file('const shown = at.toTimeString();'));
+  expect(time).toHaveLength(1);
+  expect(time[0]?.fix).toContain('toLocaleTimeString(locale');
 });
 
 unitTest('a commented-out call is a note, not a call', () => {

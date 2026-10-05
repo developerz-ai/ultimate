@@ -196,6 +196,16 @@ describe('unit · what a source file imports', () => {
     expect(importedPackages(source)).toEqual([]);
   });
 
+  test('a type-position import(…) needs its manifest line like `import type` (K16)', () => {
+    const source = [
+      "export type Cli = typeof import('@demo/one');",
+      "export let row: import('@demo/two/row').Row;",
+      "export const prose = `typeof import('@demo/three')`;",
+    ].join('\n');
+
+    expect(importedPackages(source)).toEqual(['@demo/one', '@demo/two']);
+  });
+
   test('a file the parser refuses is not silently read as importing nothing', () => {
     expect(() => importedPackages("import { a } from '@demo/one';\nconst = ;")).toThrow();
   });

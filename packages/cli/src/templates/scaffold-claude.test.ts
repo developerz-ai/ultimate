@@ -185,9 +185,9 @@ describe('unit · the generated AGENTS.md names every rule the gate actually ref
   // prose, and a test that asserted over the union would be asserting about the wrong thing.
   const agentsMd = (): string => {
     const file = docsFiles(app).find((generated) => generated.path === 'AGENTS.md');
-    if (file === undefined) throw new TypeError('x new writes no AGENTS.md');
+    if (file === undefined) expect.unreachable('x new writes no AGENTS.md');
     if (typeof file.contents !== 'string')
-      throw new TypeError('AGENTS.md is generated as bytes, not prose');
+      expect.unreachable('AGENTS.md is generated as bytes, not prose');
     return file.contents;
   };
 

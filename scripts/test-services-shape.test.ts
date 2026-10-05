@@ -35,27 +35,48 @@ const service = (name: string): Service => compose.services?.[name] ?? {};
 /** `127.0.0.1:5433:5432` → 5433: the port a suite on the host dials. */
 const hostPort = (published: string): string => published.split(':').at(-2) ?? '';
 
+const lines = (await Bun.file(`${root}/${ENV_FILE}`).text())
+  .split('\n')
+  .filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+  .map((line) => {
+    const at = line.indexOf('=');
+    return [line.slice(0, at), line.slice(at + 1)] as const;
+  });
 const urls = new Map(
-  (await Bun.file(`${root}/${ENV_FILE}`).text())
-    .split('\n')
-    .filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
-    .map((line) => {
-      const at = line.indexOf('=');
-      return [line.slice(0, at), new URL(line.slice(at + 1))] as const;
-    }),
+  lines.filter(([name]) => name.endsWith('_URL')).map(([name, value]) => [name, new URL(value)]),
 );
+
+/**
+ * The env lines that are a FILE, not a URL, each with the URL whose server wrote it — exported by
+ * whichever part exports that URL. A new one is a row here, or the assertion below refuses it.
+ */
+const COMPANIONS: Readonly<Record<string, string>> = {
+  TEST_TLS_ROOT_CERT: 'TEST_TLS_REPLICATION_URL',
+};
+
+/**
+ * The one exception to "mounts no volume" (#519): the TLS suite on the host has to read the CA the
+ * server's certificate chains to, so the certificate init writes it into docker/.tls/ and the
+ * server reads its pair from there. Data directories stay tmpfs.
+ */
+const BINDS: Readonly<Record<string, readonly string[]>> = {
+  'postgres-tls': ['./.tls:/tls:ro'],
+  'postgres-tls-certs': ['.:/docker:ro', './.tls:/docker/.tls'],
+};
 
 /** The compose service whose published port a URL dials, or nothing. */
 const serviceAt = (url: URL): string | undefined =>
   services.find(([, spec]) => (spec.ports ?? []).some((port) => hostPort(port) === url.port))?.[0];
 
 describe('unit · test services · in RAM, without durability, silent', () => {
-  test('every service keeps its data on a tmpfs and mounts no volume', () => {
+  test('every service keeps its data on a tmpfs and mounts no volume but the TLS material', async () => {
     expect(services.length).toBeGreaterThan(0);
     for (const [name, spec] of services) {
       expect(spec.tmpfs?.length ?? 0, `${name} has no tmpfs`).toBeGreaterThan(0);
-      expect(spec.volumes, `${name} mounts a volume`).toBeUndefined();
+      expect(spec.volumes ?? [], `${name} mounts a volume`).toEqual(BINDS[name] ?? []);
     }
+    // A test server's private key lands there: it must never be one `git add` away.
+    expect(await Bun.file(`${root}/.gitignore`).text()).toContain('\ndocker/.tls/\n');
   });
 
   test('every service has the `none` log driver, so nothing is kept and nothing is printed', () => {
@@ -73,13 +94,15 @@ describe('unit · test services · in RAM, without durability, silent', () => {
   test('every published port binds loopback: the credentials are in the file', () => {
     for (const [name, spec] of services) {
       for (const port of spec.ports ?? []) {
-        expect(port, `${name} publishes ${port} on every interface`).toStartWith('127.0.0.1:');
+        expect(port, `${name} publishes ${port} beyond loopback`).toMatch(
+          /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}:/,
+        );
       }
     }
   });
 
   test('both Postgres servers run without fsync and log nothing below FATAL', () => {
-    for (const name of ['postgres', 'postgres-logical']) {
+    for (const name of ['postgres', 'postgres-logical', 'postgres-tls']) {
       const initdb = service(name).environment?.['POSTGRES_INITDB_ARGS'] ?? '';
       for (const setting of [
         'fsync=off',
@@ -93,6 +116,8 @@ describe('unit · test services · in RAM, without durability, silent', () => {
     }
     expect(service('postgres').image).toStartWith('pgvector/pgvector:');
     expect(service('postgres-logical').command).toContain('wal_level=logical');
+    expect(service('postgres-tls').command).toContain('wal_level=logical');
+    expect(service('postgres-tls').command).toContain('ssl=on');
   });
 
   test('Redis keeps no snapshot and no append-only file', () => {
@@ -203,11 +228,19 @@ describe('unit · test services · every image is a tag pinned by digest', () =>
 });
 
 describe('unit · test services · a suite finds each one where it was started', () => {
-  test('every URL dials a port exactly one service publishes, and every service has a URL', () => {
+  test('every URL dials a port exactly one service publishes, and every server has a URL', () => {
     const dialled = [...urls].map(([name, url]) => [name, serviceAt(url)] as const);
+    // A one-shot (the certificate init) publishes nothing and is dialled by nobody.
+    const servers = services.filter(([, spec]) => (spec.ports ?? []).length > 0);
 
     expect(dialled.filter(([, at]) => at === undefined)).toEqual([]);
-    expect(dialled.map(([, at]) => at).sort()).toEqual(services.map(([name]) => name).sort());
+    expect(dialled.map(([, at]) => at).sort()).toEqual(servers.map(([name]) => name).sort());
+  });
+
+  test('every line that is not a URL rides with the URL whose server wrote it', () => {
+    const files = lines.filter(([name]) => !name.endsWith('_URL'));
+    expect(files.filter(([name]) => !urls.has(COMPANIONS[name] ?? ''))).toEqual([]);
+    expect(Object.fromEntries(files)).toEqual({ TEST_TLS_ROOT_CERT: 'docker/.tls/ca.crt' });
   });
 
   test('each CI part exports the URLs of exactly the services it started', async () => {
@@ -230,9 +263,13 @@ describe('unit · test services · a suite finds each one where it was started',
     for (const part of parts) {
       const started = (part['services'] ?? '').split(' ').filter((name) => name !== '');
       const exported = (part['urls'] ?? '').split('|').filter((name) => name !== '');
-      const expected = [...urls]
+      const served = [...urls]
         .filter(([, url]) => started.includes(serviceAt(url) ?? ''))
         .map(([name]) => name);
+      const expected = [
+        ...served,
+        ...Object.keys(COMPANIONS).filter((file) => served.includes(COMPANIONS[file] ?? '')),
+      ];
 
       expect(
         started.filter((name) => compose.services?.[name] === undefined),

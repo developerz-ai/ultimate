@@ -192,12 +192,14 @@ toWireSchema(publishPost);                    // an MCP tool's inputSchema: what
 toWireOutputSchema(publishPost);              // its outputSchema: structure only; undefined for a non-object root
 toJsonSchema(publishPost, { dialect: 'x' });  // X_SCHEMA_UNSUPPORTED — the two spellings are closed
 parse(publishPost, coerceQuery(publishPost, url.searchParams));
+numeric(' 12 ');                              // 12 — numeric('0x10'), numeric(' '): undefined
 ```
 
 Coercion is separate from validation on purpose: only the HTTP layer has strings that mean
 numbers. `coerceQuery` promotes repeated params to arrays and leaves anything ambiguous
 untouched so validation still produces the real error. It never invents data: only a **decimal**
-numeral becomes a number (`0x10` stays text), only a plain object is read as one (an array is never
+numeral becomes a number (`0x10` stays text; `numeric` is that one reader, for a boundary that
+holds a string and no schema node — admin's form decode), only a plain object is read as one (an array is never
 spread into `{ 0: … }`), and a union tries **every** member in declaration order — a string some
 member already accepts is left alone, and a union of objects coerces through the member whose
 literal fields the value carries.

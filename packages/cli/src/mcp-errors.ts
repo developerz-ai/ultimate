@@ -293,6 +293,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TRUSTED_PROXY_HOPS_INVALID: 'TRUSTED_PROXY_HOPS=1 ROLE=web bun apps/web/server.ts',
   X_PERMISSION_BORROWED: 'x verify --only policy --json',
   X_ERROR_CODE_UNTHROWN_STALE: 'x errors explain X_ERROR_CODE_UNTHROWN_STALE --json',
+  X_DEV_STATE_UNWRITABLE:
+    'ls -ld .x   # make it writable by this user, on a filesystem that supports hard links, then re-run x dev',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

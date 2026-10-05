@@ -6,6 +6,7 @@ import type { RealtimeConfig } from '@ultimat3/core';
 import type { RateLimitStore, Route } from '@ultimat3/http';
 import { describeRoutes } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
+import type { ImageTransformDriver } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { mountAppMcp } from './app-mcp';
@@ -53,6 +54,12 @@ export interface DevRouteTableInput {
    * empty it: a stored render outlives the module that produced it.
    */
   readonly isr?: IsrController | undefined;
+  /**
+   * `apps/<app>/runtime.ts`'s `images` driver, handed to `/media` exactly as the container hands it
+   * (`serve-web.ts`): dropped here, dev answered every variant from the builtin pipeline and a
+   * CDN-backed transform was first exercised in production.
+   */
+  readonly images?: ImageTransformDriver | undefined;
 }
 
 export interface DevRouteTable {
@@ -126,6 +133,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...assetRoutes({
       root: input.root,
       storage: served,
+      ...(input.images === undefined ? {} : { images: input.images }),
       ...(pwa === undefined ? {} : { pwa }),
     }),
     ...storageRoutes({ storage: served }),
@@ -146,6 +154,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...islandHarnessRoutes({
       islands: () => input.islands(),
       states: () => loadIslandStates(input.root),
+      devUrl: () => input.dashboard.status().url,
     }),
     ...(serviceWorker === undefined ? [] : serviceWorkerRoutes(serviceWorker)),
     ...sync.routes,

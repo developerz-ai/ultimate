@@ -43,3 +43,5 @@ node_modules
 # ULTIMATE_SECRETS_KEY is unset — so a baked copy boots the image on it and the platform's key is
 # never exercised.
 **/.secrets.key
+# the test-only TLS key the postgres-tls-certs one-shot writes (#519); never in a build context
+docker/.tls

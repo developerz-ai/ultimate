@@ -33,6 +33,30 @@ unitTest('the bare toLocaleString names the number exit, since a count matches i
   expect(dated[0]?.fix).not.toContain('Intl.NumberFormat');
 });
 
+unitTest('timeZoneName labels the zone, it does not choose one', () => {
+  const named = "at.toLocaleString('en-US', { timeZoneName: 'short' });";
+  expect(unzonedDates(file(named))).toHaveLength(1);
+  const shorthand =
+    "new Intl.DateTimeFormat('en-US', { timeZoneName: 'short', timeZone }).format(at);";
+  expect(unzonedDates(file(shorthand))).toEqual([]);
+});
+
+unitTest('a quoted key is the same key, and a quoted timeZoneName is still only a label', () => {
+  expect(unzonedDates(file("at.toLocaleString('en-US', { 'timeZone': 'UTC' });"))).toEqual([]);
+  expect(unzonedDates(file('at.toLocaleString("en-US", { "timeZone": zone });'))).toEqual([]);
+  const label = "at.toLocaleString('en-US', { 'timeZoneName': 'short' });";
+  expect(unzonedDates(file(label))).toHaveLength(1);
+});
+
+unitTest('toDateString and toTimeString name the zoned call', () => {
+  const date = unzonedDates(file('const shown = at.toDateString();'));
+  expect(date).toHaveLength(1);
+  expect(date[0]?.fix).toContain('toLocaleDateString(locale');
+  const time = unzonedDates(file('const shown = at.toTimeString();'));
+  expect(time).toHaveLength(1);
+  expect(time[0]?.fix).toContain('toLocaleTimeString(locale');
+});
+
 unitTest('a commented-out call is a note, not a call', () => {
   expect(unzonedDates(file("// at.toLocaleDateString('en-US');"))).toEqual([]);
 });

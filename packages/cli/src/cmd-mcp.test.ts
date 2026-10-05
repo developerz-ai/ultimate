@@ -11,7 +11,7 @@ import { MCP_UNAUTHENTICATED_LIMIT } from '@ultimat3/mcp';
 import { resetAppLoad } from './app-load';
 import { REQUIRED_BUN } from './app-root';
 import type { McpHttpServer } from './cmd-mcp';
-import { mcpCommand, startMcpHttp, stdioResult } from './cmd-mcp';
+import { mcpCommand, serveOverStdio, startMcpHttp, stdioResult } from './cmd-mcp';
 import type { CommandContext } from './command';
 import type { Runner } from './exec';
 import { createDevMcpServer } from './mcp-host';
@@ -332,6 +332,43 @@ describe('unit · x mcp serve --transport http on a taken port', () => {
       expect(closed).toBe(true);
     } finally {
       await holder.stop(true);
+      if (!closed) await host.close();
+    }
+  }, 180_000);
+});
+
+// `host.close()` ran only after a session that ENDED: a stdin that errored, or a transport that
+// threw, left the host's PGlite data directory held by a process that was about to report a
+// failure — and the next `x mcp serve` on the checkout met a database somebody else still held.
+describe('unit · x mcp serve --transport stdio on a session that throws', () => {
+  test('a stdio session that throws still closes the host', async () => {
+    const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
+    let closed = false;
+    const spied = {
+      ...host,
+      close: async (): Promise<void> => {
+        closed = true;
+        await host.close();
+      },
+    };
+    const broken = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(
+          new NotImplementedError({
+            cause: 'a stdin that fails mid-session is not implemented in this fixture',
+            fix: 'x mcp tools --json',
+          }),
+        );
+      },
+    });
+    try {
+      const thrown: unknown = await serveOverStdio(spied, { input: broken, write: () => {} }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
+      expect(closed).toBe(true);
+    } finally {
       if (!closed) await host.close();
     }
   }, 180_000);

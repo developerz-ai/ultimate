@@ -5,6 +5,7 @@
 // It converts and never validates: a value that will not convert is passed through as the string
 // that was typed, so the schema refuses it in its own words against the field that carried it.
 
+import { numeric } from '@ultimat3/schema';
 import type { AdminField } from './fields';
 import type { AdminRow } from './registry';
 import type { AdminResource } from './resource';
@@ -72,10 +73,15 @@ const TYPED: ReadonlySet<AdminField['widget']> = new Set([
 const blank = (field: AdminField): unknown =>
   field.required && !TYPED.has(field.widget) ? '' : null;
 
-const numberOf = (raw: string): unknown => {
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : raw;
-};
+/**
+ * Schema's own decimal reader, never `Number(raw)`: that reads hex, binary and octal too, so `0x10`
+ * in a money box was stored as `minor: 16`. Anything else is handed on as typed for the schema to
+ * refuse against the field. Whitespace never reaches here — `decodeField` blanks it first.
+ */
+const numberOf = (raw: string): unknown => numeric(raw) ?? raw;
+
+/** The widgets that hold a number: a box of only whitespace is as empty as `''` for them. */
+const NUMERIC: ReadonlySet<AdminField['widget']> = new Set(['money', 'number-input']);
 
 const jsonOf = (raw: string): unknown => {
   try {
@@ -91,6 +97,9 @@ function decodeField(field: AdminField, form: Posted): unknown {
   // An unchecked box posts nothing at all, so absence IS the answer for a checkbox.
   if (field.widget === 'checkbox') return raw !== undefined && raw !== 'false';
   if (raw === undefined || raw === '') return blank(field);
+  // `Number(' ')` is 0, so a space in an untouched optional number box was a write of 0 over a
+  // stored null — a change the audit diff then attributed to the operator.
+  if (NUMERIC.has(field.widget) && raw.trim() === '') return blank(field);
   switch (field.widget) {
     case 'number-input':
       return numberOf(raw);

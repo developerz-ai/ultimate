@@ -1,6 +1,6 @@
-// Single responsibility: which tables `x db gen` must grant `REPLICA IDENTITY FULL` — the live
-// queries' DECLARED `subscribes:` plus the `records` tables of every channel with params — and the
-// refusal for a declared name no entity's table matches. Only this tier holds all the registries.
+// Single responsibility: which tables `x db gen` must grant `REPLICA IDENTITY FULL` — the `records`
+// tables of every channel with params, and since #518 never a live query's `subscribes:` — and the
+// refusal for a declared `subscribes:` name no entity's table matches. Only this tier holds both.
 
 import { UltimateError } from '@ultimat3/core';
 import { paramsChannelTables } from '@ultimat3/realtime/server';
@@ -29,11 +29,10 @@ function offer(tables: ReadonlySet<string>): string {
 /**
  * A live read declares a relation this app has no entity for.
  *
- * Refused rather than dropped, and that is the whole point of the check: `@ultimat3/db` keeps only
- * the declared names an entity's table matches (`replica-identity.ts`), so an EXTRA name is
- * discarded in silence — and `@ultimat3/query` has no table catalog, so its own `subscribes:`
- * assertions cannot see one either. A typo therefore granted `REPLICA IDENTITY FULL` to nothing
- * while its author read the declaration as granted, which is the failure #357 exists to end.
+ * Refused rather than dropped: `@ultimat3/query` has no table catalog, so its own `subscribes:`
+ * assertions cannot see a name no table has — and a typo there is a declaration its author reads
+ * as true. Until #518 the list also chose which tables got `REPLICA IDENTITY FULL`, so the typo
+ * granted it to nothing (#357); the grant is gone, the declaration's honesty still matters.
  *
  * The name goes in the `cause` and never into a command: it is a string from the app's own source,
  * and the remedy is an edit to a field rather than anything to paste at a shell.
@@ -47,8 +46,8 @@ export class QuerySubscribesUnknownError extends UltimateError {
         'declares a table with that name',
       fix:
         `edit subscribes: on the query "${input.query}" to name a table this app declares ` +
-        `(${offer(input.tables)}), or drop the name — x db gen grants REPLICA IDENTITY FULL to ` +
-        'exactly the tables it lists, and would have granted it to nothing',
+        `(${offer(input.tables)}), or drop the name, then x db gen "fix subscribes" --json — a ` +
+        'name no table has can never match what the read selects from (X_QUERY_SUBSCRIBES_DRIFT)',
       meta: { query: input.query, table: input.table },
     });
   }
@@ -57,13 +56,19 @@ export class QuerySubscribesUnknownError extends UltimateError {
 /**
  * The tables to hand `GenerateOptions.replicaIdentityFull`, deduped and sorted.
  *
+ * A live query's `subscribes:` is VALIDATED here and never granted (#518, owner decision O-518):
+ * every entity has a primary key — `entity()` refuses one without — and a live query over a keyed
+ * table is correct on DEFAULT identity, because the shared window holds the whole row the
+ * in/out/delete decision needs (`realtime/src/pg-identity-window.live.test.ts`, on real WAL). FULL
+ * there only made every UPDATE and DELETE log the whole old row. A table already on FULL keeps it:
+ * `replica-identity.ts` never reverts, and the drift step reads a recorded FULL as agreement.
+ *
  * Sorted so the same app generates the same bytes whatever order its modules registered in — the
  * rule `@ultimat3/db`'s own `pending()` states one layer down, kept here too because a caller that
  * ordered by registration would put a diff in a file for nothing.
  *
- * Every name is checked against `tables` BEFORE any of them is returned: a run that emitted the
- * good half and refused afterwards would leave an author with a migration that is right for one
- * table and silently absent for the other.
+ * Every `subscribes:` name is checked against `tables` BEFORE anything is returned, so a refused
+ * declaration never leaves a migration half-written behind it.
  *
  * `channelTables` defaults to what the declared channels need (`paramsChannelTables()`): a channel
  * with params routes a DELETE to the topic the OLD row names, and under the default identity that
@@ -76,14 +81,12 @@ export function replicaIdentityTables(
   tables: ReadonlySet<string>,
   channelTables: readonly string[] = paramsChannelTables(),
 ): readonly string[] {
-  const wanted = new Set<string>(channelTables.filter((table) => tables.has(table)));
   for (const query of queries) {
     for (const table of query.subscribes ?? []) {
       if (!tables.has(table)) {
         throw new QuerySubscribesUnknownError({ query: query.name, table, tables });
       }
-      wanted.add(table);
     }
   }
-  return [...wanted].sort();
+  return [...new Set(channelTables.filter((table) => tables.has(table)))].sort();
 }

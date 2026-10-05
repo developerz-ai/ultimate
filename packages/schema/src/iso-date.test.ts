@@ -132,7 +132,7 @@ describe('the refusal set is the same under every host zone', () => {
         ]);
         // A crashed child otherwise surfaces as `JSON Parse error` on an empty string.
         if (exitCode !== 0)
-          throw new TypeError(`bun -e under TZ=${zone} exited ${exitCode}: ${stderr}`);
+          expect.unreachable(`bun -e under TZ=${zone} exited ${exitCode}: ${stderr}`);
         return JSON.parse(stdout.trim()) as Answers;
       };
       const [utc, newYork] = await Promise.all([readIn('UTC'), readIn('America/New_York')]);

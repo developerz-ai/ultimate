@@ -10,7 +10,7 @@ import {
   timingSafeEqual,
   UltimateError,
 } from '@ultimat3/core';
-import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
+import { mcpHttpRoute, type StdioTransportInput, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import { DEFAULT_PORT, mcpSpec } from './cmd-mcp-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -37,8 +37,12 @@ const isTransport = (value: string): value is Transport =>
 
 /** The catalog, from the server's own registry — never a list kept here. */
 async function catalog(host: CliMcpServer): Promise<CommandResult> {
-  const tools = host.server.list(host.caller);
-  await host.close();
+  let tools: ReturnType<CliMcpServer['server']['list']>;
+  try {
+    tools = host.server.list(host.caller);
+  } finally {
+    await host.close();
+  }
   return {
     ok: true,
     command: 'mcp',
@@ -162,10 +166,24 @@ export const stdioResult = (tools: number): CommandResult => ({
   stream: 'stderr',
 });
 
-/** stdout is the WIRE: `serveStdio` owns fd 1 for as long as the peer holds stdin open. */
-async function serveOverStdio(host: CliMcpServer): Promise<CommandResult> {
-  await serveStdio({ server: host.server, caller: host.caller });
-  await host.close();
+/** The pipe a session reads, when it is not this process's own stdin — a test's script. */
+export type StdioPipe = Pick<StdioTransportInput, 'input' | 'write'>;
+
+/**
+ * stdout is the WIRE: `serveStdio` owns fd 1 for as long as the peer holds stdin open. Exported
+ * with `pipe` so a test can end the session with a throw instead of a closed stdin.
+ */
+export async function serveOverStdio(
+  host: CliMcpServer,
+  pipe: StdioPipe = {},
+): Promise<CommandResult> {
+  // `finally`, as `startMcpHttp`'s refused bind does: a session that throws must not leave the
+  // host's PGlite data directory held by a process about to report the failure.
+  try {
+    await serveStdio({ server: host.server, caller: host.caller, ...pipe });
+  } finally {
+    await host.close();
+  }
   return stdioResult(host.tools.length);
 }
 

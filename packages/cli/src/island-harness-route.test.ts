@@ -10,6 +10,7 @@ import { islandBundle } from './island-bundle';
 import { ISLAND_HARNESS_PATH } from './island-harness';
 import { islandHarnessRoutes } from './island-harness-route';
 
+const DEV_URL = 'http://dev.localhost:3000';
 const HOSTILE = 'apps/web/app/$(touch pwned)/x;y.island.tsx';
 
 const manifestAt = (island: string, id: string): IslandStatesManifest =>
@@ -24,8 +25,9 @@ const refusalFix = async (manifest: IslandStatesManifest, query: string): Promis
   const routes = islandHarnessRoutes({
     islands: () => islandBundle([]),
     states: () => Promise.resolve([manifest]),
+    devUrl: () => DEV_URL,
   });
-  const url = new URL(`http://dev.test${ISLAND_HARNESS_PATH}${query}`);
+  const url = new URL(`${DEV_URL}${ISLAND_HARNESS_PATH}${query}`);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
   const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
   const route = routes[0] as (typeof routes)[number];
@@ -71,5 +73,32 @@ describe('the harness refusals screen what the manifest says', () => {
     expect(await refusalFix(manifest, target.query)).toBe(
       'x g island settings --at apps/web/app/settings',
     );
+  });
+});
+
+// `/_x/island` renders an island with its declared state props off this machine's dev server. A
+// page on a hostile name that resolves to 127.0.0.1 reads it same-origin unless the route refuses
+// the Host the way every other `/_x` route does (K6).
+describe('the harness answers a loopback Host only', () => {
+  test('a non-loopback Host is a 421 X_DEV_HOST_REFUSED, before any states file is read', async () => {
+    let read = 0;
+    const routes = islandHarnessRoutes({
+      islands: () => islandBundle([]),
+      states: () => {
+        read += 1;
+        return Promise.resolve([]);
+      },
+      devUrl: () => DEV_URL,
+    });
+    const url = new URL(`http://rebound.example${ISLAND_HARNESS_PATH}?island=x&state=y`);
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
+    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const route = routes[0] as (typeof routes)[number];
+    const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
+    expect(response.status).toBe(421);
+    const body = (await response.json()) as { error: { code: string; fix: string } };
+    expect(body.error.code).toBe('X_DEV_HOST_REFUSED');
+    expect(body.error.fix).toContain(`${DEV_URL}/_x`);
+    expect(read).toBe(0);
   });
 });

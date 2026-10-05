@@ -22,7 +22,7 @@ export { checkOf, fail, failWith, makeSchema, pass, VENDOR } from './builder';
 // not import this package — but `mcp` is tier 4 and can, so a copy there would have no excuse.
 export { charCount } from './char-count';
 export type { QuerySource } from './coerce';
-export { coerceInput, coerceNode, coerceQuery } from './coerce';
+export { coerceInput, coerceNode, coerceQuery, numeric } from './coerce';
 export { describeValue, expected } from './describe-value';
 export { discriminatedUnionSchema } from './discriminated-union';
 export type { SchemaErrorCodeDeclaration } from './error-codes';

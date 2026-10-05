@@ -64,6 +64,7 @@ import {
 } from './runtime-services';
 import { metricsPortFor, releaseBoot } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
+import { writeLine } from './write-line';
 
 const _DEFAULT_PORT = 3000;
 
@@ -261,6 +262,7 @@ async function bootDev(
     realtime: runtime.realtime,
     rateLimitStore: appRuntime?.rateLimitStore ?? runtime.rateLimitStore,
     appRoutes: appRuntime?.routes,
+    images: appRuntime?.images,
   });
 
   // The app's `apps/<app>/runtime.ts`, composed exactly as `runRole` composes a caller's
@@ -397,8 +399,7 @@ export const devCommand: CliCommand = {
       roles,
       env: ctx.env,
       onReload: (file, durationMs) => {
-        if (!ctx.args.json)
-          process.stdout.write(`${msg('cli.dev.hmr', { file, ms: durationMs })}\n`);
+        if (!ctx.args.json) writeLine(msg('cli.dev.hmr', { file, ms: durationMs }));
       },
       // Supervised, a save this process cannot serve is a drain and an exit for a fresh child.
       ...restart.options,

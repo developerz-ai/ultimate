@@ -7,7 +7,12 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
 import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
-import { ISLAND_STORE_DIR, readIslandStore, writeIslandStore } from './island-store';
+import {
+  ISLAND_STORE_DIR,
+  loadOrBuildIslands,
+  readIslandStore,
+  writeIslandStore,
+} from './island-store';
 
 const ROOT = join(import.meta.dir, '..', '.island-fixture', 'store');
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
@@ -104,6 +109,119 @@ describe('unit · the island store carries the shared chunks', () => {
 });
 
 /**
+ * K8: a store verified only its own bytes, so an island edited after `x build --target prebuilt`
+ * still verified and the boot served the chunk built from the OLD source. Each chunk now records
+ * the files it was built from, and a boot rehashes exactly those.
+ */
+describe('unit · the island store is stale once a source it was built from changes', () => {
+  const USING =
+    "import { help } from '../shared/helper';\n" +
+    'export function mount(el: HTMLElement): void { el.textContent = help(); }\n';
+
+  test('an edited island source is stale', async () => {
+    await stored();
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    await write('apps/web/site/plain.island.tsx', PLAIN.replace("'plain'", "'edited'"));
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/site/plain.island.tsx');
+  });
+
+  test('a module an island imports is a source too, and so is a deleted one', async () => {
+    await write('apps/web/shared/helper.ts', "export const help = (): string => 'one';\n");
+    await write('apps/web/site/a.island.tsx', USING);
+    await stored();
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    await write('apps/web/shared/helper.ts', "export const help = (): string => 'two';\n");
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/shared/helper.ts');
+    await rm(join(ROOT, 'apps/web/shared/helper.ts'));
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/shared/helper.ts');
+  });
+
+  test("a shared chunk's module is rehashed the same way", async () => {
+    await write('apps/web/shared/helper.ts', "export const help = (): string => 'one';\n");
+    await write('apps/web/site/a.island.tsx', USING);
+    await write('apps/web/site/b.island.tsx', USING);
+    const built = await buildIslands(ROOT, SHARED);
+    expect(built.shared).toHaveLength(1);
+    await writeIslandStore(ROOT, built);
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    await write('apps/web/shared/helper.ts', "export const help = (): string => 'two';\n");
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/shared/helper.ts');
+  });
+
+  test('a store that recorded no sources cannot be checked, so it is stale', async () => {
+    await stored();
+    const path = join(ROOT, ISLAND_STORE_DIR, 'index.json');
+    const index = (await Bun.file(path).json()) as { chunks: Record<string, unknown>[] };
+    const chunks = index.chunks.map(({ sources: _dropped, ...rest }) => rest);
+    await Bun.write(path, JSON.stringify({ ...index, chunks }));
+    expect((await readIslandStore(ROOT)).stale).toContain('records no checkable sources');
+  });
+
+  // L3: the index is a file on disk, and a recorded path is read at every boot. One the writer
+  // could never have recorded — outside the root, absolute, under node_modules — is refused before
+  // anything reads it: `../../etc/hostname` is a read outside the app, `/dev/zero` a boot that
+  // never ends.
+  test('a recorded source the writer could not have produced is stale, and never read', async () => {
+    await stored();
+    const path = join(ROOT, ISLAND_STORE_DIR, 'index.json');
+    const index = (await Bun.file(path).json()) as { chunks: Record<string, unknown>[] };
+    for (const hostile of [
+      '../../etc/hostname',
+      '/dev/zero',
+      'apps/../../outside.ts',
+      'node_modules/pkg/index.js',
+      '',
+    ]) {
+      const chunks = index.chunks.map((chunk) => ({
+        ...chunk,
+        sources: [{ path: hostile, digest: 'x' }],
+      }));
+      await Bun.write(path, JSON.stringify({ ...index, chunks }));
+      expect((await readIslandStore(ROOT)).stale).toContain('records no checkable sources');
+    }
+  });
+
+  // An entry's own file is always one of its sources. A chunk recording none of them means the
+  // map's paths stopped resolving into the root, and a store written from it would verify forever.
+  test('a chunk whose sources omit its own file is refused before anything is written', async () => {
+    const built = await buildIslands(ROOT);
+    for (const sources of [[], ['apps/web/shared/other.ts'], undefined]) {
+      const chunks = built.chunks.map(({ sources: _dropped, ...chunk }) =>
+        sources === undefined ? chunk : { ...chunk, sources },
+      );
+      const refused = await writeIslandStore(ROOT, { ...built, chunks }).then(
+        () => expect.unreachable('a store with no checkable own source was written'),
+        (error: unknown) => error,
+      );
+      expect(refused).toMatchObject({ code: 'X_BUILD_FAILED' });
+      expect(String((refused as Error).message)).toContain('apps/web/site/plain.island.tsx');
+      expect(await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).exists()).toBe(false);
+    }
+  });
+
+  test('an island another island imports may carry its own file in a shared chunk', async () => {
+    await write('apps/web/site/a.island.tsx', PLAIN.replace("'plain'", "'a'"));
+    await write(
+      'apps/web/site/b.island.tsx',
+      "import { mount as a } from './a.island';\nexport const mount = a;\n",
+    );
+    const built = await buildIslands(ROOT, SHARED);
+    await writeIslandStore(ROOT, built);
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+  });
+
+  test('a stale store is rebuilt from the edited source, never served', async () => {
+    await stored();
+    await write('apps/web/site/plain.island.tsx', PLAIN.replace("'plain'", "'edited'"));
+    const loaded = await loadOrBuildIslands(ROOT);
+    expect(loaded.built?.reason).toContain('apps/web/site/plain.island.tsx');
+    expect(loaded.bundle.chunks[0]?.code).toContain('edited');
+  });
+});
+
+// LAST, deliberately: an island build's stylesheets are process-global (`island-styles.ts`), so
+// once these run every later store in this file names a sheet the next fixture deletes.
+/**
  * A container that served the stored chunks never ran the island build, so an island's own
  * `.module.scss` never registered: its rules were missing from every pod that read the store, and
  * present on any that rebuilt — two surface stylesheets for one image (notificado.co, 22.3.2).
@@ -132,6 +250,7 @@ describe('unit · the island store carries the island stylesheets', () => {
     await write('apps/web/site/styled.island.tsx', STYLED);
     await stored();
     await rm(join(ROOT, 'apps/web/site/styled.module.scss'));
-    expect((await readIslandStore(ROOT)).stale).toContain('an island stylesheet, is missing');
+    // The sheet is also one of the chunk's recorded sources, and those are checked first.
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/site/styled.module.scss');
   });
 });

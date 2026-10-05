@@ -137,8 +137,8 @@ jobs:
             urls: TEST_DATABASE_URL
           - part: live
             only: lint,boundaries,filesize,package-shape,errors,live,eval,drift,contract-diff,budgets,seo,i18n,policy,manifest,roadmap
-            services: postgres postgres-logical redis nats s3
-            urls: TEST_DATABASE_URL|TEST_REPLICATION_URL|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
+            services: postgres postgres-logical postgres-tls redis nats s3
+            urls: TEST_DATABASE_URL|TEST_REPLICATION_URL|TEST_TLS_REPLICATION_URL|TEST_TLS_ROOT_CERT|TEST_REDIS_URL|TEST_NATS_URL|TEST_S3_URL
           - part: e2e
             only: typecheck,contract,job,e2e
             services: postgres
@@ -780,39 +780,37 @@ jobs:
   # Service, and fails on a single non-2xx. Every step is `docker/deploy-proof/run.sh`, which a
   # developer runs unchanged on a laptop.
   #
-  # Main only, and only when a file that decides the answer moved: kind plus two image builds is
-  # minutes, not seconds, and a PR that touches none of those paths cannot change the verdict.
-  # Budget: <= 8 minutes; the timeout below is the ceiling, not the target.
+  # Main only, and only when a file that decides the answer moved since a proof that PASSED: kind
+  # plus two image builds is minutes, not seconds, and a push that touches none of those paths
+  # cannot change the verdict. Budget: <= 8 minutes; the timeout below is the ceiling, not the
+  # target.
   deploy-proof:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `actions: read` is the previous run's job list, which the decision below reads.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # A `paths:` filter belongs to a whole workflow, never to one job, so the filter is a step.
-      # `github.event.before` is the tip main held before this push; a new ref or a manual run has
-      # none worth diffing against, and runs the proof.
-      - name: did a file that decides the verdict move?
+      # Before the decision, because the decision is a Bun script: ~10 s on a push that then skips.
+      - uses: ./.github/actions/setup
+      # A `paths:` filter belongs to a whole workflow, never to one job, so the filter is a step —
+      # and a script, because the rule is no longer one diff (plan 101 K15). It diffed against
+      # `github.event.before` alone, so a red proof on A was hidden by a B that touched no deciding
+      # path, and release.yml then published from B. Now a skip inherits the PREVIOUS main run's
+      # verdict, so it is legal only when that run's deploy-proof concluded `success` and no
+      # deciding file moved since its commit; a red, cancelled, unfinished or unreadable
+      # predecessor runs the proof, and so does every `release:` commit and every manual run. The
+      # rule and the path list: scripts/deploy-proof-due.ts, unit-tested beside it.
+      - name: did a file that decides the verdict move since a proof that passed?
         id: paths
         env:
-          BEFORE: ${{ github.event.before }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          run=true
-          if [ "$EVENT" = push ] && [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
-            git fetch --no-tags --depth=1 origin "$BEFORE"
-            if ! git diff --name-only "$BEFORE" "$GITHUB_SHA" \
-              | grep -Eq '^(\.github/workflows/ci\.yml|docker/|packages/cli/src/templates/scaffold-|packages/cli/src/(cmd-deploy|serve|role-|runtime-)|packages/core/src/lifecycle|packages/http/src/(server|stages)\.ts)'; then
-              run=false
-            fi
-          fi
-          echo "run=${run}" >> "$GITHUB_OUTPUT"
-          echo "deploy proof runs: ${run}"
-      - uses: ./.github/actions/setup
-        if: steps.paths.outputs.run == 'true'
+          GH_TOKEN: ${{ github.token }}
+        run: bun run scripts/deploy-proof-due.ts
       - name: kind, helm, kubectl and jq, from the runner image
         if: steps.paths.outputs.run == 'true'
         run: |

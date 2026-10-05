@@ -81,6 +81,27 @@ describe('unit · decodeForm, per widget', () => {
     expect(decode({ ...qty, required: false }, { qty: '' })).toBeNull();
   });
 
+  // `Number(raw)` reads every notation JavaScript has: `0x10` became `minor: 16` — a price nobody
+  // typed — and `' '` became `0`, a value that differs from a stored `null` and so reached the
+  // audit diff as a change the operator never made. Decimal only, through schema's own reader.
+  test('a hex or whitespace number is not converted', () => {
+    const qty = { widget: 'number-input', type: 'number', name: 'qty', required: false } as const;
+    const total = { widget: 'money', type: 'money', name: 'total', currency: 'EUR' } as const;
+    for (const notation of ['0x10', '0b11', '0o17', 'Infinity', '1_000']) {
+      expect(decode(qty, { qty: notation })).toBe(notation);
+      expect(decode(total, { total: notation })).toEqual({ minor: notation, currency: 'EUR' });
+    }
+    for (const blankish of [' ', '   ', '\t', '\n']) {
+      expect(decode(qty, { qty: blankish })).toBeNull();
+      expect(decode(total, { total: blankish })).toBeNull();
+      expect(decode({ ...total, required: true }, { total: blankish })).toBeNull();
+    }
+    // Padding around a decimal is still the decimal that was typed.
+    expect(decode(qty, { qty: ' 12 ' })).toBe(12);
+    expect(decode(total, { total: ' 1999\n' })).toEqual({ minor: 1999, currency: 'EUR' });
+    expect(decode(qty, { qty: '-1.5e2' })).toBe(-150);
+  });
+
   test('money is BOTH halves: integer minor units and the currency posted beside them', () => {
     const total = { widget: 'money', type: 'money', name: 'total' } as const;
     expect(decode(total, { total: '1999', [currencyFieldOf('total')]: 'EUR' })).toEqual({

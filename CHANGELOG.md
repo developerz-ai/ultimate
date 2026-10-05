@@ -12,10 +12,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
 that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0
 workarounds. Sweep 4 makes two implementations of one seam answer the same input the same way. Sweep 5
-closes seven open issues across navigation, ui, the MCP catalog and the dev error page.
+closes seven open issues across navigation, ui, the MCP catalog and the dev error page. Sweep 6
+holds the CLI, its guards, the test harness and CI to what they claim.
 
 ### Security
 
+- `cli`: Ctrl-C during `x secrets edit` through the local-CLI hand-off can no longer leave the
+  decrypted buffer in `$TMPDIR`. The hand-off no longer forwards a second SIGINT (the terminal
+  delivers it to the whole group), and the shred ignores repeat signals until it finishes; SIGHUP
+  shreds too.
+- `cli`: `x --cwd <other-app>` started inside another app no longer lets that app's `.env` values
+  (`DATABASE_URL`) win over the target app's, which had pointed a migration at the wrong database;
+  a key only the starting app's `.env` set is dropped, so a target relying on a default never
+  inherits the other app's value.
+- `cli`: `/_x/island` refuses a non-loopback Host (DNS rebinding), and the prebuilt island store
+  refuses any recorded source path outside the app root, so a tampered index cannot make a boot read
+  `/etc/…` or `/dev/zero`.
 - `pwa`, `core`: `pwa.offline.fallback`, `.image` and `.font` must be paths on this origin. `//host`,
   `/\host` and absolute URLs are refused at config load (`X_CONFIG_INVALID`) and at build
   (`X_PWA_NO_OFFLINE_FALLBACK`), where a `//host/offline` fallback was precached and served as the
@@ -99,6 +111,26 @@ closes seven open issues across navigation, ui, the MCP catalog and the dev erro
 
 ### Changed
 
+- `cli`: `x jobs drain` is planned and exits `X_NOT_IMPLEMENTED` before booting the queue or leasing
+  a job; both `--to` targets were stubs, so a drain held production jobs for five minutes and moved
+  none (K9).
+- `cli`: `x db gen` no longer emits `REPLICA IDENTITY FULL` for a live query's `subscribes:` tables
+  (keyed tables are correct on DEFAULT); params-channel tables still get it, and a table already on
+  FULL keeps it (#518).
+- `cli`: `x shot --viewport 390x844,1440x900` captures a route once per size into `<out>/<w>x<h>/`;
+  with `--matrix` it replaces the default sizes, and matrix directories are now `<theme>-<w>x<h>`
+  (were `<theme>-<w>`) (#444).
+- `cli`: an `isr` page served from the cache no longer runs its route's `load`; `load` runs only on a
+  render or regeneration, and a redirect from `load` is never stored (K3).
+- guards: `bun run boundaries` and the app workspace-dependency rule read a type-position
+  `import('…')` as an edge (K16); a bare Node builtin (`'fs'`, `require('child_process')`) owes the
+  `why:` comment, and Biome's `useNodejsImportProtocol` is an error, in this repo and in scaffolded
+  apps (K17). The shipped `unzoned-date` guard refuses `.toDateString()` / `.toTimeString()` and no
+  longer reads `timeZoneName` as a zone (K18); the shipped `bare-error` guard and `test-bare-error`
+  refuse `throw` without `new` and every builtin `Error` class (K19). Apps re-sync with
+  `x g guard <name> --force`. The `unzoned-date` guard accepts a quoted `'timeZone'` key, and
+  `node-imports` ignores member calls (`loader.require('fs')`).
+- `schema` exports `numeric`.
 - `ui`: `BarChart` renders a `<figure>` wrapping `<svg role="img">`; `class` now lands on the figure,
   not the svg. Axis labels are HTML text that stays readable at every width (no longer hidden below
   `sm`), and the svg box is 600×108, was 600×128 (#494).
@@ -179,6 +211,44 @@ closes seven open issues across navigation, ui, the MCP catalog and the dev erro
   and test compose images are digest-pinned and watched by Dependabot.
 
 ### Fixed
+
+- `cli`: `x --cwd <app>` run from another directory loads that app's `.env*` (K1), and root `.env`
+  files parse as Bun reads them: multi-line quoted values (PEM keys), backticks, `#` comments, `\$`,
+  `\r` in double quotes and bare carriage-return line endings (K2).
+- `cli`: `x dev` passes the app's `images` driver to `/media` as the container does (K4); idle
+  background traces no longer evict requests from `/_x/timeline` (K5); `/_x/island` refuses a
+  non-loopback Host with 421 `X_DEV_HOST_REFUSED` (K6); no file in `packages/cli/src` writes to
+  `process.stdout`/`stderr` directly, enforced by a test (K7).
+- `cli`: a prebuilt island store records the files each chunk was built from and rehashes them at
+  boot, so an edited or deleted source rebuilds instead of serving the old chunk (K8).
+- `cli`: `x mcp serve --transport stdio` closes its embedded database when a session throws (K10);
+  the hand-off to an app's own CLI forwards SIGTERM and SIGHUP at once, and a SIGINT only if the
+  child is still running a second later (a terminal Ctrl-C already reached it through the process
+  group), and exits with the child's code (K12); `x new` and `x new --dry-run` print the real target
+  paths and a `cd` into the resolved target, shell-quoted (K13); the `x dev` lock file is never
+  visible half-written, so two racing preflights cannot both claim a checkout, and a state directory
+  it cannot write or hard-link into is `X_DEV_STATE_UNWRITABLE` (K14).
+- `cli`: when concurrent requests miss one `isr` key, each gets the redirect its own `load` chose,
+  never another request's `Location`; a stale page whose regeneration redirects is dropped without
+  an `isr.regenerate.failed` line. `/_x/timeline` keeps a finished request even while a background
+  trace is still assembling. A `--cwd` start directory's file-made `NODE_ENV` no longer picks the
+  target app's `.env.*` set. `x build --target prebuilt` refuses (`X_BUILD_FAILED`) an island whose
+  own file is recorded as a source of nothing it loads, rather than writing a store that never goes
+  stale.
+- `admin`: a number or money box no longer reads `0x10` / `0b11` / `0o17` as numbers, and a box of
+  only whitespace is empty (`null`) rather than `0`, which had recorded an audit change nobody made
+  (K11).
+- ci: `deploy-proof` skips only when the previous `main` run's proof passed and no deciding file
+  moved since; a red, cancelled or unknown predecessor, a `release:` commit or a manual run always
+  proves (`scripts/deploy-proof-due.ts`). The diff lists both sides of a rename, and the deciding
+  paths include the package manifests, the setup action, the root lockfile and manifest, and the
+  rule itself, `x new` with every template it emits, and `x db gen`. A decision input that throws
+  proves rather than leaving `run` unset (K15).
+- `testing`: `E2eSession.offline()` returns only once every page has reported the switch itself (its
+  `online`/`offline` event, or already in that state), across a navigation mid-switch, else
+  `X_CDP_TIMEOUT` naming the pages that never confirmed; `newTab()` no longer polls (#572).
+- test services: a `postgres-tls` service (5440, TLS, logical) with certs generated into a
+  gitignored `docker/.tls/`, so CI's `live` part runs `pg-tls.live.test.ts` (#519).
 
 - `render`, `pwa`: offline, a client-router click no longer lands on a `blob:` URL. An error answer
   that is not a page is a full load for a GET and `ultimate:navigation-error` for a POST, and the

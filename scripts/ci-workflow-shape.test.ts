@@ -29,6 +29,7 @@ interface Job {
   readonly if?: string;
   readonly 'runs-on'?: string;
   readonly services?: unknown;
+  readonly permissions?: unknown;
   readonly strategy?: {
     readonly 'fail-fast'?: boolean;
     readonly matrix?: Readonly<Record<string, unknown>>;
@@ -313,5 +314,70 @@ describe('unit · ci.yml · what the split may not change', () => {
     ]) {
       expect(job(name).needs, `${name} must not wait on another job`).toBeUndefined();
     }
+  });
+});
+
+describe('unit · ci.yml · deploy-proof inherits a verdict only from a proof that passed', () => {
+  // K15: the path filter diffed against `github.event.before` alone, so a red proof on A was
+  // hidden by a B that touched no deciding path, and release.yml published from B. The decision
+  // is now one unit-tested script (`scripts/deploy-proof-due.test.ts`); this holds ci.yml to it.
+  const proof = job('deploy-proof');
+  const steps = proof.steps ?? [];
+  const decide = steps.findIndex((step) => step.id === 'paths');
+
+  test('the decision is scripts/deploy-proof-due.ts, reading the API with the run`s own token', () => {
+    expect(decide).toBeGreaterThanOrEqual(0);
+    expect(text(steps[decide]?.run).trim()).toBe('bun run scripts/deploy-proof-due.ts');
+    expect(steps[decide]?.env?.['GH_TOKEN']).toBe(expr('github.token'));
+    expect(proof.permissions).toEqual({ contents: 'read', actions: 'read' });
+    // The script runs on Bun, so the setup is not behind the decision any more.
+    const setup = steps.findIndex((step) => step.uses === './.github/actions/setup');
+    expect(setup).toBeGreaterThanOrEqual(0);
+    expect(setup).toBeLessThan(decide);
+    expect(steps[setup]?.if).toBeUndefined();
+  });
+
+  test('no second filter beside it, and every step after it obeys it', () => {
+    expect(JSON.stringify(steps)).not.toContain('event.before');
+    const after = steps.slice(decide + 1);
+    expect(after.length).toBeGreaterThan(0);
+    for (const step of after) expect(step.if).toBe("steps.paths.outputs.run == 'true'");
+  });
+});
+
+describe('unit · ci.yml · the TLS replication suite runs in CI', () => {
+  // #519: `pg-tls.live.test.ts` skipped in every run because nothing started a TLS server or
+  // exported its CA — a live step green over a suite that never ran.
+  const live = record(
+    listOf(job('gate').strategy?.matrix?.['include']).find((row) => record(row)['part'] === 'live'),
+  );
+
+  test('the live part starts postgres-tls and exports its URL and its CA', () => {
+    expect(text(live['services']).split(' ')).toContain('postgres-tls');
+    const urls = text(live['urls']).split('|');
+    expect(urls).toContain('TEST_TLS_REPLICATION_URL');
+    expect(urls).toContain('TEST_TLS_ROOT_CERT');
+  });
+
+  test('the suite dials 5440, the port compose publishes, and trusts the CA compose writes', async () => {
+    const root = repoRoot();
+    const env = new Map(
+      (await Bun.file(`${root}/docker/test-services.env`).text())
+        .split('\n')
+        .filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+        .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+    );
+    const compose = Bun.YAML.parse(
+      await Bun.file(`${root}/docker/docker-compose.test.yml`).text(),
+    ) as { readonly services?: Readonly<Record<string, Readonly<Record<string, unknown>>>> };
+    const tls = compose.services?.['postgres-tls'] ?? {};
+
+    expect(new URL(env.get('TEST_TLS_REPLICATION_URL') ?? 'x:').port).toBe('5440');
+    expect(listOf(tls['ports'])).toEqual(['127.0.0.1:5440:5432', '127.0.0.2:5440:5432']);
+    expect(listOf(tls['command']).join(' ')).toContain('wal_level=logical');
+    expect(listOf(tls['command']).join(' ')).toContain('ssl=on');
+    // Repo-relative, as every suite runs from the root; the directory is the one compose mounts.
+    expect(env.get('TEST_TLS_ROOT_CERT')).toBe('docker/.tls/ca.crt');
+    expect(listOf(tls['volumes'])).toContain('./.tls:/tls:ro');
   });
 });

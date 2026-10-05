@@ -16,14 +16,14 @@ createStepRunner(options) => {
       assertUniqueStepName(jobId, name);              // X_STEP_DUPLICATE
       if (name in memo) return memo[name] as T;       // replay: no call, no side effect
       const result = await fn();                      // executed once, ever
-      await driver.saveStep(jobId, name, result);     // durable before returning
+      await driver.steps.put({ runId, name, status: 'completed', output: result }, by); // durable, fenced
       memo[name] = result;
       return result;
     },
     async sleep(duration: string): Promise<void> {
       const key = `sleep:${duration}`;
       if (key in memo) return;
-      await driver.saveStep(jobId, key, true);
+      await driver.steps.put({ runId, name: key, status: 'sleeping', wakeAt }, by);
       await driver.sleepUntil(jobId, addDuration(now(), duration));
       throw StepSuspension;                           // releases the worker; no held connection
     },
@@ -32,7 +32,7 @@ createStepRunner(options) => {
 
 | Property | Detail |
 |---|---|
-| Memo load | `driver.loadSteps(jobId)` once per attempt, before `run()` is entered |
+| Memo load | `driver.steps.list(runId)` once per attempt, before `run()` is entered |
 | Persist-before-return | a step's result is durable before the next line executes. A crash between them replays that step, never skips it |
 | `step.sleep` | persists a wake time and throws `SUSPEND`. The job resumes **in a fresh process** — `'3d'` is safe, no timer in memory, no connection held |
 | `step.waitForEvent(name, { match, timeout })` | same suspension mechanism; resumes with the event payload or `null` on timeout |
@@ -83,7 +83,7 @@ export interface JobDriver {
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on all four. Switching is a config line plus `x jobs drain --to redis` for in-flight rows.
+Because `steps` is a driver member, step persistence works identically on all four. Switching is the `setJobDriver(…)` call at boot plus `x jobs drain --to redis` for in-flight rows — a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`): `redis` and `nats` are stubs, so there is nowhere durable to drain to.
 
 ## The pg claim loop
 

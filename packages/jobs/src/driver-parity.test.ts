@@ -189,7 +189,7 @@ describe('a lapsed fleet slot is lost, not renewed', () => {
     const clock = frozenClock(1_700_000_000_000);
     const store = createMemoryLeaseStore({ clock });
     const lease = await store.acquire('job:sweep', 1, 30_000, 'w1');
-    if (lease === undefined) throw new TypeError('the first slot under a limit of 1 must be free');
+    if (lease === undefined) expect.unreachable('the first slot under a limit of 1 must be free');
 
     // A renewal INSIDE the window still lands — the fence must not turn every heartbeat into a
     // loss, which is the way "add an expiry check" goes wrong.

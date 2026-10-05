@@ -43,7 +43,7 @@ const RECORDED_ONLY = 'was recorded by the newest migration and no entity declar
 /** The difference's name — what `x db gen "record …"` is told to write down. */
 const REPLICA_IDENTITY_FULL = 'replica identity full';
 const REPLICA_IDENTITY_UNRECORDED =
-  'needs REPLICA IDENTITY FULL — a channel with params or a live query subscribes to it — and no ' +
+  'needs REPLICA IDENTITY FULL — a channel with params routes deletes by its old row — and no ' +
   'migration recorded it';
 
 const columns = (names: readonly string[]): string => names.join(', ');

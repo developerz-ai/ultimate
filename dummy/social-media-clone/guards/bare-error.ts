@@ -10,9 +10,11 @@ const CODE = 'X_BARE_ERROR';
 /**
  * A THROW, never a construction. `new Error(…)` handed to something as INPUT is legitimate — a
  * test fixture, an `AbortSignal` reason, a rejection this module is passing along — and only the
- * throw is this module stating its own verdict.
+ * throw is this module stating its own verdict. `new` is optional — `throw Error(…)` builds the
+ * same bare error — and every builtin class is listed: each carries no code, cause or fix.
  */
-const BARE_THROW = /\bthrow\s+new\s+(Error|TypeError|RangeError|SyntaxError)\s*\(/g;
+const BARE_THROW =
+  /\bthrow\s+(?:new\s+)?(Error|TypeError|RangeError|SyntaxError|ReferenceError|EvalError|URIError|AggregateError)\s*\(/g;
 
 export interface SourceFile {
   /** App-root-relative POSIX path, so the finding names the file an author opens. */

@@ -18,8 +18,12 @@ const FALSE_VALUES = new Set(['0', 'false', 'no', 'off', '']);
  */
 const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
 
-/** A numeric string as a number, or `undefined` for anything that is not confidently one. */
-function numeric(raw: unknown): number | undefined {
+/**
+ * A numeric string as a number, or `undefined` for anything that is not confidently one. Exported
+ * for the other string-to-number boundary, admin's form decode: two readers of one posted numeral
+ * would disagree about `0x10`, which is the drift this rule exists to end.
+ */
+export function numeric(raw: unknown): number | undefined {
   if (typeof raw !== 'string' || !DECIMAL.test(raw.trim())) return undefined;
   const value = Number(raw);
   return Number.isFinite(value) ? value : undefined;

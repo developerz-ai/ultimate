@@ -43,7 +43,7 @@ x version              # CLI version
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
-| `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue; drain | shipped |
+| `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` is **planned** | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
@@ -1082,7 +1082,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|r
 | `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
-| `drain --to redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another **durable** driver; `--dry-run` reports the plan and moves nothing. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it built a `Map` inside the command's own process, enqueued every job into it and acked the durable rows — the queue emptied, the copy died at exit, and the command reported `ok: true` |
+| `drain --to redis\|nats` | **planned**, `As of 2026-10`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. Both `--to` values are `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` on every method, so a drain leased the whole pending batch off the production queue for five minutes, failed every enqueue and nacked it back — nothing moved, and no worker could claim those jobs meanwhile. The subcommand, `--to` and `--dry-run` still parse, so every spelling reaches the planned answer. It returns when a durable second driver ships; `--to memory` stays refused by name then (`X_CLI_BAD_FLAG`) — it built a `Map` inside the command's own process and acked the durable rows into it |
 
 `show`, `retry`, `cancel`, `rm` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `ls` only.
 
@@ -1090,7 +1090,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|r
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
 ```
 
-Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it. That ordering is only a guarantee while the target OUTLIVES the command, which is why the target set holds durable drivers only. `drain` walks every page of every pending state and leases in batches of `MAX_JOB_PAGE`, `As of 2026-10`: it read one default page (100 rows) per state, so 350 ready jobs moved 100. An `<id>` that is not a uuid is `X_JOB_UNKNOWN` before any statement is sent — `x jobs show nosuch` used to reach Postgres and come back `X_DB_STATEMENT_FAILED [22P02]`.
+Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. An `<id>` that is not a uuid is `X_JOB_UNKNOWN` before any statement is sent — `x jobs show nosuch` used to reach Postgres and come back `X_DB_STATEMENT_FAILED [22P02]`.
 
 `ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
@@ -1228,8 +1228,9 @@ Three rules the set obeys:
 x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
                [--timeout 30000] [--browser <path>] [--cdp-url <ws://…>]
                [--allow-hosts a.com,b.com] [--theme light|dark] [--locale <l>]
-               [--cookie name=value[,name=value]] [--expect-status 404] [--json]
-x shot --matrix [<route>] [--locale <l>] [--theme light|dark] [--cookie …] [--json]
+               [--cookie name=value[,name=value]] [--expect-status 404]
+               [--viewport 390x844,1440x900] [--json]
+x shot --matrix [<route>] [--locale <l>] [--theme light|dark] [--viewport …] [--cookie …] [--json]
 x shot --island <name> [--state <id>] [--json]
 x shot --all-islands [--json]
 ```
@@ -1250,7 +1251,8 @@ x shot --all-islands [--json]
 | `--cookie` | none | `name=value[,name=value]`, `As of 2026-09-29`: set in the browser for the app's own origin before the first navigation, so a page is photographed with a cookie-held choice already made — `x shot --matrix --cookie consent=granted` shoots every cell with the consent banner answered. Applies to `--matrix` cells and `--island` states too. A name that is not an RFC 6265 token, or a value holding a space, `;`, `,`, a quote or a backslash, is `X_CLI_BAD_FLAG` before anything boots |
 | `--expect-status` | absent — any 2xx | the document status this shot is ok with, `As of 2026-09-26`: `x shot /nope --expect-status 404` photographs the not-found page on purpose. Absent, a non-2xx document fails the verdict and the summary names the status. With `--matrix` it applies to every cell |
 | `--locale` | the app's `defaultLocale`, **always pinned** | one of the app's `locales`, `As of 2026-09-25`. Sent as `Accept-Language` on every request the page makes, and for a non-default locale the path is prefixed (`x shot /precios --locale en` opens `/en/precios`). Absent, `Accept-Language` is still pinned to the default locale, so a picture never depends on the language of the machine's Chrome. An undeclared locale is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island` |
-| `--matrix` | off | every static `site/` route × every locale × `light`/`dark` × 390 and 1440 px (laid out at exactly that width: scrollbars are hidden, `As of 2026-09-29` — a classic scrollbar made every capture 15 px narrow), into `.x/shot/matrix/<route>/<locale>/<theme>-<width>/`, plus `.x/shot/matrix/index.html`, a contact sheet of every picture with failures marked. One dev server for the whole run. A `<route>` narrows it to that route, `--locale` and `--theme` to one value of their axis; `ok` only when every cell's verdict is. Refused beside `--island`/`--all-islands` |
+| `--matrix` | off | every static `site/` route × every locale × `light`/`dark` × `390x844` and `1440x900` — or the `--viewport` list instead (laid out at exactly that width: scrollbars are hidden, `As of 2026-09-29` — a classic scrollbar made every capture 15 px narrow), into `.x/shot/matrix/<route>/<locale>/<theme>-<width>x<height>/` (`<theme>-<width>/` before 2026-10: two sizes sharing a width wrote one directory), plus `.x/shot/matrix/index.html`, a contact sheet of every picture with failures marked. One dev server for the whole run. A `<route>` narrows it to that route, `--locale` and `--theme` to one value of their axis; `ok` only when every cell's verdict is. Refused beside `--island`/`--all-islands` |
+| `--viewport` | absent — the driver's default size | `<w>x<h>[,<w>x<h>…]` in CSS pixels, `As of 2026-10` (#444): the route photographed **once per size** over one dev server, each into `<out>/<w>x<h>/` with its own `shot.png` and `verdict.json`; `ok` only when every size's verdict is, and the summary is the first failing size's. `x shot /pricing --viewport 390x844,820x1180,1440x900` replaces a hand-written browser script. With `--matrix` the list replaces the default pair. One flag holding a list, never repeated — the parser keeps a repeated flag's last value. A side outside `1..16384`, anything but digits around an `x` (`0x10`, `1e3`, `390.5`), an empty entry or the same size twice is `X_CLI_BAD_FLAG` before anything boots; refused beside `--island`/`--all-islands`, whose states declare their own `viewport` |
 | `--theme` | absent — the box's own preference and the app's own `theme.defaultMode` | `light` or `dark`, `As of 2026-09-19`. Both `prefers-color-scheme` is emulated **and** the scheme is stored as the visitor's choice under `THEME_STORAGE_KEY` before navigation — the boot script since 20.2.0 answers `defaultMode` before the OS, so emulation alone photographs a dark-default app dark whatever was asked (#489). The `ui.shot`/`ui.inspect`/`ui.interact` tools' `theme` is this flag. Refused beside `--island`, which photographs both themes |
 
 **`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
@@ -1390,7 +1392,7 @@ For each violation involving the file it reports the offending edge, the full ch
 
 Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
 
-The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement, `x db studio` being the only entry. It stays in `x db`'s subcommand list, so the parser reaches it and `x help db` lists it.
+The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement: `x db studio` and `x jobs drain`. Each stays in its command's subcommand list, so the parser reaches it and `x help <command>` lists it.
 
 | Command | Purpose | `fix:` today |
 |---|---|---|

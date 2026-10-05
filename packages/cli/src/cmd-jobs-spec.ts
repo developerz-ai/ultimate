@@ -17,13 +17,17 @@ export const JOBS_SUBCOMMANDS = [
 
 /**
  * The drivers a drain may move work ONTO — every one of them durable, and that is the whole rule.
- * Closed, and read three ways: the flag summary, the refusal, and the `memory` case below.
+ * Closed, and read three ways: the flag summary, the refusal, and the `memory` case below. `drain`
+ * itself is planned (`PLANNED_SUBCOMMANDS`): both values are still stubs in `@ultimat3/jobs`.
  */
 export const DRAIN_TARGETS = ['redis', 'nats'] as const;
 
 export const jobsSpec: CommandSpec = {
   name: 'jobs',
-  summary: 'list, show, retry, cancel, remove and promote jobs; pause and resume a queue; drain',
+  // Never ENDING in "(planned)": that suffix is how `x help` and the planned-table tests tell a
+  // planned COMMAND from a shipped one, and `x jobs` ships — only its `drain` does not.
+  summary:
+    'list, show, retry, cancel, remove and promote jobs; pause and resume a queue (drain is planned)',
   usage:
     'x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|resume <queue>|drain --to <driver>] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--to driver] [--dry-run] [--json]',
   requiresApp: true,
@@ -41,7 +45,7 @@ export const jobsSpec: CommandSpec = {
       summary: 'ls: the next page — the cursor the previous page printed',
       subcommands: ['ls'],
     },
-    // Each of these is read by ONE subcommand — `retryJob`, `cancelJob`, `runDrain` — and says
+    // Each of these is read by ONE subcommand — `retryJob`, `cancelJob`, the parked drain — and says
     // so in its own summary. The scope is what makes the parser refuse it anywhere else instead
     // of accepting it and ignoring it: `x db gen --dry-run` parsed and wrote the migration.
     {
@@ -59,13 +63,13 @@ export const jobsSpec: CommandSpec = {
     {
       name: 'to',
       type: 'string',
-      summary: `drain: target driver — ${DRAIN_TARGETS.join(', ')}`,
+      summary: `drain (planned): target driver — ${DRAIN_TARGETS.join(', ')}`,
       subcommands: ['drain'],
     },
     {
       name: 'dry-run',
       type: 'boolean',
-      summary: 'drain: report the plan, move nothing',
+      summary: 'drain (planned): report the plan, move nothing',
       subcommands: ['drain'],
     },
   ],

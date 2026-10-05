@@ -170,6 +170,38 @@ describe('unit · boundaries', () => {
     ).toEqual([]);
   });
 
+  test('a type-position `typeof import(…)` is the same X_BOUNDARY_VIOLATION as `import type`', () => {
+    // The slipping form (K16): no import statement at all, so the transpiler erased it whole.
+    const violations = checkBoundaries([
+      file(
+        'packages/testing/src/harness.ts',
+        "export type Cli = typeof import('@ultimat3/cli');\n" +
+          'export let run: import("@ultimat3/admin").Admin[\'run\'];',
+      ),
+    ]);
+    expect(violations.map((v) => [v.to, v.reason])).toEqual([
+      ['cli', 'same-tier'],
+      ['admin', 'same-tier'],
+    ]);
+    const first = violations[0];
+    if (first === undefined) expect.unreachable('expected a violation');
+    expect(findingFor(first).code).toBe('X_BOUNDARY_VIOLATION');
+  });
+
+  test('a type-position `import(…)` inside a string, a template or a comment is not an import', () => {
+    expect(
+      checkBoundaries([
+        file(
+          'packages/core/src/template.ts',
+          "// typeof import('@ultimat3/cli')\n" +
+            'export const a = "typeof import(\'@ultimat3/cli\')";\n' +
+            "export const b = `let x: import('@ultimat3/render').Route;`;\n" +
+            "export const c = registry.import('@ultimat3/cli');",
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
   test('a RELATIVE cross-package import is checked exactly like the package specifier', () => {
     const violations = checkBoundaries([
       file('packages/core/src/x.ts', "import { render } from '../../render/src/index';"),

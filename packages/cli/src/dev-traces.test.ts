@@ -256,3 +256,65 @@ describe('a retention bound that is not a number is not a bound', () => {
     expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_2']);
   });
 });
+
+describe('unit · idle background roles do not crowd requests off the timeline (K5)', () => {
+  test('background traces do not evict request traces', () => {
+    const { recorder, clock } = install(2);
+    request(clock, { id: 'req_1', path: '/a' }, ['query.a']);
+    // What idle background roles emit between requests: a scheduler tick's lone statement, and a
+    // worker's job with spans under it. Each is a whole trace with no request in it.
+    for (let tick = 0; tick < 10; tick += 1) {
+      clock.advance(100);
+      withSpan('db.select', () => clock.advance(1), { kind: 'client' });
+      withSpan('job.poll', () => {
+        withSpan('db.update', () => clock.advance(1), { kind: 'client' });
+      });
+    }
+    expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_1']);
+  });
+
+  test("a background trace still assembling never takes a retained request's slot", () => {
+    // At limit 1 the only slot is the request's. A worker's `job.poll` ends innermost-first: its
+    // `db.update` arrives before the root that would identify the trace as background, so a
+    // provisional trace counted against the request quota evicted the request — and discarding
+    // `job.poll` a moment later could not bring it back.
+    const { recorder, clock } = install(1);
+    request(clock, { id: 'req_1', path: '/a' }, ['query.a']);
+    clock.advance(100);
+    withSpan('job.poll', () => {
+      withSpan('db.update', () => clock.advance(1), { kind: 'client' });
+    });
+    expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_1']);
+  });
+
+  test('a request still in flight keeps its spans while background traces finish around it', async () => {
+    const { recorder, clock } = install(1);
+    let resume = (): void => undefined;
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const inFlight = withSpan(
+      'GET /slow',
+      async (span) => {
+        withSpan('query.first', () => clock.advance(1));
+        await paused;
+        withSpan('query.second', () => clock.advance(1));
+        span.setAttributes({ 'http.request_id': 'req_slow', 'http.route': '/slow' });
+      },
+      { kind: 'server' },
+    );
+    // Outside the request's context: a trace of its own, finished while the request is open. It
+    // must not take the one slot the request's half-recorded trace holds.
+    withSpan('job.poll', () => clock.advance(1));
+    withSpan('db.select', () => clock.advance(1), { kind: 'client' });
+    resume();
+    await inFlight;
+    const [trace] = recorder.traces();
+    expect(trace?.requestId).toBe('req_slow');
+    expect(trace?.spans.map((span) => span.name).sort()).toEqual([
+      'GET /slow',
+      'query.first',
+      'query.second',
+    ]);
+  });
+});

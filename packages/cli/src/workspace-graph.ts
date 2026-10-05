@@ -4,7 +4,7 @@
 // for `tsc` and is invisible to bun, to `--filter` ordering and to any change-detection tool.
 
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, maskLiterals } from '@ultimat3/core';
 import { scanAllImports } from './import-scan';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest, isVendored } from './source-files';
@@ -148,10 +148,11 @@ export function packageOfSpecifier(specifier: string): string | undefined {
  * included, because a type edge still needs its manifest line. The transpiler is the parser, so a
  * generator's template literal (even one nested in a `${…}`, #493) is a string and never an import,
  * and `from<Row>('posts')` is a call. A file it cannot parse throws rather than reading as empty.
+ * The mask is what reads a type-position `typeof import('x')`, which the transpiler erases whole.
  */
 export function importedPackages(source: string, path = 'source.ts'): readonly string[] {
   const packages = new Set<string>();
-  for (const specifier of scanAllImports({ path, source })) {
+  for (const specifier of scanAllImports({ path, source }, maskLiterals(source))) {
     const name = packageOfSpecifier(specifier);
     if (name !== undefined) packages.add(name);
   }

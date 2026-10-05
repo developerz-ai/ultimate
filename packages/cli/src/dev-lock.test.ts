@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
 // fixture helpers.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -405,6 +405,46 @@ describe('portHolder', () => {
       throw missingProgram(head ?? '?');
     });
     expect(holder).toEqual({});
+  });
+});
+
+describe('preflight · a state directory this user cannot write', () => {
+  const claim = (stateDir: string) =>
+    preflight({ stateDir, port: 3000, hostname: 'localhost', portBound: () => false }).then(
+      () => expect.unreachable('an unwritable state dir must not answer a claim'),
+      (error: unknown) => error,
+    );
+
+  const expectUnwritable = (refusal: unknown, stateDir: string, errno: string): void => {
+    expect(refusal).toBeInstanceOf(UltimateError);
+    const coded = refusal as UltimateError;
+    expect(coded.code).toBe('X_DEV_STATE_UNWRITABLE');
+    expect(coded.cause).toContain(stateDir);
+    expect(coded.cause).toContain(errno);
+    expect(coded.fix).toContain('ls -ld');
+  };
+
+  test('the staging write refused (a read-only .x/) is X_DEV_STATE_UNWRITABLE, not a raw EACCES', async () => {
+    const dir = scratch();
+    try {
+      chmodSync(dir, 0o500);
+      expectUnwritable(await claim(dir), dir, 'EACCES');
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the state directory not creatable (a read-only checkout) is X_DEV_STATE_UNWRITABLE', async () => {
+    const dir = scratch();
+    try {
+      chmodSync(dir, 0o500);
+      const stateDir = join(dir, '.x');
+      expectUnwritable(await claim(stateDir), stateDir, 'EACCES');
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

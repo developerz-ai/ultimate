@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "851c506bf7871f73b48b4fc24203aeb13d4f67b40aa52e93323b9ac30d01dcb1",
+  "buildId": "3a798acfa4a93bd30cbd0c53099ab9ce369fec8388899dc8a8f19a2d4715d96f",
   "tiers": {
     "0": [
       "core",
@@ -1161,6 +1161,11 @@
     },
     {
       "code": "X_DEV_ROOT_GONE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_STATE_UNWRITABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
