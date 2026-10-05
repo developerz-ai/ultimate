@@ -24,7 +24,7 @@ export const SPAWN_TIMEOUT_PINS: Readonly<Record<string, SpawnTimeoutPin>> = {
   cli: {
     count: 4,
     reason:
-      "why: `exec.ts` is the CLI subprocess boundary — its deadline is the caller's: `x verify` ends a step's whole tree in `verify-deadline.ts` (`X_VERIFY_STEP_TIMEOUT`). `local-cli-handoff.ts` (from `bin.ts`) forwards argv and signals to the app's own CLI and exits with it, so its lifetime is the command the user typed. `dev-supervisor.ts` runs `x dev`'s server until Ctrl-C. `cmd-secrets.ts` opens `$EDITOR` on a terminal and waits for the human to close it.",
+      "why: `exec.ts` is the CLI subprocess boundary — its deadline is the caller's: `x verify` ends a step's whole tree in `verify-deadline.ts` (`X_VERIFY_STEP_TIMEOUT`). `local-cli-handoff.ts` spawns the app's own CLI with the user's argv, forwards its stop signals and answers its exit code, and `bin.ts` exits with that code, so its lifetime is the command the user typed. `dev-supervisor.ts` runs `x dev`'s server until Ctrl-C. `cmd-secrets.ts` opens `$EDITOR` on a terminal and waits for the human to close it.",
   },
   // why: two long-lived children each with its own stop path.
   testing: {

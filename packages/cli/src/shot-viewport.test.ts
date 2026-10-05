@@ -10,7 +10,9 @@ import { join } from 'node:path'; // why: Bun ships no path join.
 import { fakeShotDriver } from './browser-launcher-fake';
 import type { ShotDriver, ShotSessionInit } from './browser-launcher-port';
 import { runShot, type ShotServer } from './cmd-shot';
-import { ISLAND_PROBE } from './shot-verdict';
+import { msg } from './messages';
+import type { ShotArtifacts } from './shot-verdict';
+import { ISLAND_PROBE, shotSummary } from './shot-verdict';
 import { parseViewports, runShotViewports, VIEWPORT_MAX, viewportDir } from './shot-viewport';
 
 const SERVER_URL = 'http://localhost:4321';
@@ -166,5 +168,31 @@ describe('runShotViewports', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.summary).toStartWith('390x844: ');
+  });
+
+  test('the summary and each size line are catalog messages, never inline text', async () => {
+    const driver = fakeShotDriver([
+      { url: `${SERVER_URL}/`, html: '<html></html>', evaluate: { [ISLAND_PROBE]: CLEAN } },
+    ]);
+    const taken: ShotArtifacts[] = [];
+    const result = await runShotViewports({
+      viewports: [{ width: 390, height: 844 }],
+      outDir: join(scratch, 'catalog'),
+      boot: () =>
+        Promise.resolve({ url: SERVER_URL, origin: 'booted', stop: () => Promise.resolve() }),
+      shoot: async (run) => {
+        const artifacts = await runShot(run);
+        taken.push(artifacts);
+        return artifacts;
+      },
+      base: { route: '/', driver, settleMs: 0, timeoutMs: 1_000, fullPage: true },
+    });
+    const [shot] = taken;
+    if (shot === undefined) return expect.unreachable('no size was photographed');
+    const summary = shotSummary(shot.verdict);
+    expect(result.summary).toBe(msg('cli.shot.viewport.summary', { size: '390x844', summary }));
+    expect(result.lines?.[0]).toBe(msg('cli.shot.viewport.line', { size: '390x844', summary }));
+    // A catalog miss renders `⟦key⟧`: both keys must exist, or the equalities above prove nothing.
+    expect(`${result.summary} ${result.lines?.[0] ?? ''}`).not.toContain('⟦');
   });
 });

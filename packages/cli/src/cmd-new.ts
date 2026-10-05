@@ -108,6 +108,9 @@ const displayPath = (cwd: string, path: string): string => {
   return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? path : rel;
 };
 
+/** The `cd` operand of the next-steps line: the target as typed from `cwd`, pasteable verbatim. */
+const cdTarget = (cwd: string, target: string): string => quoteArg(displayPath(cwd, target));
+
 /** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   const app = names(options.name);
@@ -224,7 +227,11 @@ export const newCommand: CliCommand = {
       return {
         ok: true,
         command: 'new',
-        summary: msg('cli.new.dryRun', { name: app.kebab, dir: target }),
+        summary: msg('cli.new.dryRun', {
+          name: app.kebab,
+          dir: target,
+          cd: cdTarget(ctx.cwd, target),
+        }),
         data: { dir: target, files: files.map((file) => file.path), dryRun: true },
         // Where each file WOULD land, as the caller would reach it: relative to the cwd, `--dir`
         // included — `${app.kebab}/…` named the wrong place whenever `--dir` was set.
@@ -273,7 +280,7 @@ export const newCommand: CliCommand = {
     return {
       ok: true,
       command: 'new',
-      summary: msg('cli.new.done', { name: app.kebab }),
+      summary: msg('cli.new.done', { name: app.kebab, cd: cdTarget(ctx.cwd, target) }),
       data: { dir: written.dir, files: written.files, git },
       lines,
     };

@@ -181,6 +181,35 @@ describe('unit · the island store is stale once a source it was built from chan
     }
   });
 
+  // An entry's own file is always one of its sources. A chunk recording none of them means the
+  // map's paths stopped resolving into the root, and a store written from it would verify forever.
+  test('a chunk whose sources omit its own file is refused before anything is written', async () => {
+    const built = await buildIslands(ROOT);
+    for (const sources of [[], ['apps/web/shared/other.ts'], undefined]) {
+      const chunks = built.chunks.map(({ sources: _dropped, ...chunk }) =>
+        sources === undefined ? chunk : { ...chunk, sources },
+      );
+      const refused = await writeIslandStore(ROOT, { ...built, chunks }).then(
+        () => expect.unreachable('a store with no checkable own source was written'),
+        (error: unknown) => error,
+      );
+      expect(refused).toMatchObject({ code: 'X_BUILD_FAILED' });
+      expect(String((refused as Error).message)).toContain('apps/web/site/plain.island.tsx');
+      expect(await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).exists()).toBe(false);
+    }
+  });
+
+  test('an island another island imports may carry its own file in a shared chunk', async () => {
+    await write('apps/web/site/a.island.tsx', PLAIN.replace("'plain'", "'a'"));
+    await write(
+      'apps/web/site/b.island.tsx',
+      "import { mount as a } from './a.island';\nexport const mount = a;\n",
+    );
+    const built = await buildIslands(ROOT, SHARED);
+    await writeIslandStore(ROOT, built);
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+  });
+
   test('a stale store is rebuilt from the edited source, never served', async () => {
     await stored();
     await write('apps/web/site/plain.island.tsx', PLAIN.replace("'plain'", "'edited'"));

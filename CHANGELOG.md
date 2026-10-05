@@ -128,7 +128,8 @@ holds the CLI, its guards, the test harness and CI to what they claim.
   apps (K17). The shipped `unzoned-date` guard refuses `.toDateString()` / `.toTimeString()` and no
   longer reads `timeZoneName` as a zone (K18); the shipped `bare-error` guard and `test-bare-error`
   refuse `throw` without `new` and every builtin `Error` class (K19). Apps re-sync with
-  `x g guard <name> --force`.
+  `x g guard <name> --force`. The `unzoned-date` guard accepts a quoted `'timeZone'` key, and
+  `node-imports` ignores member calls (`loader.require('fs')`).
 - `schema` exports `numeric`.
 - `ui`: `BarChart` renders a `<figure>` wrapping `<svg role="img">`; `class` now lands on the figure,
   not the svg. Axis labels are HTML text that stays readable at every width (no longer hidden below
@@ -221,10 +222,19 @@ holds the CLI, its guards, the test harness and CI to what they claim.
 - `cli`: a prebuilt island store records the files each chunk was built from and rehashes them at
   boot, so an edited or deleted source rebuilds instead of serving the old chunk (K8).
 - `cli`: `x mcp serve --transport stdio` closes its embedded database when a session throws (K10);
-  the hand-off to an app's own CLI forwards SIGTERM and SIGHUP (Ctrl-C already reaches the child
-  through the terminal's process group) and exits with the child's code (K12); `x new --dry-run` says "would create" with the real target paths (K13); the `x dev`
-  lock file is never visible half-written, so two racing preflights cannot both claim a checkout
-  (K14).
+  the hand-off to an app's own CLI forwards SIGTERM and SIGHUP at once, and a SIGINT only if the
+  child is still running a second later (a terminal Ctrl-C already reached it through the process
+  group), and exits with the child's code (K12); `x new` and `x new --dry-run` print the real target
+  paths and a `cd` into the resolved target, shell-quoted (K13); the `x dev` lock file is never
+  visible half-written, so two racing preflights cannot both claim a checkout, and a state directory
+  it cannot write or hard-link into is `X_DEV_STATE_UNWRITABLE` (K14).
+- `cli`: when concurrent requests miss one `isr` key, each gets the redirect its own `load` chose,
+  never another request's `Location`; a stale page whose regeneration redirects is dropped without
+  an `isr.regenerate.failed` line. `/_x/timeline` keeps a finished request even while a background
+  trace is still assembling. A `--cwd` start directory's file-made `NODE_ENV` no longer picks the
+  target app's `.env.*` set. `x build --target prebuilt` refuses (`X_BUILD_FAILED`) an island whose
+  own file is recorded as a source of nothing it loads, rather than writing a store that never goes
+  stale.
 - `admin`: a number or money box no longer reads `0x10` / `0b11` / `0o17` as numbers, and a box of
   only whitespace is empty (`null`) rather than `0`, which had recorded an audit change nobody made
   (K11).
@@ -232,9 +242,11 @@ holds the CLI, its guards, the test harness and CI to what they claim.
   moved since; a red, cancelled or unknown predecessor, a `release:` commit or a manual run always
   proves (`scripts/deploy-proof-due.ts`). The diff lists both sides of a rename, and the deciding
   paths include the package manifests, the setup action, the root lockfile and manifest, and the
-  rule itself (K15).
-- `testing`: `E2eSession.offline()` returns only once every page reads `navigator.onLine` as
-  switched, else `X_CDP_TIMEOUT` naming the page (#572).
+  rule itself, `x new` with every template it emits, and `x db gen`. A decision input that throws
+  proves rather than leaving `run` unset (K15).
+- `testing`: `E2eSession.offline()` returns only once every page has reported the switch itself (its
+  `online`/`offline` event, or already in that state), across a navigation mid-switch, else
+  `X_CDP_TIMEOUT` naming the pages that never confirmed; `newTab()` no longer polls (#572).
 - test services: a `postgres-tls` service (5440, TLS, logical) with certs generated into a
   gitignored `docker/.tls/`, so CI's `live` part runs `pg-tls.live.test.ts` (#519).
 

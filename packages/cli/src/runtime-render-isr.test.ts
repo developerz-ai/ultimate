@@ -4,6 +4,8 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateGraph, tag } from '@ultimat3/cache';
+import type { LogSink } from '@ultimat3/core';
+import { setLogSink } from '@ultimat3/core';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
 import { createIsrController } from '@ultimat3/render/server';
@@ -15,6 +17,10 @@ const postTag = tag('post');
 let version = 1;
 let loads = 0;
 let redirectTo: string | undefined;
+/** When set, `load` waits on it before answering — how a test holds two misses in one flight. */
+let gate: Promise<void> | undefined;
+/** When set, each `load` run redirects to the target its run number picks. */
+let redirectByRun: ((run: number) => string) | undefined;
 
 function registerTagOnlyPage(): void {
   registerRoute({
@@ -38,6 +44,8 @@ afterEach(() => {
   version = 1;
   loads = 0;
   redirectTo = undefined;
+  gate = undefined;
+  redirectByRun = undefined;
 });
 
 afterAll(() => {
@@ -121,6 +129,9 @@ function registerLoadedPage(): void {
       budget: { js: '0kb' },
       load: async () => {
         loads += 1;
+        const run = loads;
+        if (gate !== undefined) await gate;
+        if (redirectByRun !== undefined) setRedirect(redirectByRun(run), 302);
         if (redirectTo !== undefined) setRedirect(redirectTo, 302);
         return { version };
       },
@@ -174,14 +185,71 @@ describe('unit · an isr hit is a cache read, not a render (K3)', () => {
     const [path] = isr.store().paths();
     isr.markStale(path ?? '');
     redirectTo = '/moved';
-    // The stale copy answers this one; the regeneration behind it finds the redirect.
-    expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
-    let status = 0;
-    for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
-      status = (await server.fetch(new Request('http://dev.test/pricing'))).status;
-      if (status === 302) break;
+    const lines: string[] = [];
+    const collect: LogSink = (line) => {
+      lines.push(line);
+    };
+    const previous = setLogSink(collect);
+    try {
+      // The stale copy answers this one; the regeneration behind it finds the redirect.
+      expect((await server.fetch(new Request('http://dev.test/pricing'))).status).toBe(200);
+      let status = 0;
+      for (const started = Date.now(); Date.now() - started < 10_000; await Bun.sleep(5)) {
+        status = (await server.fetch(new Request('http://dev.test/pricing'))).status;
+        if (status === 302) break;
+      }
+      expect(status).toBe(302);
+    } finally {
+      setLogSink(previous);
     }
-    expect(status).toBe(302);
+    // A redirect is an outcome, not a failed regeneration: nothing is thrown into the controller.
+    expect(lines.filter((line) => line.includes('isr.regenerate.failed'))).toEqual([]);
+    expect(isr.store().paths()).toHaveLength(0);
     release();
+  });
+
+  test("two concurrent misses whose loads redirect differently each get their own load's Location", async () => {
+    registerLoadedPage();
+    const { isr, release } = attachedIsr({ buildId: BUILD_ID });
+    let open = (): void => undefined;
+    gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    redirectByRun = (run) => `/moved-${String(run)}`;
+    const [route] = appRoutes({ buildId: BUILD_ID, isr });
+    if (route === undefined) return expect.unreachable('appRoutes projected no route');
+    let arrived = 0;
+    // The handler is entered synchronously up to the controller's single-flight join, so once
+    // the second request's handler has returned its promise, it is a joiner of the first's flight.
+    const held = {
+      ...route,
+      meta: route.meta,
+      handler: (
+        request: Parameters<typeof route.handler>[0],
+        ctx: Parameters<typeof route.handler>[1],
+      ) => {
+        arrived += 1;
+        const answered = route.handler(request, ctx);
+        if (arrived === 2) open();
+        return answered;
+      },
+    };
+    const server = serverOver([held]);
+    const responses = await Promise.all([
+      server.fetch(new Request('http://dev.test/pricing')),
+      server.fetch(new Request('http://dev.test/pricing')),
+    ]);
+    release();
+    expect(responses.map((response) => response.status)).toEqual([302, 302]);
+    // Each request answered the redirect ITS load decided — never the other request's Location.
+    expect(responses.map((response) => response.headers.get('location')).sort()).toEqual([
+      '/moved-1',
+      '/moved-2',
+    ]);
+    expect(responses.map((response) => response.headers.get('cache-control'))).toEqual([
+      'private, no-store',
+      'private, no-store',
+    ]);
+    expect(isr.store().paths()).toHaveLength(0);
   });
 });

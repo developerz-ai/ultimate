@@ -23,15 +23,25 @@ const shippedSources = (): readonly string[] =>
 
 const DIRECT_WRITE = /\bprocess\s*\.\s*(?:stdout|stderr)\s*\.\s*write\b/;
 
+/**
+ * The 1-based line each direct write STARTS on, matched over the whole source rather than line by
+ * line: `\s*` spans newlines, so a chain split as `process.stdout\n  .write(…)` is one match that no
+ * single line contains. The mask keeps newlines, so a match offset still names its line.
+ */
+function writeLines(source: string): readonly number[] {
+  const every = new RegExp(DIRECT_WRITE.source, 'g');
+  return [...source.matchAll(every)].map(
+    (match) => source.slice(0, match.index).split('\n').length,
+  );
+}
+
 /** Every `<file>:<line>` in this package that writes to fd 1 or 2 past `write-line.ts`. */
 async function directWrites(): Promise<readonly string[]> {
   const hits: string[] = [];
   for (const path of shippedSources()) {
     // Comments blanked first: `write-line.ts` explains WHY in prose that names the call.
     const source = stripComments(await Bun.file(join(SRC, path)).text());
-    source.split('\n').forEach((line, index) => {
-      if (DIRECT_WRITE.test(line)) hits.push(`${path}:${index + 1}`);
-    });
+    for (const line of writeLines(source)) hits.push(`${path}:${line}`);
   }
   return hits;
 }
@@ -42,6 +52,13 @@ describe('unit · cli output goes through write-line.ts', () => {
     // No exceptions: every site was moved (plan 101 K7). The fix for each: `import { writeLine, writeErrorLine } from './write-line'` and call it with
     // the line, no trailing newline.
     expect(hits).toEqual([]);
+  });
+
+  test('a call split across lines is still a hit, on the line it starts', () => {
+    // Biome wraps a long chain as `process.stdout\n  .write(line)`: no single line holds the call.
+    const source = "const a = 1;\nprocess.stdout\n  .write(line);\nprocess.stderr.write('x');\n";
+    expect(writeLines(source)).toEqual([2, 4]);
+    expect(writeLines(stripComments('// process.stdout\n// .write(x)\n'))).toEqual([]);
   });
 
   test('the scan sees the call it exists for, and not the prose about it', () => {

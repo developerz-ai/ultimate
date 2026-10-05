@@ -154,6 +154,22 @@ describe('what the rule stays silent about', () => {
     expect(found("import { serve } from 'bun';")).toEqual([]);
     expect(found("import { t } from '@ultimat3/path';")).toEqual([]);
   });
+
+  test('a member call that shares the keyword is a method, not an import', () => {
+    expect(found("const m = loader.require('fs');")).toEqual([]);
+    expect(found("const m = await loader.import('fs');")).toEqual([]);
+    expect(found("const m = loader?.require('node:fs');")).toEqual([]);
+    expect(found("const m = loader\n  .import('node:path');")).toEqual([]);
+    expect(found("const b = Buffer.from('fs');")).toEqual([]);
+    expect(found("const m = myrequire('fs');")).toEqual([]);
+    expect(found("const m = $import('fs');")).toEqual([]);
+  });
+
+  test('the direct call is still reported beside a member call', () => {
+    expect(found("loader.require('fs');\nconst cp = require('child_process');")).toEqual([
+      'child_process',
+    ]);
+  });
 });
 
 /**

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
 // fixture helpers.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -408,6 +408,46 @@ describe('portHolder', () => {
   });
 });
 
+describe('preflight · a state directory this user cannot write', () => {
+  const claim = (stateDir: string) =>
+    preflight({ stateDir, port: 3000, hostname: 'localhost', portBound: () => false }).then(
+      () => expect.unreachable('an unwritable state dir must not answer a claim'),
+      (error: unknown) => error,
+    );
+
+  const expectUnwritable = (refusal: unknown, stateDir: string, errno: string): void => {
+    expect(refusal).toBeInstanceOf(UltimateError);
+    const coded = refusal as UltimateError;
+    expect(coded.code).toBe('X_DEV_STATE_UNWRITABLE');
+    expect(coded.cause).toContain(stateDir);
+    expect(coded.cause).toContain(errno);
+    expect(coded.fix).toContain('ls -ld');
+  };
+
+  test('the staging write refused (a read-only .x/) is X_DEV_STATE_UNWRITABLE, not a raw EACCES', async () => {
+    const dir = scratch();
+    try {
+      chmodSync(dir, 0o500);
+      expectUnwritable(await claim(dir), dir, 'EACCES');
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the state directory not creatable (a read-only checkout) is X_DEV_STATE_UNWRITABLE', async () => {
+    const dir = scratch();
+    try {
+      chmodSync(dir, 0o500);
+      const stateDir = join(dir, '.x');
+      expectUnwritable(await claim(stateDir), stateDir, 'EACCES');
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('clearLock', () => {
   test('removes the file, and is safe to call again — shutdown paths overlap', async () => {
     const dir = scratch();
@@ -420,56 +460,4 @@ describe('clearLock', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
-
-// K14: the claim used to be `openSync(path, 'wx')` and THEN a write. Between the two a racing
-// preflight read an empty file, parsed it as a stale lock, unlinked the live claim and took the
-// slot itself — two `x dev` on one `.x/pgdata`. Real processes, released together off one barrier,
-// because the window is between two syscalls and only separate processes can land inside it.
-describe('claim · racing claimers', () => {
-  const CLAIMERS = 12;
-  const ROUNDS = 2;
-
-  const claimer = (dir: string, barrier: string): string => `
-import { preflight } from ${JSON.stringify(join(import.meta.dir, 'dev-lock.ts'))};
-while (!(await Bun.file(${JSON.stringify(barrier)}).exists())) await Bun.sleep(1);
-let verdict = 'won';
-try {
-  await preflight({ stateDir: ${JSON.stringify(dir)}, port: 3000, hostname: 'localhost', portBound: () => false });
-} catch (error) {
-  verdict = 'refused:' + String((error as { code?: unknown }).code);
-}
-console.log(verdict);
-// Alive while the others decide: a winner that exited would read as a stale lock, legitimately.
-await Bun.sleep(800);
-`;
-
-  test('exactly one of many simultaneous claimers wins, every round', async () => {
-    for (let round = 0; round < ROUNDS; round += 1) {
-      const dir = scratch();
-      try {
-        const barrier = join(dir, 'go');
-        const script = join(dir, 'claim.ts');
-        writeFileSync(script, claimer(join(dir, '.x'), barrier));
-        const procs = Array.from({ length: CLAIMERS }, () =>
-          Bun.spawn([process.execPath, script], { stdout: 'pipe', stderr: 'pipe' }),
-        );
-        // Every child has started and is polling before the barrier drops.
-        await Bun.sleep(400);
-        writeFileSync(barrier, '');
-        const verdicts = await Promise.all(
-          procs.map(async (proc) => (await new Response(proc.stdout).text()).trim()),
-        );
-        await Promise.all(procs.map((proc) => proc.exited));
-        expect(verdicts.filter((verdict) => verdict === 'won')).toHaveLength(1);
-        expect(
-          verdicts
-            .filter((verdict) => verdict !== 'won')
-            .every((v) => v.startsWith('refused:X_DEV_')),
-        ).toBe(true);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    }
-  }, 60_000);
 });

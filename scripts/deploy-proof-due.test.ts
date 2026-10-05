@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DeployProofInput, Predecessor } from './deploy-proof-due';
 import {
   changedFilesCommand,
+  decideOrProve,
   deployProofDue,
   jobConclusion,
   parseRuns,
@@ -92,6 +93,14 @@ describe('unit · deploy-proof-due · the paths that decide the verdict', () => 
       'package.json',
       // The rule itself: a change to it is proved, never skipped by itself.
       'scripts/deploy-proof-due.ts',
+      // What `x new` writes is the proof app: the command and every template it emits from.
+      'packages/cli/src/cmd-new.ts',
+      'packages/cli/src/cmd-new-spec.ts',
+      'packages/cli/src/templates/index.ts',
+      'packages/cli/src/templates/naming.ts',
+      // `x db gen initial` writes the migration the release applies in the cluster.
+      'packages/cli/src/cmd-db.ts',
+      'packages/cli/src/db-generate.ts',
     ]) {
       expect({ file, decides: touchesVerdict([file]) }).toEqual({ file, decides: file });
     }
@@ -106,8 +115,51 @@ describe('unit · deploy-proof-due · the paths that decide the verdict', () => 
         'README.md',
         'scripts/deploy-proof-due.test.ts',
         'examples/dummy/package.json',
+        'packages/cli/src/cmd-newsletter.ts',
+        'packages/cli/src/cmd-dbx.ts',
       ]),
     ).toBe(undefined);
+  });
+});
+
+describe('unit · deploy-proof-due · a read that throws still proves', () => {
+  // ghApi and changedSince turn a FAILED command into an unknown, but Bun.spawn THROWS on a
+  // missing binary — and a throw before $GITHUB_OUTPUT is written left `run` unset, so every
+  // proof step skipped. Unknown is never a skip, and a throw is the most unknown answer there is.
+  test('the decision is run=true, naming what threw', async () => {
+    const decision = await decideOrProve(() =>
+      Promise.reject(new TypeError('Executable not found in $PATH: "git"')),
+    );
+    expect(decision.run).toBe(true);
+    expect(decision.reason).toContain('Executable not found in $PATH: "git"');
+    expect(decision.base).toBeUndefined();
+  });
+
+  test('a read that answers is decided by the one rule', async () => {
+    expect(await decideOrProve(async () => push())).toEqual(deployProofDue(push()));
+  });
+
+  test('the script, with no git on PATH, still writes run=true to $GITHUB_OUTPUT', async () => {
+    const dir = `${Bun.env['TMPDIR'] ?? '/tmp'}/deploy-proof-due-${crypto.randomUUID()}`;
+    const output = `${dir}/github-output`;
+    try {
+      await Bun.write(output, 'prior=kept\n');
+      const proc = Bun.spawn(
+        [process.execPath, `${import.meta.dir}/deploy-proof-due.ts`, '--json'],
+        {
+          cwd: import.meta.dir,
+          env: { PATH: `${dir}/no-such-bin`, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: 'push' },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      );
+      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      expect(await Bun.file(output).text()).toBe('prior=kept\nrun=true\n');
+      expect(code).toBe(0);
+      expect(stdout).toContain('git');
+    } finally {
+      await run(['rm', '-rf', dir]);
+    }
   });
 });
 

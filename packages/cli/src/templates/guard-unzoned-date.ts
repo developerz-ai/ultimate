@@ -33,10 +33,12 @@ const FORMATTER =
   /(?:\\.toLocale(?:Date|Time)?String|\\.to(?:Date|Time)String|Intl\\.DateTimeFormat)\\s*\\(/g;
 
 /**
- * A \`timeZone\` KEY — written \`timeZone: z\` or the shorthand \`{ timeZone }\`. A substring test read
- * \`timeZoneName\`, which only labels the zone the host already chose, as a zone.
+ * A \`timeZone\` KEY — written \`timeZone: z\`, the shorthand \`{ timeZone }\`, or quoted
+ * \`{ 'timeZone': z }\`, which is the same property. A substring test read \`timeZoneName\`, which
+ * only labels the zone the host already chose, as a zone. A quoted key takes only \`:\` — a
+ * quoted \`'timeZone',\` is a string in a list, not an option.
  */
-const ZONED = /\\btimeZone\\s*[:,}]/;
+const ZONED = /\\btimeZone\\s*[:,}]|(['"])timeZone\\1\\s*:/;
 
 /**
  * The zoned call that replaces a formatter with no zone option. A \`Map\`, not an object: an
@@ -173,6 +175,13 @@ unitTest('timeZoneName labels the zone, it does not choose one', () => {
   const shorthand =
     "new Intl.DateTimeFormat('en-US', { timeZoneName: 'short', timeZone }).format(at);";
   expect(unzonedDates(file(shorthand))).toEqual([]);
+});
+
+unitTest('a quoted key is the same key, and a quoted timeZoneName is still only a label', () => {
+  expect(unzonedDates(file("at.toLocaleString('en-US', { 'timeZone': 'UTC' });"))).toEqual([]);
+  expect(unzonedDates(file('at.toLocaleString("en-US", { "timeZone": zone });'))).toEqual([]);
+  const label = "at.toLocaleString('en-US', { 'timeZoneName': 'short' });";
+  expect(unzonedDates(file(label))).toHaveLength(1);
 });
 
 unitTest('toDateString and toTimeString name the zoned call', () => {

@@ -6,6 +6,7 @@
 //
 //   bun run scripts/deploy-proof-due.ts [--json]     (ci.yml; writes run= to $GITHUB_OUTPUT)
 
+import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -15,10 +16,13 @@ import { repoRoot, run } from './lib/run';
  * and what `docker/deploy-proof/run.sh` builds them WITH: every `packages/<pkg>/package.json`
  * (each package is packed into the proof app, so its manifest decides what ships), the setup
  * action (the Bun that packs, scaffolds and builds), the root install the CLI runs on, and this
- * rule itself, so a change to it is proved rather than skipped by itself.
+ * rule itself, so a change to it is proved rather than skipped by itself. run.sh drives three
+ * commands, so each one's code is here too: `x new` (`cmd-new*.ts` and all of `templates/` — the
+ * proof app IS what they emit), `x db gen` (`cmd-db.ts`, `db-generate.ts`: the migration the
+ * release applies in the cluster) and `x deploy` (`cmd-deploy*`).
  */
 export const VERDICT_PATHS =
-  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/scaffold-|packages\/cli\/src\/(cmd-deploy|serve|role-|runtime-)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
+  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/|packages\/cli\/src\/(cmd-new(-[^/]+)?\.ts$|cmd-db\.ts$|db-generate\.ts$|cmd-deploy|serve|role-|runtime-)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
 
 /** The job whose conclusion is the verdict being carried forward. Its id in ci.yml. */
 export const PROOF_JOB = 'deploy-proof';
@@ -91,6 +95,24 @@ export function deployProofDue(input: DeployProofInput): DeployProofDecision {
     reason: `no file that decides the proof moved since ${predecessor.headSha}, whose proof passed (run ${String(predecessor.runId)})`,
     base: predecessor.headSha,
   };
+}
+
+/**
+ * The rule over inputs that may not arrive. `run()` reports a FAILED command, but Bun.spawn
+ * THROWS on a missing binary, and a throw before `$GITHUB_OUTPUT` is written leaves `run` unset —
+ * which every proof step reads as a skip. Unknown is never a skip, so a read that throws proves.
+ */
+export async function decideOrProve(
+  read: () => Promise<DeployProofInput>,
+): Promise<DeployProofDecision> {
+  try {
+    return deployProofDue(await read());
+  } catch (error) {
+    return {
+      run: true,
+      reason: `reading the decision's inputs threw (${renderThrowable(error)}), and unknown runs`,
+    };
+  }
 }
 
 const member = (from: unknown, key: string): unknown =>
@@ -192,19 +214,16 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const cwd = repoRoot();
   const event = Bun.env['GITHUB_EVENT_NAME'] ?? 'push';
-  const subject = await run(['git', 'log', '-1', '--format=%s'], { cwd });
-  // Asked only when the answer can matter: a manual run or a release commit proves regardless.
-  const asks = event === 'push' && !(subject.ok && RELEASE_SUBJECT.test(subject.output));
-  const predecessor = asks ? await readPredecessor(cwd) : undefined;
-  const changed =
-    predecessor?.conclusion === 'success'
-      ? await changedSince(predecessor.headSha, cwd)
-      : undefined;
-  const decision = deployProofDue({
-    event,
-    subject: subject.ok ? subject.output : '',
-    predecessor,
-    changed,
+  const decision = await decideOrProve(async () => {
+    const subject = await run(['git', 'log', '-1', '--format=%s'], { cwd });
+    // Asked only when the answer can matter: a manual run or a release commit proves regardless.
+    const asks = event === 'push' && !(subject.ok && RELEASE_SUBJECT.test(subject.output));
+    const predecessor = asks ? await readPredecessor(cwd) : undefined;
+    const changed =
+      predecessor?.conclusion === 'success'
+        ? await changedSince(predecessor.headSha, cwd)
+        : undefined;
+    return { event, subject: subject.ok ? subject.output : '', predecessor, changed };
   });
   const output = Bun.env['GITHUB_OUTPUT'];
   if (output !== undefined && output !== '') {

@@ -15,6 +15,10 @@ describe('unit · shipped guard · unzoned-date', () => {
       "export const shown = (at: Date) => at.toLocaleString('en-US', { timeZoneName: 'short' });",
     );
     expect(findings.map((finding) => finding.code)).toEqual(['X_UNZONED_DATE']);
+    const quoted = await findingsFor(
+      "export const q = (at: Date) => at.toLocaleString('en-US', { 'timeZoneName': 'short' });",
+    );
+    expect(quoted.map((finding) => finding.code)).toEqual(['X_UNZONED_DATE']);
   });
 
   test('toDateString and toTimeString are refused, and the fix names the zoned call', async () => {
@@ -38,6 +42,9 @@ describe('unit · shipped guard · unzoned-date', () => {
       "export const c = (at: Date, timeZone: string) => new Intl.DateTimeFormat('en', { timeZone, hour: 'numeric' }).format(at);",
       "export const d = (at: Date) => at.toLocaleString('en', { timeZoneName: 'short', timeZone: 'UTC' });",
       'export const e = (at: Date) => at.toISOString();',
+      "export const f = (at: Date) => at.toLocaleString('en', { 'timeZone': 'UTC' });",
+      'export const g = (at: Date) => at.toLocaleString("en", { "timeZone": "UTC" });',
+      "export const h = (at: Date) => new Intl.DateTimeFormat('en', { 'timeZone' : zone }).format(at);",
     ]) {
       expect(await findingsFor(zoned)).toEqual([]);
     }

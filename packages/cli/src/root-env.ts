@@ -152,12 +152,20 @@ export async function rootEnvChanges(input: RootEnvInput): Promise<RootEnvChange
   if (root === undefined || resolve(root.dir) === resolve(input.processCwd)) {
     return { set: {}, unset: [] };
   }
-  const envName = env['NODE_ENV'] ?? 'development';
-  const merged = await envFilesIn(root.dir, rootEnvFiles(envName));
+  const outside = !isWithin(root.dir, input.processCwd);
   // A superset of what Bun loads from a cwd, so a key from any of them is recognised as file-made.
-  const foreign = isWithin(root.dir, input.processCwd)
-    ? new Map<string, string>()
-    : await envFilesIn(input.processCwd, [...rootEnvFiles(envName), '.env.local']);
+  const filesAt = (dir: string, name: string) =>
+    envFilesIn(dir, [...rootEnvFiles(name), '.env.local']);
+  let envName = env['NODE_ENV'] ?? 'development';
+  let foreign = outside ? await filesAt(input.processCwd, envName) : new Map<string, string>();
+  // A NODE_ENV another app's file wrote is not one the operator chose: Bun picked that directory's
+  // file set with no real NODE_ENV, so with its default — and the target's set is picked the same
+  // way, never from the foreign value (app-a's `NODE_ENV=test` loaded app-b's `.env.test`).
+  if (foreign.has('NODE_ENV') && env['NODE_ENV'] === foreign.get('NODE_ENV')) {
+    envName = 'development';
+    foreign = await filesAt(input.processCwd, envName);
+  }
+  const merged = await envFilesIn(root.dir, rootEnvFiles(envName));
   const fromFile = (key: string): boolean => foreign.has(key) && env[key] === foreign.get(key);
   return {
     set: Object.fromEntries([...merged].filter(([key]) => env[key] === undefined || fromFile(key))),

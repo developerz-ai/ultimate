@@ -273,6 +273,20 @@ describe('unit · idle background roles do not crowd requests off the timeline (
     expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_1']);
   });
 
+  test("a background trace still assembling never takes a retained request's slot", () => {
+    // At limit 1 the only slot is the request's. A worker's `job.poll` ends innermost-first: its
+    // `db.update` arrives before the root that would identify the trace as background, so a
+    // provisional trace counted against the request quota evicted the request — and discarding
+    // `job.poll` a moment later could not bring it back.
+    const { recorder, clock } = install(1);
+    request(clock, { id: 'req_1', path: '/a' }, ['query.a']);
+    clock.advance(100);
+    withSpan('job.poll', () => {
+      withSpan('db.update', () => clock.advance(1), { kind: 'client' });
+    });
+    expect(recorder.traces().map((trace) => trace.requestId)).toEqual(['req_1']);
+  });
+
   test('a request still in flight keeps its spans while background traces finish around it', async () => {
     const { recorder, clock } = install(1);
     let resume = (): void => undefined;

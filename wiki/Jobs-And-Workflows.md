@@ -82,7 +82,7 @@ External brokers are not exempted: the outbox table stays the transactional reco
 |---|---|
 | Names unique within one `run` | `X_STEP_DUPLICATE` at `x verify` |
 | Names stable across deploys | renaming a step invalidates its stored result — it re-runs |
-| Step results must be serializable | persisted via the driver's `saveStep` |
+| Step results must be serializable | persisted through the driver's `steps` store (`StepStore.put`) |
 | No step inside a loop with a computed name | non-deterministic names break replay; enumerate them |
 | Non-idempotent external call inside a step | wrap with the provider's idempotency header, keyed off `${jobId}:${stepName}` |
 

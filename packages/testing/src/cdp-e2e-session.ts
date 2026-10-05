@@ -35,10 +35,19 @@ export interface CdpE2eSessionOptions {
   readonly acceptLanguage?: string | undefined;
 }
 
-const POLL_MS = 50;
-
 /** What a page reports to its own code — the state a test's next `fetch` runs under. */
 const ON_LINE = 'navigator.onLine';
+
+/**
+ * Answers `true` at once when the page already reads `online`, else on the `online`/`offline`
+ * event that flips it. The read and the `addEventListener` run in ONE task, so the event cannot
+ * land between them. `false` only when the event came and the state still disagrees: ask again.
+ */
+const readsOnLine = (online: boolean): string => {
+  const reads = `${ON_LINE} === ${String(online)}`;
+  const flip = online ? 'online' : 'offline';
+  return `${reads} || new Promise((resolve) => addEventListener('${flip}', () => resolve(${reads}), { once: true }))`;
+};
 
 const member = (from: unknown, key: string): unknown =>
   typeof from === 'object' && from !== null ? (from as Record<string, unknown>)[key] : undefined;
@@ -60,6 +69,8 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
   const send = connection.send.bind(connection);
   const sessions = new Set<string>();
   const pages = new Map<string, string>(); // targetId → sessionId
+  // targetId → the `newTab()` waiting for that tab to be published.
+  const published = new Map<string, (session: string) => void>();
   const scripts: string[] = [];
   const sockets: string[] = [];
   const requests: string[] = [];
@@ -142,6 +153,7 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
       const targetId = field(info, 'targetId');
       if (type === 'page' && targetId !== undefined && sessions.has(session)) {
         pages.set(targetId, session);
+        published.get(targetId)?.(session);
       }
     })();
   });
@@ -152,15 +164,63 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     flatten: true,
   });
 
-  /** One page's `navigator.onLine`, or nothing while it cannot answer (a navigation in flight). */
-  const reportsOnLine = async (session: string): Promise<boolean | undefined> => {
-    const answer = await send(
-      'Runtime.evaluate',
-      { expression: ON_LINE, returnByValue: true },
-      session,
-    ).catch(() => undefined);
-    const value = member(member(answer?.result, 'result'), 'value');
-    return typeof value === 'boolean' ? value : undefined;
+  /** Settles `true` on `event` from `session` and `false` at `deadline`, whichever is first. */
+  const nextEvent = (event: string, session: string, deadline: number) => {
+    let heard: () => void = () => undefined;
+    const arrived = new Promise<void>((resolve) => {
+      heard = resolve;
+    });
+    const off = connection.on(event, (_params, on) => {
+      if (on === session) heard();
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return {
+      /** Subscribed when created, so an event that lands before this is awaited still counts. */
+      wait: (): Promise<boolean> =>
+        Promise.race([
+          arrived.then(() => true),
+          new Promise<boolean>((resolve) => {
+            timer = setTimeout(() => resolve(false), Math.max(0, deadline - performance.now()));
+          }),
+        ]),
+      close: (): void => {
+        off();
+        clearTimeout(timer);
+      },
+    };
+  };
+
+  /**
+   * Whether one page came to read `navigator.onLine === online` before `deadline`. The page itself
+   * says when — the evaluated promise resolves on the event that flips it, `awaitPromise` holds the
+   * reply until then — so nothing is polled and nothing sleeps. A navigation destroys the context
+   * the promise lived in and refuses the call; the page is asked again in the document that
+   * replaces it, once Chrome announces that document's context.
+   */
+  const pageReads = async (session: string, online: boolean, deadline: number) => {
+    for (;;) {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) return false;
+      const context = nextEvent('Runtime.executionContextCreated', session, deadline);
+      try {
+        const answer = await send(
+          'Runtime.evaluate',
+          { expression: readsOnLine(online), returnByValue: true, awaitPromise: true },
+          session,
+          remaining,
+        );
+        const value = member(member(answer.result, 'result'), 'value');
+        if (value === true) return true;
+        // `false`: the event fired and the state disagrees, so the next ask awaits the next one.
+        // Anything else is a page that could not run the read — the same as a refusal, below.
+        if (value !== false && !(await context.wait())) return false;
+      } catch (error) {
+        if (error instanceof CdpTimeoutError) return false;
+        if (!(await context.wait())) return false;
+      } finally {
+        context.close();
+      }
+    }
   };
 
   // #572. `offline()` SENDS the condition, and the renderer applies it when it gets to it: a `fetch`
@@ -171,20 +231,16 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
   // a page that never reads it is a timeout naming the page, never a resolve the test trusts.
   const confirmed = async (online: boolean): Promise<void> => {
     const deadline = performance.now() + options.loadTimeoutMs;
-    let waiting = [...pageSessions].filter((session) => sessions.has(session));
-    while (waiting.length > 0) {
-      const answers = await Promise.all(
-        waiting.map(async (session) => [session, await reportsOnLine(session)] as const),
-      );
-      waiting = answers.filter(([, reads]) => reads !== online).map(([session]) => session);
-      if (waiting.length === 0) return;
-      if (performance.now() >= deadline) {
-        throw new CdpTimeoutError({
-          method: `${ON_LINE} === ${String(online)} in page session ${waiting.join(', ')}`,
-          timeoutMs: options.loadTimeoutMs,
-        });
-      }
-      await Bun.sleep(POLL_MS);
+    const open = [...pageSessions].filter((session) => sessions.has(session));
+    const answers = await Promise.all(
+      open.map(async (session) => [session, await pageReads(session, online, deadline)] as const),
+    );
+    const waiting = answers.filter(([, reads]) => !reads).map(([session]) => session);
+    if (waiting.length > 0) {
+      throw new CdpTimeoutError({
+        method: `${ON_LINE} === ${String(online)} in page session ${waiting.join(', ')}`,
+        timeoutMs: options.loadTimeoutMs,
+      });
     }
   };
 
@@ -212,15 +268,25 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     await confirmed(!enabled);
   };
 
-  const attached = async (targetId: string): Promise<string> => {
-    for (let waited = 0; waited < options.loadTimeoutMs; waited += POLL_MS) {
-      const session = pages.get(targetId);
-      if (session !== undefined) return session;
-      await Bun.sleep(POLL_MS);
-    }
-    throw new CdpTimeoutError({
-      method: `Target.attachedToTarget for tab ${targetId}`,
-      timeoutMs: options.loadTimeoutMs,
+  /** The tab's session once it is published — told by the attach itself, never polled for. */
+  const attached = (targetId: string): Promise<string> => {
+    const session = pages.get(targetId);
+    if (session !== undefined) return Promise.resolve(session);
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        published.delete(targetId);
+        reject(
+          new CdpTimeoutError({
+            method: `Target.attachedToTarget for tab ${targetId}`,
+            timeoutMs: options.loadTimeoutMs,
+          }),
+        );
+      }, options.loadTimeoutMs);
+      published.set(targetId, (ready) => {
+        clearTimeout(timer);
+        published.delete(targetId);
+        resolve(ready);
+      });
     });
   };
 

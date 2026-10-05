@@ -16,14 +16,14 @@ createStepRunner(options) => {
       assertUniqueStepName(jobId, name);              // X_STEP_DUPLICATE
       if (name in memo) return memo[name] as T;       // replay: no call, no side effect
       const result = await fn();                      // executed once, ever
-      await driver.saveStep(jobId, name, result);     // durable before returning
+      await driver.steps.put({ runId, name, status: 'completed', output: result }, by); // durable, fenced
       memo[name] = result;
       return result;
     },
     async sleep(duration: string): Promise<void> {
       const key = `sleep:${duration}`;
       if (key in memo) return;
-      await driver.saveStep(jobId, key, true);
+      await driver.steps.put({ runId, name: key, status: 'sleeping', wakeAt }, by);
       await driver.sleepUntil(jobId, addDuration(now(), duration));
       throw StepSuspension;                           // releases the worker; no held connection
     },
@@ -32,7 +32,7 @@ createStepRunner(options) => {
 
 | Property | Detail |
 |---|---|
-| Memo load | `driver.loadSteps(jobId)` once per attempt, before `run()` is entered |
+| Memo load | `driver.steps.list(runId)` once per attempt, before `run()` is entered |
 | Persist-before-return | a step's result is durable before the next line executes. A crash between them replays that step, never skips it |
 | `step.sleep` | persists a wake time and throws `SUSPEND`. The job resumes **in a fresh process** — `'3d'` is safe, no timer in memory, no connection held |
 | `step.waitForEvent(name, { match, timeout })` | same suspension mechanism; resumes with the event payload or `null` on timeout |

@@ -211,6 +211,38 @@ describe('unit · a key Bun loaded from ANOTHER app is not a real environment va
     expect(changes.unset).toEqual(['DATABASE_URL']);
   });
 
+  test("another app's file-made NODE_ENV never picks the target's file set", async () => {
+    // Started below app-a's root, in a directory whose `.env` sets NODE_ENV: Bun loaded it with no
+    // real NODE_ENV, so it chose the default set, and so must the target's — app-b's `.env.test`
+    // answering for `x --cwd ../app-b db migrate` would migrate app-b's TEST database.
+    const appB = await app();
+    await Bun.write(join(appB, '.env.test'), 'DATABASE_URL=postgres://test/db\n');
+    const appA = await mkdtemp(join(tmpdir(), 'x-root-env-a-'));
+    roots.push(appA);
+    await Bun.write(join(appA, 'app.config.ts'), 'export default {};\n');
+    const web = join(appA, 'apps/web');
+    await Bun.write(join(web, '.env'), 'NODE_ENV=test\n');
+    const changes = await rootEnvChanges({ cwd: appB, processCwd: web, env: { NODE_ENV: 'test' } });
+    expect(changes.set['DATABASE_URL']).toBe('postgres://root/db');
+    expect(changes.unset).toEqual(['NODE_ENV']);
+  });
+
+  test('a real NODE_ENV still picks the file set when the start directory is foreign', async () => {
+    const appB = await app();
+    await Bun.write(join(appB, '.env.test'), 'DATABASE_URL=postgres://test/db\n');
+    const appA = await mkdtemp(join(tmpdir(), 'x-root-env-a-'));
+    roots.push(appA);
+    await Bun.write(join(appA, '.env'), 'NODE_ENV=development\n');
+    // Differs from app-a's file, so Bun did not write it: it is the operator's, and it decides.
+    const changes = await rootEnvChanges({
+      cwd: appB,
+      processCwd: appA,
+      env: { NODE_ENV: 'test' },
+    });
+    expect(changes.set['DATABASE_URL']).toBe('postgres://test/db');
+    expect(changes.unset).toEqual([]);
+  });
+
   test('started inside the target root, nothing is ever removed', async () => {
     const root = await app();
     await Bun.write(join(root, 'apps/web/.env'), 'ONLY_WEB=1\n');

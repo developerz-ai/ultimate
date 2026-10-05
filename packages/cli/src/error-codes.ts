@@ -228,6 +228,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_TRUSTED_PROXY_HOPS_INVALID',
   'X_PERMISSION_BORROWED',
   'X_ERROR_CODE_UNTHROWN_STALE',
+  'X_DEV_STATE_UNWRITABLE',
 ] as const;
 
 /**
@@ -412,6 +413,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_PERMISSION_BORROWED: 'an app rule requires a permission only an imported package declared',
   X_ERROR_CODE_UNTHROWN_STALE:
     'a code UNTHROWN_CODES lists as thrown by nothing is thrown again — delete it from UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts',
+  X_DEV_STATE_UNWRITABLE: 'x dev cannot claim its state directory',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

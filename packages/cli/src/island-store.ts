@@ -10,6 +10,7 @@
 import { join, relative, sep } from 'node:path'; // why: Bun ships no path-join primitive.
 import { frameworkVersion } from '@ultimat3/core';
 import { contentHash, loadStylesheet } from '@ultimat3/render/server';
+import { IslandBuildFailedError } from './errors';
 import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
 import type { SourceDigester, SourceStamp } from './island-sources';
@@ -57,11 +58,30 @@ interface StoreIndex {
 
 const chunkFile = (url: string): string => url.slice(url.lastIndexOf('/') + 1);
 
+/**
+ * Refuses a bundle in which an island's own file is a source of nothing it loads. Its file is
+ * always one — in its entry chunk, or in a shared chunk when another island imports it — so its
+ * absence means the map's paths stopped resolving into the root (`sourcesOnDisk`), and the store
+ * would record nothing to rehash: a boot would serve that chunk after any edit, the K8 bug again.
+ */
+function refuseUntracked(bundle: IslandBundle): void {
+  const shared = new Map(bundle.shared.map((one) => [one.url, one.sources ?? []]));
+  for (const chunk of bundle.chunks) {
+    const loaded = [chunk.sources ?? [], ...chunk.imports.map((url) => shared.get(url) ?? [])];
+    if (loaded.some((sources) => sources.includes(chunk.file))) continue;
+    throw new IslandBuildFailedError({
+      file: chunk.file,
+      logs: `neither its chunk nor a shared chunk it loads records ${chunk.file} as a source — the source map's paths, resolved against the build's cwd ${process.cwd()}, no longer land in the app root, so a prebuilt store would serve this chunk after the file is edited`,
+    });
+  }
+}
+
 /** Writes every chunk and the index that verifies them. Answers the files written, app-relative. */
 export async function writeIslandStore(
   root: string,
   bundle: IslandBundle,
 ): Promise<readonly string[]> {
+  refuseUntracked(bundle);
   const dir = join(root, ISLAND_STORE_DIR);
   const digestOf = sourceDigester(root);
   const chunks: StoredChunk[] = [];

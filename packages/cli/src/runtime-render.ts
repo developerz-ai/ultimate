@@ -37,7 +37,6 @@ import {
 import type { IsrController } from '@ultimat3/render/server';
 import {
   contentHash,
-  isrKey,
   ROOT_ELEMENT_ID,
   renderComponent,
   renderSsr,
@@ -54,6 +53,7 @@ import {
 } from './page-navigation';
 import { bootScript, collectorFor } from './route-islands';
 import { attachedIsr } from './runtime-isr';
+import { isrOutcome } from './runtime-isr-outcome';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
 import { styleBundle } from './style-bundle';
@@ -437,23 +437,7 @@ async function renderEntry(
   return { document, respond: () => responseOf(document) };
 }
 
-/**
- * Thrown out of an `isr` producer whose `load` redirected: a redirect is not a page, so nothing
- * may be stored for it, and the throw is what keeps `isr.serve` from storing one. Not an error —
- * the request it belongs to answers with the redirect.
- */
-class IsrLoadRedirected {
-  readonly reason = 'the isr load redirected, so no page was generated';
-  constructor(readonly to: RedirectIntent) {}
-}
-
-/**
- * `isr`: a store hit is answered WITHOUT `load`. Resolving it before the mode choice, as every
- * other mode does, made each hit cost a full SSR's database work and kept only the HTML step
- * cached. So `load` and its redirect live inside the producer, which runs on a miss and on a
- * stale page's regeneration. A redirect drops whatever the store held for the key — a stale page
- * whose regeneration redirects is answered once more from the stale copy, then never again.
- */
+/** `isr`'s outcome (`runtime-isr-outcome.ts`) as this file's answer: a page, or the redirect. */
 async function renderIsr(
   entry: RouteEntry,
   data: DevRouteData,
@@ -461,27 +445,9 @@ async function renderIsr(
   options: DevRenderOptions,
   isr: IsrController,
 ): Promise<Rendered> {
-  // `isrKey(url, locale)`, never `url.pathname`: the query is part of what was rendered — `meta`
-  // reads `data.url` — so two URLs differing only in their query are two documents (#171). The
-  // locale is `ctx.locale`, the one the `locale` stage negotiated for THIS request.
-  const key = isrKey(new URL(data.url), asCtx(ctx).locale);
-  try {
-    // `{ html, status }`, never the bare string: the entry stores the status beside the HTML and
-    // serves it on every hit, so a 404 under `isr` is a 404 for its whole TTL.
-    const served = await isr.serve(key, async () => {
-      const loaded = await routeDataFor(entry.config, data);
-      const to = takeRedirect(ctx);
-      if (to !== undefined) {
-        isr.store().delete(key);
-        throw new IsrLoadRedirected(to);
-      }
-      const html = await documentFrom(entry, data, loaded, options);
-      return { html, status: routeStatusOf(loaded) };
-    });
-    return { respond: () => responseOf(served.result) };
-  } catch (thrown) {
-    if (!(thrown instanceof IsrLoadRedirected)) throw thrown;
-    const { to } = thrown;
-    return { respond: () => loadRedirect(entry, to) };
-  }
+  const document = (loaded: RouteData): Promise<string> =>
+    documentFrom(entry, data, loaded, options);
+  const outcome = await isrOutcome({ entry, data, ctx, isr, document });
+  if (outcome.kind === 'redirect') return { respond: () => loadRedirect(entry, outcome.to) };
+  return { respond: () => responseOf(outcome.result) };
 }

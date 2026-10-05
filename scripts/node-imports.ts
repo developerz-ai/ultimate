@@ -65,8 +65,11 @@ const BARE_BUILTINS = new Set(
  * a dynamic `await import('node:x')` and a `require('node:x')` — each with or without the prefix.
  * The dynamic form is here because `scripts/async-context-guard.ts`'s own header names it as the
  * hole a static-only scan leaves. A bare candidate counts only when its root is in BARE_BUILTINS.
+ * The keyword must stand alone: after `.`/`?.` it names a method (`loader.require('fs')`,
+ * `Buffer.from('fs')`), after an identifier character it is part of one (`myrequire`). Neither
+ * reaches a builtin, so a finding there would ask a `why:` of an import that never happens.
  */
-const NODE_IMPORT = /(?:from|import|require)\s*\(?\s*['"]((?:node:)?[\w./-]+)['"]/g;
+const NODE_IMPORT = /(?<![\w$]|\.\s*)(?:from|import|require)\s*\(?\s*['"]((?:node:)?[\w./-]+)['"]/g;
 
 /** `node:fs`, `fs`, `fs/promises` — and not `fsevents`, `./fs` or `bun`. */
 const isBuiltinSpecifier = (specifier: string): boolean =>

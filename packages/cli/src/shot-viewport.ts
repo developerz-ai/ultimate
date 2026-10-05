@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { renderCauseValue } from '@ultimat3/core';
 import type { ShotRun } from './cmd-shot';
 import { BadFlagError } from './errors';
+import { msg } from './messages';
 import type { CommandResult } from './output';
 import type { ShotServer } from './shot-server';
 import type { ShotArtifacts } from './shot-verdict';
@@ -126,9 +127,15 @@ export async function runShotViewports(run: ViewportRun): Promise<CommandResult>
     summary:
       worst === undefined
         ? refuse('lists no size')
-        : `${viewportDir(worst.viewport)}: ${shotSummary(worst.artifacts.verdict)}`,
+        : msg('cli.shot.viewport.summary', {
+            size: viewportDir(worst.viewport),
+            summary: shotSummary(worst.artifacts.verdict),
+          }),
     lines: shots.flatMap((shot) => [
-      `${viewportDir(shot.viewport)}  ${shotSummary(shot.artifacts.verdict)}`,
+      msg('cli.shot.viewport.line', {
+        size: viewportDir(shot.viewport),
+        summary: shotSummary(shot.artifacts.verdict),
+      }),
       ...shotLines(shot.artifacts).map((line) => `  ${line}`),
     ]),
     data: {

@@ -173,11 +173,14 @@ const CATALOG = {
   // (proved with `env -i PATH=… command -v x`). The scaffold's own `bin/` wrappers are the form
   // that works from a fresh clone, and `bin/setup` already uses `bunx x` internally for this
   // reason.
-  'cli.new.done': 'created {name} — next: cd {name} && bin/setup && bin/dev',
+  // `{cd}` is the resolved target as the caller's shell reaches it — `--dir` included, relative to
+  // the cwd when under it, shell-quoted (`cmd-new.ts`'s `cdTarget`). `cd {name}` entered the wrong
+  // directory, or none, whenever `--dir` put the app somewhere else.
+  'cli.new.done': 'created {name} — next: cd {cd} && bin/setup && bin/dev',
   // `--dry-run`'s own summary: nothing landed, so "created" was a claim an agent branching on the
   // summary would act on. `{dir}` is the resolved target, `--dir` included.
   'cli.new.dryRun':
-    'would create {name} in {dir} — nothing written; after a real run: cd {name} && bin/setup && bin/dev',
+    'would create {name} in {dir} — nothing written; after a real run: cd {cd} && bin/setup && bin/dev',
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.
@@ -239,6 +242,10 @@ const CATALOG = {
   'cli.shot.pageError': '  threw    {message}  {at}',
   'cli.shot.picture': '  picture  {path}',
   'cli.shot.verdict': '  verdict  {path}',
+  // `--viewport`: one route at several sizes. The summary is ONE size's verdict, so it says which
+  // size; each size line leads with its size and the per-size detail lines sit indented beneath.
+  'cli.shot.viewport.summary': '{size}: {summary}',
+  'cli.shot.viewport.line': '{size}  {summary}',
   // `--island`. A component capture reports per STATE, so the summary counts pictures and the
   // lines name one state each; nothing here restates a fact `--json` does not carry.
   'cli.shot.island.ok':

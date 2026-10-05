@@ -1,3 +1,7 @@
+// Pins the type-position half of the one import scanner: Bun's transpiler drops `typeof import(…)`
+// and `import(…).T`, so a tier-crossing edge spelled only in a type would pass `boundaries` unseen
+// unless this masked read finds it — and finding a quoted or commented one would fail clean code.
+
 import { describe, expect, test } from 'bun:test';
 import { maskLiterals } from '@ultimat3/core';
 import { scanAllImports, typePositionImports } from './import-scan';

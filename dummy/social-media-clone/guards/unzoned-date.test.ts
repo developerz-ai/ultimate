@@ -41,6 +41,13 @@ unitTest('timeZoneName labels the zone, it does not choose one', () => {
   expect(unzonedDates(file(shorthand))).toEqual([]);
 });
 
+unitTest('a quoted key is the same key, and a quoted timeZoneName is still only a label', () => {
+  expect(unzonedDates(file("at.toLocaleString('en-US', { 'timeZone': 'UTC' });"))).toEqual([]);
+  expect(unzonedDates(file('at.toLocaleString("en-US", { "timeZone": zone });'))).toEqual([]);
+  const label = "at.toLocaleString('en-US', { 'timeZoneName': 'short' });";
+  expect(unzonedDates(file(label))).toHaveLength(1);
+});
+
 unitTest('toDateString and toTimeString name the zoned call', () => {
   const date = unzonedDates(file('const shown = at.toDateString();'));
   expect(date).toHaveLength(1);

@@ -283,7 +283,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
   });
 
   test('the line `x new` prints last names a command the author can run', () => {
-    const done = msg('cli.new.done', { name: 'ledger-demo' });
+    const done = msg('cli.new.done', { name: 'ledger-demo', cd: 'ledger-demo' });
     expect(done).toContain('bin/setup');
     expect(RUNNABLE.test(done.replace('bin/setup', ''))).toBe(false);
   });

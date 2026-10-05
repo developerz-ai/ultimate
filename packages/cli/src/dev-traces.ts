@@ -127,58 +127,82 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
 
 /**
  * Spans end innermost-first, so a trace is only whole once its root arrives — which is also the
- * moment the request finished. Grouping by trace id and reporting only groups that have an HTTP
- * root is what keeps a half-finished request out of a panel about requests; a trace whose root
- * arrives and is NOT a request's is forgotten the moment it ends, so it never occupies a slot.
+ * moment the request finished. Until then it is OPEN: unclassified, because the span that says
+ * "request" or "background" is the last one to end. A trace whose root arrives and is NOT a
+ * request's is forgotten the moment it ends; one whose root IS a request's is RETAINED.
+ *
+ * Two maps, two quotas, because only retained requests are what the limit promises to keep. One
+ * shared buffer let an open trace evict a retained request: at limit 1, a worker's `job.poll`
+ * ended its `db.update` first, that provisional trace took the only slot, and discarding
+ * `job.poll` a moment later could not bring the request back.
  */
 export function createTraceRecorder(options: { limit?: number } = {}): TraceRecorder {
-  // `byTrace.size > NaN` is false on every pass, so an unchecked limit does not widen the buffer —
+  // `buffer.size > NaN` is false on every pass, so an unchecked limit does not widen the buffer —
   // it deletes the eviction loop, and a dev session then holds every span of every request it has
   // ever seen. At least 1: a recorder that retains nothing is what `/_x/timeline` reads.
   const limit = finiteCount('createTraceRecorder', 'limit', options.limit ?? DEFAULT_LIMIT, 1);
-  // Insertion-ordered: the oldest trace id is the first key, which is the one eviction drops.
-  const byTrace = new Map<string, ReadableSpan[]>();
+  // Insertion-ordered, both: the oldest trace id is the first key, which is the one eviction drops.
+  const retained = new Map<string, ReadableSpan[]>();
+  // Bounded too, by the same figure but separately: a root that never ends (a span leaked by app
+  // code) would otherwise hold its children forever. Overflowing it costs an in-flight trace its
+  // early spans, never a finished request.
+  const open = new Map<string, ReadableSpan[]>();
+
+  const admit = (buffer: Map<string, ReadableSpan[]>, traceId: string, spans: ReadableSpan[]) => {
+    buffer.set(traceId, spans);
+    // Bounded by TRACE, not by span: dropping half a request would leave a flame with holes.
+    // The cost is stated rather than capped — one trace's span array has no bound of its own, so
+    // a request issuing 50k statements holds 50k `ReadableSpan`s until it is evicted. That is a
+    // dev-only recorder (`serve.ts` installs none), and a per-trace cap would silently produce
+    // the holed flame this bound exists to prevent.
+    while (buffer.size > limit) {
+      const oldest = buffer.keys().next();
+      if (oldest.done === true) break;
+      buffer.delete(oldest.value);
+    }
+  };
 
   const record = (span: ReadableSpan): void => {
     const traceId = span.context.traceId;
+    // Late spans of a request already retained (work it handed off under its own trace id) join it.
+    const kept = retained.get(traceId);
+    if (kept !== undefined) {
+      kept.push(span);
+      return;
+    }
+    // Taken out and put back last: an open trace still receiving spans is never the oldest key,
+    // so the open bound evicts the trace that went quiet, not the one mid-flight.
+    const spans = open.get(traceId) ?? [];
+    open.delete(traceId);
+    // A request's root: the trace is classified and complete, so it moves into the quota.
+    if (isHttpRoot(span)) {
+      spans.push(span);
+      admit(retained, traceId, spans);
+      return;
+    }
     // A root that is not a request's — no parent, no HTTP facts — ends its trace, and the trace is
     // a scheduler tick or a worker's job: not the panel's to show. Dropped here, not filtered at
-    // read time, because it would otherwise hold a slot until evicted, and idle background roles
-    // minting a few per second pushed every real request out of `/_x/timeline` within minutes.
-    if (span.parentSpanId === undefined && !isHttpRoot(span)) {
-      byTrace.delete(traceId);
-      return;
-    }
-    const spans = byTrace.get(traceId);
-    if (spans === undefined) {
-      byTrace.set(traceId, [span]);
-      // Bounded by TRACE, not by span: dropping half a request would leave a flame with holes.
-      // The cost is stated rather than capped — one trace's span array has no bound of its own, so
-      // a request issuing 50k statements holds 50k `ReadableSpan`s until it is evicted. That is a
-      // dev-only recorder (`serve.ts` installs none), and a per-trace cap would silently produce
-      // the holed flame this bound exists to prevent.
-      while (byTrace.size > limit) {
-        const oldest = byTrace.keys().next();
-        if (oldest.done === true) break;
-        byTrace.delete(oldest.value);
-      }
-      return;
-    }
+    // read time, because idle background roles minting a few per second would otherwise churn
+    // the buffers for nothing.
+    if (span.parentSpanId === undefined) return;
     spans.push(span);
+    if (spans.length === 1) admit(open, traceId, spans);
+    else open.set(traceId, spans);
   };
 
   return {
     exporter: { export: record },
     traces(): readonly RequestTrace[] {
       const traces: RequestTrace[] = [];
-      for (const spans of byTrace.values()) {
+      for (const spans of retained.values()) {
         const root = httpRootOf(spans);
         if (root !== undefined) traces.push(toTrace(root, spans));
       }
       return traces.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     },
     reset(): void {
-      byTrace.clear();
+      retained.clear();
+      open.clear();
     },
   };
 }

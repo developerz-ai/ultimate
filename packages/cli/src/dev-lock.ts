@@ -142,6 +142,26 @@ export class DevLockUnreadableError extends UltimateError {
   }
 }
 
+/**
+ * The state directory refused the claim itself: it could not be created, the lock could not be
+ * staged in it, or the filesystem would not hard-link the staged file into place. None of that is
+ * another `x dev` — only `EEXIST` is — and escaping raw it reached the operator as
+ * `X_CLI_UNEXPECTED` with `fix: x doctor --json`, which says nothing about `.x/`.
+ */
+export class DevStateUnwritableError extends UltimateError {
+  constructor(input: { readonly stateDir: string; readonly error: unknown }) {
+    // Read the field, never cast and dereference: `unknown` is what a catch hands over.
+    const errno = stringField(input.error, 'code') ?? 'an unreported errno';
+    super({
+      code: 'X_DEV_STATE_UNWRITABLE',
+      cause: `${input.stateDir} could not be created, written, or hard-linked into (${errno}), so x dev cannot take its lock — a read-only checkout, a .x/ this user may not write, or a filesystem without hard links`,
+      fix: `ls -ld ${quoteArg(input.stateDir)}   # make it writable by this user, on a filesystem that supports hard links, then re-run x dev`,
+      meta: { stateDir: input.stateDir, errno },
+      sourceError: input.error,
+    });
+  }
+}
+
 /** Whatever is listening, as far as the OS will say. Both fields absent when it will not say. */
 export interface PortHolder {
   readonly pid?: number;
@@ -256,20 +276,24 @@ const lockText = (lock: DevLock): string => `${JSON.stringify(lock, null, 2)}\n`
  * path, 'wx')` and THEN a write; a racing preflight that read the file between the two parsed an
  * empty lock as stale, unlinked the live claim and took the slot itself.
  *
- * Only `EEXIST` is "someone else has it". Anything else — a read-only checkout, a `.x/` nobody may
- * write — is rethrown as it arrives: it is the same failure `writeLock` would have raised seconds
- * later, and inventing a code for it here would be a second answer to one condition.
+ * Only `EEXIST` is "someone else has it". Any other refusal of the staging write or the link — a
+ * `.x/` this user may not write, a filesystem without hard links — is `X_DEV_STATE_UNWRITABLE`
+ * naming the directory and the errno, the original kept as its `sourceError`.
  */
-function claimExclusive(path: string, lock: DevLock): boolean {
+function claimExclusive(stateDir: string, path: string, lock: DevLock): boolean {
   const staged = stagingPath(path);
-  writeFileSync(staged, lockText(lock));
+  try {
+    writeFileSync(staged, lockText(lock));
+  } catch (error) {
+    throw new DevStateUnwritableError({ stateDir, error });
+  }
   try {
     linkSync(staged, path);
     return true;
   } catch (error) {
     // Same rule as `isProcessAlive` above: read the field, never cast and dereference.
     if (stringField(error, 'code') === 'EEXIST') return false;
-    throw error;
+    throw new DevStateUnwritableError({ stateDir, error });
   } finally {
     try {
       unlinkSync(staged);
@@ -330,7 +354,11 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
   const release = (): void => clearLock(input.stateDir);
   // The lock lives inside the state directory, which the database has not created yet — this runs
   // before anything boots, which is the whole point of it.
-  mkdirSync(input.stateDir, { recursive: true });
+  try {
+    mkdirSync(input.stateDir, { recursive: true });
+  } catch (error) {
+    throw new DevStateUnwritableError({ stateDir: input.stateDir, error });
+  }
   const mine: DevLock = {
     pid: process.pid,
     port: input.port,
@@ -341,7 +369,7 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
   };
   let clearedStale = false;
 
-  if (!claimExclusive(path, mine)) {
+  if (!claimExclusive(input.stateDir, path, mine)) {
     const held = await readLock(path);
     if (held !== null && alive(held.pid)) {
       throw new DevAlreadyRunningError({
@@ -358,7 +386,7 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
       // Already gone, or not ours to remove. The claim below is what decides.
     }
     clearedStale = true;
-    if (!claimExclusive(path, mine)) {
+    if (!claimExclusive(input.stateDir, path, mine)) {
       // Lost the race for the slot we just cleared. `held` is the best identity available — a
       // half-written file parses as `null` for microseconds — and refusing on a stale pid beats
       // the alternative, which is two processes writing one single-writer data directory.
