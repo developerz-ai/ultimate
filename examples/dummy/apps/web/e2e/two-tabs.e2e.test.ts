@@ -11,6 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import {
   everyCount,
   like,
@@ -21,10 +22,13 @@ import {
 } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
   acceptanceBrowser,
   likeOverHttp,
   noBrowser,
   POSTS,
+  SIGN_IN_MS,
   signInAs,
   startPostly,
 } from './fixtures/postly';
@@ -50,21 +54,24 @@ describe.skipIf(noBrowser)('two tabs, one origin', () => {
       let one: E2eTab;
       let two: E2eTab;
 
-      beforeAll(async () => {
-        app = await startPostly();
-        browser = await acceptanceBrowser(shape.initScript);
-        await signInAs(browser.session, app, 'kenji');
-        one = await browser.session.newTab();
-        two = await browser.session.newTab();
-        await one.goto(`${app.base}${PAGE}`);
-        await two.goto(`${app.base}${PAGE}`);
-      }, 240_000);
+      beforeAll(
+        async () => {
+          app = await startPostly();
+          browser = await acceptanceBrowser(shape.initScript);
+          await signInAs(browser.session, app, 'kenji');
+          one = await browser.session.newTab();
+          two = await browser.session.newTab();
+          await one.goto(`${app.base}${PAGE}`);
+          await two.goto(`${app.base}${PAGE}`);
+        },
+        ACCEPTANCE_OPEN_MS + SIGN_IN_MS + 2 * E2E_TAB_OPEN_MS + 2 * E2E_GOTO_MS,
+      );
 
       afterAll(async () => {
         await two?.close();
         await browser?.close();
         await app?.stop();
-      });
+      }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
       test('the tabs share the expected number of sockets, and a like crosses between them', async () => {
         const { session } = browser;

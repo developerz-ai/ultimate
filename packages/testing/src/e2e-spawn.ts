@@ -8,7 +8,7 @@
 import { get } from 'node:http';
 // why: Bun exposes no path API — the CLI's bin is joined onto its package directory.
 import { dirname, join } from 'node:path';
-import { assert } from '@ultimat3/core';
+import { assert, DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
 import { E2eAppFailedError } from './e2e-errors';
 import { freePort } from './free-port';
 
@@ -43,6 +43,29 @@ export async function xBin(root: string): Promise<string> {
 }
 const POLL_MS = 250;
 
+/**
+ * How long one `/readyz` probe may hang before it counts as "not yet": an app that accepted the
+ * connection mid-boot and has not answered. The readiness deadline can overshoot by one of these.
+ */
+export const READY_PROBE_MS = POLL_MS * 4;
+
+/**
+ * What a SIGTERM'd app is given before it is killed outright: its own designed drain at the
+ * defaults — the readiness grace a deployed app holds, then `drain.deadlineMs` — because a stop
+ * shorter than the drain kills an app that was doing what it was told.
+ */
+const TERM_GRACE_MS = READINESS_GRACE_DEFAULT_MS + DRAIN_DEADLINE_DEFAULT_MS;
+
+/** After SIGKILL: the kernel's to deliver, bounded for a container whose init never reaps. */
+const KILL_GRACE_MS = 5_000;
+
+/**
+ * The longest `stop()` is DESIGNED to take: the drain, then the kill. THE deadline a hook that
+ * stops an e2e app derives from — unbounded, a wedged app held the hook until Bun killed it, and
+ * the browser close behind it in the same hook never ran.
+ */
+export const E2E_APP_STOP_MS = TERM_GRACE_MS + KILL_GRACE_MS;
+
 export interface SpawnedE2eApp {
   /** `http://localhost:<port>`, no trailing slash. */
   readonly base: string;
@@ -63,6 +86,8 @@ export interface SpawnE2eAppOptions {
   readonly readyTimeoutMs: number;
   /** `xBin(root)`, when the caller already resolved it; resolved here otherwise, in `dev` mode only. */
   readonly bin?: string | undefined;
+  /** How long a SIGTERM'd app has before SIGKILL. Defaults to the app's own drain at its defaults. */
+  readonly termGraceMs?: number | undefined;
 }
 
 /**
@@ -107,14 +132,17 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
       stdout: 'pipe',
       stderr: 'pipe',
     });
+  const termGraceMs = options.termGraceMs ?? TERM_GRACE_MS;
+  // On the monotonic clock: counted in polls, every probe an app wedged mid-boot held for its
+  // whole `READY_PROBE_MS` stretched a 90 s deadline to 450 s, past any hook derived from it.
   const ready = async (child: ReturnType<typeof spawnApp>, tail: () => string): Promise<void> => {
-    for (let waited = 0; waited < deadline; waited += POLL_MS) {
+    const until = performance.now() + deadline;
+    while (performance.now() < until) {
       if (child.exitCode !== null) break;
       if (await answersOk(`${base}/readyz`)) return;
       await Bun.sleep(POLL_MS);
     }
-    child.kill();
-    await child.exited;
+    await end(child, termGraceMs);
     throw refuse(`${command.join(' ')} never answered ${base}/readyz`, tail());
   };
 
@@ -126,8 +154,7 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    child.kill();
-    await child.exited;
+    await end(child, termGraceMs);
   };
   try {
     await ready(child, tail);
@@ -149,13 +176,28 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
       );
       // The same port and the same state directory — a deploy, not a second app: a tab already
       // open on `base` sees the new build on its next request, and the data it wrote is still there.
-      child.kill();
-      await child.exited;
+      await end(child, termGraceMs);
       child = spawnApp(next);
       tail = drainTail(child.stdout, child.stderr);
       await ready(child, tail);
     },
   };
+}
+
+const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
+  Promise.race([work, Bun.sleep(ms)]);
+
+/** SIGTERM, the grace, then SIGKILL: bounded at `termGraceMs + KILL_GRACE_MS`, never forever. */
+async function end(child: Bun.Subprocess, termGraceMs: number): Promise<void> {
+  child.kill();
+  const exited =
+    (await within(
+      termGraceMs,
+      child.exited.then(() => true),
+    )) === true;
+  if (exited) return;
+  child.kill('SIGKILL');
+  await within(KILL_GRACE_MS, child.exited);
 }
 
 const TAIL_CHARS = 16_000;

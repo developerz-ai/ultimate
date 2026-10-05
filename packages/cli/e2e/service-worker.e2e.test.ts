@@ -17,7 +17,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // The browser is `@ultimat3/testing`'s since 22.0.0; this file stays in cli because what it drives
 // is cli's own emitted service worker, and `testing` may not import cli.
 import type { E2eBrowser, PageLike } from '@ultimat3/testing';
-import { e2ePage, findChrome, openE2eBrowser, openE2eBrowserIfAvailable } from '@ultimat3/testing';
+import {
+  DEFAULT_E2E_TIMEOUT_MS,
+  DEFAULT_SERVICE_WORKER_TIMEOUT_MS,
+  E2E_BROWSER_OPEN_MS,
+  e2ePage,
+  findChrome,
+  openE2eBrowser,
+  openE2eBrowserIfAvailable,
+} from '@ultimat3/testing';
 import { islandBundle } from '../src/island-bundle';
 import type { PwaArtifacts } from '../src/pwa-artifacts';
 import { styleBundleOf } from '../src/style-bundle';
@@ -126,7 +134,9 @@ console.log(
     : `sw e2e browser: ${chrome}`,
 );
 
-const HOOK_TIMEOUT_MS = 60_000;
+/** The open's whole designed budget, then the hook's `goto` and its wait for the worker. */
+const HOOK_TIMEOUT_MS =
+  E2E_BROWSER_OPEN_MS + DEFAULT_E2E_TIMEOUT_MS + DEFAULT_SERVICE_WORKER_TIMEOUT_MS;
 const TEST_TIMEOUT_MS = 45_000;
 
 let browser: E2eBrowser | undefined;
@@ -155,7 +165,7 @@ describe.skipIf(chrome === undefined && !required)(
     // Awaited until Chrome has EXITED (bounded): the next suite in this process launches its own.
     afterAll(async () => {
       await browser?.close();
-    }, 30_000);
+    }, E2E_BROWSER_OPEN_MS);
 
     test(
       'it installs, activates and takes control of the page',

@@ -5,7 +5,13 @@
 // Skips with no Chrome, unless E2E_BROWSER_REQUIRED=1.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eBrowser } from '@ultimat3/testing';
-import { findChrome, openE2eBrowser, openE2eBrowserIfAvailable } from '@ultimat3/testing';
+import {
+  DEFAULT_CDP_TIMEOUT_MS,
+  E2E_BROWSER_OPEN_MS,
+  findChrome,
+  openE2eBrowser,
+  openE2eBrowserIfAvailable,
+} from '@ultimat3/testing';
 import { buildIslands } from '../src/island-bundle';
 import type { FixtureApp } from '../src/templates/island-fixture';
 import { fixtureAppRoot } from '../src/templates/island-fixture';
@@ -70,6 +76,12 @@ import(${JSON.stringify(url)})
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
 
+/** The island build: what this hook gave it beyond the open before the open was budgeted. */
+const BUILD_MS = 30_000;
+const MOUNT_MS = 20_000;
+/** The open's whole designed budget, the build, then the `goto`, the mount and two reads. */
+const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS + BUILD_MS + MOUNT_MS + 3 * DEFAULT_CDP_TIMEOUT_MS;
+
 describe.skipIf(chrome === undefined && !required)(
   'ui `as` roots and `level` headings mount inside an island',
   () => {
@@ -98,7 +110,11 @@ describe.skipIf(chrome === undefined && !required)(
       if (browser === undefined)
         expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
       await browser.page.goto(`http://localhost:${String(server.port)}/`);
-      await browser.page.waitFor('window.__done === true', 'the island to finish mounting', 20_000);
+      await browser.page.waitFor(
+        'window.__done === true',
+        'the island to finish mounting',
+        MOUNT_MS,
+      );
       errors = JSON.parse(String(await browser.page.evaluate('JSON.stringify(window.__errors)')));
       shape = JSON.parse(
         String(
@@ -109,14 +125,14 @@ describe.skipIf(chrome === undefined && !required)(
           })))`),
         ),
       );
-    }, 90_000);
+    }, HOOK_TIMEOUT_MS);
 
     // THE close: the connection, the Chrome process and its profile directory, then the fixture.
     afterAll(async () => {
       await browser?.close();
       server?.stop(true);
       app?.[Symbol.dispose]();
-    });
+    }, E2E_BROWSER_OPEN_MS);
 
     test('mounting throws nothing', () => {
       expect(errors).toEqual([]);

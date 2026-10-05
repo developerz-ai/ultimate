@@ -6,6 +6,14 @@ import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import {
+  type ComposeStrategy,
+  composeStrategies,
+  readComposeFile,
+  runStartFirst,
+  startFirstUp,
+} from './cmd-deploy-compose';
+import { readHelmDrainOverrides } from './cmd-deploy-drain';
+import {
   type HelmTarget,
   helmUpgradeArgs,
   readHelmTimeout,
@@ -78,10 +86,21 @@ export function readMethod(raw: string | undefined): DeployMethod {
 /** The roles that run to completion and exit, as against the ones that stay up serving. */
 const ONE_SHOT_ROLES: readonly string[] = ['migrate', 'backfill'];
 
+/**
+ * One step. A compose serving role carries its rollout `strategy` (`cmd-deploy-compose.ts`); a
+ * start-first step's `command` is its scale-up as it runs in the steady state, where the
+ * containers running equal the declared replicas — the run counts them first.
+ */
+export interface DeployStep {
+  readonly role: string;
+  readonly command: readonly string[];
+  readonly strategy?: ComposeStrategy | undefined;
+}
+
 export interface DeployPlan {
   readonly image: string;
   /** Ordered: migrate runs to completion before any role that serves traffic starts. */
-  readonly steps: readonly { readonly role: string; readonly command: readonly string[] }[];
+  readonly steps: readonly DeployStep[];
   /**
    * The environment every step runs with — how the COMPOSE method carries the image, because
    * `docker-compose.prod.yml` resolves each service from `${IMAGE:-ultimate-app:latest}` and
@@ -134,26 +153,41 @@ const OCI_REFERENCE = new RegExp(
 /** What was asked for: the method, and for helm the release it is aimed at. */
 export type DeployRequest =
   | { readonly method: 'compose' }
-  | ({ readonly method: 'helm' } & HelmTarget);
+  | ({ readonly method: 'helm' } & HelmDeployTarget);
+
+/** A helm target plus the `--set` pairs that size the chart's grace periods (`cmd-deploy-drain.ts`). */
+export interface HelmDeployTarget extends HelmTarget {
+  readonly drain?: readonly string[] | undefined;
+}
 
 /**
  * The plan for one method. A helm plan takes its target — release, namespace, timeout — because
  * the release is read off `app.config.ts`, which only the command can import; the compose plan
  * needs none, so its three-argument form is unchanged.
  */
-export function planDeploy(image: string, method: 'compose', root: string): DeployPlan;
+export function planDeploy(
+  image: string,
+  method: 'compose',
+  root: string,
+  strategies?: ReadonlyMap<string, ComposeStrategy>,
+): DeployPlan;
 export function planDeploy(
   image: string,
   method: 'helm',
   root: string,
-  target: HelmTarget,
+  target: HelmDeployTarget,
 ): DeployPlan;
 export function planDeploy(
   image: string,
   method: DeployMethod,
   root: string,
-  target?: HelmTarget,
+  extra?: HelmDeployTarget | ReadonlyMap<string, ComposeStrategy>,
 ): DeployPlan {
+  const target = method === 'helm' ? (extra as HelmDeployTarget | undefined) : undefined;
+  const strategies =
+    method === 'compose' && extra instanceof Map
+      ? (extra as ReadonlyMap<string, ComposeStrategy>)
+      : new Map<string, ComposeStrategy>();
   if (method === 'helm') {
     // A caller from plain JS can still reach this without one; `app` for every app is the
     // defect the target exists to end, so it is refused rather than defaulted back.
@@ -190,7 +224,15 @@ export function planDeploy(
     return {
       image,
       env: {},
-      steps: [{ role: 'all', command: helmUpgradeArgs(root, target, helmImageOverrides(image)) }],
+      steps: [
+        {
+          role: 'all',
+          command: helmUpgradeArgs(root, target, [
+            ...helmImageOverrides(image),
+            ...(target.drain ?? []),
+          ]),
+        },
+      ],
     };
   }
   return {
@@ -199,25 +241,40 @@ export function planDeploy(
     // header documents `IMAGE=… docker compose …` as the way to run it by hand; this is that line,
     // performed.
     env: { IMAGE: image },
-    steps: DEPLOY_ROLES.map((role) => ({
-      role,
-      command: [
-        'docker',
-        'compose',
-        // Compose interpolates `${SYNC_URL:?…}`, `${APP_URL:?…}` and `${POSTGRES_PASSWORD:?…}` from
-        // the shell and `--env-file` only — never from a service's `env_file:`. Without this an
-        // operator who put them in `.env.production`, the one file the compose file tells them to
-        // fill, had every step die on a parse error. Global flag, so it precedes `-f`; the shell still wins over it.
-        '--env-file',
-        join(root, PROD_ENV_FILE),
-        '-f',
-        join(root, 'docker', 'docker-compose.prod.yml'),
-        ONE_SHOT_ROLES.includes(role) ? 'run' : 'up',
-        ONE_SHOT_ROLES.includes(role) ? '--rm' : '-d',
-        role,
-      ],
-    })),
+    steps: DEPLOY_ROLES.map((role) => composeStep(composeBase(root), role, strategies.get(role))),
   };
+}
+
+/**
+ * Every compose command's prefix. Compose interpolates `${SYNC_URL:?…}`, `${APP_URL:?…}` and
+ * `${POSTGRES_PASSWORD:?…}` from the shell and `--env-file` only — never from a service's
+ * `env_file:`. Without it an operator who put them in `.env.production`, the one file the compose
+ * file tells them to fill, had every step die on a parse error. Global flag, so it precedes `-f`;
+ * the shell still wins over it.
+ */
+const composeBase = (root: string): readonly string[] => [
+  'docker',
+  'compose',
+  '--env-file',
+  join(root, PROD_ENV_FILE),
+  '-f',
+  composeFileOf(root),
+];
+
+const composeFileOf = (root: string): string => join(root, 'docker', 'docker-compose.prod.yml');
+
+/** One compose step: a one-shot `run --rm`, a start-first scale-up, or compose's own recreate. */
+function composeStep(
+  base: readonly string[],
+  role: string,
+  strategy: ComposeStrategy | undefined,
+): DeployStep {
+  if (ONE_SHOT_ROLES.includes(role)) return { role, command: [...base, 'run', '--rm', role] };
+  if (strategy?.kind === 'start-first') {
+    const scale = strategy.replicas === 0 ? undefined : strategy.replicas * 2;
+    return { role, command: startFirstUp(base, role, scale), strategy };
+  }
+  return { role, command: [...base, 'up', '-d', role], strategy };
 }
 
 /**
@@ -259,6 +316,7 @@ export async function readDeployRequest(
     release: await readReleaseName(root, flagString(ctx.args, 'release')),
     namespace: namespace === undefined ? undefined : readLabel('namespace', namespace),
     timeout: readHelmTimeout(flagString(ctx.args, 'timeout')),
+    drain: await readHelmDrainOverrides(root),
   };
 }
 
@@ -283,10 +341,17 @@ export const deployCommand: CliCommand = {
     // X_DEPLOY_FAILED, whose fix is the exact command to rerun.
     const method = readMethod(flagString(ctx.args, 'method'));
     const request = await readDeployRequest(ctx, method, root);
+    // Read before the plan, because the plan IS the rollout: which compose roles can start their
+    // new container first is a fact of the app's compose file, and a dry run reports it too.
     const plan =
       request.method === 'helm'
         ? planDeploy(image, 'helm', root, request)
-        : planDeploy(image, 'compose', root);
+        : planDeploy(
+            image,
+            'compose',
+            root,
+            composeStrategies(await readComposeFile(composeFileOf(root))),
+          );
     // What the helm flags resolved to — the release above all, which is read off `app.config.ts`
     // and so is not something the operator typed. Absent on compose, which has no release.
     const target: { readonly [key: string]: JsonValue } =
@@ -306,7 +371,12 @@ export const deployCommand: CliCommand = {
       // Reported, because it is what makes `image` above true on the compose method — a dry run
       // that names an image the steps do not carry is the defect this field closed.
       env: { ...plan.env },
-      steps: plan.steps.map((step) => ({ role: step.role, command: step.command.join(' ') })),
+      steps: plan.steps.map((step) => ({
+        role: step.role,
+        command: step.command.join(' '),
+        ...(step.strategy === undefined ? {} : { strategy: step.strategy.kind }),
+        ...(step.strategy?.kind === 'stop-first' ? { why: step.strategy.why } : {}),
+      })),
     };
     // The roles THIS plan has, never the compose list: on `--method helm` there is one step,
     // `all`, and naming `backfill` there promises an operator a sweep the chart cannot run.
@@ -326,10 +396,26 @@ export const deployCommand: CliCommand = {
     // and revision rather than an exit code standing in for one. Compose has no such record.
     let rollout: { readonly [key: string]: JsonValue } = {};
     for (const step of plan.steps) {
-      const result = await ctx.runner(step.command, { cwd: root, env: plan.env });
-      if (request.method === 'helm')
-        rollout = { rollout: { ...readRollout(request, result.stdout) } };
-      if (!result.ok) {
+      const options = { cwd: root, env: plan.env };
+      // A start-first step is a sequence — list, scale up, wait, stop the old — and reports the
+      // command of the sub-step that failed, so the fix line below is still the one to rerun.
+      const outcome =
+        step.strategy?.kind === 'start-first'
+          ? await runStartFirst({
+              role: step.role,
+              base: composeBase(root),
+              replicas: step.strategy.replicas,
+              runner: ctx.runner,
+              options,
+            })
+          : await ctx.runner(step.command, options).then((result) => {
+              if (request.method === 'helm')
+                rollout = { rollout: { ...readRollout(request, result.stdout) } };
+              return result.ok
+                ? { ok: true as const }
+                : { ok: false as const, code: result.code, command: step.command };
+            });
+      if (!outcome.ok) {
         return {
           ok: false,
           command: 'deploy',
@@ -337,8 +423,8 @@ export const deployCommand: CliCommand = {
           findings: [
             {
               code: 'X_DEPLOY_FAILED',
-              cause: `role "${step.role}" step exited ${result.code}`,
-              fix: `${stepLine(plan.env, step.command)}   # run it directly to see the full output`,
+              cause: `role "${step.role}" step exited ${outcome.code}`,
+              fix: `${stepLine(plan.env, outcome.command)}   # run it directly to see the full output`,
               docs: ERROR_DOCS_URL,
             },
           ],

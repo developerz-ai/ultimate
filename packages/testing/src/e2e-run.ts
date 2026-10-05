@@ -5,7 +5,9 @@
 
 import { finiteCount } from '@ultimat3/core';
 import type { E2eBrowser } from './cdp-browser';
+import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS } from './cdp-browser';
 import type { E2eApp } from './e2e-app';
+import { E2E_APP_STOP_MS } from './e2e-app';
 import { e2eBrowser, publishE2eRun, republishE2eBrowser } from './e2e-browser-handle';
 import type { E2eDriverOptions } from './e2e-driver';
 import type { E2eBrowserPage } from './e2e-page';
@@ -35,8 +37,9 @@ export interface E2eRunDeps {
   readonly app: E2eApp;
   readonly openBrowser: () => Promise<E2eBrowser>;
   readonly install: (options: E2eDriverOptions) => () => void;
-  readonly beforeEach: (hook: () => Promise<void>) => void;
-  readonly afterAll: (hook: () => Promise<void>) => void;
+  /** Bun's, in the preload: the second argument is the hook's deadline, never left to the 5 s default. */
+  readonly beforeEach: (hook: () => Promise<void>, timeoutMs: number) => void;
+  readonly afterAll: (hook: () => Promise<void>, timeoutMs: number) => void;
   readonly probeMs?: number | undefined;
 }
 
@@ -74,19 +77,26 @@ export async function startE2eRun(deps: E2eRunDeps): Promise<void> {
   // call (run 8). So each test starts with a short probe, and a browser that fails it — or one a
   // deploy ran under — is closed and relaunched: the app is untouched, and the test gets a fresh
   // profile, a fresh SharedWorker and a fresh tab on the same origin.
-  deps.beforeEach(async () => {
-    const alive = !deployed && (await answersWithin(e2eBrowser().page, probeMs));
-    if (alive) return;
-    deployed = false;
-    await browser.close();
-    browser = await deps.openBrowser();
-    republishE2eBrowser(browser);
-  });
+  //
+  // Deadlines are the designed lengths of the work, because Bun's 5 s default killed both hooks
+  // mid-work: a relaunch cut short left its open in flight, assigned later over the next one's
+  // browser and never closed; a close cut short as the run exited left the profile half-removed.
+  deps.beforeEach(
+    async () => {
+      const alive = !deployed && (await answersWithin(e2eBrowser().page, probeMs));
+      if (alive) return;
+      deployed = false;
+      await browser.close();
+      browser = await deps.openBrowser();
+      republishE2eBrowser(browser);
+    },
+    probeMs + E2E_BROWSER_CLOSE_MS + E2E_BROWSER_OPEN_MS,
+  );
 
   deps.afterAll(async () => {
     setFailureContext(undefined);
     uninstall();
     await browser.close();
     await app.stop();
-  });
+  }, E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS);
 }

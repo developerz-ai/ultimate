@@ -26,7 +26,7 @@ Rung numbers are [`../idea/17-scale-ladder.md`](../idea/17-scale-ladder.md)'s �
 | Rung | You run | You deploy by | Costs you |
 |---|---|---|---|
 | **0–1 — PaaS** | one container per role on a managed platform, managed Postgres | pushing an image; the platform restarts | per-process pricing, and whatever datastore the platform does not sell |
-| **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible — one published port has one binder, so there is no second replica to take traffic while the first drains. Invisible restarts are rung 3's claim, not this one's |
+| **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `x deploy` (or `ssh` + the same `docker compose` lines) | the box is the availability story. `x deploy` rolls every role that can run two containers **start-first**; a role publishing a host port (the shipped `web`, `sync`) cannot, and restarts with a gap until a proxy fronts it — below |
 | **3 — Kubernetes** | the Helm chart or the manifest set in [`01-kubernetes.md`](./01-kubernetes.md) | `git push` (GitOps) | a control plane, a secrets story, an on-call story |
 
 **You are on a PaaS or one box until something on this list is true.** Not before. A first app and a product with paying users are the same deployment — rung 0 is a free plan with no card — and the range that spans, small end to very large, is [`../idea/21-the-range.md`](../idea/21-the-range.md).
@@ -43,11 +43,27 @@ Rung 2's real ceiling, `As of 2026-08`: the shipped prod compose publishes stati
 services declare `replicas: 1` — the file says what it does, rather than declaring 3 and starting 1.
 `worker` has no published port and scales freely.
 
+**How `x deploy --method compose` rolls a serving role** (`As of 2026-10-05`,
+[`packages/cli/src/cmd-deploy-compose.ts`](../../packages/cli/src/cmd-deploy-compose.ts)). Read off
+the compose file per role, and reported per step in `x deploy --dry-run --json` (`strategy`, `why`):
+
+| The service | Strategy | What runs |
+|---|---|---|
+| publishes no fixed host port, sets no `container_name`, not `network_mode: host` — the shipped `worker`, `scheduler` | **start-first** | `docker compose ps -q <role>` lists the running containers; `up -d --no-deps --no-recreate --wait --wait-timeout 300 --scale <role>=<running + replicas> <role>` starts the new ones **beside** them from the new image and waits for their healthcheck; then `docker stop` (SIGTERM, then `stop_grace_period`) and `docker rm` the old ones. A new container that never turns healthy is stopped and removed, the old keep serving, and the deploy fails `X_DEPLOY_FAILED` naming the sub-command |
+| publishes a host port (`3000:3000`, `127.0.0.1:3001:3001`, long-form `published:`) — the shipped `web`, `sync` | **stop-first** | `up -d <role>`: compose recreates the container, so the role serves nothing between the old one's exit and the new one's healthcheck |
+
+`deploy.update_config.order: start-first` is a Swarm field `docker compose` ignores, which is why the
+sequence is `x deploy`'s own. **The proxy requirement:** to roll `web` and `sync` start-first, delete
+their `ports:` lines and put a reverse proxy on the compose network that routes to the service
+names and **retries a refused connection on another upstream** — compose DNS resolves a service name
+to every replica, so during a roll it returns the old and the new container, and the old one stops
+accepting the instant its readiness grace ends. The proxy publishes the host port instead.
+
 Two ways past it, in order of cost:
 
 | Want | Do |
 |---|---|
-| more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
+| more `web`/`sync` on the same box, and start-first deploys for them | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica, and `x deploy` then rolls both start-first |
 | more `web`/`sync`, full stop | climb to rung 3; `docker/helm` already carries a per-role HPA and an ingress |
 
 **Set `SYNC_URL` on this rung**, shipped in 21.0.0. A page's one socket dials

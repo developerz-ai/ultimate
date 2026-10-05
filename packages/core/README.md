@@ -66,6 +66,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
+| the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS` | `drain-deadline.ts` |
 | SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |

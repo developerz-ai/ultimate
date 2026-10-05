@@ -52,13 +52,20 @@ const LISTENING_ROLES: readonly Role[] = ['web', 'sync'];
  * `createServer` hands it to. A role nothing routes to gets no readiness grace at all: the grace
  * holds `/readyz` at 503 with the listener open so the endpoints catch up, and a worker has neither
  * — it only went on claiming jobs for those seconds, then aborted them at the drain (s1-con #7).
+ *
+ * The budget (`deadlineMs`) is every role's: it is the time a worker's running job has to finish
+ * on a deploy, so it is the one key here a non-listening role needs MOST. `http.drainTimeoutMs`,
+ * when declared, is applied after this by `createServer` and still wins on the web role.
  */
 export function lifecycleForRole(
   role: Role,
   drain: Partial<DrainConfig> | undefined,
 ): LifecycleOptions {
-  if (!LISTENING_ROLES.includes(role)) return { readinessGraceMs: 0 };
-  return drain?.readinessGraceMs === undefined ? {} : { readinessGraceMs: drain.readinessGraceMs };
+  const budget = drain?.deadlineMs === undefined ? {} : { deadlineMs: drain.deadlineMs };
+  if (!LISTENING_ROLES.includes(role)) return { readinessGraceMs: 0, ...budget };
+  return drain?.readinessGraceMs === undefined
+    ? budget
+    : { readinessGraceMs: drain.readinessGraceMs, ...budget };
 }
 
 /**

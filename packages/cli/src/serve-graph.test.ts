@@ -79,8 +79,14 @@ const MIGRATE_CEILING = 615;
  * (`app-load` sorts module paths by their `/` form, so every OS imports an app in one order) and
  * `core/src/bunfs.ts` (`isCompiledBundle`, the Windows `B:\~BUN\` prefix beside `/$bunfs/`), against
  * sweep 7's 886.
+ * raised 888 → 893, measured 893 (2026-10-05, plan 101 sweep 8c, zero-downtime deploys): a worker
+ * that lets a running job FINISH on SIGTERM — `jobs/src/worker-drain-cutoff.ts` (cancel only at
+ * the deadline less a margin), `worker-held.ts` (hand every held claim back before the driver
+ * closes), `worker-tally.ts` (counters split so `worker.ts` stays under the ceiling) — plus
+ * `core/src/drain-deadline.ts` (`drain.deadlineMs`) and `db/src/migrate-rollback.ts` (a rollback
+ * onto a newer build's ledger is accepted, not `X_MIGRATION_CONFLICT`).
  */
-const SERVING_ROLE_CEILING = 888;
+const SERVING_ROLE_CEILING = 893;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -96,8 +102,10 @@ const SERVING_ROLE_CEILING = 888;
  * named on `SERVING_ROLE_CEILING` for sweep 8b, and `cli/src/island-package-dedupe.ts` — the island
  * build resolves every `@ultimat3/*` import to the app's one copy, which a Windows `file:` install
  * without symlinks had bundled twice (+15 KB on `/posts`).
+ * raised 987 → 992, measured 992 (2026-10-05, plan 101 sweep 8c): the five modules named on
+ * `SERVING_ROLE_CEILING` for sweep 8c.
  */
-const WEB_ROLE_CEILING = 987;
+const WEB_ROLE_CEILING = 992;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

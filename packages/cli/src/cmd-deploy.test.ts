@@ -263,6 +263,11 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
         'image.repository=ghcr.io/org/app',
         '--set-string',
         'image.tag=1.2.3',
+        // The chart's grace periods, sized from app.config.ts's drain section (core's defaults).
+        '--set',
+        'drain.deadlineSeconds=25',
+        '--set',
+        'drain.readinessGraceSeconds=5',
       ],
     ]);
   });

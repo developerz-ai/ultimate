@@ -3,7 +3,7 @@
 // chord the page reads as `metaKey`, the emulated scheme, the accessibility tree and a clipped
 // PNG. Skips with no Chrome, and refuses to skip under `E2E_BROWSER_REQUIRED=1`.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { findChrome } from '@ultimat3/testing';
+import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
 import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 
@@ -38,6 +38,14 @@ const pngSize = (bytes: Uint8Array): readonly [number, number] => {
 };
 
 const chrome = await findChrome(process.env);
+
+/** Every call of the shot session after the launch. */
+const SHOT_TIMEOUT_MS = 20_000;
+/**
+ * The open's designed budget, then the shot session's own: `open()`'s eight calls (attach a page,
+ * enable four domains, two emulations — `cdp-shot-driver.ts`) and the `goto`.
+ */
+const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS + 9 * SHOT_TIMEOUT_MS;
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
 
 describe.skipIf(chrome === undefined && !required)('x shot’s browser, in a real Chrome', () => {
@@ -56,15 +64,15 @@ describe.skipIf(chrome === undefined && !required)('x shot’s browser, in a rea
       name: 'x shot',
       rules: { allowHosts: ['localhost'] },
       clock,
-      timeoutMs: 20_000,
+      timeoutMs: SHOT_TIMEOUT_MS,
     });
     await session.page.goto(`${base()}/`);
-  }, 60_000);
+  }, HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await session?.close();
     server?.stop(true);
-  });
+  }, E2E_BROWSER_OPEN_MS);
 
   const page = () => {
     if (session === undefined) expect.unreachable('the session never opened');

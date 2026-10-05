@@ -30,7 +30,7 @@ const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
 /** What every finding is: code, cause and fix as strings. Optional fields ride along as written. */
-const isFinding = (value: unknown): value is Finding =>
+export const isFinding = (value: unknown): value is Finding =>
   isRecord(value) &&
   typeof value['code'] === 'string' &&
   typeof value['cause'] === 'string' &&

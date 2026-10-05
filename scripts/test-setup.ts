@@ -7,6 +7,7 @@
 
 // A green run prints the reporter and nothing else: the process logger's lines go to a sink.
 import '../packages/testing/src/quiet-logs';
+import { closeE2eBrowsersAtRunEnd } from '../packages/testing/src/cdp-browser-lease';
 import { installDeterminism } from '../packages/testing/src/determinism';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
@@ -45,3 +46,8 @@ installPerTestReset();
 
 // Opt-out is an env var, not an API, so no test file can quietly unseal the network for itself.
 if (Bun.env['ULTIMATE_TEST_ALLOW_NET'] !== '1') sealNetwork();
+
+// One Chrome per run, not per suite: suites that lease a browser (`leaseE2eBrowser`) share it, and
+// only a preload's `afterAll` runs after every file — Bun fires neither `exit` nor `beforeExit`
+// under `bun test`. Under `--isolate` it runs after each file, which is also correct.
+closeE2eBrowsersAtRunEnd();

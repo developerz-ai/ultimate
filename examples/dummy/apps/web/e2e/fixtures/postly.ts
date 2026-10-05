@@ -8,7 +8,17 @@
 import { expect } from 'bun:test';
 import { seedId } from '@ultimat3/entity';
 import type { E2eApp, E2eSession } from '@ultimat3/testing';
-import { allowHost, findChrome, openE2eBrowser, startE2eApp } from '@ultimat3/testing';
+import {
+  allowHost,
+  DEFAULT_CDP_TIMEOUT_MS,
+  E2E_APP_START_MS,
+  E2E_APP_STOP_MS,
+  E2E_BROWSER_CLOSE_MS,
+  E2E_BROWSER_OPEN_MS,
+  findChrome,
+  openE2eBrowser,
+  startE2eApp,
+} from '@ultimat3/testing';
 
 /** A test's verdict, never a bare Error (`bun run scripts/test-bare-error.ts`). */
 export const fail = (message: string): never => expect.unreachable(message);
@@ -22,6 +32,25 @@ export const APP_ROOT = Bun.fileURLToPath(new URL('../../../../', import.meta.ur
 /** Skipped only when this machine has no Chrome; `E2E_BROWSER_REQUIRED=1` refuses the skip. */
 export const noBrowser =
   (await findChrome(process.env)) === undefined && process.env['E2E_BROWSER_REQUIRED'] !== '1';
+
+/**
+ * What every acceptance suite's `beforeAll` begins with — `startPostly()`, then `acceptanceBrowser()`
+ * and its one init-script call — at their DESIGNED lengths, never a literal: a hook shorter than the
+ * open is killed by Bun before the relaunch that would have named the slow step. A suite adds its
+ * own steps on top (`SIGN_IN_MS`, `E2E_TAB_OPEN_MS`, `E2E_GOTO_MS`); `e2e-browser-hooks.test.ts`
+ * refuses a hook whose deadline does not hold the open and the boot.
+ */
+export const ACCEPTANCE_OPEN_MS = E2E_BROWSER_OPEN_MS + E2E_APP_START_MS + DEFAULT_CDP_TIMEOUT_MS;
+
+/** One `signInAs`: a single cookie call. */
+export const SIGN_IN_MS = DEFAULT_CDP_TIMEOUT_MS;
+
+/**
+ * What every acceptance suite's `afterAll` ends with: the browser's bounded close, then the app's
+ * bounded stop. Left at Bun's 5 s default, a close cut short by the run's end leaves the Chrome
+ * profile half-removed in the temp root. A suite that closes a tab first adds one call.
+ */
+export const ACCEPTANCE_CLOSE_MS = E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS;
 
 /** The demo sign-in (`app/auth/demo-actor.ts`): a cookie naming one of four seeded members. */
 export const DEMO_MEMBER_COOKIE = 'postly_demo_member';

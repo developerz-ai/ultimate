@@ -48,6 +48,18 @@ export function holdUntilShutdown(
   release: () => Promise<void>,
   options: HoldOptions = {},
 ): () => Promise<void> {
+  return armHold(name, release, options).hold;
+}
+
+/** A hold whose handlers are already listening, and the way to give them back unheld. */
+interface ArmedHold {
+  readonly hold: () => Promise<void>;
+  /** Uninstall the handlers and the hook without waiting for any shutdown — a boot that failed. */
+  readonly disarm: () => void;
+}
+
+/** The signal handlers and the `accept` hook, installed NOW; the release waits for `hold()`. */
+function armHold(name: string, release: () => Promise<void>, options: HoldOptions): ArmedHold {
   const uninstall = installSignalHandlers({ exit: false });
   let unregister = (): void => {};
   // The hook's own `reason`, not a stopwatch of ours: `deadlineAt` is the instant core computed
@@ -64,7 +76,7 @@ export function holdUntilShutdown(
   });
 
   let held: Promise<void> | undefined;
-  return () => {
+  const hold = (): Promise<void> => {
     // Memoised: awaiting a hold twice must not release twice, and `dispatch` is not the only
     // caller a test can be.
     held ??= (async () => {
@@ -79,6 +91,49 @@ export function holdUntilShutdown(
     })();
     return held;
   };
+  return {
+    hold,
+    disarm: () => {
+      unregister();
+      uninstall();
+    },
+  };
+}
+
+/** What a boot answers once it is up: the app, and the hold that keeps the process on it. */
+export interface BootedHold<T> {
+  readonly app: T;
+  readonly hold: () => Promise<void>;
+}
+
+/**
+ * Boot under the drain's handlers, never ahead of them. `runRole` used to install them after the
+ * boot returned, while `startRoles` starts the worker claiming in the middle of it — so a SIGTERM
+ * landing between the two (a rollout replacing a pod still booting) met Bun's default and ended a
+ * process holding claimed jobs, each one stranded for a whole visibility timeout. Armed first, the
+ * same signal is a drain: whatever the boot has started hears core's phases (the worker stops
+ * claiming and hands back at its cut-off), and the release — the app's own `stop()` — runs once
+ * the boot has finished, so nothing it acquired after the signal is left running.
+ *
+ * A boot that throws gives the handlers back and rethrows its own error: the refusal is the
+ * finding, and handlers left installed would turn the next signal into a drain of nothing.
+ */
+export async function holdWhileBooting<T extends { stop(): Promise<void> }>(
+  name: string,
+  boot: () => Promise<T>,
+  options: HoldOptions = {},
+): Promise<BootedHold<T>> {
+  let booted: T | undefined;
+  const armed = armHold(name, async () => await booted?.stop(), options);
+  let app: T;
+  try {
+    app = await boot();
+  } catch (error) {
+    armed.disarm();
+    throw error;
+  }
+  booted = app;
+  return { app, hold: armed.hold };
 }
 
 /**

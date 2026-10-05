@@ -4,7 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 // why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: the scratch directory lives under the OS temp dir, which Bun does not expose.
 import { tmpdir } from 'node:os';
 // why: joining the script and its profile-log paths.
@@ -36,6 +37,12 @@ const withFake = async (rest: string, body: (fake: string) => Promise<void>): Pr
 const profileOf = async (fake: string): Promise<string> =>
   (await Bun.file(join(fake, '..', 'profile')).text()).trim();
 
+/** What Chrome's ProcessSingleton does at start-up: a socket directory beside the profile, linked from it. */
+const singleton = (root: string): string => `SOCK="$(mktemp -d "${root}/com.google.Chrome.XXXXXX")"
+touch "$SOCK/SingletonSocket"; ln -s 12345 "$SOCK/SingletonCookie"
+ln -s "$SOCK/SingletonSocket" "$PROFILE/SingletonSocket"
+echo "$SOCK" >"$(dirname "$0")/singleton"`;
+
 /**
  * Every fake here is a bash script talking on fds 3 and 4 — POSIX only: Windows executes no `#!`
  * script and is driven over a port (`cdp-launch-wire.ts`). `cdp-launch.test.ts` proves the launcher
@@ -52,6 +59,7 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       const profile = await profileOf(fake);
       await launched.close();
       expect(await Bun.file(join(profile, 'flushed')).exists()).toBe(false);
+      expect(existsSync(profile)).toBe(false);
     });
   });
 
@@ -62,6 +70,61 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
       const profile = await profileOf(fake);
       await launched.close();
       expect(await Bun.file(join(profile, 'flushed')).exists()).toBe(false);
+      expect(existsSync(profile)).toBe(false);
     });
   }, 20_000);
+
+  test('a writer OUTSIDE the process group that re-creates the profile does not outlast the close', async () => {
+    // Its own process group (`set -m`), so the group reap cannot see it — Chrome's crashpad
+    // handler is one — and it re-creates the profile each time it goes, three times. A close that
+    // removes once after the reap leaves the third.
+    const late = `set -m
+( for n in 1 2 3; do
+    for _ in $(seq 400); do [ -d "$PROFILE" ] || break; sleep 0.005; done
+    mkdir -p "$PROFILE/Default/Cache/Cache_Data"
+  done ) &
+set +m`;
+    await withFake(late, async (fake) => {
+      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+      const profile = await profileOf(fake);
+      await launched.close();
+      // Long past the writer's 5 ms poll: a profile it re-created after the close has reappeared.
+      await Bun.sleep(250);
+      expect(existsSync(profile)).toBe(false);
+    });
+  }, 20_000);
+
+  test("Chrome's singleton socket directory beside the profile goes with it", async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-profile-root-'));
+    try {
+      await withFake(singleton(root), async (fake) => {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        const socketDir = (await Bun.file(join(fake, '..', 'singleton')).text()).trim();
+        expect(existsSync(join(socketDir, 'SingletonSocket'))).toBe(true);
+        await launched.close();
+        expect(existsSync(socketDir)).toBe(false);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a SingletonSocket link to a directory holding anything else leaves that directory alone', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-profile-root-'));
+    try {
+      const foreign = join(root, 'somebody');
+      await mkdir(foreign);
+      await writeFile(join(foreign, 'SingletonSocket'), '');
+      await writeFile(join(foreign, 'notes.txt'), 'keep me');
+      const link = `ln -s "${foreign}/SingletonSocket" "$PROFILE/SingletonSocket"`;
+      await withFake(link, async (fake) => {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        await launched.close();
+        expect(await Bun.file(join(foreign, 'notes.txt')).text()).toBe('keep me');
+        expect(existsSync(join(foreign, 'SingletonSocket'))).toBe(true);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

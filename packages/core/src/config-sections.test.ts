@@ -124,3 +124,28 @@ describe('drain.readinessGraceMs', () => {
     expect(cause).toContain('drain.readinessGraceMs');
   });
 });
+
+describe('drain.deadlineMs', () => {
+  test('defaults to the 25 s budget the lifecycle has always drained in', () => {
+    expect(defineConfig({ name: 'app' }).drain.deadlineMs).toBe(25_000);
+  });
+
+  test('an explicit budget wins, and an overlay sets it without resetting the grace', () => {
+    const config = defineConfig(
+      { name: 'app', drain: { readinessGraceMs: 3_000 } },
+      { drain: { deadlineMs: 120_000 } },
+    );
+    expect(config.drain.deadlineMs).toBe(120_000);
+    expect(config.drain.readinessGraceMs).toBe(3_000);
+  });
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5, 3_600_001, '25s'])(
+    '%p is refused, naming the key',
+    (value) => {
+      const cause = refusal(() =>
+        defineConfig({ name: 'app', drain: { deadlineMs: value as number } }),
+      );
+      expect(cause).toContain('drain.deadlineMs');
+    },
+  );
+});

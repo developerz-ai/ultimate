@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eBrowser } from '../src/cdp-browser';
-import { openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
+import { E2E_BROWSER_OPEN_MS, openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
 import { findChrome } from '../src/cdp-launch';
 
 /** The worker every tab connects to: one socket, opened at start-up, for all of them. */
@@ -77,12 +77,12 @@ describe.skipIf(chrome === undefined && !required)('the e2e session, in a real b
 
   beforeAll(async () => {
     browser = required ? await openE2eBrowser() : await openE2eBrowserIfAvailable();
-  }, 60_000);
+  }, E2E_BROWSER_OPEN_MS);
 
   afterAll(async () => {
     await browser?.close();
     server.stop(true);
-  });
+  }, E2E_BROWSER_OPEN_MS);
 
   const opened = (): E2eBrowser => browser ?? expect.unreachable('the browser did not open');
 

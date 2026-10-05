@@ -1,11 +1,10 @@
-// The fixture the four `client-navigation-*.e2e.test.ts` suites share: the client router
-// (`@ultimat3/render/navigation`) as the CLI builds it, served by `@ultimat3/http`'s REAL pipeline —
-// its navigation gate, its redirect hand-over, its build check and an ENFORCED content security
-// policy — over documents shaped like `runtime-render.ts`'s. Every route counts its own executions
-// in `ran`, because the claim is not "the page looks right": it is that a GET some app records
-// evidence on runs exactly once, a prefetch runs nothing a route did not opt into, and a POST is
-// never sent twice. One server per test process, `unref`'d: the suites share it, and none stops it
-// under another.
+// The fixture the five `client-navigation-*.e2e.test.ts` suites share, one browser and a tab each:
+// the client router (`@ultimat3/render/navigation`) as the CLI builds it, served by
+// `@ultimat3/http`'s REAL pipeline — its navigation gate, its redirect hand-over, its build check
+// and an ENFORCED content security policy — over documents shaped like `runtime-render.ts`'s. Every
+// route counts its own executions in `ran`: the claim is that a GET some app records evidence on
+// runs exactly once, a prefetch runs nothing a route did not opt into, and a POST is never sent
+// twice. One server per test process, `unref`'d: the suites share it, and none stops it.
 
 import { afterAll, beforeAll, expect } from 'bun:test';
 // why: Bun has no file-URL-to-path API; the router's entry is located beside this file.
@@ -21,8 +20,15 @@ import {
   hydrateRuntime,
   renderHead,
 } from '@ultimat3/render';
-import type { E2eBrowser, E2eTab } from '@ultimat3/testing';
-import { findChrome, openE2eBrowser, openE2eBrowserIfAvailable } from '@ultimat3/testing';
+import type { E2eBrowser, E2eBrowserLease, E2eTab } from '@ultimat3/testing';
+import {
+  E2E_BROWSER_OPEN_MS,
+  E2E_TAB_OPEN_MS,
+  findChrome,
+  leaseE2eBrowser,
+  openE2eBrowser,
+  openE2eBrowserIfAvailable,
+} from '@ultimat3/testing';
 import { buildNavigationScript } from '../src/worker-bundle';
 
 const ENTRY = fileURLToPath(new URL('../../render/src/navigation-entry.ts', import.meta.url));
@@ -401,29 +407,40 @@ export const session = (): E2eBrowser | undefined => browser;
 /** The suite's tab. */
 export const currentTab = (): E2eTab => tab;
 
-/** A hook's own deadline — above the browser's 30 s launch budget, never Bun's 5 s default. */
-const HOOK_TIMEOUT_MS = 60_000;
+/** The key every `client-navigation-*` suite leases the one browser of this process under. */
+const LEASE = 'cli:client-navigation';
 
 /**
- * Opens this suite's own browser and tab; call inside the suite's `describe`. Deterministic both
- * ways, because the suites share one test process with every other suite of the package: the close
- * is AWAITED until Chrome has exited (a browser still shutting down slowed the next suite's launch
- * past its deadline on a 4-CPU runner), and a launch that outlived its `beforeAll` — whose hook
- * already failed — is still waited for and closed in `afterAll`, or it would keep the process alive.
+ * ONE browser for every suite of this file's family, each suite its own tab — a cold Chrome per
+ * suite was four more launches on the loaded coverage shard. Leased (`leaseE2eBrowser`): the last
+ * suite out closes it, or the run's end once the preload keeps it (Bun fires no `exit` under
+ * `bun test` and runs one file to its end before the next, so "last" is known nowhere else).
+ *
+ * The open's deadline is the open's DESIGN (`E2E_BROWSER_OPEN_MS`): both starts and their reaps
+ * and the session's setup, then this suite's own tab. The tab is closed with the suite, so a page
+ * one suite left on this origin never hears the next suite's `BroadcastChannel`. A launch that
+ * outlived its `beforeAll` is still released in `afterAll`, or it would keep the process alive.
  */
 export function useBrowser(): void {
-  let opening: Promise<E2eBrowser | undefined> | undefined;
+  let lease: E2eBrowserLease | undefined;
+  let own: E2eTab | undefined;
   beforeAll(async () => {
-    opening = required ? openE2eBrowser() : openE2eBrowserIfAvailable();
-    browser = await opening;
+    lease = leaseE2eBrowser(LEASE, () =>
+      required ? openE2eBrowser() : openE2eBrowserIfAvailable(),
+    );
+    browser = await lease.opened;
     if (browser === undefined) expect.unreachable('a browser was found and then would not open');
-    tab = await browser.session.newTab();
-  }, HOOK_TIMEOUT_MS);
+    own = await browser.session.newTab();
+    tab = own;
+  }, E2E_BROWSER_OPEN_MS + E2E_TAB_OPEN_MS);
   afterAll(async () => {
-    const launched = await opening?.catch(() => undefined);
-    await (launched ?? browser)?.close();
-    browser = undefined;
-  }, HOOK_TIMEOUT_MS);
+    try {
+      await own?.close();
+    } finally {
+      browser = undefined;
+      await lease?.release();
+    }
+  }, E2E_BROWSER_OPEN_MS);
 }
 
 export const read = (expression: string): Promise<unknown> => tab.evaluate(expression);

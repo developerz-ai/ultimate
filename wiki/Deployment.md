@@ -33,7 +33,7 @@ ROLE=replicator myapp
 
 ## Health endpoints
 
-**`web` and `sync` serve both; nothing else does.** They are the two roles that construct an HTTP server — `worker`, `scheduler` and `replicator` open the metrics listener alone, so probe those on `/metrics`. Both endpoints return a body, never a bare `200 OK`.
+**Every serving role answers both.** `web` and `sync` on their HTTP server; `worker`, `scheduler` and `replicator` construct none and answer them on the metrics listener (`METRICS_PORT`, default 9090, `packages/cli/src/metrics-endpoint.ts`) with the verdict only — `{ state, ready, role }`, never the check names. There `/readyz` is 503 until the role has started and from the first instant of a drain, which is what the chart's readiness probe on those roles reads. Both endpoints return a body, never a bare `200 OK`.
 
 | Endpoint | Answers | 503 when | Consumer |
 |---|---|---|---|
@@ -46,7 +46,7 @@ The body is `{ state, ready, role }` for everyone, and `{ state, ready, uptimeMs
 |---|---|---|
 | `database` | always | the previous `db.ping()`, refreshed on read — never awaited inside the probe |
 | `transport` | only when the transport can report a connection: NATS can, the in-process bus cannot | `transport.connected` |
-| anything per-role | **never** `As of 2026-08-22` | this table used to list five — replication lag, migration-version skew, "one pool claiming", "holds the leader lock", "slot active" — and none was wired. A `scheduler` standby does not report not-ready; it serves no readiness endpoint |
+| anything per-role | **never** `As of 2026-08-22` | this table used to list five — replication lag, migration-version skew, "one pool claiming", "holds the leader lock", "slot active" — and none was wired. The one since is `replicator` (`As of 2026-10-02`: failing while its stream is down). A `scheduler` standby does not report not-ready: its `/readyz` answers exactly as the leader's |
 
 **`health: { readiness: 'process' }` in `app.config.ts`** (`As of 22.5`; default `'dependencies'`). Every replica shares the database, so one blip fails `database` everywhere at once and the ingress answers "no available server" for the whole site — pages that never touch the database included. In `'process'` mode `/readyz` is 503 only while starting, draining or stopped; a failing check stays 200 with `ready: true` and the check still named `failing` in `checks`. `/readyz?deep=1` always answers in `'dependencies'` mode — point monitoring there. Web and sync roles alike; liveness is unchanged in both modes.
 
@@ -58,23 +58,31 @@ Identical in every role. Framework behavior, not a deployment guide.
 
 ```
 SIGTERM
-  1. /readyz → 503                    (LB stops sending new work; wait ≥ 2× probe interval)
+  1. /readyz → 503                    (web, sync: the listener stays open for drain.readinessGraceMs —
+                                       5 s outside development/test — so the LB stops routing here
+                                       first; every other role: no grace)
   2. stop accepting new work          (HTTP: close listener; worker: stop claiming; sync: refuse new upgrades)
-  3. finish in-flight work            (bounded by DRAIN_TIMEOUT, default 30s)
+  3. finish in-flight work            (bounded by drain.deadlineMs in app.config.ts, default 25 s)
   4. role-specific handoff            (see table)
   5. flush OTel spans + logs
   6. close pools, release advisory locks, exit 0
 ```
 
+Both numbers are `app.config.ts`'s `drain` section, applied to every role by the production boot
+([Configuration](Configuration#drain)). The budget is what a running job gets on a deploy, so an
+app with long jobs raises it there: `drain: { deadlineMs: 600_000 }`. The platform's kill timer
+must outlast grace + budget — the Helm chart derives each role's `terminationGracePeriodSeconds`
+from the values `x deploy --method helm` passes it; on Compose, `stop_grace_period` is yours.
+
 | Role | Step 4 handoff |
 |---|---|
 | `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
 | `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
-| `worker` | abort every held job's `ctx.signal` with `X_DRAINING` at step 2, so a body that reads it unwinds inside the budget; a job that stops is handed back uncounted and the worker replacing this one resumes it at its last recorded step. A body that ignores the signal is waited on to the deadline and its lease lapses |
+| `worker` | stop claiming at step 2 and **cancel nothing**: every held job keeps running, and one that finishes inside the budget is acked. At the cut-off — `drain.deadlineMs` less a margin (2 s, or half of a budget under 4 s) — a job still running has its `ctx.signal` aborted with `X_DRAINING`; a step that completes after that is still recorded. Half a margin later every claim still held is handed back uncounted (`countsAsAttempt: false`), so the replacement worker claims it at once — not after the visibility timeout — and replays every completed step instead of re-running it. A worker started after the signal (a boot still in progress) claims nothing |
 | `scheduler` | delete the lease row immediately so the standby promotes on its next round rather than waiting out the 30s TTL |
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 
-Exceeding `DRAIN_TIMEOUT` throws `X_SHUTDOWN_TIMEOUT`; requests arriving during the drain get `X_DRAINING`.
+A hook or request still running at `drain.deadlineMs` is **abandoned** — logged as `X_SHUTDOWN_TIMEOUT` naming it, never thrown, and the process exits clean; requests arriving during the drain get `X_DRAINING`.
 
 ### Which signals start the drain
 
@@ -92,16 +100,20 @@ Windows never sends SIGTERM to a console process, so the set is per platform —
 Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubscribing, all asking "what changed since my LSN?" — a self-inflicted DDoS landing during a deploy when capacity is already reduced, and it is fractal: surviving nodes overload, drop connections, and the herd re-forms.
 
 ```
-{ type: 'reconnect', afterMs: 1830, resumeFrom: '0/1A2B3C4', reason: 'drain' }
+{ "type": "reconnect", "v": 3, "afterMs": 1830, "reason": "drain" }
 ```
+
+`ReconnectFrame` in `packages/realtime/src/sync-protocol.ts` — four fields, built by
+`reconnectFrame()` (`thundering-herd.ts`); `v` is `PROTOCOL_VERSION`, `reason` one of `drain`,
+`overload`, `rebalance`.
 
 | Property | Effect |
 |---|---|
 | Per-client `afterMs`, jittered over a window | reconnects arrive spread out, not as a spike |
-| Server chooses the window from live connection count | 500 clients drain in a second; 500k spread over minutes |
-| `resumeFrom` LSN | reconnect is a **delta from the change buffer**, not a resubscribe-and-refetch |
+| The window is `createSyncNode({ drainSpreadMs })`, default 30 s | each socket draws its own delay inside it (`drainPlan`) |
+| The resume point is the **client's**, not the frame's | the frame carries no cursor. On reopen the client sends `hello`, then one `subscribe` per live query carrying that query's own cursor, and re-announces every channel from its own; the node replays from its change buffer when the cursor is inside it and serves one snapshot when it is not (`live-resume.ts`) |
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
-| Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |
+| Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter; one that got a frame waits its `afterMs` instead |
 
 **`sync` takes both shutdown phases, and they answer different questions** `As of 2026-08`. The `accept` phase calls `stopAccepting()`: `/readyz` flips to 503 and an upgrade arriving anyway is shed with `retry-after-ms`, while every socket the node already holds keeps its patch stream — sockets are untouched and no `reconnect` frame has been sent yet. The `close` phase is the drain below, then `stop()`. Registered with no phase, the whole thing landed in `close`, and until that last phase ran the node went on upgrading new websockets onto a process that was going away.
 
@@ -215,7 +227,8 @@ services:
 | `POSTGRES_PASSWORD` in `.env.production`, read through `--env-file` | `x new`'s compose file runs its own `db` service and refuses to start it without one (`${POSTGRES_PASSWORD:?…}`) |
 | every command passes `--env-file .env.production`, before `-f` | Compose interpolates `${VAR:?…}` from the shell and `--env-file` only, **never** from a service's `env_file:`. Without the flag a value set only in `.env.production` reads as missing and the parse fails. `x deploy` passes it on every step (`packages/cli/src/cmd-deploy.ts`, `PROD_ENV_FILE`); a variable set in the shell still wins |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
-| `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
+| `stop_grace_period` ≥ `drain.readinessGraceMs` + `drain.deadlineMs` + 10 s (`40s` ships, for the defaults) | otherwise SIGKILL truncates the drain and the reconnect fanout. Raise it with `drain.deadlineMs` — nothing derives it on this rung |
+| roles that publish no host port are rolled **start-first** | `x deploy` scales the new container up beside the old with `--no-recreate`, waits for its healthcheck, then stops and removes the old one; `web` and `sync` publish one and are recreated stop-first until a proxy fronts them ([`docs/ops/README.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/README.md)) |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 
 `x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand — from the app root, as `docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d`.
@@ -235,7 +248,7 @@ services:
 
 | Role | HPA metric | Typical range | Notes |
 |---|---|---|---|
-| `web` | requests/sec (or CPU as fallback) | 3–50 | behind Ingress + CDN; `terminationGracePeriodSeconds` >= drain |
+| `web` | requests/sec (or CPU as fallback) | 3–50 | behind Ingress + CDN; `terminationGracePeriodSeconds` derived per role from `drain.*` in values (45 s web/sync, 35 s the rest, by default) |
 | `sync` | **active WS connections** (custom metric) | 2–100 | no session affinity; connection count is the only honest signal |
 | `worker` | **queue depth** per named queue (custom metric) | 2–200 | one Deployment per queue when isolation matters |
 | `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1, leader lock covers overlap |
@@ -249,6 +262,11 @@ completely and its `X_NOT_IMPLEMENTED` branch — which claimed the *build* did 
 a build that did — is deleted. An app that deleted its chart now gets helm's own error. The image
 goes in as `--set-string image.repository=… --set-string image.tag=…` `As of 2026-10`: a plain
 `--set` typed an all-digit tag (a build number) as an integer and rendered `app:%!s(int64=…)`.
+`As of 2026-10-05` it also passes the chart values `--set drain.deadlineSeconds=… --set
+drain.readinessGraceSeconds=…`,
+read off the app's own `drain` config, so the chart's grace periods follow a raised budget. Every role carries a readiness probe on `/readyz` (worker and scheduler on
+the metrics port), every Deployment `minReadySeconds: 10`, and every rolling role keeps
+`maxUnavailable: 0`.
 
 The framework repo's own [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm)
 carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in

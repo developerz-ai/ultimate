@@ -11,9 +11,19 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { seedId } from '@ultimat3/entity';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import { indexedDbDump, likeCount, readFlag, readText, until } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
-import { acceptanceBrowser, noBrowser, POSTS, signInAs, startPostly } from './fixtures/postly';
+import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
+  acceptanceBrowser,
+  noBrowser,
+  POSTS,
+  SIGN_IN_MS,
+  signInAs,
+  startPostly,
+} from './fixtures/postly';
 
 const ACME_TITLE = POSTS.tenancy.title;
 /** What ada's records carry: her org's id on every post, her member id on her own. */
@@ -33,19 +43,22 @@ describe.skipIf(noBrowser)('signing out', () => {
   let browser: AcceptanceBrowser;
   let tab: E2eTab;
 
-  beforeAll(async () => {
-    app = await startPostly();
-    browser = await acceptanceBrowser();
-    await signInAs(browser.session, app, 'ada');
-    tab = await browser.session.newTab();
-    await tab.goto(`${app.base}/feed`);
-  }, 240_000);
+  beforeAll(
+    async () => {
+      app = await startPostly();
+      browser = await acceptanceBrowser();
+      await signInAs(browser.session, app, 'ada');
+      tab = await browser.session.newTab();
+      await tab.goto(`${app.base}/feed`);
+    },
+    ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS + E2E_GOTO_MS,
+  );
 
   afterAll(async () => {
     await tab?.close();
     await browser?.close();
     await app?.stop();
-  });
+  }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
   test('leaves no record of the previous principal on screen or on disk', async () => {
     await tab.waitFor(`${likeCount(POSTS.tenancy.id)} !== null`, "ada's feed to render");

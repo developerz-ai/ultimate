@@ -26,15 +26,18 @@ binary); it contains no app, so it serves no role. See its header.
 a shared `NATS_URL` and one replicator on a `wal_level=logical` Postgres, and without them it is
 refused at boot (`X_REALTIME_TOPOLOGY`). The comment beside each says how to turn it on.
 
-**Only `web` and `sync` serve `/healthz` and `/readyz`**; the other three open no HTTP socket at all
-(`packages/cli/src/metrics-endpoint.ts`), and the scrape listener is the only port they have. This
-file claimed "every role" until 2026-08, which is the same wrong assumption that made `sync`'s
-readiness probe poll a port the process never opened. Every role drains on `SIGTERM`: first the
+**Only `web` and `sync` open an HTTP socket**; the other three answer `/healthz` and `/readyz` (the
+verdict only) on the scrape listener, the only port they have (`packages/cli/src/metrics-endpoint.ts`)
+— which is where the chart's readiness probe on them points. Probing the app port on those roles is
+the wrong assumption that once made `sync`'s readiness probe poll a port the process never opened. Every role drains on `SIGTERM`: first the
 readiness grace (`drain.readinessGraceMs`, 5s outside local environments — `/readyz` answers 503
-with the listener still open), then the drain itself, bounded at `DEFAULT_DEADLINE_MS` — 25s. So
-`stop_grace_period` is 40s (5 + 25 + headroom) and `terminationGracePeriodSeconds` is 45s (the chart
-adds a 5s `preStop` sleep on Kubernetes 1.30+); anything below the sum is a SIGKILL on a process
-that was about to exit cleanly.
+with the listener still open), then the drain itself, bounded by `drain.deadlineMs` in `app.config.ts` — 25s by default. So
+`stop_grace_period` is 40s (5 + 25 + headroom), and it is **manual**: raise it with
+`drain.deadlineMs`. The chart derives `terminationGracePeriodSeconds` per role instead — 45s for
+web/sync (a 5s `preStop` sleep on Kubernetes 1.30+, the grace, the budget, a 10s margin), 35s for
+the roles with no grace — from `drain.*` in `helm/values.yaml`, which `x deploy --method helm` sets
+from the app's config. Anything below the sum is a SIGKILL on a process that was about to exit
+cleanly.
 
 ## Files
 

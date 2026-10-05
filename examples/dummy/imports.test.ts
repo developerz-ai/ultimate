@@ -9,12 +9,15 @@
  *    packages never shipped is silently `undefined` here and a hard error under `bun run` — which
  *    is how half this app once imported `defineCatalogs`, `rpc` and `<Text>` that did not exist.
  *
- * `x dev`, `x manifest` and `x verify` boot the app by dynamic-importing exactly this file set, so
- * a module that fails either half is a module the toolchain cannot see.
+ * The module set is the framework's own, never this file's: `loadApp` is the scan `x dev`,
+ * `x manifest` and `x verify` boot the app with, so a module that fails either half is a module the
+ * toolchain cannot see. It was a `**\/*.{ts,tsx}` glob with a deny-list, and an entry-point
+ * directory the list did not name (`bin/`) was imported — and RAN — before the list caught up.
  */
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isolateDeclaredTags } from '@ultimat3/cache';
+import { loadApp } from '@ultimat3/cli';
 import { Glob } from 'bun';
 
 const APP_ROOT = Bun.fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]$/, '');
@@ -28,26 +31,30 @@ const APP_ROOT = Bun.fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]
 const restoreTags = isolateDeclaredTags();
 afterAll(restoreTags);
 
-/**
- * Test files are excluded: importing one from inside another registers its cases twice. They are
- * covered anyway — `bun test` imports every one of them.
- */
-const isTest = (path: string): boolean => /\.test\.tsx?$/.test(path);
+/** App-root-relative POSIX paths of the modules the boot imported, and what would not import. */
+let booted: Awaited<ReturnType<typeof loadApp>>;
+beforeAll(async () => {
+  booted = await loadApp(APP_ROOT);
+  // The whole module graph, imported once for every test below: it pays a real cost that grows
+  // with the app, measured at a coin-flip against bun's 5000ms default while eight shards compete
+  // for the same cores. A literal rather than `scripts/lib/run.ts`'s constant: an app's suite must
+  // not import the host monorepo's scripts.
+}, 30_000);
 
-const modules = async (): Promise<readonly string[]> => {
+const absolute = (file: string): string => `${APP_ROOT}/${file}`;
+
+/**
+ * Every TypeScript source on disk, read as text and never imported — a test file is not a module
+ * of the app, and `node_modules` is not this app's. Only the two text checks below read beyond
+ * the boot set: the client entry points (`*.island.tsx`) the boot deliberately leaves to the
+ * build are still this app's code, and reading a file runs nothing.
+ */
+const sources = async (): Promise<readonly string[]> => {
   const found: string[] = [];
-  for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: APP_ROOT, absolute: true })) {
-    if (file.includes('/node_modules/') || isTest(file)) continue;
-    // `bin/*.ts` are the scripts `bun run setup` / `check` execute: importing one RUNS it (an
-    // install, `x setup`, a nested `x verify`). They are entry points, not modules of the app.
-    if (
-      file
-        .slice(APP_ROOT.length + 1)
-        .replaceAll('\\', '/')
-        .startsWith('bin/')
-    )
-      continue;
-    found.push(file);
+  for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: APP_ROOT })) {
+    const posix = file.replaceAll('\\', '/');
+    if (posix.split('/').includes('node_modules') || /\.test\.tsx?$/.test(posix)) continue;
+    found.push(posix);
   }
   return found.sort();
 };
@@ -84,31 +91,41 @@ const namedImportsOf = (source: string): readonly NamedImport[] => {
 };
 
 describe('every app module', () => {
-  test('imports against the real package APIs', async () => {
-    const files = await modules();
-    expect(files.length).toBeGreaterThan(50);
+  test('imports against the real package APIs, as the boot imports it', () => {
+    expect(booted.files.length).toBeGreaterThan(50);
+    // A module that would not import, or a primitive that would not register, is a finding at
+    // its file: the boot's own report, rendered one line each.
+    expect(booted.findings.map((finding) => `${finding.at ?? '?'}: ${finding.cause}`)).toEqual([]);
+  });
 
-    const broken: string[] = [];
-    for (const file of files) {
+  // The boot is not the whole app: the island build's client entry points and the e2e suites'
+  // fixtures are modules of this app too, and each must import against the real package APIs.
+  // Every source on disk but the `bin/` entry points, which are scripts — importing one RUNS it.
+  test('every other source module imports against the real package APIs', async () => {
+    const rest = (await sources()).filter(
+      (file) => !file.startsWith('bin/') && !booted.files.includes(file),
+    );
+    expect(rest.some((file) => /\.island\.tsx$/.test(file))).toBe(true);
+    const failed: string[] = [];
+    for (const file of rest) {
       try {
-        await import(file);
+        await import(absolute(file));
       } catch (error) {
-        broken.push(
-          `${relative(file)}: ${String((error as Error).message ?? error).split('\n')[0]}`,
-        );
+        failed.push(`${file}: ${String((error as Error).message).split('\n')[0]}`);
       }
     }
+    expect(failed).toEqual([]);
+  });
 
-    expect(broken).toEqual([]);
-    // Both tests here walk EVERY app module and dynamically import it, so they pay a real
-    // module-graph cost that grows with the app — measured at a coin-flip against bun's 5000ms
-    // default while eight shards compete for the same cores. The scan is the point of the test, so
-    // the timeout is what moves. A literal rather than `scripts/lib/run.ts`'s constant: an app's
-    // suite must not import the host monorepo's scripts.
-  }, 30_000);
+  // `bin/setup.ts` and `bin/check.ts` are what `bun run setup` / `check` execute: importing one
+  // RUNS it (an install, `x setup`, a nested `x verify`). Present on disk, absent from the boot.
+  test('runs no entry point: nothing under bin/ is in the set the boot imports', async () => {
+    expect((await sources()).filter((file) => file.startsWith('bin/')).length).toBeGreaterThan(0);
+    expect(booted.files.filter((file) => file.startsWith('bin/'))).toEqual([]);
+  });
 
   test('imports only names those packages actually export', async () => {
-    const files = await modules();
+    const files = (await sources()).map(absolute);
     const missing: string[] = [];
 
     for (const file of files) {
@@ -133,8 +150,7 @@ describe('every app module', () => {
     }
 
     expect(missing).toEqual([]);
-    // Same whole-graph walk as above, so the same budget. Raised with its neighbour rather than
-    // after it is seen failing: they scan one module set, and fixing one relocates the failure.
+    // Resolves and imports every named-import target: the same whole-graph cost as the boot.
   }, 30_000);
 
   /**
@@ -146,7 +162,7 @@ describe('every app module', () => {
    * app's catalog besides, so an unknown key is a compile error rather than a loud miss.
    */
   test("reads strings through this app's catalog module, never past it", async () => {
-    const files = await modules();
+    const files = (await sources()).map(absolute);
     const past: string[] = [];
 
     for (const file of files) {

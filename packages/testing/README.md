@@ -740,8 +740,22 @@ on Linux, the app bundles on macOS, Chrome under `%ProgramFiles%` / `%ProgramFil
 |---|---|
 | `LAUNCH_TIMEOUT_MS` | `60_000` — the first answer's deadline per start. `launchTimeoutMs` defaults to the larger of this and `timeoutMs`; every later call has `timeoutMs` |
 | `LAUNCH_ATTEMPTS` | `2` — an unanswered start is reaped and started once more on a fresh profile. Never more |
-| `CdpLaunchAttempt` | one unanswered start, in `X_CDP_LAUNCH_FAILED`'s `meta.attempts`: `why` (`deadline` \| `closed`), `waitedMs`, `exitCode` (`null` when killed), `stderr` (its last lines) |
-| `LaunchedBrowser.close()` · `E2eBrowser.close()` | THE close, a promise, always awaited: the process, its whole process group (on Windows its process tree, `taskkill /T /F`), its profile directory. There is no synchronous close |
+| `LAUNCH_BUDGET_MS` | derived: `LAUNCH_ATTEMPTS × (LAUNCH_TIMEOUT_MS + LAUNCH_REAP_MS)` — the longest a launch is designed to take, both starts and their bounded reaps |
+| `E2E_BROWSER_OPEN_MS` | derived: `LAUNCH_BUDGET_MS` + the session's two setup calls + the first tab, at `DEFAULT_CDP_TIMEOUT_MS` each. THE deadline of every `beforeAll` that opens a browser — one below it is killed by Bun before the relaunch, and `X_CDP_LAUNCH_FAILED` never names the slow step |
+| `E2E_BROWSER_CLOSE_MS` | derived: `4 × CLOSE_GRACE_MS` — SIGTERM's grace, SIGKILL's, the group reap, the profile's removal. THE deadline of an `afterAll` that closes a browser it holds (one that releases a lease takes `E2E_BROWSER_OPEN_MS`: it may await the open). At Bun's 5 s default a close cut short by the run's end left the profile half-removed in the temp root |
+| `E2E_TAB_OPEN_MS` | derived: one more `session.newTab()` — `Target.createTarget`, then its attach |
+| `E2E_GOTO_MS` | derived: one `tab.goto()` — the navigate raced by the load event, then two reads of the document |
+| `E2E_APP_START_MS` | derived: `startE2eApp()` at its default deadline — `x db reset`, `x db seed` and `/readyz` (wall-clock), each its whole 90 s, then a refused boot's stop |
+| `E2E_APP_STOP_MS` | derived: an e2e app's `stop()` — SIGTERM, the app's own drain at the defaults (readiness grace + `drain.deadlineMs`), then SIGKILL. Bounded: a wedged app no longer holds the hook forever |
+
+Every hook that opens or closes a browser derives its deadline from these — the open, the close,
+the app's start or stop, plus its own steps. `e2e-browser-hooks.test.ts` reads every suite under
+`packages/*/e2e`, `examples/*/apps/*/e2e` and `dummy/*/apps/*/e2e`, follows each exported helper
+that calls an opener (`acceptanceBrowser()`) or `startE2eApp`, resolves named deadlines through
+their declarations, and refuses a literal, a missing deadline or a sum without the budget it needs.
+| `CdpLaunchAttempt` | one unanswered start, in `X_CDP_LAUNCH_FAILED`'s `meta.attempts`: `why` (`deadline` \| `closed` \| `spawn` — the binary could not be started at all), `waitedMs`, `exitCode` (`null` when killed), `stderr` (its last lines), `detail` (what the launcher saw end it: the refused dial and its endpoint, the call that timed out, the spawn error) |
+| `leaseE2eBrowser(key, open)` | ONE browser for every suite of the process that asks by `key`: `{ opened, release() }`, opened by the first, each suite its own tab. Closed by the last holder out — or, once a preload has called `closeE2eBrowsersAtRunEnd()`, at the run's end (Bun fires no `exit` under `bun test`, and runs one file to its end before loading the next) |
+| `LaunchedBrowser.close()` · `E2eBrowser.close()` | THE close, a promise, always awaited: the process, its whole process group (on Windows its process tree, `taskkill /T /F`), and only then its profile directory — removed again while something re-creates it, bounded — and Chrome's `com.google.Chrome.XXXXXX` singleton-socket directory beside it, when it holds nothing but singleton files. There is no synchronous close |
 
 `As of 2026-10-05`.
 

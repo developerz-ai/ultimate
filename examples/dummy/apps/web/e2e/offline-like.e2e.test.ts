@@ -13,12 +13,16 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import { everyCount, like, requestsSince, until } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
   acceptanceBrowser,
   noBrowser,
   POSTS,
+  SIGN_IN_MS,
   serverLikeCount,
   signInAs,
   startPostly,
@@ -48,20 +52,23 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
   let browser: AcceptanceBrowser;
   let tab: E2eTab;
 
-  beforeAll(async () => {
-    app = await startPostly();
-    // A browser of its own: the recorder is an init script, and one added to the run's shared
-    // browser would run in every later suite's tabs.
-    browser = await acceptanceBrowser(RECORDER);
-    await signInAs(browser.session, app, 'kenji');
-    tab = await browser.session.newTab();
-    await tab.goto(`${app.base}/posts/${POSTS.timezones.id}`);
-  }, 240_000);
+  beforeAll(
+    async () => {
+      app = await startPostly();
+      // A browser of its own: the recorder is an init script, and one added to the run's shared
+      // browser would run in every later suite's tabs.
+      browser = await acceptanceBrowser(RECORDER);
+      await signInAs(browser.session, app, 'kenji');
+      tab = await browser.session.newTab();
+      await tab.goto(`${app.base}/posts/${POSTS.timezones.id}`);
+    },
+    ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS + E2E_GOTO_MS,
+  );
 
   afterAll(async () => {
     await browser?.close();
     await app?.stop();
-  });
+  }, ACCEPTANCE_CLOSE_MS);
 
   test('shows at once, survives a reload, replays once, and never flickers back', async () => {
     const { session } = browser;

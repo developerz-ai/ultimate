@@ -3,10 +3,12 @@
 // deploy or a hung browser is relaunched before the next test, and everything is released after.
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { E2eBrowser } from './cdp-browser';
+import { E2E_BROWSER_CLOSE_MS, E2E_BROWSER_OPEN_MS } from './cdp-browser';
 import type { E2eApp } from './e2e-app';
 import { e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 import type { E2eDriverOptions } from './e2e-driver';
 import { startE2eRun } from './e2e-run';
+import { E2E_APP_STOP_MS } from './e2e-spawn';
 import { withFailureContext } from './failure-context';
 
 afterEach(() => {
@@ -63,7 +65,12 @@ function harness(browsers: ReturnType<typeof fakeBrowser>[]) {
   const queue = [...browsers];
   let installed: E2eDriverOptions | undefined;
   let uninstalled = 0;
-  const hooks: { before?: () => Promise<void>; after?: () => Promise<void> } = {};
+  const hooks: {
+    before?: () => Promise<void>;
+    after?: () => Promise<void>;
+    beforeMs?: number | undefined;
+    afterMs?: number | undefined;
+  } = {};
   return {
     app,
     restarts,
@@ -85,11 +92,13 @@ function harness(browsers: ReturnType<typeof fakeBrowser>[]) {
           uninstalled += 1;
         };
       },
-      beforeEach: (hook: () => Promise<void>) => {
+      beforeEach: (hook: () => Promise<void>, timeoutMs?: number) => {
         hooks.before = hook;
+        hooks.beforeMs = timeoutMs;
       },
-      afterAll: (hook: () => Promise<void>) => {
+      afterAll: (hook: () => Promise<void>, timeoutMs?: number) => {
         hooks.after = hook;
+        hooks.afterMs = timeoutMs;
       },
       probeMs: 20,
     },
@@ -97,6 +106,19 @@ function harness(browsers: ReturnType<typeof fakeBrowser>[]) {
 }
 
 describe('unit · one e2e run', () => {
+  // Bun's 5 s hook default killed both mid-work: a relaunch's open in flight, later assigned over
+  // the next relaunch's browser and never closed; a close cut short as the run exited — each a
+  // Chrome profile left in the temp root.
+  test('its hooks are given the designed length of what they do, never Bun’s 5 s default', async () => {
+    const run = harness([fakeBrowser('first')]);
+    await startE2eRun(run.deps);
+
+    expect(run.hooks.beforeMs).toBeGreaterThanOrEqual(
+      20 + E2E_BROWSER_CLOSE_MS + E2E_BROWSER_OPEN_MS,
+    );
+    expect(run.hooks.afterMs).toBeGreaterThanOrEqual(E2E_BROWSER_CLOSE_MS + E2E_APP_STOP_MS);
+  });
+
   test('publishes the app and the browser, and installs a page over the app’s origin', async () => {
     const first = fakeBrowser('first');
     const run = harness([first]);

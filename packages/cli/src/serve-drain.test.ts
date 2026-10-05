@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { defaultReadinessGraceMs } from '@ultimat3/core';
+import { DRAIN_DEADLINE_DEFAULT_MS, defaultReadinessGraceMs } from '@ultimat3/core';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 
 const appWith = (config: string): string => {
@@ -19,14 +19,15 @@ const appWith = (config: string): string => {
 
 const none = (): string => mkdtempSync(join(tmpdir(), 'serve-drain-none-'));
 
-test('the declared readiness grace is read off app.config.ts', async () => {
-  const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000 } }');
-  expect(await loadDrainConfig(root)).toEqual({ readinessGraceMs: 7000 });
+test('the declared readiness grace and drain budget are read off app.config.ts', async () => {
+  const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000, deadlineMs: 120000 } }');
+  expect(await loadDrainConfig(root)).toEqual({ readinessGraceMs: 7000, deadlineMs: 120_000 });
 });
 
 test('no drain section is core default; no config at all leaves the default to core', async () => {
   expect(await loadDrainConfig(appWith('{ name: "demo" }'))).toEqual({
     readinessGraceMs: defaultReadinessGraceMs(),
+    deadlineMs: DRAIN_DEADLINE_DEFAULT_MS,
   });
   expect(await loadDrainConfig(none())).toBeUndefined();
 });

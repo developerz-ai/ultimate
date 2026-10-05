@@ -6,13 +6,13 @@ import { finiteCount } from '@ultimat3/core';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch-attempt';
-import { launchAttempt } from './cdp-launch-attempt';
+import { LAUNCH_REAP_MS, launchAttempt } from './cdp-launch-attempt';
 import { chromeCandidates } from './cdp-launch-candidates';
 import type { CdpWire } from './cdp-launch-wire';
 import { defaultWire, wireFlag } from './cdp-launch-wire';
 
 export type { LaunchedBrowser } from './cdp-launch-attempt';
-export { CLOSE_GRACE_MS } from './cdp-launch-attempt';
+export { CLOSE_GRACE_MS, LAUNCH_REAP_MS } from './cdp-launch-attempt';
 export { chromeCandidates } from './cdp-launch-candidates';
 export type { CdpWire } from './cdp-launch-wire';
 export { defaultWire } from './cdp-launch-wire';
@@ -106,6 +106,14 @@ export const LAUNCH_TIMEOUT_MS = 60_000;
  * went unanswered are `X_CDP_LAUNCH_FAILED` carrying both.
  */
 export const LAUNCH_ATTEMPTS = 2;
+
+/**
+ * The longest `launchChrome` is DESIGNED to take, for any `timeoutMs` up to `LAUNCH_TIMEOUT_MS`:
+ * every start given its whole deadline, each failed one its bounded reap. A hook that wraps a launch
+ * and gives it less is killed by Bun before the relaunch, and the `X_CDP_LAUNCH_FAILED` that would
+ * have named the slow step never surfaces — the shape of four CI flakes (plan 101, F1).
+ */
+export const LAUNCH_BUDGET_MS = LAUNCH_ATTEMPTS * (LAUNCH_TIMEOUT_MS + LAUNCH_REAP_MS);
 
 export interface LaunchOptions {
   readonly executable: string;

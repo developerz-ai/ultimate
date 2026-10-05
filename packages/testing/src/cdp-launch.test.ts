@@ -164,7 +164,17 @@ describe('launchChrome — a binary that cannot be started', () => {
         timeoutMs: 1_000,
       }).catch((e: unknown) => e);
       expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-      expect((error as { cause: string }).cause).toContain('could not be started');
+      const { cause, meta } = error as { cause: string; meta?: Record<string, unknown> };
+      expect(cause).toContain('could not be started');
+      // Its own `why`: `closed` reads "it ran and was killed", which is not what happened.
+      expect(cause).not.toContain('was killed');
+      const never = {
+        why: 'spawn',
+        exitCode: null,
+        stderr: '',
+        detail: expect.stringContaining('ENOENT'),
+      };
+      expect(meta?.['attempts']).toMatchObject([never, never]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

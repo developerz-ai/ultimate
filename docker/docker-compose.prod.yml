@@ -43,10 +43,10 @@ x-common: &common
   logging: *logging
   # SIGTERM drains in-flight work before the process exits, and it is spent in two halves: the
   # readiness grace (`drain.readinessGraceMs`, packages/core — /readyz at 503 with the listener still
-  # open, 5s outside local environments) and then the drain itself, bounded by `DEFAULT_DEADLINE_MS`
-  # (packages/core/src/lifecycle.ts, 25s). 5 + 25 = 30s, so 40s leaves 10s before Docker SIGKILLs a
-  # process that was about to exit cleanly — the twin of `terminationGracePeriodSeconds` in
-  # docker/helm/templates/deployments.yaml. Raise this WITH `configureLifecycle({ deadlineMs })`,
+  # open, 5s outside local environments) and then the drain itself, bounded by `drain.deadlineMs`
+  # in app.config.ts (25s by default). 5 + 25 = 30s, so 40s leaves 10s before Docker SIGKILLs a
+  # process that was about to exit cleanly. Nothing derives it on this rung — the chart derives its
+  # `terminationGracePeriodSeconds` from the same budget — so raise this WITH `drain.deadlineMs`,
   # never instead of it.
   stop_grace_period: 40s
   # The hardening the chart's `securityContext` already applies, on the rung that had none: a

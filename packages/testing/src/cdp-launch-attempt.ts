@@ -2,30 +2,33 @@
 // first DevTools answer, and on no answer reap it (killed, awaited, profile removed) and say why.
 // Which binary, which flags and how many starts is `cdp-launch.ts`.
 
-// why: Bun exposes no recursive-remove and no temp-root primitive, so the throwaway profile
-// directory this launcher must create and delete needs both.
-import { mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
-// why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpTimeoutError } from './cdp-errors';
+import { throwawayProfile } from './cdp-launch-profile';
 import { CLOSE_GRACE_MS, killTree } from './cdp-launch-reap';
 import type { CdpWire } from './cdp-launch-wire';
 import { pipeConnection, portConnection, wireStdio } from './cdp-launch-wire';
 
 export { CLOSE_GRACE_MS } from './cdp-launch-reap';
 
+/**
+ * The longest `LaunchedBrowser.close()` is DESIGNED to take: SIGTERM's grace, SIGKILL's, the group
+ * reap, then the profile's removal — four `CLOSE_GRACE_MS`, each step bounded by its own. A hook
+ * that closes a browser and gives it less is killed by Bun mid-close, and when that hook is the
+ * run's last the process exits with the profile half-removed: the `Default/Cache` tree the leaked
+ * `x-e2e-chrome-*` directories held.
+ */
+export const LAUNCHED_CLOSE_MS = 4 * CLOSE_GRACE_MS;
+
 export interface LaunchedBrowser {
   /** The browser's own CDP connection, over its debugging pipe or port. Already answering. */
   readonly connection: CdpConnection;
   /**
    * THE close, idempotent, and awaited by every caller: the connection closed, SIGTERM, SIGKILL
-   * after `CLOSE_GRACE_MS`, then the browser's whole process group killed and the profile removed —
-   * bounded at three graces. On Windows, which has no SIGTERM to grant grace to, the process TREE
+   * after `CLOSE_GRACE_MS`, then the browser's whole process group killed and, only then, the
+   * profile removed — bounded at `LAUNCHED_CLOSE_MS`. On Windows, which has no SIGTERM to grant grace to, the process TREE
    * is killed outright (`killTree`) and awaited. A promise because a Chrome still shutting down competes with the next
    * launch on a 4-CPU runner, and its children re-create a profile removed before they are gone.
    */
@@ -92,6 +95,13 @@ function stderrTail(stream: ReadableStream<Uint8Array>): {
  */
 const FAILURE_DRAIN_MS = 1_000;
 
+/**
+ * The longest a FAILED attempt spends after its deadline before the next can start: the drain a
+ * browser that hung up gets, the bounded close (`LAUNCHED_CLOSE_MS`), then the stderr drain. A
+ * caller's hook deadline adds this per attempt.
+ */
+export const LAUNCH_REAP_MS = FAILURE_DRAIN_MS + LAUNCHED_CLOSE_MS + FAILURE_DRAIN_MS;
+
 const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
   Promise.race([work, Bun.sleep(ms)]);
 
@@ -101,14 +111,8 @@ const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
  */
 export async function launchAttempt(options: LaunchAttemptOptions): Promise<LaunchAttemptResult> {
   const platform = options.platform ?? process.platform;
-  const profileDir = mkdtempSync(join(tmpdir(), 'x-e2e-chrome-'));
-  const removeProfile = (): void => {
-    try {
-      rmSync(profileDir, { recursive: true, force: true });
-    } catch {
-      // A throwaway directory that will not go is litter, never the launch's or the close's verdict.
-    }
-  };
+  const profile = throwawayProfile();
+  const profileDir = profile.path;
   const began = performance.now();
   let child: ReturnType<typeof spawnBrowser>;
   try {
@@ -117,11 +121,16 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
     // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
     // throw escaped as a bare ENOENT where every other way a launch fails is X_CDP_LAUNCH_FAILED.
-    removeProfile();
-    const stderr = `could not be started: ${renderThrowable(error)}`;
+    await profile.remove(undefined, CLOSE_GRACE_MS);
     return {
       ok: false,
-      failure: { why: 'closed', waitedMs: 0, exitCode: null, stderr },
+      failure: {
+        why: 'spawn',
+        waitedMs: 0,
+        exitCode: null,
+        stderr: '',
+        detail: renderThrowable(error),
+      },
       reaped: true,
     };
   }
@@ -131,8 +140,9 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
   let exiting: Promise<void> | undefined;
   const close = (): Promise<void> => {
     exiting ??= (async () => {
+      // Read while the browser still runs: a clean exit unlinks it, a killed one never does.
+      const singleton = profile.singletonDir();
       connection?.close();
-      removeProfile();
       if (platform === 'win32') {
         // No SIGTERM to grant grace to: a kill on Windows is TerminateProcess, and taking the
         // browser alone would orphan the children that hold the profile's files open.
@@ -151,10 +161,11 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
         }
         await killTree(child.pid, platform);
       }
-      // Again, now that nothing is writing: Chrome's network process outlives the browser process
-      // and flushes into the profile, re-creating a directory removed a moment before. Measured on
-      // Chrome 150, 30 launches each: left behind 6 and 12 times without the group reap, 0 with.
-      removeProfile();
+      // Only now, with the tree gone: removed under a live browser, the profile is re-created by
+      // its shutdown — the network process flushes its cache, the browser writes its prefs — and
+      // a close cut short there leaves exactly that tree. Measured on Chrome 150, 30 launches
+      // each: left behind 6 and 12 times without the group reap, 0 with.
+      await profile.remove(singleton, CLOSE_GRACE_MS);
     })();
     return exiting;
   };
@@ -184,7 +195,15 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     await within(FAILURE_DRAIN_MS, tail.drained);
     return {
       ok: false,
-      failure: { why, waitedMs, exitCode, stderr: tail.lastLines() },
+      // `detail`: the error itself. Without it a refused dial after "DevTools listening" read as a
+      // browser that hung up (seen on windows), and nothing said which step had failed.
+      failure: {
+        why,
+        waitedMs,
+        exitCode,
+        stderr: tail.lastLines(),
+        detail: renderThrowable(error),
+      },
       reaped: child.exitCode !== null || child.signalCode !== null,
     };
   }

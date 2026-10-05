@@ -241,6 +241,30 @@ describe.skipIf(WINDOWS)('launchChrome — the one relaunch', () => {
       { why: 'closed', exitCode: 127 },
     ]);
   });
+
+  test('a browser that announced its port and then refused the dial says WHICH dial, and why', async () => {
+    // Seen once on windows: "DevTools listening" printed, then `why: 'closed'` and nothing else —
+    // the dial's own error was dropped, so the report read like a browser that died. Port 1 on
+    // loopback: nothing unprivileged listens there, so the dial is refused on every machine.
+    const endpoint = '/devtools/browser/fake';
+    await using it = await fakeBrowser(
+      `printf '1\\n${endpoint}\\n' >"$PROFILE/DevToolsActivePort"\nexec sleep 30\n`,
+    );
+
+    const error = await launchChrome({ executable: it.fake, timeoutMs: 5_000, wire: 'port' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+    const { cause, meta } = error as CdpLaunchFailedError;
+    expect(cause).toContain(`ws://127.0.0.1:1${endpoint}`);
+    expect(cause).toContain('refused the connection');
+    expect(cause).not.toContain('closed its DevTools pipe');
+    expect(meta?.['attempts']).toMatchObject([
+      { why: 'closed', detail: expect.stringContaining('refused the connection') },
+      { why: 'closed', detail: expect.stringContaining('refused the connection') },
+    ]);
+  }, 20_000);
 });
 
 describe('CdpLaunchFailedError', () => {

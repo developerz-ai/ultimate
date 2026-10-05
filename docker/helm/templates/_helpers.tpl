@@ -131,11 +131,15 @@ in values.yaml, where the two numbers would drift.
   them would have been the mirror-image bug: a port the role never opens, which is exactly what made
   sync's readiness probe meaningless.
 
-  Liveness for all three on `/metrics`. Readiness for `replicator` alone, on `/readyz` of the same
-  listener (packages/cli/src/metrics-endpoint.ts): it is 503 while the replication stream is down
-  (`watchReplicatorReadiness`), so `kubectl get pods` shows 0/1 instead of a healthy pod feeding
-  nothing. A not-ready pod still gets scraped: their headless Service publishes not-ready addresses
-  (service.yaml). `worker` and `scheduler` have nothing a readiness flap would say.
+  Liveness for all three on `/metrics`. Readiness for all three on `/readyz` of the same listener
+  (packages/cli/src/metrics-endpoint.ts), which answers 503 until `startRoles` has started the
+  role (`markReady()` in packages/cli/src/role-start.ts) and again from the first instant of a
+  drain. Without it a worker or scheduler pod was Ready the moment its scrape port bound — before
+  its role had started — so a rolling update could replace every old worker with new ones that
+  crashed later in boot. `replicator` reads `?deep=1`: it is 503 while the replication stream is
+  down (`watchReplicatorReadiness`), so `kubectl get pods` shows 0/1 instead of a healthy pod
+  feeding nothing. A not-ready pod still gets scraped: their headless Service publishes not-ready
+  addresses (service.yaml).
 
   A `startupProbe` on every role, because NO listener is up early. This comment said `startRoles`
   opens the metrics listener "FIRST" and so needed no startup allowance; that is first within
@@ -177,11 +181,14 @@ in values.yaml, where the two numbers would drift.
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 5
     failureThreshold: 30
-  {{- if eq $role "replicator" }}
   readinessProbe:
+    {{- if eq $role "replicator" }}
     httpGet: { path: '/readyz?deep=1', port: metrics }
     periodSeconds: 10
-  {{- end }}
+    {{- else }}
+    httpGet: { path: /readyz, port: metrics }
+    periodSeconds: 5
+    {{- end }}
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15
@@ -191,6 +198,34 @@ in values.yaml, where the two numbers would drift.
   volumeMounts:
     - name: tmp
       mountPath: /tmp
+{{- end -}}
+
+{{/*
+A role's terminationGracePeriodSeconds: everything the kubelet must wait out before SIGKILL, in the
+order it is spent.
+
+  preStop sleep          `drain.preStopSleepSeconds` — only a role with an HTTP port (web, sync)
+                         renders one, and only on 1.30+ (`ultimate.container`)
+  readiness grace        `drain.readinessGraceSeconds` — /readyz at 503 with the listener open.
+                         Web and sync only: every other role drains with NO grace
+                         (`lifecycleForRole`, packages/cli/src/serve-boot.ts)
+  drain budget           `drain.deadlineSeconds` — app.config.ts `drain.deadlineMs`, every role
+  teardown margin        `drain.teardownMarginSeconds` — the release after the drain, and headroom
+
+Defaults: web/sync 5 + 5 + 25 + 10 = 45 (40 below 1.30), worker/scheduler/replicator 25 + 10 = 35.
+A role nothing routes to used to get web's 45 and a raised budget got nothing: one literal for five
+roles, sized for none of them once `drain.deadlineMs` moved.
+*/}}
+{{- define "ultimate.terminationGracePeriodSeconds" -}}
+{{- $drain := .root.Values.drain -}}
+{{- $total := add (int $drain.deadlineSeconds) (int $drain.teardownMarginSeconds) -}}
+{{- if .cfg.port -}}
+{{- $total = add $total (int $drain.readinessGraceSeconds) -}}
+{{- if semverCompare ">=1.30-0" .root.Capabilities.KubeVersion.Version -}}
+{{- $total = add $total (int $drain.preStopSleepSeconds) -}}
+{{- end -}}
+{{- end -}}
+{{- $total -}}
 {{- end -}}
 
 {{/*

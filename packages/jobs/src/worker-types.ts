@@ -71,8 +71,8 @@ export interface Worker {
   /**
    * Stop claiming, wait for every job this worker holds, close the driver. Unbounded, and it
    * aborts nothing: a caller that asked wants its work finished. SIGTERM takes the other path —
-   * the shutdown hooks `start()` registers abort every held run's `ctx.signal` and wait under
-   * the lifecycle's deadline.
+   * it stops claiming and lets held runs finish under the lifecycle's deadline; only at the cut-off
+   * (`deadlineAt − margin`) is a still-running `ctx.signal` aborted, and its claim handed back.
    */
   stop(reason?: string): Promise<void>;
   stats(): Promise<WorkerStats>;

@@ -16,10 +16,19 @@ closes seven open issues across navigation, ui, the MCP catalog and the dev erro
 holds the CLI, its guards, the test harness and CI to what they claim. Sweep 7 deletes trash and
 twins, and ships the guard that keeps each one gone. Sweep 8a makes native Windows (PowerShell, no
 WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job;
-sweep 8b fixes what that job found.
+sweep 8b fixes what that job found. Sweep 8c makes a deploy zero-downtime: a working worker finishes,
+then restarts. Sweep 8d root-causes the flaky tests.
 
 ### Added
 
+- `drain.deadlineMs` in `app.config.ts` (default 25 s, 1 ms to 1 h): the drain budget for every
+  role, including how long a running job has to finish on a deploy.
+- `x deploy --method compose` rolls roles with no published host port start-first (scale up, wait
+  for health, stop the old); a role publishing a host port stays stop-first, and `--json` reports
+  each role's strategy and why.
+- `@ultimat3/testing`: `E2E_BROWSER_OPEN_MS`, `E2E_TAB_OPEN_MS` and `LAUNCH_BUDGET_MS`, derived from
+  the launch and CDP deadlines; `leaseE2eBrowser()` / `closeE2eBrowsersAtRunEnd()` share one
+  browser across suites.
 - `x build --target binary --platform <bun-linux-x64|bun-linux-arm64|bun-windows-x64|bun-darwin-arm64>`
   cross-compiles through Bun's `--target`; a Windows executable is written and reported as
   `<out>.exe`.
@@ -249,6 +258,40 @@ sweep 8b fixes what that job found.
 
 ### Fixed
 
+- **Deploys no longer cut off running jobs.** On SIGTERM a worker stops claiming and lets held jobs
+  finish inside `drain.deadlineMs`. Only at the deadline less a margin is `ctx.signal` aborted with
+  `X_DRAINING`, and a step that completes in the drain is still recorded. The worker used to abort
+  every running job at once, and a step whose side effect had completed was run again by the next
+  worker. Claims still held are handed back uncounted, so the replacement takes them at once
+  instead of after the visibility timeout. A SIGTERM during boot drains instead of killing the
+  process.
+- Helm: every role has a `/readyz` readiness probe and `minReadySeconds`, and each role's
+  `terminationGracePeriodSeconds` is derived from the `drain.*` values, which `x deploy --method helm`
+  sets from `app.config.ts`. `x new` writes the same chart.
+- `migrate()` / `ROLE=migrate` accept a rollback onto a newer build's ledger: nothing applied, the
+  newer rows logged and returned in `ahead`. Rolling back the image no longer fails the pre-upgrade
+  Job.
+- Flaky tests, root-caused:
+  - **Browser hooks:** every browser hook now waits for the browser open as designed (two launches
+    and four CDP handshakes, about 274 s) instead of 60 s, which killed the hook before the designed
+    relaunch. A guard test refuses a literal hook deadline. The `client-navigation-*` suites share
+    one browser.
+  - **Chrome launch failures:** `X_CDP_LAUNCH_FAILED` carries the dial or handshake error and a
+    `why: 'spawn'` for a binary that cannot start.
+  - **Missing results:** `x verify merge` says a part's result never arrived (its job never ran),
+    distinct from a part that failed.
+  - **CI runs:** a rerun of an older CI run no longer cancels a newer one, and each step summary is
+    bounded below GitHub's 1 MiB limit.
+  - **Import test:** the dummy app's import test reads the module set `x dev` boots, not a glob.
+  - **Browser close:** the profile is removed only after the process tree is gone, and removed again
+    if Chrome's late writes re-create it. Chrome's singleton-socket directory goes too, which ends
+    the `x-e2e-chrome-*` and `com.google.Chrome.*` folders that piled up in the temp root.
+  - **e2e hooks:** the e2e step's relaunch and teardown hooks, and the dummy app's acceptance suites,
+    have derived deadlines (`E2E_BROWSER_CLOSE_MS`, `E2E_GOTO_MS`, `E2E_APP_START_MS`,
+    `E2E_APP_STOP_MS`) instead of Bun's 5 s default.
+  - **App stop and readiness:** an e2e app's `stop()` escalates to SIGKILL after its drain grace, and
+    the `/readyz` wait is wall-clock.
+  - **CDP errors:** a CDP WebSocket error carries the socket's own message.
 - Windows, part 2:
   - On Windows every role drains on Ctrl-Break (SIGBREAK) and console close (SIGHUP).
   - The master key file gets an owner-only `icacls` ACL, or is not written at all.

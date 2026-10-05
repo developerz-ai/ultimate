@@ -83,6 +83,13 @@ slices:                    # one row per independently merged sweep; `sweep` is 
     percent: 0
     evidence: []
     notes: "added by the owner 2026-10-05: frequent zero-downtime deploys; a working worker finishes, then restarts"
+  - file: 15-flakes.md
+    tier: 0
+    sweep: "8d"
+    status: not_started
+    percent: 0
+    evidence: []
+    notes: "added by the owner 2026-10-05: every flaky test root-caused; investigation over 300 ci runs"
   - file: 09-realtime-islands.md
     tier: 3
     sweep: "9"

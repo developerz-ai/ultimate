@@ -3,10 +3,11 @@
 // app-version fence is the `migrate` role's contract — a pod must refuse to migrate a database
 // another build already owns, because the alternative is two schemas racing during a rollout.
 
-import { appVersion, finiteCount, renderFixShellArg } from '@ultimat3/core';
+import { appVersion, finiteCount, logger, renderFixShellArg } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { refuseDependentViews } from './dependent-view';
 import { expectedQueryLoop } from './expected-loop';
+import { ledgerAheadOfBuild } from './migrate-rollback';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import type { Migration } from './migration-ledger';
 import {
@@ -61,6 +62,11 @@ export interface MigrationReport {
   readonly skipped: readonly string[];
   readonly durationMs: number;
   readonly appVersion: string;
+  /**
+   * Ledger ids a NEWER build applied, when this build is a rollback onto them — accepted, never
+   * applied or reverted (`migrate-rollback.ts`). Empty on every ordinary run.
+   */
+  readonly ahead: readonly string[];
 }
 
 export interface MigrateOptions {
@@ -237,8 +243,22 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
     finiteCount('migrate', 'lockWaitMs', options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS, 0),
     async (session) => {
       await ensureLedger(session);
-      const ledger = await readLedger(session);
+      const read = await readLedger(session);
+      // A rollback to an older image meets rows the newer build applied. Accepted, applied over by
+      // nothing, and said out loud: the pre-upgrade Job failing here was the rollback failing.
+      const rolledBack = ledgerAheadOfBuild(read, options.migrations);
+      const ledger = rolledBack?.known ?? read;
       auditLedger(ledger, options.migrations, appVersion);
+      const ahead = rolledBack?.ahead.map((row) => row.id) ?? [];
+      if (rolledBack !== undefined) {
+        logger.warn('ultimate migrate ledger ahead of build', {
+          appVersion,
+          ahead,
+          aheadAppVersions: [...new Set(rolledBack.ahead.map((row) => row.app_version))],
+          cause: `the ledger holds ${ahead.length} migration(s) newer than every one build "${appVersion}" ships — a rollback onto a newer build's schema; nothing was applied`,
+          fix: 'x db migrate --json   # after the rollback, from the newer build: it finds its migrations already applied',
+        });
+      }
 
       const pending = pendingMigrations(ledger, options.migrations);
       // A statement per migration and a transaction per migration is the point, not an N+1 to batch:
@@ -287,6 +307,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
         skipped: ledger.map((row) => row.id),
         durationMs: Math.round(performance.now() - started),
         appVersion,
+        ahead,
       };
     },
   );

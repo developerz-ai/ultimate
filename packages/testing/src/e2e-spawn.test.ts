@@ -12,14 +12,17 @@ import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
-import { spawnE2eApp } from './e2e-spawn';
+import { E2E_APP_STOP_MS, READY_PROBE_MS, spawnE2eApp } from './e2e-spawn';
 
 /** Answers `/readyz`, and `/env` with what it was spawned with — the facts a test can read. */
 const SERVER = `
 const port = Number(process.env.PORT);
 if (process.env.CRASH === '1') { console.error('boom: the fixture refused to start'); process.exit(3); }
+if (process.env.IGNORE_TERM === '1') process.on('SIGTERM', () => console.error('SIGTERM ignored'));
 Bun.serve({ port, fetch(req) {
   const path = new URL(req.url).pathname;
+  // Accepts the connection and never answers: an app wedged in its boot.
+  if (path === '/readyz' && process.env.HANG === '1') return new Promise(() => {});
   if (path === '/readyz') return new Response('ok');
   if (path === '/shout') { console.error('X_FIXTURE_LOUD: what the server said'); return new Response('ok'); }
   if (path === '/env') return Response.json({
@@ -139,4 +142,40 @@ describe('spawnE2eApp', () => {
     expect((error as { cause: string }).cause).toContain('/readyz');
     expect((error as { cause: string }).cause).toContain('boom: the fixture refused to start');
   }, 30_000);
+
+  test('stop is bounded: an app that ignores SIGTERM is killed after the grace, never awaited forever', async () => {
+    const app = await spawnE2eApp({
+      root,
+      mode: 'serve',
+      env: { IGNORE_TERM: '1' },
+      readyTimeoutMs: 20_000,
+      termGraceMs: 200,
+    });
+    const began = performance.now();
+
+    await app.stop();
+
+    expect(performance.now() - began).toBeLessThan(5_000);
+    expect(await readJson(`${app.base}/env`).catch(() => 'nothing listening')).toBe(
+      'nothing listening',
+    );
+  }, 30_000);
+
+  test('the readiness deadline is wall-clock time, not a count of polls that each wait a probe', async () => {
+    const began = performance.now();
+    const error = await spawnE2eApp({
+      root,
+      mode: 'serve',
+      env: { HANG: '1' },
+      readyTimeoutMs: 1_000,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeUltimateError('X_E2E_APP_FAILED');
+    // One deadline, one probe past it at most, and the stop of an app that answers SIGTERM.
+    expect(performance.now() - began).toBeLessThan(1_000 + READY_PROBE_MS + 1_000);
+  }, 30_000);
+
+  test("the stop budget covers the app's own drain at its defaults, then the kill", () => {
+    expect(E2E_APP_STOP_MS).toBeGreaterThan(25_000);
+  });
 });

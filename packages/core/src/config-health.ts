@@ -33,9 +33,16 @@ export interface DrainConfig {
    * `/readyz` answers 503 for this long before the listener closes, so endpoints stop routing here
    * first. Default 0 in development/test and 5000 everywhere else — a process naming NO environment
    * included. A whole number, 0–60000. The chart's `terminationGracePeriodSeconds` must exceed it
-   * plus the drain budget.
+   * plus `deadlineMs`.
    */
   readonly readinessGraceMs: number;
+  /**
+   * The drain budget: how long a SIGTERM'd process has to finish what it holds — in-flight requests,
+   * a running job — after the grace, before the lifecycle abandons the rest. Applied to EVERY role,
+   * so this is the knob that gives a long job room to finish on a deploy. Default 25000. A whole
+   * number, 1–3600000. `http.drainTimeoutMs`, when an app declares it, still wins on the web role.
+   */
+  readonly deadlineMs: number;
 }
 
 /** Why a value is not a readiness mode, or `undefined` when it is one. */
