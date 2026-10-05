@@ -16,6 +16,7 @@ import type { Middleware } from './middleware';
 import { peerIdentity } from './peer-identity';
 import { assertRateLimitScope, createRateLimiter, type RateLimiter } from './rate-limit';
 import { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
+import { assertInstalledRateLimitScope } from './rate-limit-installed';
 import { UltimateRequest } from './request';
 import { problem } from './response';
 import type { RouteTable } from './router';
@@ -145,6 +146,9 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
   // embedder shares, so a limiter that cannot keep the app's declaration is refused exactly once.
   // Two halves of one question — where the counters live, and which buckets the limiter holds.
   assertRateLimitScope(config.rateLimit, limiter);
+  // The third half: where an action's or a query's declared `rateLimit:` is counted. Under a
+  // `'shared'` declaration that store is held to the same promise as this pipeline's own.
+  assertInstalledRateLimitScope(config.rateLimit);
   assertRouteBuckets(limiter, deps.table.routes);
   const run = stageRunners({
     table: deps.table,

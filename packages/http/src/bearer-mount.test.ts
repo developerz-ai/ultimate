@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type Actor, agentActor, frozenClock, userActor } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
 import { defineHttpConfig } from './config';
 import { useRequestContext } from './context';
@@ -179,6 +180,175 @@ describe('bearerMount through the pipeline', () => {
       { role: 'web' },
     );
     expect(other.status).toBe(200);
+  });
+});
+
+// Whether a path is served must not be readable without a token. The mount answered 401 on a
+// served path and 404 (or 405, for a served path under another method) everywhere else, so an
+// anonymous walk of `/v1/*` listed the cut. Under the prefix every anonymous request is now the
+// same 401 challenge, and every authenticated miss the same 404.
+describe('the prefix is opaque to a caller without a valid token', () => {
+  const answer = async (method: string, path: string, headers: Record<string, string> = {}) => {
+    const response = await pipelineFor().handle(call(method, path, headers), { role: 'web' });
+    const body = (await response.json()) as { code?: string };
+    return {
+      status: response.status,
+      challenge: response.headers.get('www-authenticate'),
+      allow: response.headers.get('allow'),
+      code: body.code,
+    };
+  };
+
+  test('no token: a served path, an unserved one and a wrong method answer alike', async () => {
+    const served = await answer('POST', '/v1/create-case');
+    expect(served).toEqual({
+      status: 401,
+      challenge: 'Bearer',
+      allow: null,
+      code: 'X_UNAUTHENTICATED',
+    });
+    // `grantCredits` is a real route the cut leaves out; `nothing` is no route at all.
+    expect(await answer('POST', '/v1/grant-credits')).toEqual(served);
+    expect(await answer('POST', '/v1/nothing/at/all')).toEqual(served);
+    expect(await answer('GET', '/v1/create-case')).toEqual(served);
+    expect(await answer('DELETE', '/v1')).toEqual(served);
+  });
+
+  test('a bad token: the same invalid_token challenge, served or not', async () => {
+    const bad = { authorization: 'Bearer revoked' };
+    const served = await answer('GET', '/v1/case-list', bad);
+    expect(served.status).toBe(401);
+    expect(served.challenge).toBe('Bearer error="invalid_token"');
+    expect(await answer('GET', '/v1/nothing', bad)).toEqual(served);
+  });
+
+  test('a valid token: an unserved path or method is the same 404 an out-of-scope one is', async () => {
+    const auth = { authorization: 'Bearer tok-read' };
+    const hidden = await answer('POST', '/v1/create-case', auth);
+    expect(hidden.status).toBe(404);
+    expect(hidden.code).toBe('X_ROUTE_NOT_FOUND');
+    expect(await answer('POST', '/v1/nothing', auth)).toEqual(hidden);
+    expect(await answer('PUT', '/v1/create-case', auth)).toEqual(hidden);
+  });
+
+  // The catch-all serves OPTIONS too, and a browser preflight carries no Authorization header —
+  // a 401 there would block every cross-origin integrator. The `context` stage answers a preflight
+  // before the match, so the catch-all never sees one.
+  test('a CORS preflight under the prefix gets the CORS answer, never the 401', async () => {
+    const pipeline = createPipeline({
+      table: createRouter(
+        bearerMount({
+          prefix: '/v1',
+          routes: api,
+          scopes: { 'cases:read': ['caseList'] },
+          resolveToken: () => null,
+        }),
+      ),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: false,
+        cors: { origins: ['https://integrator.example'], credentials: false },
+      }),
+    });
+    for (const path of ['/v1/case-list', '/v1/not-served']) {
+      const response = await pipeline.handle(
+        new Request(`http://localhost${path}`, {
+          method: 'OPTIONS',
+          headers: {
+            origin: 'https://integrator.example',
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'authorization',
+          },
+        }),
+        { role: 'web' },
+      );
+      expect(response.status).toBe(204);
+      expect(response.headers.get('access-control-allow-origin')).toBe(
+        'https://integrator.example',
+      );
+      expect(response.headers.get('www-authenticate')).toBeNull();
+    }
+  });
+
+  test("the app's own routes outside the prefix are untouched", async () => {
+    expect((await answer('GET', '/elsewhere')).code).toBe('X_ROUTE_NOT_FOUND');
+  });
+});
+
+// The cut is the FIRST answer an out-of-scope token gets. Checked in the handler, it came after the
+// `body` and `authz` stages: the token was told the schema's issues (422) or the policy's reason
+// (403) for a primitive it must not learn exists. In the `auth` stage it answers before either.
+describe('the cut answers before body validation and authz', () => {
+  let authorized = 0;
+  const guarded: readonly Route[] = [
+    {
+      method: 'POST',
+      path: '/api/rename-case',
+      meta: { name: 'renameCase', auth: 'required', input: t.object({ title: t.string }) },
+      handler: seenActor,
+    },
+    {
+      method: 'POST',
+      path: '/api/close-case',
+      meta: { name: 'closeCase', auth: 'required', policy: 'case:close' },
+      handler: seenActor,
+    },
+  ];
+  const pipeline = () =>
+    createPipeline({
+      table: createRouter(
+        bearerMount({
+          prefix: '/v1',
+          routes: [...api, ...guarded],
+          scopes: { 'cases:read': ['caseList'], 'cases:write': ['renameCase', 'closeCase'] },
+          resolveToken: (token) => {
+            const scopes = TOKENS[token];
+            return scopes === undefined ? null : { actor: agent, scopes: new Set(scopes) };
+          },
+        }),
+      ),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
+      hooks: {
+        authorize: () => {
+          authorized += 1;
+          return { allowed: false, reason: 'cases are closed by their owner' };
+        },
+      },
+    });
+
+  test('an out-of-scope token is 404 even with an invalid body or a denying policy', async () => {
+    authorized = 0;
+    const invalidBody = await pipeline().handle(
+      call('POST', '/v1/rename-case', { authorization: 'Bearer tok-read' }),
+      { role: 'web' },
+    );
+    const denied = await pipeline().handle(
+      call('POST', '/v1/close-case', { authorization: 'Bearer tok-read' }),
+      { role: 'web' },
+    );
+    expect(invalidBody.status).toBe(404);
+    expect(denied.status).toBe(404);
+    expect(((await invalidBody.json()) as { code: string }).code).toBe('X_ROUTE_NOT_FOUND');
+    const body = await denied.text();
+    expect(body).toContain('X_ROUTE_NOT_FOUND');
+    expect(body).not.toContain('cases are closed');
+    // The policy was never asked: a refusal must not be decided by evaluating it.
+    expect(authorized).toBe(0);
+  });
+
+  test('the same requests with the scope held reach the stages the cut sits in front of', async () => {
+    authorized = 0;
+    const invalidBody = await pipeline().handle(
+      call('POST', '/v1/rename-case', { authorization: 'Bearer tok-write' }),
+      { role: 'web' },
+    );
+    const denied = await pipeline().handle(
+      call('POST', '/v1/close-case', { authorization: 'Bearer tok-write' }),
+      { role: 'web' },
+    );
+    expect(invalidBody.status).toBe(422);
+    expect(denied.status).toBe(403);
+    expect(authorized).toBe(1);
   });
 });
 

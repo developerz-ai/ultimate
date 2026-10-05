@@ -38,6 +38,8 @@ export interface ClientFrameTarget {
   setUpdate(buildId: string | null): void;
   /** The node named the beat this socket must keep (`hello.heartbeatMs`). */
   followHeartbeat(intervalMs: number): void;
+  /** A refused registration the node said may succeed later: subscribe it again after `afterMs`. */
+  retryLater(registration: Registration, afterMs: number): void;
   /** The node assigned this socket its own delay before closing it. */
   scheduleReconnect(afterMs: number | null): void;
   closeSocket(code: number, reason: string): void;
@@ -112,6 +114,9 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
       registration.state = 'failed';
       registration.error = refusal;
       registration.notify();
+      // A refusal that states when it may succeed (a rate limit's refill) is not final.
+      const after = frame.error.retryAfterSeconds;
+      if (after !== undefined) target.retryLater(registration, after * 1000);
       return;
     }
     case 'reconnect': {

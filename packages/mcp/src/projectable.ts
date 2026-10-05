@@ -118,7 +118,8 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         // and is what `live`, `paginate` and `explain` build on too. Executed without the
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,
         // not a TTL.
-        const source = await sourceFor(target, input);
+        // `'mcp'`: an agent's call spends the read's declared `rateLimit:`, as `toQueryTool` does.
+        const source = await sourceFor(target, input, { surface: 'mcp' });
         // `@ultimat3/query`'s one rule for what a read answers: rows, or a single read's row.
         return readAnswer(target, await source.execute());
       }),

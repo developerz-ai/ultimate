@@ -9,7 +9,12 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
-import { registerErrorStatus, registerProblemMeta, resetErrorStatus } from '@ultimat3/http';
+import {
+  registerErrorStatus,
+  registerProblemMeta,
+  resetErrorStatus,
+  resetRateLimitStore,
+} from '@ultimat3/http';
 import { allow, forbidden } from '@ultimat3/policy';
 import { t, toWireSchema } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';
@@ -320,6 +325,87 @@ describe('runLlmToolCall withholds a 5xx cause the code did not declare public',
     );
     const foreign = { code: 'X_APP_UPSTREAM_DOWN', cause: 'secret', callerFix: 'curl evil' };
     expect(await call(foreign)).toBe(`X_APP_UPSTREAM_DOWN: ${HIDDEN_TOOL_CAUSE}`);
+  });
+});
+
+/**
+ * The in-app agent ends at `invoke` like every other surface, so a declared `rateLimit:` refuses
+ * the model's third call exactly as it refuses an HTTP client's — and the model reads the 429's
+ * code and cause, which is a caller-facing 4xx and is not withheld.
+ */
+describe('a tool with a declared rate limit', () => {
+  afterEach(() => resetRateLimitStore());
+
+  test("the agent's call past the limit is refused X_RATE_LIMITED", async () => {
+    resetRateLimitStore();
+    const tool = asProjectableAction(
+      action({
+        input: t.object({ id: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: allow(),
+        rateLimit: { limit: 2, windowMs: 60_000 },
+        mcp: { expose: true },
+        handle: () => ({ ok: true }),
+      }).named('pingOnce'),
+    );
+    const results = [];
+    for (let i = 0; i < 3; i += 1) {
+      results.push(
+        await runLlmToolCall(
+          [tool],
+          { id: `call-${i}`, name: 'pingOnce', input: { id: 'p' } },
+          actor,
+        ),
+      );
+    }
+    expect(results.map((result) => result.isError === true)).toEqual([false, false, true]);
+    expect(results[2]?.content).toStartWith('X_RATE_LIMITED: ');
+  });
+});
+
+/**
+ * An in-app agent's tool calls carry no address of their own — `runLlmToolCall` invokes with the
+ * actor alone — so they are keyed by the address of the request the agent run started from.
+ * Without it every anonymous visitor shared one `ip:unknown` bucket and one could deny them all.
+ */
+describe('an anonymous visitor’s tool calls', () => {
+  afterEach(() => resetRateLimitStore());
+
+  test('are keyed by that visitor’s address, so one visitor cannot exhaust another', async () => {
+    resetRateLimitStore();
+    const tool = asProjectableAction(
+      action({
+        input: t.object({ id: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: allow(),
+        rateLimit: { limit: 1, windowMs: 60_000 },
+        mcp: { expose: true },
+        handle: () => ({ ok: true }),
+      }).named('lookUp'),
+    );
+    // The agent run, as an action invoked over HTTP — the surface that knows the address.
+    const run = action({
+      input: t.object({ id: t.string }),
+      output: t.object({ refused: t.boolean }),
+      policy: allow(),
+      handle: async ({ input, ctx }) => {
+        const result = await runLlmToolCall(
+          [tool],
+          { id: 'c', name: 'lookUp', input: { id: input.id } },
+          ctx.actor,
+        );
+        return { refused: result.isError === true };
+      },
+    }).named('askAgent');
+    const visit = async (clientAddress: string) =>
+      (
+        (await run({ id: 'p' }, { ctx: createContext({}), surface: 'http', clientAddress })) as {
+          refused: boolean;
+        }
+      ).refused;
+    expect(await visit('198.51.100.1')).toBe(false);
+    expect(await visit('198.51.100.1')).toBe(true);
+    expect(await visit('198.51.100.2')).toBe(false);
   });
 });
 

@@ -73,6 +73,8 @@ export function toQueryTool<TSingle extends boolean = boolean>(
       // Executed without the cache tiers on purpose: an agent diffing two tool
       // calls must be reading the rows, not a TTL.
       const source = await sourceFor(target, input, {
+        // An agent's call, so a declared `rateLimit:` spends for it; judged as `'server'` was.
+        surface: 'mcp',
         ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
         ...(options.actor === undefined ? {} : { actor: options.actor }),
       });

@@ -6,8 +6,9 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { toBucket } from '@ultimat3/http';
+import { useContext } from '@ultimat3/core';
+import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
+import { publishRateLimit, toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
@@ -16,7 +17,7 @@ import { absentArraysOf } from './input-shape';
 import { derivePath } from './naming';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
 import { admitsAnonymous, policyCapability } from './policy-gate';
-import type { AnyQuery } from './query';
+import type { AnyQuery, QueryRateLimit } from './query';
 import { queryName, runQuery } from './read';
 import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
 import { oneRowOf } from './single-answer';
@@ -60,6 +61,14 @@ export function toQueryRoute(target: AnyQuery): Route {
     //
     // The two page controls come OUT first (`page-controls.ts`): they are the route's, not the
     // read's, and a schema that refused unknown keys would otherwise refuse every paged call.
+    // The read spends its declared limit itself (`spendReadLimit`, on every surface), keyed on
+    // this request's address for an anonymous reader, and hands the decision back for the headers.
+    const spending = {
+      surface: 'http',
+      clientAddress: request.ctx.ip,
+      onRateLimit: (decision: RateLimitDecision) =>
+        publishRateLimit(request.ctx, decision, useContext().now().getTime()),
+    } as const;
     const { input: values, page } = pageControlsOf(name, request.queryRaw());
     const input = absentArraysOf(target.input, coerceQuery(target.input, values));
     if (target.single === true) {
@@ -73,7 +82,7 @@ export function toQueryRoute(target: AnyQuery): Route {
       }
       // The first row — what every in-process `[0]` of the same read already takes. None is the
       // 404 a detail URL means, where a list read answers `200 []`.
-      return answerRow(oneRowOf(name, await runQuery(target, input, { surface: 'http' })));
+      return answerRow(oneRowOf(name, await runQuery(target, input, spending)));
     }
     // With a page control the answer is the `Page` envelope `query.page()` answers a server
     // caller with — `{ rows, nextCursor, hasMore, endCursor, hasNextPage }`, the same names (the
@@ -84,8 +93,8 @@ export function toQueryRoute(target: AnyQuery): Route {
     // has no business being.
     return answer(
       page === undefined
-        ? await runQuery(target, input, { surface: 'http' })
-        : await target.page(input, { ...page, surface: 'http' }),
+        ? await runQuery(target, input, spending)
+        : await target.page(input, { ...page, ...spending }),
     );
   };
 
@@ -114,18 +123,24 @@ export function toQueryRoute(target: AnyQuery): Route {
     // ride along so a purge can still name the read the tier keys by.
     cache: { mode: 'no-store', tags: tagKeys(target.cache?.tags ?? []) },
     tags: ['query'],
-    // Name AND numbers, exactly as an action's route sets them — the name alone selects a bucket
-    // the limiter's table never held, so `bucketFor` falls through to `default` (120 burst, 2/s)
-    // and a read declaring 5 runs on 120. `withRouteBuckets` registers the pair at construction.
-    // `toBucket` is `@ultimat3/http`'s: the limiter owns the maths, and a copy here would be a
-    // second conversion able to publish numbers the limiter refuses.
+    // The read spends its own declared bucket on every surface (`read.ts`), so the stage spends
+    // no caller bucket here: not this one (the old HTTP-only enforcement point the MCP tool never
+    // reached), and not `default` (a ceiling a read declaring more than it never had). The tenant
+    // allowance stays the stage's. Refused at mount, never on the first read, when the pair is one
+    // the limiter cannot run on: `toBucket` is `@ultimat3/http`'s, so the numbers cannot drift.
     ...(target.rateLimit === undefined
       ? {}
-      : { rateLimit: name, rateLimitBucket: toBucket(name, target.rateLimit) }),
+      : { rateLimitedBy: rateLimitedByHandler(name, target.rateLimit) }),
     ...(target.mcp?.description === undefined ? {} : { description: target.mcp.description }),
   };
 
   return { method: 'GET', path: derivePath(name), handler, meta };
+}
+
+/** Validates the declaration through the limiter's own conversion, then hands the route its flag. */
+function rateLimitedByHandler(name: string, limit: QueryRateLimit): 'handler' {
+  toBucket(name, limit);
+  return 'handler';
 }
 
 /**

@@ -8,6 +8,7 @@ import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
+import type { RateLimitDecision } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -180,6 +181,19 @@ export interface InvokeOptions {
   readonly idempotencyKey?: string | null;
   readonly store?: IdempotencyStore;
   readonly onReplay?: () => void;
+  /**
+   * The caller's connection address, which is the only rate-limit subject an anonymous caller has
+   * (`actor > org > address`). The HTTP projection passes the request's; a surface with none
+   * leaves it out, and every anonymous caller there shares one bucket — refused together rather
+   * than unlimited.
+   */
+  readonly clientAddress?: string | null;
+  /**
+   * Hands over the `rateLimit:` decision before a refusal is thrown — how the HTTP projection
+   * answers with `RateLimit-*` and `Retry-After`. Called only for a declared limit on a surface
+   * that spends one.
+   */
+  readonly onRateLimit?: (decision: RateLimitDecision) => void;
 }
 
 export interface McpDescriptorMeta {

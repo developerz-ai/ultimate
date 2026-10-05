@@ -6,7 +6,7 @@ import type { ErrorRetry } from '@ultimat3/core';
 import { classifyThrown, isUltimateError, renderThrowable, statedDelayMs } from '@ultimat3/core';
 import { finiteDurationMs } from './clock';
 import type { Random, RetryDecision, RetryPolicy } from './retry';
-import { DEFAULT_RETRY, nextRetry } from './retry';
+import { backoffDelayMs, DEFAULT_RETRY, nextRetry } from './retry';
 
 /** Why this attempt was the last one. Absent while the job is still being retried. */
 export type JobStopReason = 'terminal' | 'attempts-exhausted';
@@ -69,6 +69,37 @@ export function nextRetryForError(
   // day is still a responder this deployment has not agreed to wait a day for.
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
   return { ...decision, delayMs: Math.min(stated, cap), stoppedBy: undefined, classification };
+}
+
+/**
+ * `@ultimat3/http`'s `rateLimited()` — the refusal a declared `rateLimit:` answers on every
+ * surface, a job's `.job()`/`llm()` run included. Named, not classified: `retry-after` also covers
+ * `X_OVERLOADED`, a shed that should still spend the policy's attempts.
+ */
+const RATE_LIMITED = 'X_RATE_LIMITED';
+
+/**
+ * How long to wait out a rate-limit refusal, or `undefined` when `error` is not one. A refusal is
+ * "not yet", never "failed": the bucket refills, so the run is rescheduled with its attempt
+ * UNCOUNTED — counted, a backlog of rate-limited jobs spent every attempt waiting and was
+ * dead-lettered for it.
+ *
+ * The wait is the stated `Retry-After` (the policy's own backoff when none was stated), clamped by
+ * `maxDelay`, then SPREAD over half of itself again: `[wait, 1.5 × wait)`. Never earlier — a wake
+ * before the refill is refused again — and never all at once: a backlog refused together and woken
+ * at the exact same instant is refused together again, a claim storm that repeats forever. The
+ * spread can pass `maxDelay` by up to half; the clamp bounds the wait, the spread only staggers it.
+ */
+export function rateLimitDeferralMs(
+  policy: RetryPolicy,
+  attempt: number,
+  error: unknown,
+  random: Random = Math.random,
+): number | undefined {
+  if (!isUltimateError(error) || error.code !== RATE_LIMITED) return undefined;
+  const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
+  const wait = Math.min(statedDelayMs(error) ?? backoffDelayMs(policy, attempt), cap);
+  return wait + Math.floor(random() * (wait / 2));
 }
 
 /**

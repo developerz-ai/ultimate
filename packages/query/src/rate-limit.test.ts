@@ -2,10 +2,10 @@
 // bucket, so every `GET /_x/query/*` fell to `default` — 120 burst, 2/s per actor. One
 // authenticated caller could hold 120 cross-tenant aggregates in flight, then 2/s, forever.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig, toBucket } from '@ultimat3/http';
+import { createServer, defineHttpConfig, resetRateLimitStore } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -22,6 +22,9 @@ interface Order {
 const ORG = '00000000-0000-4000-8000-000000000001';
 const orders: readonly Order[] = [{ id: 'a', orgId: ORG }];
 const reader: Actor = { ...userActor({ id: 'u1' }), permissions: ['order:read'] };
+
+// One query name, one reader, one process-wide store: each test starts with the bucket full.
+beforeEach(() => resetRateLimitStore());
 
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
@@ -66,12 +69,13 @@ describe('a query rate limit is enforced, not merely declarable', () => {
     expect(statuses.every((status) => status === 200)).toBe(true);
   });
 
-  test('the route carries the NAME and the NUMBERS — a name alone falls through to default', () => {
+  // The read spends its own bucket on every surface (`rate-limit-surfaces.test.ts`), so the route
+  // names no bucket for the stage — it says the handler counts it, which keeps `default` off it.
+  test('the route leaves the limit to its handler and names no stage bucket', () => {
     const meta = toQueryRoute(searchOrders({ limit: 3, windowMs: 600_000 })).meta;
-    expect(meta.rateLimit).toBe('searchOrders');
-    // Converted by `@ultimat3/http`'s `toBucket`, the same one the action route uses: a second
-    // conversion here could publish numbers the limiter refuses.
-    expect(meta.rateLimitBucket).toEqual(toBucket('searchOrders', { limit: 3, windowMs: 600_000 }));
+    expect(meta.rateLimitedBy).toBe('handler');
+    expect(meta.rateLimit).toBeUndefined();
+    expect(meta.rateLimitBucket).toBeUndefined();
   });
 
   test('a pair the limiter cannot run on is refused at projection', () => {

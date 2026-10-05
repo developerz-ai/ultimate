@@ -10,6 +10,7 @@ import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
 import { fingerprint } from '@ultimat3/core';
+import type { RateLimitDecision } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethodOf, QueryClientOptions } from './client';
@@ -176,6 +177,13 @@ export interface QueryOptions {
    * stays on the one read path instead of forking a second one.
    */
   readonly actor?: Actor | null;
+  /**
+   * The reader's connection address — the only rate-limit subject an anonymous reader has. The
+   * HTTP projection passes the request's; elsewhere every anonymous reader shares one bucket.
+   */
+  readonly clientAddress?: string | null;
+  /** The declared `rateLimit:` decision, before a refusal: how HTTP answers `RateLimit-*`. */
+  readonly onRateLimit?: (decision: RateLimitDecision) => void;
 }
 
 export interface SourceOptions extends QueryOptions {

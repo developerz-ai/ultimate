@@ -24,14 +24,19 @@ export const rateLimited = (key: string, retryAfterSeconds: number): HttpError =
  * a green `x verify` and a limit that is not the limit. The declaration is the app's because the
  * framework cannot see its replica count, and a framework that guessed would guess wrong.
  */
-export const rateLimitNotShared = (found: 'process' | 'disabled'): HttpError =>
+export const rateLimitNotShared = (found: 'process' | 'disabled' | 'installed'): HttpError =>
   new HttpError({
     code: 'X_RATE_LIMIT_NOT_SHARED',
     cause:
       found === 'disabled'
         ? "http.rateLimit.scope is 'shared' but http.rateLimit.enabled is false, so the fleet-wide limit is enforced nowhere"
-        : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
-    fix: "createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }) — or defineHttpConfig({ rateLimit: { scope: 'process' } }) to accept per-replica limits",
+        : found === 'installed'
+          ? "http.rateLimit.scope is 'shared' but the store actions and queries spend their declared rateLimit from keeps its counters in this process, so each replica would enforce every declared limit on its own"
+          : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
+    fix:
+      found === 'installed'
+        ? 'installRateLimitStore(rateLimitStore) at boot, with the same postgresRateLimitStore({ executor }) passed to createServer({ routes, rateLimitStore })'
+        : "createServer({ routes, rateLimitStore: postgresRateLimitStore({ executor: { query: (text, values) => db().query({ text, values }) } }) }) — or defineHttpConfig({ rateLimit: { scope: 'process' } }) to accept per-replica limits",
   });
 
 /**

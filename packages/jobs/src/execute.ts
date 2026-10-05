@@ -26,7 +26,12 @@ import type { AnyJobHandle } from './job';
 import { createProgressReporter } from './progress';
 import { isFinalAttempt } from './retry';
 import type { JobStopReason } from './retry-classification';
-import { failureForRow, nextRetryForError, recordedFailure } from './retry-classification';
+import {
+  failureForRow,
+  nextRetryForError,
+  rateLimitDeferralMs,
+  recordedFailure,
+} from './retry-classification';
 import { raceTimeout } from './run-deadline';
 import { createRunSignal } from './run-signal';
 import { announceSettled, settledCode } from './settled';
@@ -306,6 +311,39 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         attempt: claimed.attempt,
         durationMs: nowMs(options.clock) - startedAt,
         error: message,
+        steps: [],
+        replayed: [],
+      });
+    }
+    // A rate-limit refusal is "not yet": rescheduled for its Retry-After with the attempt
+    // UNCOUNTED, like a suspension — but left in the ready bucket (no park): it is a job still
+    // waiting, and it belongs in `queue_depth`. Counted, a backlog of rate-limited `llm()` jobs was
+    // dead-lettered for having waited on a bucket that was only ever going to refill.
+    const deferMs = rateLimitDeferralMs(handle.retry, claimed.attempt, error);
+    if (deferMs !== undefined) {
+      landed(
+        await driver.nack(claimed.id, {
+          ...by(),
+          delayMs: deferMs,
+          error: failureForRow(error),
+          countsAsAttempt: false,
+        }),
+        'retried',
+      );
+      logger.info('jobs.attempt.rate_limited', {
+        job: handle.name,
+        jobId: claimed.id,
+        attempt: claimed.attempt,
+        delayMs: deferMs,
+      });
+      return settle({
+        outcome: 'retried',
+        jobId: claimed.id,
+        job: handle.name,
+        attempt: claimed.attempt,
+        durationMs: nowMs(options.clock) - startedAt,
+        error: message,
+        resumeAt: nowMs(options.clock) + deferMs,
         steps: [],
         replayed: [],
       });

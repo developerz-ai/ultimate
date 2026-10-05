@@ -72,6 +72,7 @@ export {
   McpResourceDuplicateError,
   McpScopeConflictError,
   McpScopeDeniedError,
+  McpScopeUncoveredError,
   McpScopeUnknownError,
   McpSurfaceOverBudgetError,
   McpToolDuplicateError,

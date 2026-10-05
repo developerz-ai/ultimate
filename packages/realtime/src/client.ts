@@ -49,6 +49,8 @@ export class LiveClient {
   readonly #clock: Clock;
   readonly #onError: (error: unknown) => void;
   readonly #registrations = new Map<string, Registration>();
+  /** A refused registration's armed re-subscribe, by sid — the node said when it may succeed. */
+  readonly #retries = new Map<string, () => void>();
   readonly #windows: RowWindows;
   readonly #channels: ChannelBook;
   readonly #heartbeat: Heartbeat;
@@ -194,6 +196,9 @@ export class LiveClient {
    */
   #offline(): void {
     this.#heartbeat.stop();
+    // The reopen replays every registration, so a timer left armed would send one twice.
+    for (const cancel of this.#retries.values()) cancel();
+    this.#retries.clear();
     this.#setStatus({ connected: false });
     // Told once, not two ways: a `useConnection().offline` that flips while a live window still
     // reads 'live' is one dead socket rendered as two states. A refused one stays refused.
@@ -254,6 +259,8 @@ export class LiveClient {
       if (!open) return;
       open = false;
       this.#registrations.delete(sid);
+      this.#retries.get(sid)?.();
+      this.#retries.delete(sid);
       close();
       listeners.clear();
       this.#send({
@@ -323,9 +330,29 @@ export class LiveClient {
       setUpdate: (buildId) => this.#setStatus({ update: buildId }),
       followHeartbeat: (intervalMs) => this.#heartbeat.follow(intervalMs),
       scheduleReconnect: (afterMs) => this.#scheduleReconnect(afterMs),
+      retryLater: (registration, afterMs) => this.#retryLater(registration, afterMs),
       closeSocket: (code, reason) => this.#socket?.close(code, reason),
       report: (error) => this.#onError(error),
     };
+  }
+
+  /**
+   * Ask again once the node's stated delay has passed — a rate-limited subscribe, whose bucket
+   * refills. Only while the registration is still held, still refused and the socket still up:
+   * anything else and the reopen's replay, or the unsubscribe, already decided its fate.
+   */
+  #retryLater(registration: Registration, afterMs: number): void {
+    this.#retries.get(registration.sid)?.();
+    const cancel = (this.#options.scheduler ?? timeoutScheduler)(() => {
+      this.#retries.delete(registration.sid);
+      if (this.#registrations.get(registration.sid) !== registration) return;
+      if (!this.#connected || registration.state !== 'failed') return;
+      registration.state = 'loading';
+      registration.error = undefined;
+      registration.notify();
+      this.#sendSubscribe(registration);
+    }, afterMs);
+    this.#retries.set(registration.sid, cancel);
   }
 
   /** The opening frame, and the heartbeat's. One shape, because it makes one claim: I am here. */

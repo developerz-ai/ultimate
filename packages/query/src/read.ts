@@ -31,6 +31,7 @@ import {
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { actorOf, guard, guardBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
+import { spendReadLimit } from './rate-limit-gate';
 import type { SqlSource } from './source';
 
 /**
@@ -213,6 +214,19 @@ async function buildSource(
       { actor: actorOf(ctx), ctx, query: name },
       options.surface ?? 'server',
     );
+  }
+  // The ONE place a read's declared `rateLimit:` is spent for every surface it runs on — the
+  // route, a paged read, the MCP tool. After the actor half (a refused reader learns that, not a
+  // 429), before the parse and `sql()`, which are the work being limited. An unenforced build has
+  // no caller to charge: the shared live window spends per subscriber (`spendQueryLimit`).
+  if (unenforced === undefined) {
+    await spendReadLimit(name, def.rateLimit, {
+      actor: ctx.actor,
+      surface: options.surface ?? 'server',
+      clientAddress: options.clientAddress,
+      onRateLimit: options.onRateLimit,
+      nowMs: ctx.now().getTime(),
+    });
   }
   const input = await validate(def.input, raw, name);
   if (unenforced === undefined) {

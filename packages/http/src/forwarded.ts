@@ -43,9 +43,24 @@ export const forwardedElement = (
   return list[index];
 };
 
-/** The plain-list form: `x-forwarded-for`, `x-forwarded-proto`. */
+/** The plain-list form: `x-forwarded-for`. */
 export const forwardedValue = (header: string | null, hops: number): string | undefined =>
   forwardedElement(header, hops);
+
+/**
+ * `x-forwarded-proto`, which proxies OVERWRITE far more often than they append (nginx's `$scheme`,
+ * an ALB, Traefik): behind two hops it holds one value while `x-forwarded-for` holds two. A full
+ * chain is read exactly like an address. A SHORTER one is not a forgery here: an overwrite erased
+ * everything client-ward of it, so every entry left was written by a trusted hop, and the
+ * outermost of them — index 0 — is the one that saw the client's leg. A client value survives only
+ * when no trusted hop writes the header at all, the same exposure `hops: 1` has always had.
+ */
+export const forwardedProto = (header: string | null, hops: number): string | undefined => {
+  if (header === null || hops < 1) return undefined;
+  const list = plainSplit(header, ',');
+  if (list.length === 0) return undefined;
+  return list[Math.max(0, list.length - hops)];
+};
 
 /**
  * `1.2.3.4:5678` and `[::1]:443` are both legal in an `x-forwarded-for` entry; the port is the
@@ -91,12 +106,12 @@ export const clientAddress = (input: ForwardedInput): string | null =>
   forwardedClientAddress(input.headers, input.config) ?? input.socketAddress;
 
 /**
- * Whether the CLIENT's leg of the connection was TLS. Read at the same hop index as the address,
- * because `x-forwarded-proto` is as forgeable as `x-forwarded-for` — and this one decides whether
- * a two-year `includeSubDomains` HSTS policy goes out.
+ * Whether the CLIENT's leg of the connection was TLS. Hop-indexed like the address, because
+ * `x-forwarded-proto` is as forgeable as `x-forwarded-for` — and this one decides whether a
+ * two-year `includeSubDomains` HSTS policy goes out. `forwardedProto` says why a short list counts.
  */
 export const clientUsedHttps = (input: ForwardedInput): boolean => {
-  const forwarded = forwardedValue(
+  const forwarded = forwardedProto(
     input.headers.get(FORWARDED_PROTO),
     input.config.trustedProxyHops,
   );

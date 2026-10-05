@@ -1,14 +1,19 @@
 // The declared numbers must be the ENFORCED numbers. Driven through the real server rather than
 // through `toRoute`'s meta, because a bucket name nothing registers is exactly what this proves:
 // the declaration reached OpenAPI and stopped, and the endpoint ran on `default` — 120 burst.
+// The bucket is spent inside `invoke` now (`rate-limit-gate.ts`); every surface is
+// `rate-limit-surfaces.test.ts`.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig, toBucket } from '@ultimat3/http';
+import { createServer, defineHttpConfig, resetRateLimitStore } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { toOpenApiOperation, toRoute } from './http';
+
+// One action name, one caller, one process-wide store: each test starts with the bucket full.
+beforeEach(() => resetRateLimitStore());
 
 const Input = t.object({ email: t.email });
 const Output = t.object({ ok: t.boolean });
@@ -90,7 +95,9 @@ describe('an action rate limit is enforced, not only published', () => {
     expect(statuses.every((status) => status === 200)).toBe(true);
   });
 
-  test('a configured bucket of the same name with other numbers is refused at boot', () => {
+  // The declaration is the action's own: an HTTP bucket configured under the same name is a
+  // different table now, so it neither collides at boot nor loosens what the action declared.
+  test('a configured HTTP bucket of the same name neither conflicts nor loosens the limit', async () => {
     const config = defineHttpConfig({
       rateLimit: {
         scope: 'process',
@@ -100,19 +107,10 @@ describe('an action rate limit is enforced, not only published', () => {
         },
       },
     });
-    expect(() => createServer({ routes: [toRoute(contactSales())], config })).toThrow(
-      /X_RATE_LIMIT_BUCKET_CONFLICT/,
-    );
-  });
-
-  test('a configured bucket restating the same numbers is accepted', () => {
-    const config = defineHttpConfig({
-      rateLimit: {
-        scope: 'process',
-        buckets: { contactSales: toBucket('contactSales', { limit: 5, windowMs: 600_000 }) },
-      },
-    });
-    expect(() => createServer({ routes: [toRoute(contactSales())], config })).not.toThrow();
+    const server = createServer({ routes: [toRoute(contactSales())], config });
+    const statuses = await drain(server, 6);
+    expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
+    expect(statuses[5]).toBe(429);
   });
 });
 

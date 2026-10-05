@@ -68,7 +68,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   handler, policy, idempotency; adds the credential (bearer only, `WWW-Authenticate` on 401), the
   cut (outside the token's scopes = `X_ROUTE_NOT_FOUND`, the MCP rule), and a per-token bucket
   keyed by a SHA-256 of the token. Bad prefix / unknown name / double claim:
-  `X_BEARER_MOUNT_INVALID` at construction.
+  `X_BEARER_MOUNT_INVALID` at construction. **The cut is decided in the `auth` stage** — one
+  authenticator per route, closed over its scope — so an out-of-scope token is 404 before `body`
+  (422) and `authz` (403) could describe the primitive. **The prefix is opaque**: `<prefix>/*rest`
+  for every method (`opaquePrefix`) answers no token / a bad token with the same 401 challenge a
+  served path gives, and a valid token with the same 404 — never 404-vs-401 or a 405 naming methods.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 
 ## Rules — the pipeline
@@ -86,7 +90,10 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)`** — the entry at
-  `entries.length - hops`, never `[0]`; a short chain trusts nothing. `trustProxy` defaults to false
+  `entries.length - hops`, never `[0]`; a short chain trusts nothing. **Except `x-forwarded-proto`**
+  (`forwardedProto`): proxies usually OVERWRITE it, so a list shorter than `hops` reads its first
+  entry (an overwrite erased the client's value; what is left a trusted hop wrote) — HSTS behind
+  two hops. A full-length list is read like an address. `trustProxy` defaults to false
   and requires `trustedProxyHops`. `x-forwarded-proto` (HSTS) and Envoy XFCC (`peer-identity.ts`) ride
   it; `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared (appending to
   XFF is no promise of stripping a client-sent cert header), and is never an actor.

@@ -5,7 +5,8 @@
 // happens to the siblings when one throws". Nothing here knows what a model is.
 
 import type { Ctx } from '@ultimat3/core';
-import { isThrownError, isUltimateError, stringField, withChildContext } from '@ultimat3/core';
+import { withChildContext } from '@ultimat3/core';
+import { discloseFailure } from './failure-disclosure';
 import type { HiveMember, HiveMemberError } from './hive-result';
 import { SKIPPED_ABORTED, SKIPPED_NO_INPUT } from './hive-result';
 
@@ -57,7 +58,7 @@ export async function runPool<I, O>(input: PoolInput<I, O>): Promise<readonly Hi
         );
         members[index] = { status: 'ok', index, value };
       } catch (error) {
-        members[index] = { status: 'failed', index, ...failureOf(error) };
+        members[index] = { status: 'failed', index, ...failureOf(error, ctx, index) };
         if (input.onMemberError === 'abort') controller.abort();
       }
     }
@@ -72,19 +73,26 @@ export async function runPool<I, O>(input: PoolInput<I, O>): Promise<readonly Hi
 }
 
 /**
- * What a member threw, as two data fields — never as an error's `cause:`, which is why the thrown
- * value is read structurally and never interpolated. A foreign throw gets `'unknown'` rather than
- * an invented `X_` code: a code nothing declares is a code no `x errors explain` can answer.
+ * What the caller may read of a member's throw, as two data fields — never as an error's `cause:`.
+ * The reason ships in the hive action's 200 answer, so it is `discloseFailure`'s verdict, the one
+ * the tool result gets: a 5xx cause or a foreign `.message` (a pg `Key (email)=(…)`) is withheld
+ * and logged whole. A throw with no code gets `'unknown'` rather than an invented `X_` code: a code
+ * nothing declares is a code no `x errors explain` can answer.
  */
-function failureOf(error: unknown): { readonly code: string; readonly reason: string } {
-  if (isUltimateError(error)) return { code: error.code, reason: error.cause };
-  // `isThrownError` and `stringField`, never `error instanceof Error` and `.message`: a member
-  // is an app's action, so the value is one the framework did not build — `instanceof` runs a
-  // `Proxy`'s `getPrototypeOf` trap and `.message` is a getter call. A throw HERE would take the
-  // whole hive down with it, which is the one outcome the three arms exist to prevent.
-  const message = stringField(error, 'message');
-  if (isThrownError(error) && message !== undefined && message !== '') {
-    return { code: 'unknown', reason: message };
-  }
-  return { code: 'unknown', reason: 'the member threw a value that is not an Error' };
+function failureOf(
+  error: unknown,
+  ctx: Ctx,
+  index: number,
+): { readonly code: string; readonly reason: string } {
+  // `fix` is not carried: `reason` has always been the cause alone, and a member's caller acts on
+  // the code. What `discloseFailure` withholds stays withheld either way.
+  const shown = discloseFailure(error, ctx.logger, `hive member ${index}`);
+  return { code: shown.code ?? 'unknown', reason: shown.cause ?? HIDDEN_MEMBER_CAUSE };
 }
+
+/**
+ * What a caller reads in place of a reason it may not see. Fixed, so nothing of the throw rides on
+ * it — the hive's answer goes wherever its caller sends it, a model's context included.
+ */
+export const HIDDEN_MEMBER_CAUSE =
+  'the member failed inside the server; the details are withheld from this answer and are in the server logs';

@@ -175,15 +175,17 @@ export {
 export {
   actorIdOf,
   CLOSE,
-  DEFAULT_FRAME_BURST,
-  DEFAULT_MAX_BUFFERED_BYTES,
-  DEFAULT_MAX_FRAMES_PER_SECOND,
   SocketRegistry,
   type SocketRegistryOptions,
   SyncSocket,
   type SyncSocketOptions,
   type WsLike,
 } from './socket';
+export {
+  DEFAULT_FRAME_BURST,
+  DEFAULT_MAX_BUFFERED_BYTES,
+  DEFAULT_MAX_FRAMES_PER_SECOND,
+} from './socket-defaults';
 export { DEFAULT_IDLE_TIMEOUT_MS, idleSweepPeriodMs } from './socket-idle';
 export type {
   GateFailed,

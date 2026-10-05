@@ -11,6 +11,7 @@ import {
   rateLimitScopeUnset,
   tenantBucketUnknown,
 } from './rate-limit-errors';
+import { rateLimitHeaders } from './rate-limit-headers';
 import { type RateLimitPeek, rateLimitPeek, refilledTokens } from './rate-limit-peek';
 
 /**
@@ -325,6 +326,13 @@ export interface RateLimitKeyParts {
   readonly orgId: string | null;
   readonly ip: string | null;
   readonly routeName: string;
+  /**
+   * The subject when there is no actor, no org AND no address. Defaults to `ip:unknown` — every
+   * such request shares it, which is what the pipeline has always done. A caller that can name a
+   * narrower population (a job run nobody attributed) passes its own, so it does not share one
+   * bucket with every anonymous request whose address could not be read.
+   */
+  readonly unattributed?: string | undefined;
 }
 
 /**
@@ -360,17 +368,20 @@ export interface RateLimitSpend {
  */
 export const rateLimitSpends = (
   parts: RateLimitKeyParts,
-  buckets: { readonly route: string; readonly tenant: string | null },
+  // `route: null` — the route's own limit is spent by its handler (`RouteMeta.rateLimitedBy`), so
+  // the caller key is not spent here at all; only the tenant allowance is.
+  buckets: { readonly route: string | null; readonly tenant: string | null },
 ): readonly RateLimitSpend[] => {
   const subject =
     parts.actorId !== null
       ? `actor:${parts.actorId}`
       : parts.orgId !== null
         ? `org:${parts.orgId}`
-        : `ip:${parts.ip ?? 'unknown'}`;
-  const spends: RateLimitSpend[] = [
-    { key: `${parts.routeName}|${subject}`, bucket: buckets.route },
-  ];
+        : parts.ip !== null
+          ? `ip:${parts.ip}`
+          : (parts.unattributed ?? 'ip:unknown');
+  const spends: RateLimitSpend[] =
+    buckets.route === null ? [] : [{ key: `${parts.routeName}|${subject}`, bucket: buckets.route }];
   if (buckets.tenant !== null && parts.orgId !== null) {
     spends.push({ key: `${TENANT_SCOPE}|org:${parts.orgId}`, bucket: buckets.tenant });
   }
@@ -438,11 +449,7 @@ export const createRateLimiter = (options: {
     buckets: options.config.buckets,
     check,
     peek: (key, bucketName) => store.peek(key, bucketFor(bucketName), now()),
-    headers: (decision) => ({
-      'ratelimit-limit': String(decision.limit),
-      'ratelimit-remaining': String(decision.remaining),
-      'ratelimit-reset': String(Math.ceil((decision.resetAtMs - now()) / 1000)),
-    }),
+    headers: (decision) => rateLimitHeaders(decision, now()),
     async assert(key, bucketName, cost = 1) {
       const decision = await check(key, bucketName, cost);
       if (!decision.allowed) throw rateLimited(key, decision.retryAfterSeconds);

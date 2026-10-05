@@ -103,11 +103,12 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **A claimed job is counted with core's `beginWork()`**, so the drain's in-flight phase does the
   waiting. **The teardown's wait is bounded on SIGTERM** (`settleAllBy` in `drain-wait.ts`,
   `jobs.worker.drain-abandoned`) and unbounded on a manual `stop()`. A worker always reaches `'stopped'`;
-  `state` is set in the `finally`. **One teardown, joined.**
+  `state` is set in the `finally`: one teardown, joined.
 - **SIGTERM reaches the job**: the worker's one `AbortController` (`drainSignal`) is composed into every
   run (`worker-run.ts`); `stopAccepting(reason)` aborts it with `JobDrainedError` (`X_DRAINING`). A
   drained attempt settles as **`interrupted`** (`nack`, `countsAsAttempt: false`, no park, no dead
   letter), read off the SIGNAL. `WorkerStats.interrupted`; `worker-drain-signal.test.ts`.
+- **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.
 - **A fleet slot is taken INSIDE a `try`, released AWAITED, and HELD, not owned**: `false`, or a TTL

@@ -88,4 +88,27 @@ describe('clientUsedHttps', () => {
   test('a spoofed leftmost proto is skipped like an address is', () => {
     expect(clientUsedHttps(input({ 'x-forwarded-proto': 'https, http' }, 1))).toBe(false);
   });
+
+  // Proxies APPEND to `x-forwarded-for` but most OVERWRITE `x-forwarded-proto` (nginx's
+  // `$scheme`, an ALB, Traefik), so behind two hops the proto list holds one value while the
+  // address list holds two. Read at the address's index it was "not the configured chain", the
+  // URL decided, and a TLS-terminated request got no HSTS and an `http://` self-origin.
+  test('two hops and one overwritten proto: the value a trusted hop wrote decides', () => {
+    expect(
+      clientUsedHttps(
+        input({ 'x-forwarded-for': '203.0.113.9, 10.0.0.2', 'x-forwarded-proto': 'https' }, 2),
+      ),
+    ).toBe(true);
+    expect(clientUsedHttps(input({ 'x-forwarded-proto': 'http' }, 2))).toBe(false);
+  });
+
+  // An overwrite erased everything client-ward of it, so every entry left was written by a trusted
+  // hop — and the outermost of them saw the client's leg.
+  test('a mixed chain shorter than the hops reads its outermost entry', () => {
+    expect(clientUsedHttps(input({ 'x-forwarded-proto': 'https, http' }, 3))).toBe(true);
+  });
+
+  test('a full-length proto chain still skips the client-typed entries', () => {
+    expect(clientUsedHttps(input({ 'x-forwarded-proto': 'https, http, http' }, 2))).toBe(false);
+  });
 });

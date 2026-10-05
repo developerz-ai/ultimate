@@ -10,6 +10,7 @@ import {
   isMcpExposed,
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
+  useContext,
   withWriteOrigin,
   writeDigest,
 } from '@ultimat3/core';
@@ -17,7 +18,7 @@ import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
 // and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
 // a copy here would be a second answer to "what does this limit mean" for the read half.
-import { json, redirect, takeRedirect, toBucket } from '@ultimat3/http';
+import { json, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
 import type { Deprecation } from './deprecation';
 import { recordDeprecatedCall, renderDeprecation } from './deprecation';
@@ -90,6 +91,9 @@ function projectRoute(
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first request — the same rule `toBucket` follows for a rate limit.
   const sunsetting = deprecationHeadersFor(name, def.deprecated);
+  // Same rule, for a limit the limiter could not run on: refused at mount (`X_RATE_LIMIT_INVALID`),
+  // never on the first request that tries to spend it.
+  if (def.rateLimit !== undefined) toBucket(name, def.rateLimit);
   const enveloped = carriesRecords(target.output);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
@@ -121,6 +125,9 @@ function projectRoute(
         onReplay: () => {
           replayed = true;
         },
+        clientAddress: req.ctx.ip,
+        onRateLimit: (decision) =>
+          publishRateLimit(req.ctx, decision, useContext().now().getTime()),
       }),
     );
     // The one thing an action's return value cannot say. `setRedirect()` inside the handler
@@ -167,12 +174,11 @@ function projectRoute(
     // failing a plain `route.ts`'s own schema, where no primitive owns the input.
     cache: { mode: 'no-store', tags: tagKeys(def.cache?.invalidates ?? []) },
     tags: [operationTagOf(target)],
-    // Name AND numbers. The name alone selected a bucket the limiter's table never held, so
-    // `bucketFor` fell through to `default` — 120 burst for an action that declared 5. The
-    // numbers ride along and `withRouteBuckets` registers them at construction.
-    ...(def.rateLimit === undefined
-      ? {}
-      : { rateLimit: name, rateLimitBucket: toBucket(name, def.rateLimit) }),
+    // `invoke` spends the declared bucket for every surface, so the stage spends no caller bucket
+    // for this route — not the action's (that was the second, HTTP-only enforcement point MCP,
+    // the agent tool and `.job()` never reached) and not `default` (a ceiling an action declaring
+    // more than it never had). The tenant allowance is still the stage's.
+    ...(def.rateLimit === undefined ? {} : { rateLimitedBy: 'handler' as const }),
     ...(def.mcp?.description === undefined ? {} : { description: def.mcp.description }),
   };
 

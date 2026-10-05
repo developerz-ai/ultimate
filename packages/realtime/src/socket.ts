@@ -55,6 +55,11 @@ export interface SyncSocketOptions {
   readonly clientBuildId: string;
   readonly serverBuildId: string;
   readonly actor?: Actor | null;
+  /**
+   * The caller's address, resolved ONCE at the upgrade (`UpgradeDeps.clientAddressOf`) — the
+   * only subject an anonymous reader has. `null` when the host cannot say.
+   */
+  readonly clientAddress?: string | null;
   readonly id?: string;
   readonly clock?: Clock;
   /** Frames are dropped rather than queued past this. See `desynced`. */
@@ -66,23 +71,11 @@ export interface SyncSocketOptions {
   readonly frameBurst?: number;
 }
 
-/**
- * What one socket may ask this node to do per second, and how much of it may arrive at once.
- *
- * The burst clears `DEFAULT_MAX_PER_SOCKET` (128) plus a `hello`, because that is exactly what a
- * legitimate client sends on connect; the sustained rate is well under the ~155 frames/s measured
- * to consume a node through the subscribe path's amplifiers.
- */
-export const DEFAULT_MAX_FRAMES_PER_SECOND = 64;
-export const DEFAULT_FRAME_BURST = 256;
-/**
- * Queued-but-unwritten bytes on one server socket before `send` declines and marks the subscriber
- * desynced. `sync-node.ts` hands the same number to Bun as `backpressureLimit` rather than spelling
- * it again: they are one socket's one buffer, and a check the runtime's own limit fires before is a
- * check that never runs. The client half (`client-mutations.ts`) is deliberately its own constant —
- * it is browser code, and importing this file would pull the node's socket registry into the tab.
- */
-export const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024;
+import {
+  DEFAULT_FRAME_BURST,
+  DEFAULT_MAX_BUFFERED_BYTES,
+  DEFAULT_MAX_FRAMES_PER_SECOND,
+} from './socket-defaults';
 
 /**
  * Channel frames this process dropped under backpressure. A dropped `records` frame is now marked
@@ -142,6 +135,7 @@ export class SyncSocket {
   readonly frameBudget: AcceptBudget;
 
   actor: Actor | null;
+  readonly clientAddress: string | null;
   /**
    * MONOTONIC milliseconds, not an instant — the idle sweep measures a duration, and a duration
    * read off the wall clock is decided by whatever NTP last wrote. A step forward evicts sockets
@@ -167,6 +161,7 @@ export class SyncSocket {
     this.#clientBuildId = options.clientBuildId;
     this.serverBuildId = options.serverBuildId;
     this.actor = options.actor ?? null;
+    this.clientAddress = options.clientAddress ?? null;
     this.#maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES;
     finiteOption('SyncSocket', 'maxBufferedBytes', this.#maxBufferedBytes);
     this.#maxDroppedFrames = options.maxDroppedFrames ?? 32;

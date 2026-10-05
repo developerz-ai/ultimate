@@ -37,6 +37,8 @@ export interface WireError {
   readonly cause: string;
   readonly fix: string;
   readonly docs?: string;
+  /** When a retry can succeed — a rate-limited subscribe's refill. Whole seconds, positive. */
+  readonly retryAfterSeconds?: number;
 }
 
 export interface PresenceMember {
@@ -285,7 +287,23 @@ export function toWireError(error: unknown): WireError {
   const cause = stringField(error, 'cause') ?? renderThrowable(error);
   const fix = stringField(error, 'fix') ?? 'x doctor realtime';
   const docs = stringField(error, 'docs');
-  return docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
+  const base = docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
+  const retryAfterSeconds = retryHintOf(error);
+  return retryAfterSeconds === undefined ? base : { ...base, retryAfterSeconds };
+}
+
+/**
+ * `meta.retryAfterSeconds`, the field `@ultimat3/http`'s `X_RATE_LIMITED` carries — read as totally
+ * as `stringField` reads the rest, because the throwable is app code's and its getters may throw.
+ */
+function retryHintOf(error: unknown): number | undefined {
+  try {
+    const meta: unknown = (error as { readonly meta?: unknown } | null)?.meta;
+    const held: unknown = isJsonObject(meta) ? meta['retryAfterSeconds'] : undefined;
+    return typeof held === 'number' && Number.isFinite(held) && held > 0 ? held : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function row(value: unknown): Row {
@@ -336,5 +354,8 @@ function wireError(value: unknown): WireError | null {
   if (value === null || value === undefined) return null;
   if (!isJsonObject(value)) throw fail('ack.error must be an object or null');
   const base = { code: str(value, 'code'), cause: str(value, 'cause'), fix: str(value, 'fix') };
-  return value['docs'] === undefined ? base : { ...base, docs: str(value, 'docs') };
+  const documented = value['docs'] === undefined ? base : { ...base, docs: str(value, 'docs') };
+  return value['retryAfterSeconds'] === undefined
+    ? documented
+    : { ...documented, retryAfterSeconds: num(value, 'retryAfterSeconds') };
 }

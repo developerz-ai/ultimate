@@ -21,12 +21,18 @@ const tool = (name: string, scope?: string): AnyMcpTool => ({
 
 const thrown = (
   fn: () => unknown,
-): { code?: string; cause?: string; fix?: string; scopes?: readonly string[] } => {
+): {
+  code?: string;
+  cause?: string;
+  fix?: string;
+  scopes?: readonly string[];
+  uncovered?: readonly string[];
+} => {
   try {
     fn();
     return {};
   } catch (error) {
-    return error as { code: string; cause: string; fix: string; scopes?: readonly string[] };
+    return error as ReturnType<typeof thrown>;
   }
 };
 
@@ -34,14 +40,46 @@ const scopeOf = (tools: readonly AnyMcpTool[], name: string): string | undefined
   tools.find((candidate) => candidate.name === name)?.scope;
 
 describe('withScopes', () => {
-  test('attaches the declared scope to the named tool and leaves the rest ungated', () => {
+  test('attaches the declared scope to the named tool', () => {
     const catalog = [tool('refundOrder'), tool('orderById')];
+
+    const scoped = withScopes(catalog, {
+      'orders:write': ['refundOrder'],
+      'orders:read': ['orderById'],
+    });
+
+    expect(scopeOf(scoped, 'refundOrder')).toBe('orders:write');
+    expect(scopeOf(scoped, 'orderById')).toBe('orders:read');
+  });
+
+  // The fail-open this refuses: with `scopes:` set, a tool the map does not name carried NO
+  // scope, so the registry's gate (`tool.scope !== undefined && …`) let every token through — a
+  // `posts:read` token ran an unlisted `deleteAccount`. A bearer mount over the same map serves
+  // an unlisted primitive to nobody, so the two surfaces disagreed about one declaration.
+  test('a projected tool no scope names is X_MCP_SCOPE_UNCOVERED, every offender at once', () => {
+    const catalog = [tool('refundOrder'), tool('deleteAccount'), tool('orderById')];
+
+    const error = thrown(() => withScopes(catalog, { 'orders:write': ['refundOrder'] }));
+
+    expect(error.code).toBe('X_MCP_SCOPE_UNCOVERED');
+    // Sorted and complete, so one boot names every edit and two boots read alike.
+    expect(error.uncovered).toEqual(['deleteAccount', 'orderById']);
+    expect(error.cause).toContain('"deleteAccount", "orderById"');
+    expect(error.fix).toContain('defineAppMcp');
+    expect(error.fix).toContain('deleteAccount');
+  });
+
+  test('a tool that arrived with its own scope is covered without a map entry', () => {
+    const catalog = [tool('dbQuery', 'db:read'), tool('refundOrder')];
 
     const scoped = withScopes(catalog, { 'orders:write': ['refundOrder'] });
 
+    expect(scopeOf(scoped, 'dbQuery')).toBe('db:read');
     expect(scopeOf(scoped, 'refundOrder')).toBe('orders:write');
-    // Absent, not `undefined`-valued: `exactOptionalPropertyTypes` and the wire both care.
-    expect('scope' in (scoped.find((t) => t.name === 'orderById') ?? {})).toBe(false);
+  });
+
+  test('an empty map is a declaration too — it covers nothing, so every tool is uncovered', () => {
+    expect(thrown(() => withScopes([tool('refundOrder')], {})).code).toBe('X_MCP_SCOPE_UNCOVERED');
   });
 
   test('one scope covers many tools, and many scopes coexist', () => {
@@ -130,6 +168,8 @@ describe('withScopes', () => {
   test('an empty scope entry is a no-op, not a refusal — declaring a capability early is fine', () => {
     const catalog = [tool('refundOrder')];
 
-    expect(withScopes(catalog, { 'orders:write': [] })[0]?.scope).toBeUndefined();
+    const scoped = withScopes(catalog, { 'orders:write': ['refundOrder'], 'orders:admin': [] });
+
+    expect(scopeOf(scoped, 'refundOrder')).toBe('orders:write');
   });
 });

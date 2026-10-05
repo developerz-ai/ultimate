@@ -3,7 +3,13 @@
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
 import { createContext, logger, UltimateError } from '@ultimat3/core';
-import { configuredHttp, type WebSocketMount } from '@ultimat3/http';
+import {
+  clientAddress,
+  configuredHttp,
+  defineHttpConfig,
+  mergeHttpConfig,
+  type WebSocketMount,
+} from '@ultimat3/http';
 import { listQueries } from '@ultimat3/query';
 import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
 import {
@@ -19,8 +25,12 @@ import {
 import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
 import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
+import type { Env } from './runtime-bindings';
 import { syncAuthenticator } from './sync-authenticator';
 import { syncOriginsFrom } from './sync-url';
+// A value edge back into `role-start.ts`, read only inside a call: the one parser of
+// `TRUSTED_PROXY_HOPS`, never a second copy of it.
+import { trustedHopsFromEnv } from './trusted-hops';
 import { DEV_BINDING } from './web-binding';
 
 /**
@@ -177,6 +187,34 @@ export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegist
   return registry;
 }
 
+/**
+ * Who dialled the socket, resolved by `@ultimat3/http`'s `clientAddress()` — the rule the web role's
+ * `ctx.ip` follows, at the same `TRUSTED_PROXY_HOPS`. It keys an anonymous live reader's rate
+ * limit: read off the socket alone, a node behind an ingress put every anonymous viewer of the
+ * fleet in the ingress's one bucket, and one visitor looping subscribes locked out the rest.
+ *
+ * The config is built only to carry the hops — `rateLimit.scope` is declared because
+ * `defineHttpConfig` requires it, and this node runs no HTTP limiter that would read it.
+ */
+export function syncClientAddressOf(
+  env: Env,
+): (request: Request, socketAddress: string | null) => string | null {
+  const hops = trustedHopsFromEnv(env);
+  const config = defineHttpConfig(
+    mergeHttpConfig(configuredHttp(), {
+      rateLimit: { scope: 'process' },
+      ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
+    }),
+  );
+  return (request, socketAddress) =>
+    clientAddress({
+      headers: request.headers,
+      config,
+      socketAddress,
+      urlProtocol: new URL(request.url).protocol,
+    });
+}
+
 const healthDetailPeersOf = (
   peers: readonly string[] | undefined,
 ): { readonly healthDetailPeers?: readonly string[] } =>
@@ -244,6 +282,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     // Who this node's OWN `/healthz` and `/readyz` tell the detail to: the app's one declaration,
     // the same list the web role reads. Unset, the node keeps its default (the box itself).
     ...healthDetailPeersOf(configuredHttp()?.healthDetailPeers),
+    clientAddressOf: syncClientAddressOf(options.env),
     // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
     // list at all — the KV bucket the transport just created would hold nothing and every `sync`
     // container would run a presence-less protocol. It reads and writes `transport.shared`, so it

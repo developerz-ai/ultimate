@@ -27,6 +27,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
   'X_MCP_SURFACE_OVER_BUDGET',
   'X_MCP_PATH_DUPLICATE',
+  'X_MCP_SCOPE_UNCOVERED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -56,6 +57,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
     "an idempotent action's input declares idempotencyKey, the MCP argument reserved for the idempotency key",
   X_MCP_SURFACE_OVER_BUDGET: "an MCP surface an agent reads is larger than the app's budget for it",
   X_MCP_PATH_DUPLICATE: 'two MCP endpoints claim one path',
+  X_MCP_SCOPE_UNCOVERED: 'an MCP tool is covered by no scope in the scopes map',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -65,12 +67,9 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(MCP_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
-// No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
-// which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
-// `wiki/` is the framework's only public documentation surface and a code lives there in a TABLE ROW,
-// which has no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x
-// answered 404, host included, on every error it has ever thrown; restating the replacement here
-// would be the same constant in eight places waiting to drift again.
+// No `docs:` on the subclasses below: `UltimateError` fills it from `describeErrorCode(code).docs`,
+// core's one `ERROR_DOCS_URL` — a code lives in a `wiki/` TABLE ROW, which has no anchor. The
+// per-code links this file built until 9.x answered 404; restating one here would drift again.
 
 /**
  * The one instruction that is SAFE on both of outcome 1's branches. `server.ts` appends it to the
@@ -184,11 +183,6 @@ export class McpToolUndeclaredError extends UltimateError {
 }
 
 /**
- * Two primitives project to one tool name. Caught at boot rather than at first call: an agent
- * asking for the name reaches whichever copy won, which is the worst failure mode available —
- * a call that succeeds against the wrong handler and reports nothing.
- */
-/**
  * `config.ai.mcp.expose` is `true` — the DEFAULT — and the web role found nothing to mount at
  * `config.ai.mcp.path`. Two causes, one code: no `apps/<app>/mcp.ts` exports an `mcp`, or the one
  * that does was built without `resolveToken`, so `defineAppMcp` built no `route` (a token resolver
@@ -224,6 +218,10 @@ export class McpAppUnmountedError extends UltimateError {
   }
 }
 
+/**
+ * Two primitives project to one tool name. Refused at boot, not at first call: the agent would
+ * reach whichever copy won — a call that succeeds against the wrong handler and reports nothing.
+ */
 export class McpToolDuplicateError extends UltimateError {
   /**
    * Which declaration each copy came from, when the projector knows — carried the way
@@ -233,10 +231,8 @@ export class McpToolDuplicateError extends UltimateError {
   readonly declaredBy: readonly string[];
 
   constructor(input: { name: string; declaredBy?: readonly string[] | undefined }) {
-    // The old `fix:` named "the primitive's export name, or the `tools` record key" for every
-    // raiser. On `@ultimat3/admin`'s path the colliding string is an `AdminAction.name` and
-    // neither of those exists, so the reader was sent to two places that do not hold it. Where
-    // the projector knows the sources, the fix names THEM instead of guessing.
+    // Where the projector knows the sources the fix names THEM: on `@ultimat3/admin`'s path the
+    // colliding string is an `AdminAction.name`, neither an export name nor a `tools` key.
     const sites = input.declaredBy ?? [];
     const from = sites.length > 0 ? ` (declared by ${sites.join(' and ')})` : '';
     super({
@@ -308,6 +304,21 @@ export class McpScopeConflictError extends UltimateError {
       fix: `in defineAppMcp, keep "${input.name}" under the single scope a token must hold for it, and remove the other entry`,
     });
     this.scopes = input.scopes;
+  }
+}
+
+/** `scopes:` names none of these tools, so every token ran them — while a bearer mount over the
+ * same map serves them to nobody. Refused at boot, every offender at once. */
+export class McpScopeUncoveredError extends UltimateError {
+  readonly uncovered: readonly string[];
+  constructor(input: { uncovered: readonly string[] }) {
+    const names = input.uncovered.map((name) => `"${name}"`).join(', ');
+    super({
+      code: 'X_MCP_SCOPE_UNCOVERED',
+      cause: `defineAppMcp was given a scopes map that names no scope for ${names}, so no token scope gates them`,
+      fix: `scopes: { '<scope>': [${names}] } — in defineAppMcp, under the scope a token must hold for each; or stop projecting them`,
+    });
+    this.uncovered = input.uncovered;
   }
 }
 

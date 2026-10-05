@@ -363,6 +363,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MCP_TOOL_UNDECLARED',
     'X_MCP_TOOL_UNKNOWN',
     'X_MCP_TOOL_UNSAFE',
+    'X_MCP_SCOPE_UNCOVERED',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules plus faults raised in the
   // BROWSER, where there is no response to give a status to.

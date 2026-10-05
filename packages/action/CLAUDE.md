@@ -46,6 +46,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust) and `liveTransaction` (the settle) |
+| `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the installed-sink store |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
@@ -154,9 +155,19 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   payloads.
 - **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (re-exported; raises
   `X_RATE_LIMIT_INVALID`). Never restore a local copy; never use `@ultimat3/render`'s `tagKeys`.
-- **`rateLimit:` reaches the limiter**: `toRoute` sets `meta.rateLimit` AND `meta.rateLimitBucket`
-  (`toBucket`), which `@ultimat3/http`'s `withRouteBuckets` registers. The computed rate must be
-  finite and `limit` at least one token.
+- **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent
+  tool and `.job()` share one bucket; `surface: 'server'` spends nothing. `toRoute` sets
+  `rateLimitedBy: 'handler'` and NO `meta.rateLimit`/`rateLimitBucket` — the stage spends neither
+  the action's bucket (the old HTTP-only point) nor `default`. Key `action:<name>|<subject>`.
+  HTTP gets `RateLimit-*` via `onRateLimit` → http's `publishRateLimit`. The store is
+  `@ultimat3/http`'s installed one, adopted by the boot on every role. Spent after
+  `guardBeforeInput`, BEFORE the parse and `def.row()` (an input/row-denied flood is refused). A key
+  the idempotency store holds spends nothing (replay); a reservation `withIdempotency` CREATES that
+  the peek did not pay for spends in `beforeRun`, released on refusal. A job run is charged to its
+  org, else `job:unattributed`. A surface's `clientAddress` is inherited by nested `invoke`s
+  (`withCallerAddress`); a `'job'` invoke opens a fresh frame (`withJobFrame`) so no visitor's
+  address follows work into the worker, and calls nested in it are the job's.
+  `rate-limit-surfaces.test.ts`. The computed rate must be finite and `limit` at least one token.
 - **`deprecated:` is a compat WINDOW** — headers on every response including failures, a
   `rel="successor-version"` link via `derivePath`, `deprecated: true` in OpenAPI,
   `deprecated_calls_total`. Rendered ONCE at projection (`X_ACTION_DEPRECATION_INVALID` at mount).

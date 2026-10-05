@@ -243,6 +243,27 @@ an npm tarball, so taking them is a `git clone` of this repo. On 3.0.0 and below
 chart at all and `--method helm` exits `X_NOT_IMPLEMENTED`: copy the chart in, or use
 `--method compose`.
 
+## Behind a proxy — `TRUSTED_PROXY_HOPS`
+
+`TRUSTED_PROXY_HOPS` counts the proxies that **append** to `x-forwarded-for` between the client and
+`web`/`sync` → [Configuration](Configuration). Unset trusts no proxy header. Proxies treat the two
+headers differently, and the reader follows that:
+
+| Header | What proxies do | What the framework reads |
+|---|---|---|
+| `x-forwarded-for` → `ctx.ip` | **append** their peer (nginx `$proxy_add_x_forwarded_for`, an ALB, Envoy) | the entry `hops` from the right. A shorter list is not the declared chain: nothing is trusted and the socket address is used |
+| `x-forwarded-proto` → `ctx.https` (HSTS, the CSRF self-origin) | usually **overwrite** (nginx `$scheme`, an ALB, Traefik); some append | a full list: the entry `hops` from the right. A **shorter** list: its first entry — an overwrite erased what the client sent, so what is left was written by a trusted hop |
+
+As of 2026-10, two hops with an overwriting proto proxy read `https`, so HSTS goes out. Before, a
+one-entry proto header behind `TRUSTED_PROXY_HOPS=2` counted as "not the chain": `ctx.https` was
+false and no HSTS was sent.
+
+**Make sure at least one trusted hop writes `x-forwarded-proto`.** If none does, the client's own
+value reaches the app, exactly as it always has with `TRUSTED_PROXY_HOPS=1`. The edge that ends TLS
+is the one to set it: nginx `proxy_set_header X-Forwarded-Proto $scheme;`. An inner proxy reached
+over plain http must pass the edge's value on rather than writing its own `$scheme` — on
+ingress-nginx, `use-forwarded-headers: "true"`.
+
 ## Static deploys independently
 
 ```

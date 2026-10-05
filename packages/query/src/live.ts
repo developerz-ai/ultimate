@@ -13,8 +13,10 @@ import type { Patch } from './matcher';
 import { assertMatchable } from './matcher';
 import type { QueryPolicy, QuerySubject } from './policy-gate';
 import { guard } from './policy-gate';
-import type { Query } from './query';
+import type { AnyQuery, Query } from './query';
 import { queryHash } from './query';
+import type { QueryLimitCaller } from './rate-limit-gate';
+import { spendReadLimit } from './rate-limit-gate';
 import { queryName, sourceFor } from './read';
 import { assertNoSealedKey } from './sealed-shape';
 import type { QueryShape, SeekKey } from './shape';
@@ -102,6 +104,20 @@ export interface ToLiveOptions {
  */
 const SHARED_WINDOW_REASON =
   'the shared subject-less window has no subscriber to decide about; authorize() runs per subscriber';
+
+/**
+ * A live SUBSCRIBE's spend of the read's declared `rateLimit:` — the bucket the HTTP route, a paged
+ * read and the MCP tool spend. Its own export because the subscribe is realtime's: the sync node
+ * builds one shared window per `(query, input)` with no subscriber (`enforce: false`, which spends
+ * nothing) and calls this once per subscriber, beside `authorize`. Never on a re-authorization:
+ * the subscription it already holds was paid for.
+ */
+export function spendQueryLimit(
+  target: AnyQuery,
+  caller: Omit<QueryLimitCaller, 'surface'>,
+): Promise<void> {
+  return spendReadLimit(queryName(target), target.rateLimit, { ...caller, surface: 'live' });
+}
 
 /** Changing the build changes the epoch, which forces reconnects to refetch. */
 export function liveEpoch(): string {

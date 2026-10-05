@@ -162,6 +162,15 @@ export {
   rateLimitStoreUnavailable,
   tenantBucketUnknown,
 } from './rate-limit-errors';
+export { publishRateLimit, rateLimitHeaders } from './rate-limit-headers';
+export type { AdoptRateLimitStoreOptions } from './rate-limit-installed';
+export {
+  adoptRateLimitStore,
+  assertInstalledRateLimitScope,
+  installedRateLimitStore,
+  installRateLimitStore,
+  resetRateLimitStore,
+} from './rate-limit-installed';
 export type { RateLimitPeek } from './rate-limit-peek';
 export { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 export type { PostgresRateLimitStore, PostgresRateLimitStoreOptions } from './rate-limit-postgres';

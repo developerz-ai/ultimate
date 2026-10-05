@@ -9,8 +9,14 @@
 // every time. Collapsing the second onto the first is privilege escalation with a cache hit rate.
 
 import type { Ctx } from '@ultimat3/core';
-import { finiteOption, runWithContext, serviceActor, withChildContext } from '@ultimat3/core';
-import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
+import {
+  anonymousActor,
+  finiteOption,
+  runWithContext,
+  serviceActor,
+  withChildContext,
+} from '@ultimat3/core';
+import { type AnyQuery, queryHash, queryName, spendQueryLimit } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
@@ -182,6 +188,10 @@ export function liveQueryDefinition(
     // memoised anywhere: `authorize` runs on every subscribe, `visible` on every row of every
     // delivery, and there is no key here an actor could share with another actor.
     authorize: authorizeWithPolicy(target.policy, { query: name, ctx: options.ctx }),
+    // The read's own `rateLimit:` bucket, per subscriber — the one HTTP and MCP spend. A socket
+    // with no actor is the anonymous reader, keyed by its address as an unauthenticated HTTP read is.
+    spend: ({ actor, clientAddress, nowMs }) =>
+      spendQueryLimit(target, { actor: actor ?? anonymousActor(), clientAddress, nowMs }),
     visible: visibleWithPolicy(target.policy, { query: name, ctx: options.ctx }),
   };
 }

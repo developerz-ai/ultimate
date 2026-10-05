@@ -25,6 +25,7 @@ import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
 import { createRateLimiter, type RateLimitStore } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
+import { adoptRateLimitStore } from './rate-limit-installed';
 import { json } from './response';
 import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
 
@@ -154,6 +155,24 @@ export interface ServerHandle {
 const roleFromEnv = (): Role => (Bun.env['ROLE'] ?? 'web') as Role;
 
 export const createServer = (options: ServerOptions): ServerHandle => {
+  // The store this server is handed is also the one actions and queries spend their declared
+  // `rateLimit:` from — adopted BEFORE the pipeline, whose boot check reads it, and never over a
+  // store the boot already chose (`keepChosen`). Given back on `stop()`, or by ANY refusal from
+  // here to the handle — the pipeline's checks, `configureLifecycle`, `assertMountPathFree` — so a
+  // boot that never produced a server leaves nothing behind it.
+  const releaseStore =
+    options.rateLimitStore === undefined
+      ? () => undefined
+      : adoptRateLimitStore(options.rateLimitStore, { keepChosen: true });
+  try {
+    return buildServer(options, releaseStore);
+  } catch (error) {
+    releaseStore();
+    throw error;
+  }
+};
+
+const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHandle => {
   const role = options.role ?? roleFromEnv();
   const table = createRouter(options.routes);
   // Merged here as well as in `createPipeline`, and for the store's sake: the limiter below is
@@ -371,6 +390,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       // core's `shutdownHookCount()` exists to make visible. The shape `worker.ts`'s teardown
       // holds: the unregisters are the closure's, not the drain's.
       const releaseHooks = (): void => {
+        releaseStore();
         unregister?.();
         unregisterClose?.();
         unregister = undefined;

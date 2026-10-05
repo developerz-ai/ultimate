@@ -13,8 +13,10 @@ import { bearerMountInvalid, routeNotFound } from './errors';
 import type { RateLimitDecision, RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore, toBucket } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
+import { rateLimitHeaders } from './rate-limit-headers';
 import type { UltimateRequest } from './request';
 import type { Route, RouteMeta } from './router';
+import { HTTP_METHODS } from './router';
 
 /**
  * What a token resolves to. Structurally `@ultimat3/mcp`'s `ResolvedToken`, so an app hands the
@@ -86,6 +88,9 @@ const tokenKey = (token: string): string =>
  * The mounted routes. Refuses at construction (`X_BEARER_MOUNT_INVALID`) a prefix that is not a
  * plain path or would shadow `/api` / `/_x`, a scope naming a primitive no route carries, and two
  * primitives that would land on one mounted path.
+ *
+ * The last routes returned are the prefix's catch-all (`<prefix>/*rest`, every method), so no
+ * path under the prefix answers differently for being served: see `opaquePrefix`.
  */
 export function bearerMount(input: BearerMountInput): readonly Route[] {
   const { prefix } = input;
@@ -134,20 +139,32 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   // concurrent requests could share.
   const callers = new WeakMap<RequestContext, { caller: BearerCaller; key: string }>();
 
-  const authenticate: NonNullable<RouteMeta['authenticate']> = async (request, ctx) => {
-    const token = bearerTokenOf(request.header('authorization'));
-    if (token === null) {
-      ctx.headers.set('www-authenticate', 'Bearer');
-      return null;
-    }
-    const caller = await input.resolveToken(token);
-    if (caller === null) {
-      ctx.headers.set('www-authenticate', 'Bearer error="invalid_token"');
-      return null;
-    }
-    callers.set(ctx, { caller, key: tokenKey(token) });
-    return caller.actor;
-  };
+  // One authenticator per mounted route, closed over ITS scope, so the cut is decided in the `auth`
+  // stage — before `body` and `authz`. Decided in the handler, an out-of-scope token was answered
+  // 422 with the schema's issues or 403 with the policy's reason, both confirming the primitive.
+  // `null` is the catch-all's: a scope no token holds, so a valid token is told 404 exactly where
+  // an out-of-scope one is, and a missing or bad one gets the same challenge as on a served path.
+  const authenticatorOf =
+    (scope: string | null): NonNullable<RouteMeta['authenticate']> =>
+    async (request, ctx) => {
+      const token = bearerTokenOf(request.header('authorization'));
+      if (token === null) {
+        ctx.headers.set('www-authenticate', 'Bearer');
+        return null;
+      }
+      const caller = await input.resolveToken(token);
+      if (caller === null) {
+        ctx.headers.set('www-authenticate', 'Bearer error="invalid_token"');
+        return null;
+      }
+      // Hidden, never forbidden: a 403 would confirm the primitive exists to a token that was
+      // not issued for it — the enumeration MCP's catalog refuses the same way.
+      if (scope === null || !caller.scopes.has(scope)) {
+        throw routeNotFound(ctx.method, ctx.url.pathname);
+      }
+      callers.set(ctx, { caller, key: tokenKey(token) });
+      return caller.actor;
+    };
 
   const spend = async (key: string, ctx: RequestContext): Promise<void> => {
     if (bucket === undefined) return;
@@ -157,12 +174,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       1,
       clock.now().getTime(),
     );
-    ctx.headers.set('ratelimit-limit', String(decision.limit));
-    ctx.headers.set('ratelimit-remaining', String(decision.remaining));
-    ctx.headers.set(
-      'ratelimit-reset',
-      String(Math.max(0, Math.ceil((decision.resetAtMs - clock.now().getTime()) / 1000))),
-    );
+    for (const [name, value] of Object.entries(rateLimitHeaders(decision, clock.now().getTime()))) {
+      ctx.headers.set(name, value);
+    }
     // `rateLimited` carries the seconds in `meta`, which the error-map stage turns into
     // `Retry-After` — the same 429 every other limit in the framework answers.
     if (!decision.allowed) throw rateLimited(`${prefix}|token`, decision.retryAfterSeconds);
@@ -182,11 +196,11 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       mounted.push({
         method: route.method,
         path,
-        meta: { ...route.meta, auth: 'required', authenticate },
+        meta: { ...route.meta, auth: 'required', authenticate: authenticatorOf(scope) },
         handler: async (request: UltimateRequest, ctx: RequestContext) => {
           const resolved = callers.get(ctx);
-          // Hidden, never forbidden: a 403 would confirm the primitive exists to a token that
-          // was not issued for it — the enumeration MCP's catalog refuses the same way.
+          // The authenticator already answered an out-of-scope token; this is the fail-closed
+          // floor for a handler driven without the `auth` stage.
           if (resolved === undefined || !resolved.caller.scopes.has(scope)) {
             throw routeNotFound(ctx.method, ctx.url.pathname);
           }
@@ -196,5 +210,30 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       });
     }
   }
-  return mounted;
+  return [...mounted, ...opaquePrefix(prefix, authenticatorOf(null))];
 }
+
+/** Every method a client can send. HEAD is GET's (`router.ts`'s `routeFor`), never its own route. */
+const CATCH_ALL_METHODS = HTTP_METHODS.filter((method) => method !== 'HEAD');
+
+/**
+ * `<prefix>/*rest` for every method, behind the mount's own authenticator. Without it a request
+ * with no token answered 401 on a served path and 404 — or 405 naming the served methods — on
+ * every other, so an anonymous walk of the prefix listed the cut. 401 with the `Bearer` challenge
+ * is the uniform answer because it is the TRUE one for a real client anywhere under the prefix:
+ * nothing there is reachable without a token. A static or param route still outranks a wildcard,
+ * so the mounted routes, and any route the app serves under the prefix itself, keep answering.
+ */
+const opaquePrefix = (
+  prefix: string,
+  authenticate: NonNullable<RouteMeta['authenticate']>,
+): readonly Route[] =>
+  CATCH_ALL_METHODS.map((method) => ({
+    method,
+    path: `${prefix}/*rest`,
+    meta: { name: `bearer-mount:${prefix}`, auth: 'required', authenticate },
+    // Reached only if the authenticator did not run: fail closed, with the miss it stands for.
+    handler: (_request: UltimateRequest, ctx: RequestContext) => {
+      throw routeNotFound(ctx.method, ctx.url.pathname);
+    },
+  }));

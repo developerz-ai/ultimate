@@ -33,6 +33,11 @@ export interface WsData {
    * forever for having sent no query.
    */
   readonly clientBuildId: string;
+  /**
+   * The caller's address, resolved here once (`clientAddressOf`); `null` when nothing can say.
+   * Optional only for a socket a host builds without this upgrade (a test harness).
+   */
+  readonly clientAddress?: string | null;
 }
 
 /** Structural view of `Bun.serve`'s server object; keeps this module free of a Bun import. */
@@ -66,6 +71,14 @@ export interface UpgradeDeps {
    * (`sync-origin.ts`).
    */
   readonly allowedOrigins?: readonly string[] | undefined;
+  /**
+   * Who the caller is, for keying an anonymous reader's rate limit: the deployment's own rule —
+   * `@ultimat3/http`'s `clientAddress()` under its `TRUSTED_PROXY_HOPS`, injected by the boot so
+   * this package reads no proxy header itself. Absent, the socket's address is the caller.
+   */
+  readonly clientAddressOf?:
+    | ((request: Request, socketAddress: string | null) => string | null)
+    | undefined;
   /** The `Host`-derived origin admitted beside a declared list too — `x dev` only. */
   readonly admitReachedOrigin?: boolean | undefined;
   /**
@@ -173,6 +186,7 @@ export async function handleUpgrade(
     socketId: deps.newSocketId(),
     // The node's own id is "not skewed until the hello says so", never "current forever".
     clientBuildId: url.searchParams.get('build') ?? deps.buildId,
+    clientAddress: callerAddress(deps, request, server),
   };
   // Before the upgrade, never after: `server.upgrade` runs `websocket.open` synchronously and does
   // not return until it has, so a grant recorded on the next line is one the socket was already
@@ -236,6 +250,13 @@ function health(
     status: payload.status,
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
+}
+
+function callerAddress(deps: UpgradeDeps, request: Request, server: UpgradeTarget): string | null {
+  const socketAddress = server.requestIP(request)?.address ?? null;
+  return deps.clientAddressOf === undefined
+    ? socketAddress
+    : deps.clientAddressOf(request, socketAddress);
 }
 
 /** Load shedding with a delay attached: refusing without one just moves the herd next door. */
