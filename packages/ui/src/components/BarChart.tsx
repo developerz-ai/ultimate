@@ -33,8 +33,6 @@ export function BarChart(props: BarChartProps): JSX.Element {
   const named = (label: string | undefined, value: number): string =>
     label === undefined ? String(value) : `${label} ${value}`;
   const lastIndex = (): number => props.points.length - 1;
-  const first = (): ChartPoint | undefined => props.points[0];
-  const last = (): ChartPoint | undefined => props.points.at(-1);
   const highlight = (): boolean => props.highlightLast !== false;
   return (
     <figure class={cx(styles['chart'], props.class)}>
@@ -94,14 +92,17 @@ export function BarChart(props: BarChartProps): JSX.Element {
           );
         })}
       </svg>
-      {first() === undefined ? null : (
+      {props.points.length === 0 ? null : (
         <div class={styles['keys']} aria-hidden="true">
           <span class={styles['axis']} data-axis="first">
-            {first()?.key}
+            {props.points[0]?.key}
           </span>
-          <span class={styles['axis']} data-axis="last">
-            {last()?.key}
-          </span>
+          {/* One point: its bar is both first and last, so its key is named once. */}
+          {props.points.length === 1 ? null : (
+            <span class={styles['axis']} data-axis="last">
+              {props.points.at(-1)?.key}
+            </span>
+          )}
         </div>
       )}
     </figure>

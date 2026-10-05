@@ -75,6 +75,14 @@ describe('BarChart', () => {
     expect(withAttr(nodes, 'data-axis', 'max')[0]?.props['children']).toBe(4);
   });
 
+  test('one point names its key once — first and last are the same bar', () => {
+    const nodes = renderNodes(BarChart, { label: 'x', points: [{ key: 'only', value: 2 }] });
+    const keys = withAttr(nodes, 'data-axis').filter((l) => l.props['data-axis'] !== 'max');
+    expect(keys.map((l) => [l.props['data-axis'], l.props['children']])).toEqual([
+      ['first', 'only'],
+    ]);
+  });
+
   test('no points draws no bars and no date labels', () => {
     const nodes = renderNodes(BarChart, { label: 'x', points: [] });
     expect(withAttr(nodes, 'data-bar')).toHaveLength(0);

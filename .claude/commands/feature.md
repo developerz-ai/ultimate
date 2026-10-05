@@ -173,7 +173,7 @@ Then say in one line what you can do end-to-end and what you cannot. Do not prin
 - **Fix, never pin, what a tightened guard surfaces.** Workers reach for "raise the pin by the sites I found". On a high-stakes run, extend the worker's file set and have it screen every site; a pin is for a site that genuinely cannot change, with its reason.
 - **Homeless follow-ups are assigned at once, by widening a set.** A worker's report ends with "outside my set: …". Hand each item to the agent holding the context (extend its exclusive set, name the files) or do the one-line edit yourself; never file it for later.
 - **A flake is proved, not assumed.** An e2e that times out under load is re-run alone 3× before it is called a flake; say so in the PR body.
-- **CodeRabbit's stale verdict.** Its `CHANGES_REQUESTED` review survives after every thread is fixed, answered and resolved. With CI green on the head commit, zero unresolved threads and no new top-level comment, `gh pr merge --squash --admin` is the merge; say so in the report.
+- **CodeRabbit's stale verdict.** Its `CHANGES_REQUESTED` review survives after every thread is fixed, answered and resolved. With CI green on the head commit, zero unresolved threads and no new top-level comment, **dismiss that one stale review with its reason** (`gh api -X PUT repos/{owner}/{repo}/pulls/<n>/reviews/<id>/dismissals -f message='every finding fixed in <sha>, threads resolved' -f event=DISMISS`), then `gh pr merge --squash` — so branch protection still decides. Never `--admin`: it bypasses every unmet requirement, not just the stale review, and needs the user's own words.
 
 ## Hard rules (from CLAUDE.md — non-negotiable)
 
