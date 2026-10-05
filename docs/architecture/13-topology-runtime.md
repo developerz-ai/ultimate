@@ -23,13 +23,13 @@ ROLE=replicator myapp
 | `worker` | env → DB pool → one pool per `WORKER_QUEUES` entry | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain |
 | `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` per round is both the renewal and the standby retry | SIGTERM, or a round where the lease is not this holder's |
 | `migrate` | env → DB → advisory lock → apply → post-migrate drift check | none | none | after apply — **exit 0 or non-zero, run-once** |
-| `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM, or lock held elsewhere |
+| `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM — a lock held elsewhere is a standby (`/readyz` 503, re-asking on a backoff), never an exit |
 
 Rules that keep this honest:
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - `web` and `sync` are interchangeable to the load balancer except for protocol.
-- `replicator` and `migrate` **exit non-zero with a typed error** rather than running degraded when their lock is held. `scheduler` is the exception by design: a node that does not hold the lease stays up as a warm standby and retries every round.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. `scheduler` and `replicator` containers stand by instead: a node that does not hold the lease or lock stays up — the replicator unready — and retries, the scheduler every round, the replicator on a jittered backoff.
 - Any role can be co-located in one process for dev — role isolation is simulated, never skipped.
 - Every role runs the same image and the same `x.manifest.json`, so the build ID is identical across the fleet.
 
@@ -218,7 +218,7 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 | Consumer | Mechanism | Held for | On loss |
 |---|---|---|---|
 | `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 30s; the per-round `acquire()` renews it | stop ticking; the next round's `acquire()` is the retry |
-| `replicator` | `PgAdvisoryLock` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
+| `replicator` | `PgAdvisoryLock` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | stand by, unready: a container stays up with `/readyz` 503 and re-asks on the replicator's jittered backoff (the chart's `strategy: Recreate` lets the holder go first on a rollout); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. A second replicator would double-deliver |
 | `migrate` | `pg_try_advisory_lock(4919202607)`, polled 500ms apart for up to 60s, on a reserved connection from a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero — bounded on purpose, because blocking `pg_advisory_lock` has no timeout and hangs the deploy instead of failing it |
 | ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
 | jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
@@ -293,7 +293,7 @@ Skew handling during a rolling deploy:
 |---|---|---|
 | `X_CONFIG_INVALID` | env/config failed its schema at boot | `x doctor --json` |
 | `X_MIGRATE_CONCURRENT` | another migrator still held advisory lock `4919202607` when the 60s wait budget ran out | `psql "$DATABASE_URL"` for the advisory-lock holder, terminate the wedged backend, then `x db migrate` |
-| `X_REPLICATOR_SLOT_HELD` | a second replicator for one database | scale `replicator` to 1 |
+| `X_REPLICATOR_SLOT_HELD` | `x dev --role replicator` against a database another replicator already holds (a container stands by instead) | stop the other replicator, or run `x dev` without `--role replicator` |
 | `X_BUILD_SKEW` | client build incompatible with the current contract | client reload signal |
 | `X_SHUTDOWN_TIMEOUT` | graceful shutdown exceeded its deadline | `raise configureLifecycle({ deadlineMs })` or shorten the slow handler |
 | `X_DRAINING` | work arrived after SIGTERM | retry against another replica; the LB should already have removed this one |

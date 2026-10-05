@@ -141,8 +141,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **Suspension is control flow, and a SHED is not a suspension**: `StepSuspension` →
   `nack({ countsAsAttempt: false, park: true })`; a shed is `countsAsAttempt: false` without `park`,
   stays `ready`, logs `jobs.worker.shed` (no `last_error`). `driver-parity.test.ts`.
-- **A run's acquisitions are handed back even when the wiring throws** (`worker-run.ts`: `context()`
-  above the heartbeat; `createRunSignal` and `fleetSlots.startRenewal` inside the `try`).
+- **A wiring throw hands back the run's holdings, and its ROW until `executeJob` starts**
+  (`worker-run.ts`), as a failed shed does its job (`worker-admit.ts`).
 - **`step.run` hydrates the run's steps from ONE `store.list(runId)`**; `sleep` and `waitForEvent`
   record replays through `trace()`. **`claimName` reads a Set**; `usedNames()` keeps
   `MAX_TRACE_NAMES` (200).
@@ -229,8 +229,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **`purge()`** is the one caller of every `purgeExpired()`: one table per `step.run`, one clock
   reading per pass, duplicate names refused.
 - **`exportRows()`**: one object per PAGE, named by page index; NO cross-tenant escape.
-- **`webhook()`** delivers ONE event to ONE endpoint; no steps; every attempt recorded before the
-  throw. **The wire format is core's**, re-exported.
+- **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
+  before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.**
 - A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` subclass on
   purpose (it stands in for app code).
 

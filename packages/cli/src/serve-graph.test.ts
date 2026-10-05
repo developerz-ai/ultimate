@@ -72,15 +72,20 @@ const MIGRATE_CEILING = 615;
  * (`realtime/src/subscription-count.ts`, `principal-sockets.ts`) and three splits the 500-line
  * ceiling forced (`live-reauth.ts` out of `live-query.ts`, `sync-actor-change.ts` out of
  * `sync-node.ts`, `db/src/migration-ledger.ts` out of `migrate.ts`).
+ * raised 885 → 887, measured 887 (2026-10-05, plan 101 sweep 2): `action/src/idempotency-redact.ts`
+ * (an idempotent answer redacted at rest, #591) and `jobs/src/webhook-attempt.ts` (the webhook
+ * transport, split out so `webhook.ts` stays under the ceiling once the attempt carries its signal).
  */
-const SERVING_ROLE_CEILING = 885;
+const SERVING_ROLE_CEILING = 887;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
  * raised 975 → 980, measured 980 (2026-10-05, plan 101 sweep 1c): the same five modules named on
  * `SERVING_ROLE_CEILING`, which every role carries.
+ * raised 980 → 982, measured 982 (2026-10-05, plan 101 sweep 2): the same two modules named on
+ * `SERVING_ROLE_CEILING` for sweep 2.
  */
-const WEB_ROLE_CEILING = 980;
+const WEB_ROLE_CEILING = 982;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

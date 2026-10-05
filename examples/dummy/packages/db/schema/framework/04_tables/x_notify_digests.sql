@@ -9,5 +9,6 @@ create table "x_notify_digests" (
   "ends_at" timestamp with time zone not null,
   "sealed" boolean default false not null,
   "events" jsonb not null,
+  "appended_by" text[] default '{}'::text[] not null,
   constraint "x_notify_digests_pkey" PRIMARY KEY (seq)
 );

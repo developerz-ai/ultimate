@@ -26,6 +26,13 @@ export interface DigestAppend {
   readonly event: NotifyEvent<unknown>;
   readonly windowMs: number;
   readonly now: Date;
+  /**
+   * Who is appending: the fan-out passes its job's `runId` and the recipient, which a retry keeps.
+   * The append runs inside a step that re-runs WHOLE when any append in it fails, so an appender
+   * that already landed must get the SAME answer back and add nothing — a replay that read
+   * `opened: false` left a window nobody owned, and so nobody ever drained.
+   */
+  readonly appender: string;
 }
 
 export interface DigestBucket {
@@ -65,6 +72,8 @@ const slotKey = (slot: DigestSlot): string =>
 interface OpenBucket {
   endsAt: number;
   readonly events: NotifyEvent<unknown>[];
+  /** Every appender this window took, opener first — what makes a replayed append a no-op. */
+  readonly appenders: string[];
 }
 
 export interface MemoryDigestStore extends DigestStore {
@@ -90,15 +99,24 @@ export function createMemoryDigestStore(): MemoryDigestStore {
       const id = slotKey(input.slot);
       const at = input.now.getTime();
       const windows = slots.get(id) ?? [];
+      // A replay answers the window it already landed in, sealed or not, and adds nothing.
+      const prior = windows.find((window) => window.appenders.includes(input.appender));
+      if (prior !== undefined) {
+        return Promise.resolve({
+          opened: prior.appenders[0] === input.appender,
+          endsAt: prior.endsAt,
+        });
+      }
       const newest = windows.at(-1);
       // An elapsed window is SEALED — its flush drains it — and never appended to: the event
       // opens the next window, which is one extra delivery rather than a lost one.
       if (newest !== undefined && newest.endsAt > at) {
         newest.events.push(input.event);
+        newest.appenders.push(input.appender);
         return Promise.resolve({ opened: false, endsAt: newest.endsAt });
       }
       const endsAt = at + input.windowMs;
-      windows.push({ endsAt, events: [input.event] });
+      windows.push({ endsAt, events: [input.event], appenders: [input.appender] });
       slots.set(id, windows);
       return Promise.resolve({ opened: true, endsAt });
     },

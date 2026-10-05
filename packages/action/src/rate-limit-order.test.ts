@@ -101,8 +101,9 @@ describe('an idempotent key spends once, for the run that happens', () => {
     const released: string[] = [];
     const reclaiming: IdempotencyStore = {
       scope: inner.scope,
+      keepsRedaction: true,
       reserve: (key, hash) => inner.reserve(key, hash),
-      settle: (key, value, id) => inner.settle(key, value, id),
+      settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
       fail: (key, failure, id) => inner.fail(key, failure, id),
       release: (key) => {
         released.push(key);

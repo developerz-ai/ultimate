@@ -125,7 +125,7 @@ describe('the postgres idempotency store', () => {
     // `returning key` is what makes the no-op observable — an update that matched nothing looks
     // exactly like one that matched, otherwise.
     expect(SQL_IDEMPOTENCY_SETTLE).toContain('returning key');
-    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
+    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID, false);
   });
 
   // The status alone cannot see the case that matters: a reservation whose window lapsed is
@@ -139,7 +139,7 @@ describe('the postgres idempotency store', () => {
   test('the reservation id travels as the third parameter of both statements', async () => {
     const { exec, calls } = executor([[{ key: 'chargeCard:k1' }], [{ key: 'chargeCard:k1' }]]);
     const store = postgresIdempotencyStore({ executor: exec, origin, reclaimAfterMs: deadline });
-    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
+    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID, false);
     await store.fail?.(
       'chargeCard:k1',
       { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },

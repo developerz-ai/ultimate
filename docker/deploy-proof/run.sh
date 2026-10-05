@@ -55,10 +55,14 @@ step "two images, differing only by BUILD_ID"
 for build in v1 v2; do
   docker build -q -f "$APP/docker/Dockerfile" --build-arg BUILD_ID="$build" -t "proofapp:$build" "$APP" >/dev/null
 done
+# The upgrade ships v2 under an ALL-DIGIT tag, the shape of a CI build number: `--set image.tag=`
+# typed it as an int64 and the chart rendered `proofapp:%!s(int64=…)` into every workload.
+NUMERIC_TAG=2026100502
+docker tag proofapp:v2 "proofapp:$NUMERIC_TAG"
 
 step "kind cluster $CLUSTER, the images, a database and the release's secret"
 kind get clusters 2>/dev/null | grep -qx "$CLUSTER" || kind create cluster --name "$CLUSTER" --wait 120s >/dev/null
-for build in v1 v2; do kind load docker-image "proofapp:$build" --name "$CLUSTER" >/dev/null; done
+for tag in v1 "$NUMERIC_TAG"; do kind load docker-image "proofapp:$tag" --name "$CLUSTER" >/dev/null; done
 kubectl apply -f "$KIT/postgres.yaml" >/dev/null
 kubectl create secret generic proofapp-secrets \
   --from-literal=DATABASE_URL=postgres://postgres:proof@postgres:5432/proofapp \
@@ -89,7 +93,7 @@ kubectl run proof-load --image=proofapp:v1 --image-pull-policy=Never --restart=N
   --command -- bun -e "$(cat "$KIT/load.ts")" >/dev/null
 kubectl wait --for=condition=Ready pod/proof-load --timeout=120s >/dev/null
 sleep 10
-deploy v2
+deploy "$NUMERIC_TAG"
 [ "$(kubectl get pod proof-load -o jsonpath='{.status.phase}')" = Running ] \
   || refuse "the load ended before the rollout did, so part of the upgrade went unmeasured. fix: LOAD_SECONDS=$((LOAD_SECONDS * 2)) bash docker/deploy-proof/run.sh"
 kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/proof-load --timeout="$((LOAD_SECONDS + 120))s" >/dev/null

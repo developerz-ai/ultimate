@@ -421,10 +421,11 @@ export type {
   WebhookDeliveryInput,
   WebhookEndpoint,
   WebhookEvent,
-  WebhookFetch,
   WebhookReport,
 } from './webhook';
-export { DEFAULT_WEBHOOK_DISABLE_AFTER, WEBHOOK_CONTENT_TYPE, webhook } from './webhook';
+export { DEFAULT_WEBHOOK_DISABLE_AFTER, webhook } from './webhook';
+export type { WebhookFetch } from './webhook-attempt';
+export { WEBHOOK_CONTENT_TYPE } from './webhook-attempt';
 export {
   WebhookDeliveryFailedError,
   WebhookDeliveryRejectedError,

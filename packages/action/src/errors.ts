@@ -27,6 +27,7 @@ export {
   IdempotencyReplayedFailureError,
   IdempotencyReservationLostError,
   IdempotencyStatusUnknownError,
+  IdempotentReplayRedactedError,
   MutatorNotIdempotentError,
 } from './errors-idempotency';
 
@@ -65,6 +66,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_MUTATOR_NOT_IDEMPOTENT: 'a mutator is declared without idempotent: true',
   X_IDEMPOTENCY_RESERVATION_LOST:
     "an idempotent action's reservation was taken over before its transaction could settle it",
+  X_IDEMPOTENT_REPLAY_REDACTED: 'an idempotent replay would return a field redacted at rest',
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

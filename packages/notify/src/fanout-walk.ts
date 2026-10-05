@@ -21,6 +21,8 @@ export interface Walk<Params> {
   readonly event: NotifyEvent<Params>;
   readonly audience: readonly Recipient[];
   readonly ctx: Ctx;
+  /** The job run's id, which every retry of it keeps — what names this run's digest appends. */
+  readonly runId: string;
   readonly step: StepApi;
   readonly tally: Tally;
 }

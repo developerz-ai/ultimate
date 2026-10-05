@@ -41,6 +41,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
 | `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
+| `idempotency-redact.ts` | `restingAnswer` — the copy of an answer a store may keep: core's `isRedactedKey` + `isSecret`, the SAME reference when nothing is redacted |
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
@@ -219,8 +220,17 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   inside `withWriteOrigin(writeDigest(key))` so the page recognises its own `records` echo. A label,
   never a gate.
 - **Both stores FENCE a settlement on the reservation `id` AND `in-flight`**:
-  `settle(key, value, reservationId)` / `fail(key, failure, reservationId)`. A fenced no-op is logged,
+  `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)`. A fenced no-op is logged,
   never thrown.
+- **An answer rests REDACTED** (#591): `withIdempotency` passes the store `restingAnswer(value)`
+  (core's `isRedactedKey` + `isSecret` — never a second rule) and `redacted` as `settle`'s
+  REQUIRED 4th argument; both stores keep it (`x_idempotency.redacted`, memory's record field).
+  A flagged replay is `X_IDEMPOTENT_REPLAY_REDACTED`, decided by the FLAG, never by scanning for
+  `[redacted]`. Plain data is the same reference, replayed as before; anything else that
+  `JSON.stringify` would run app code on (`toJSON`, `Map`/`Set`, class instances, `Date`
+  subclasses) is redacted FAIL-CLOSED, and a getter is read once. `keepsRedaction: true` is a
+  required store declaration (`type-pins.ts`: a pre-25 store is a build error — a required
+  parameter alone is not). A reclaim and a `fail` reset the flag.
 - **A stored status is NARROWED** (`isIdempotencyStatus`; unknown is
   `X_IDEMPOTENCY_STATUS_UNKNOWN`), never cast.
 - **Where records live is DECLARED and refused at registration**: `IdempotencyStore.scope` vs

@@ -255,8 +255,9 @@ describe('the drain hands every hook back', () => {
         dev: false,
       }),
     }).start();
-    // Two: 'accept' stops listening, 'close' closes the socket. Non-vacuity for the count below.
-    expect(shutdownHookCount()).toBe(before + 2);
+    // Three: 'accept' stops listening, 'inflight' waits out the bodies still being written,
+    // 'close' closes the socket. Non-vacuity for the count below.
+    expect(shutdownHookCount()).toBe(before + 3);
 
     // The SIGTERM path, which is the one that clears `server` from underneath `stop()`.
     await drain('SIGTERM');

@@ -15,6 +15,7 @@ import {
   markReady,
   onShutdown,
   readyzPayload,
+  systemClock,
 } from '@ultimat3/core';
 import type { Server } from 'bun';
 import { defineHttpConfig, type HttpConfig } from './config';
@@ -152,6 +153,9 @@ export interface ServerHandle {
   fetch(request: Request): Promise<Response>;
 }
 
+/** How often the `inflight` hook re-reads Bun's count of unfinished responses. */
+const BODY_POLL_MS = 5;
+
 const roleFromEnv = (): Role => (Bun.env['ROLE'] ?? 'web') as Role;
 
 export const createServer = (options: ServerOptions): ServerHandle => {
@@ -209,6 +213,7 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
   const mount = options.websocket;
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;
+  let unregisterBodies: (() => void) | undefined;
   let unregisterClose: (() => void) | undefined;
   let stopListening: (() => void) | undefined;
 
@@ -361,14 +366,40 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
       // 'accept' runs first on SIGTERM, but only after core's readiness grace: readyz flips to
       // 503 the moment the drain starts, the socket stays open for `readinessGraceMs`, so the
       // endpoints controller stops routing here before this closes it — not a 502 in between.
+      //
+      // NOT awaited: Bun's `stop(false)` stops the listener at once but resolves only when every
+      // request AND every websocket on it has closed — so one open browser tab held this hook, and
+      // every `accept` hook after it (worker, scheduler), until the drain deadline, leaving the
+      // `close` hooks 0 ms. Handlers are core's to wait for (`beginWork()`), bodies the `inflight`
+      // hook's below, sockets the `close` hook's `stop(true)`. The same shape as
+      // `realtime/src/sync-listen.ts`. A rejection is the close hook's to surface, not this one's.
       unregister = onShutdown(
         `http:${role}`,
-        async () => {
-          await server?.stop(false);
+        () => {
+          server?.stop(false).catch(() => undefined);
         },
         { phase: 'accept' },
       );
-      // 'close' runs after core has waited out the in-flight phase.
+      // The BODIES. `beginWork()` ends when a handler returns its Response, and a streamed body —
+      // a page render, a file, an LLM stream — is still being written after that; awaiting
+      // `stop(false)` above was what used to wait for it, websockets and all. Bun's
+      // `pendingRequests` counts exactly the responses not yet finished (a client that went away
+      // included as finished), never an upgraded socket, so this waits for bodies alone and costs
+      // the request path nothing. Polled, and bounded by the drain's own deadline: a body that
+      // never ends (SSE) is cut by the `close` hook's `stop(true)`, not waited on forever.
+      unregisterBodies = onShutdown(
+        `http:${role}:bodies`,
+        async (reason) => {
+          while (
+            (server?.pendingRequests ?? 0) > 0 &&
+            systemClock.monotonic() < reason.deadlineAt
+          ) {
+            await Bun.sleep(BODY_POLL_MS);
+          }
+        },
+        { phase: 'inflight' },
+      );
+      // 'close' runs after core has waited out the in-flight phase, bodies included.
       unregisterClose = onShutdown(
         `http:${role}:close`,
         async () => {
@@ -392,8 +423,10 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
       const releaseHooks = (): void => {
         releaseStore();
         unregister?.();
+        unregisterBodies?.();
         unregisterClose?.();
         unregister = undefined;
+        unregisterBodies = undefined;
         unregisterClose = undefined;
       };
       if (server === undefined) {

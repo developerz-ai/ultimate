@@ -487,6 +487,41 @@ post-commit: a handler that took the money and then failed its own `output:` sch
 The reservation is settled as a FAILURE and the retry re-throws it under the first attempt's own
 code. Releasing it there is what made idempotency the cause of a double charge.
 
+**A credential in the answer is never kept at rest.** The record lives a day, and a mutator is
+always idempotent — so a "create an API key" mutator would otherwise leave the plaintext key in
+`x_idempotency.value`. On settle, every value under a key `@ultimat3/core`'s `isRedactedKey` names
+(the table the logger and the audit row use, extended by `defineEnv({ secret: true })`) and every
+`Secret` box is stored as `[redacted]`, at any depth, and the record is flagged `redacted`. The
+first caller still gets the whole answer. A replay of a flagged record is
+`X_IDEMPOTENT_REPLAY_REDACTED` (409) rather than `[redacted]` served as the answer: the first call
+RAN, so read its effect with a query — a fresh key runs the mutation again. An answer with no such
+key is stored and replayed exactly as before — plain data (plain objects, arrays, `Date`,
+primitives) comes back as the same reference. **What the walk cannot vouch for is redacted too**:
+a value with a `toJSON` method, a `Map`, a `Set`, a class instance or a `Date` subclass, because
+`JSON.stringify` would run app code the walk never saw; an own getter is read once and the stored
+copy holds that read. A custom `IdempotencyStore` receives the redacted copy, must declare
+`keepsRedaction: true` (a store without it is a compile error), and must keep `settle`'s required
+fourth argument and hand it back as `IdempotencyRecord.redacted`:
+
+```ts
+import type { IdempotencyStore } from '@ultimat3/action';
+
+// A store that wraps another — a metrics or tracing decorator — passes the flag through.
+export function counted(inner: IdempotencyStore, onSettle: () => void): IdempotencyStore {
+  return {
+    scope: inner.scope,
+    keepsRedaction: true,
+    reserve: (key, requestHash) => inner.reserve(key, requestHash),
+    settle: (key, value, reservationId, redacted) => {
+      onSettle();
+      return inner.settle(key, value, reservationId, redacted);
+    },
+    release: (key) => inner.release(key),
+    get: (key) => inner.get(key),
+  };
+}
+```
+
 **The stored payload fingerprint is keyed.** `requestHash` is `keyedFingerprint(input, …)` from
 `@ultimat3/core`: `h1:<key id>:<HMAC-SHA-256/128>` under a key derived from the app's signing
 secret (`ULTIMATE_CURSOR_SECRET` / `configureCursorSigning`), never a bare hash — the row lives a

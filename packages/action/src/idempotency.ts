@@ -9,8 +9,10 @@ import {
   IdempotencyConflictError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
+  IdempotentReplayRedactedError,
 } from './errors';
 import { MemoryIdempotencyStore } from './idempotency-memory';
+import { restingAnswer } from './idempotency-redact';
 
 /**
  * Where a store's records live. Declared by the driver, never inferred — the same rule
@@ -68,6 +70,12 @@ export interface IdempotencyRecord {
   readonly value: unknown;
   /** Present exactly when `status === 'failed'` — what the replay re-throws. */
   readonly failure?: IdempotencyFailure | undefined;
+  /**
+   * True when `value` had a field redacted at rest (`idempotency-redact.ts`). Its replay is
+   * `X_IDEMPOTENT_REPLAY_REDACTED`, decided by this flag — never by scanning the value for
+   * `[redacted]`, a string a legitimate answer may hold. Absent or false: replayed as stored.
+   */
+  readonly redacted?: boolean | undefined;
   /** Epoch milliseconds. The store's own dedupe window is measured from here. */
   readonly createdAt: number;
 }
@@ -91,6 +99,14 @@ export interface IdempotencyStore {
    * is one immortal entry per write, forever.
    */
   readonly windowMs?: number | undefined;
+  /**
+   * The store's declaration that it keeps `settle`'s `redacted` flag and hands it back as
+   * `IdempotencyRecord.redacted` (#591). REQUIRED, and a literal: a store written before answers
+   * were redacted at rest drops the flag and would replay `[redacted]` as the answer, and a
+   * required parameter alone cannot refuse it — TypeScript accepts an implementation with fewer
+   * parameters. Without this member, such a store is a build error (`type-pins.ts`).
+   */
+  readonly keepsRedaction: true;
   /** Atomically create-or-fetch the record for `key`. The atomicity is the point. */
   reserve(key: string, requestHash: string): Promise<IdempotencyReservation>;
   /**
@@ -104,8 +120,13 @@ export interface IdempotencyStore {
    * exactly, overwrote a live reservation, and the replacement's own settle was then fenced out —
    * so the retry replayed a value produced for a different request. A settlement that matches no
    * record is logged, never thrown: it lands after the handler has committed.
+   *
+   * `value` is already the RESTING copy — `withIdempotency` redacts before it calls, so no store
+   * ever receives a credential. `redacted` says it did, and a store MUST keep it and hand it back
+   * as `IdempotencyRecord.redacted`: one that drops it replays `[redacted]` as the answer. Required
+   * of every caller, so a store that wraps another cannot drop it on the way through.
    */
-  settle(key: string, value: unknown, reservationId: string): Promise<void>;
+  settle(key: string, value: unknown, reservationId: string, redacted: boolean): Promise<void>;
   /**
    * Settle a FAILURE, so the retry replays it instead of re-running a handler that may already
    * have committed. Fenced on the same reservation id as `settle`, for the same case — a
@@ -221,6 +242,9 @@ export async function withIdempotency<T>(
   if (!created) {
     if (record.status === 'in-flight') throw new IdempotencyConflictError(key, 'in-flight');
     if (record.status === 'failed') throw new IdempotencyReplayedFailureError(key, record.failure);
+    // The stored value lost a credential at rest: serving it would hand `[redacted]` back as the
+    // answer, so the replay is refused — and, like any replay, spends and runs nothing.
+    if (record.redacted === true) throw new IdempotentReplayRedactedError(key);
     // The stored value is the previous return of this very handler.
     return { value: record.value as T, replayed: true };
   }
@@ -249,7 +273,11 @@ export async function withIdempotency<T>(
   // Inside a transaction the shared store settles on that transaction's connection, so "settled"
   // and "the write is durable" are one COMMIT — and a settle that lost its reservation THROWS
   // (`X_IDEMPOTENCY_RESERVATION_LOST`), which is the rollback of an attempt a retry replaced.
-  await store.settle(key, value, record.id);
+  //
+  // The CALLER gets `value` whole; the store gets the resting copy, so an answer carrying a
+  // credential is never written down in plaintext for the window (#591).
+  const resting = restingAnswer(value);
+  await store.settle(key, resting.value, record.id, resting.redacted);
   return { value, replayed: false };
 }
 

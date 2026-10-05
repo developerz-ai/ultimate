@@ -63,8 +63,8 @@ export class ReplicationTlsError extends RealtimeError {
 /**
  * A second replicator found the advisory lock held. Distinct from `X_REPLICATION_FAILED` because
  * nothing is wrong with this process: the database already has its one replicator, and a second
- * one that started anyway would publish every change twice. Terminal for a container whose whole
- * job is that role — the scheduler is the thing that has to change, not the connection.
+ * one that started anyway would publish every change twice. Thrown only under `x dev`: a container
+ * that loses the lock stays up unready and takes over when it frees (`cli/src/role-replicator.ts`).
  */
 export class ReplicatorSlotHeldError extends RealtimeError {
   constructor(args: { key: string; holder?: string | undefined }) {
@@ -73,7 +73,7 @@ export class ReplicatorSlotHeldError extends RealtimeError {
       cause:
         `advisory lock ${args.key} is held${args.holder === undefined ? '' : ` by ${args.holder}`}` +
         ' — one database has exactly one replicator',
-      fix: 'scale the replicator to 1 per database: kubectl scale deploy/replicator --replicas=1',
+      fix: 'x dev --role replicator   # rerun after the replicator already on this DATABASE_URL stops — one database has one replicator',
     });
   }
 }

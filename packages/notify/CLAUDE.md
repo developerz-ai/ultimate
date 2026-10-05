@@ -61,6 +61,18 @@ opens the window and owns the flush; an elapsed open window is sealed and the ap
 its `drain` is still a delete, so the seam is unchanged (`digest-parity.live.test.ts` runs one
 suite against both stores).
 
+**A digest append is ONE STEP PER RECIPIENT, and idempotent per appender** (`As of 2026-10-05`).
+The append pass was one `step.run`, and a step that fails part-way re-runs WHOLE: recipients already
+appended read `opened: false` from the window they had opened and it was never drained, and a window
+they had JOINED could have been drained and deleted by its owner meanwhile, so their event went out
+in a second digest. Now `digest:<channel>:<recipient>` is a step each (the step store is the
+durable fence; one row per recipient, as `deliver:` already writes), and behind it
+`DigestAppend.appender` (`${runId}:${recipient}`) is stored per window — `appended_by text[]`,
+opener first — so an append whose answer was lost, or a run whose step history is gone, gets back
+the window it landed in while that window exists. Two executions of one appender at once (a lapsed
+lease) cannot both join: the `do update` refuses an appender already in the row. Pinned by
+`fanout-digest.test.ts` and `digest-parity.live.test.ts`.
+
 **The audience is deduplicated by `id` once, as it leaves the `open` step** (`As of 2026-10-02`).
 Every per-recipient step is named by the id, so a resolver that named one person twice failed
 `X_STEP_DUPLICATE` part-way through the fan-out, on every retry. Outside the step rather than in it,

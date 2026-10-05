@@ -116,6 +116,34 @@ describe('logger · redaction by key', () => {
     'databaseUrl',
     'DATABASE_URL',
     'REDIS_URL',
+    // Security review of #591: the names an idempotent answer or an audit row carries a bearer
+    // credential under that the table did not know.
+    'credentials',
+    'credential',
+    'awsCredentials',
+    'jwt',
+    'accessJwt',
+    'JWT',
+    'bearer',
+    'authBearer',
+    'sessionId',
+    'session_id',
+    'sessionKey',
+    'cookies',
+    'sessionCookie',
+    'privateKey',
+    'privateKeyPem',
+    'private_key_pem',
+    'privateKeyJwk',
+    'cvv',
+    'cvv2',
+    'cardCvv',
+    'cvc',
+    'pin',
+    'PIN',
+    'cardPin',
+    'pinCode',
+    'pin_hash',
   ])('a compound credential name is redacted: %s', (key) => {
     expect(isRedactedKey(key)).toBe(true);
     const { logger, lines } = capture();
@@ -173,6 +201,26 @@ describe('logger · redaction by key', () => {
     'hash',
     'option',
     'author',
+    // Security review of #591, the other direction: a short word is matched whole, never inside
+    // another, and the readable half of each new family stays readable.
+    'spinner',
+    'pinned',
+    'isPinned',
+    'shipping',
+    'opinion',
+    'pinterestUrl',
+    'pins',
+    'credentialId',
+    'credentialsPath',
+    'jwksUrl',
+    'jwtIssuer',
+    'bearerFormat',
+    'sessionStart',
+    'sessionCount',
+    'cookieName',
+    'cookiePath',
+    'privateKeyId',
+    'cvvLength',
   ])('an ordinary name stays readable: %s', (key) => {
     expect(isRedactedKey(key)).toBe(false);
   });

@@ -23,10 +23,10 @@ ROLE=replicator myapp
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant is session-scoped and the executor is a pool. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds the migration advisory lock on one pinned session for the whole run, so overlapping deploys serialise — the second waits, polling once per 500ms for up to 60s, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the rollout (`As of 2026-08`; 1.2.0 waits forever — [Known gaps](Known-Gaps)) |
-| `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
+| `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock — a container that loses it stays up, `/readyz` 503, and takes over when the holder goes (`x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD` instead) |
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
-- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`), and `x dev --role replicator` refuses (`X_REPLICATOR_SLOT_HELD`). A `scheduler` or `replicator` container that does not hold its lease or lock stays up as a standby — unready, retrying — rather than running degraded or double-delivering.
 - **There is no `ROLE=all`.** Those six names are the whole set; anything else is `X_ROLE_UNKNOWN` at boot. For dev, `x dev` co-locates `web`, `sync`, `worker` and `scheduler` in one process — role isolation is simulated, not skipped, and `--role` opts the `replicator` in.
 
 `PORT` selects the bind port, default `3000`. Empty or whitespace falls back to the default; anything else must be an integer in 0–65535 or the process refuses with `X_PORT_INVALID` rather than quietly binding 3000 and failing the platform's health probe with nothing in the log that names the cause. The production entry is the scaffolded `apps/web/server.ts` → [CLI reference](CLI-Reference).
@@ -228,18 +228,22 @@ services:
 | `sync` | **active WS connections** (custom metric) | 2–100 | no session affinity; connection count is the only honest signal |
 | `worker` | **queue depth** per named queue (custom metric) | 2–200 | one Deployment per queue when isolation matters |
 | `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1, leader lock covers overlap |
-| `replicator` | none — `replicas: 1` | 1 | `StatefulSet`-shaped for stable identity; owns the slot |
+| `replicator` | none — `replicas: 1` | 1 | owns the slot; `strategy: Recreate`, because a surged pod can only stand by unready and `maxUnavailable: 0` would never retire the holder |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
 
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_depth`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. Two things remain, and neither is the chart's: `serviceMonitor.enabled` defaults **false**, because a cluster without the Prometheus operator has no such CRD and `helm install` would fail on an unknown kind; and turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
 
 `x deploy --method helm` works in a fresh app `As of 2026-08-19`: the command implements helm
 completely and its `X_NOT_IMPLEMENTED` branch — which claimed the *build* did not implement it, over
-a build that did — is deleted. An app that deleted its chart now gets helm's own error.
+a build that did — is deleted. An app that deleted its chart now gets helm's own error. The image
+goes in as `--set-string image.repository=… --set-string image.tag=…` `As of 2026-10`: a plain
+`--set` typed an all-digit tag (a build number) as an integer and rendered `app:%!s(int64=…)`.
 
 The framework repo's own [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm)
 carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in
-an npm tarball, so taking them is a `git clone` of this repo. On 3.0.0 and below, `x new` writes no
+an npm tarball, so taking them is a `git clone` of this repo. Its `image.repository` is a placeholder
+(`registry.example.com/your-app`) — the framework publishes no app image — and an emptied one is a
+render error naming the key. On 3.0.0 and below, `x new` writes no
 chart at all and `--method helm` exits `X_NOT_IMPLEMENTED`: copy the chart in, or use
 `--method compose`.
 

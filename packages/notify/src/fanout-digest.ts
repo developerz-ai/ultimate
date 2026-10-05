@@ -21,7 +21,7 @@ export interface DigestFlush<Params> {
 
 export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<void> {
   const { walk, channel, delivery, allowed } = input;
-  const { plan, event, ctx, step, tally } = walk;
+  const { plan, event, ctx, runId, step, tally } = walk;
   const windowMs = delivery.digestMs ?? 0;
   const digest = requireDigest(plan.name);
   const group = delivery.group?.(event) ?? plan.name;
@@ -32,26 +32,33 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
     group,
   });
 
-  // One step for the whole append pass: appending is what a replayed attempt must NOT redo, or the
-  // same event lands in the digest twice.
-  const opened = await step.run(`digest:${channel.name}`, async () => {
-    // Each owner's OWN window end: two recipients' windows need not close together, and the
-    // drain takes the window it names.
-    const owned: { readonly id: string; readonly endsAt: number }[] = [];
-    let endsAt = 0;
-    for (const recipient of allowed) {
-      const bucket = await digest.append({
+  // ONE STEP PER APPEND, and the step store is the fence: a completed append is never redone, so
+  // the same event never lands in a digest twice. One step for the whole pass re-ran every append
+  // when any one failed, and the window a re-run append had joined may already have been drained
+  // and deleted by its owner — nothing in the store remembered it, so the event went out again in
+  // a second digest. The appender id is the store's own defence behind the step: an append whose
+  // write committed but whose answer was lost, or a run whose step history is gone, gets back the
+  // window it already landed in — `opened` included — for as long as that window exists.
+  // Each owner's OWN window end: two recipients' windows need not close together, and the drain
+  // takes the window it names.
+  const opened: { owned: { readonly id: string; readonly endsAt: number }[]; endsAt: number } = {
+    owned: [],
+    endsAt: 0,
+  };
+  for (const recipient of allowed) {
+    const bucket = await step.run(`digest:${channel.name}:${recipient.id}`, () =>
+      digest.append({
         slot: slotFor(recipient.id),
         event,
         windowMs,
         now: ctx.now(),
-      });
-      if (!bucket.opened) continue;
-      owned.push({ id: recipient.id, endsAt: bucket.endsAt });
-      endsAt = Math.max(endsAt, bucket.endsAt);
-    }
-    return { owned, endsAt };
-  });
+        appender: `${runId}:${recipient.id}`,
+      }),
+    );
+    if (!bucket.opened) continue;
+    opened.owned.push({ id: recipient.id, endsAt: bucket.endsAt });
+    opened.endsAt = Math.max(opened.endsAt, bucket.endsAt);
+  }
 
   tally.digested += allowed.length - opened.owned.length;
   if (opened.owned.length === 0) return;

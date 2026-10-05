@@ -60,6 +60,7 @@ interface Flight {
 export class MemoryIdempotencyStore implements IdempotencyStore {
   /** Declared, never inferred: this map is this process's and nothing else can reach it. */
   readonly scope: IdempotencyScope = 'process';
+  readonly keepsRedaction = true as const;
   readonly windowMs: number;
   readonly #maxKeys: number;
   readonly #evictTo: number;
@@ -148,11 +149,18 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
    * again — which is why the id is half the fence. Both stores fence, or the guarantee is
    * whichever store the deployment happens to install.
    */
-  settle(key: string, value: unknown, reservationId: string): Promise<void> {
+  settle(key: string, value: unknown, reservationId: string, redacted: boolean): Promise<void> {
     const existing = this.#owned(key, reservationId);
+    // Spread only when set, so an unredacted record keeps the exact shape it always had.
+    const settled = (from: IdempotencyRecord): IdempotencyRecord => ({
+      ...from,
+      status: 'settled',
+      value,
+      ...(redacted ? { redacted: true } : {}),
+    });
     const tx = liveTransaction();
     if (tx === undefined) {
-      if (existing !== undefined) this.#records.set(key, { ...existing, status: 'settled', value });
+      if (existing !== undefined) this.#records.set(key, settled(existing));
       return Promise.resolve();
     }
     // Inside a transaction the record is settled BY the commit, as the Postgres store's is: a
@@ -170,7 +178,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     tx.onCommit(() => {
       // Still this reservation's: `settling` kept a reclaim away, and `release` may have dropped it.
       if (this.#records.get(key) === existing) {
-        this.#records.set(key, { ...existing, status: 'settled', value });
+        this.#records.set(key, settled(existing));
       }
     });
     return Promise.resolve();

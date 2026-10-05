@@ -37,7 +37,7 @@ afterAll(async () => {
 
 describe('rolesUnderRealtime', () => {
   test('enabled keeps every role it was given', () => {
-    expect(rolesUnderRealtime(['web', 'sync', 'replicator'], ON)).toEqual([
+    expect(rolesUnderRealtime(['web', 'sync', 'replicator'], ON, true)).toEqual([
       'web',
       'sync',
       'replicator',
@@ -45,7 +45,7 @@ describe('rolesUnderRealtime', () => {
   });
 
   test('disabled drops sync and the replicator, and keeps the rest', () => {
-    expect(rolesUnderRealtime(['web', 'sync', 'worker', 'scheduler'], OFF)).toEqual([
+    expect(rolesUnderRealtime(['web', 'sync', 'worker', 'scheduler'], OFF, true)).toEqual([
       'web',
       'worker',
       'scheduler',
@@ -56,12 +56,26 @@ describe('rolesUnderRealtime', () => {
   // pass no probe and restart forever. Refused, naming the key and the edit.
   test('disabled with only realtime roles left refuses, naming realtime.enabled', () => {
     for (const roles of [['sync'], ['replicator'], ['sync', 'replicator']] as const) {
-      const error = refusal(() => rolesUnderRealtime(roles, OFF));
+      const error = refusal(() => rolesUnderRealtime(roles, OFF, true));
       expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
       const said = isUltimateError(error) ? `${error.cause} ${error.fix}` : '';
       expect(said).toContain('realtime.enabled');
       expect(said).toContain('app.config.ts');
     }
+  });
+
+  // The container half of the same refusal: `x dev --role` is not something a pod can run, so a
+  // fix line naming it sent the operator to a command that does not apply to the failing process.
+  test('a container refusal names ROLE, not x dev', () => {
+    const error = refusal(() => rolesUnderRealtime(['sync'], OFF, false));
+    expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
+    const said = isUltimateError(error) ? `${error.cause} ${error.fix}` : '';
+    expect(said).toContain('realtime.enabled');
+    expect(said).toContain('ROLE=');
+    // Pasted from its first character (`bun run scripts/fix-prose.ts`): the env, then the command.
+    expect(isUltimateError(error) ? error.fix : '').toMatch(/^ROLE=web bun /);
+    expect(said).not.toContain('x dev');
+    expect(said).not.toContain('--role');
   });
 });
 

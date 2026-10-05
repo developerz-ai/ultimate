@@ -66,15 +66,37 @@ describe('unit · digest window', () => {
     const store = createMemoryDigestStore();
     const slot = { recipient: 'ana', notifier: 'n', channel: 'email', group: 'g' };
     const event: NotifyEvent = { notifier: 'n', key: 'k1', params: {}, at: new Date(0) };
-    const first = await store.append({ slot, event, windowMs: 1_000, now: new Date(0) });
+    const first = await store.append({
+      slot,
+      event,
+      windowMs: 1_000,
+      now: new Date(0),
+      appender: 'run-0',
+    });
     expect(first).toEqual({ opened: true, endsAt: 1_000 });
     expect(store.open).toBe(1);
 
-    expect((await store.append({ slot, event, windowMs: 1_000, now: new Date(500) })).opened).toBe(
-      false,
-    );
     expect(
-      (await store.append({ slot, event, windowMs: 1_000, now: new Date(2_000) })).opened,
+      (
+        await store.append({
+          slot,
+          event,
+          windowMs: 1_000,
+          now: new Date(500),
+          appender: 'run-500',
+        })
+      ).opened,
+    ).toBe(false);
+    expect(
+      (
+        await store.append({
+          slot,
+          event,
+          windowMs: 1_000,
+          now: new Date(2_000),
+          appender: 'run-2000',
+        })
+      ).opened,
     ).toBe(true);
 
     // The re-opened window sits BESIDE the sealed one; it used to replace it, and the two events

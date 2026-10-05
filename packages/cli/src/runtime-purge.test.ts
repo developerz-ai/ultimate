@@ -37,6 +37,7 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
   const at: number[] = [];
   const idempotency: PostgresIdempotencyStore = {
     scope: 'shared',
+    keepsRedaction: true,
     windowMs: 86_400_000,
     reserve: (): Promise<IdempotencyReservation> => Promise.reject(new TypeError('not used')),
     settle: (): Promise<void> => Promise.resolve(),

@@ -22,7 +22,7 @@ export async function runFanout<Params>(
   plan: NotifyPlan<Params>,
   args: JobRunArgs<NotifyPayload<Params>>,
 ): Promise<NotifyReport> {
-  const { input, step, ctx } = args;
+  const { input, step, ctx, runId } = args;
   // One step for BOTH facts, because both must survive a replay: a re-resolved audience would
   // deliver to whoever subscribed during the wait, and a re-read clock would write a different
   // `at` into the inbox on every attempt. Epoch ms rather than a `Date` — a step's return value
@@ -49,7 +49,7 @@ export async function runFanout<Params>(
     at: new Date(open.at),
   };
   const tally: Tally = { delivered: 0, suppressed: 0, skipped: 0, replayed: 0, digested: 0 };
-  const walk: Walk<Params> = { plan, event, audience, ctx, step, tally };
+  const walk: Walk<Params> = { plan, event, audience, ctx, runId, step, tally };
 
   // `deliveries` is sorted by `waitMs`, so this sleeps the DELTA and never the sum: an in-app
   // channel with no wait fires now even when the email beside it waits an hour.

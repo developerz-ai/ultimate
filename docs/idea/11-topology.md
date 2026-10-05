@@ -21,13 +21,13 @@ ROLE=replicator myapp
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant belongs to the **session**, not to the process: it outlives every transaction on the connection and is released only by an explicit unlock, the pool's reset on release, or the connection dying — so a node can neither renew it nor prove it still holds one. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | waits up to 60s for the migration lock while another version's migration is in flight, then refuses (`X_MIGRATE_CONCURRENT`) — bounded, so a wedged predecessor fails the deploy rather than hanging it |
-| `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
+| `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock — a container that loses it stays up unready and takes over when the holder goes |
 
 Rules that keep this honest:
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - `sync` and `web` are interchangeable from the load balancer's perspective except for protocol.
-- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`), and `x dev --role replicator` refuses (`X_REPLICATOR_SLOT_HELD`). A `scheduler` or `replicator` container that does not hold its lease or lock stays up as a standby — unready, retrying — rather than running degraded or double-delivering.
 - Any role can be co-located in one process for dev ([`13-dx.md`](./13-dx.md)) — role isolation is simulated, not skipped.
 
 ## Health endpoints

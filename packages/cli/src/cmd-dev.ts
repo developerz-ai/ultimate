@@ -54,7 +54,14 @@ import { liveFeedLabel } from './runtime-live-feed';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { replicaOverrides } from './runtime-replica';
 import type { RunningServices } from './runtime-services';
-import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './runtime-services';
+import {
+  cdnLabel,
+  describeCdn,
+  describeMail,
+  mailLabel,
+  releaseOrThrow,
+  startServices,
+} from './runtime-services';
 import { metricsPortFor, releaseBoot } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
@@ -348,22 +355,12 @@ async function bootDev(
     running,
     runtime,
     panels,
-    async stop() {
-      watcher.close();
-      await running.stop();
-      releaseIsr();
-      await runtime.stop();
-      // Released after the roles: a span opened by an in-flight request still has an exporter to
-      // end into. `configureTelemetry` merges, so handing back the noop is how it is uninstalled —
-      // leaving it in place would keep every span of the next `startDev` in this process's buffer.
-      configureTelemetry({ exporter: noopExporter });
-      traces.reset();
-      // With the exporter, for the same reason: an in-flight statement is observed by the ledger
-      // that counted its request. Left installed, the next `startDev`'s statements land in these
-      // counts — and instrumentation stays on in a process that is no longer a dev server.
-      setStatementObserver(undefined);
-      statements.reset();
-    },
+    // The boot's own unwind list IS the stop list — one list, so the two cannot drift — plus the
+    // watcher. Every step runs and the first failure is rethrown (`releaseOrThrow`): one refused
+    // role stop used to leave PGlite's lock held for the next `x dev`. Newest first: the watcher,
+    // the roles, ISR, the statement ledger and the exporter (after the roles, so an in-flight
+    // request still has both), then the services.
+    stop: () => releaseOrThrow([...acquired, () => watcher.close()]),
   };
   return server;
 }

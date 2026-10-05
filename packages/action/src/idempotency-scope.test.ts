@@ -39,6 +39,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
 
   test('a store that declares no scope is refused too — unproven is not assumed', () => {
     const noScope: IdempotencyStore = {
+      keepsRedaction: true,
       reserve: () => Promise.reject(new Error('unused')),
       settle: () => Promise.resolve(),
       release: () => Promise.resolve(),
@@ -53,9 +54,10 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
     const inner = new MemoryIdempotencyStore();
     const shared: IdempotencyStore = {
       scope: 'shared',
+      keepsRedaction: true,
       windowMs: inner.windowMs,
       reserve: (key, hash) => inner.reserve(key, hash),
-      settle: (key, value, id) => inner.settle(key, value, id),
+      settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
       fail: (key, failure, id) => inner.fail(key, failure, id),
       release: (key) => inner.release(key),
       get: (key) => inner.get(key),
@@ -77,7 +79,7 @@ describe('the memory store is bounded and swept', () => {
     const store = new MemoryIdempotencyStore({ windowMs: 5_000, now: () => now });
     const first = await store.reserve('k', 'hash-a');
     expect(first.created).toBe(true);
-    await store.settle('k', 'v', first.record.id);
+    await store.settle('k', 'v', first.record.id, false);
 
     // Inside the window: the same key replays.
     expect((await store.reserve('k', 'hash-a')).created).toBe(false);
@@ -93,7 +95,7 @@ describe('the memory store is bounded and swept', () => {
     const store = new MemoryIdempotencyStore({ maxKeys: 100 });
     for (let i = 0; i < 5_000; i += 1) {
       const { record } = await store.reserve(`k${i}`, 'hash');
-      await store.settle(`k${i}`, i, record.id);
+      await store.settle(`k${i}`, i, record.id, false);
     }
     expect(store.size).toBeLessThanOrEqual(100);
   });
@@ -138,7 +140,7 @@ describe('the memory store is bounded and swept', () => {
     await store.reserve('in-flight', 'hash');
     for (let i = 0; i < 500; i += 1) {
       const { record } = await store.reserve(`k${i}`, 'hash');
-      await store.settle(`k${i}`, i, record.id);
+      await store.settle(`k${i}`, i, record.id, false);
     }
     expect((await store.get('in-flight'))?.status).toBe('in-flight');
   });

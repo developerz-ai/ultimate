@@ -32,7 +32,7 @@ function counter(): { readonly run: () => Promise<{ n: number }>; readonly runs:
 async function seeded(requestHash: string): Promise<MemoryIdempotencyStore> {
   const store = new MemoryIdempotencyStore();
   const { record } = await store.reserve('k', requestHash);
-  await store.settle('k', { n: 1 }, record.id);
+  await store.settle('k', { n: 1 }, record.id, false);
   return store;
 }
 

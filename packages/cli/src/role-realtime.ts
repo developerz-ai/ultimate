@@ -14,10 +14,14 @@ const REALTIME_ROLES: readonly Role[] = ['sync', 'replicator'];
  * what `x dev`'s default set needs on an app that opted out (`enabled: false`; the default is on).
  * A selection that was NOTHING but realtime roles is refused instead: that is `ROLE=sync` on an app
  * that turned realtime off, a container that would bind nothing and restart behind its probe.
+ *
+ * `dev` is the boot's `WebBinding.dev`, and picks the invocation the fix names: `x dev --role` for
+ * `x dev`, a `ROLE=` for a container — neither reads the other's selector.
  */
 export function rolesUnderRealtime(
   selected: readonly Role[],
   realtime: Pick<RealtimeConfig, 'enabled'>,
+  dev: boolean,
 ): readonly Role[] {
   // The key is read only when a realtime role was asked for, so a selection without one never
   // depends on it — a hand-built runtime in a test that starts `web` alone included.
@@ -27,7 +31,9 @@ export function rolesUnderRealtime(
   if (kept.length === 0) {
     throw new ConfigInvalidError({
       cause: `role ${dropped.join(',')} was asked for and realtime.enabled is false in app.config.ts, so this process would serve nothing`,
-      fix: `set realtime: { enabled: true } in app.config.ts, or run a role that is not realtime: x dev --role web,worker,scheduler`,
+      fix: dev
+        ? 'set realtime: { enabled: true } in app.config.ts, or run a role that is not realtime: x dev --role web,worker,scheduler'
+        : 'ROLE=web bun apps/web/server.ts — a role that is not realtime; or set realtime: { enabled: true } in app.config.ts and rebuild the image, or drop the role from the deploy (the chart: roles.<role>.enabled: false in values.yaml)',
       meta: { key: 'realtime.enabled', roles: dropped },
     });
   }

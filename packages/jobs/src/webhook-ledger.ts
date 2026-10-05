@@ -39,11 +39,19 @@ export interface WebhookLedger {
    */
   record(attempt: WebhookAttempt): Promise<number>;
   /**
-   * Stop delivering to this endpoint. Called once, on the attempt whose count reached
-   * `disableAfter`. Re-enabling is the app's — a dead endpoint that heals itself is a retry loop
-   * with no end.
+   * Stop delivering to this endpoint. Called by the attempt whose count reached `disableAfter` —
+   * and, rarely, by a second attempt that was already in flight when the first one crossed it, so
+   * an implementation is IDEMPOTENT: disabling a disabled endpoint changes nothing. Re-enabling is
+   * the app's — a dead endpoint that heals itself is a retry loop with no end.
    */
   disable(endpointId: string, reason: string): Promise<void>;
+  /**
+   * Whether `disable` has switched this endpoint off. Asked before every attempt opens a socket,
+   * because `disable` is the only thing the mechanism writes: a ledger that recorded the verdict
+   * and was never asked for it again is an endpoint that keeps receiving POSTs. An app whose
+   * `disable` sets its endpoint row's `disabled` column answers from that same column.
+   */
+  isDisabled(endpointId: string): Promise<boolean>;
 }
 
 /** Attempts one process keeps before the oldest go. A dev ledger that grows forever is a leak. */
@@ -88,9 +96,12 @@ export function memoryWebhookLedger(
       return Promise.resolve(failures);
     },
     disable(endpointId: string, reason: string): Promise<void> {
-      off.set(endpointId, reason);
+      // The FIRST reason stays: it names the run that switched the endpoint off, and a late
+      // in-flight attempt repeating the verdict must not overwrite it.
+      if (!off.has(endpointId)) off.set(endpointId, reason);
       return Promise.resolve();
     },
+    isDisabled: (endpointId: string): Promise<boolean> => Promise.resolve(off.has(endpointId)),
     attempts: (): readonly WebhookAttempt[] => [...attempts],
     disabled: (): ReadonlyMap<string, string> => new Map(off),
     reset(): void {

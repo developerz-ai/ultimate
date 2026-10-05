@@ -141,6 +141,33 @@ describe('a slot renewal that fails', () => {
     }
   });
 
+  test('a slow renewal restarts the window from when it was SENT, as the store does', async () => {
+    // The store stamps the slot's new expiry at the statement. Sent at 10 s and answered at 29 s,
+    // the renewal bought a slot ending at 40 s — counted from the reply, this worker would hold
+    // on to 59 s, sharing a `concurrency: 1` with whoever took the slot at 40.
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      let asked = 0;
+      let advance = (_ms: number): void => undefined;
+      const { clock, tick, lost } = await fixture(() => {
+        asked += 1;
+        if (asked === 1) advance(19_000);
+        return Promise.resolve(true);
+      });
+      advance = (ms) => clock.advance(ms);
+      clock.advance(TTL_MS / 3);
+      await tick();
+      expect(lost).toEqual([]);
+      // To the store's expiry (10 s + 30 s), plus one interval.
+      clock.advance(TTL_MS / 3 + TTL_MS - 19_000);
+      await tick();
+      expect(lost).toHaveLength(1);
+      expect(asked).toBe(1);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   test('a renewal that lands restarts the window; a stopped renewal reports nothing', async () => {
     const error = spyOn(logger, 'error').mockImplementation(() => undefined);
     try {

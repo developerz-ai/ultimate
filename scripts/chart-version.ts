@@ -3,10 +3,12 @@
 // give `scripts/release.ts` the one function that keeps it there, so it stops being hand-kept.
 //
 // `appVersion` is NOT metadata: `values.yaml` ships `image.tag: ""`, which the chart defaults to
-// `.Chart.AppVersion`, so the chart's number IS the image tag a fresh `helm install` pulls. It sat
-// at `0.0.1` — a tag no release has ever pushed — through every 1.x release, and the reason is
-// structural: `scripts/release.ts` rewrites WORKSPACE manifests, and a chart is not a workspace.
-// Bumping it by hand fixes today and drifts again on the next release.
+// `.Chart.AppVersion`, so the chart's number is the TAG a `helm install` with no `image.tag` pulls —
+// from whatever `image.repository` the operator set. No framework workflow publishes an app image
+// (`values.yaml` ships a placeholder repository for that reason), so keeping this current names a
+// consistent default; it does not, on its own, make an install pullable. It sat at `0.0.1` through
+// every 1.x release because `scripts/release.ts` rewrites WORKSPACE manifests and a chart is not a
+// workspace; bumping it by hand fixes today and drifts again on the next release.
 //
 // Runs on `x verify`'s `manifest` step: "does a committed file still describe the code?" is that
 // step's own question, and this is the same question `frameworkManifest` asks about the manifest.
@@ -75,7 +77,7 @@ export function setChartVersions(raw: string, version: string): string {
   // prints `chart … -> 1.3.0` over a chart that received neither key — a report of work that did
   // not happen, which is this slice's whole subject. A missing `appVersion` is worse than a stale
   // one: `values.yaml` ships `image.tag: ""`, so the tag resolves to empty and helm installs
-  // `ultimate-app:`. Written rather than repaired-later, so the output always satisfies
+  // `<repository>:`. Written rather than repaired-later, so the output always satisfies
   // `checkChartVersion` — that property is what `chart-version.test.ts` asserts.
   const write = (text: string, key: ChartVersionKey, value: string): string => {
     const line = `${key}: ${value}`;

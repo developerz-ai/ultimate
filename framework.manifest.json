@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e939f46d4c2e7c26d29e9c0c0d0e360e2a539110f21f762fda88f0dafad5e51c",
+  "buildId": "a2f86ae1d508379d5b1ef3a6d45208b5a4a40741b187fdc39d5dbdb76ab6aed0",
   "tiers": {
     "0": [
       "core",
@@ -1796,6 +1796,11 @@
     },
     {
       "code": "X_IDEMPOTENCY_STATUS_UNKNOWN",
+      "owner": "action",
+      "at": "packages/action/src/errors-idempotency.ts"
+    },
+    {
+      "code": "X_IDEMPOTENT_REPLAY_REDACTED",
       "owner": "action",
       "at": "packages/action/src/errors-idempotency.ts"
     },

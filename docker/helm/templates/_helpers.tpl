@@ -8,8 +8,15 @@
 {{- printf "%s-%s" .Release.Name (include "ultimate.name" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/*
+`toString` on both halves: `--set image.tag=1234567` hands the chart an int64, and `printf "%s"`
+renders `%!s(int64=1234567)` into the reference — ImagePullBackOff on every workload for any
+all-digit tag. `x deploy` passes `--set-string`; this holds for every other caller too. The
+repository is `required`: there is no image this chart can name for you.
+*/}}
 {{- define "ultimate.image" -}}
-{{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- $repository := required "image.repository is empty — set it to the registry path your CI pushes the app image to: --set-string image.repository=ghcr.io/<org>/<app>, or x deploy --method helm --image ghcr.io/<org>/<app>:<tag>" .Values.image.repository -}}
+{{- printf "%s:%s" (toString $repository) (toString (default .Chart.AppVersion .Values.image.tag)) -}}
 {{- end -}}
 
 {{/*
@@ -67,7 +74,7 @@ in values.yaml, where the two numbers would drift.
 {{- $envPort = sub (int $cfg.port) 1 -}}
 {{- end -}}
 - name: {{ $role }}
-  image: {{ include "ultimate.image" $root }}
+  image: {{ include "ultimate.image" $root | quote }}
   imagePullPolicy: {{ $root.Values.image.pullPolicy }}
   securityContext: {{- toYaml $root.Values.securityContext | nindent 4 }}
   env:

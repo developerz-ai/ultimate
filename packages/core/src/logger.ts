@@ -112,6 +112,11 @@ const redactedKeys = new Set<string>([
  *   service URLs that carry `user:password@` (`databaseUrl`, `REDIS_URL`). A bare `url` does not.
  * - the one-time codes by name. Never a `code` suffix: that is the error contract's own field.
  * - a stored hash of any of them: it is what an offline guess runs against.
+ * - a bearer by its kind as the LAST word: `credentials`, `jwt`, `bearer`, `cookies`, a session's
+ *   id or key (`sessionId` IS the session), and key material by encoding (`privateKeyPem`).
+ *   `credentialId`, `jwtIssuer`, `cookieName`, `privateKeyId` name a credential, not hold one.
+ * - card verification codes (`cvv`, `cvc2`) as a suffix, and a `pin` only as the WHOLE word
+ *   behind an owner qualifier — three letters inside `spinner`, `shipping` or `pinned` are not one.
  *
  * Built from constant alternatives with no nested quantifier, so there is no input it backtracks on.
  */
@@ -127,6 +132,10 @@ const CREDENTIAL_NAME = new RegExp(
     '(?:database|db|redis|replication|nats|smtp|amqp|mongo)ur[li]s?$',
     '^totp$|totpcode$|otp$|otpcode$',
     '(?:recovery|backup|mfa)codes?(?:hash(?:es)?)?$',
+    'credentials?$|jwts?$|bearer$|cookies?$|session(?:id|key)s?$',
+    'privatekey(?:pem|der|jwk)$',
+    'cv[vc]2?$',
+    '^(?:card|atm|security|account|user|wallet)?pin(?:code|number)?(?:hash(?:es)?)?$',
   ].join('|'),
 );
 

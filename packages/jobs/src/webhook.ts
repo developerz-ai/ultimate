@@ -19,14 +19,10 @@ import type { Clock, Ctx } from '@ultimat3/core';
 import {
   finiteOption,
   isCanonicalWebhookField,
-  // Core's ONE table, never a fifth copy of it. The copy that lived here omitted 409, so a
-  // receiver saying "a concurrent writer won this round" dead-lettered on attempt 1 as a refusal
-  // no retry could change — the exact divergence `retryable-status.ts` was extracted to end.
-  isRetryableStatus,
-  renderThrowable,
+  isUltimateError,
   systemClock,
+  throwIfAborted,
   WEBHOOK_FIELD_MAX,
-  webhookHeaders,
 } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
@@ -36,10 +32,9 @@ import { job } from './job';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 import type { JobTenant } from './tenant';
+import type { Outcome, WebhookFetch } from './webhook-attempt';
+import { attemptDelivery, deliveryError, deliverySignal } from './webhook-attempt';
 import {
-  WebhookDeliveryFailedError,
-  WebhookDeliveryRejectedError,
-  WebhookDeliveryThrottledError,
   WebhookEndpointDisabledError,
   WebhookEndpointInvalidError,
   WebhookEndpointUnknownError,
@@ -47,18 +42,8 @@ import {
   WebhookEventUnknownError,
 } from './webhook-errors';
 import type { WebhookLedger } from './webhook-ledger';
-import type { WebhookResolve, WebhookTarget } from './webhook-target';
+import type { WebhookResolve } from './webhook-target';
 import { resolveWebhookHost, webhookTarget } from './webhook-target';
-
-/** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
-/**
- * The transport. `init.tls.serverName` carries the hostname a PINNED connection proves, because
- * the url it is handed names the approved address (`webhook-target.ts`); Bun's `fetch` honours it.
- */
-export type WebhookFetch = (
-  url: string,
-  init: RequestInit & { readonly tls?: { readonly serverName?: string } },
-) => Promise<Response>;
 
 /**
  * Consecutive failures before an endpoint stops taking deliveries. Ten is roughly a day of a
@@ -66,12 +51,6 @@ export type WebhookFetch = (
  * a decommissioned endpoint does not cost the fleet forever.
  */
 export const DEFAULT_WEBHOOK_DISABLE_AFTER = 10;
-
-/** The one content type a delivery announces. The BODY is the app's; how it is framed is not. */
-export const WEBHOOK_CONTENT_TYPE = 'application/json';
-
-/** `Retry-After` in seconds. The HTTP-date form is ignored on purpose — see `retryAfterSeconds`. */
-const RETRY_AFTER_SECONDS = /^\d{1,7}$/;
 
 export interface WebhookEndpoint {
   readonly id: string;
@@ -184,13 +163,6 @@ export interface WebhookDefinition {
   readonly timeout?: DurationInput;
 }
 
-/** `Retry-After: 120`. The HTTP-date form needs the receiver's clock, which is what we do not trust. */
-const retryAfterSeconds = (response: Response): number | undefined => {
-  const header = response.headers.get('retry-after');
-  if (header === null || !RETRY_AFTER_SECONDS.test(header.trim())) return undefined;
-  return Number(header.trim());
-};
-
 export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput> {
   const clock = definition.clock ?? systemClock;
   const disableAfter = finiteOption(
@@ -200,7 +172,8 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
   );
   const send = definition.fetch ?? ((url, init) => fetch(url, init));
 
-  return job<WebhookDeliveryInput>({
+  // Named so `run` can read the deadline `job()` resolved — one parse of `timeout`, never two.
+  const handle: JobHandle<WebhookDeliveryInput> = job<WebhookDeliveryInput>({
     name: definition.name,
     input: t.object({ endpointId: t.string, eventId: t.string }),
     // Endpoint AND event: the same event fans out to every subscribed endpoint, so a key on the
@@ -211,6 +184,16 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     async run({ input, ctx, attempt }): Promise<WebhookReport> {
+      // On the clock `executeJob`'s deadline timer runs on, read as the body starts — which is
+      // when that timer is armed.
+      const deadline =
+        handle.timeoutMs === undefined
+          ? undefined
+          : {
+              atMs: performance.now() + handle.timeoutMs,
+              job: definition.name,
+              timeoutMs: handle.timeoutMs,
+            };
       const endpoint = await definition.endpoint({ endpointId: input.endpointId, ctx });
       if (endpoint === null) {
         throw new WebhookEndpointUnknownError({
@@ -220,7 +203,9 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
       }
       // Before the ledger and before the socket: a disabled endpoint costs nothing, which is the
       // whole point of disabling one.
-      if (endpoint.disabled === true) {
+      // Asked of BOTH sources, because `disableAfter` writes only the ledger: an endpoint the
+      // mechanism switched off must stop here whether or not the app mirrored it onto its row.
+      if (endpoint.disabled === true || (await definition.ledger.isDisabled(endpoint.id))) {
         throw new WebhookEndpointDisabledError({
           webhook: definition.name,
           endpointId: endpoint.id,
@@ -260,17 +245,41 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
       // again now, so a receiver's freshness window measures the request in front of it rather
       // than the age of the fact behind it.
       const timestampSeconds = Math.floor(nowMs(clock) / 1_000);
+      // The last moment a cancelled attempt can stop without the receiver hearing anything — the
+      // drain included: a POST not yet started is handed back to the next pod at no cost.
+      stopIfCancelled(ctx);
       const startedAt = clock.monotonic();
-      const outcome: Outcome = await ('unresolved' in target
-        ? Promise.resolve({ ok: false as const, status: null, detail: target.unresolved })
-        : attemptDelivery(send, endpoint, target, {
-            secret: endpoint.secret,
-            timestampSeconds,
-            eventId: input.eventId,
-            topic: event.topic,
-            body: event.body,
-          }));
+      // Past this line the drain no longer cancels: see `deliverySignal`.
+      const request = deliverySignal(ctx.signal, deadline);
+      let outcome: Outcome;
+      try {
+        outcome = await ('unresolved' in target
+          ? Promise.resolve({ ok: false as const, status: null, detail: target.unresolved })
+          : attemptDelivery(
+              send,
+              endpoint,
+              target,
+              {
+                secret: endpoint.secret,
+                timestampSeconds,
+                eventId: input.eventId,
+                topic: event.topic,
+                body: event.body,
+              },
+              request.signal,
+            ));
+      } finally {
+        request.dispose();
+      }
       const durationMs = Math.max(0, clock.monotonic() - startedAt);
+      // A failure the REQUEST's cancellation caused is not the receiver's, and is not this
+      // attempt's to record: the queue has already handed the delivery to another worker, whose
+      // outcome is the one the consecutive count must hear. Recorded, it was a failure nobody saw
+      // counting toward `disableAfter` — an abandoned attempt switching off a healthy endpoint.
+      // Read off the request's signal, never the attempt's: a receiver that really failed while
+      // the worker drained is a failure like any other, and the count hears it. A delivery that
+      // LANDED is a fact, and is always recorded.
+      if (!outcome.ok && request.signal.aborted) stopIfCancelled(ctx);
 
       // Recorded whatever happened, and BEFORE the throw: a failure that is not on the ledger is a
       // failure the consecutive count cannot see, which is an endpoint that never gets disabled.
@@ -311,6 +320,7 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
       throw deliveryError(definition.name, endpoint, outcome);
     },
   });
+  return handle;
 }
 
 /** A URL no delivery may open, or a secret that would make the POST unsigned. The parsed url. */
@@ -346,96 +356,14 @@ function assertDeliverable(name: string, endpoint: WebhookEndpoint): URL {
   return parsed;
 }
 
-type Outcome =
-  | { readonly ok: true; readonly status: number }
-  | {
-      readonly ok: false;
-      readonly status: number | null;
-      readonly detail: string;
-      readonly retryAfterSeconds?: number;
-    };
-
 /**
- * The row's own headers, then the framework's — each SET, case-insensitively, over whatever the row
- * said. An object spread cannot do this: `{ Host: 'evil.test', host: <pinned> }` keeps both keys and
- * `fetch` joins them, so a row would reach another virtual host, change the content type, and ship
- * a forged value inside the signature list. Going through `Headers` collapses every spelling of a
- * name to one entry before the framework's value replaces it. Returned as a plain lowercase record,
- * because an injected `WebhookFetch` has always been handed one.
- *
- * Inside the caller's `try`: a row header the platform refuses (a newline in a value) is the same
- * failed attempt it always was, never a bare `TypeError` out of the job.
+ * Throw the attempt's cancellation as itself — the deadline's `X_JOB_TIMEOUT`, the drain's
+ * `X_DRAINING`, a lost lease — so `executeJob` reads the stop it caused, never a delivery failure
+ * naming a receiver that did nothing wrong. Core's `X_ABORTED` when the reason carries no code.
  */
-function deliveryHeaders(
-  endpoint: WebhookEndpoint,
-  target: WebhookTarget,
-  signing: Parameters<typeof webhookHeaders>[0],
-): Record<string, string> {
-  const headers = new Headers(endpoint.headers);
-  // The name the pinned address is reached AS, so an endpoint cannot redirect the request to a
-  // different virtual host than the one it registered.
-  headers.set('host', target.host);
-  headers.set('content-type', WEBHOOK_CONTENT_TYPE);
-  // The signature and the event identity it covers: a row can never overwrite what it is proved by.
-  for (const [name, value] of Object.entries(webhookHeaders(signing))) headers.set(name, value);
-  return Object.fromEntries(headers.entries());
-}
-
-async function attemptDelivery(
-  send: WebhookFetch,
-  endpoint: WebhookEndpoint,
-  target: WebhookTarget,
-  signing: Parameters<typeof webhookHeaders>[0],
-): Promise<Outcome> {
-  let response: Response;
-  try {
-    response = await send(target.url, {
-      method: 'POST',
-      headers: deliveryHeaders(endpoint, target, signing),
-      ...(target.serverName === undefined ? {} : { tls: { serverName: target.serverName } }),
-      body: signing.body,
-      // Never followed: a 3xx would re-POST a body signed for one host to whatever the receiver
-      // named, and the signature would travel with it.
-      redirect: 'manual',
-    });
-  } catch (error) {
-    // `renderThrowable`, never `String(error)` or `${error}`: this string lands in a `cause` and on
-    // a durable ledger row, and a null-prototype throwable makes both of those a `TypeError`.
-    return { ok: false, status: null, detail: renderThrowable(error) };
-  }
-  if (response.ok) return { ok: true, status: response.status };
-  const stated = retryAfterSeconds(response);
-  return {
-    ok: false,
-    status: response.status,
-    detail: `status ${response.status}`,
-    ...(stated === undefined ? {} : { retryAfterSeconds: stated }),
-  };
-}
-
-/** Which of the three failure codes this outcome is. The split is "can the same request land?". */
-function deliveryError(
-  name: string,
-  endpoint: WebhookEndpoint,
-  outcome: Extract<Outcome, { ok: false }>,
-): Error {
-  const base = { webhook: name, endpointId: endpoint.id, url: endpoint.url };
-  if (outcome.status === null) {
-    return new WebhookDeliveryFailedError({ ...base, status: null, detail: outcome.detail });
-  }
-  if (!isRetryableStatus(outcome.status)) {
-    return new WebhookDeliveryRejectedError({ ...base, status: outcome.status });
-  }
-  if (outcome.retryAfterSeconds !== undefined) {
-    return new WebhookDeliveryThrottledError({
-      ...base,
-      status: outcome.status,
-      retryAfterSeconds: outcome.retryAfterSeconds,
-    });
-  }
-  return new WebhookDeliveryFailedError({
-    ...base,
-    status: outcome.status,
-    detail: outcome.detail,
-  });
+function stopIfCancelled(ctx: Ctx): void {
+  if (!ctx.signal.aborted) return;
+  const reason: unknown = ctx.signal.reason;
+  if (isUltimateError(reason)) throw reason;
+  throwIfAborted(ctx);
 }

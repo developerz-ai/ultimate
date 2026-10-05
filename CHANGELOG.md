@@ -9,8 +9,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ## [Unreleased]
 
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
-Sweep 1 is security, in three PRs (1a, 1b, 1c). The behaviour changes under **Changed** are security fixes, so they ship in a
-minor instead of waiting for 25.0.0.
+Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
+that the framework could have fenced, and never strands work.
 
 ### Security
 
@@ -109,6 +109,53 @@ minor instead of waiting for 25.0.0.
 - `scraping`: an offline test (`fakeBrowser`, `fixtureBrowser`) must declare
   `robots: { ignore: '…' }`. Under `bun test`, the sealed network's refusal of the robots read is
   now a refused scrape instead of a silent allow.
+- **BREAKING** `jobs`: `WebhookLedger` requires `isDisabled(endpointId)`. `webhook()` asks it before
+  every socket, so a disabled endpoint receives nothing. A custom ledger adds the method.
+- **BREAKING** `notify`: `DigestAppend` requires `appender` (the fan-out passes `runId:recipient`).
+  A custom `DigestStore` keys its replay on it.
+- **BREAKING** `action`: an `IdempotencyStore` declares `keepsRedaction: true`, and `settle` takes a
+  required 4th argument, `redacted`, which it keeps and returns as `IdempotencyRecord.redacted`. A
+  store written before this fails to compile instead of replaying `[redacted]` as an answer (#591).
+- `core`: `isRedactedKey` also names `credentials`, `jwt`, `bearer`, `cookie(s)`, `sessionId` /
+  `sessionKey`, `privateKeyPem` / `Der` / `Jwk`, `cvv` / `cvc` and a whole-word `pin` (`cardPin`,
+  `pinCode`). Log lines, error reports and audit rows redact them too; `spinner`, `isPinned`,
+  `sessionStart` and `cookieName` stay readable.
+- `cli`: `x deploy --method helm` passes the image with `--set-string`, and the framework chart's
+  default `image.repository` is the placeholder `registry.example.com/your-app`; an empty one is a
+  render error, and the image is rendered quoted. `--image` is checked against the OCI reference
+  grammar (`X_CLI_BAD_FLAG`), so a `,` or newline can no longer set another chart value. The
+  replicator Deployment uses `strategy: Recreate`.
+- `realtime`: `X_REPLICATOR_SLOT_HELD` is thrown only under `x dev`. A container replicator that
+  loses the lock stays up unready and takes over when it frees.
+
+### Fixed
+
+- `http`: an open websocket no longer holds shutdown to the drain deadline. A later `accept` hook
+  runs at once (11 ms, was 25 s), so the worker stops claiming and `close` hooks get their time. A
+  response body still streaming is waited for (a new `inflight` hook) up to the deadline, so a
+  deploy never cuts a page, download or `llm` stream mid-body (D1).
+- `jobs`: a lease or fleet-slot window is measured from when its renewal was **sent**, as the
+  server stamps it, so a slow reply can no longer let a second worker claim a running job (D2).
+- `jobs`: a webhook attempt's request follows the run's signal for every reason but the worker's
+  drain, so the deadline or a lost lease aborts it instead of leaving it open while another worker
+  re-sends, and a POST already on the wire at SIGTERM finishes and is recorded instead of being
+  re-sent by the next pod. A cancelled attempt writes no ledger outcome and never disables the
+  endpoint (D4). A disabled endpoint opens no socket (D5). Set a webhook `timeout` below the drain
+  budget (25 s by default).
+- `jobs`: a throwing `context()`, slot renewal or shed hand-back no longer strands the claimed row
+  `running`; it is handed back with its attempt unspent (D6).
+- `notify`: a digest append is one step per recipient and idempotent per run and recipient, so a
+  retried fan-out no longer orphans the windows it opened, lands an event twice, or re-delivers an
+  event from a window already drained. `x_notify_digests` gains `appended_by` (added at boot) (D3).
+- `action`: an idempotent answer is redacted at rest. A field `isRedactedKey` names, a `Secret`, or
+  anything `JSON.stringify` would run app code on (`toJSON`, `Map` / `Set`, a class instance) is
+  stored as `[redacted]` in `x_idempotency` and the memory store; the first caller still gets the
+  whole answer. A replay of such an answer throws the new `X_IDEMPOTENT_REPLAY_REDACTED` (409)
+  instead of returning it. `x_idempotency` gains `redacted` (added at boot) (D7, #591).
+- `cli`: one rejecting stop step (`x dev`, a container role, `x serve`) no longer skips the rest;
+  every step runs and the first failure is rethrown (D9).
+- `cli`: an all-digit image tag (`1234567`) no longer renders as `%!s(int64=…)` and stalls the
+  rollout (D10).
 
 ## 24.0.0 - 2026-10-04
 

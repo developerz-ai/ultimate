@@ -93,6 +93,7 @@ describe('a run hands back everything it took', () => {
         workerId: 'worker-1',
         visibilityTimeoutMs: 30_000,
         heartbeatIntervalMs: 5,
+        pollIntervalMs: 25,
         schedule,
       }),
     ).rejects.toBeInstanceOf(SlotStoreDown);
@@ -100,4 +101,85 @@ describe('a run hands back everything it took', () => {
     // Asked of the seam, not of a wall-clock window: nothing the run armed is still armed.
     expect(schedule.armed()).toBe(0);
   });
+});
+
+/** Not an `UltimateError`: it stands in for the app's own `WorkerOptions.context` failing. */
+class ContextDown extends Error {}
+
+/** One `wiredJob` on a memory queue, CLAIMED — `running`, its attempt spent by the claim. */
+async function claimedOnMemory() {
+  job({
+    tenant: 'none',
+    name: 'wiredJob',
+    input: passthrough<Record<string, never>>(),
+    idempotencyKey: () => 'wired:1',
+    retry: { attempts: 3, jitter: false },
+    run: () => Promise.resolve(),
+  });
+  const driver = createMemoryDriver();
+  await driver.enqueue({
+    name: 'wiredJob',
+    queue: 'default',
+    input: {},
+    idempotencyKey: 'wired:1',
+    maxAttempts: 3,
+  });
+  const [claimed] = await driver.claim({
+    queues: ['default'],
+    limit: 1,
+    visibilityTimeoutMs: 30_000,
+    workerId: 'worker-1',
+  });
+  if (claimed === undefined) return expect.unreachable('the memory queue claimed nothing');
+  const before = await driver.introspect?.job(claimed.id);
+  return { driver, claimed, before };
+}
+
+describe('a run that never started is handed back, not stranded', () => {
+  for (const [where, wiring] of [
+    [
+      'the app context()',
+      {
+        context: (): Ctx => {
+          throw new ContextDown('tenant lookup failed');
+        },
+      },
+    ],
+    ['the slot renewal', { context, fleetSlots: slotsThatThrowOnRenewal() }],
+  ] as const) {
+    test(`a throw from ${where} leaves the row ready, its attempt unspent`, async () => {
+      const { driver, claimed, before } = await claimedOnMemory();
+      expect(before?.state).toBe('running');
+
+      let thrown: unknown;
+      try {
+        await runClaimedJob({
+          driver,
+          claimed,
+          fleetSlots: {
+            acquire: () => Promise.resolve({ outcome: 'granted' }),
+            startRenewal: () => () => undefined,
+            release: () => Promise.resolve(),
+          },
+          workerId: 'worker-1',
+          visibilityTimeoutMs: 30_000,
+          heartbeatIntervalMs: 5,
+          pollIntervalMs: 25,
+          schedule: armedTicks(),
+          ...wiring,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      // The wiring's own failure still reaches the round — handing back is not swallowing.
+      expect(thrown).toBeInstanceOf(Error);
+      const after = await driver.introspect?.job(claimed.id);
+      // `ready` for the next worker, NOT `running` until the lease lapses: a final attempt spent
+      // that way dead-letters a job whose body never ran.
+      expect(after?.state).toBe('ready');
+      expect(after?.attempt).toBe((before?.attempt ?? 0) - 1);
+      expect(after?.lastError).toBeUndefined();
+    });
+  }
 });

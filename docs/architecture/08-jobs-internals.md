@@ -174,7 +174,7 @@ owning its connection, and this package holds no wire protocol, so it solves it 
 | Single node | `soleLeader()`, which acquires unconditionally |
 | Missed tick | decided against the durable watermark in `x_scheduler_state` (`pgSchedulerState`), per `catchUp` — `skip` (default), `run-once` or `run-all` bounded by `maxCatchUp` |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` |
-| `replicator` | a second instance exits non-zero with `X_REPLICATOR_SLOT_HELD` rather than double-delivering |
+| `replicator` | a second container never double-delivers: it stays up, `/readyz` 503, and asks for the lock again on a backoff until the holder goes. Only `x dev --role replicator` refuses, with `X_REPLICATOR_SLOT_HELD` |
 
 `task` only enqueues. A `task` with a handler body is a rejected design — if it does work, it is a `job` ([`../idea/02-primitives.md`](../idea/02-primitives.md)).
 

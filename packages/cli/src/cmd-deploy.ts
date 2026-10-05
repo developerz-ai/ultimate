@@ -88,7 +88,7 @@ export interface DeployPlan {
    * `docker compose` takes no image argument. Without it `--image` decided nothing: the plan
    * reported the reference the operator asked for while the six steps read `IMAGE` off the
    * ambient environment, or deployed `ultimate-app:latest` where it was unset. Helm carries none
-   * — the chart reads `--set image.repository/tag`, and an env var it never looks at would be a
+   * — the chart reads `--set-string image.repository/tag`, and an env var it never looks at would be a
    * second answer to which image is being deployed.
    */
   readonly env: Readonly<Record<string, string>>;
@@ -96,7 +96,7 @@ export interface DeployPlan {
 
 /**
  * The chart declares `image` as a MAP — `repository`, `tag`, `pullPolicy` — and `_helpers.tpl`
- * renders `printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag)`.
+ * renders `repository:tag` from it, the tag defaulting to `.Chart.AppVersion`.
  * `--set image=<ref>` replaces that map with a string, so every workload template fails on
  * `.repository` and the deploy that was asked to ship one image ships nothing. The reference is
  * split into the two keys the chart actually reads; a reference with no tag sets only the
@@ -109,10 +109,27 @@ export function helmImageOverrides(image: string): readonly string[] {
   const colon = image.lastIndexOf(':');
   const tag = colon > image.lastIndexOf('/') ? image.slice(colon + 1) : '';
   const repository = tag === '' ? image : image.slice(0, colon);
+  // `--set-string`, never `--set`: `--set` TYPES its value, so `image.tag=1234567` reached the chart
+  // as an int64 and rendered `app:%!s(int64=1234567)` — any all-digit tag (a build number, a date,
+  // a short SHA that happens to be digits) was an ImagePullBackOff behind `--wait`.
   return tag === ''
-    ? ['--set', `image.repository=${repository}`]
-    : ['--set', `image.repository=${repository}`, '--set', `image.tag=${tag}`];
+    ? ['--set-string', `image.repository=${repository}`]
+    : ['--set-string', `image.repository=${repository}`, '--set-string', `image.tag=${tag}`];
 }
+
+/**
+ * The OCI reference grammar (distribution/reference), tag form only — the digest form has its own
+ * refusal in `planDeploy`. `[domain[:port]/]path[:tag]`: a domain of dot-separated host labels, path
+ * components of lower-case alphanumerics joined by `.`, `_`, `__` or dashes, a tag of word
+ * characters, `.` and `-`, at most 128. It holds none of helm's `--set-string` metacharacters (`,`
+ * `=` `\` `{` `}`), so a reference it admits never needs escaping, and one it refuses is never
+ * split into a second value.
+ */
+const LABEL = '[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?';
+const COMPONENT = '[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*';
+const OCI_REFERENCE = new RegExp(
+  `^(?:${LABEL}(?:\\.${LABEL})*(?::[0-9]+)?/)?${COMPONENT}(?:/${COMPONENT})*(?::[\\w][\\w.-]{0,127})?$`,
+);
 
 /** What was asked for: the method, and for helm the release it is aimed at. */
 export type DeployRequest =
@@ -157,6 +174,17 @@ export function planDeploy(
         command: 'deploy',
         reason: `"${image}" pins a digest, and docker/helm renders repository:tag with no digest branch`,
         fix: `x deploy --method helm --image ${image.slice(0, image.lastIndexOf('@'))}:<tag> --json`,
+      });
+    }
+    // Helm splits a `--set-string` argument on `,` and reads `=` as key/value: an image built from
+    // a git ref name (`app,serviceAccount.create=true:1.2`) set a value nobody asked for. The value
+    // is quoted with JSON in the cause (it may hold a newline) and never echoed into the fix.
+    if (!OCI_REFERENCE.test(image)) {
+      throw new BadFlagError({
+        flag: 'image',
+        command: 'deploy',
+        reason: `${JSON.stringify(image)} is not an OCI image reference ([registry[:port]/]path[:tag], lower-case path), and helm would read its , or = as more --set-string values`,
+        fix: 'x deploy --method helm --image ghcr.io/<org>/<app>:<tag> --json',
       });
     }
     return {

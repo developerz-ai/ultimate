@@ -17,6 +17,7 @@ import type { RunSignal } from './run-signal';
 import { createRunSignal } from './run-signal';
 import type { EventLookup } from './steps';
 import type { FleetSlots } from './worker-fleet-slots';
+import { handBack } from './worker-hand-back';
 
 export interface RunClaimedOptions {
   readonly driver: JobDriver;
@@ -27,6 +28,8 @@ export interface RunClaimedOptions {
   readonly workerId: string;
   readonly visibilityTimeoutMs: number;
   readonly heartbeatIntervalMs: number;
+  /** How soon a run whose wiring threw before its body started is claimable again — a shed's. */
+  readonly pollIntervalMs: number;
   readonly clock?: Clock;
   /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
   readonly schedule?: IntervalScheduler;
@@ -73,10 +76,28 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     return unknownJob(claimed);
   }
 
+  // A throw from the wiring below means the body never started, so the row goes BACK exactly as a
+  // shed returns one — uncounted, no `lastError` — before the throw reaches the round. Rethrowing
+  // alone left it `running` until the lease lapsed, an attempt spent on nothing; on the final
+  // attempt the claim then dead-letters a job whose body never ran. Once `executeJob` is entered
+  // the attempt is real and settles itself, so `started` is set at that door and nowhere else.
+  let started = false;
+  const handedBack = async (error: unknown): Promise<never> => {
+    if (!started) {
+      await handBack(driver, [claimed], { delayMs: options.pollIntervalMs, workerId });
+    }
+    throw error;
+  };
+
   // Read BEFORE the timers start. `context()` is the app's own function and it can throw; started
   // first, a heartbeat interval and a slot renewal were left running for a job that never ran,
   // with nothing left holding a reference to stop them.
-  const base = options.context();
+  let base: Ctx;
+  try {
+    base = options.context();
+  } catch (error) {
+    return handedBack(error);
+  }
 
   // The lease, kept alive and NOT kept quiet: a renewal that stops landing means the queue hands
   // this job to another worker while this one is still running it, and `.catch(() => undefined)`
@@ -132,8 +153,9 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
 
     return await withSpan(
       `job.${handle.name}`,
-      () =>
-        executeJob({
+      () => {
+        started = true;
+        return executeJob({
           driver,
           claimed,
           handle,
@@ -141,7 +163,8 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
           ...(options.clock === undefined ? {} : { clock: options.clock }),
           ...(options.events === undefined ? {} : { events: options.events }),
           ...(options.refusal === undefined ? {} : { refusal: options.refusal }),
-        }),
+        });
+      },
       {
         ...(parent === undefined ? {} : { parent }),
         attributes: {
@@ -152,6 +175,13 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
         },
       },
     );
+  } catch (error) {
+    // Stopped BEFORE the row goes back, never after: a renewal landing on a handed-back row
+    // answers "not yours", which `heartbeat.ts` reports as a lease lost under a running job.
+    // Both are idempotent, so the `finally` repeating them costs nothing.
+    stopSlotRenewal?.();
+    heartbeat.stop();
+    return await handedBack(error);
   } finally {
     stopSlotRenewal?.();
     heartbeat.stop();
