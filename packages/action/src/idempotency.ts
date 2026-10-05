@@ -196,13 +196,24 @@ export interface IdempotentOutcome<T> {
  * first has committed. Releasing the reservation there is what turned a rounding change in an
  * output schema into a second charge: `X_OUTPUT_INVALID` dropped the record, and the client's
  * automatic retry re-ran a handler that had already taken the money. So the failure is SETTLED
- * and replayed, and `release` is reserved for a pre-handler failure — of which this gate has none.
+ * and replayed, and `release` is reserved for a pre-handler failure — `beforeRun` is the only one.
  */
+export interface WithIdempotencyOptions {
+  /**
+   * Called only for a reservation this call CREATED, before `run` — `invoke`'s rate-limit spend
+   * for a key its pre-parse peek took for a replay (a stale record reclaimed in between). A throw
+   * here is a PRE-handler failure, so the reservation is released, never settled: a refusal is not
+   * the key's outcome, and a retry once the bucket refills must still be able to run.
+   */
+  readonly beforeRun?: () => Promise<void>;
+}
+
 export async function withIdempotency<T>(
   store: IdempotencyStore,
   key: string,
   input: unknown,
   run: () => Promise<T>,
+  options: WithIdempotencyOptions = {},
 ): Promise<IdempotentOutcome<T>> {
   const requestHash = keyedFingerprint(input, IDEMPOTENCY_FINGERPRINT_PURPOSE);
   const { record, created } = await store.reserve(key, requestHash);
@@ -212,6 +223,14 @@ export async function withIdempotency<T>(
     if (record.status === 'failed') throw new IdempotencyReplayedFailureError(key, record.failure);
     // The stored value is the previous return of this very handler.
     return { value: record.value as T, replayed: true };
+  }
+  if (options.beforeRun !== undefined) {
+    try {
+      await options.beforeRun();
+    } catch (error) {
+      await store.release(key);
+      throw error;
+    }
   }
   let value: T;
   try {

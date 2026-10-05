@@ -23,7 +23,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | — | flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported. No local copy |
 | `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS core's `queryPath`. **Paths only** |
 | `registry.ts` | export-name registration, `describeQueries()`, the `registerPrimitiveRegistrar('query', …)` announcement |
-| `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
+| `live.ts` | `LiveQuery` descriptor + cursor arithmetic + `spendQueryLimit` (a live subscribe's spend) |
+| `rate-limit-gate.ts` | **the one place** a read's declared `rateLimit:` is spent |
 | `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
 | `sealed-shape.ts` | a live read keyed on a `.sealed()` column is refused at subscribe (`X_MATCHER_UNSUPPORTED`) |
 | `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
@@ -76,8 +77,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A `single: true` read answers the row or `X_NOT_FOUND` by ONE rule** (`single-answer.ts`:
   `oneRowOf`, `readAnswer`) — the route, `tool().read()` and `@ultimat3/mcp`'s served tool all call
   it. `QueryToolDescriptor<TSingle>` types the answer: rows for a list read, the row for a single.
-- **`rateLimit:` is declarable; `toQueryRoute` sets both `meta.rateLimit` and
-  `meta.rateLimitBucket`**, via `@ultimat3/http`'s `toBucket` — never a local copy.
+- **`rateLimit:` is spent ONCE, in `buildSource`** (`rate-limit-gate.ts`'s `spendReadLimit`), for
+  every enforced build — route, `page()`, the MCP tool (`surface: 'mcp'`, judged as `'server'`).
+  `'server'` and an `unenforced` build spend nothing. A live subscribe spends via `live.ts`'s
+  `spendQueryLimit`, called by realtime per subscriber. `toQueryRoute` sets `rateLimitedBy:
+  'handler'` and no stage bucket. Counted in `@ultimat3/http`'s installed store; key
+  `query:<name>|<subject>`. `toBucket` is http's — never a local copy. `rate-limit-surfaces.test.ts`.
 - **`deprecated:` is a compat WINDOW**: `Deprecation` / `Sunset` / `rel="successor-version"` on every
   answer, rendered ONCE at projection (`X_QUERY_DEPRECATION_INVALID` at mount). Versioning is two
   deployments behind one ingress.

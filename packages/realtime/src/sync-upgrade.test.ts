@@ -184,6 +184,42 @@ describe('the upgrade records ?build= when the dial carries one', () => {
   });
 });
 
+// The caller's address is resolved ONCE, where the request still exists, and rides the socket:
+// it is the only subject an anonymous live reader's rate limit can be keyed on.
+describe('the upgrade resolves the caller address once and hands it to the socket', () => {
+  const dial = async (deps: UpgradeDeps, peer: string | null): Promise<WsData | null> => {
+    let data: WsData | null = null;
+    const server: UpgradeTarget = {
+      upgrade(_request: Request, upgradeOptions: { data: WsData }): boolean {
+        data = upgradeOptions.data;
+        return true;
+      },
+      requestIP: () => (peer === null ? null : { address: peer }),
+    };
+    const forwarded = new Request('http://node/_x/sync', {
+      headers: { 'x-forwarded-for': '203.0.113.7' },
+    });
+    await handleUpgrade(deps, forwarded, server);
+    return data;
+  };
+
+  test('with no resolver the socket address is the caller', async () => {
+    expect((await dial(rig({ accepts: true }).deps, '198.51.100.4'))?.clientAddress).toBe(
+      '198.51.100.4',
+    );
+    expect((await dial(rig({ accepts: true }).deps, null))?.clientAddress).toBeNull();
+  });
+
+  test("the deployment's resolver decides — the proxy hops the HTTP read honours", async () => {
+    const deps: UpgradeDeps = {
+      ...rig({ accepts: true }).deps,
+      clientAddressOf: (incoming, socketAddress) =>
+        incoming.headers.get('x-forwarded-for') ?? socketAddress,
+    };
+    expect((await dial(deps, '10.0.0.2'))?.clientAddress).toBe('203.0.113.7');
+  });
+});
+
 // `health.readiness: 'process'` reaches the sync node's own `/readyz` too, and `?deep=1` still
 // answers on the dependencies — the same two answers the web role's native route gives.
 describe('the sync node honours the readiness mode', () => {

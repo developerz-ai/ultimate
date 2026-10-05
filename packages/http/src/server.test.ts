@@ -14,6 +14,11 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { memoryRateLimitStore, type RateLimitStore } from './rate-limit';
+import {
+  installedRateLimitStore,
+  installRateLimitStore,
+  resetRateLimitStore,
+} from './rate-limit-installed';
 import { json, text } from './response';
 import type { Route } from './router';
 import { createServer } from './server';
@@ -168,6 +173,9 @@ const server = () =>
 // Core's lifecycle is a process singleton, so each test starts from `starting`.
 beforeEach(resetLifecycle);
 afterEach(resetLifecycle);
+// The primitives' store slot is process-wide, and a server handed a store fills it.
+beforeEach(resetRateLimitStore);
+afterEach(resetRateLimitStore);
 
 describe('createServer', () => {
   test('runs a static route through the full pipeline in-process', async () => {
@@ -246,7 +254,50 @@ describe('rate limiting across replicas', () => {
   });
 
   test('a shared declaration on a per-process store refuses at boot, not at the first burst', () => {
-    expect(() => replica(memoryRateLimitStore())).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+    const refused = memoryRateLimitStore();
+    expect(() => replica(refused)).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+    // A boot that refused keeps nothing it took: the slot is not left holding the refused store.
+    expect(installedRateLimitStore()).not.toBe(refused);
+  });
+
+  test('the store a server is handed is the one primitives spend from — one source of truth', async () => {
+    const store = sharedStore();
+    const handle = replica(store);
+    expect(installedRateLimitStore()).toBe(store);
+    await handle.stop();
+    expect(installedRateLimitStore()).not.toBe(store);
+  });
+
+  test('a store the boot already installed is not clobbered by a server handed another', async () => {
+    const booted = sharedStore();
+    installRateLimitStore(booted);
+    const handle = replica(sharedStore());
+    expect(installedRateLimitStore()).toBe(booted);
+    await handle.stop();
+    expect(installedRateLimitStore()).toBe(booted);
+  });
+
+  test('a shared declaration refuses a per-process store installed for the primitives', () => {
+    installRateLimitStore(memoryRateLimitStore());
+    expect(() => replica(sharedStore())).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+  });
+
+  test('a refusal AFTER the pipeline — a taken mount path — still gives the slot back', () => {
+    const store = sharedStore();
+    expect(() =>
+      createServer({
+        routes,
+        role: 'web',
+        rateLimitStore: store,
+        websocket: {
+          path: '/healthz',
+          fetch: () => new Response('never reached', { status: 426 }),
+          websocket: { open: () => undefined, message: () => undefined, close: () => undefined },
+        },
+        config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+      }),
+    ).toThrow();
+    expect(installedRateLimitStore()).not.toBe(store);
   });
 
   test('the default declaration still boots on the memory store', () => {

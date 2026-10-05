@@ -4,9 +4,18 @@
 // `ack` is only ever a refusal.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { LiveClient } from './client';
 import { defaultReconnectBudget, makeCursor, shouldResnapshot } from './cursor';
-import { liveFeed, type PostRow, pageHarness, querySid, resetPage } from './hooks-fixture';
+import {
+  FakeSocket,
+  liveFeed,
+  type PostRow,
+  pageHarness,
+  querySid,
+  querySids,
+  resetPage,
+} from './hooks-fixture';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
 const LSN_0 = '0'.repeat(24);
@@ -133,6 +142,69 @@ describe('an ack carrying an error', () => {
     });
     socket.close(1006);
     expect(handle.state()).toBe('failed');
+  });
+});
+
+// A rate-limited registration is not a denial: the node said when the bucket refills. Left
+// `failed`, it stayed dead until the socket happened to reconnect.
+describe('a rate-limited subscription', () => {
+  const LIMITED = { ...DENIED, code: 'X_RATE_LIMITED', retryAfterSeconds: 3 };
+
+  const rig = () => {
+    const socket = new FakeSocket();
+    const armed: { run: () => void; delayMs: number; cancelled: boolean }[] = [];
+    const client = new LiveClient({
+      connect: () => socket,
+      buildId: 'build-1',
+      catchUp: async () => undefined,
+      clock: frozenClock(1_000),
+      rng: () => 0,
+      heartbeatMs: 0,
+      scheduler: (run, delayMs) => {
+        const timer = { run, delayMs, cancelled: false };
+        armed.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
+      },
+      onError: () => {},
+    });
+    client.connect();
+    socket.open();
+    return { socket, client, armed };
+  };
+
+  test('re-subscribes after the delay the node named, under the same sid', () => {
+    const { socket, client, armed } = rig();
+    const handle = client.subscribeLive<PostRow>(liveFeed, { orgId: 'o1' });
+    const sid = querySid(socket, 'add');
+    socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: sid, lsn: null, error: LIMITED });
+    expect(handle.state()).toBe('failed');
+    const retry = armed.find((timer) => timer.delayMs === 3_000);
+    expect(retry).toBeDefined();
+    retry?.run();
+    expect(querySids(socket, 'add')).toEqual([sid, sid]);
+    expect(handle.state()).toBe('loading');
+  });
+
+  test('a denial schedules nothing, and an unsubscribe cancels a pending retry', () => {
+    const { socket, client, armed } = rig();
+    const denied = client.subscribeLive<PostRow>(liveFeed, { orgId: 'o1' });
+    socket.deliver({
+      type: 'ack',
+      v: PROTOCOL_VERSION,
+      ref: querySid(socket, 'add'),
+      lsn: null,
+      error: DENIED,
+    });
+    expect(armed.filter((timer) => timer.delayMs === 3_000)).toHaveLength(0);
+    denied.unsubscribe();
+
+    const limited = client.subscribeLive<PostRow>(liveFeed, { orgId: 'o2' });
+    const sid = querySids(socket, 'add')[1] ?? '';
+    socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: sid, lsn: null, error: LIMITED });
+    limited.unsubscribe();
+    expect(armed.find((timer) => timer.delayMs === 3_000)?.cancelled).toBe(true);
   });
 });
 

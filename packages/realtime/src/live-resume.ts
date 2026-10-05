@@ -24,6 +24,8 @@ export interface ResumeOntoDeps {
   readonly gate: SubscriberGate;
   /** The window, read once for the entry and filtered for THIS subscriber. */
   read(): Promise<SnapshotResult>;
+  /** Called before the delta path fills an unread entry — a database read the caller pays for. */
+  beforeFill?(): Promise<void>;
 }
 
 /**
@@ -54,7 +56,10 @@ export async function resumeOnto(
   // yet has none — every patch would meet an empty window and be withheld. Filling is
   // conditional on purpose: a restart storm resumes onto entries that already hold a live
   // window, and re-reading per resuming subscriber is the cost a delta resume exists to skip.
-  if (entry.lsn === '') await fillWindow(entry);
+  if (entry.lsn === '') {
+    await deps.beforeFill?.();
+    await fillWindow(entry);
+  }
   // The live entry on purpose: a resume runs outside the lane, so the window under it may
   // have moved on — always forwards, and a row whose grant was revoked in the meantime is
   // one this pass must refuse rather than replay from the state it had at the cursor's lsn.

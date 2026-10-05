@@ -7,8 +7,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { runPool } from './hive-pool';
+import {
+  createContext,
+  createLogger,
+  runWithContext,
+  UltimateError,
+  userActor,
+} from '@ultimat3/core';
+import { HIDDEN_MEMBER_CAUSE, runPool } from './hive-pool';
 import type { HiveMember } from './hive-result';
 import { SKIPPED_ABORTED, SKIPPED_NO_INPUT } from './hive-result';
 
@@ -69,12 +75,83 @@ describe('a member throw is recorded, never re-raised', () => {
     expect(failed?.status === 'failed' ? failed.code : '').toBe('unknown');
     expect(failed?.status === 'failed' ? typeof failed.reason : '').toBe('string');
   });
+});
 
-  test('an ordinary Error keeps its own message', async () => {
-    const members = await pooled<number, string>([1], 'collect', () =>
-      Promise.reject(new Error('kaboom')),
-    );
-    expect(members[0]).toEqual({ status: 'failed', index: 0, code: 'unknown', reason: 'kaboom' });
+/**
+ * A member's reason lands in the hive action's 200 answer, so it is held to the rule the tool
+ * result is held to (`failure-disclosure.ts`): a 5xx cause and a foreign `.message` are the
+ * server's, and the caller reads a fixed sentence while the log keeps the whole throw.
+ */
+describe('a member failure discloses only what the caller may read', () => {
+  /** A pool whose context logs into `lines`, so the withheld half can be found where it went. */
+  function logged(
+    thrown: unknown,
+  ): Promise<{ members: readonly HiveMember<string>[]; log: string }> {
+    const lines: string[] = [];
+    const ctx = createContext({
+      actor: userActor({ id: 'user-7' }),
+      logger: createLogger({ level: 'error', writer: (line) => lines.push(line) }),
+    });
+    return runWithContext(ctx, async () => {
+      const members = await runPool<number, string>({
+        inputs: [1],
+        width: 1,
+        ctx,
+        onMemberError: 'collect',
+        member: () => Promise.reject(thrown),
+      });
+      return { members, log: lines.join('\n') };
+    });
+  }
+
+  test('a 5xx member cause and a foreign message are withheld', async () => {
+    const invariant = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: 'tenant org-42 row 9f3c has no owner',
+      fix: 'psql -c "select * from x_posts where id = 9f3c"',
+    });
+    const coded = await logged(invariant);
+    expect(coded.members[0]).toEqual({
+      status: 'failed',
+      index: 0,
+      code: 'X_INVARIANT',
+      reason: HIDDEN_MEMBER_CAUSE,
+    });
+    // The log carries what identifies the failure, never what it says: the logger redacts by
+    // field NAME, so a cause or a message logged as text would carry its tenant and its PII.
+    expect(coded.log).not.toContain('org-42');
+    expect(coded.log).toContain('X_INVARIANT');
+
+    // A driver's own throw, before anything coded it: the pg message names the row it hit.
+    const foreign = await logged(new Error('Key (email)=(ceo@corp.com) already exists'));
+    expect(foreign.members[0]).toEqual({
+      status: 'failed',
+      index: 0,
+      code: 'unknown',
+      reason: HIDDEN_MEMBER_CAUSE,
+    });
+    expect(JSON.stringify(foreign.members)).not.toContain('ceo@corp.com');
+    expect(foreign.log).not.toContain('ceo@corp.com');
+    expect(foreign.log).toContain('uncoded');
+    expect(foreign.log).toContain('"name":"Error"');
+    // The frames stay — they are where the operator starts — with the message line gone.
+    expect(foreign.log).toContain('hive-pool.test.ts');
+  });
+
+  test('a caller-facing code keeps its cause, and nothing is logged for it', async () => {
+    const denied = new UltimateError({
+      code: 'X_INPUT_INVALID',
+      cause: 'title is required',
+      fix: 'send a title',
+    });
+    const { members, log } = await logged(denied);
+    expect(members[0]).toEqual({
+      status: 'failed',
+      index: 0,
+      code: 'X_INPUT_INVALID',
+      reason: 'title is required',
+    });
+    expect(log).toBe('');
   });
 });
 

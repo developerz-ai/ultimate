@@ -21,7 +21,8 @@ import type { TransportSubscription } from './fanout';
 import { refuseSubscription } from './live-refusal';
 import { CHANGE_SUBJECT_ALL } from './replicator';
 import { parseEnvelope, SeqGapDetector } from './replicator-envelope';
-import { CLOSE, DEFAULT_MAX_BUFFERED_BYTES, SocketRegistry, SyncSocket } from './socket';
+import { CLOSE, SocketRegistry, SyncSocket } from './socket';
+import { DEFAULT_MAX_BUFFERED_BYTES } from './socket-defaults';
 import { idleSweepPeriodMs } from './socket-idle';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter } from './sync-frames';
@@ -350,6 +351,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           authenticate: options.authenticate,
           allowedOrigins: options.allowedOrigins,
           admitReachedOrigin: options.admitReachedOrigin,
+          clientAddressOf: options.clientAddressOf,
           healthDetailPeers: options.healthDetailPeers ?? DEFAULT_HEALTH_DETAIL_PEERS,
           onGranted: (socketId, grant) => grants.set(socketId, grant),
           // The other half of recording the grant before the upgrade: an upgrade that never took
@@ -384,6 +386,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           clientBuildId: ws.data.clientBuildId,
           serverBuildId: options.buildId,
           actor: grants.get(ws.data.socketId)?.actor ?? null,
+          clientAddress: ws.data.clientAddress ?? null,
           clock,
           ...ceilings,
         });

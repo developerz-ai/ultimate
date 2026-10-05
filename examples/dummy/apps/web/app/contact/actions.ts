@@ -45,11 +45,11 @@ export const contactSales = action({
    * page's read allowance, not a contact form's.
    *
    * Declared with the numbers a human filling this in cannot exceed, and these are the numbers
-   * that run: `toRoute` registers a bucket named `contactSales` from this declaration, and the
-   * same `toBucket` conversion feeds `openapi.json`, so the published contract and the limiter
-   * cannot disagree.
+   * that run — on every surface: `invoke` spends this bucket whether the call came over HTTP, an
+   * MCP tool or a job, and the route is not also held to `default`. The same `toBucket`
+   * conversion feeds `openapi.json`, so the published contract and the limiter cannot disagree.
    *
-   * One honest caveat: the limiter keys per ACTOR, then org, then IP (`rateLimitKey`), so "per
+   * One honest caveat: the limiter keys per ACTOR, then org, then IP (`rateLimitSpends`), so "per
    * recipient" is not a scope an app can ask for — the job's idempotency key is what stops a
    * replayed enquiry mailing twice.
    */

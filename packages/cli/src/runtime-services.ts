@@ -16,7 +16,7 @@ import {
   systemClock,
 } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
-import { postgresRateLimitStore } from '@ultimat3/http';
+import { adoptRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import {
@@ -358,6 +358,10 @@ export async function startServices(
       postgresAuthLimiter({ executor, clock: systemClock, policy }),
     );
     started.push(() => resetAuthLimiters());
+    // Where an action's or a query's declared `rateLimit:` is counted — on every surface, so a
+    // task or a one-off command spends from the fleet's table too, not one process' memory. Before
+    // `loadApp` for the auth limiters' reason; `startRoles` stacks a deployment's override over it.
+    started.push(adoptRateLimitStore(rateLimitStore));
     // The hourly sweep over the framework tables this boot is responsible for. Every one of them
     // ships a `purgeExpired()` that nothing called, so every row written was a row kept —
     // `x_rate_limit` takes one upsert per request the web role serves, assets included.

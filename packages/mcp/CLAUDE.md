@@ -28,7 +28,7 @@ import. The CLI wires it.
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
-| `scopes.ts` | the `scopes:` map — outcome 2's declaration surface; boot-time refusal of an unknown or doubly-claimed tool |
+| `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
@@ -185,12 +185,12 @@ import. The CLI wires it.
   published.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
-  `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`. The caller reading them is usually an agent
+  `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`, `X_MCP_SCOPE_UNCOVERED`. The caller reading them is usually an agent
   that needs `{ code, cause, fix }`.
-- `scopes:` is refused at boot two ways, both because the alternative ships a tool silently
-  ungated: a name no projected tool answers to is `X_MCP_SCOPE_UNKNOWN` (a typo, a rename, a
-  primitive never listed); one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT` — a tool
-  carries exactly one, and object key order is not a security model.
+- `scopes:` is refused at boot three ways, each shipping a silently ungated tool otherwise: a name
+  nothing projects (`X_MCP_SCOPE_UNKNOWN`); one tool under two scopes (`X_MCP_SCOPE_CONFLICT` —
+  key order is not a security model); a tool under none (`X_MCP_SCOPE_UNCOVERED`, `As of 2026-10`:
+  it answered every token while `bearerMount` served it to nobody — `scope-surfaces.test.ts`).
 - The **projection** invents no `scope` — `toolFromAction` cannot know what a token means.
   `defineAppMcp`'s `scopes:` may attach one afterward, as a capability of the CONNECTION; that
   is not a second authz path, because the scope gate decides before the policy runs and never

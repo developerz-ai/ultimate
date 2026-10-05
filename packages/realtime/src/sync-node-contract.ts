@@ -66,6 +66,12 @@ export interface SyncNodeOptions {
    */
   readonly admitReachedOrigin?: boolean;
   /**
+   * The caller's address from the upgrade request — the boot injects `@ultimat3/http`'s
+   * `clientAddress()` under the deployment's `TRUSTED_PROXY_HOPS`. Absent, the socket's own
+   * address. It keys an anonymous subscriber's live rate limit (`UpgradeDeps.clientAddressOf`).
+   */
+  readonly clientAddressOf?: (request: Request, socketAddress: string | null) => string | null;
+  /**
    * Peers this node's own `/healthz` and `/readyz` tell the whole report to: address classes
    * (`loopback`, `private`, …) or exact IP literals — the app's `http.healthDetailPeers`. Defaults
    * to core's `DEFAULT_HEALTH_DETAIL_PEERS` (the box itself); anyone else, and any request that

@@ -130,12 +130,19 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
     clearRoles();
   });
 
-  /** The app's one boot call: everything opted in, one capability declared over one tool. */
+  /**
+   * The app's one boot call: everything opted in, and — because a `scopes` map must cover every
+   * projected tool (`X_MCP_SCOPE_UNCOVERED`) — each tool under exactly one capability.
+   */
   const appServer = (): McpServer =>
     defineAppMcp({
       name: 'postly',
       include: 'exposed',
-      scopes: { 'posts:write': ['publishPost'] },
+      scopes: {
+        'posts:write': ['publishPost'],
+        'org:admin': ['transferOrg'],
+        'posts:read': ['orgFeed'],
+      },
     }).server;
 
   test('OUTCOME 1 — visibleTo on the action reaches the catalog, per caller', async () => {
@@ -189,13 +196,29 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
     expect(published).toBe(0);
   });
 
-  test('OUTCOME 2 — an unscoped tool on the same server is unaffected', async () => {
+  test('OUTCOME 2 — each tool is gated by its OWN scope, never by another tool’s', async () => {
     const server = appServer();
 
-    const response = await inRequest(() => server.handle(call('transferOrg'), asOwner()));
+    const held = await inRequest(() => server.handle(call('transferOrg'), asOwner(['org:admin'])));
+    expect(held?.error).toBeUndefined();
+    expect(JSON.stringify(held)).not.toContain('X_MCP_SCOPE_DENIED');
+    // Holding a different capability reaches nothing here: no tool on a scoped server is open.
+    const other = await inRequest(() =>
+      server.handle(call('transferOrg'), asOwner(['posts:write'])),
+    );
+    expect(errorData(other)['scope']).toBe('org:admin');
+  });
 
-    expect(response?.error).toBeUndefined();
-    expect(JSON.stringify(response)).not.toContain('X_MCP_SCOPE_DENIED');
+  test('a scopes map that leaves a projected tool uncovered is refused at BOOT', () => {
+    // Before, `transferOrg` and `orgFeed` booted with NO scope and answered every token.
+    expect(() =>
+      defineAppMcp({ include: 'exposed', scopes: { 'posts:write': ['publishPost'] } }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'X_MCP_SCOPE_UNCOVERED',
+        uncovered: ['orgFeed', 'transferOrg'],
+      }),
+    );
   });
 
   test('OUTCOME 3 — with the scope held, the action’s own policy decides', async () => {

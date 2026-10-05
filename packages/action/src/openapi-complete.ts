@@ -79,10 +79,25 @@ interface Refusals {
   readonly unauthorizedHeaders?: Record<string, unknown>;
 }
 
+/**
+ * An ACTION's limit is spent inside `invoke`, so its route carries no bucket to read; the operation
+ * itself publishes the declaration (`x-ultimate.rateLimit`, `null` when none). A query's route
+ * still does, hence both reads above.
+ */
+function declaresRateLimit(operation: Operation): boolean {
+  const extensions = operation['x-ultimate'];
+  if (typeof extensions !== 'object' || extensions === null) return false;
+  const declared = (extensions as Record<string, unknown>)['rateLimit'];
+  return declared !== undefined && declared !== null;
+}
+
 /** One operation, with its route's refusals and security added. Never mutates `operation`. */
 function completeOperation(operation: Operation, route: Route | undefined, refusals: Refusals) {
   const authenticated = route?.meta.auth === 'required';
-  const limited = refusals.everyOpLimited || route?.meta.rateLimitBucket !== undefined;
+  const limited =
+    refusals.everyOpLimited ||
+    route?.meta.rateLimitBucket !== undefined ||
+    declaresRateLimit(operation);
   if (!authenticated && !limited) return operation;
   const responses = { ...(operation['responses'] as Record<string, unknown>) };
   if (limited) {

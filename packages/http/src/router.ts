@@ -76,6 +76,14 @@ export interface RouteMeta {
    * refuses a configured bucket of the same name that says something else.
    */
   readonly rateLimitBucket?: Bucket;
+  /**
+   * `'handler'`: the handler spends this route's own declared limit — an action's `invoke`, a
+   * query's read — because the primitive counts it on every surface (HTTP, MCP, the agent tool, a
+   * job). The `rate-limit` stage then spends no caller bucket for it, only the tenant allowance:
+   * spending `default` too would cap a primitive that declared more than `default` at `default`.
+   * Set, it wins: `rateLimit`/`rateLimitBucket` name a bucket the STAGE spends, and are not read.
+   */
+  readonly rateLimitedBy?: 'handler';
   readonly tags?: readonly string[];
   readonly description?: string;
   /**

@@ -18,7 +18,12 @@ import { QueryDeniedError } from './errors';
 /** Policies are opaque here: we evaluate them, we never introspect their rules. */
 export type QueryPolicy = Policy<unknown>;
 
-export type QuerySurface = 'server' | 'http' | 'live';
+/**
+ * Where a read came from. `'mcp'` is an agent's tool call — named so a declared `rateLimit:`
+ * spends for it (`'server'`, in-process app code, does not) — and is judged by the policy exactly
+ * as `'server'` always judged it, so no MCP read's authz answer moved.
+ */
+export type QuerySurface = 'server' | 'http' | 'live' | 'mcp';
 
 export interface QuerySubject {
   readonly actor: Actor | null;
@@ -68,6 +73,7 @@ function policySurface(surface: QuerySurface): PolicySurface {
     case 'live':
       return 'live';
     case 'server':
+    case 'mcp':
       return 'job';
     default:
       return assertNever(surface);

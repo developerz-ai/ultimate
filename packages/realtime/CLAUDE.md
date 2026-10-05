@@ -114,6 +114,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`**
   (`subscription-book.ts` is the only spelling). Reusing a sid the same socket holds is
   `X_SUBSCRIPTION_ID_TAKEN`.
+- **`rateLimit:` is spent once per NEW subscription** (`live-spend.ts`).
 - Truth is the server. A client is never the merge authority.
 
 ## The node, the bus and presence

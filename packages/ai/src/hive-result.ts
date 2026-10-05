@@ -23,7 +23,10 @@ export type HiveMember<O> =
   | {
       readonly status: 'failed';
       readonly index: number;
-      /** The `UltimateError` code the member threw, or `'unknown'` for a foreign throw. */
+      /**
+       * The code the member threw — read structurally, so a foreign throw carrying a string `code`
+       * (a driver's SQLSTATE) reports it — or `'unknown'` for a throw with none.
+       */
       readonly code: string;
       readonly reason: string;
     }

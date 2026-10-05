@@ -20,10 +20,10 @@
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { hasPublicCause, isMcpExposed, isUltimateError, stringField } from '@ultimat3/core';
-import { statusFor } from '@ultimat3/http';
+import { isMcpExposed, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
+import { discloseFailure } from './failure-disclosure';
 
 /**
  * The JSON Schema subset the framework emits for tool arguments — `@ultimat3/schema`'s
@@ -162,7 +162,7 @@ export async function runLlmToolCall(
     return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
-    return { toolUseId: call.id, content: describeFailure(error), isError: true };
+    return { toolUseId: call.id, content: describeFailure(error, call.name), isError: true };
   }
 }
 
@@ -195,29 +195,16 @@ function resultOf(toolUseId: string, output: unknown): LlmToolResult {
  * it: the provider keeps every request it is sent, and a cause that reached it cannot be recalled.
  */
 export const HIDDEN_TOOL_CAUSE =
-  'the tool failed inside the server; the details are withheld from this conversation and are in the server logs';
+  'the tool failed inside the server; the details are withheld from this conversation; the server log records its code and where it failed';
 
 /**
- * The thrown value, read STRUCTURALLY and totally. `stringField` from `@ultimat3/core`, never
- * `typeof e.code === 'string'`: the value is whatever an app's handler, its driver or its SDK
- * threw, so each read is a getter call or a `Proxy` trap — and it runs inside the catch block
- * that has nothing left to answer the model with if the probe itself raises.
- *
- * A 5xx code's cause is shown only when core's `hasPublicCause` allows it — the rule a production
- * problem document follows (`@ultimat3/http`'s `toProblem`). Hidden, the developer's `fix` goes with
- * it (a driver writes it from the statement it failed on); a `callerFix` an `UltimateError` built in
- * this process is authored for a remote reader and stays.
+ * `discloseFailure`'s verdict, rendered as the `tool_result` line — the same rule a hive member's
+ * reason follows, so what an agent may read of a throw is decided once. An uncoded throw says only
+ * that it failed; a withheld cause becomes `HIDDEN_TOOL_CAUSE`, and the log has the rest.
  */
-function describeFailure(error: unknown): string {
-  const code = stringField(error, 'code');
-  if (code === undefined) return 'tool failed';
-  if (statusFor(code) >= 500 && !hasPublicCause(code)) {
-    const callerFix = isUltimateError(error) ? stringField(error, 'callerFix') : undefined;
-    return callerFix === undefined
-      ? `${code}: ${HIDDEN_TOOL_CAUSE}`
-      : `${code}: ${HIDDEN_TOOL_CAUSE} (fix: ${callerFix})`;
-  }
-  const cause = stringField(error, 'cause') ?? 'unknown';
-  const fix = stringField(error, 'fix') ?? '';
-  return fix === '' ? `${code}: ${cause}` : `${code}: ${cause} (fix: ${fix})`;
+function describeFailure(error: unknown, toolName: string): string {
+  const shown = discloseFailure(error, tryUseContext()?.logger, `tool ${toolName}`);
+  if (shown.code === undefined) return 'tool failed';
+  const line = `${shown.code}: ${shown.cause ?? HIDDEN_TOOL_CAUSE}`;
+  return shown.fix === undefined ? line : `${line} (fix: ${shown.fix})`;
 }

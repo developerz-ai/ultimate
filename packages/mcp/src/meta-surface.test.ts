@@ -71,7 +71,9 @@ const caller = (
 ): McpCaller => ({
   actor,
   role: `${surface}:${role}`,
-  scopes: new Set(scopes),
+  // `app:use` is the base capability every tool not under `posts:write` sits behind: a scoped
+  // server must cover every tool (`X_MCP_SCOPE_UNCOVERED`), so the token that reaches them holds it.
+  scopes: new Set(['app:use', ...scopes]),
 });
 const metaOwner = (scopes: readonly string[] = []) => caller(owner, 'owner', scopes);
 const metaMember = (scopes: readonly string[] = []) => caller(member, 'member', scopes);
@@ -159,7 +161,7 @@ const appServer = (): McpServer =>
   defineAppMcp({
     include: 'exposed',
     tools: [whoami],
-    scopes: { 'posts:write': ['publishPost'] },
+    scopes: { 'posts:write': ['publishPost'], 'app:use': ['listPosts', 'transferOrg', 'whoami'] },
     surface: bySurface,
     groups: GROUPS,
   }).server;

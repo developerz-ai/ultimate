@@ -427,17 +427,43 @@ import type { ActionRateLimit } from '@ultimat3/action';
 const rateLimit: ActionRateLimit = { limit: 5, windowMs: 600_000 };
 ```
 
-One declaration, three places it lands: the bucket the limiter runs on (named after the action,
-registered by `@ultimat3/http`'s `withRouteBuckets` when the route is mounted), the
-`ratelimit-limit` header the caller reads, and `x-ultimate.rateLimit` in the OpenAPI operation.
+One declaration, one bucket, every surface. `invoke` spends it — so the HTTP route, the MCP tool,
+the in-app agent's tool call and `.job()` draw on the **same** bucket, and the third call to a
+`limit: 2` action is refused `X_RATE_LIMITED` whichever door it came through. A direct in-process
+call (`surface: 'server'` — a service, a seed, a test) is app code, not a caller, and spends nothing.
+
+| Fact | Answer |
+|---|---|
+| whose bucket | the caller's: actor → org → connection address (`@ultimat3/http`'s `rateLimitSpends`). An anonymous caller with no address (MCP, a job) shares one bucket |
+| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore()`) — the slot `@ultimat3/query` spends from too; the boot fills it with the SAME instance it gives `createServer({ rateLimitStore })`, on every role. Default: one process' memory |
+| what HTTP answers | `RateLimit-*` from the bucket closest to refusing, and on a refusal `429` + `Retry-After` — the pipeline's own shape |
+| a retry | an admitted attempt spends one token; a refused one spends nothing. A job refused `X_RATE_LIMITED` is rescheduled for its `Retry-After` WITHOUT counting an attempt, so a backlog is delayed, never dead-lettered |
+| an idempotent replay | spends nothing: the stored answer is served, never a 429 |
+| who a job run is | its actor, else its tenant (`org:<orgId>`); a run with neither shares one `job:unattributed` bucket, never the anonymous callers' |
+| OpenAPI | `x-ultimate.rateLimit`, and with `defineApi({ openapi })` the `RateLimit-*` headers and `429` |
+
+```ts
+import type { PgExecutor } from '@ultimat3/core';
+import { installRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
+
+declare const executor: PgExecutor; // the pool this boot already opened
+
+// Boot, before the first call — the one store every surface and every replica counts in.
+// `x dev` and a container boot do this themselves, and `createServer({ rateLimitStore })` adopts
+// the store it is handed; a process with no server (a worker of your own) installs it here.
+const rateLimitStore = postgresRateLimitStore({ executor });
+installRateLimitStore(rateLimitStore);
+```
+
 `toBucket` is the only conversion — `capacity: limit`, `refillPerSecond: limit / (windowMs / 1000)`
 — so the published numbers and the enforced ones cannot differ. It lives in `@ultimat3/http`,
 beside `Bucket` and the limiter maths, and is re-exported here: `@ultimat3/query` needs the same
 conversion and is the same tier, so a copy in either package would be a second answer for the
-other. A pair the limiter cannot run on is `X_RATE_LIMIT_INVALID`, at projection. An action that declares nothing
-stays on the `default` bucket. An app that also configures `http.rateLimit.buckets.<actionName>`
-with **different** numbers is `X_RATE_LIMIT_BUCKET_CONFLICT` at boot: neither source wins, because
-the loser would go on being read as enforced.
+other. A pair the limiter cannot run on is `X_RATE_LIMIT_INVALID`, at projection. The route says
+`rateLimitedBy: 'handler'`, so the pipeline's stage spends no caller bucket for it — not `default`,
+which would cap an action declaring more than it — and only the tenant allowance. An
+`http.rateLimit.buckets.<actionName>` entry is a different table: it neither conflicts with nor
+loosens what the action declared.
 
 ## `idempotent:` — and where its records live
 

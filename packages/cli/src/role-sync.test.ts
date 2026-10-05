@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import { PORT_RANGE } from './flag-number';
-import { syncBindRefusal, syncPortFor } from './role-sync';
+import { syncBindRefusal, syncClientAddressOf, syncPortFor } from './role-sync';
 
 const refusal = (port: number): { code: string; cause: string; fix: string } => {
   try {
@@ -89,5 +89,28 @@ describe('unit · the sync node cannot bind, and says which port', () => {
   // failed for any other reason must reach the caller as the value it was.
   test('a free port produces no refusal, so the original failure is re-thrown', async () => {
     expect(await syncBindRefusal(3999, 4000, async () => true)).toBeUndefined();
+  });
+});
+
+// An anonymous live reader's rate limit is keyed on its address, so the sync node has to resolve
+// the caller exactly as the web role does — `x-forwarded-for` read at `TRUSTED_PROXY_HOPS`, the
+// socket otherwise. Keyed on the ingress, every anonymous viewer in the fleet shared one bucket.
+describe('unit · the sync node resolves the caller as the web role does', () => {
+  const dial = (forwardedFor: string | null): Request =>
+    new Request('http://node/_x/sync', {
+      headers: forwardedFor === null ? {} : { 'x-forwarded-for': forwardedFor },
+    });
+
+  test('behind one trusted proxy the forwarded client is the caller', () => {
+    const resolve = syncClientAddressOf({ TRUSTED_PROXY_HOPS: '1' });
+    expect(resolve(dial('198.51.100.4'), '10.0.0.2')).toBe('198.51.100.4');
+    // A client-typed entry in front of the trusted hop is not the caller.
+    expect(resolve(dial('6.6.6.6, 198.51.100.4'), '10.0.0.2')).toBe('198.51.100.4');
+  });
+
+  test('with nothing trusted the socket is the caller, whatever the header says', () => {
+    const resolve = syncClientAddressOf({});
+    expect(resolve(dial('6.6.6.6'), '10.0.0.2')).toBe('10.0.0.2');
+    expect(resolve(dial(null), null)).toBeNull();
   });
 });

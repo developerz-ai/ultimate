@@ -98,7 +98,7 @@ export {
 /** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
 export { toQueryRoute } from './http';
 export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } from './live';
-export { planResume, seekOf, toLiveQuery } from './live';
+export { planResume, seekOf, spendQueryLimit, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
 export type { QueryToolAnswer, QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';

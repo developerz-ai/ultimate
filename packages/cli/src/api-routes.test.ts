@@ -89,12 +89,31 @@ describe('apiMountRoutes — defineApi({ http: { mounts } })', () => {
         ],
       },
     });
-    const mounted = apiMountRoutes();
+    const all = apiMountRoutes();
+    // The prefix's catch-all (`<prefix>/*rest`) is the mount's own, not a projected primitive:
+    // asserted apart, so the cut below stays exactly the primitives the scopes name.
+    const isCatchAll = (route: { path: string }): boolean => route.path === '/v1/*rest';
+    const mounted = all.filter((route) => !isCatchAll(route));
     expect(mounted.map((route) => `${route.method} ${route.path}`)).toEqual([
       'POST /v1/publish-post',
     ]);
     expect(mounted[0]?.meta.auth).toBe('required');
     expect(typeof mounted[0]?.meta.authenticate).toBe('function');
+    // Present for every method a client sends, behind the same kind of authenticator, so no path
+    // under the prefix answers an anonymous caller differently for being served.
+    const catchAll = all.filter(isCatchAll);
+    expect(catchAll.map((route) => route.method).sort()).toEqual([
+      'DELETE',
+      'GET',
+      'OPTIONS',
+      'PATCH',
+      'POST',
+      'PUT',
+    ]);
+    for (const route of catchAll) {
+      expect(route.meta.auth).toBe('required');
+      expect(typeof route.meta.authenticate).toBe('function');
+    }
   });
 });
 

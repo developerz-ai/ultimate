@@ -402,4 +402,26 @@ describe('toWireError over a throwable it does not control', () => {
       toWireError({ code: 'X_TOPIC_FORBIDDEN', cause: 'no guard', fix: 'declare one' }),
     ).toEqual({ code: 'X_TOPIC_FORBIDDEN', cause: 'no guard', fix: 'declare one' });
   });
+
+  // A rate-limited subscribe is retryable, and only the node knows when: the delay rides the ack
+  // so a client can come back once the bucket refills instead of staying `failed`.
+  test('a refusal stating when to retry carries retryAfterSeconds across the wire', () => {
+    const refused = {
+      code: 'X_RATE_LIMITED',
+      cause: 'exhausted',
+      fix: 'retry later',
+      meta: { key: 'query:feed|ip:1.2.3.4', retryAfterSeconds: 12 },
+    };
+    const wire = toWireError(refused);
+    expect(wire.retryAfterSeconds).toBe(12);
+    const frame: Frame = { type: 'ack', v: PROTOCOL_VERSION, ref: 's1', lsn: null, error: wire };
+    expect(decode(encode(frame))).toEqual(frame);
+  });
+
+  test('a retry hint that is not a positive finite number never reaches the wire', () => {
+    for (const retryAfterSeconds of [0, -1, Number.NaN, '12', Number.POSITIVE_INFINITY]) {
+      const wire = toWireError({ code: 'X_A', cause: 'c', fix: 'f', meta: { retryAfterSeconds } });
+      expect('retryAfterSeconds' in wire).toBe(false);
+    }
+  });
 });

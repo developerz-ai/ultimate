@@ -110,7 +110,10 @@ export const mcp = defineAppMcp({
       },
     },
   },
-  scopes: { 'admin:seats': ['seatReport'] },   // scope name → tool NAMES, by string
+  scopes: {                              // scope name → tool NAMES; given, it must cover EVERY tool
+    'admin:seats': ['seatReport'],
+    'posts:write': ['publishPost'],      // …including each one include: 'exposed' projected
+  },
   instructions: 'Admin console. seatReport({}) answers seat questions; writes are audited.',
   resolveToken: (token) => sessions.resolveAgentToken(token),
 });
@@ -185,6 +188,13 @@ beside the action, because a scope is a capability of the CONNECTION's token —
 `x token grant <scope>` names — not a fact about the operation; the policy beside the action
 stays the only rule that reads the input. A name this server does not project is
 `X_MCP_SCOPE_UNKNOWN` at boot; one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT`.
+
+**Given at all, `scopes:` must cover every tool** — `X_MCP_SCOPE_UNCOVERED` at boot names each one
+no scope lists, `As of 2026-10`. The registry gates a tool only when it carries a scope, so an
+unlisted tool answered every token, while `bearerMount` over the same map serves an unlisted
+primitive to nobody; one map now exposes one set on both doors. A ready `McpTool` that arrives with
+its own `scope` is covered by it. With `include: 'exposed'`, every primitive that opts in later
+needs a line here too, or the next boot says which.
 
 ### A constant surface: `surface: 'meta'`
 
@@ -360,6 +370,7 @@ is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 | `X_MCP_SCOPE_DENIED` | visible, but the connection's token lacks the scope |
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project |
 | `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool |
+| `X_MCP_SCOPE_UNCOVERED` | `defineAppMcp` was given `scopes:` and a projected tool is under none of them |
 | `X_INPUT_INVALID` | arguments failed the published `inputSchema` — an `isError` result since 22.10 |
 | `X_MCP_ARGS_INVALID` | no longer raised on the wire (22.10); `McpArgsInvalidError` stays exported |
 | `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
@@ -395,6 +406,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpResourceDuplicateError` | `X_MCP_RESOURCE_DUPLICATE` | `src/errors.ts` |
 | `McpScopeConflictError` | `X_MCP_SCOPE_CONFLICT` | `src/errors.ts` |
 | `McpScopeDeniedError` | `X_MCP_SCOPE_DENIED` | `src/errors.ts` |
+| `McpScopeUncoveredError` | `X_MCP_SCOPE_UNCOVERED` | `src/errors.ts` |
 | `McpScopeUnknownError` | `X_MCP_SCOPE_UNKNOWN` | `src/errors.ts` |
 | `McpSurfaceOverBudgetError` | `X_MCP_SURFACE_OVER_BUDGET` | `src/errors.ts` |
 | `McpToolDuplicateError` | `X_MCP_TOOL_DUPLICATE` | `src/errors.ts` |

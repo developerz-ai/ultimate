@@ -60,8 +60,16 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  */
 const MIGRATE_CEILING = 615;
 
-/** measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles. */
-const SERVING_ROLE_CEILING = 875;
+/**
+ * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
+ * raised 875 → 880, measured 880 (2026-10-04, plan 101 sweep 1): eight modules that are real function
+ * on every role's path — the per-primitive rate-limit gates (`action/src/rate-limit-gate.ts`,
+ * `query/src/rate-limit-gate.ts`), their shared header rendering and installed-limiter seam
+ * (`http/src/rate-limit-headers.ts`, `http/src/rate-limit-installed.ts`), and the live-query
+ * delivery split (`realtime/src/live-deliver.ts`, `live-spend.ts`, `socket-defaults.ts`), and
+ * `cli/src/trusted-hops.ts`, moved out of `role-start.ts` so the sync role reads the same hop count.
+ */
+const SERVING_ROLE_CEILING = 880;
 
 /** measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA). */
 const WEB_ROLE_CEILING = 975;

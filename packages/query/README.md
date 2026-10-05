@@ -574,8 +574,21 @@ rateLimit: { limit: 3, windowMs: 600_000 },   // 3 held, one back every three an
 Symmetric with an action's, and for a reason: without it **every** `GET /_x/query/*` fell to the
 `default` bucket — 120 burst, 2/s per actor — so one authenticated caller could hold 120
 cross-tenant aggregates in flight and then 2/s indefinitely, from a single account, with no
-declaration able to say otherwise. `toQueryRoute` sets the bucket NAME and the NUMBERS, and
-`@ultimat3/http`'s `withRouteBuckets` registers them: a name alone falls through to `default`.
+declaration able to say otherwise.
+
+**One bucket, every surface.** The read path's front half (`buildSource`) spends it, so the HTTP
+route, a paged read and the MCP tool (`surface: 'mcp'`) all draw on the same bucket. A live
+SUBSCRIBE is realtime's — the sync node builds one shared window per `(query, input)` with no
+subscriber, which spends nothing — and spends per subscriber through `spendQueryLimit(target,
+{ actor })`. An in-process read (`surface: 'server'`, a page's render, a service) spends nothing.
+
+| Fact | Answer |
+|---|---|
+| whose bucket | the reader's: actor → org → connection address (`@ultimat3/http`'s `rateLimitSpends`) |
+| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore`) — the one `@ultimat3/action` spends from, and the instance the boot hands `createServer` |
+| what HTTP answers | `RateLimit-*` from the bucket closest to refusing; `429` + `Retry-After` on a refusal |
+| `default` | not spent for this route: it is `rateLimitedBy: 'handler'`, so a read declaring more than `default` is not capped at it. The tenant allowance still applies |
+
 The conversion is `toBucket` from `@ultimat3/http` — the same one the action route uses, because
 http owns `Bucket` and `action` is the same tier as this package. A pair the limiter cannot run
 on is `X_RATE_LIMIT_INVALID`, at projection.

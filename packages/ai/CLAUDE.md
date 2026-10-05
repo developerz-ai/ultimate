@@ -46,6 +46,7 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `pg-vector.ts` | `PgVectorStore` — the production store |
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
+| `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged as code, name and stack frames — never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
@@ -211,11 +212,13 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
     never as a failure); the throw is read with `stringField`.
   - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
     `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
-    same verdict a problem document and `@ultimat3/mcp` give.
+    same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
+    rule a hive member's `reason` follows too. Never a second copy.
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
   order with `index`; the hive never names an actor; no hive budget code (the reservation holds
-  it); a member's throw is recorded via `isThrownError`/`stringField`; `skipped` reasons
+  it); a member's throw is recorded through `discloseFailure` — a 5xx cause or an uncoded throw's
+  message becomes `HIDDEN_MEMBER_CAUSE`, logged as facts only; `skipped` reasons
   `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required; `concurrency` 4, `minMembers`
   2 (a below-floor split still runs serially); an empty split is `X_HIVE_EMPTY`; an aborted `ctx`
   unwinds with `X_ABORTED`.

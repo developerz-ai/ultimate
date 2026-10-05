@@ -32,7 +32,7 @@ export interface FixShellArgPin {
  */
 export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   action: {
-    count: 4,
+    count: 2,
     reason:
       '`errors.ts` and `client.ts` splice an ACTION NAME into `x actions describe <name>` / `x mcp tools`. The name comes from the action registry, which is a key an `action()` declaration wrote in this process — never from a request. The day a route name reaches one of these, it is caller data.',
   },

@@ -13,11 +13,13 @@ import { type LiveCursor, makeCursor } from './cursor';
 import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
-import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
+import { deliverChange } from './live-deliver';
+import { type FanoutDeps, snapshotFrame } from './live-fanout';
 import { floorAfterRead } from './live-floor';
 import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
 import { refuseSubscription } from './live-refusal';
 import { resumeOnto } from './live-resume';
+import { type Charge, type SubscribeArgs, spendOnce } from './live-spend';
 import { liveTenantOf, windowId } from './live-tenant';
 import { createEntry, fillWindow, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
@@ -124,13 +126,15 @@ export class LiveQueryRegistry {
    * Subscribe or resume. Returns the frame this subscriber needs: a `snapshot` on a cold start or a
    * blown reconnect budget, a `patch` when the cursor is inside the retained window.
    */
-  async subscribe(args: {
-    socket: SyncSocket;
-    name: string;
-    input: JsonValue;
-    sid?: string;
-    cursor?: LiveCursor | null;
-  }): Promise<{ subscription: LiveSubscription; frame: Frame }> {
+  subscribe(args: SubscribeArgs): Promise<{ subscription: LiveSubscription; frame: Frame }> {
+    return this.#subscribe(args, { due: true });
+  }
+
+  /** `charge.due` false: a re-seat, whose subscription was paid for when it was first made. */
+  async #subscribe(
+    args: SubscribeArgs,
+    charge: Charge,
+  ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     const definition = this.#definitions.get(args.name);
     // A name this node never registered, and not a protocol skew: the frame parsed, the version
     // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
@@ -148,7 +152,7 @@ export class LiveQueryRegistry {
         // re-decides only what is ATTACHED. So a subscription seated for an actor the socket no
         // longer carries is taken back and served again under the one it does.
         const actor = args.socket.actor;
-        const served = await this.#subscribeReserved(definition, sid, args);
+        const served = await this.#subscribeReserved(definition, sid, args, charge);
         if (args.socket.actor === actor) return served;
         this.unsubscribe(args.socket.id, sid);
       }
@@ -168,19 +172,22 @@ export class LiveQueryRegistry {
       input: JsonValue;
       cursor?: LiveCursor | null;
     },
+    charge: Charge,
   ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
-    // After this subscriber's own decision, never before it: resolving a shape for a caller who
-    // may not subscribe is work an unauthorized client gets to schedule.
-    await definition.prepare?.(args.input);
-
     // The window is the subscriber's TENANT's: two orgs on one `(query, input)` are two entries,
     // two reads and two retained rings, so no shared row ever stands between them and a policy.
     const tenant = liveTenantOf(args.socket.actor);
     const qid = windowId(queryHash(args.name, args.input), tenant);
+    // After this subscriber's own decision, never before it: resolving a shape for a caller who
+    // may not subscribe is work an unauthorized client gets to schedule.
+    await definition.prepare?.(args.input);
+
     const entry = this.#entryFor(qid, definition, args.input, tenant);
     try {
-      return await this.#serve(entry, sid, args);
+      // Charged where a read happens, never from the cursor's say-so (`live-spend.ts`).
+      const pay = () => spendOnce(definition, args.socket, charge, this.#clock);
+      return await this.#serve(entry, sid, args, pay);
     } catch (error) {
       // The entry was born above, before anything could fill it. Everything below can throw — the
       // snapshot, the resume, the window's own read deadline — and `unsubscribe` is the only other
@@ -200,6 +207,7 @@ export class LiveQueryRegistry {
       input: JsonValue;
       cursor?: LiveCursor | null;
     },
+    pay: () => Promise<void>,
   ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     const qid = entry.qid;
     const now = this.#clock.now().getTime();
@@ -219,7 +227,11 @@ export class LiveQueryRegistry {
           budget: this.#options.budget,
           clock: this.#clock,
           gate: this.#gate,
-          read: () => this.#read(entry, who),
+          read: async () => {
+            await pay();
+            return await this.#read(entry, who);
+          },
+          beforeFill: pay,
         },
         entry,
         who,
@@ -230,6 +242,7 @@ export class LiveQueryRegistry {
       return { subscription, frame: resumed.frame };
     }
 
+    await pay();
     const fresh = await this.#read(entry, { sid, actor: args.socket.actor });
     const cursor = makeCursor(qid, fresh.lsn, fresh.rows, now);
     const subscription = this.#attachUnlessGone(entry, args.socket, sid, cursor);
@@ -354,7 +367,10 @@ export class LiveQueryRegistry {
       return true;
     }
     try {
-      const { frame } = await this.subscribe({ socket, name: definition.name, input, sid });
+      const { frame } = await this.#subscribe(
+        { socket, name: definition.name, input, sid },
+        { due: false },
+      );
       if (!socket.send(frame)) socket.markDesynced(sid);
     } catch (error) {
       this.#gate.failedAuthorize(wanted, { sid, actor: socket.actor }, error);
@@ -364,21 +380,6 @@ export class LiveQueryRegistry {
   }
 
   /**
-   * Fan one change out. Matched once per query id, authorized once per subscriber. Returns the
-   * number of frames sent — the metric the reconnect benchmark watches.
-   *
-   * Each entry's turn is taken in that entry's lane. Nothing upstream orders this: `sync` fires
-   * `void registry.deliver(change)` straight off the bus subscription, so two changes arriving back
-   * to back would otherwise interleave inside one query id — lsn 2 delivered before lsn 1, the
-   * subscriber's cursor rewound to 1, and every gate deciding against whichever window won.
-   *
-   * Every lane is *entered* before any of them is awaited, and nothing inside a fanout takes a
-   * second lane, so holding all of them at once cannot be a cycle. That is what makes the ordering
-   * claim true: two deliveries queue onto each query id in call order, serialized per query id and
-   * never per node — awaiting one entry before entering the next made one slow policy pass the
-   * whole node's pace, and let a lane that threw skip every entry behind it with nobody desynced.
-   */
-  /**
    * The newest change position this registry has been handed. What a node's snapshot may claim
    * (`liveQueryDefinition`'s `lsn`): a read begun after it holds at least that change, and every
    * later change is above it. `''` before the first.
@@ -387,34 +388,12 @@ export class LiveQueryRegistry {
     return this.#lastLsn;
   }
 
+  /** Fan one change out, every query id in its own lane — `live-deliver.ts` owns why. */
   async deliver(change: ChangeEvent): Promise<number> {
     if (change.lsn > this.#lastLsn) this.#lastLsn = change.lsn;
-    const lanes = [...this.#entries.values()].map(async (entry) => {
-      try {
-        const result = await entry.lock.run(() => fanoutChange(this.#fanout, entry, change));
-        this.#staleChanges += result.stale;
-        return result.sent;
-      } catch (error) {
-        // The window advanced under a fanout that did not finish, so every subscriber of this one
-        // query id now holds a cursor below the change and no later flush would correct them:
-        // desynced here, re-snapshotted on the next one. Silent divergence is the whole reason
-        // `markDesynced` exists, and skipping this is how a failure became one.
-        for (const subscription of entry.subscribers.values()) {
-          subscription.socket.markDesynced(subscription.sid);
-        }
-        throw error;
-      }
+    return await deliverChange(this.#entries.values(), this.#fanout, change, (stale) => {
+      this.#staleChanges += stale;
     });
-    // `allSettled`, so one lane's rejection neither cancels the others nor goes unhandled. The
-    // first failure still reaches the caller — `sync` logs it — but it costs one query id.
-    let sent = 0;
-    let failure: { readonly error: unknown } | null = null;
-    for (const lane of await Promise.allSettled(lanes)) {
-      if (lane.status === 'fulfilled') sent += lane.value;
-      else failure ??= { error: lane.reason };
-    }
-    if (failure !== null) throw failure.error;
-    return sent;
   }
 
   #attachUnlessGone(

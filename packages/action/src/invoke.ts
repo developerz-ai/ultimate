@@ -1,6 +1,6 @@
 /**
- * The one invocation core: parse input, evaluate policy, run the handler, parse
- * output. The declaration lives in this module's private store, so `handle` is
+ * The one invocation core: ask who is calling, spend the rate limit, parse input, evaluate
+ * policy, run the handler, parse output. The declaration lives in this module's private store, so `handle` is
  * unreachable from anywhere else — HTTP, MCP, jobs and `.as()` hand `invoke` a
  * payload, and none of them can become a second execution path.
  *
@@ -35,6 +35,7 @@ import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
 import { actorOf, guard, guardBeforeInput } from './policy-gate';
+import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
 import { parsedOrNothing, validateInput, validateOutput } from './validate';
 
 /**
@@ -77,6 +78,15 @@ export function invoke(
   raw: unknown,
   options: InvokeOptions = {},
 ): Promise<unknown> {
+  // The address a surface handed over becomes the one every nested call inherits — an agent's
+  // tool calls are keyed by the visitor who asked, not shared by every anonymous visitor.
+  // A job run opens a fresh frame instead: no visitor's address follows work into the worker.
+  return options.surface === 'job'
+    ? withJobFrame(() => invokeAs(target, raw, options))
+    : withCallerAddress(options.clientAddress, () => invokeAs(target, raw, options));
+}
+
+function invokeAs(target: AnyAction, raw: unknown, options: InvokeOptions): Promise<unknown> {
   if (options.actor === undefined) {
     // INSTALLED, never only handed over. An explicit `ctx` used to be passed to `core` and to
     // nothing else, so everything downstream that reads the ambient context — most importantly
@@ -228,6 +238,33 @@ async function perform(
     if (def.audit === true) trace.input = await parsedOrNothing(def.input, raw);
     throw denial;
   }
+  // The ONE place a declared `rateLimit:` is spent, so every surface draws on the same bucket.
+  // HERE — after the actor half (a refused caller learns that, not a 429), BEFORE the parse, the
+  // row load and `guard`: spent later, a flood of invalid input (400) or row-denied calls (403)
+  // was never refused, and every 429 had already paid for a row load.
+  const spend = (): Promise<void> =>
+    spendActionLimit(name, def.rateLimit, ctx, {
+      surface,
+      clientAddress: options.clientAddress,
+      onRateLimit: options.onRateLimit,
+    });
+  const key = def.idempotent === true ? (options.idempotencyKey ?? null) : null;
+  const store = key === null ? undefined : (options.store ?? getIdempotencyStore());
+  // The namespaced key, not the caller's: the same key under two actions — or from two callers
+  // — is two keys, and an audit row keyed on the raw header would collide across both. The
+  // ACTOR comes from `ctx`, which `invoke` installed, so every surface scopes identically.
+  if (key !== null) trace.idempotencyKey = idempotencyKeyFor(name, key, ctx.actor);
+  // A replay is its stored answer and spends nothing — a 429 in its place told a client its
+  // committed write had not happened. A key the store already holds is a replay (or a duplicate in
+  // flight, answered 409); only a key it does not hold spends here. The peek can be stale both
+  // ways, so `withIdempotency` meters a reservation it CREATED that this peek did not pay for.
+  const spentEarly =
+    trace.idempotencyKey === null ||
+    store === undefined ||
+    def.rateLimit === undefined ||
+    (await store.get(trace.idempotencyKey)) === undefined;
+  if (spentEarly) await spend();
+
   const input = await validateInput(def.input, raw, name);
   trace.input = input;
   // The one place a row-level rule gets its row. Once per invocation, never per row:
@@ -246,18 +283,14 @@ async function perform(
     return validateOutput(def.output, produced, name);
   };
 
-  const key = def.idempotent === true ? (options.idempotencyKey ?? null) : null;
   let value: unknown;
   let wrote = true;
-  if (key === null) {
+  if (store === undefined || trace.idempotencyKey === null) {
     value = await run();
   } else {
-    const store = options.store ?? getIdempotencyStore();
-    // The namespaced key, not the caller's: the same key under two actions — or from two callers
-    // — is two keys, and an audit row keyed on the raw header would collide across both. The
-    // ACTOR comes from `ctx`, which `invoke` installed, so every surface scopes identically.
-    trace.idempotencyKey = idempotencyKeyFor(name, key, ctx.actor);
-    const outcome = await withIdempotency(store, trace.idempotencyKey, input, run);
+    const outcome = await withIdempotency(store, trace.idempotencyKey, input, run, {
+      ...(spentEarly ? {} : { beforeRun: spend }),
+    });
     if (outcome.replayed) options.onReplay?.();
     trace.replayed = outcome.replayed;
     wrote = !outcome.replayed;
