@@ -38,6 +38,15 @@ const modules = async (): Promise<readonly string[]> => {
   const found: string[] = [];
   for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: APP_ROOT, absolute: true })) {
     if (file.includes('/node_modules/') || isTest(file)) continue;
+    // `bin/*.ts` are the scripts `bun run setup` / `check` execute: importing one RUNS it (an
+    // install, `x setup`, a nested `x verify`). They are entry points, not modules of the app.
+    if (
+      file
+        .slice(APP_ROOT.length + 1)
+        .replaceAll('\\', '/')
+        .startsWith('bin/')
+    )
+      continue;
     found.push(file);
   }
   return found.sort();

@@ -4,6 +4,7 @@
 // is a failing assertion rather than something a newcomer meets on PowerShell.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: Bun has no temp-directory or recursive-remove native; each case writes a throwaway app.
 import {
   chmodSync,
   existsSync,
@@ -13,7 +14,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun ships no path-join primitive, and the scripts are spawned by their joined path.
 import { join } from 'node:path';
 import { BIN_SCRIPTS, binFiles } from './scaffold-bin';
 
@@ -78,6 +81,8 @@ const runScript = (
     env: { ...process.env, ...env },
     stdout: 'pipe',
     stderr: 'pipe',
+    // A bin script runs a stand-in `x` and exits; one that hangs fails the test instead of the run.
+    timeout: 30_000,
   });
   const log = join(root, 'x.log');
   const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [];

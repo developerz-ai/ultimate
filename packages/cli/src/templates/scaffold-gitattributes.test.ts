@@ -2,6 +2,7 @@
 // binaries never rewritten — and the framework's own copy held to the same block, byte for byte.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no path-join primitive; the framework's own .gitattributes is read by repo path.
 import { join } from 'node:path';
 import {
   BINARY_EXTENSIONS,
