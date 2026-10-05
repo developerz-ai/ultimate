@@ -3,10 +3,17 @@
 // every one of them has to import, export the name its path promises, and survive the glyph gate.
 
 import { describe, expect, test } from 'bun:test';
+// why: a scratch bin directory holding a fake tool needs mkdtemp, chmod and recursive rm; Bun has none.
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun exposes no tmpdir().
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';
 import { UI_ERROR_CODES } from '../errors';
 import {
+  biomeBinary,
   GLYPHS_DIR,
   identifierFor,
   LUCIDE_ICON_NODES_URL,
@@ -312,5 +319,26 @@ describe('the icon NAME is validated before it reaches a sink', () => {
       f.slice(0, -3),
     );
     expect(names.filter((name) => !SAFE_ICON_NAME.test(name))).toEqual([]);
+  });
+});
+
+// `<bin>/biome` was spawned by path, which on Windows is ENOENT: the link there is `biome.exe`.
+describe('biomeBinary', () => {
+  test('finds the tool the way the OS resolves it, and answers undefined where there is none', () => {
+    const bin = mkdtempSync(join(tmpdir(), 'x-icons-bin-'));
+    try {
+      expect(biomeBinary(bin)).toBeUndefined();
+      // Windows resolves by PATHEXT, every other OS by the executable bit.
+      const name = process.platform === 'win32' ? 'biome.exe' : 'biome';
+      writeFileSync(join(bin, name), '');
+      chmodSync(join(bin, name), 0o755);
+      expect(biomeBinary(bin)).toBe(join(bin, name));
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  test('the repo’s own install has one', () => {
+    expect(biomeBinary()).toBeDefined();
   });
 });

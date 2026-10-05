@@ -34,6 +34,17 @@ export interface DevServices {
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/**
+ * An embedded binding's `url`: `<scheme>://` and then the HOST path, verbatim — a scheme-tagged
+ * path, NOT a URL. `pglite://D:\\app\\.x\\pgdata` is what Windows gets, and no URL parser reads it
+ * back (a `\\` is not a separator to one, a space would need encoding). Nothing parses it: db's
+ * `pgliteDataDir` and `startStorage` strip the prefix, and the report goes through `safeUrlLabel`,
+ * which answers the binding's name for anything that is not a URL. `Bun.pathToFileURL` was the
+ * other option, and would have made both readers decode as well as strip.
+ */
+export const embeddedLocation = (scheme: 'pglite' | 'file', path: string): string =>
+  `${scheme}://${path}`;
+
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value.trim().length === 0 ? undefined : value;
 
@@ -67,7 +78,7 @@ export function resolveServices(
         ? {
             name: 'db',
             mode: 'embedded',
-            url: `pglite://${join(stateDir, 'pgdata')}`,
+            url: embeddedLocation('pglite', join(stateDir, 'pgdata')),
             detail: 'PGlite in this process — set DATABASE_URL to use a real Postgres',
           }
         : { name: 'db', mode: 'external', url: databaseUrl, detail: 'DATABASE_URL' },
@@ -77,7 +88,7 @@ export function resolveServices(
         ? {
             name: 'storage',
             mode: 'embedded',
-            url: `file://${join(stateDir, 'storage')}`,
+            url: embeddedLocation('file', join(stateDir, 'storage')),
             detail: 'local directory — set S3_ENDPOINT to use S3',
           }
         : { name: 'storage', mode: 'external', url: s3Endpoint, detail: 'S3_ENDPOINT' },

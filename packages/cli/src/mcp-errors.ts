@@ -69,7 +69,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # the package-shape finding carries the dependency line to add',
   X_PACKAGE_DUPLICATED:
     'x i18n check --json   # the finding names both copies and the package.json to pin',
-  X_SHOT_BROWSER_MISSING: 'export CHROME_PATH=/usr/bin/google-chrome',
+  X_SHOT_BROWSER_MISSING:
+    'export CHROME_PATH=/usr/bin/google-chrome   # macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows PowerShell: $env:CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"',
   X_UI_SHOT_ROUTE_UNKNOWN:
     'x routes --json   # then call the ui.* tool with one of its path values',
   X_UI_SHOT_ROUTE_UNBUDGETED:

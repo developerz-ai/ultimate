@@ -126,15 +126,23 @@ export interface StepGuard {
  *
  * A nested gate (a test that runs `x verify`) appends its tag to the one it inherited, so the
  * outer step's kill still finds the inner step's children.
+ *
+ * Windows reads no process's environment, so there the tag finds nothing: every child's pid is
+ * recorded at spawn (`ExecOptions.onSpawn`) and `expire` tree-kills each one (`taskkillTree`).
  */
 export function guardStep(
   runner: Runner,
   tag: string,
   env: Readonly<Record<string, string | undefined>> = Bun.env,
+  platform: PlatformKill = {},
 ): StepGuard {
   let expired = false;
   // Keyed by the promise itself: two batches of one step may run the very same argv.
   const inFlight = new Map<Promise<ExecResult>, readonly string[]>();
+  // Every child's pid, recorded the moment it exists and dropped when its run settles (a settled
+  // pid may be reused). Windows reads no process's environment, so this is the step's only handle.
+  const spawned = new Map<number, readonly string[]>();
+  const windows = (platform.platform ?? process.platform) === 'win32';
   const inherited = env[STEP_TAG_ENV];
   const value = inherited === undefined || inherited === '' ? tag : `${inherited} ${tag}`;
   return {
@@ -151,18 +159,32 @@ export function guardStep(
           durationMs: 0,
         };
       }
-      const run = runner(command, { ...options, env: { ...options.env, [STEP_TAG_ENV]: value } });
+      let pid: number | undefined;
+      const run = runner(command, {
+        ...options,
+        env: { ...options.env, [STEP_TAG_ENV]: value },
+        onSpawn: (spawnedPid) => {
+          pid = spawnedPid;
+          spawned.set(spawnedPid, command);
+          options.onSpawn?.(spawnedPid);
+        },
+      });
       inFlight.set(run, command);
       try {
         return await run;
       } finally {
         inFlight.delete(run);
+        if (pid !== undefined) spawned.delete(pid);
       }
     },
     async expire(): Promise<StepExpiry> {
       expired = true;
       // Before the kill: a killed child settles its runner call, which takes it off the map.
       const waiting = [...inFlight];
+      if (windows) {
+        const killed = await killTrees(spawned, platform.killTree ?? taskkillTree);
+        return { killed, inFlight: await settleAll(waiting) };
+      }
       const workers = await killTagged(tag, undefined, isTestWorker);
       if (workers.length > 0) {
         await raceDeadline(Promise.allSettled(waiting.map(([run]) => run)), CRASH_REPORT_MS);
@@ -171,17 +193,72 @@ export function guardStep(
       const killed = [...workers, ...rest.filter((one) => workers.every((w) => w.pid !== one.pid))];
       // After it: the kill closed the child's pipes, so its call now resolves with everything it
       // had printed — for `bun test`, the crash line of each file a worker was holding.
-      const settled = await Promise.all(
-        waiting.map(async ([run, command]): Promise<InFlightRun> => {
-          const raced = await raceDeadline(run.then(execOutput), SETTLE_MS).catch(() => undefined);
-          return raced === undefined || raced.timedOut
-            ? { command }
-            : { command, output: raced.value };
-        }),
-      );
-      return { killed, inFlight: settled };
+      return { killed, inFlight: await settleAll(waiting) };
     },
   };
+}
+
+/** What each child had printed, once the kill closed its pipes — or just its argv past `SETTLE_MS`. */
+function settleAll(
+  waiting: readonly (readonly [Promise<ExecResult>, readonly string[]])[],
+): Promise<readonly InFlightRun[]> {
+  return Promise.all(
+    waiting.map(async ([run, command]): Promise<InFlightRun> => {
+      const raced = await raceDeadline(run.then(execOutput), SETTLE_MS).catch(() => undefined);
+      return raced === undefined || raced.timedOut ? { command } : { command, output: raced.value };
+    }),
+  );
+}
+
+/** Kills `pid` and every process under it; answers whether it did. */
+export type KillTree = (pid: number) => Promise<boolean>;
+
+/** The platform a guard kills on, injectable so the Windows path runs on any host's tests. */
+export interface PlatformKill {
+  /** `process.platform` unless a test names one. */
+  readonly platform?: string;
+  /** Windows' tree kill. Absent is `taskkill /T /F /PID`. */
+  readonly killTree?: KillTree;
+}
+
+/**
+ * Windows: `taskkill /T /F` — the tree under the pid, forced. POSIX's tag sweep cannot run there
+ * (no process exposes its environment) and `process.kill` ends one process, leaving a
+ * `bun test --parallel` coordinator's workers behind. Bounded like `ps`, for the same reason.
+ */
+export async function taskkillTree(pid: number): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(['taskkill', '/T', '/F', '/PID', String(pid)], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+      timeout: PS_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    });
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every recorded child, each with its tree, named by the argv it was started with. A child that
+ * already exited is not recorded — its run settled — so what is left is what was still running.
+ * A grandchild whose parent already exited is out of reach here: Windows keeps no tag to find it.
+ */
+export async function killTrees(
+  spawned: ReadonlyMap<number, readonly string[]>,
+  killTree: KillTree,
+): Promise<readonly KilledProcess[]> {
+  const killed: KilledProcess[] = [];
+  for (const [pid, command] of spawned) {
+    if (pid === process.pid || !(await killTree(pid))) continue;
+    const line = command.join(' ');
+    killed.push({
+      pid,
+      command: line.length > COMMAND_CHARS ? `${line.slice(0, COMMAND_CHARS)}…` : line,
+    });
+  }
+  return killed;
 }
 
 /** One process and the environment it was started with, as the platform reports it. */

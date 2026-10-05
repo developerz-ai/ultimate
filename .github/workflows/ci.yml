@@ -948,7 +948,7 @@ jobs:
         run: bun test --isolate ./packages/cli/src/app-load.test.ts ./packages/cli/src/drift.test.ts ./packages/cli/src/app-boundaries.test.ts ./packages/cli/src/path-segments.test.ts ./packages/cli/src/templates/scaffold-gitattributes.test.ts
       - name: unit · browser discovery
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        run: bun test --isolate ./packages/testing/src/cdp-launch.test.ts
+        run: bun test --isolate ./packages/testing/src/cdp-launch.test.ts ./packages/testing/src/cdp-launch-wire.test.ts ./packages/testing/src/cdp-launch-reap.test.ts
       - name: x new winapp
         id: new
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}

@@ -4,7 +4,7 @@
 
 /** One `SF:` record, as written: its own totals and every `DA:` line. */
 export interface LcovRecord {
-  /** The `SF:` path, verbatim — Bun writes it relative to the directory the run started in. */
+  /** The `SF:` path with `/` separators — Bun writes it relative to the directory the run started in. */
   readonly file: string;
   /** `LF` / `LH` / `FNF` / `FNH`. Bun's lcov carries no `FN:` lines, so functions are counts only. */
   readonly linesFound: number;
@@ -25,7 +25,9 @@ export function parseLcov(text: string): readonly LcovRecord[] {
   let lines = new Map<number, number>();
   for (const line of text.split('\n')) {
     if (line.startsWith('SF:')) {
-      file = line.slice(3);
+      // `/` on every OS: Bun on Windows writes `apps\web\…`, and the app's source walk keys its
+      // files with `/`, so no record matched and the floor read 0% of a fully tested app.
+      file = line.slice(3).replaceAll('\\', '/');
       lf = 0;
       lh = 0;
       fnf = 0;

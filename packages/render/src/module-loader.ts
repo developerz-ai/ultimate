@@ -4,12 +4,10 @@
  * `bun test` all load a component the same way and there is no separate "bundled" behaviour.
  */
 
-// why: Bun ships no path API, and a relative app root has to be resolved against the working
-// directory before it can be compared with the absolute paths the Bun plugin hands this loader.
-import { resolve } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import { compileStylesheet, isGlobalStylesheet, stripCharset } from './css-modules';
 import { PrerenderFailedError } from './errors';
+import { comparablePath, isPathBelow, pathBelow } from './stylesheet-path';
 import type { Surface } from './surfaces';
 import { surfaceUnder } from './surfaces';
 
@@ -121,8 +119,11 @@ export function registeredStylesheets(): readonly Stylesheet[] {
 /**
  * The directory a sheet's surface is read below. Absent, the process's working directory — which
  * is the app root in the container (`WORKDIR /app`) and under every `x` command run from one.
+ * Held as a `comparablePath`, like every claim: on Windows each arrives as `D:\app\…`.
  */
 let stylesheetRoot: string | undefined;
+
+const rootOfSheets = (): string => stylesheetRoot ?? comparablePath(process.cwd());
 
 /**
  * Directories a package claimed for ONE surface, longest first. A package's sheet has no surface
@@ -131,11 +132,13 @@ let stylesheetRoot: string | undefined;
  */
 const claims: { readonly dir: string; readonly surface: Surface }[] = [];
 
-const claimedSurface = (path: string): Surface | undefined =>
-  claims.find((claim) => path.startsWith(`${claim.dir}/`))?.surface;
+const claimedSurface = (path: string): Surface | undefined => {
+  const comparable = comparablePath(path);
+  return claims.find((claim) => isPathBelow(comparable, claim.dir))?.surface;
+};
 
 const surfaceOfSheet = (path: string): Surface | null =>
-  claimedSurface(path) ?? surfaceUnder(stylesheetRoot ?? process.cwd(), path);
+  claimedSurface(path) ?? surfaceUnder(rootOfSheets(), comparablePath(path));
 
 /** Every registered sheet, classified again; the revision moves only when an answer does. */
 const reclassify = (): void => {
@@ -158,7 +161,7 @@ const reclassify = (): void => {
  * it standing, because the module that made it is cached and will not make it again.
  */
 export function claimStylesheets(dir: string, surface: Surface): void {
-  const claimed = resolve(dir);
+  const claimed = comparablePath(dir);
   if (claims.some((claim) => claim.dir === claimed && claim.surface === surface)) return;
   claims.push({ dir: claimed, surface });
   claims.sort((a, b) => b.dir.length - a.dir.length);
@@ -175,7 +178,7 @@ export function claimStylesheets(dir: string, surface: Surface): void {
  */
 export function setStylesheetRoot(root: string | undefined): void {
   // Resolved: `loadApp('.')` is a legal call, and `.` is a prefix of no absolute path.
-  stylesheetRoot = root === undefined ? undefined : resolve(root);
+  stylesheetRoot = root === undefined ? undefined : comparablePath(root);
   reclassify();
 }
 
@@ -222,11 +225,12 @@ const OWNER_RANK = (sheet: Stylesheet): number =>
   // A claimed sheet is a package's whichever surface carries it: library first.
   sheet.surface === null || sheet.claimed ? 0 : sheet.surface === 'shared' ? 1 : 2;
 
-/** Relative to the app root, so a container at `/app` and a laptop order one app alike. */
-const orderPath = (sheet: Stylesheet): string => {
-  const root = stylesheetRoot ?? process.cwd();
-  return sheet.file.startsWith(`${root}/`) ? sheet.file.slice(root.length + 1) : sheet.file;
-};
+/**
+ * Relative to the app root and `/`-separated, so a container at `/app`, a laptop and a Windows
+ * checkout at `D:\app` order one app alike — and so mint one stylesheet hash.
+ */
+const orderPath = (sheet: Stylesheet): string =>
+  pathBelow(comparablePath(sheet.file), rootOfSheets());
 
 /** See `stylesFor`: global layer, then owner, then path. Exported for the tests that pin it. */
 export function stylesheetOrder(a: Stylesheet, b: Stylesheet): number {

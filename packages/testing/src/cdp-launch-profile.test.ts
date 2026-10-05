@@ -36,7 +36,14 @@ const withFake = async (rest: string, body: (fake: string) => Promise<void>): Pr
 const profileOf = async (fake: string): Promise<string> =>
   (await Bun.file(join(fake, '..', 'profile')).text()).trim();
 
-describe('launchChrome — the profile outlives no close', () => {
+/**
+ * Every fake here is a bash script talking on fds 3 and 4 — POSIX only: Windows executes no `#!`
+ * script and is driven over a port (`cdp-launch-wire.ts`). `cdp-launch.test.ts` proves the launcher
+ * there against the machine's real Chrome.
+ */
+const WINDOWS = process.platform === 'win32';
+
+describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () => {
   test('a browser that flushes into its profile on SIGTERM leaves no directory', async () => {
     // What Chrome does: SIGTERM starts a shutdown that writes the profile it was handed.
     const onTerm = `trap 'mkdir -p "$PROFILE"; echo x >"$PROFILE/flushed"; exit 0' TERM`;

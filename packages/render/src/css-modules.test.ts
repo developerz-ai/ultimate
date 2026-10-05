@@ -125,6 +125,14 @@ describe('compileStylesheet', () => {
     expect(a.classes).toEqual(b.classes);
   });
 
+  // Bun hands a Windows checkout's path over as `D:\…`: split on `/` alone, the whole path was the
+  // "basename", so a Windows build minted class names no Linux build of the same app agreed with.
+  test('a Windows checkout agrees with a POSIX one — the basename is read across `\\` too', () => {
+    const posix = compileStylesheet('/srv/app/site/page.module.scss', '.hero{color:red}');
+    const windows = compileStylesheet('D:\\a\\app\\site\\page.module.scss', '.hero{color:red}');
+    expect(windows.classes).toEqual(posix.classes);
+  });
+
   test.each([["html[data-theme='light']"], ['html[data-theme="light"]']])(
     'a compiled module keeps the quoted value in :global(%s)',
     (selector) => {

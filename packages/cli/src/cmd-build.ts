@@ -103,6 +103,47 @@ export function dockerArgs(root: string, tag: string, buildId: string): readonly
 }
 
 /**
+ * What `--platform` may name: Bun's own `--target` spellings, so the flag maps onto Bun's one to
+ * one and an agent who knows Bun's list knows this one. Four, not Bun's every target — these are
+ * the hosts the framework is tested on; a musl or baseline build is `bun build` by hand.
+ */
+export const BINARY_PLATFORMS = [
+  'bun-linux-x64',
+  'bun-linux-arm64',
+  'bun-windows-x64',
+  'bun-darwin-arm64',
+] as const;
+
+export type BinaryPlatform = (typeof BINARY_PLATFORMS)[number];
+
+/** `--platform`, checked before the gate runs: an unknown value is a typo, never a guess. */
+export function readPlatform(raw: string | undefined): BinaryPlatform | undefined {
+  if (raw === undefined) return undefined;
+  const known: readonly string[] = BINARY_PLATFORMS;
+  if (known.includes(raw)) return raw as BinaryPlatform;
+  throw new BadFlagError({
+    flag: 'platform',
+    command: 'build',
+    reason: `${quoteArg(raw)} is not a platform x build compiles for — one of ${BINARY_PLATFORMS.join(', ')}`,
+    fix: 'x build --target binary --platform bun-linux-x64',
+  });
+}
+
+/**
+ * The path the executable really lands at. Bun names a Windows executable `<out>.exe` — whether
+ * `--platform bun-windows-x64` asked for it or the host is Windows and no platform was named — so
+ * the `.exe` is appended HERE and passed to `--outfile`, and the path reported is the path written.
+ */
+export function binaryOutfile(
+  out: string,
+  platform: BinaryPlatform | undefined,
+  host: string = process.platform,
+): string {
+  const windows = platform === undefined ? host === 'win32' : platform.startsWith('bun-windows-');
+  return windows && !out.toLowerCase().endsWith('.exe') ? `${out}.exe` : out;
+}
+
+/**
  * The define is not optional. A single-file executable carries no `package.json`, so
  * `frameworkVersion()` has nothing to read and throws — which is exactly how this target came to
  * compile an artifact that could never boot. The value is this CLI's own `@ultimat3/core`, which is
@@ -113,12 +154,17 @@ export function dockerArgs(root: string, tag: string, buildId: string): readonly
  * builder, which reaches `@babel/core` — whose `.cts`-config loader requires a package we
  * deliberately do not install. Bun 1.3 fails the compile on it. See `compile-externals.ts`.
  */
-export function binaryArgs(root: string, out: string): readonly string[] {
+export function binaryArgs(
+  root: string,
+  out: string,
+  platform?: BinaryPlatform,
+): readonly string[] {
   return [
     'bun',
     'build',
     '--compile',
     '--minify',
+    ...(platform === undefined ? [] : ['--target', platform]),
     '--define',
     `${VERSION_DEFINE}=${JSON.stringify(frameworkVersion())}`,
     ...externalArgs(),
@@ -140,10 +186,12 @@ export function argsFor(
     readonly out: string;
     /** The docker target's `BUILD_ID` build arg — `appManifest(root)`'s own. */
     readonly buildId?: string;
+    /** The binary target's `--platform`, as Bun's `--target`. */
+    readonly platform?: BinaryPlatform;
   },
 ): readonly string[] {
   if (target === 'docker') return dockerArgs(paths.root, paths.tag, paths.buildId ?? 'dev');
-  if (target === 'binary') return binaryArgs(paths.root, paths.out);
+  if (target === 'binary') return binaryArgs(paths.root, paths.out, paths.platform);
   return staticArgs(paths.root, paths.out);
 }
 
@@ -176,6 +224,8 @@ export function buildResult(input: {
   readonly command: readonly string[];
   readonly result: ExecResult;
   readonly report?: StaticReport;
+  /** The binary target's `--platform`, when one was named. */
+  readonly platform?: BinaryPlatform;
 }): CommandResult {
   const { report, result, target } = input;
   const output = result.ok ? '' : execOutput(result);
@@ -195,6 +245,7 @@ export function buildResult(input: {
         ],
     data: {
       target,
+      ...(input.platform === undefined ? {} : { platform: input.platform }),
       artifact: input.artifact,
       durationMs: result.durationMs,
       ...(result.ok ? {} : { output }),
@@ -209,14 +260,14 @@ export function buildResult(input: {
 }
 
 /** The flags only some targets read. */
-const TARGET_SCOPED_FLAGS = ['tag', 'out', 'preflight'] as const;
+const TARGET_SCOPED_FLAGS = ['tag', 'out', 'platform', 'preflight'] as const;
 
 type TargetScopedFlag = (typeof TARGET_SCOPED_FLAGS)[number];
 
 /** The optional flags each target READS. One table, so a flag cannot be read by one and ignored. */
 const TARGET_FLAGS: ReadonlyMap<BuildTarget, readonly TargetScopedFlag[]> = new Map([
   ['docker', ['tag', 'preflight']],
-  ['binary', ['out', 'preflight']],
+  ['binary', ['out', 'platform', 'preflight']],
   ['static', ['out', 'preflight']],
   // The boot reads ONE place, and the image holds no devDependencies to run a gate with.
   ['prebuilt', []],
@@ -226,6 +277,7 @@ const TARGET_FLAGS: ReadonlyMap<BuildTarget, readonly TargetScopedFlag[]> = new 
 const UNREAD_BECAUSE: Readonly<Record<TargetScopedFlag, string>> = {
   tag: 'only the docker target tags an image',
   out: 'the docker target writes an image, not a path',
+  platform: 'only the binary target compiles an executable for a platform',
   preflight: 'the prebuilt target runs no gate: `x verify` ran before `docker build` was called',
 };
 
@@ -297,6 +349,7 @@ export const buildCommand: CliCommand = {
     // an agent spends on the wrong question.
     requireEntry(root, target);
     refuseUnreadFlags(ctx.args, target);
+    const platform = readPlatform(flagString(ctx.args, 'platform'));
     if (target === 'prebuilt') return buildPrebuilt(root);
 
     // Run static verify steps before building — unless the caller is a gate that runs the same
@@ -317,10 +370,11 @@ export const buildCommand: CliCommand = {
     // A relative `--out` is a path the caller typed from where they stand, so it resolves against
     // the cwd — against the root it landed somewhere else whenever `x build` ran from `apps/web`.
     const outFlag = flagString(ctx.args, 'out');
-    const out =
+    const requested =
       outFlag === undefined
         ? join(root, '.x', target === 'static' ? 'static' : 'app')
         : resolve(ctx.cwd, outFlag);
+    const out = target === 'binary' ? binaryOutfile(requested, platform) : requested;
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
     // The docker target stamps the manifest's build id into the image, so no role derives one at
     // boot. The island chunks and stylesheets are the image build's own (`--target prebuilt`).
@@ -331,6 +385,7 @@ export const buildCommand: CliCommand = {
       tag,
       out,
       ...(buildId === undefined ? {} : { buildId }),
+      ...(platform === undefined ? {} : { platform }),
     });
     // Removed BEFORE the builder runs, so a build that writes no inventory can never be reported
     // with the last one's: a stale emitted list is worse than none, because it reads as this run's.
@@ -346,6 +401,7 @@ export const buildCommand: CliCommand = {
       command,
       result,
       ...(report === undefined ? {} : { report }),
+      ...(platform === undefined ? {} : { platform }),
     });
   },
 };

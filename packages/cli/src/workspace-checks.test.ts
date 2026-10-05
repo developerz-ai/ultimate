@@ -26,6 +26,7 @@ import {
   pinSkewFinding,
   publishesTestsFinding,
   TEST_EXCLUSION,
+  workspaceDirOf,
   workspacePackages,
 } from './workspace-checks';
 
@@ -263,6 +264,11 @@ describe('unit · the package shape', () => {
     expect(findings.filter((f) => f.code === 'X_PACKAGE_UNREFERENCED')).toEqual([]);
     expect(await workspacePackages(REPO_ROOT)).toContain('cli');
     expect(PACKAGE_FILES).toHaveLength(4);
+  });
+
+  test('a Windows glob answer names its workspace — the step is not skipped on Windows', () => {
+    expect(workspaceDirOf('packages\\db\\package.json')).toBe('db');
+    expect(workspaceDirOf('packages/db/package.json')).toBe('db');
   });
 
   test('the step is skipped where there are no workspace packages', async () => {

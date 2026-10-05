@@ -3,8 +3,6 @@
 // version. Each is a file the gate reads at the tag, so a bump that skips one leaves a tree
 // `--check` calls stamped and `verify` then refuses — which is what v19.3.0 was.
 
-// why: Bun exposes no path-relative primitive, and a finding names a repo-relative path.
-import { relative } from 'node:path';
 import { checkPackageShape } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
 // Upward, and the only file under `scripts/lib/` that reaches out of it: the three writes have to
@@ -16,6 +14,7 @@ import { buildManifest, DEFAULT_OUT, frameworkManifestDrift } from '../manifest'
 import { versionStampFindings } from '../version-stamps';
 import { frameworkManifestJson } from './framework-manifest';
 import type { Finding } from './log';
+import { posixRelative } from './posix-path';
 import { readStampPages, readStamps, rewriteStamps, STAMP_PAGE } from './version-stamp-scan';
 import { listWorkspaces, publishFloorFindings } from './workspaces';
 
@@ -243,7 +242,7 @@ export async function stampReleaseFiles(
 ): Promise<{ readonly written: readonly string[]; readonly findings: readonly Finding[] }> {
   const written: string[] = [];
   for (const edit of edits) {
-    const at = relative(root, edit.path);
+    const at = posixRelative(root, edit.path);
     try {
       const file = Bun.file(edit.path);
       if (edit.optional === true && !(await file.exists())) continue;

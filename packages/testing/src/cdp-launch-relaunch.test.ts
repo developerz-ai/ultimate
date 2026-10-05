@@ -68,7 +68,14 @@ const alive = (pid: string): boolean => {
   }
 };
 
-describe('launchChrome — the launch deadline', () => {
+/**
+ * Every fake here is a bash script talking on fds 3 and 4 — POSIX only: Windows executes no `#!`
+ * script and is driven over a port (`cdp-launch-wire.ts`). `cdp-launch.test.ts` proves the launcher
+ * there against the machine's real Chrome.
+ */
+const WINDOWS = process.platform === 'win32';
+
+describe.skipIf(WINDOWS)('launchChrome — the launch deadline', () => {
   test('the default is measured in tens of seconds, and there is exactly one relaunch', () => {
     // 2026-10-02, `scaffold-smoke`: 11 cold first launches cost 5-19 s more than a warm one, and
     // the one that failed was still starting at 30 s. A floor below that is the flake.
@@ -130,7 +137,7 @@ describe('launchChrome — the launch deadline', () => {
   });
 });
 
-describe('launchChrome — the one relaunch', () => {
+describe.skipIf(WINDOWS)('launchChrome — the one relaunch', () => {
   test('a first start that never answers is reaped, and the second start is the browser', async () => {
     await using it = await fakeBrowser(
       `if [ "$N" = 1 ]; then exec sleep 30; fi\n${ANSWER}sleep 30\n`,

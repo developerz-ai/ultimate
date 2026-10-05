@@ -13,6 +13,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun ships no path API; the entry is written INSIDE the package so `@ultimat3/core/page`
 // resolves through the workspace, and each banner is resolved back to an absolute path.
+import * as nodePath from 'node:path';
 import { join, resolve } from 'node:path';
 
 /** Gitignored repo-wide; one directory per process so concurrent runs never delete each other. */
@@ -40,21 +41,68 @@ async function build(
   if (!built.success || output === undefined) {
     return expect.unreachable(`${name} did not bundle: ${built.logs.map(String).join('; ')}`);
   }
-  const code = await output.text();
   const modules: string[] = [];
-  for (const line of code.split('\n')) {
-    if (!line.startsWith('// ')) continue;
-    const path = resolve(process.cwd(), line.slice(3));
-    if (
-      path.startsWith(`${PACKAGES}/`) &&
-      path.includes('/src/') &&
-      (await Bun.file(path).exists())
-    ) {
-      modules.push(path.slice(PACKAGES.length + 1));
-    }
+  for (const banner of bannerModules(await output.text(), PACKAGES, process.cwd())) {
+    if (await Bun.file(banner.absolute).exists()) modules.push(banner.module);
   }
   return { modules: modules.sort(), bytes: output.size };
 }
+
+/** The slice of `node:path` a banner is read with — `path.win32` in the test that proves Windows. */
+type PathApi = Pick<typeof nodePath, 'isAbsolute' | 'relative' | 'resolve' | 'sep'>;
+
+/**
+ * Each `// <path>` banner under `packagesDir`'s `src/` trees, named `<pkg>/src/<file>` with `/`
+ * whatever the platform. Compared as a RELATIVE path, never as a `${packagesDir}/` prefix: on
+ * Windows every resolved path is `\`-separated, so the prefix test matched nothing and each
+ * module-set assertion read an empty list (windows-latest, 2026-10-05).
+ */
+function bannerModules(
+  code: string,
+  packagesDir: string,
+  cwd: string,
+  path: PathApi = nodePath,
+): { module: string; absolute: string }[] {
+  const found: { module: string; absolute: string }[] = [];
+  for (const line of code.split('\n')) {
+    if (!line.startsWith('// ')) continue;
+    const absolute = path.resolve(cwd, line.slice(3));
+    const inside = path.relative(packagesDir, absolute);
+    if (inside === '' || inside.startsWith('..') || path.isAbsolute(inside)) continue;
+    const module = inside.split(path.sep).join('/');
+    if (module.includes('/src/')) found.push({ module, absolute });
+  }
+  return found;
+}
+
+describe('reading the retained set off the banners', () => {
+  const chunk = (...banners: string[]): string =>
+    banners.map((banner) => `// ${banner}\nvar x = 1;`).join('\n');
+
+  test('a Windows checkout names each module with forward slashes, as on Linux', () => {
+    const code = chunk(
+      'packages/core/src/page-meta.ts',
+      'packages\\core\\src\\record-sink.ts',
+      'node_modules/other/src/index.js',
+      'packages/core/package.json',
+    );
+    const read = bannerModules(code, 'D:\\a\\u\\packages', 'D:\\a\\u', nodePath.win32);
+    expect(read).toEqual([
+      { module: 'core/src/page-meta.ts', absolute: 'D:\\a\\u\\packages\\core\\src\\page-meta.ts' },
+      {
+        module: 'core/src/record-sink.ts',
+        absolute: 'D:\\a\\u\\packages\\core\\src\\record-sink.ts',
+      },
+    ]);
+  });
+
+  test('a POSIX checkout reads the same names', () => {
+    const code = chunk('packages/core/src/page-meta.ts', '../elsewhere/src/x.ts');
+    expect(bannerModules(code, '/r/packages', '/r', nodePath.posix).map((b) => b.module)).toEqual([
+      'core/src/page-meta.ts',
+    ]);
+  });
+});
 
 /** A titles table: core's own and schema's, each a side-effect anchor the barrel loads. */
 const isTitlesTable = (module: string): boolean =>
@@ -133,7 +181,8 @@ describe('the browser path to the page seam', () => {
 // the table: an untitled code renders humanised, and the barrel is what titles it.
 describe("UltimateError's own subgraph", () => {
   const THROWS =
-    `import { UltimateError } from '${join(import.meta.dir, 'errors.ts')}';\n` +
+    // JSON-quoted: a raw Windows path in single quotes reads `\\u…` as an escape — a Syntax Error.
+    `import { UltimateError } from ${JSON.stringify(join(import.meta.dir, 'errors.ts'))};\n` +
     "globalThis.probe = new UltimateError({ code: 'X_A', cause: 'c', fix: 'f' });\n";
 
   test('excludes the core titles table', async () => {

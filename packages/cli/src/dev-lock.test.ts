@@ -18,9 +18,11 @@ import {
   DevPortInUseError,
   isProcessAlive,
   lockPath,
+  netstatListener,
   parseLock,
   portHolder,
   preflight,
+  tasklistImage,
   writeLock,
 } from './dev-lock';
 
@@ -398,6 +400,40 @@ describe('portHolder', () => {
       };
     });
     expect(holder).toEqual({ command: 'bun', pid: 41234 });
+  });
+
+  test('on Windows — no ss, no lsof — netstat names the pid and tasklist its image', async () => {
+    const asked: string[] = [];
+    const holder = await portHolder(3000, async (command) => {
+      asked.push(command[0] ?? '');
+      if (command[0] === 'ss' || command[0] === 'lsof') throw missingProgram(command[0]);
+      const stdout =
+        command[0] === 'netstat'
+          ? [
+              '',
+              'Active Connections',
+              '',
+              '  Proto  Local Address          Foreign Address        State           PID',
+              '  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1012',
+              '  TCP    127.0.0.1:30001        0.0.0.0:0              LISTENING       77',
+              '  TCP    127.0.0.1:3000         127.0.0.1:52144        ESTABLISHED     9',
+              '  TCP    127.0.0.1:3000         0.0.0.0:0              LISTENING       41234',
+            ].join('\r\n')
+          : '"bun.exe","41234","Console","1","45,312 K"\r\n';
+      return { command, code: 0, ok: true, stdout, stderr: '', durationMs: 0 };
+    });
+    expect(holder).toEqual({ command: 'bun.exe', pid: 41234 });
+    expect(asked).toEqual(['ss', 'lsof', 'netstat', 'tasklist']);
+  });
+
+  test('netstat reads IPv6 and an exact port; tasklist with no match names nothing', () => {
+    expect(netstatListener('  TCP    [::1]:3000    [::]:0    LISTENING    5\r\n', 3000)).toBe(5);
+    expect(netstatListener('  TCP    [::1]:30000   [::]:0    LISTENING    5\r\n', 3000)).toBe(
+      undefined,
+    );
+    expect(tasklistImage('INFO: No tasks are running which match the specified criteria.')).toBe(
+      undefined,
+    );
   });
 
   test('neither tool available is an empty holder, never a throw', async () => {

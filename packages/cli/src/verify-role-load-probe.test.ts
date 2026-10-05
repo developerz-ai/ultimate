@@ -8,8 +8,8 @@ import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
-import { join } from 'node:path';
-import { probeRoleLoad } from './verify-role-load-probe';
+import { join, win32 } from 'node:path';
+import { moduleKey, probeRoleLoad } from './verify-role-load-probe';
 
 let root = '';
 
@@ -52,4 +52,14 @@ export const api = defineApi({});
       },
     ]);
   }, 60_000);
+
+  test('a Windows module is keyed app-root-relative and POSIX, like the worker load', () => {
+    const root = 'D:\\a\\_temp\\winapp';
+    expect(moduleKey(root, `${root}\\apps\\web\\app\\clock\\service.ts`, win32)).toBe(
+      'apps/web/app/clock/service.ts',
+    );
+    expect(moduleKey('/srv/app', '/srv/app/apps/web/app/clock/service.ts')).toBe(
+      'apps/web/app/clock/service.ts',
+    );
+  });
 });

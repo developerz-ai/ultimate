@@ -8,7 +8,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
-import { loadFailureOf, loadFinding } from './guard-load';
+import { loadFailureOf, loadFinding, scriptName } from './guard-load';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 // Reads the real tree or spawns real processes, so it runs on the repo-scan backstop.
@@ -70,6 +70,26 @@ describe('which failures are load failures', () => {
     expect(finding.fix).toBe(
       'edit packages/entity/src/index.ts until bun run typecheck is clean, then rerun: bun run gate-codes',
     );
+  });
+});
+
+// The Windows job: every path below is spelt with `\`, and none of it matched a `/` pattern.
+describe('a Windows-shaped run', () => {
+  const root = 'D:\\a\\ultimate';
+
+  test('the script is named from a `\\` entry, not reported as `the guard`', () => {
+    expect(scriptName(['bun.exe', `${root}\\scripts\\gate-codes.ts`, '--json'])).toBe('gate-codes');
+  });
+
+  test('the module is repo-relative and `/`-spelt, and the cause carries no root', () => {
+    const module = `${root}\\packages\\entity\\src\\index.ts`;
+    const finding = loadFinding(
+      'gate-codes',
+      { module, message: `Export named 'x' not found in module '${module}'` },
+      root,
+    );
+    expect(finding.at).toBe('packages/entity/src/index.ts');
+    expect(finding.cause).not.toContain(root);
   });
 });
 
@@ -136,7 +156,8 @@ describe('a guard run under the preload', () => {
   test('a guard`s own dynamic import is caught by loadOrReport the same way', async () => {
     const loader = `${ROOT}/scripts/lib/guard-load.ts`;
     const entry = await fixture(
-      `import { loadOrReport } from '${loader}';\nawait loadOrReport('fixture-guard', () => import('./lib-module').then((m) => (m as Record<string, unknown>)['absent'] ?? import('./missing-module')));\n`,
+      // JSON-quoted, never `'${loader}'`: a Windows path's `\u…` is an escape, and a SyntaxError.
+      `import { loadOrReport } from ${JSON.stringify(loader)};\nawait loadOrReport('fixture-guard', () => import('./lib-module').then((m) => (m as Record<string, unknown>)['absent'] ?? import('./missing-module')));\n`,
     );
     const result = await spawned(['bun', entry, '--json']);
     expect(result.exitCode).toBe(1);

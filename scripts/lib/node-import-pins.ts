@@ -58,7 +58,7 @@ export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
   admin: 1,
   ai: 9,
   cli: 85,
-  core: 16,
+  core: 14,
   db: 8,
   entity: 1,
   i18n: 3,

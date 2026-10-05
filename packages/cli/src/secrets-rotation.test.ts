@@ -92,3 +92,15 @@ describe('unit · a rotation interrupted between its two writes loses nothing', 
     expect(await Bun.file(stagedMasterKeyPath(root)).exists()).toBe(false);
   });
 });
+
+describe('unit · every key write goes through core', () => {
+  // A raw `writeFileSync(…, { mode: 0o600 })` is owner-only on POSIX and readable by every account
+  // the profile directory admits on Windows; a raw `renameSync` loses to a reader holding the key
+  // open there (EPERM/EBUSY). Core's `stageMasterKeyFile` / `promoteStagedMasterKey` answer both.
+  test('the rotation writes and renames no key file itself', async () => {
+    const source = await Bun.file(join(import.meta.dir, 'secrets-rotation.ts')).text();
+    expect(source).not.toMatch(/\b(?:writeFileSync|renameSync)\b/);
+    expect(source).toContain('stageMasterKeyFile(');
+    expect(source).toContain('promoteStagedMasterKey(');
+  });
+});

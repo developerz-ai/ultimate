@@ -8,7 +8,7 @@ export const buildSpec: CommandSpec = {
   summary:
     'build a container image, a single binary, a prerendered static site, or the store an image boots from',
   usage:
-    'x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-preflight] [--json]',
+    'x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--json]',
   requiresApp: true,
   flags: [
     {
@@ -20,6 +20,12 @@ export const buildSpec: CommandSpec = {
     },
     { name: 'tag', type: 'string', summary: 'image tag (docker target)' },
     { name: 'out', type: 'string', summary: 'output path (binary and static targets)' },
+    {
+      name: 'platform',
+      type: 'string',
+      summary:
+        "binary target only: bun-linux-x64 | bun-linux-arm64 | bun-windows-x64 | bun-darwin-arm64 — Bun's --target; a Windows build is written as <out>.exe",
+    },
     {
       name: 'preflight',
       type: 'boolean',

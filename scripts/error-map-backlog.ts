@@ -32,6 +32,7 @@ export const OFF_SOCKET: Pins = {
     'X_REGISTRAR_CONFLICT',
     'X_SERVICE_DUPLICATE',
     'X_SHUTDOWN_TIMEOUT',
+    'X_SECRETS_KEY_ACL_FAILED',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
   // by `new LruCache(...)` and `createMemorySemanticCache(...)`, which a boot builds once.

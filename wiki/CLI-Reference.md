@@ -660,7 +660,7 @@ Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own co
 ## x build
 
 ```bash
-x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-preflight] [--json]
+x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--platform bun-target] [--no-preflight] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -668,9 +668,10 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--no-p
 | `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`), `prebuilt` (the island store and compiled stylesheets, written to `node_modules/.cache/ultimate` — the app image's own `RUN` line; no gate, no subprocess, refuses `--tag` and `--out`). The list is `BUILD_TARGETS` in `packages/cli/src/cmd-build.ts` |
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target only |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
+| `--platform` | string | the host | binary target only: `bun-linux-x64`, `bun-linux-arm64`, `bun-windows-x64` or `bun-darwin-arm64`, passed to Bun as `--target` (the list is `BINARY_PLATFORMS` in `packages/cli/src/cmd-build.ts`). A Windows executable — `--platform bun-windows-x64`, or no `--platform` on a Windows host — is written as `<out>.exe`, and `data.artifact` names that file; `data.platform` echoes the flag. Any other value is `X_CLI_BAD_FLAG` before the gate runs, `fix: x build --target binary --platform bun-linux-x64`. For local runs and CI cross-compiles: a Windows host deploys the Linux image under Docker Desktop ([Deployment](Deployment)). `As of 2026-10-05` |
 | `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bun run check` does. Not on `prebuilt`. `As of 22.7` |
 
-A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, any of the three on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
+A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, `--platform` on anything but `binary`, any of them on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
 
 **`--out` for `static` is emptied before every build**, so it must be provably the build's: absent, empty, the default `.x/static`, or a directory holding the `.x-export` marker every static build writes. The app root, an ancestor of it, or any other non-empty directory (`apps`, `.x`, `.x/pgdata`, a home directory) is `X_BUILD_OUT_UNSAFE` and nothing is removed. A module that will not import fails the static build with `X_BUILD_FAILED` (`fix: x verify --only manifest --json`) before the export is touched — its page would otherwise vanish from the artifact under a green build.
 
@@ -681,7 +682,7 @@ A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` o
 | `--target` | Entry file | Command it execs | Output |
 |---|---|---|---|
 | `docker` | `docker/Dockerfile` | `docker build -f <root>/docker/Dockerfile -t <tag> <root>` | one OCI image, `ROLE` selects behaviour |
-| `binary` | `apps/web/server.ts` | `bun build --compile --minify --define ULTIMATE_FRAMEWORK_VERSION="<version>" <root>/apps/web/server.ts --outfile <out>` | a single executable |
+| `binary` | `apps/web/server.ts` | `bun build --compile --minify [--target <platform>] --define ULTIMATE_FRAMEWORK_VERSION="<version>" <root>/apps/web/server.ts --outfile <out>[.exe]` | a single executable |
 | `static` | `apps/web/prerender.ts` | `bun run <root>/apps/web/prerender.ts --out <out>` | prerendered `site/` |
 
 All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whose `fix` names the file and points at a fresh scaffold — the usual cause is an app scaffolded before 1.1.0 wrote `server.ts` and `prerender.ts`, or a deleted `docker/Dockerfile`.
@@ -818,9 +819,11 @@ Two files, one committed and one never:
 | File | Committed | Holds |
 |---|---|---|
 | `secrets.enc.json` | yes | the sealed envelope: `v`, `alg`, the master key's id, the IV, the ciphertext |
-| `.secrets.key` | **no** — `x secrets init` writes the `.gitignore` rule before it writes the key | 64 hex characters, mode `0600` |
+| `.secrets.key` | **no** — `x secrets init` writes the `.gitignore` rule before it writes the key | 64 hex characters, mode `0600`; on Windows, an ACL granting the current account alone |
 
 `ULTIMATE_SECRETS_KEY` is read first and the key file second, so a container is handed its key by the platform and ships no key file at all.
+
+**On Windows the mode keeps no one out** — every file reports `0666` and inherits the profile directory's ACL. So every key write (`init`, `rotate`, the staged `.secrets.key.next`) runs `icacls <temp> /inheritance:r /grant:r "<DOMAIN>\<user>:F"` on the temp file **before** the rename makes it live: one explicit entry, nothing inherited. Read it back with `icacls .secrets.key`. An `icacls` that fails writes no key at all: `X_SECRETS_KEY_ACL_FAILED`, fix `where.exe icacls`, or keep no key file and set `ULTIMATE_SECRETS_KEY`. A rename over a key another process holds open (an editor, an indexer, a virus scan) is retried 5 times over ~150 ms on `EPERM`/`EBUSY` before it fails. `As of 2026-10-05`.
 
 **A secret is an environment variable.** The decrypted payload is a flat map of `ENV_NAME` to value, and `installSecrets()` writes each one into the process environment where nothing has already set it — the real environment always wins, so one image runs in Compose and on K8s with the same committed file. Everything downstream is what already existed:
 

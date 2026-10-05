@@ -37,6 +37,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | a value that cannot be printed by accident | `secret.ts` |
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
 | the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
+| a key file only its owner can read — 0600, and an `icacls` ACL on Windows — written via temp + rename, the rename retried on EPERM/EBUSY (`writeMasterKeyFile`, `stageMasterKeyFile`, `promoteStagedMasterKey`) | `secrets-key-file.ts` |
 | one value sealed under the master key — `seal()` / `open()` | `seal.ts` |
 | the key ring those work under: the current key plus retired ones | `seal-keys.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
@@ -65,7 +66,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
-| SIGTERM/SIGINT → the one drain | `lifecycle-signals.ts` |
+| SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
+| is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |
 | the network a caller's address keys a per-caller budget on — `addressNetwork`: IPv4 exact, IPv4-mapped as IPv4, IPv6 as its /64 | `address-class.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
@@ -216,6 +218,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `SealKeyUnknownError` | `X_SEAL_KEY_UNKNOWN` | `src/seal-errors.ts` |
 | `SecretsFileInvalidError` | `X_SECRETS_FILE_INVALID` | `src/secrets-errors.ts` |
 | `SecretsFileMissingError` | `X_SECRETS_FILE_MISSING` | `src/secrets-errors.ts` |
+| `SecretsKeyAclError` | `X_SECRETS_KEY_ACL_FAILED` — Windows only: `icacls` could not restrict a new key file, so none was written | `src/secrets-key-file.ts` |
 | `SecretsKeyInvalidError` | `X_SECRETS_KEY_INVALID` | `src/secrets-errors.ts` |
 | `SecretsRingKeyInvalidError` | `X_SECRETS_KEY_INVALID` — a malformed entry of `ULTIMATE_SECRETS_RETIRED_KEYS` | `src/secrets-errors.ts` |
 | `SecretsKeyMismatchError` | `X_SECRETS_KEY_MISMATCH` | `src/secrets-errors.ts` |

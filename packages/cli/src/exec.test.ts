@@ -78,3 +78,14 @@ describe('unit · the CLI subprocess boundary', () => {
     expect(result.stdout.trim()).toBe('set-for-child');
   });
 });
+
+describe('unit · the pid at spawn', () => {
+  test('onSpawn hears the real child pid, before the run settles', async () => {
+    const pids: number[] = [];
+    const result = await exec(['sh', '-c', 'echo $$'], {
+      cwd: process.cwd(),
+      onSpawn: (pid) => pids.push(pid),
+    });
+    expect(pids).toEqual([Number(result.stdout.trim())]);
+  });
+});

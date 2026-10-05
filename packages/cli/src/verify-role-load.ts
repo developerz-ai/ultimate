@@ -5,7 +5,7 @@
 // manifest; this is the build error for everything else a job reads by name.
 
 // why: Bun ships no path API; the fix names the import relative to the API index.
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 import { ERROR_DOCS_URL, registeredServiceNames, singleLine } from '@ultimat3/core';
 import { entityNames } from '@ultimat3/entity';
 import { catalogDeclarationCount } from '@ultimat3/i18n';
@@ -16,6 +16,8 @@ import { definedStorage } from '@ultimat3/storage';
 import { API_INDEX } from './app-root';
 import type { Runner } from './exec';
 import type { Finding } from './output';
+import type { RelativeHost } from './posix-path';
+import { posixRelative } from './posix-path';
 import { quoteArg } from './shell-quote';
 
 /** One thing a process registered, as a job would ask for it: by kind and by name. */
@@ -79,9 +81,12 @@ export function registeredSince(
   return after.filter((one) => !had.has(keyOf(one)));
 }
 
-/** The import the API index is missing, as it would be written there. */
-function specifierFor(module: string): string {
-  const from = relative(dirname(API_INDEX), module).replace(/\.[jt]sx?$/, '');
+/**
+ * The import the API index is missing, as it would be written there — POSIX on every host: a `\`
+ * pasted from a Windows run is an import no Linux teammate resolves. `host` is for a test only.
+ */
+export function specifierFor(module: string, host?: RelativeHost): string {
+  const from = posixRelative(dirname(API_INDEX), module, host).replace(/\.[jt]sx?$/, '');
   return from.startsWith('.') ? from : `./${from}`;
 }
 

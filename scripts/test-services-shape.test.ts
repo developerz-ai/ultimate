@@ -237,6 +237,13 @@ describe('unit · test services · a suite finds each one where it was started',
     expect(dialled.map(([, at]) => at).sort()).toEqual(servers.map(([name]) => name).sort());
   });
 
+  // Every port binds `127.0.0.1` (above). `localhost` resolves `::1` first on Windows, where
+  // nothing listens, so a suite dialled a closed port and skipped under a green run.
+  test('every URL dials the IPv4 loopback the ports bind, never a name that resolves ::1', () => {
+    const hosts = [...urls].filter(([, url]) => url.hostname !== '127.0.0.1');
+    expect(hosts.map(([name, url]) => `${name}=${url.hostname}`)).toEqual([]);
+  });
+
   test('every line that is not a URL rides with the URL whose server wrote it', () => {
     const files = lines.filter(([name]) => !name.endsWith('_URL'));
     expect(files.filter(([name]) => !urls.has(COMPANIONS[name] ?? ''))).toEqual([]);

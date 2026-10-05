@@ -167,13 +167,22 @@ export function moduleSource(name: string, glyph: IconGlyph): string {
   ].join('\n');
 }
 
+/** The repo's own `node_modules/.bin`, where `bun install` links every tool binary. */
+const REPO_BIN = Bun.fileURLToPath(new URL('../../../../node_modules/.bin', import.meta.url));
+
+/**
+ * The biome executable in `binDir`, or `undefined`. Asked of `Bun.which` rather than spelled as
+ * `<bin>/biome`: on Windows the link is `biome.exe`, and a path with no extension is ENOENT there.
+ */
+export function biomeBinary(binDir: string = REPO_BIN): string | undefined {
+  return Bun.which('biome', { PATH: binDir }) ?? undefined;
+}
+
 /** Biome owns formatting in this repo, generated files included — so the generator asks it rather
  * than imitating it, and a regenerated set never shows up as a lint diff. */
 async function format(): Promise<void> {
-  const biome = Bun.fileURLToPath(new URL('../../../../node_modules/.bin/biome', import.meta.url));
-  if (!(await Bun.file(biome).exists())) {
-    throw runtimeMissingError('the biome binary', 'bun install');
-  }
+  const biome = biomeBinary();
+  if (biome === undefined) throw runtimeMissingError('the biome binary', 'bun install');
   // A formatter over one directory of generated files; a wedged one is the refusal below.
   const result = Bun.spawnSync([biome, 'format', '--write', GLYPHS_DIR], { timeout: 60_000 });
   if (result.exitCode !== 0) {

@@ -75,8 +75,12 @@ const MIGRATE_CEILING = 615;
  * raised 885 → 887, measured 887 (2026-10-05, plan 101 sweep 2): `action/src/idempotency-redact.ts`
  * (an idempotent answer redacted at rest, #591) and `jobs/src/webhook-attempt.ts` (the webhook
  * transport, split out so `webhook.ts` stays under the ceiling once the attempt carries its signal).
+ * raised 887 → 888, measured 888 (2026-10-05, plan 101 sweep 8b, native Windows): `cli/src/posix-path.ts`
+ * (`app-load` sorts module paths by their `/` form, so every OS imports an app in one order) and
+ * `core/src/bunfs.ts` (`isCompiledBundle`, the Windows `B:\~BUN\` prefix beside `/$bunfs/`), against
+ * sweep 7's 886.
  */
-const SERVING_ROLE_CEILING = 887;
+const SERVING_ROLE_CEILING = 888;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -88,8 +92,12 @@ const SERVING_ROLE_CEILING = 887;
  * 500-line ceiling and split by responsibility into `metric-errors.ts`, `metric-registry.ts` and
  * `metric-series.ts` (+3), and `storage/src/driver-s3-absent.ts` left `driver-s3.ts` (+1); the
  * action and query `deprecation.ts` copies collapsed into one `core/src/deprecation.ts` (−1 net).
+ * raised 984 → 987, measured 987 (2026-10-05, plan 101 sweep 8b, native Windows): the two modules
+ * named on `SERVING_ROLE_CEILING` for sweep 8b, and `cli/src/island-package-dedupe.ts` — the island
+ * build resolves every `@ultimat3/*` import to the app's one copy, which a Windows `file:` install
+ * without symlinks had bundled twice (+15 KB on `/posts`).
  */
-const WEB_ROLE_CEILING = 984;
+const WEB_ROLE_CEILING = 987;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -3,9 +3,8 @@
 // `registerQueries` / `registerRoute` name the rest — so `x manifest`, `x routes` and `x verify`
 // read exactly the tables the running server reads.
 
-// Bun ships no `Bun.*` path API: `relative`/`sep` turn an absolute scan hit into the app-root-
-// relative POSIX path every finding and every manifest fact is keyed by.
-import { join, relative, resolve, sep } from 'node:path';
+// Bun ships no `Bun.*` path API: `join`/`resolve` reach the files a scan imports.
+import { join, resolve } from 'node:path';
 import { isAction, isMutator, listActions, registerActions } from '@ultimat3/action';
 import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import { localeConfig } from '@ultimat3/i18n';
@@ -40,6 +39,7 @@ import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { posixRelative, toPosix } from './posix-path';
 import { siteAssetTable } from './site-assets';
 import { isTest } from './source-files';
 
@@ -122,6 +122,17 @@ export function resetAppLoad(): void {
 }
 
 /**
+ * One glob's hits in code-unit order of their POSIX spelling — never the host's. Sorted raw, `\`
+ * (0x5C) sorts after a digit or a capital where `/` (0x2F) sorts before one, so Windows imported
+ * `app/a1/page.tsx` before `app/a/page.tsx` and Linux after: one app, two cascades.
+ */
+export function sortModulePaths(paths: readonly string[]): string[] {
+  const keyed = paths.map((path) => ({ path, key: toPosix(path) }));
+  keyed.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return keyed.map((one) => one.path);
+}
+
+/**
  * Every module path the app globs match, SORTED — with the API index first. `Bun.Glob` answers in
  * directory order, which is the filesystem's — ext4 hashes names with a per-filesystem seed — so
  * two pods of one image imported the app in two orders, registered its stylesheets in two orders,
@@ -144,7 +155,7 @@ export async function appModulePaths(root: string): Promise<readonly string[]> {
       if (!seen.has(absolute)) matched.push(absolute);
       seen.add(absolute);
     }
-    found.push(...matched.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+    found.push(...sortModulePaths(matched));
   }
   // Resolved, like the glob's own answers: `loadApp('.')` is a legal call.
   const index = resolve(root, API_INDEX);
@@ -196,7 +207,7 @@ export async function scanAppModules(root: string, options: ScanOptions): Promis
     // file it holds, so this loop imported none of them and the app registered nothing.
     // The ROOT-RELATIVE path is tested, never the absolute one: an app checked out under
     // `~/work/my.test.app` matched `.test.` on every file and loaded none of them.
-    const file = relative(root, absolute).split(sep).join('/');
+    const file = posixRelative(root, absolute);
     if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
     if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file) || STATES_FILE.test(file)) {
       continue;

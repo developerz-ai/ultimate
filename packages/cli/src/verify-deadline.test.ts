@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
 import {
   CHECK_STEP_TIMEOUT_MS,
   guardStep,
   killTagged,
+  killTrees,
   psProcesses,
   raceDeadline,
   readStepTimeouts,
@@ -190,3 +192,96 @@ async function tagged(tag: string): Promise<readonly number[]> {
   }
   return pids;
 }
+
+/**
+ * A runner that reports a pid at spawn and settles only when `finish` is called — the shape the
+ * Windows path needs, run on any host.
+ */
+function pendingRunner(pids: readonly number[]): {
+  readonly runner: Runner;
+  readonly finish: (index: number) => void;
+} {
+  const settle: ((result: ExecResult) => void)[] = [];
+  let next = 0;
+  return {
+    runner: (command, options) => {
+      const pid = pids[next] ?? 0;
+      next += 1;
+      options.onSpawn?.(pid);
+      return new Promise<ExecResult>((resolve) => {
+        settle.push(resolve);
+      }).then((result) => ({ ...result, command }));
+    },
+    finish: (index) =>
+      settle[index]?.({ command: [], code: 1, ok: false, stdout: '', stderr: '', durationMs: 0 }),
+  };
+}
+
+describe('on Windows, the pids recorded at spawn', () => {
+  test('expire() tree-kills every child still running, by the pid it reported at spawn', async () => {
+    const trees: number[] = [];
+    const { runner, finish } = pendingRunner([4100, 4200]);
+    const seen: number[] = [];
+    const guard = guardStep(
+      runner,
+      'unit@w',
+      {},
+      {
+        platform: 'win32',
+        killTree: async (pid) => {
+          trees.push(pid);
+          finish(pid === 4100 ? 0 : 1);
+          return true;
+        },
+      },
+    );
+    const first = guard.runner(['bun', 'test', 'a.test.ts'], {
+      cwd: '.',
+      onSpawn: (pid) => seen.push(pid),
+    });
+    const second = guard.runner(['bun', 'test', 'b.test.ts'], { cwd: '.' });
+    const expiry = await guard.expire();
+    expect(trees).toEqual([4100, 4200]);
+    expect(expiry.killed).toEqual([
+      { pid: 4100, command: 'bun test a.test.ts' },
+      { pid: 4200, command: 'bun test b.test.ts' },
+    ]);
+    expect(expiry.inFlight.map((run) => run.command[2])).toEqual(['a.test.ts', 'b.test.ts']);
+    // The caller's own observer still hears the pid the guard recorded.
+    expect(seen).toEqual([4100]);
+    await Promise.all([first, second]);
+  });
+
+  test('a child whose run already settled is not killed — its pid may be someone else’s now', async () => {
+    const trees: number[] = [];
+    const { runner, finish } = pendingRunner([4300]);
+    const guard = guardStep(
+      runner,
+      'unit@w2',
+      {},
+      {
+        platform: 'win32',
+        killTree: async (pid) => {
+          trees.push(pid);
+          return true;
+        },
+      },
+    );
+    const run = guard.runner(['bun', 'x'], { cwd: '.' });
+    finish(0);
+    await run;
+    expect((await guard.expire()).killed).toEqual([]);
+    expect(trees).toEqual([]);
+  });
+
+  test('a tree the kill could not end is not reported killed; this process never is', async () => {
+    const spawned = new Map<number, readonly string[]>([
+      [process.pid, ['self']],
+      [4400, ['gone']],
+      [4500, ['bun', 'test']],
+    ]);
+    expect(await killTrees(spawned, async (pid) => pid !== 4400)).toEqual([
+      { pid: 4500, command: 'bun test' },
+    ]);
+  });
+});

@@ -15,11 +15,12 @@
 //
 //   bun run scripts/version-stamps.ts [--json]
 
-import { dirname, relative } from 'node:path';
+import { dirname } from 'node:path';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { posixRelative } from './lib/posix-path';
 import { repoRoot } from './lib/run';
 import {
   applyStampUnpin,
@@ -382,7 +383,7 @@ export async function readInternalDeps(
 ): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
   const out: Record<string, Record<string, string>> = {};
   for (const path of await workspaceManifests(root)) {
-    const dir = relative(root, dirname(path));
+    const dir = posixRelative(root, dirname(path));
     // `requireWorkspaceManifest`, never a cast: this is the second half of #281 and the same
     // defect one file over — a trailing comma in ANY workspace manifest left a bare `SyntaxError`
     // out of the `manifest` gate step, and a `"dependencies"` that is not an object of strings

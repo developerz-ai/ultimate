@@ -3,17 +3,17 @@
 // each value into the process environment, under its own name, only where the real environment has
 // nothing. `secrets.ts` owns the envelope; this owns the filesystem and `process.env`.
 
-// `node:fs` sync, by necessity twice over: Bun.write takes no mode, and a world-readable master key
-// is the whole failure this file exists to prevent — and `installSecrets()` runs once, at boot,
-// before the process is serving anything, so there is nothing for an async read to overlap with.
-// `renameSync` because Bun has no atomic-replace primitive, and `rmSync` to clear the temp file.
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+// why: Bun has no synchronous file read or exists check, and `installSecrets()` runs once, at boot,
+// before the process serves anything, so an async read has nothing to overlap with. Writing the
+// key is `secrets-key-file.ts`'s.
+import { existsSync, readFileSync } from 'node:fs';
 // Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { isUltimateError } from './errors';
 import type { SecretValues } from './secrets';
 import { masterKeyId, openSecrets, parseMasterKey, sealSecrets } from './secrets';
 import { SecretsFileMissingError, SecretsKeyMissingError } from './secrets-errors';
+import { OWNER_ONLY_MODE, renameOver, writeOwnerOnlyFile } from './secrets-key-file';
 
 /** Committed. Encrypted at rest, diffable, and the only file `x secrets` writes into the repo. */
 export const SECRETS_FILE = 'secrets.enc.json';
@@ -21,8 +21,11 @@ export const SECRETS_FILE = 'secrets.enc.json';
 export const SECRETS_KEY_FILE = '.secrets.key';
 /** Read first, so a container gets its key from the platform's secret store and never from a file. */
 export const SECRETS_KEY_ENV = 'ULTIMATE_SECRETS_KEY';
-/** Owner read/write. A key file the rest of the box can read is a key file that has leaked. */
-export const SECRETS_KEY_MODE = 0o600;
+/**
+ * Owner read/write. A key file the rest of the box can read is a key file that has leaked. On
+ * Windows the mode is not what keeps other accounts out — the ACL is, and the writers set it.
+ */
+export const SECRETS_KEY_MODE = OWNER_ONLY_MODE;
 
 export type MasterKeySource = 'env' | 'file';
 
@@ -118,7 +121,9 @@ export async function writeSecretsFile(
 }
 
 /**
- * Write the master key at 0600. Callers must have made the ignore rule true first.
+ * Write the master key at 0600 — on Windows, with an ACL granting the current account alone
+ * (`X_SECRETS_KEY_ACL_FAILED` when `icacls` refuses). Callers must have made the ignore rule true
+ * first.
  *
  * Through a fresh temp file renamed over the target, never a write in place: `mode` applies only
  * when a write CREATES the file, so rotating over a key that was 0644 left the new key 0644. The
@@ -126,14 +131,25 @@ export async function writeSecretsFile(
  */
 export function writeMasterKeyFile(root: string, keyHex: string): string {
   const path = masterKeyPath(root);
-  const temp = `${path}.${crypto.randomUUID()}.tmp`;
-  try {
-    writeFileSync(temp, `${keyHex}\n`, { encoding: 'utf-8', mode: SECRETS_KEY_MODE, flag: 'wx' });
-    renameSync(temp, path);
-  } catch (error) {
-    rmSync(temp, { force: true });
-    throw error;
-  }
+  writeOwnerOnlyFile(path, `${keyHex}\n`);
+  return path;
+}
+
+/** Stage a rotation's new key at `stagedMasterKeyPath`, owner-only like the live one. */
+export function stageMasterKeyFile(root: string, keyHex: string): string {
+  const path = stagedMasterKeyPath(root);
+  writeOwnerOnlyFile(path, `${keyHex}\n`);
+  return path;
+}
+
+/**
+ * Make a staged key live: rename it over the key file. Retried briefly when Windows refuses the
+ * rename because something holds the old key open (EPERM/EBUSY) — the last step of a rotation is
+ * the wrong one to lose to an editor or a virus scan.
+ */
+export function promoteStagedMasterKey(root: string): string {
+  const path = masterKeyPath(root);
+  renameOver(stagedMasterKeyPath(root), path);
   return path;
 }
 

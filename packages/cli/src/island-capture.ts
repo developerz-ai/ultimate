@@ -265,7 +265,7 @@ export async function captureIslandState(
         state: target.state,
         theme: target.theme,
         reason: `produced ${bytes.byteLength} bytes, under the ${floor}-byte floor — that is not an image`,
-        fix: `x shot --island ${target.name} --browser /usr/bin/chromium --json`,
+        fix: `x shot --island ${target.name} --browser /usr/bin/chromium --json   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"`,
       });
     }
     await Bun.write(join(options.outDir, target.file), bytes);

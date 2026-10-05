@@ -4,6 +4,7 @@
 // No new dependency: the repo's own `typescript` devDependency is the compiler.
 
 import { join } from 'node:path';
+import { localBin } from './local-bin';
 import { run } from './run';
 
 /** The one program that reads test sources. `noEmit` there is what keeps `dist/` out of this. */
@@ -71,10 +72,9 @@ export interface TestTypecheckRun {
  * green this whole check exists to remove.
  */
 export async function runTestTypecheck(root: string): Promise<TestTypecheckRun> {
-  const result = await run(
-    [join(root, 'node_modules/.bin/tsc'), '--noEmit', '-p', join(root, TESTS_TSCONFIG)],
-    { cwd: root },
-  ).catch((cause: unknown) => ({
+  const result = await run([localBin(root, 'tsc'), '--noEmit', '-p', join(root, TESTS_TSCONFIG)], {
+    cwd: root,
+  }).catch((cause: unknown) => ({
     // A compiler that will not SPAWN — no `bun install` yet — throws out of `Bun.spawn`, and an
     // uncaught throw here takes the whole `manifest` step down with a stack instead of a finding.
     ok: false,

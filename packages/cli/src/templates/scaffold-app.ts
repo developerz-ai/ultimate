@@ -200,7 +200,8 @@ import './global';
 
 unitTest('importing shared/global registers the one global stylesheet', () => {
   const sheets = registeredStylesheets().filter((sheet) => sheet.global);
-  expect(sheets.map((sheet) => sheet.file.split('/').slice(-3).join('/'))).toEqual([
+  // Split on either separator: \`file\` is a host path, \`D:\\…\\global.scss\` on Windows.
+  expect(sheets.map((sheet) => sheet.file.split(/[\\\\/]/).slice(-3).join('/'))).toEqual([
     'web/shared/global.scss',
   ]);
   // The custom properties themselves, declared once on the root — what \`tokens.role()\` refers to.

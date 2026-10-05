@@ -7,7 +7,14 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no temp-director
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { eachSourceFile, isGenerated, isTest, isVendored, SOURCE_GLOBS } from './source-files';
+import {
+  eachSourceFile,
+  isGenerated,
+  isTest,
+  isVendored,
+  SOURCE_GLOBS,
+  sortedPosix,
+} from './source-files';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 
@@ -61,5 +68,18 @@ describe("unit · an app's own entry files and guards are source (s1-t5 gaps)", 
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('unit · a Windows glob answer is the same source set', () => {
+  test('backslash answers come out POSIX, in the order their POSIX spelling sorts', () => {
+    // `\` sorts after `1`, `/` before it: one tree, one order, on either host.
+    expect(
+      sortedPosix([
+        'guards\\untranslated-string.ts',
+        'packages\\a1\\src\\x.ts',
+        'packages\\a\\src\\x.ts',
+      ]),
+    ).toEqual(['guards/untranslated-string.ts', 'packages/a/src/x.ts', 'packages/a1/src/x.ts']);
   });
 });

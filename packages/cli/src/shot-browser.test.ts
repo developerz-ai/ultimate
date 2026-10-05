@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { UltimateError } from '@ultimat3/core';
+import { CHROME_CANDIDATES } from '@ultimat3/testing';
 import { BROWSER_CDP_URL_VAR } from './browser-launcher';
 import { shotBrowserChoice } from './shot-browser';
 
@@ -61,9 +62,12 @@ describe('unit · start a browser here, or attach to one somebody else is runnin
     const error = thrownBy(() => shotBrowserChoice({ env: {}, exists: NO_BROWSER_ANYWHERE }));
     expect(error['code']).toBe('X_SHOT_BROWSER_MISSING');
     expect(String(error['fix'])).toContain('export CHROME_PATH=/usr/bin/google-chrome');
+    // A Windows reader is handed a path that exists on Windows, in the same one literal.
+    expect(String(error['fix'])).toContain('\\Google\\Chrome\\Application\\chrome.exe');
     // The cause has to say what was looked at, or the reader cannot tell "no Chrome" from
     // "a Chrome this run could not see".
-    expect(String(error['cause'])).toContain('/usr/bin/google-chrome-stable');
+    // This platform's list: `/usr/bin` on Linux, Chrome and Edge on Windows, the bundles on macOS.
+    for (const candidate of CHROME_CANDIDATES) expect(String(error['cause'])).toContain(candidate);
     expect(String(error['cause'])).toContain('CHROME_PATH');
   });
 
@@ -78,7 +82,7 @@ describe('unit · start a browser here, or attach to one somebody else is runnin
     );
     expect([error['code'], error['fix']]).toEqual([
       'X_CLI_BAD_FLAG',
-      'x shot / --browser /usr/bin/chromium',
+      expect.stringMatching(/^x shot \/ --browser \/usr\/bin\/chromium {3}# macOS: --browser "/),
     ]);
     expect(String(error['cause'])).toContain('/no/such/chrome');
   });
@@ -112,7 +116,7 @@ describe('unit · start a browser here, or attach to one somebody else is runnin
     // Reached the executable check — which is the browser it was told to use, not the attach.
     expect([error['code'], error['fix']]).toEqual([
       'X_CLI_BAD_FLAG',
-      'x shot / --browser /usr/bin/chromium',
+      expect.stringMatching(/^x shot \/ --browser \/usr\/bin\/chromium {3}# macOS: --browser "/),
     ]);
   });
 

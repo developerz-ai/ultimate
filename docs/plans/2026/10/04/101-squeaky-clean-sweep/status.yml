@@ -65,22 +65,37 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 08-windows.md
     tier: 0
     sweep: "8a"
-    status: in_progress
-    percent: 80
+    status: complete
+    percent: 100
     evidence: ["#660"]
-    notes: "windows job lands reporting (continue-on-error); its first run's 46 failing tests are 8b's input"
+    notes: "windows job landed reporting (continue-on-error); its first run's failing tests were 8b's input"
   - file: 08-windows.md
     tier: 0
     sweep: "8b"
+    status: in_progress
+    percent: 90
+    evidence: ["#661"]
+    notes: "every windows unit subset green. Open: the scaffold app's `budgets` on Windows reads /posts at 80.2kb while the island bundles to 59.8kb (measured on the job under the framework's own plugins) — a measurement bug in budgets.ts's document read, not a bundle. Then the binary boot, then make the job required."
+  - file: 13-deploy-drain.md
+    tier: 3
+    sweep: "8c"
     status: not_started
     percent: 0
     evidence: []
+    notes: "added by the owner 2026-10-05: frequent zero-downtime deploys; a working worker finishes, then restarts"
   - file: 09-realtime-islands.md
     tier: 3
     sweep: "9"
     status: not_started
     percent: 0
     evidence: []
+  - file: 14-dashboards.md
+    tier: 4
+    sweep: "9b"
+    status: not_started
+    percent: 0
+    evidence: []
+    notes: "added by the owner 2026-10-05: charts, tables, a sci-fi preset, mobile"
   - file: 10-carried-backlog.md
     tier: 0
     sweep: "10a"

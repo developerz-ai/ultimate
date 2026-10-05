@@ -34,3 +34,12 @@ pr:
   # AT ALL flips auto-merge on unless this line says otherwise. This file exists
   # to add reviews, not to change what merges. Flip it deliberately or not at all.
   auto_merge: false
+
+release:
+  # `.github/workflows/release.yml` is the ONE release path (axiom 1): a version bump commit, an
+  # annotated `v*` tag, a published GitHub Release, then OIDC trusted publishing to npm. The
+  # platform default (`release-please`, `bump_strategy: tag_only`) cut a SECOND path beside it —
+  # lightweight-tag Releases before any bump (v23.0.1, v24.0.1, v24.0.2), each failing `check` and
+  # one left marked Latest while npm still served 24.0.0. Off, so a Release only ever means npm.
+  manager: none
+  channels: []

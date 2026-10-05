@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "815e92d89c7771fcff57bd4501aa41b9fbada4d48966eb5c136556a3da6fb508",
+  "buildId": "8f8a68c19e48648a387825df2a87bb54ff5b39cf7f7b6cd02418a5a256007c21",
   "tiers": {
     "0": [
       "core",
@@ -2970,6 +2970,11 @@
       "at": "scripts/registry-audit.ts"
     },
     {
+      "code": "X_RELATIVE_PATH_NOT_POSIX",
+      "owner": "scripts",
+      "at": "scripts/posix-relative.ts"
+    },
+    {
       "code": "X_RELEASE_FLAG_UNKNOWN",
       "owner": "scripts",
       "at": "scripts/release.ts"
@@ -3453,6 +3458,11 @@
       "code": "X_SECRETS_FILE_MISSING",
       "owner": "core",
       "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_KEY_ACL_FAILED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_SECRETS_KEY_INVALID",

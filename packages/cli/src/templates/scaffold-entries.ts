@@ -16,6 +16,7 @@ const server =
 
 import { join } from 'node:path';
 import { runRole } from '@ultimat3/cli/serve';
+import { isCompiledBundle } from '@ultimat3/core';
 
 // MORE THAN ONE REPLICA? Add these two lines, above \`runRole\`:
 //
@@ -36,10 +37,10 @@ import { runRole } from '@ultimat3/cli/serve';
  * holds this module's bundled imports and none of the app's source, and the framework's registries
  * are filled by scanning that source at boot. So a binary reads its root from the directory it is
  * started in — it is a launcher for an app tree, not a self-contained copy of one.
+ * \`isCompiledBundle\` knows both spellings of that filesystem: \`/$bunfs/\` on Linux and macOS,
+ * \`B:\\~BUN\\\` on Windows.
  */
-const root = import.meta.dir.startsWith('/$bunfs')
-  ? process.cwd()
-  : join(import.meta.dir, '..', '..');
+const root = isCompiledBundle(import.meta.dir) ? process.cwd() : join(import.meta.dir, '..', '..');
 
 // Guarded, because the framework's module scan imports every file under apps/*/ to fill its
 // registries — an unguarded boot would start a server inside \`x verify\`.

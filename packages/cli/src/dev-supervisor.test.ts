@@ -11,6 +11,7 @@ import {
   devSupervision,
   restartFinding,
   restartReason,
+  stopChild,
   superviseDev,
 } from './dev-supervisor';
 
@@ -103,5 +104,56 @@ describe('unit · childRestart', () => {
     // Never exits a process nothing supervises, whatever the hold hands it.
     plain.exit(0);
     expect(childRestart('/app', { [DEV_CHILD_ENV]: '1' }).options.onRestart).toBeFunction();
+  });
+});
+
+describe('unit · stopChild', () => {
+  const child = (send?: (message: unknown) => void) => {
+    const killed: string[] = [];
+    const sent: unknown[] = [];
+    return {
+      killed,
+      sent,
+      child: {
+        exited: new Promise<number>(() => undefined),
+        kill: (signal: string) => killed.push(signal),
+        ...(send === undefined
+          ? {}
+          : {
+              send: (message: unknown) => {
+                send(message);
+                sent.push(message);
+              },
+            }),
+      },
+    };
+  };
+
+  test('a stop is a drain message over IPC, never a signal — on Windows a signal kills outright', () => {
+    const one = child(() => undefined);
+    stopChild(one.child, 'SIGTERM');
+    expect(one.sent).toEqual([{ type: 'x-dev-drain', signal: 'SIGTERM' }]);
+    expect(one.killed).toEqual([]);
+  });
+
+  test('no channel, or a closed one, falls back to the signal', () => {
+    const none = child();
+    stopChild(none.child, 'SIGINT');
+    expect(none.killed).toEqual(['SIGINT']);
+    // Input, not a verdict: the error a closed channel's `send` raises.
+    const closedChannel = new TypeError('channel closed');
+    const closed = child(() => {
+      throw closedChannel;
+    });
+    stopChild(closed.child, 'SIGTERM');
+    expect(closed.killed).toEqual(['SIGTERM']);
+  });
+
+  test('a message nobody acted on is followed by the signal once the bound has passed', async () => {
+    const booting = child(() => undefined);
+    stopChild(booting.child, 'SIGTERM', 5);
+    expect(booting.killed).toEqual([]);
+    await Bun.sleep(30);
+    expect(booting.killed).toEqual(['SIGTERM']);
   });
 });
