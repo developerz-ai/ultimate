@@ -27,7 +27,7 @@ import { REQUIRED_BUN } from './app-root';
 import { tasksCommand } from './cmd-tasks';
 import type { CommandContext } from './command';
 import { msg } from './messages';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 function appRoot(): string {
   const dir = mkdtempSync(join(tmpdir(), 'x-tasks-'));

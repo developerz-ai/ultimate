@@ -14,7 +14,7 @@ import {
   renderShallowNodes,
   restoreFactory,
   withAttr,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import type { NavGroup } from './nav';
 import { adminBranding, type ThemeTokenRef, themeAttributes } from './theme';
 

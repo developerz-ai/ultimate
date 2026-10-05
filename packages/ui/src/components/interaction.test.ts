@@ -8,7 +8,7 @@
 // dispatch: a DOM present during a render is what `solid()` reads as "client", and it throws.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { FakeElement, installFakeDom, keydown } from '../fake-dom';
+import { FakeElement, installFakeDom, keydown } from '../fake-dom-fixture';
 import {
   attachRef,
   byTag,

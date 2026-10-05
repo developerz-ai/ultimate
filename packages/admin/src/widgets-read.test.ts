@@ -1,6 +1,6 @@
 // Read mode: what the detail row and the list cell actually put on screen. Driven through the
-// inert factory (`inert-jsx.ts`), the same server path `@ultimat3/render` has — a view is a plain
-// function of props here, exactly as `renderToHtml` calls it.
+// inert factory (`inert-jsx-fixture.ts`), the same server path `@ultimat3/render` has — a view is a
+// plain function of props here, exactly as `renderToHtml` calls it.
 //
 // The assertions are on the PROPS the admin handed a design-system component, not on the markup
 // ui chose to emit for them: `<Money value={…}>` is this package's contract, `<span class="money">`
@@ -18,7 +18,7 @@ import {
   one,
   renderHtml,
   restoreFactory,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never

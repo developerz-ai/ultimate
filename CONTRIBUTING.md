@@ -6,18 +6,19 @@ that already works will be declined — that ambiguity is the tax agents pay.
 ## 🚀 Setup
 
 ```sh
-bin/setup      # bun version check, install, .env.development.local, git hooks
-bin/check      # the gate: 20 steps, one command, no --only and no --skip. Green = shippable
+bun run setup    # bun version check, install, .env.development.local, git hooks
+bun run verify   # the gate: 20 steps, one command, no --only and no --skip. Green = shippable
 ```
 
-Requirements: **Bun >= 1.3**. Nothing else. No Node, no Docker, no database — `x dev` runs
-embedded Postgres (PGlite), in-process events, and S3 to a local directory.
+Requirements: **Bun >= 1.4.2** (`engines.bun` in `package.json`). Nothing else. No Node, no Docker,
+no database — `x dev` runs embedded Postgres (PGlite), in-process events, and S3 to a local
+directory.
 
 | Command | Does |
 |---|---|
-| `bin/setup` | fresh clone to running |
-| `bin/dev <args>` | run the `x` CLI from source: `bin/dev verify --json` |
-| `bin/check` | the CI gate, locally |
+| `bun run setup` | fresh clone to running |
+| `bun run x -- <args>` | run the `x` CLI from source: `bun run x -- verify --json` |
+| `bun run verify` | the CI gate, locally |
 | `bun run test` | every package's tests, opt-in suites included; `examples/` is gated by its own `x verify` |
 | `bunx tsc --noEmit -p packages/<pkg>/tsconfig.json` | one package's types, when `tsc -b` stops in another project; the package's `tsconfig.json` excludes its tests, so `bun run scripts/test-typecheck-gate.ts` checks those |
 | `bun run scripts/help.ts` | the full script catalogue |

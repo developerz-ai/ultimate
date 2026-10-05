@@ -106,15 +106,29 @@ registerErrorCodes(
 // answered 404, host included, on every error it has ever thrown; restating the replacement here
 // would be the same constant in eight places waiting to drift again.
 
-/** A test reached the network without a mock or an allowlist entry. Always a bug, never a flake. */
+/**
+ * A test reached the network without a mock or an allowlist entry. Always a bug, never a flake.
+ * `transport` picks the repair: a `fetch` is mocked, a socket (`WebSocket`, `Bun.connect`) has no
+ * mock — the code under test takes its transport as a parameter, and the test hands one in.
+ */
 export class NetworkSealedError extends UltimateError {
-  constructor(input: { url: string; method: string; allowed: readonly string[] }) {
+  constructor(input: {
+    url: string;
+    method: string;
+    allowed: readonly string[];
+    transport?: 'fetch' | 'socket' | undefined;
+  }) {
+    const allowCall = `allowHost('${hostOf(input.url)}')`;
+    const allow = `${allowCall} if it must be real`;
     super({
       code: 'X_TEST_NETWORK_SEALED',
       cause: `${input.method} ${input.url} was not mocked (allowed hosts: ${
         input.allowed.length > 0 ? input.allowed.join(', ') : 'none'
       })`,
-      fix: `mockFetch('${input.url}', () => new Response('{}')) — or allowHost('${hostOf(input.url)}') if it must be real`,
+      fix:
+        input.transport === 'socket'
+          ? `${allowCall}   # only if it must be real — otherwise inject the transport: pass the code under test its \`connect\`/\`client\` option, or dial a Bun.listen server on 127.0.0.1 (loopback is never sealed)`
+          : `mockFetch('${input.url}', () => new Response('{}')) — or ${allow}`,
     });
   }
 }

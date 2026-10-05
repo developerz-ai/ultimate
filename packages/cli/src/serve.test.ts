@@ -26,8 +26,8 @@ import {
   runRole,
   withAppRuntime,
 } from './serve';
-import type { ThrownShape } from './thrown-by';
-import { thrownBy } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
+import { thrownBy } from './thrown-by-fixture';
 
 test('ROLE defaults to web and accepts every real role', () => {
   expect(roleFromEnv({})).toBe('web');

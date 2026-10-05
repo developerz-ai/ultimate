@@ -17,7 +17,7 @@ import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.

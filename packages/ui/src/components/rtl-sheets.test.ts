@@ -4,7 +4,7 @@
 // x offset is physical, so one drawn on an inline edge needs its `[dir='rtl']` mirror.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScss, compileScssFile } from '../sass-probe';
+import { compileScss, compileScssFile } from '../sass-probe-fixture';
 
 const COMPONENTS = new URL('.', import.meta.url).pathname;
 

@@ -36,7 +36,7 @@ export const METRIC_EXPORT_INTERVAL_MS = 60_000;
  * merge into process-global state, so stopping the timer and dropping the drain hooks left the
  * first boot's exporter configured: a second `serveApp` in the same process exported its spans
  * into a released exporter — queued against a collector nothing will flush to, on a timer nothing
- * clears. `cmd-dev.ts`'s `stop()` hands back `noopExporter` for exactly this reason. Per signal and
+ * clears. `dev-boot.ts`'s `stop()` hands back `noopExporter` for exactly this reason. Per signal and
  * never unconditionally: `x dev` configures a trace RECORDER before calling this, and a boot that
  * installed no exporter must not uninstall one it never owned.
  */
@@ -52,7 +52,7 @@ export function startOtlpExport(env: Env = process.env): () => void {
     const exporter = otlpSpanExporter({ endpoint: traces });
     configureTelemetry({ exporter });
     // Pushed first, so the reversed run below applies it LAST — after the drain hook is dropped,
-    // the same order `cmd-dev.ts` releases the recorder in.
+    // the same order `dev-boot.ts` releases the recorder in.
     releases.push(() => configureTelemetry({ exporter: noopExporter }));
     releases.push(onShutdown('otlp-traces', () => exporter.shutdown(), { phase: 'close' }));
     logger.info('ultimate otlp traces', { endpoint: traces });

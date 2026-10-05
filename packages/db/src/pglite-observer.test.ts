@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { withStatementAttribution } from './attribution';
 import { setDbClient } from './client';
 import { expectedQueryLoop } from './expected-loop';
-import { fakeDriver } from './fake-pglite';
+import { fakeDriver } from './fake-pglite-fixture';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
 import { createPgliteClient } from './pglite';

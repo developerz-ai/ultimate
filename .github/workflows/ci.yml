@@ -331,9 +331,9 @@ jobs:
   # and no repair round. A GitHub `ubuntu-latest` runner with bun, git and network is the closest
   # thing in this repo to that VM; it is not the VM, and the timings the job prints say so.
   #
-  # Distinct from scaffold-typecheck.ts (which compiles every generated file set in-process, in the
-  # workspace, against source packages, and tolerates a short list of pinned KNOWN_GAPS) — this job
-  # runs the real CLI-produced files through a real, separate `bun install` and a real gate
+  # Distinct from scaffold-typecheck-fixture.ts (which compiles every generated file set in-process,
+  # in the workspace, against source packages, and tolerates a short list of pinned KNOWN_GAPS) —
+  # this job runs the real CLI-produced files through a real, separate `bun install` and a real gate
   # subprocess, catching whatever only shows up once an app is actually assembled and installed (a
   # missing package-shape file, a dependency range with no matching release, a preload path that
   # only resolves inside this workspace). It runs outside the checkout so nothing here can quietly

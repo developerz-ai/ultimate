@@ -4,7 +4,7 @@
 // at 460 of its 500 lines.
 
 import { describe, expect, test } from 'bun:test';
-import { fakeCdpBrowser } from './cdp-fake';
+import { fakeCdpBrowser } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
 import {

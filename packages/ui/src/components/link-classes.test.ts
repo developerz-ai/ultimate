@@ -3,7 +3,7 @@
 // a `.module.scss` import is a file path and no render can show which class an element got.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScssFile, declaredClasses } from '../sass-probe';
+import { compileScssFile, declaredClasses } from '../sass-probe-fixture';
 import { buttonClassKeys } from './button-classes';
 import { linkClasses } from './link-classes';
 

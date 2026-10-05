@@ -1,7 +1,7 @@
-// The browser TARGET of `cdp-fake.ts`'s browser: one raw session that records what the driver
-// enabled and answers `Fetch.requestPaused` the way Chrome does — a request from a target this
-// package never created (a popup) pauses here and nowhere else. Split out because `cdp-fake.ts`
-// stands near its size ceiling.
+// The browser TARGET of `cdp-fake-fixture.ts`'s browser: one raw session that records what the
+// driver enabled and answers `Fetch.requestPaused` the way Chrome does — a request from a target
+// this package never created (a popup) pauses here and nowhere else. Split out because
+// `cdp-fake-fixture.ts` stands near its size ceiling.
 
 import type { CdpBrowserSessionLike, CdpBrowserTargetLike } from './cdp-port';
 

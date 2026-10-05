@@ -12,7 +12,7 @@ import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { createMemoryEventBus, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { memoryDriver } from '@ultimat3/storage';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { TestScrapeClock } from './clock';
 import { testClock } from './clock';
 import { remoteBrowser } from './driver-cdp';

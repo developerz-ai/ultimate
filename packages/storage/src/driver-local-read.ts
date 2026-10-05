@@ -33,11 +33,11 @@ async function pendingEtag(root: string, key: string): Promise<string | undefine
  * would have been one call earlier.
  */
 const refusedRead =
-  (root: string, key: string) =>
+  (root: string, key: string, disk: string) =>
   (error: unknown): never => {
     if (isStorageError(error)) throw error;
     throw stringField(error, 'code') === 'ENOENT'
-      ? objectNotFound('local', key)
+      ? objectNotFound(disk, key)
       : readFailed(
           'local',
           key,
@@ -46,20 +46,27 @@ const refusedRead =
         );
   };
 
-/** The whole object, buffered — `get()`'s one read. */
-export async function readObjectBytes(root: string, key: string): Promise<Uint8Array> {
+/**
+ * The whole object, buffered — `get()`'s one read. `disk` is the name `defineStorage` registered,
+ * because a not-found `fix:` is `disk('<it>').list(…)`; `local` only for a driver nobody named.
+ */
+export async function readObjectBytes(
+  root: string,
+  key: string,
+  disk = 'local',
+): Promise<Uint8Array> {
   return Bun.file(`${root}/${key}`)
     .arrayBuffer()
-    .then((buffer) => new Uint8Array(buffer), refusedRead(root, key));
+    .then((buffer) => new Uint8Array(buffer), refusedRead(root, key, disk));
 }
 
 /** `etagOf`, streamed: a copy or a `stat()` must settle a doubt without buffering the object. */
-export async function etagOfFile(root: string, key: string): Promise<string> {
+export async function etagOfFile(root: string, key: string, disk = 'local'): Promise<string> {
   const hasher = new Bun.CryptoHasher('sha256');
   try {
     for await (const chunk of Bun.file(`${root}/${key}`).stream()) hasher.update(chunk);
   } catch (error) {
-    return refusedRead(root, key)(error);
+    return refusedRead(root, key, disk)(error);
   }
   return hasher.digest('hex').slice(0, 32);
 }

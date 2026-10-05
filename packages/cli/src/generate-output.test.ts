@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { GENERATORS, generate } from './cmd-generate';
 import { INVOICE_ENTITY } from './scaffold-fixture';
 import type { GeneratedFile } from './templates';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 const loaderFor = (path: string): 'ts' | 'tsx' => (path.endsWith('.tsx') ? 'tsx' : 'ts');
 

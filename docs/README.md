@@ -7,6 +7,7 @@ Two bodies of docs, one split:
 | [**idea/**](idea/README.md) | **what and why** | you want to understand a decision, or argue with it |
 | [**architecture/**](architecture/README.md) | **how it's built** | you're changing the framework itself |
 | [**ops/**](ops/README.md) | **how to run it** | you're deploying an app, or something is on fire |
+| **plans/** | **what is being done** — dated execution plans; `status.yml` per plan, held to the template enum by `bun run plan-status` | you're picking up, or reviewing, a sweep |
 
 Plus, outside `docs/`:
 

@@ -1,7 +1,7 @@
 // The offline driver every `x shot` / `ui.*` test runs on. What it may answer from markup, it does;
 // what only a browser knows — a layout box, an accessibility tree — it refuses rather than invents.
 import { describe, expect, test } from 'bun:test';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import { systemShotClock } from './cdp-shot-clock';
 
 const HTML =

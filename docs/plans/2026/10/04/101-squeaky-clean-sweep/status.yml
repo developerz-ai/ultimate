@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 35
-current_focus: "sweep 6 (06-cli-ci-tooling.md) in review; next 07-cleanup.md"
+percent: 40
+current_focus: "sweep 7 (07-cleanup.md) in progress; next 08-windows.md"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -53,13 +53,13 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 06-cli-ci-tooling.md
     tier: 0
     sweep: "6"
-    status: in_progress
-    percent: 90
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#658"]
   - file: 07-cleanup.md
     tier: 0
     sweep: "7"
-    status: not_started
+    status: in_progress
     percent: 0
     evidence: []
   - file: 08-windows.md

@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: same — no Bun native answers the platform temp root.
 import { join } from 'node:path'; // why: same — the sandbox's paths are joined, never concatenated.
 import { INVOICE_ENTITY } from '../scaffold-fixture';
-import { sandboxPath, workspaceRoot } from '../scaffold-typecheck';
+import { sandboxPath, workspaceRoot } from '../scaffold-typecheck-fixture';
 import { isTenantScopedSlice, jobFiles, taskFiles } from './job';
 
 const target = { surfaceDir: 'apps/web/app', feature: 'links' } as const;

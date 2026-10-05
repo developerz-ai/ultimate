@@ -12,7 +12,7 @@
 //   `schema/errors.ts:120`  a `TypeError` thrown from INSIDE an error constructor, replacing the
 //                           caller's own failure with one about the failure.
 //   `ai/vector-scope.ts:59` plus a `__proto__` WRITE that silently widened a security scope.
-//   `ui/fake-dom.ts:79`     `querySelectorAll('[constructor]')` matched every element.
+//   `ui/fake-dom-fixture.ts:79` `querySelectorAll('[constructor]')` matched every element.
 //   and `db/foreign-key.ts`, `cache/purge-fastly.ts`, `seo/images.ts`, `http/rate-limit.ts`,
 //   three in `auth` and three in `admin/dev/`.
 //

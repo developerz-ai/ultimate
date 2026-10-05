@@ -107,6 +107,22 @@ describe('unit · output', () => {
     expect(renderJson(failing)).toContain('"skipped":false');
   });
 
+  // A warning is advice that never fails a step, so it is carried on a PASS too — unlike
+  // `output`, which a green step keeps quiet. Otherwise the advice would reach nobody until it
+  // had become the failure it warns about.
+  test('a step carries its warnings on a green run: listed in --json, counted in the terminal', () => {
+    const steps: StepResult[] = [
+      { name: 'filesize', ok: true, durationMs: 3, findings: [], warnings: ['a.ts: 470 lines'] },
+      { name: 'lint', ok: true, durationMs: 1, findings: [] },
+    ];
+    const result: CommandResult = { ok: true, command: 'verify', summary: 'ok', steps };
+    const payload = JSON.parse(renderJson(result)) as { steps: { warnings?: string[] }[] };
+    expect(payload.steps.map((step) => step.warnings)).toEqual([['a.ts: 470 lines'], undefined]);
+    expect(renderHuman(result)).toContain('      ! 1 warning(s) — --verbose or --json lists them');
+    expect(renderHuman(result)).not.toContain('a.ts: 470 lines');
+    expect(renderHuman(result, true)).toContain('      ! a.ts: 470 lines');
+  });
+
   test('an UltimateError-shaped value is recognised across a process boundary', () => {
     const plain = { code: 'X_TEST', cause: 'because', fix: 'x doctor' };
     expect(isUltimateErrorShape(plain)).toBe(true);

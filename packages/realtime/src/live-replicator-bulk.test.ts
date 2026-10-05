@@ -20,7 +20,7 @@ import { RingChangeBuffer } from './change-buffer';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
 import { type LiveReplicator, startLiveReplicator } from './live-replicator';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
 

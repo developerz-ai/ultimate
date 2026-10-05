@@ -229,6 +229,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_PERMISSION_BORROWED',
   'X_ERROR_CODE_UNTHROWN_STALE',
   'X_DEV_STATE_UNWRITABLE',
+  'X_PACKAGE_TEST_ONLY_SHIPPED',
 ] as const;
 
 /**
@@ -414,6 +415,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ERROR_CODE_UNTHROWN_STALE:
     'a code UNTHROWN_CODES lists as thrown by nothing is thrown again — delete it from UNTHROWN_CODES in packages/cli/src/unthrown-codes.ts',
   X_DEV_STATE_UNWRITABLE: 'x dev cannot claim its state directory',
+  X_PACKAGE_TEST_ONLY_SHIPPED: 'a test-only module ships in the tarball',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

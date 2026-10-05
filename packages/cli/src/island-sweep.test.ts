@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
 import { defineIslandStates, islandShotPlan } from '@ultimat3/testing';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver } from './browser-launcher-port';
 import {
   refuseSweepWithIsland,

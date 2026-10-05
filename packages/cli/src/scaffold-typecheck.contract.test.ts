@@ -11,7 +11,7 @@ import {
   staleGapsIn,
   typecheckScaffold,
   unexpectedIn,
-} from './scaffold-typecheck';
+} from './scaffold-typecheck-fixture';
 
 /** One compile per variant, for the whole file: `tsc` is the cost, not the assertions. */
 const reports = await Promise.all(

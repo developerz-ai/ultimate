@@ -79,10 +79,12 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
   let baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
   const secret = resolveSigningSecret(DRIVER_NAME, options);
   const stored = new Map<string, Stored>();
+  // The name a registry gave this disk, so a miss names `disk('<it>')` — the call the author wrote.
+  let registered: string = DRIVER_NAME;
 
   const found = (key: string): Stored => {
     const hit = stored.get(key);
-    if (hit === undefined) throw objectNotFound(DRIVER_NAME, key);
+    if (hit === undefined) throw objectNotFound(registered, key);
     return hit;
   };
 
@@ -94,6 +96,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
     },
 
     registerAs(diskName: string): void {
+      registered = diskName;
       if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
     },
 

@@ -11,7 +11,6 @@ import {
   NotImplementedError,
   renderFixLiteral,
   renderFixShellArg,
-  stringField,
 } from '@ultimat3/core';
 import {
   assertListOptions,
@@ -30,6 +29,7 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
+import { isAbsentObject } from './driver-s3-absent';
 import { regionMismatch } from './driver-s3-region';
 import {
   checksumMismatch,
@@ -183,34 +183,6 @@ function buildClient(options: S3DriverOptions): S3ClientLike {
 const dated = (value: string | Date | undefined): { readonly lastModified?: Date } =>
   value === undefined ? {} : { lastModified: value instanceof Date ? value : new Date(value) };
 
-/** One numeric field off a value that may fight being read — `stringField`'s missing twin. */
-function numberField(value: unknown, key: string): number | undefined {
-  if (typeof value !== 'object' || value === null) return undefined;
-  try {
-    const held = (value as Record<string, unknown>)[key];
-    return typeof held === 'number' ? held : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The provider codes that mean "there is nothing at that key", and nothing wider. */
-const ABSENT_OBJECT_CODES: ReadonlySet<string> = new Set(['NoSuchKey', 'NotFound', 'ENOENT']);
-
-/**
- * The ONE delete failure the contract calls success. `AccessDenied`, `SlowDown`, an expired
- * credential and a reset connection are none of them, and the previous `.catch(() => undefined)`
- * reported all four as deleted — which is how an erasure sweep certifies data it never removed.
- *
- * Read structurally: an `S3Error` is `name: 'S3Error'` with a `code` the service returned, and
- * every field of a value this process did not build is a getter that can throw.
- */
-function isAbsentObject(error: unknown): boolean {
-  const code = stringField(error, 'code');
-  if (code !== undefined && ABSENT_OBJECT_CODES.has(code)) return true;
-  return numberField(error, 'statusCode') === 404 || numberField(error, 'status') === 404;
-}
-
 /**
  * Everything `put()` may be handed that this driver cannot honour, refused before a byte moves.
  * A typed refusal at the call site is the whole point: `serverSideEncryption` exists on
@@ -258,6 +230,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     options.maxGetBytes === undefined ? maxPutBytes : options.maxGetBytes,
     1,
   );
+  // The key `defineStorage` registered this disk under: a not-found `fix:` is `disk('<it>')…`,
+  // and the driver kind there is `X_STORAGE_DISK_UNKNOWN` on any app that named its disk.
+  let diskName = DRIVER_NAME;
   let client: S3ClientLike | undefined;
   const conn = (): S3ClientLike => {
     client ??= buildClient(options);
@@ -299,7 +274,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     (key: string) =>
     (error: unknown): never => {
       if (isStorageError(error)) throw error;
-      if (isAbsentObject(error)) throw objectNotFound(DRIVER_NAME, key);
+      if (isAbsentObject(error)) throw objectNotFound(diskName, key);
       throwIfMisconfigured(error);
       throw readFailed(
         DRIVER_NAME,
@@ -324,6 +299,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
   return {
     name: DRIVER_NAME,
+    registerAs(name: string): void {
+      diskName = name;
+    },
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
@@ -354,7 +332,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     async get(key: string): Promise<StorageRead> {
       const safe = assertSafeKey(key);
       const file = conn().file(safe);
-      if (!(await present(safe))) throw objectNotFound(DRIVER_NAME, safe);
+      if (!(await present(safe))) throw objectNotFound(diskName, safe);
       // The HEAD comes FIRST, and it is the whole point: a client PUT straight into the bucket is
       // bounded by nothing on this disk, so `arrayBuffer()` on whatever is there was heap growth
       // the uploader chose. Refused on the provider's own size before a byte is read.
@@ -367,7 +345,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
       const safe = assertSafeKey(key);
       const file = conn().file(safe);
-      if (!(await present(safe))) throw objectNotFound(DRIVER_NAME, safe);
+      if (!(await present(safe))) throw objectNotFound(diskName, safe);
       return file.stream();
     },
 
@@ -382,7 +360,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
       const file = conn().file(source);
-      if (!(await present(source))) throw objectNotFound(DRIVER_NAME, source);
+      if (!(await present(source))) throw objectNotFound(diskName, source);
       const stat = await file.stat().catch(refusedRead(source));
       await conn()
         .file(destination)

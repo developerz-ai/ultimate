@@ -120,6 +120,12 @@ export function checkEnvExample(schema: EnvSchema, text: string): EnvExampleRepo
  * Throws `X_ENV_EXAMPLE_DRIFT` when the committed example has fallen behind the schema — the
  * failure an agent hits *before* a teammate hits `X_ENV_MISSING` on a variable nobody told them
  * about.
+ *
+ * @deprecated A second, weaker `.env.example` gate that nothing calls: it checks keys only. The
+ * gate is `x verify`'s `manifest` step (`x verify --only manifest`), which compares the file
+ * byte-for-byte against `renderEnvExample` via `envExampleFindings` in `@ultimat3/cli`'s
+ * `app-env.ts`, and whose fix is `x env example`. Deleted in 25.0.0; call `checkEnvExample` for
+ * the report as data.
  */
 export function assertEnvExample(schema: EnvSchema, text: string, path = ENV_EXAMPLE_PATH): void {
   const report = checkEnvExample(schema, text);

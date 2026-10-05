@@ -6,7 +6,7 @@ import { readOnlySteps } from './cmd-verify';
 import { msg } from './messages';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 import { runVerify } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';

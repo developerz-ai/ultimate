@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { buildManifest } from './build';
 import { diffManifest } from './diff';
-import { fixtureManifest } from './diff-fixtures';
+import { fixtureManifest } from './diff-fixture';
 import { manifestJson } from './emit';
 import { type AdminFact, isManifest } from './schema';
 import { frameworkSources } from './sources';

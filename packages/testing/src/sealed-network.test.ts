@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { markListening, resetListeners } from '@ultimat3/core';
-import { allowHost, mockJson, requestedUrls, resetNetwork, sealNetwork } from './sealed-network';
+import {
+  allowHost,
+  mockJson,
+  requestedUrls,
+  resetNetwork,
+  sealNetwork,
+  setNetworkState,
+  unsealNetwork,
+} from './sealed-network';
 import { testName } from './test-types';
 
 sealNetwork();
@@ -85,6 +93,109 @@ describe(testName('unit', 'sealed network'), () => {
     for (const _ of [1, 2, 3]) {
       expect(await (await fetch('https://api.example.com/g')).json()).toEqual({ ok: 'g' });
       expect(await (await fetch('https://api.example.com/y')).json()).toEqual({ ok: 'y' });
+    }
+  });
+});
+
+/** What a sealed socket dial threw or rejected with — `undefined` when it went through. */
+const socketRefusal = async (dial: () => unknown): Promise<{ code?: string } | undefined> => {
+  try {
+    await dial();
+    return undefined;
+  } catch (error) {
+    return error as { code?: string };
+  }
+};
+
+/** A dial that must never connect: `example.invalid` is reserved (RFC 6761), resolves nowhere. */
+const dialInvalid = (): Promise<unknown> =>
+  Bun.connect({ hostname: 'example.invalid', port: 443, socket: { data() {} } });
+
+describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
+  test('new WebSocket to a host nobody allowed is X_TEST_NETWORK_SEALED, before any dial', () => {
+    let refusal: { code?: string; cause?: string; fix?: string } | undefined;
+    try {
+      new WebSocket('ws://example.invalid').close();
+    } catch (error) {
+      refusal = error as { code?: string; cause?: string; fix?: string };
+    }
+    expect(refusal?.code).toBe('X_TEST_NETWORK_SEALED');
+    expect(refusal?.cause).toContain('WEBSOCKET ws://example.invalid');
+    expect(refusal?.fix).toContain("allowHost('example.invalid')");
+    // A socket has no mock: the repair is the transport the code under test already takes.
+    expect(refusal?.fix).not.toContain('mockFetch');
+    expect(refusal?.fix).toContain('inject the transport');
+    expect(requestedUrls()).toEqual(['ws://example.invalid']);
+  });
+
+  test('Bun.connect to a host nobody allowed rejects X_TEST_NETWORK_SEALED', async () => {
+    const refusal = (await socketRefusal(dialInvalid)) as {
+      code?: string;
+      cause?: string;
+      fix?: string;
+    };
+    expect(refusal?.code).toBe('X_TEST_NETWORK_SEALED');
+    expect(refusal?.cause).toContain('CONNECT tcp://example.invalid:443');
+    expect(refusal?.fix).not.toContain('mockFetch');
+    expect(refusal?.fix).toContain("allowHost('example.invalid:443')");
+  });
+
+  test('offline closes sockets too, with the offline code rather than the seal', async () => {
+    setNetworkState('offline');
+    expect((await socketRefusal(() => new WebSocket('wss://example.invalid')))?.code).toBe(
+      'X_TEST_NETWORK_OFFLINE',
+    );
+    expect((await socketRefusal(dialInvalid))?.code).toBe('X_TEST_NETWORK_OFFLINE');
+  });
+
+  test('loopback is this machine, not egress: a Bun.listen server is reachable', async () => {
+    const server = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+    try {
+      const socket = await Bun.connect({
+        hostname: '127.0.0.1',
+        port: server.port,
+        socket: { data() {} },
+      });
+      socket.end();
+      const ws = new WebSocket(`ws://localhost:${server.port}/`);
+      ws.close();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('an allowed host reaches the REAL dial, and unseal hands the originals back', async () => {
+    const realWebSocket = globalThis.WebSocket;
+    const realConnect = Bun.connect;
+    const dialled: string[] = [];
+    class FakeWebSocket extends EventTarget {
+      constructor(url: string | URL) {
+        super();
+        dialled.push(String(url));
+      }
+    }
+    const fakeConnect = (options: { readonly hostname?: string }): Promise<string> => {
+      dialled.push(`tcp ${options.hostname}`);
+      return Promise.resolve('connected');
+    };
+    unsealNetwork();
+    Reflect.set(globalThis, 'WebSocket', FakeWebSocket);
+    Reflect.set(Bun, 'connect', fakeConnect);
+    try {
+      sealNetwork();
+      allowHost('example.invalid');
+      allowHost('example.invalid:443');
+      new WebSocket('ws://example.invalid');
+      expect(await dialInvalid()).toBe('connected');
+      expect(dialled).toEqual(['ws://example.invalid', 'tcp example.invalid']);
+      unsealNetwork();
+      expect(globalThis.WebSocket).toBe(FakeWebSocket as unknown as typeof WebSocket);
+      expect(Bun.connect).toBe(fakeConnect as unknown as typeof Bun.connect);
+    } finally {
+      unsealNetwork();
+      Reflect.set(globalThis, 'WebSocket', realWebSocket);
+      Reflect.set(Bun, 'connect', realConnect);
+      sealNetwork();
     }
   });
 });

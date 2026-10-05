@@ -135,6 +135,8 @@ export interface StepOutcome {
   readonly ok: boolean;
   readonly findings: readonly Finding[];
   readonly output?: string;
+  /** Advice that does not fail the step; carried on a pass too (`StepResult.warnings`). */
+  readonly warnings?: readonly string[];
   /**
    * Processes this step actually used. `1` is a step that ran serially, and a reader has to be
    * able to tell "serial because nothing could isolate it" from "parallel and fast" without

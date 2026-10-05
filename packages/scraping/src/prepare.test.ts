@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createLogger } from '@ultimat3/core';
-import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';
 import type { ScrapeDriver } from './driver';

@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createLogger } from '@ultimat3/core';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { testClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';

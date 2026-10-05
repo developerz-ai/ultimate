@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createLogger } from '@ultimat3/core';
-import { fakeCdpLauncher } from './cdp-fake';
-import { fakeBrowserTarget } from './cdp-fake-target';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
+import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import { testClock } from './clock';
 import type { SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';

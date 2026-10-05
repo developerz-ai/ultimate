@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { diffManifest, formatDiff } from './diff';
-import { fixtureManifest } from './diff-fixtures';
+import { fixtureManifest } from './diff-fixture';
 import type { Manifest } from './schema';
 import { ARRAY_SECTIONS } from './schema';
 import { verifyContract } from './verify';

@@ -23,7 +23,7 @@ import {
   restoreFactory,
   shallowNodesOf,
   withAttr,
-} from './inert-jsx';
+} from './inert-jsx-fixture';
 
 const react = (): unknown => Reflect.get(globalThis, 'React');
 const installed = (): boolean =>

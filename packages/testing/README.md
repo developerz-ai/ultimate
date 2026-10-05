@@ -10,7 +10,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `harness.ts` | `describeApp()` / `testApp()` — boot an app in-process with its own database |
 | `template-db.ts` | N workers, N databases, one migrated template, `CREATE DATABASE ... TEMPLATE` |
 | `determinism.ts` | frozen clock, seeded RNG, seeded uuids, `assertDeterministic` |
-| `sealed-network.ts` | any unmocked egress fails, with the URL and the mock line |
+| `sealed-network.ts` | any unmocked `fetch`, `WebSocket` or `Bun.connect` egress fails, with the URL and the line that fixes it |
+| `sealed-sockets.ts` | the `WebSocket` and `Bun.connect` patches, behind `sealed-network.ts`'s one gate |
 | `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
 | `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, defaults read off column names |
 | `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
@@ -331,7 +332,7 @@ and `JEST_WORKER_ID` itself, so that precedence is load-bearing rather than defe
 
 | State | Owned by | What teardown does |
 |---|---|---|
-| the seal on `fetch` | the preload | unseals only if this boot was the one that sealed |
+| the seal on `fetch`, `WebSocket` and `Bun.connect` | the preload | unseals only if this boot was the one that sealed |
 | the frozen instant, `Math.random`, `globalThis.Date` | the preload (`ULTIMATE_TEST_NOW` / `ULTIMATE_TEST_SEED`) | `restoreCapturedDeterminism(captureDeterminism())` around the boot |
 | mocks, allow-listed hosts, the seen list | the boot | `resetNetwork()` |
 | the cloned worker database | the boot | `db.drop()`, in a `finally` — a rejecting `app.close()` reaches it |
@@ -353,6 +354,22 @@ A server this process booted is exempt: `createServer().start()` announces its s
 core's `markListening()`, so a test may call its own `handle.url()` on a kernel-assigned port with
 the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
 integration — never for a socket test.
+
+**Three dials are sealed, and only three** — `fetch`, `new WebSocket(url)` and `Bun.connect({ hostname,
+port })`, behind one gate: one allow-list (`allowHost('host[:port]')`), one offline state, one
+`requestedUrls()` record. As of 2026-10:
+
+| Dial | Refused with | Passes through |
+|---|---|---|
+| `fetch` | `X_TEST_NETWORK_SEALED` / `X_TEST_NETWORK_OFFLINE` | a mock, an allowed host, a port `markListening()` announced |
+| `new WebSocket(url)` | the same, thrown by the constructor before it dials | an allowed host, any loopback host |
+| `Bun.connect(…)` | the same, as the rejected promise | an allowed host, any loopback host, a unix socket |
+
+A socket to loopback is not egress on any port: it is how a test reaches a server it `Bun.listen`ed
+and the compose services the live suites dial. A socket test injects its transport (`connect`,
+`client`) rather than mocking the dial, so there is no `mockFetch` for one. **Not sealed:**
+`node:net`, `node:tls`, `node:http(s)`, `Bun.udpSocket` and the native clients (`Bun.sql`,
+`Bun.redis`, `Bun.S3Client`) — a test that must not reach the internet through those injects them.
 
 ## Rendering a page or a component
 

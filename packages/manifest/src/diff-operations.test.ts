@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { diffManifest } from './diff';
-import { fixtureAction, fixtureManifest, fixtureQuery } from './diff-fixtures';
+import { fixtureAction, fixtureManifest, fixtureQuery } from './diff-fixture';
 
 type Query = NonNullable<ManifestSources['queries']>[number];
 

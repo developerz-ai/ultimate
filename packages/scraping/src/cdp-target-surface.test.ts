@@ -4,7 +4,7 @@
 // event-payload rules (restored storage, request method, console level).
 
 import { describe, expect, test } from 'bun:test';
-import { fakeBrowserTarget } from './cdp-fake-target';
+import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpScreenshotOptions } from './cdp-port';
 import { cdpTarget } from './cdp-target';
 import { testClock } from './clock';

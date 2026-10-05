@@ -639,6 +639,10 @@ operation, and a `deprecated_calls_total{primitive,name}` counter — which is t
 answer "is anyone still calling it?" before deleting it. A date that cannot be rendered is
 `X_ACTION_DEPRECATION_INVALID` at projection, not on the first request.
 
+`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s, re-exported
+from this package's index for existing callers (the re-exports leave in 25.0.0); this package
+imports them from core directly, as `@ultimat3/query` does.
+
 **Versioning itself is deliberately absent, and will stay absent.** Running `v1` and `v2` of one
 action side by side is two deployments behind one ingress — axiom 7's answer, costing this package
 no router feature, no path prefix and no second registry. What ships is the window: a date, a

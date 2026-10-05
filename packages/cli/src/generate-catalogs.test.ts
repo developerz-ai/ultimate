@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { catalogKeys, loadCatalog } from '@ultimat3/i18n';
 import { generate } from './cmd-generate';
 import type { GeneratedFile, GeneratedJsonFile } from './templates';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 /**
  * A generated catalog read exactly as the app reads it. `loadCatalog` is the assertion, not a

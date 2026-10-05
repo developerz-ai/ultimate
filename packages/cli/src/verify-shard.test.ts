@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { readShard } from './cmd-verify';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 import {
   assertShardable,
   corpusHash,

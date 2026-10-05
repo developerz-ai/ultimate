@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSessionInit } from './browser-launcher-port';
 import { runShot, type ShotServer } from './cmd-shot';
 import {

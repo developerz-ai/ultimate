@@ -4,7 +4,7 @@
 // whether a key this function returns is a class the sheet declares.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScssFile, declaredClasses } from '../sass-probe';
+import { compileScssFile, declaredClasses } from '../sass-probe-fixture';
 import { BUTTON_CONTENT_KEYS, buttonClassKeys } from './button-classes';
 import { BUTTON_VARIANTS, SIZES, TONES } from './variants';
 

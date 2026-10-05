@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { UltimateError } from '@ultimat3/core';
-import { type FakeIdbOptions, fakeIndexedDb } from './idb-fake';
+import { type FakeIdbOptions, fakeIndexedDb } from './idb-fake-fixture';
 import type { LocalStore } from './local-store-idb';
 import { MemoryLocalStore, openLocalStore, scopeKey } from './local-store-idb';
 

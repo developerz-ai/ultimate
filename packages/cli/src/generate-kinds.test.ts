@@ -11,7 +11,7 @@ import {
   readPermission,
   readSurface,
 } from './generate-kinds';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 describe('readKind', () => {
   test('every declared generator resolves to itself', () => {

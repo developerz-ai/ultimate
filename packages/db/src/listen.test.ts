@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createPostgresClient } from './client';
 import { DbError } from './errors';
-import { fakeDriver } from './fake-pglite';
+import { fakeDriver } from './fake-pglite-fixture';
 import { assertListenChannel, canListen } from './listen';
 import { createPgliteClient } from './pglite';
 

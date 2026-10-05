@@ -3,7 +3,7 @@
 // pseudo-element — it compiles to a rule no element matches, and the dim silently never applies.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScssFile } from '../sass-probe';
+import { compileScssFile } from '../sass-probe-fixture';
 
 const COMPONENTS = new URL('.', import.meta.url).pathname;
 

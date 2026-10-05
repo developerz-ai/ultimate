@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { GENERATORS } from './cmd-generate';
 import { ScaffoldPathEscapeError } from './errors';
 import { FIXTURE_GENERATORS, scaffoldFixture, scaffoldVariants } from './scaffold-fixture';
-import type { KnownGap } from './scaffold-typecheck';
+import type { KnownGap } from './scaffold-typecheck-fixture';
 import {
   formatDiagnostics,
   gapsFor,
@@ -14,7 +14,7 @@ import {
   sandboxPath,
   staleGapsIn,
   unexpectedIn,
-} from './scaffold-typecheck';
+} from './scaffold-typecheck-fixture';
 
 const gap = { file: 'apps/web/app/post/entity.ts', line: 20, code: 'TS18048' } as const;
 const pinned = { ...gap, message: "'c.title' is possibly 'undefined'." };

@@ -6,10 +6,13 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
+import type { Deprecation } from '@ultimat3/core';
 import {
   isMcpExposed,
   RECORDS_OPENAPI_HEADER,
+  recordDeprecatedCall,
   recordEnvelopeSchema,
+  renderDeprecation,
   useContext,
   withWriteOrigin,
   writeDigest,
@@ -20,8 +23,6 @@ import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // a copy here would be a second answer to "what does this limit mean" for the read half.
 import { json, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
-import type { Deprecation } from './deprecation';
-import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { ActionDeprecationInvalidError } from './errors';
 import { actionPathStyle, servedActionRoute } from './http-path';
 import { actionName, defOf, invoke } from './invoke';

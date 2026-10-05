@@ -44,6 +44,15 @@ import { flagList, parseScriptArgs } from './lib/args';
 import type { AppSource } from './lib/config-app-readers';
 import { appClaimGaps, configAppSources } from './lib/config-app-readers';
 import {
+  CONFIG_FILE,
+  CONFIG_FILES,
+  configDeclaration,
+  configLeaves,
+  ROOT_INTERFACE,
+} from './lib/config-leaves';
+import type { ConfigSource } from './lib/config-read-evidence';
+import { ambiguityOf, owningPackage, readPattern } from './lib/config-read-evidence';
+import {
   applyConfigReaderUnpin,
   CONFIG_AMBIGUOUS_PINS,
   CONFIG_PINS_FILE,
@@ -56,186 +65,30 @@ import { GATED_APPS } from './lib/gated-apps';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { ALL_PACKAGES } from './lib/tiers';
+
+// The declaration walk (`lib/config-leaves.ts`) and the read evidence (`lib/config-read-evidence.ts`)
+// are modules of their own; every name stays importable from here, where its callers reach it.
+export {
+  CONFIG_FILE,
+  CONFIG_FILES,
+  configDeclaration,
+  configLeaves,
+  ROOT_INTERFACE,
+} from './lib/config-leaves';
+export type { ConfigSource } from './lib/config-read-evidence';
+export {
+  AMBIGUOUS_LIMIT,
+  ambiguityOf,
+  owningPackage,
+  qualifiedPattern,
+  readPattern,
+  SECTION_PACKAGE,
+} from './lib/config-read-evidence';
 
 const SCRIPT = 'config-readers';
 
-/**
- * The declaration, and the interface the walk starts from.
- *
- * A LIST, not one file, `As of 2026-08-27`. It was one path, and `config.ts` then reached its
- * 500-line ceiling and the `pwa` block moved to `config-pwa.ts` — at which point the walk stopped
- * finding `PwaConfig`, the derived leaf set silently LOST five keys, and this rule reported green
- * over every one of them. That is the rule's own defect class, wearing the shape of a file split:
- * a derivation whose source is a single hardcoded path is a hand list with extra steps. Text is
- * concatenated before the walk, so a section declared anywhere in the list resolves.
- *
- * The FIRST entry is what a finding cites — the file that declares `AppConfig` itself, and the one
- * an author edits to delete a section.
- */
-export const CONFIG_FILES = [
-  'packages/core/src/config.ts',
-  'packages/core/src/config-pwa.ts',
-  'packages/core/src/config-site.ts',
-  'packages/core/src/config-health.ts',
-  'packages/core/src/config-navigation.ts',
-  'packages/core/src/config-islands.ts',
-] as const;
-export const CONFIG_FILE = CONFIG_FILES[0];
-export const ROOT_INTERFACE = 'AppConfig';
-
-/** Every declaring file's text, joined — what `configLeaves` walks. */
-export const configDeclaration = async (root: string): Promise<string> =>
-  (await Promise.all(CONFIG_FILES.map((path) => Bun.file(`${root}/${path}`).text()))).join('\n');
-
 /** Shipped source of every package. The declaring file is excluded by the caller, not by a glob. */
 const SOURCE_GLOB = CORPUS_PATTERNS.shipped.join(', ');
-
-/**
- * A section's DECLARATION, in both spellings TypeScript offers: `export interface X { … }` and
- * `export type X = { … };`. The alias form was unread until 2026-09-06, so a section written that
- * way contributed zero leaves and every key under it read as alive — this rule's own defect class
- * one level up, and the same shape as `PwaConfig` losing five keys to a file split.
- */
-const INTERFACE = /export (?:interface (\w+)\s*|type (\w+)\s*=\s*)\{([\s\S]*?)\n\}/g;
-
-/**
- * A member: `readonly queues: readonly string[];`, at ANY indent and with `readonly` OPTIONAL.
- *
- * It demanded exactly two spaces AND the modifier, which is a rule about this repo's current
- * formatting wearing a rule about a declaration — a section nested one level deeper, or one member
- * written without `readonly`, dropped out of the derived set in silence. A guard a reformat evades
- * is not a guard.
- */
-const MEMBER = /^\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\??\s*:\s*([^;]+);/gm;
-/** A member whose type is a single named interface — the one shape the walk descends into. */
-const NAMED_TYPE = /^([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
-
-/**
- * Every leaf key of `AppConfig`, dotted. Derived from the declaration's own text rather than typed
- * out here: a hand list is the defect this check exists to catch, one level up.
- */
-export function configLeaves(source: string, root = ROOT_INTERFACE): readonly string[] {
-  const bodies = new Map<string, string>();
-  for (const match of source.matchAll(INTERFACE))
-    bodies.set((match[1] ?? match[2]) as string, match[3] as string);
-  const leaves: string[] = [];
-  const walk = (name: string, prefix: string, seen: readonly string[]): void => {
-    const body = bodies.get(name);
-    // A cycle would recurse forever, and a self-referential config is not a thing this repo has —
-    // but a check that hangs is worse than one that reports nothing, so the guard is cheap.
-    if (body === undefined || seen.includes(name)) return;
-    for (const member of body.matchAll(MEMBER)) {
-      const key = member[1] as string;
-      const type = (member[2] as string).trim();
-      const target = NAMED_TYPE.exec(type)?.[1];
-      if (target !== undefined && bodies.has(target))
-        walk(target, `${prefix}${key}.`, [...seen, name]);
-      else leaves.push(`${prefix}${key}`);
-    }
-  };
-  walk(root, '', []);
-  return leaves;
-}
-
-/**
- * `.key` or `{ …, key }` / `{ key, … }`. A declaration (`readonly key: T;`) and a literal
- * (`key: 'UTC',`) both fail it, which is what keeps a scaffold template that WRITES the key out of
- * the reader set — `packages/cli/src/templates/` emits `defaultTimeZone: 'UTC'` and reads nothing.
- */
-export const readPattern = (leaf: string): RegExp => {
-  const key = leaf.split('.').at(-1) as string;
-  return new RegExp(`\\.${key}\\b|(?<![\\w$.])${key}\\s*[,}]`);
-};
-
-/**
- * The QUALIFIED form — `realtime.tier`, `config.realtime.tier`, `cfg . realtime . tier` — which is
- * the only conclusive evidence text can offer. Undefined for a top-level leaf, which has no section
- * to qualify it with.
- *
- * Measured 2026-08-23 across all 28 leaves: this pattern matches in ZERO files for 19 of them,
- * `database.driver` and `jobs.concurrency` included — a package takes `CacheConfig` as a parameter
- * and reads `cfg.driver`, so demanding this form would report nineteen live keys as dead. It is
- * therefore a POSITIVE signal only: a match silences the ambiguity rule below, and a miss says
- * nothing on its own.
- */
-export const qualifiedPattern = (leaf: string): RegExp | undefined => {
-  const parts = leaf.split('.');
-  if (parts.length < 2) return undefined;
-  const [section, key] = parts.slice(-2) as [string, string];
-  return new RegExp(`(?<![\\w$])${section}\\s*\\.\\s*${key}(?![\\w$])`);
-};
-
-/**
- * The package a section's keys belong to, where the two names differ. Two rows, and both are
- * asserted against the real package list by this rule's own test — a rename that made a row resolve
- * to nothing would silently switch the ambiguity check off for every key in that section, which is
- * the failure mode this whole rule exists to remove one level up.
- */
-export const SECTION_PACKAGE: Readonly<Record<string, string>> = {
-  database: 'db',
-  // why: `AppConfig.drain` (plan 101 slice 01) is core's lifecycle budget; no package is named `drain`.
-  drain: 'core',
-  // why: `AppConfig.health` is what core's `/readyz` answers on; no package is named `health`.
-  health: 'core',
-  // why: `AppConfig.site` is the public origin; the CLI's document and sitemap builders read it.
-  site: 'cli',
-  // why: `AppConfig.navigation` is the client router's opt-in; the CLI reads it to build and name
-  // the router (`page-navigation.ts`), and no package is named `navigation`.
-  navigation: 'cli',
-  // why: `AppConfig.islands` is the island bundler's opt-in (`island-bundle.ts`); no package is
-  // named `islands`.
-  islands: 'cli',
-  theme: 'ui',
-};
-
-/**
- * `realtime.tier` -> `realtime`; `ai.mcp.path` -> `mcp`; a top-level leaf -> undefined.
- *
- * THE DEEPEST ANCESTOR THAT NAMES A PACKAGE, not simply the second-to-last segment, `As of
- * 2026-08-27`. `ai.mcp.path` wants `mcp` rather than `ai`, which is why the deepest one is tried
- * first — but `pwa.colors.light.themeColor` wants `pwa`, and `at(-2)` answered `light`, a value
- * shape rather than a subsystem. Every key of that section would then have been looked for in a
- * `packages/light/` that does not exist, which switches the ambiguity check off silently for all
- * four — the failure mode this rule's own header names. Nothing had a four-level key until the
- * walk learned to descend into an OPTIONAL section.
- */
-export const owningPackage = (leaf: string): string | undefined => {
-  const parts = leaf.split('.');
-  if (parts.length < 2) return undefined;
-  const ancestors = parts.slice(0, -1).reverse();
-  for (const segment of ancestors) {
-    const mapped = Object.hasOwn(SECTION_PACKAGE, segment) ? SECTION_PACKAGE[segment] : segment;
-    if (mapped !== undefined && ALL_PACKAGES.includes(mapped)) return mapped;
-  }
-  // A section naming no package at all is still an owner — the ambiguity rule looks for a hit
-  // inside `packages/<owner>/` and simply finds none, which is the same answer it gave before.
-  const section = parts[0] as string;
-  return Object.hasOwn(SECTION_PACKAGE, section) ? SECTION_PACKAGE[section] : section;
-};
-
-/**
- * How many unrelated files may match a bare leaf name before the match stops being evidence.
- *
- * Eight, measured. `realtime.tier` had NINETEEN matching files and not one of them in
- * `packages/realtime/` — `@ultimat3/cache`'s `CacheTier` and `@ultimat3/query`'s read-tier
- * vocabulary account for most, and `packages/policy/src/surfaces.ts` matched on the words `tier,`
- * in its FILE-HEADER PROSE while importing only `./errors`, `./evaluate` and `./policy`. The key
- * was read by nothing and this rule printed `✓`. The header above called the looseness safe because
- * it "only ever HIDES a dead key whose name collides with an unrelated property"; hiding a dead key
- * is the entire defect this rule exists for, so the sentence conceded the check away.
- *
- * Eight is where the four suspects separate from the twenty-four keys that have a hit inside their
- * own package: every leaf with a real reader has at least one, and the four that do not
- * (`realtime.tier` 19, `theme.tokens` 24, `pwa.enabled` 10, `realtime.enabled` 10) are the ones a
- * human should look at. Lowering it is a pin table with more rows, never a weaker rule.
- */
-export const AMBIGUOUS_LIMIT = 8;
-
-export interface ConfigSource {
-  readonly path: string;
-  readonly text: string;
-}
 
 export type ConfigReaderGapKind =
   | 'unread'
@@ -271,27 +124,6 @@ export interface ConfigReaderInput {
   readonly ambiguousPins?: Readonly<Record<string, string>>;
   /** Both tracked apps' source — what a pin naming APP code as the reader is held to. */
   readonly appFiles?: readonly AppSource[];
-}
-
-/**
- * Whether a leaf's "reader" set is evidence at all. Three conditions, all of them necessary:
- * no qualified `<section>.<key>` anywhere, no bare match inside the section's OWN package, and
- * more than `AMBIGUOUS_LIMIT` bare matches outside it. A top-level leaf has no owning package and
- * is never asked — stated rather than silently skipped, and the honest limit of this rule.
- */
-export function ambiguityOf(
-  leaf: string,
-  files: readonly ConfigSource[],
-): { readonly readers: number; readonly colliding: readonly string[] } | undefined {
-  const owner = owningPackage(leaf);
-  if (owner === undefined) return undefined;
-  const qualified = qualifiedPattern(leaf);
-  if (qualified !== undefined && files.some((file) => qualified.test(file.text))) return undefined;
-  const bare = readPattern(leaf);
-  const hits = files.filter((file) => bare.test(file.text));
-  if (hits.some((file) => file.path.startsWith(`packages/${owner}/`))) return undefined;
-  if (hits.length <= AMBIGUOUS_LIMIT) return undefined;
-  return { readers: hits.length, colliding: hits.slice(0, 2).map((file) => file.path) };
 }
 
 /** The ratchet: an unread leaf must be pinned with a reason, and a pin that gained a reader must go. */

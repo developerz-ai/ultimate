@@ -5,7 +5,7 @@
 // component actually did.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { FakeElement, type InstalledDom, installFakeDom, keydown } from '../fake-dom';
+import { FakeElement, type InstalledDom, installFakeDom, keydown } from '../fake-dom-fixture';
 import { attachRef, byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';

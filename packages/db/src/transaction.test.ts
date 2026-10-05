@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, setDbClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
-import { reservableOver } from './fake-reservable';
+import { reservableOver } from './fake-reservable-fixture';
 import { sql } from './sql';
 import { currentTx, withTransaction } from './transaction';
 import type { IsolationLevel } from './transaction-options';

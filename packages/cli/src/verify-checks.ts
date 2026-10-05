@@ -46,7 +46,7 @@ import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 import { typecheckArgs } from './verify-typecheck';
-import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
+import { checkPackageShape, fileSizeReport, hasWorkspacePackages } from './workspace-checks';
 import { checkWorkspaceDependencies } from './workspace-graph';
 
 /** The one file that makes the `roadmap` step answerable, and therefore what `applies` reads. */
@@ -120,7 +120,17 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'filesize',
     summary: 'one file, one job',
-    run: async (ctx) => fromFindings(await checkFileSizes(ctx.root)),
+    // The band below the ceiling rides as warnings: listed in `--json` on a pass, never a failure.
+    run: async (ctx) => {
+      const { findings, warnings } = await fileSizeReport(ctx.root);
+      return {
+        ...fromFindings(findings),
+        warnings: warnings.map(
+          (warning) =>
+            `${warning.path}: ${warning.lines} lines, ${warning.ceiling - warning.lines} under the ${warning.ceiling} line ceiling — plan the split`,
+        ),
+      };
+    },
   },
   {
     name: 'package-shape',

@@ -308,7 +308,7 @@ The manifest is generated. Hand-editing a colour there drifts from the tokens an
 | Check | Enforcement |
 |---|---|
 | Contrast, shipped pairings | the table above, run by `x verify`'s `unit` step |
-| Contrast, a `defineTheme()` override | **nothing**. `defineTheme()` validates channel *syntax* — three 0–255 integers — and measures no ratio. Assert it yourself: `contrastRatio` and `AA_TEXT` are exported for it |
+| Contrast, a `defineTheme()` override | **refused when `defineTheme()` runs** — at import, since a brand is declared at module top level — before a single declaration renders. Every pair in `CONTRAST_PAIRS` (`packages/ui/src/tokens/contrast-pairs.ts`, the same list `contrast.test.ts` holds the shipped palette to) is measured on the resolved palette — your overrides on top of the shipped channels — at its floor: 4.5:1 text, 3:1 the focus ring, 1.4:1 `line`. Only pairs the brand changed, either side, are measured; the rest are the shipped palette's. A miss throws `X_UI_CONTRAST_INSUFFICIENT` naming the pair, the theme and the ratio. The `scrim` ordering is not measured for a brand |
 | Focus ring | `:focus-visible` from `--color-accent` in `reset.scss`, and `@include t.focus-ring` per control. Taking one away without painting one back is refused in an **app** by `guards/focus-visible.ts`, on `x verify`'s `boundaries` step — **not by lint**, which ignores `.scss` entirely |
 | Reduced motion | honored globally, not per component — and it *deletes* rather than reduces, see below |
 | Lighthouse a11y | minimum threshold in `app.config.ts`, default 95 → [Testing](Testing) |

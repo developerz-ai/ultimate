@@ -14,7 +14,7 @@ import {
   REDIS_INVALIDATE_SCRIPT,
   REDIS_TAG_MEMBER_SCRIPT,
 } from './redis';
-import { fakeRedis, keysOf, tierFor } from './redis-fake';
+import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 import { createCacheStack } from './tiers';
 

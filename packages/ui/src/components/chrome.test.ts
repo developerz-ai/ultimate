@@ -8,7 +8,7 @@
 import '../theme/ambient';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
-import { FakeElement } from '../fake-dom';
+import { FakeElement } from '../fake-dom-fixture';
 import { UI_KEYS } from '../i18n-keys';
 import {
   attachRef,

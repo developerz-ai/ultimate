@@ -52,30 +52,21 @@ t('greeting', { name: user.firstName });  // vars are open: a missing one render
 
 ### Rules
 
-- Semantic tokens only: `--surface`, `--text-muted`, `--danger-fg`. Never a raw hex, never a palette name, in any component or stylesheet.
-- One token source of truth. Everything else is generated from it.
+- Semantic tokens only: `--color-surface`, `--color-fg-muted`, `--color-danger-fg`. Never a raw hex, never a palette name, in any component or stylesheet.
+- One token source of truth: the SCSS partials in `packages/ui/src/tokens/` (`_colors.scss` for colour), emitted once by `theme.scss`.
 - `data-theme` beats the media query.
 - The theme is applied **before first paint**.
 
 ```scss
 /* apps/web/shared/ui/card.module.scss */
 .card {
-  background: var(--surface-raised);
-  color: var(--text-default);
-  border: 1px solid var(--border-subtle);
+  background: rgb(var(--color-surface-raised));
+  color: rgb(var(--color-fg));
+  border: 1px solid rgb(var(--color-line));
 }
 ```
 
-```ts
-// packages/ui/src/tokens.ts — the single source
-export const tokens = {
-  surface: { light: palette.white, dark: palette.slate900 },
-  'surface-raised': { light: palette.slate50, dark: palette.slate800 },
-  'text-default': { light: palette.slate900, dark: palette.slate50 },
-} as const;
-```
-
-Generated from it: the CSS custom properties for both themes, the TS union of valid token names, and the manifest entry the SEO/PWA layers read for `theme_color`.
+A colour token is space-separated RGB channels, so it is read through `rgb()` and takes an alpha. `packages/ui/src/tokens/tokens.ts` is a typed, **hand-maintained** mirror of the SCSS for consumers that cannot read CSS (charts, `<canvas>`, OG images, email); `tokens.test.ts` fails when the two disagree. A brand restyles through `defineTheme()` (`packages/ui/src/theme/brand.ts`), never a second SCSS seam.
 
 ### Enforcement
 
@@ -83,7 +74,7 @@ Generated from it: the CSS custom properties for both themes, the TS union of va
 |---|---|
 | No raw colour | **a convention, not a rule.** `As of 2026-08` there is no `raw-hex` lint rule and no gate step that refuses a colour literal in a component or `.scss` module. The check that should exist would scan the same file set `errors` and `filesize` already walk |
 | Token existence | `ColorRole` is a union derived from `colorTokens`, so naming a token TypeScript does not know is a compile error **in TS**. A `var(--foo)` in SCSS is not checked against it — SCSS is not typechecked |
-| Contrast | `contrastRatio` / `meetsContrast` measure every pairing against `AA_TEXT` (4.5) and `AA_LARGE` (3), and `packages/ui/src/tokens/contrast.test.ts` fails on a pair that misses. That is the framework's own palette and a brand override run through the same function; it is a **test**, so it reaches the gate through the `unit` step, not through a check of its own |
+| Contrast | one list, `CONTRAST_PAIRS` (`packages/ui/src/tokens/contrast-pairs.ts`): every foreground/background pairing a shipped component renders, at `AA_TEXT` (4.5:1), `AA_LARGE` (3:1) or `VISIBLE_EDGE` (1.4:1, a 1px edge). The shipped palette is held to it by `packages/ui/src/tokens/contrast.test.ts` (the `unit` step). A brand is held to it when `defineTheme()` runs — at import time, before a declaration renders — for every pair the brand changed either side of, measured on the resolved palette; a miss throws `X_UI_CONTRAST_INSUFFICIENT` |
 | Specificity | generated CSS emits `@media (prefers-color-scheme: dark)` **first**, then `:root[data-theme="dark"]` / `:root[data-theme="light"]` overrides — so an explicit choice always wins in both directions |
 | Pre-paint script | a byte-capped inline `<script>` in `<head>`, counted against the route budget by `measureDocumentJs`. Nothing fails a route that omits it |
 | Inline `<style>` | `style-csp.ts` computes the `style-src` sha256 of every inline `<style>` the web role still serves, so a CSP does not need `'unsafe-inline'`. `As of 2026-09-06` an app's own surface CSS is not among them: it is a content-hashed file under `/styles/`, admitted by `'self'` |

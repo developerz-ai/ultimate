@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DbClient } from './client';
 import { dbUnavailable, driverError } from './errors';
 import { createRecordingClient } from './fake';
-import { reservableOver } from './fake-reservable';
+import { reservableOver } from './fake-reservable-fixture';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 

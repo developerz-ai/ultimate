@@ -17,7 +17,7 @@ import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests, readFilters } from './test-select';
 import { filesIn } from './test-shards';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 let root = '';
 

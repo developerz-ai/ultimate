@@ -23,6 +23,8 @@ import {
 } from './publish-closure';
 import { isReExportManifest } from './reexport-manifest';
 import { eachSourceFile, isGenerated } from './source-files';
+import type { ShippedPackage } from './test-only-shipped';
+import { checkTestOnlyShipped, entryPatternsOf } from './test-only-shipped';
 import { checkRootReferences } from './tsconfig-references';
 
 export const LINE_CEILING = 500;
@@ -53,15 +55,41 @@ export const countLines = (text: string): number =>
  * statement of logic in it is not, and only reading tells them apart.
  */
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
+  return (await fileSizeReport(root)).findings;
+}
+
+/**
+ * Where a split gets planned rather than forced. Seven files once sat at exactly 500 lines,
+ * trimmed to the ceiling instead of split: a band that lists a file at 450 makes the split a
+ * decision taken with room to spare. Never a finding — a warning that fails the step is a ceiling.
+ */
+export const WARN_BAND = 450;
+
+/** A file in the band: at or over `WARN_BAND`, at or under the ceiling. */
+export interface FileSizeWarning {
+  readonly path: string;
+  readonly lines: number;
+  readonly ceiling: number;
+}
+
+export interface FileSizeReport {
+  readonly findings: readonly Finding[];
+  readonly warnings: readonly FileSizeWarning[];
+}
+
+/** The ceiling's findings and the band's warnings, from one read of every file. */
+export async function fileSizeReport(root: string): Promise<FileSizeReport> {
   const findings: Finding[] = [];
+  const warnings: FileSizeWarning[] = [];
   for await (const path of eachSourceFile(root)) {
     if (isGenerated(path)) continue;
     const source = await Bun.file(join(root, path)).text();
     const lines = countLines(source);
-    if (lines <= LINE_CEILING || isReExportManifest(source)) continue;
-    findings.push(tooLongFinding(path, lines));
+    if (lines < WARN_BAND || isReExportManifest(source)) continue;
+    if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
+    else warnings.push({ path, lines, ceiling: LINE_CEILING });
   }
-  return findings;
+  return { findings, warnings };
 }
 
 export const missingFileFinding = (dir: string, file: string, scaffolder: boolean): Finding => ({
@@ -361,6 +389,7 @@ export async function checkPackageShape(
   const scaffolder = existsSync(join(root, 'scripts', 'new-package.ts'));
   const findings: Finding[] = [];
   const facts: ManifestFacts[] = [];
+  const shipped: ShippedPackage[] = [];
   const allowlisted = new Set(ARTIFACT_ALLOWLIST);
   for (const dir of await workspacePackages(root)) {
     for (const file of PACKAGE_FILES) {
@@ -389,7 +418,10 @@ export async function checkPackageShape(
       findings.push(badVersionFinding(dir, version));
       continue;
     }
-    if (record.private !== true) findings.push(...(await fixtureReach(root, dir, manifest)));
+    if (record.private !== true) {
+      findings.push(...(await fixtureReach(root, dir, manifest)));
+      shipped.push({ dir, entries: entryPatternsOf(manifest) });
+    }
     facts.push({
       dir,
       name: typeof record.name === 'string' ? record.name : `@ultimat3/${dir}`,
@@ -403,6 +435,8 @@ export async function checkPackageShape(
     ...findings,
     ...checkLockstep(facts, options.release),
     ...checkPublishShape(root, facts),
+    // The other way test code ships: a module only tests import, under a name `files` keeps.
+    ...(await checkTestOnlyShipped(root, shipped)),
     // Nothing enforced that a workspace joins the root build graph, and `scripts/new-package.ts`
     // never added one — so a package could ship, be imported, and be typechecked by nothing. It
     // rides on this step because it is this step's own question: what does a workspace owe the

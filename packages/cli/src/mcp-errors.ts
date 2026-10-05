@@ -295,6 +295,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ERROR_CODE_UNTHROWN_STALE: 'x errors explain X_ERROR_CODE_UNTHROWN_STALE --json',
   X_DEV_STATE_UNWRITABLE:
     'ls -ld .x   # make it writable by this user, on a filesystem that supports hard links, then re-run x dev',
+  X_PACKAGE_TEST_ONLY_SHIPPED:
+    'bun run x -- verify --only package-shape --json   # then rename each listed module to <name>-fixture.ts and update its importers',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

@@ -11,7 +11,7 @@ import { verifyCommand } from './cmd-verify';
 import { renderJson } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 import type { VerifyPart } from './verify-merge';
 import { mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
 import { corpusHash, shardFiles } from './verify-shard';
@@ -310,6 +310,38 @@ describe('unit · a part step is read against its shape, not cast', () => {
         'X_VERIFY_MERGE_INPUT',
       ]);
     }
+  });
+
+  test('warnings that are not a list of text are refused', () => {
+    for (const warnings of ['a.ts', [1], [null]]) {
+      const refusal = thrownBy(() =>
+        parsePart('p.json', doc({ durationMs: 1, findings: [], warnings })),
+      );
+      expect(refusal.code).toBe('X_VERIFY_MERGE_INPUT');
+    }
+  });
+
+  // A part's warnings survive the merge: `filesize` runs in one CI part, and the verdict document
+  // is the one a reader opens.
+  test("warnings are read, and the merged step carries every part's, once each", () => {
+    const read = parsePart('p.json', doc({ durationMs: 1, findings: [], warnings: ['a.ts'] }));
+    expect(read.steps[0]?.warnings).toEqual(['a.ts']);
+    const merged = mergeParts(
+      [
+        part('a.json', [
+          { ...unitShard(1, 2, 1), warnings: ['a.ts', 'b.ts'] },
+          whole('lint'),
+          whole('live'),
+        ]),
+        part('b.json', [{ ...unitShard(2, 2, 1), warnings: ['b.ts', 'c.ts'] }]),
+      ],
+      undefined,
+      DECLARED,
+    );
+    const unit = merged.steps?.find((step) => step.name === 'unit');
+    expect(unit?.warnings).toEqual(['a.ts', 'b.ts', 'c.ts']);
+    expect(unit?.ok).toBe(true);
+    expect(merged.steps?.find((step) => step.name === 'lint')?.warnings).toBeUndefined();
   });
 
   test('a well-formed step still reads', () => {

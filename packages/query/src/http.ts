@@ -6,12 +6,11 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { useContext } from '@ultimat3/core';
+import type { Deprecation } from '@ultimat3/core';
+import { recordDeprecatedCall, renderDeprecation, useContext } from '@ultimat3/core';
 import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { publishRateLimit, toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
-import type { Deprecation } from './deprecation';
-import { recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
 import { absentArraysOf } from './input-shape';
 import { derivePath } from './naming';

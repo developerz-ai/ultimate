@@ -1,13 +1,12 @@
 /**
  * A declared retirement, rendered as the two headers the standards already define — RFC 9745
  * `Deprecation` and RFC 8594 `Sunset` — plus the successor link. Pure string and date maths, and
- * deliberately throw-free: each package raises its own `X_*` for a date it cannot render.
+ * deliberately throw-free: each caller raises its own `X_*` for a date it cannot render.
  *
- * `@ultimat3/query` carries a twin of this file. Both are tier 3, so neither may import the
- * other, and the shared home is `@ultimat3/http` (tier 2) once that package grows one — the same
- * compromise `naming.ts` is ported under.
+ * One home for `@ultimat3/action` and `@ultimat3/query`, which are both tier 3 and so cannot share
+ * a module sideways; their twins had already drifted in prose. `HELPER_HOMES` refuses a third.
  */
-import { counter } from '@ultimat3/core';
+import { counter } from './metrics';
 
 export interface Deprecation {
   /** When it was deprecated. ISO-8601, e.g. `'2026-08-01T00:00:00Z'`. */
@@ -24,7 +23,7 @@ export type DeprecationRender =
   | {
       readonly ok: true;
       readonly headers: Readonly<Record<string, string>>;
-      /** The same facts as data, for `x-ultimate` in the OpenAPI operation and the manifest. */
+      /** The same facts as data: OpenAPI `x-ultimate`, the descriptor and the manifest. */
       readonly meta: Readonly<Record<string, string>>;
     }
   | { readonly ok: false; readonly field: DeprecationField; readonly value: string };
@@ -33,7 +32,8 @@ export type DeprecationRender =
  * How many calls a deprecated declaration is still taking — the number "can we remove it yet?"
  * needs and the one nothing in the framework could answer. Attributes are the primitive and the
  * declared NAME, both bounded by the size of the codebase; a caller id here would be an unbounded
- * series, which is the cardinality mistake core's own overflow bucket exists to catch.
+ * series, which is the cardinality mistake core's own overflow bucket exists to catch. Declared
+ * once, here: two declaring modules were two owners of one series.
  */
 const deprecatedCalls = counter('deprecated_calls_total', {
   unit: '{call}',
@@ -62,8 +62,8 @@ export function renderDeprecation(
     deprecation: `@${Math.floor(since / 1000)}`,
     sunset: new Date(sunset).toUTCString(),
   };
-  // The successor's URL, derived by the caller from the same `naming.ts` the client uses — a
-  // link this file built from the export name would be the second URL derivation in the package.
+  // The successor's URL, derived by the caller from its own route naming — the one the typed
+  // client uses. A link built here from the export name would be a second URL derivation.
   if (successorPath !== undefined) {
     headers['link'] = `<${successorPath}>; rel="successor-version"`;
   }

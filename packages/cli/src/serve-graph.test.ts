@@ -84,8 +84,12 @@ const SERVING_ROLE_CEILING = 887;
  * `SERVING_ROLE_CEILING`, which every role carries.
  * raised 980 → 982, measured 982 (2026-10-05, plan 101 sweep 2): the same two modules named on
  * `SERVING_ROLE_CEILING` for sweep 2.
+ * raised 982 → 984, measured 984 (2026-10-05, plan 101 sweep 7): `core/src/metrics.ts` hit the
+ * 500-line ceiling and split by responsibility into `metric-errors.ts`, `metric-registry.ts` and
+ * `metric-series.ts` (+3), and `storage/src/driver-s3-absent.ts` left `driver-s3.ts` (+1); the
+ * action and query `deprecation.ts` copies collapsed into one `core/src/deprecation.ts` (−1 net).
  */
-const WEB_ROLE_CEILING = 982;
+const WEB_ROLE_CEILING = 984;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

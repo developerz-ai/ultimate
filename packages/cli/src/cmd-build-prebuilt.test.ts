@@ -17,7 +17,7 @@ import { readIslandStore } from './island-store';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { PREBUILT_DIR, PREBUILT_SASS_DIR } from './serve-prebuilt-paths';
-import type { ThrownShape } from './thrown-by';
+import type { ThrownShape } from './thrown-by-fixture';
 
 /** An app root with the entries the docker and prebuilt targets require. */
 async function buildRoot(): Promise<string> {

@@ -6,7 +6,13 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { writeErrorLine, writeLine } from './write-line';
+import {
+  droppedLineCount,
+  EAGAIN_ATTEMPTS,
+  writeAll,
+  writeErrorLine,
+  writeLine,
+} from './write-line';
 
 const MODULE = join(import.meta.dir, 'write-line.ts');
 
@@ -94,5 +100,91 @@ describe('writeErrorLine', () => {
     expect(() => {
       writeErrorLine('');
     }).not.toThrow();
+  });
+});
+
+/**
+ * `EAGAIN` is "the pipe is full right now" — and a reader that never drains makes it "forever". An
+ * unbounded retry turned a stalled reader into a command that never exits; the bound turns it into
+ * one dropped line, counted, and a process that finishes.
+ */
+describe('writeAll under EAGAIN', () => {
+  const eagain = (): never => {
+    throw Object.assign(new Error('write EAGAIN'), { code: 'EAGAIN' });
+  };
+
+  test('a pipe that answers EAGAIN forever still returns, after the bounded attempts', () => {
+    let attempts = 0;
+    const naps: number[] = [];
+    const before = droppedLineCount();
+    const ok = writeAll(
+      1,
+      Buffer.from('never drains\n'),
+      () => {
+        attempts += 1;
+        return eagain();
+      },
+      (ms) => naps.push(ms),
+    );
+    expect(ok).toBe(false);
+    expect(attempts).toBe(EAGAIN_ATTEMPTS);
+    expect(droppedLineCount()).toBe(before + 1);
+    // Backoff, not a spin: every retry waits, the waits grow, and they stay capped.
+    expect(naps).toHaveLength(EAGAIN_ATTEMPTS - 1);
+    expect(naps[1]).toBeGreaterThan(naps[0] ?? 0);
+    expect(Math.max(...naps)).toBeLessThanOrEqual(32);
+  });
+
+  test('a transient EAGAIN is retried and every byte arrives; progress resets the bound', () => {
+    const out: number[] = [];
+    let calls = 0;
+    const before = droppedLineCount();
+    const buffer = Buffer.from('abcdef');
+    const ok = writeAll(
+      1,
+      buffer,
+      (_fd, data, offset) => {
+        calls += 1;
+        // Stall EAGAIN_ATTEMPTS - 1 times before EACH one-byte write: the bound is per stall.
+        if (calls % EAGAIN_ATTEMPTS !== 0) return eagain();
+        out.push(data[offset] ?? -1);
+        return 1;
+      },
+      () => {},
+    );
+    expect(ok).toBe(true);
+    expect(Buffer.from(out).toString()).toBe('abcdef');
+    expect(droppedLineCount()).toBe(before);
+  });
+
+  test('any other error is rethrown, never retried', () => {
+    let calls = 0;
+    expect(() =>
+      writeAll(
+        1,
+        Buffer.from('x'),
+        () => {
+          calls += 1;
+          throw Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+        },
+        () => {},
+      ),
+    ).toThrow('EPIPE');
+    expect(calls).toBe(1);
+  });
+
+  test('a write that makes no progress is a stall too, so it cannot spin', () => {
+    let calls = 0;
+    const ok = writeAll(
+      1,
+      Buffer.from('x'),
+      () => {
+        calls += 1;
+        return 0;
+      },
+      () => {},
+    );
+    expect(ok).toBe(false);
+    expect(calls).toBe(EAGAIN_ATTEMPTS);
   });
 });

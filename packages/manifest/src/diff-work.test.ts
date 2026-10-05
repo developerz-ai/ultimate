@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { diffManifest } from './diff';
-import { fixtureManifest } from './diff-fixtures';
+import { fixtureManifest } from './diff-fixture';
 
 const job = (overrides: Partial<NonNullable<ManifestSources['jobs']>[number]>) => [
   {

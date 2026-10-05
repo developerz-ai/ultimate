@@ -16,7 +16,7 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   the SHAPE of a check, and it must not be read as a claim that CI fails on one. What is actually
   reached from outside this package is `renderMeta` (through `@ultimat3/render`'s `seoRenderers`),
   `ld.*` (an app's own `meta`), `buildFeed`, and the image contract (`parseImageQuery` /
-  `builtinImageDriver` / `responsiveImage`, through `@ultimat3/cli`'s `dev-assets.ts`).
+  `builtinImageDriver` / `responsiveImage`, through `@ultimat3/cli`'s `runtime-assets.ts`).
   `validateMeta`/`assertMeta`, `buildSitemap`, `buildRobots`, `isIndexable` and
   `indexableRoutes`/`expandRoute` have **no caller anywhere** — no step of `x verify` runs them.
   Wiring them is a `HostCheck` on an existing step in `packages/cli/src/cmd-verify.ts`; until that

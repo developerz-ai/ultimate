@@ -100,8 +100,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`expected-loop.ts` is the ONLY suppression**: `expectedQueryLoop(reason, fn)`, innermost reason,
   blank is `X_INVARIANT`; the funnel stamps `expected`; it suppresses a verdict, never a statement.
   The framework's own loops declare themselves (`migrate()`, `rollback()`, admin's `search.ts`).
-- `@ultimat3/jobs` never imports this package; its statements pass the observer only because
-  `packages/cli/src/dev-queue.ts` wraps a real client for its `PgExecutor`, unattributed.
+- `@ultimat3/jobs` never imports this package; its statements pass the observer only as
+  `packages/cli/src/runtime-queue.ts` wraps a real client for its `PgExecutor`, unattributed.
 
 ## Migrations
 

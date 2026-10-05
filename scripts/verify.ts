@@ -58,6 +58,7 @@ import {
 import { chartVersionFindings } from './chart-version';
 import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
+import { docPathFindings } from './doc-paths';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
 import { fixProseFindings } from './fix-prose';
@@ -277,6 +278,7 @@ export const errorContract: HostCheck = async (root) => [
  * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
  * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
  * | `docCommandFindings` | every `` `x …` `` on a page an agent reads is an invocation this build can run | `loadCommandCatalog()` |
+ * | `docPathFindings` | every backticked `packages/…`, `scripts/…` or `docs/…` path on a published page exists — eight package CLAUDE.md files named `dev-*` modules 22.0.0 had renamed | the tree, and the two tracked apps |
  * | `gateStepFindings` | a page stating how many steps `x verify` runs, or enumerating them, describes this build's gate — 17 documented against 18 shipped, in 20 files, through a whole major | `VERIFY_STEP_NAMES` |
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
  * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
@@ -305,6 +307,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await frameDocFindings(root)),
   ...(await chartVersionFindings(root)),
   ...(await docCommandFindings(root)),
+  ...(await docPathFindings(root)),
   ...(await gateStepFindings(root)),
   ...(await versionStampFindings(root)),
   ...(await readmeFenceFindings(root)),

@@ -14,7 +14,7 @@ import { CacheTtlInvalidError } from './errors';
 import { createLruTier } from './lru';
 import { createMemoTier } from './memo';
 import { REDIS_INVALIDATE_SCRIPT } from './redis';
-import { fakeRedis, keysOf, tierFor } from './redis-fake';
+import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 import type { CacheTier } from './tiers';
 

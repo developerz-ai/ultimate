@@ -5,7 +5,7 @@
  * contract tests for free, and its authz is the same single evaluation.
  */
 
-import type { ConflictPolicy, Ctx, Row } from '@ultimat3/core';
+import type { ConflictPolicy, Ctx, Deprecation, Row } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type {
   Action,
@@ -17,7 +17,6 @@ import type {
   ActionRowArgs,
 } from './action';
 import { action, isAction } from './action';
-import type { Deprecation } from './deprecation';
 import { MutatorNotIdempotentError } from './errors';
 import type { ActionHttp } from './http-path';
 import { assertConflictClock } from './mutator-clock';

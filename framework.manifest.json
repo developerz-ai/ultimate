@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3a798acfa4a93bd30cbd0c53099ab9ce369fec8388899dc8a8f19a2d4715d96f",
+  "buildId": "6d2b9f0c8dc6d19915b164c4a786d0af6e6502dcf7b371b60f167f6e1c170497",
   "tiers": {
     "0": [
       "core",
@@ -892,7 +892,7 @@
     {
       "code": "X_CORPUS_UNSCANNED",
       "owner": "scripts",
-      "at": "scripts/image-contract.ts"
+      "at": "scripts/doc-paths.ts"
     },
     {
       "code": "X_CORS_CONFIG_INVALID",
@@ -1283,6 +1283,11 @@
       "code": "X_DOC_PACKAGE_GRAPH_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/package-map-graph.ts"
+    },
+    {
+      "code": "X_DOC_PATH_DEAD",
+      "owner": "scripts",
+      "at": "scripts/doc-paths.ts"
     },
     {
       "code": "X_DOC_RELEASE_FACT_STALE",
@@ -2575,6 +2580,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_PACKAGE_TEST_ONLY_SHIPPED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PACKAGE_UNREFERENCED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2628,6 +2638,16 @@
       "code": "X_PIPELINE_NO_RESPONSE",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_PLAN_STATUS_INVALID",
+      "owner": "scripts",
+      "at": "scripts/plan-status.ts"
+    },
+    {
+      "code": "X_PLAN_STATUS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/plan-status.ts"
     },
     {
       "code": "X_POLICY_CLAUSE_EMPTY",
@@ -3043,6 +3063,11 @@
       "code": "X_ROLE_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ROOT_BIN_REINTRODUCED",
+      "owner": "scripts",
+      "at": "scripts/root-bin.ts"
     },
     {
       "code": "X_ROUTE_ASYNC_PAGE",

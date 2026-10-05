@@ -8,13 +8,12 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
-import type { Actor, Ctx } from '@ultimat3/core';
+import type { Actor, Ctx, Deprecation } from '@ultimat3/core';
 import { fingerprint } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethodOf, QueryClientOptions } from './client';
-import type { Deprecation } from './deprecation';
 import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertEncodableInput } from './input-shape';

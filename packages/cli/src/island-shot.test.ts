@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
-import { fakeShotDriver } from './browser-launcher-fake';
+import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSession } from './browser-launcher-port';
 import { readStateFlag, refuseRouteWithIsland } from './cmd-shot-island';
 import { clipFor, ISLAND_CROP_MARGIN_PX } from './island-capture';

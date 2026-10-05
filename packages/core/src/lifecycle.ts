@@ -10,93 +10,39 @@ import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
 import { lifecycleDrained } from './lifecycle-errors';
 import { defaultReadinessGraceMs, readinessGraceIssue } from './lifecycle-grace';
-import type { ReadinessCheck, ReadinessStatus } from './lifecycle-readiness';
+import type { ReadinessStatus } from './lifecycle-readiness';
+import {
+  clearReadinessChecks,
+  readinessCheckCount,
+  runReadinessChecks,
+} from './lifecycle-readiness';
+import type {
+  HealthPayload,
+  HealthReport,
+  HealthState,
+  LifecycleOptions,
+  OnShutdownOptions,
+  ShutdownHook,
+  ShutdownPhase,
+  ShutdownReason,
+} from './lifecycle-types';
 import { type LogFields, type Logger, logger as rootLogger } from './logger';
 
-export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
-
-/** Ordered. `accept` runs first, `close` last. */
-export type ShutdownPhase = 'accept' | 'inflight' | 'close';
-
-export const SHUTDOWN_PHASES: readonly ShutdownPhase[] = ['accept', 'inflight', 'close'];
-
-/** Signals Ultimate reacts to. Narrower than `NodeJS.Signals` on purpose. */
-export type ProcessSignal = 'SIGTERM' | 'SIGINT' | 'SIGHUP' | 'SIGQUIT';
-
-export interface ShutdownReason {
-  readonly signal: string;
-  /**
-   * Real monotonic ms (`systemClock`) after which hooks are abandoned — deliberately NOT the
-   * injected clock. The budget this bounds is `terminationGracePeriodSeconds`, counted by the
-   * kubelet in real seconds, so a frozen clock must be unable to extend it: read off `clock` a
-   * test that advanced an hour of fake time handed the drain a 16-minute grace period, while
-   * `waitForIdle` went on sleeping on a real `setTimeout`. `clock` still owns `uptimeMs`.
-   */
-  readonly deadlineAt: number;
-}
-
-export type ShutdownHook = (reason: ShutdownReason) => void | Promise<void>;
-
-export interface OnShutdownOptions {
-  readonly phase?: ShutdownPhase | undefined;
-}
-
-export interface LifecycleOptions {
-  /**
-   * The whole drain's budget — the in-flight wait AND every hook, in every phase. 25s by default,
-   * and **enforced whether or not an app sets it**: `ShutdownReason.deadlineAt` was always computed
-   * and handed to every hook, so the deadline was declared by the design and only the enforcement
-   * was missing. No hook reads `deadlineAt`, which is why it has to be imposed here.
-   *
-   * The lever is a LARGER value, not the absence of one: a `worker` holding a 10-minute job wants
-   * `configureLifecycle({ deadlineMs: 600_000 })` and a `terminationGracePeriodSeconds` at least as
-   * large. Left at 25s it is abandoned and the process exits clean — the row's visibility lease
-   * lapses and another worker re-claims it, which is what at-least-once already promises. The
-   * alternative is not "the job finishes": it is the same duplicate, delivered by SIGKILL at the
-   * kubelet's grace period, with no log line naming what overran.
-   *
-   * Screened where it is assigned: a whole number of milliseconds, 0 or more. `0` is "drain now".
-   */
-  readonly deadlineMs?: number | undefined;
-  /**
-   * How long `/readyz` answers 503 BEFORE the `accept` phase closes the listener — the time the
-   * endpoints controller and the ingress need to stop routing here. Closing on the flip itself left
-   * endpoints pointing at a closed socket, and a POST in that window got a 502. Added to
-   * `deadlineMs`, never taken from it. Unset: `defaultReadinessGraceMs()` of the process env at
-   * drain time — 0 in development/test, 5000 everywhere else, including a process naming no env.
-   * A whole number from 0 to 60000; 0 is no grace.
-   */
-  readonly readinessGraceMs?: number | undefined;
-  /** What a failing check does to `/readyz` — see `ReadinessMode`. Default `'dependencies'`. */
-  readonly readiness?: ReadinessMode | undefined;
-  readonly clock?: Clock | undefined;
-  readonly logger?: Logger | undefined;
-}
-
-export interface HealthReport {
-  readonly state: HealthState;
-  readonly ready: boolean;
-  readonly uptimeMs: number;
-  readonly inflight: number;
-  readonly buildId: string;
-  /** Named, because "alert on check failures BY CHECK NAME" is not writable against a boolean. */
-  readonly checks: Readonly<Record<string, ReadinessStatus>>;
-  /**
-   * How many checks are registered. `checks: {}` reads identically for "every check passed" and
-   * "nobody registered one", and only the second is a `/readyz` that means no more than "the
-   * socket is bound" — which is what the chart's and compose's healthchecks route traffic on.
-   * Reported rather than enforced: an empty registry is still ready, so a role that genuinely has
-   * no dependency does not have to invent a check to boot.
-   */
-  readonly registered: number;
-}
-
-export interface HealthPayload {
-  readonly ok: boolean;
-  /** The status code the HTTP layer should return. Core stays HTTP-free; this is just data. */
-  readonly status: number;
-  readonly body: HealthReport;
-}
+// The data model and the readiness registry are modules of their own; every name stays exported
+// from here, so nothing that imports a lifecycle type or the check registry learns a second path.
+export { readinessCheckCount, registerReadinessCheck } from './lifecycle-readiness';
+export type {
+  HealthPayload,
+  HealthReport,
+  HealthState,
+  LifecycleOptions,
+  OnShutdownOptions,
+  ProcessSignal,
+  ShutdownHook,
+  ShutdownPhase,
+  ShutdownReason,
+} from './lifecycle-types';
+export { SHUTDOWN_PHASES } from './lifecycle-types';
 
 interface Registration {
   readonly name: string;
@@ -120,7 +66,6 @@ let lifetime = 0;
 let registrations: Registration[] = [];
 let drainPromise: Promise<void> | undefined;
 let idleWaiters: (() => void)[] = [];
-const readiness = new Map<string, ReadinessCheck>();
 
 export function configureLifecycle(options: LifecycleOptions): void {
   // Screened above the write, never beside the arithmetic: `Math.max(0, deadlineAt - monotonic())`
@@ -175,30 +120,6 @@ export function markReady(): void {
 }
 
 /**
- * Register a named readiness check. Returns its unregister — the same shape as `onShutdown`, and
- * owned by whoever can be started twice, for the same reason.
- */
-export function registerReadinessCheck(name: string, check: ReadinessCheck): () => void {
-  if (readiness.has(name)) {
-    throw new UltimateError({
-      code: 'X_READINESS_CHECK_DUPLICATE',
-      cause: `a readiness check named "${name}" is already registered (have: ${[...readiness.keys()].join(', ')})`,
-      fix: `name the second check for what it actually probes, e.g. registerReadinessCheck('${name}-replica', check) — or hold the unregister the first registration returned and call it first`,
-      meta: { name },
-    });
-  }
-  readiness.set(name, check);
-  return () => {
-    if (readiness.get(name) === check) readiness.delete(name);
-  };
-}
-
-/** Test-only: registered checks. A count that climbs across a start/stop cycle is a leak. */
-export function readinessCheckCount(): number {
-  return readiness.size;
-}
-
-/**
  * Every line this file emits, and the only way it emits one. `log` is an injection seam
  * (`configureLifecycle({ logger })`), so an app's `Logger` decides whether a log call can throw —
  * and a throw here does not lose a line, it replaces the event. Inside `drain()` it rejected
@@ -226,24 +147,13 @@ function report(level: 'info' | 'warn' | 'error', message: string, fields: LogFi
 }
 
 /**
- * Every check, run now, by name. A check that throws is `failing` — never an unhandled error.
- *
- * Built through `Object.fromEntries`, never by assigning `results[name]`: assignment to the one
- * name `__proto__` sets the PROTOTYPE instead of adding a key, so that check vanished from the
- * report, `ready` was computed over an empty object — vacuously true — and a failing check
- * answered 200. `fromEntries` defines own properties and has no such name.
+ * Every check, run now, by name. A check that throws is `failing` — never an unhandled error —
+ * and is reported through `report`, so an injected logger that throws cannot replace the answer.
  */
 export function readinessChecks(): Readonly<Record<string, ReadinessStatus>> {
-  const results: [string, ReadinessStatus][] = [];
-  for (const [name, check] of readiness) {
-    try {
-      results.push([name, check() ? 'ok' : 'failing']);
-    } catch (thrown) {
-      results.push([name, 'failing']);
-      report('warn', 'readiness check threw', { check: name, error: thrown });
-    }
-  }
-  return Object.fromEntries(results);
+  return runReadinessChecks((name, thrown) => {
+    report('warn', 'readiness check threw', { check: name, error: thrown });
+  });
 }
 
 export function inflightCount(): number {
@@ -458,7 +368,7 @@ export function healthReport(mode: ReadinessMode = readinessMode): HealthReport 
     inflight,
     buildId: process.env['BUILD_ID'] ?? 'dev',
     checks,
-    registered: readiness.size,
+    registered: readinessCheckCount(),
   };
 }
 
@@ -496,5 +406,5 @@ export function resetLifecycle(): void {
   registrations = [];
   drainPromise = undefined;
   idleWaiters = [];
-  readiness.clear();
+  clearReadinessChecks();
 }

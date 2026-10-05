@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { resetIdCounter, useId } from './a11y';
-import { FakeElement, installFakeDom } from './fake-dom';
+import { FakeElement, installFakeDom } from './fake-dom-fixture';
 
 describe('useId', () => {
   beforeEach(resetIdCounter);

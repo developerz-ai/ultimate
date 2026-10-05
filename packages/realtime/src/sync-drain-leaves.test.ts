@@ -12,7 +12,7 @@ import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
 import { InProcessTransport, type Transport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
-import { OPEN_POLICY } from './policy-fake';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import { createSyncNode, type SyncWs, type WsData } from './sync-node';

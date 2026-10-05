@@ -1,7 +1,7 @@
 /**
  * The slice of IndexedDB `local-store-idb.ts` touches, as structural types: the browser's
- * `indexedDB` satisfies them and so does `idb-fake.ts`, so the store is tested against the same
- * surface it runs on without a DOM shim.
+ * `indexedDB` satisfies them and so does `idb-fake-fixture.ts`, so the store is tested against the
+ * same surface it runs on without a DOM shim.
  */
 
 export interface IdbRequestLike<T> {

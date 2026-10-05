@@ -14,6 +14,7 @@ export interface PartStep {
   readonly workers?: number;
   readonly tests?: TestCounts;
   readonly output?: string;
+  readonly warnings?: readonly string[];
   readonly shard?: {
     readonly index: number;
     readonly total: number;
@@ -41,6 +42,9 @@ const isTests = (value: unknown): value is TestCounts =>
   isCount(value['skipped']) &&
   (value['errors'] === undefined || isCount(value['errors']));
 
+const isTextList = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) && value.every((line) => typeof line === 'string');
+
 const isShard = (value: unknown): value is NonNullable<PartStep['shard']> =>
   isRecord(value) &&
   isCount(value['index']) &&
@@ -63,7 +67,7 @@ export function readPartStep(raw: unknown): PartStep | string {
   if (!Array.isArray(findings) || !findings.every(isFinding)) {
     return `holds step "${name}" whose findings are not each a code, a cause and a fix`;
   }
-  const { tests, shard, output, workers, skipped } = raw;
+  const { tests, shard, output, workers, skipped, warnings } = raw;
   if (tests !== undefined && !isTests(tests)) {
     return `holds step "${name}" whose tests are not counts`;
   }
@@ -72,6 +76,9 @@ export function readPartStep(raw: unknown): PartStep | string {
   }
   if (output !== undefined && typeof output !== 'string') {
     return `holds step "${name}" whose output is not text`;
+  }
+  if (warnings !== undefined && !isTextList(warnings)) {
+    return `holds step "${name}" whose warnings are not a list of text`;
   }
   if (workers !== undefined && !isCount(workers)) {
     return `holds step "${name}" whose workers is not a count`;
@@ -85,6 +92,7 @@ export function readPartStep(raw: unknown): PartStep | string {
     ...(workers === undefined ? {} : { workers }),
     ...(tests === undefined ? {} : { tests }),
     ...(output === undefined ? {} : { output }),
+    ...(warnings === undefined ? {} : { warnings }),
     ...(shard === undefined ? {} : { shard }),
   };
 }

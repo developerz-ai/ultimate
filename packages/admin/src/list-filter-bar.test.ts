@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import { byComponent, byTag, installFactory, nodesOf, restoreFactory } from './inert-jsx';
+import { byComponent, byTag, installFactory, nodesOf, restoreFactory } from './inert-jsx-fixture';
 import type { AdminListRequest } from './list-scope';
 import type { AdminResource } from './resource';
 import type { WidgetContext } from './widget-value';

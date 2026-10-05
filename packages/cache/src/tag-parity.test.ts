@@ -10,7 +10,7 @@ import { cacheHeaders, createCdnTier } from './cdn';
 import { createLruTier } from './lru';
 import { createMemoTier } from './memo';
 import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
-import { fakeRedis, keysOf, tierFor } from './redis-fake';
+import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import type { CacheTag } from './tags';
 import { tag, tagsIntersect } from './tags';
 import type { CacheTier } from './tiers';

@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { intFlagOr, PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
 import type { CommandSpec, ParsedArgs } from './parse';
 import { parseArgs } from './parse';
-import { thrownBy } from './thrown-by';
+import { thrownBy } from './thrown-by-fixture';
 
 const SPEC: CommandSpec = {
   name: 'doctor',

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import { staticAuthz } from './authz';
-import { installFactory, renderHtml, restoreFactory } from './inert-jsx';
+import { installFactory, renderHtml, restoreFactory } from './inert-jsx-fixture';
 import { DEFAULT_SECTION_KEY } from './resource-layout';
 
 await import('@ultimat3/render/server');

@@ -606,6 +606,10 @@ before the read is deleted. A date that cannot be rendered is `X_QUERY_DEPRECATI
 projection, not on the first read. Versioning is two deployments behind one ingress, never a
 router feature here.
 
+`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s, re-exported
+from this package's index for existing callers (the re-exports leave in 25.0.0); this package
+imports them from core directly, as `@ultimat3/action` does.
+
 ## Errors
 
 | Code | When | Fix |

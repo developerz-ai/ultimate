@@ -31,6 +31,11 @@ export type {
   ClientFlight,
   ClientFlightOptions,
   ClientRetry,
+  // The compat window a retirement gets — `@ultimat3/core`'s, re-exported here until 25.0.0.
+  // Versioning is two deployments, not a router feature.
+  Deprecation,
+  DeprecationField,
+  DeprecationRender,
   FlightKeyOptions,
   FlightPlan,
   WireAnswer,
@@ -40,6 +45,8 @@ export {
   DEFAULT_CLIENT_RETRY,
   isSuperseded,
   isTransientFailure,
+  recordDeprecatedCall,
+  renderDeprecation,
 } from '@ultimat3/core';
 /** Re-exported so a `query` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
@@ -75,9 +82,6 @@ export { queryClient, queryClientMethodFor } from './client';
  */
 export type { KindOf } from './column-kinds';
 export { kindsOf } from './column-kinds';
-/** The compat window a retirement gets. Versioning is two deployments, not a router feature. */
-export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
-export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export {
   CursorInvalidError,
   CursorValueUnsupportedError,

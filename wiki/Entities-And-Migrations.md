@@ -614,7 +614,8 @@ A column with existing plaintext is migrated — expand, backfill, contract.
 | 5 | contract: drop the plaintext, take the name back | delete `password`; `password: text().sealed().column('password_sealed')` · `x db gen "drop plaintext password"` · `x db migrate` |
 
 ```ts
-// packages/db/src/backfills.ts
+// apps/web/app/connection/backfills/seal-connection-passwords.ts — a backfill IS a job: register
+// the module in defineApi({ jobs }) beside the slice's other jobs
 import { backfill } from '@ultimat3/jobs';
 
 export const sealConnectionPasswords = backfill({

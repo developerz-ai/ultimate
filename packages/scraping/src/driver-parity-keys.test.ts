@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 import { createLogger } from '@ultimat3/core';
-import { fakeCdpLauncher } from './cdp-fake';
+import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { testClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';

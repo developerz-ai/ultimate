@@ -77,8 +77,9 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the one `Cookie:` reader — `readCookie(header, name)`, `null` when absent, never a throw | `cookie.ts` |
 | 32-bit FNV-1a — a BUCKET (rollouts, factory seeds), never a sharing key (`fingerprint` is) | `fnv1a.ts` |
 | `PgExecutor` — the structural `query(text, values)` seam every Postgres store takes | `pg-executor.ts` |
+| a declared retirement as headers — `renderDeprecation` (RFC 9745 `Deprecation`, RFC 8594 `Sunset`, the `successor-version` link) and `recordDeprecatedCall` on the one `deprecated_calls_total`; `action` and `query` both project through it | `deprecation.ts` |
 
-Each of the four, and `fingerprint`, `storeMode` and render's `contentHash`, has ONE implementation:
+Each of the five, and `fingerprint`, `storeMode` and render's `contentHash`, has ONE implementation:
 `bun run flight-copies` refuses a second by its shape (`X_HELPER_COPY`), whatever it is named.
 
 ## Errors are instructions
@@ -771,9 +772,9 @@ is read, mapping it onto `X_IMAGE_UNSUPPORTED` / `X_IMAGE_TOO_LARGE` / `X_IMAGE_
 caller branches on a Bun code.
 
 Two files in `image/` are past the 200-line target and neither splits without inventing a seam:
-`probe.ts` is one algorithm per format over header bytes, and `fixtures.ts` is data. The 500-line
+`probe.ts` is one algorithm per format over header bytes, and `image-fixture.ts` is data. The 500-line
 hard ceiling applies to both. Everything else in `image/` is under the target — deleting the
 hand-rolled JPEG and PNG codecs is what put it there.
 
-`image/fixtures.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
+`image/image-fixture.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
 trips against itself proves nothing. Never regenerate a fixture with our own encoder.
