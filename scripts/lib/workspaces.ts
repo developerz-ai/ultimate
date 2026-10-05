@@ -7,6 +7,7 @@ import { join } from 'node:path';
 // is mid-edit (DX ledger #10).
 import { renderFixShellArg, renderThrowable } from '../../packages/core/src/error-render';
 import type { Finding } from './log';
+import { toPosix } from './posix-path';
 import { ScriptError } from './script-error';
 import { tierOf } from './tiers';
 
@@ -162,16 +163,22 @@ export function publishSequence<T extends SequenceNode>(nodes: readonly T[]): re
 const internalDeps = (manifest: PackageJson): readonly string[] =>
   Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith('@ultimat3/'));
 
+/** `packages/<dir>/package.json` → `<dir>`, from either separator a glob can answer with. */
+export const workspaceDirOf = (scanned: string): string => toPosix(scanned).split('/')[1] ?? '';
+
 export async function listWorkspaces(root: string): Promise<readonly Workspace[]> {
   const glob = new Bun.Glob(WORKSPACE_GLOB);
   const out: Workspace[] = [];
-  for await (const relative of glob.scan({ cwd: root, absolute: false })) {
+  for await (const scanned of glob.scan({ cwd: root, absolute: false })) {
+    // `/`-spelt: on Windows the glob answers `packages\core\package.json`, and a split on `/`
+    // named every workspace `''` — the publish list, the manifest and the lockfile keys with it.
+    const relative = toPosix(scanned);
     // Refuse rather than skip. A skipped workspace is a package silently missing from the publish
     // list `release.ts` derives from this call, which is worse than a red release run.
     // `ScriptError`'s message carries the code, the cause AND the fix, so even a rejection that
     // nothing catches prints instructions rather than a stack trace.
     const manifest = await requireWorkspaceManifest(join(root, relative), relative);
-    const dir = relative.split('/')[1] ?? '';
+    const dir = workspaceDirOf(relative);
     out.push({
       dir,
       name: manifest.name ?? `@ultimat3/${dir}`,

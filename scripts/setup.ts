@@ -9,6 +9,7 @@ import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
+import { liveSuiteLines } from './lib/test-services-hint';
 
 // A floor on CONTRIBUTORS to this repo. It is the exact patch CI runs
 // (`.github/actions/setup/action.yml`), because that is the only thing this check can usefully
@@ -90,13 +91,7 @@ if (findings.length === 0) {
 // Not started here: nothing in the default run needs a server, and a setup that boots five
 // containers is one nobody re-runs after a pull. Named, so the live suites are one paste away
 // instead of a skip nobody notices.
-if (findings.length === 0) {
-  lines.push(
-    '  live suites skip without services — to run them, in RAM:',
-    '    docker compose -f docker/docker-compose.test.yml up -d --wait',
-    '    set -a; . docker/test-services.env; set +a',
-  );
-}
+if (findings.length === 0) lines.push(...liveSuiteLines(process.platform));
 
 report(
   {

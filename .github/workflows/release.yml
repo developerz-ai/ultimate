@@ -31,10 +31,16 @@ on:
         required: true
         type: string
 
-# Serialize releases, but NEVER cancel one mid-flight — npm publishes are irreversible, so
-# cancel-in-progress must stay false (repo CI standard).
+# ONE queue for every release, and a running one is never cancelled — npm publishes are
+# irreversible. The group was per-ref (`release-<tag>`), which serialized nothing across versions:
+# two Releases cut minutes apart published side by side, and `latest` on each package went to
+# whichever finished last, so a lockstep set could end up split across two versions. Now a second
+# release waits for the first to finish. GitHub keeps ONE waiting run per group, so a third cut
+# while one runs and one waits replaces the waiting one: it shows as cancelled, never half-published
+# (`check` runs before any publish), and `workflow_dispatch` with its version re-runs it — `publish`
+# skips every package npm already holds.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 # Workflow-wide: read only. `id-token: write` IS the repository's npm publishing identity, so it is

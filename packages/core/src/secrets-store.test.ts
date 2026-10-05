@@ -13,6 +13,7 @@ import {
   findMasterKey,
   installSecrets,
   masterKeyPath,
+  promoteStagedMasterKey,
   readSecretsFile,
   requireMasterKey,
   SECRETS_FILE,
@@ -22,6 +23,7 @@ import {
   secretsFileExists,
   secretsPath,
   stagedMasterKeyPath,
+  stageMasterKeyFile,
   writeMasterKeyFile,
   writeSecretsFile,
 } from './secrets-store';
@@ -82,11 +84,17 @@ describe('unit · finding the master key', () => {
     expect(() => requireMasterKey(root, {})).toThrow(new RegExp(SECRETS_KEY_ENV));
   });
 
-  test('the key file is written 0600 — a world-readable key is a leaked key', async () => {
-    const root = await appRoot({ keyFile: KEY });
-    const mode = (await stat(masterKeyPath(root))).mode & 0o777;
-    expect(mode).toBe(SECRETS_KEY_MODE);
-  });
+  // POSIX only: Windows reports every file as 0o666 whatever it was created with, because the ACL,
+  // not the mode, is what keeps other accounts out there. `secrets-key-file.test.ts` reads that ACL
+  // back with icacls on win32, so the property is pinned on both platforms, each in its own terms.
+  test.skipIf(process.platform === 'win32')(
+    'the key file is written 0600 — a world-readable key is a leaked key',
+    async () => {
+      const root = await appRoot({ keyFile: KEY });
+      const mode = (await stat(masterKeyPath(root))).mode & 0o777;
+      expect(mode).toBe(SECRETS_KEY_MODE);
+    },
+  );
 });
 
 describe('unit · reading and writing the file', () => {
@@ -104,22 +112,26 @@ describe('unit · reading and writing the file', () => {
     expect(await Bun.file(secretsPath(root)).text()).not.toContain('s3cr3t');
   });
 
-  test('rotating over an existing world-readable key leaves it at 0600', async () => {
-    // `writeFileSync`'s `mode` applies only when it CREATES the file, so a key that was 0644
-    // before rotation stayed 0644 after it — the new key, readable by the whole box.
-    const root = await appRoot({});
-    const path = masterKeyPath(root);
-    await Bun.write(path, `${OTHER_KEY}\n`);
-    await chmod(path, 0o644);
-    expect((await stat(path)).mode & 0o777).toBe(0o644);
-    writeMasterKeyFile(root, KEY);
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
-    expect((await Bun.file(path).text()).trim()).toBe(KEY);
-    // Written through a temp file renamed over the target: nothing is left beside it.
-    expect((await readdir(root)).filter((name) => name.includes(SECRETS_KEY_FILE))).toEqual([
-      SECRETS_KEY_FILE,
-    ]);
-  });
+  // POSIX only, for the reason above: `chmod` and `stat().mode` carry no meaning on Windows.
+  test.skipIf(process.platform === 'win32')(
+    'rotating over an existing world-readable key leaves it at 0600',
+    async () => {
+      // `writeFileSync`'s `mode` applies only when it CREATES the file, so a key that was 0644
+      // before rotation stayed 0644 after it — the new key, readable by the whole box.
+      const root = await appRoot({});
+      const path = masterKeyPath(root);
+      await Bun.write(path, `${OTHER_KEY}\n`);
+      await chmod(path, 0o644);
+      expect((await stat(path)).mode & 0o777).toBe(0o644);
+      writeMasterKeyFile(root, KEY);
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      expect((await Bun.file(path).text()).trim()).toBe(KEY);
+      // Written through a temp file renamed over the target: nothing is left beside it.
+      expect((await readdir(root)).filter((name) => name.includes(SECRETS_KEY_FILE))).toEqual([
+        SECRETS_KEY_FILE,
+      ]);
+    },
+  );
 
   test('no file at all is X_SECRETS_FILE_MISSING, never an empty map', async () => {
     const root = await appRoot({ keyFile: KEY });
@@ -142,6 +154,29 @@ describe('unit · reading and writing the file', () => {
 // `x secrets rotate` stages the new key at `<key>.next`, seals the committed file with it, THEN
 // renames the key into place. A crash between the seal and the rename leaves a file only the
 // staged key opens — and a process booting then could not read its own secrets.
+describe('unit · staging and promoting a rotated key', () => {
+  test('the staged key is written beside the live one and the promotion moves it into place', async () => {
+    const root = await appRoot({ keyFile: OTHER_KEY });
+    expect(stageMasterKeyFile(root, KEY)).toBe(stagedMasterKeyPath(root));
+    expect((await Bun.file(masterKeyPath(root)).text()).trim()).toBe(OTHER_KEY);
+    expect(promoteStagedMasterKey(root)).toBe(masterKeyPath(root));
+    expect((await Bun.file(masterKeyPath(root)).text()).trim()).toBe(KEY);
+    expect(await Bun.file(stagedMasterKeyPath(root)).exists()).toBe(false);
+  });
+
+  // POSIX only, for the reason the 0600 test above gives.
+  test.skipIf(process.platform === 'win32')(
+    'a leftover world-readable staged key is replaced at 0600, never written into',
+    async () => {
+      const root = await appRoot({});
+      await Bun.write(stagedMasterKeyPath(root), `${OTHER_KEY}\n`);
+      await chmod(stagedMasterKeyPath(root), 0o644);
+      stageMasterKeyFile(root, KEY);
+      expect((await stat(stagedMasterKeyPath(root))).mode & 0o777).toBe(SECRETS_KEY_MODE);
+    },
+  );
+});
+
 describe('unit · a rotation interrupted before its rename', () => {
   test('installSecrets opens the file with the staged key, and moves nothing', async () => {
     const root = await appRoot({ keyFile: OTHER_KEY });

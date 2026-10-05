@@ -5,6 +5,10 @@
 // 100% CPU, measured at ~50 MB/s of heap growth). Found on a laptop, 2026-09-29: two children of
 // `cmd-dev-restart.live.test.ts`, six hours old, ppid 1, cwd deleted, one at 7 GB.
 //
+// Both facts and the stop itself hold on Windows: the supervisor is asked for by pid
+// (`process.kill(pid, 0)`), since a Windows child's ppid never changes, and a stop arrives as a
+// `drain` message over IPC — `kill('SIGTERM')` there is TerminateProcess, with no drain at all.
+//
 // And a stop that does not finish is finished for it. A drain is bounded by core's deadline, but a
 // loop starved by a spin like the one above reaches its timers late or never, so every stop this
 // child begins — a signal, the watch below, a restart — carries a hard exit past that bound.
@@ -29,8 +33,8 @@ export interface DevChildWatchInput {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Called once, when the child decides to leave. */
   readonly leave: (why: DevChildGone) => void;
-  /** Test seams: the defaults read the process and the disk. */
-  readonly parentPid?: () => number;
+  /** Test seams: the defaults read the process table and the disk. */
+  readonly supervisorAlive?: (pid: number) => boolean;
   readonly rootExists?: (root: string) => boolean;
   readonly intervalMs?: number;
 }
@@ -43,21 +47,46 @@ export function supervisorPid(
   return Number.isInteger(said) && said > 0 ? said : undefined;
 }
 
+/** `process.kill(pid, 0)`'s answer: delivered, or refused for permission — both mean it exists. */
+export function pidAlive(
+  pid: number,
+  kill: (pid: number, signal: 0) => void = process.kill,
+): boolean {
+  try {
+    kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as { readonly code?: unknown } | null)?.code === 'EPERM';
+  }
+}
+
 /**
- * Polls both facts until one fails, then calls `leave` once and stops. Answers the stop.
- * `process.ppid` rather than a pipe from the supervisor: stdin is the terminal's (`inherit`), and
- * a supervisor that died before the first tick is still caught — its pid is never ours again.
+ * Whether the supervisor at `pid` still runs this child. POSIX asks the ppid — immune to a reused
+ * pid, and a supervisor that died before the first tick is still caught, since the child is
+ * reparented. Windows never reparents (the ppid stays the dead supervisor's forever), so there the
+ * process table is asked directly.
+ */
+export function defaultSupervisorAlive(
+  platform: string = process.platform,
+): (pid: number) => boolean {
+  return platform === 'win32' ? (pid) => pidAlive(pid) : (pid) => process.ppid === pid;
+}
+
+/**
+ * Polls both facts until one fails, then calls `leave` once and stops. Answers the stop. Polled
+ * rather than a pipe from the supervisor: stdin is the terminal's (`inherit`), and IPC closing is
+ * not a fact Bun reports to the child.
  */
 export function watchDevChild(input: DevChildWatchInput): () => void {
   const expected = supervisorPid(input.env);
-  const parent = input.parentPid ?? (() => process.ppid);
+  const alive = input.supervisorAlive ?? defaultSupervisorAlive();
   const exists = input.rootExists ?? existsSync;
   let left = false;
   const timer = setInterval(
     () => {
       if (left) return;
       const why: DevChildGone | undefined =
-        expected !== undefined && parent() !== expected
+        expected !== undefined && !alive(expected)
           ? 'supervisor'
           : exists(input.root)
             ? undefined
@@ -116,10 +145,26 @@ export function hardExit(
   };
 }
 
+/** What the supervisor sends for a stop: the signal it would have forwarded on POSIX. */
+export interface DevDrainMessage {
+  readonly type: 'x-dev-drain';
+  readonly signal: 'SIGINT' | 'SIGTERM';
+}
+
+export function isDevDrainMessage(message: unknown): message is DevDrainMessage {
+  if (typeof message !== 'object' || message === null) return false;
+  const { type, signal } = message as Record<string, unknown>;
+  return type === 'x-dev-drain' && (signal === 'SIGINT' || signal === 'SIGTERM');
+}
+
+/** The exit code a stop for `signal` answers: 128 + its number, as a shell reports it. */
+export const signalExitCode = (signal: 'SIGINT' | 'SIGTERM'): number =>
+  signal === 'SIGINT' ? 130 : 143;
+
 /**
- * The child's watch, wired to core's drain: the supervisor's death or the root's, and SIGINT or
- * SIGTERM, each begin a stop that ends within `devHardExitMs` however the drain fares. `onGone`
- * marks why, so the hold's exit can answer a code.
+ * The child's watch, wired to core's drain: the supervisor's death or the root's, SIGINT or
+ * SIGTERM, and the supervisor's `drain` message each begin a stop that ends within
+ * `devHardExitMs` however the drain fares. `onGone` marks why, so the hold's exit can answer a code.
  */
 export function startDevChildWatch(
   root: string,
@@ -128,8 +173,14 @@ export function startDevChildWatch(
 ): { readonly stopping: (code: number) => void } {
   const stopping = hardExit((code) => process.exit(code));
   // Beside core's own handlers, never instead of them: the drain is theirs, the deadline is this.
-  process.on('SIGINT', () => stopping(130));
-  process.on('SIGTERM', () => stopping(143));
+  process.on('SIGINT', () => stopping(signalExitCode('SIGINT')));
+  process.on('SIGTERM', () => stopping(signalExitCode('SIGTERM')));
+  // The supervisor's stop, on every platform: the same drain a signal begins, by message.
+  process.on('message', (message: unknown) => {
+    if (!isDevDrainMessage(message)) return;
+    stopping(signalExitCode(message.signal));
+    void drain(message.signal);
+  });
   watchDevChild({
     root,
     env,

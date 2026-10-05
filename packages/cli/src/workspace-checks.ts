@@ -14,6 +14,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
+import { pathSegments } from './path-segments';
+import { toPosix } from './posix-path';
 import {
   entryFilesOf,
   FIXTURE_SUFFIX,
@@ -335,13 +337,20 @@ export function frameworkDepsOf(manifest: unknown): ManifestFacts['frameworkDeps
   });
 }
 
+/**
+ * `packages/<dir>/package.json` → `<dir>`, from a glob answer in the host's separator. Split on `/`
+ * alone, Windows' `packages\db\package.json` named no directory, so an app's `package-shape` found
+ * no workspace and its floor reported `X_VERIFY_SUITE_VANISHED` on a scaffold fresh from `x new`.
+ */
+export const workspaceDirOf = (globbed: string): string | undefined => pathSegments(globbed)[1];
+
 export async function workspacePackages(root: string): Promise<readonly string[]> {
   const dirs: string[] = [];
   for await (const path of new Bun.Glob('packages/*/package.json').scan({
     cwd: root,
     absolute: false,
   })) {
-    const dir = path.split('/')[1];
+    const dir = workspaceDirOf(path);
     if (dir !== undefined) dirs.push(dir);
   }
   return dirs.sort();
@@ -373,7 +382,10 @@ async function fixtureReach(root: string, dir: string, manifest: unknown): Promi
   // consumer's, so no `*.test.ts` is read.
   const sources = new Map<string, string>();
   for await (const path of new Bun.Glob('src/**/*.{ts,tsx}').scan({ cwd: base, absolute: false })) {
-    if (!/\.test\.tsx?$/.test(path)) sources.set(path, readFileSync(join(base, path), 'utf8'));
+    // Keyed POSIX: `entryFilesOf` and every import the walk resolves are, on every host.
+    if (!/\.test\.tsx?$/.test(path)) {
+      sources.set(toPosix(path), readFileSync(join(base, path), 'utf8'));
+    }
   }
   if (!mayReachFixture(sources, entries)) return [];
   return fixturesReachedFrom({ read: (path) => sources.get(path) }, entries).map((fixture) =>
@@ -402,7 +414,7 @@ export async function checkPackageShape(
       cwd: join(root, 'packages', dir),
       absolute: false,
     })) {
-      if (!allowlisted.has(join('packages', dir, path))) artifacts.push(path);
+      if (!allowlisted.has(toPosix(join('packages', dir, path)))) artifacts.push(path);
     }
     if (artifacts.length > 0) {
       findings.push(buildArtifactsFinding(dir, artifacts.length));

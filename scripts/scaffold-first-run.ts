@@ -20,6 +20,7 @@
 import { resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
+import { localBin } from './lib/local-bin';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
@@ -34,11 +35,12 @@ const SCRIPT = 'scaffold-first-run';
 // which is a code that ships enforced by nothing.
 
 /**
- * The app's own `x`, resolved through its `node_modules`, not this repo's. A scaffolded app is the
+ * The app's own `x`, resolved through its `node_modules`, not this repo's — `x.exe` on Windows,
+ * where `bun install` links no extensionless `x`. A scaffolded app is the
  * thing under test, and `bun run x` here would run the CLI out of the checkout — proving the
  * workspace works, which is the claim the job already cannot make.
  */
-export const appBin = (dir: string): string => resolve(dir, 'node_modules', '.bin', 'x');
+export const appBin = (dir: string): string => localBin(resolve(dir), 'x');
 
 export interface FirstRunStep {
   /** Names the step in the log and in the `fix:`, so a red run says WHICH generator broke. */

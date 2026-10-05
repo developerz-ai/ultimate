@@ -25,6 +25,7 @@ import { commentSafe } from './comment-safe';
 import { scanRuntimeImports, stripShebang } from './import-scan';
 import type { Finding } from './output';
 import { hasPathSegment } from './path-segments';
+import { toPosix } from './posix-path';
 import { quoteArg } from './shell-quote';
 
 export const BOUNDARY_CODES = [
@@ -104,7 +105,9 @@ export function resolveSpecifier(
  * the form `CANDIDATE_SUFFIXES` resolves and the form every app source already writes.
  */
 export function relativeSpecifier(fromFile: string, target: string): string {
-  const path = relative(dirname(fromFile), target).replace(/\.[cm]?tsx?$/, '');
+  // Through `toPosix` even over the POSIX `relative`: a key spelt `apps\web\…` is ONE segment to
+  // it, and the specifier came out `./apps\web\…` — an import no host resolves.
+  const path = relative(dirname(toPosix(fromFile)), toPosix(target)).replace(/\.[cm]?tsx?$/, '');
   return path.startsWith('.') ? path : `./${path}`;
 }
 
@@ -232,7 +235,7 @@ export async function readAppSources(root: string): Promise<readonly SourceFile[
     const glob = new Bun.Glob(pattern);
     for await (const path of glob.scan({ cwd: root, absolute: false })) {
       if (hasPathSegment(path, 'node_modules') || path.includes('.test.')) continue;
-      const posix = path.split('\\').join('/');
+      const posix = toPosix(path);
       files.push({ path: posix, source: await Bun.file(joinPath(root, posix)).text() });
     }
   }

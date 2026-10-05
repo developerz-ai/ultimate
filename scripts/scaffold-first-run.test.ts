@@ -1,4 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun ships no path API; the expected binary path is spelt the way the host spells it.
+import { join, resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
 import type { RunResult } from './lib/run';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -204,5 +206,6 @@ test('firstRunLines prints the whole output of a failing step and none of a pass
 });
 
 test('appBin resolves the scaffolded app’s binary, not this repo’s', () => {
-  expect(appBin('/tmp/demoapp')).toBe('/tmp/demoapp/node_modules/.bin/x');
+  // Not installed, so the answer is the path `bun install` would write — host-spelt, either way.
+  expect(appBin('/tmp/demoapp')).toBe(join(resolve('/tmp/demoapp'), 'node_modules', '.bin', 'x'));
 });

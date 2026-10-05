@@ -9,7 +9,8 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mk
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { eventsBinding, reportedUrls, resolveServices } from './runtime-bindings';
+import { pgliteDataDir } from '@ultimat3/db';
+import { embeddedLocation, eventsBinding, reportedUrls, resolveServices } from './runtime-bindings';
 import { safeUrlLabel } from './safe-url-label';
 
 const withRoot = <T>(body: (root: string) => T): T => {
@@ -132,4 +133,16 @@ test('the events binding reads the variable realtime.urlEnv names, only under tr
     url: 'nats://bus.internal:4222',
   });
   expect(eventsBinding(env, { ...nats, transport: 'memory' }).mode).toBe('embedded');
+});
+
+// W18: a Windows state directory is a tagged PATH, read back by stripping the prefix — never
+// parsed as a URL, which would split it at the drive colon and mangle the backslashes.
+test('an embedded location round-trips a Windows path verbatim, and is never printed raw', () => {
+  const dir = 'D:\\a\\my app\\.x\\pgdata';
+  const db = embeddedLocation('pglite', dir);
+  expect(pgliteDataDir(db)).toBe(dir);
+  expect(embeddedLocation('file', 'D:\\a\\.x\\storage').slice('file://'.length)).toBe(
+    'D:\\a\\.x\\storage',
+  );
+  expect(safeUrlLabel(db, 'db')).not.toContain('my app');
 });

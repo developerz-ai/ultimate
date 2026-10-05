@@ -3,7 +3,14 @@
 // Proved through `parseScriptArgs` alone — the release script itself is never run here.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { flagBool, flagList, flagString, parseScriptArgs } from './args';
+import {
+  flagBool,
+  flagList,
+  flagString,
+  parseScriptArgs,
+  scriptNameOf,
+  scriptPathOf,
+} from './args';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 // Spawns a real script from the repo root, so it runs on the repo-scan backstop.
@@ -78,6 +85,24 @@ describe('unit · the string readers are unchanged', () => {
     expect(flagList(args, 'unpin')).toEqual(['a', 'b', 'c']);
     expect(flagString(args, 'only')).toBeUndefined();
     expect(args.argv).toEqual(['--unpin', 'a, b,,c', '--base=origin/main', '--only']);
+  });
+});
+
+// The Windows job: `Bun.main` is `D:\…\scripts\gate-codes.ts`, and the fix pasted that back quoted.
+describe('unit · the refusal names the script repo-relative on every host', () => {
+  test('a Windows entry under a Windows root is the `/` path `bun run` takes', () => {
+    const main = 'D:\\a\\ultimate\\scripts\\gate-codes.ts';
+    expect(scriptPathOf(main, 'D:\\a\\ultimate')).toBe('scripts/gate-codes.ts');
+    expect(scriptNameOf(main)).toBe('gate-codes');
+  });
+
+  test('a POSIX entry is unchanged', () => {
+    expect(scriptPathOf('/repo/scripts/gate-codes.ts', '/repo')).toBe('scripts/gate-codes.ts');
+    expect(scriptNameOf('/repo/scripts/gate-codes.ts')).toBe('gate-codes');
+  });
+
+  test('an entry outside the root keeps its path, quoted when it is not inert', () => {
+    expect(scriptPathOf('/my dir/x.ts', '/repo')).toBe("'/my dir/x.ts'");
   });
 });
 

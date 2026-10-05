@@ -70,6 +70,7 @@ const CORE_CODE_TITLES = {
   // place rather than by whichever package happened to raise one first.
   X_TIMEOUT: 'operation exceeded its deadline',
   X_UNREACHABLE: 'unreachable branch was reached',
+  X_SECRETS_KEY_ACL_FAILED: 'key file ACL not owner-only',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

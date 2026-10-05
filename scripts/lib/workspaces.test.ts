@@ -18,6 +18,7 @@ import {
   publishSequence,
   readWorkspaceManifest,
   WORKSPACE_GLOB,
+  workspaceDirOf,
 } from './workspaces';
 
 const roots: string[] = [];
@@ -114,6 +115,12 @@ describe('listWorkspaces', () => {
       'packages/core/package.json': '{"name":"@ultimat3/core","version":"9.0.0"}',
     });
     expect((await listWorkspaces(root)).map((one) => one.dir)).toEqual(['core', 'cli']);
+  });
+
+  // The Windows job named every workspace `''`: its glob answers `packages\\core\\package.json`.
+  test('a workspace directory is read off either separator the glob answers with', () => {
+    expect(workspaceDirOf('packages\\core\\package.json')).toBe('core');
+    expect(workspaceDirOf('packages/core/package.json')).toBe('core');
   });
 
   test('the glob is exported, so the refusal can name what it scanned', () => {

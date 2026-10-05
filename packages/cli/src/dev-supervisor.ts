@@ -5,17 +5,21 @@
 // of logging "reloaded" over stale code, and this loop boots a fresh one on the same port. Every
 // other save stays the in-process reload it was — a restart is paid only where nothing else works.
 
-// why: Bun has no path API; the restart line names files relative to the app root.
-import { relative } from 'node:path';
 import { drain } from '@ultimat3/core';
 import type { StalePin } from './app-reload-graph';
 import { devSpec } from './cmd-dev-spec';
-import type { DevChildGone } from './dev-child-watch';
-import { DEV_SUPERVISOR_PID_ENV, startDevChildWatch, supervisorPid } from './dev-child-watch';
+import type { DevChildGone, DevDrainMessage } from './dev-child-watch';
+import {
+  DEV_SUPERVISOR_PID_ENV,
+  devHardExitMs,
+  startDevChildWatch,
+  supervisorPid,
+} from './dev-child-watch';
 import { devPortFor } from './dev-port';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
+import { posixRelative } from './posix-path';
 import { writeErrorLine } from './write-line';
 
 /** Set on the child: it serves, and a pinned save makes it exit for a restart. */
@@ -76,6 +80,35 @@ function withPort(argv: readonly string[], port: number): readonly string[] {
 export interface DevChild {
   readonly exited: Promise<number>;
   kill(signal: 'SIGINT' | 'SIGTERM'): void;
+  /** The IPC channel; absent or closed, `stopChild` falls back to the signal. */
+  send?(message: DevDrainMessage): void;
+}
+
+/**
+ * Asks the child to drain: a `drain` message over IPC, on every platform — on Windows
+ * `kill('SIGTERM')` is TerminateProcess, which skips the drain and leaves the embedded database
+ * unclean. The signal only when there is no channel to ask over (it closed, or a test's child) —
+ * or once `afterMs` has passed with the child still running: one still booting has no listener
+ * yet and drops the message, and a stop that never lands is a supervisor waiting forever.
+ */
+export function stopChild(
+  child: DevChild,
+  signal: 'SIGINT' | 'SIGTERM',
+  afterMs: number = devHardExitMs(),
+): void {
+  if (child.send !== undefined) {
+    try {
+      child.send({ type: 'x-dev-drain', signal });
+      const fallback = setTimeout(() => child.kill(signal), afterMs);
+      // Never what keeps this process alive: awaiting the child's exit is.
+      fallback.unref();
+      void child.exited.then(() => clearTimeout(fallback));
+      return;
+    } catch {
+      // The channel closed under us: the child is exiting or gone, and the signal is all that's left.
+    }
+  }
+  child.kill(signal);
 }
 
 export interface SuperviseDevInput {
@@ -92,16 +125,23 @@ const spawnInherited = (
   command: readonly string[],
   env: Record<string, string | undefined>,
 ): DevChild =>
-  Bun.spawn([...command], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit', env });
+  Bun.spawn([...command], {
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+    env,
+    // The channel `stopChild` drains over; the child sends nothing back.
+    ipc: () => undefined,
+  });
 
 /**
  * Runs children until one exits with anything but `DEV_RESTART_EXIT_CODE`, and answers that code.
- * SIGINT and SIGTERM are forwarded — a terminal's Ctrl-C reaches the child on its own too, and its
- * drain is idempotent — and once one arrived no child is started again: a Ctrl-C during a restart
- * is a stop, never a respawn.
+ * SIGINT and SIGTERM are forwarded as a `drain` message (`stopChild`) — a terminal's Ctrl-C reaches
+ * the child on its own too, and its drain is idempotent — and once one arrived no child is started
+ * again: a Ctrl-C during a restart is a stop, never a respawn.
  *
  * Every other way out stops the child too: an uncaught error or a `process.exit` here reaches the
- * `exit` listener, which SIGTERMs a child still running. The one way no listener sees is a SIGKILL
+ * `exit` listener, which asks a child still running to drain. The one way no listener sees is a SIGKILL
  * of this process — the child's own watch (`dev-child-watch.ts`) answers that, from its side, off
  * the pid this loop hands it.
  */
@@ -112,12 +152,12 @@ export async function superviseDev(input: SuperviseDevInput): Promise<number> {
   let stopping = false;
   const forward = (signal: 'SIGINT' | 'SIGTERM') => (): void => {
     stopping = true;
-    child?.kill(signal);
+    if (child !== undefined) stopChild(child, signal);
   };
   const onInt = forward('SIGINT');
   const onTerm = forward('SIGTERM');
   const onExit = (): void => {
-    if (running) child?.kill('SIGTERM');
+    if (running && child !== undefined) stopChild(child, 'SIGTERM');
   };
   process.on('SIGINT', onInt);
   process.on('SIGTERM', onTerm);
@@ -146,8 +186,8 @@ export function restartReason(root: string, pins: readonly StalePin[]): string {
   return pins
     .map(({ changed, pinned }) =>
       changed === pinned
-        ? relative(root, pinned)
-        : `${relative(root, changed)} under ${relative(root, pinned)}`,
+        ? posixRelative(root, pinned)
+        : `${posixRelative(root, changed)} under ${posixRelative(root, pinned)}`,
     )
     .join(', ');
 }
@@ -159,7 +199,7 @@ export function restartFinding(root: string, pins: readonly StalePin[]): Finding
     code: 'X_DEV_RESTART_REQUIRED',
     cause: `${restartReason(root, pins)} — a module that defines a primitive still holds the code before the save, and re-importing it would register a second definition`,
     fix: 'restart x dev (a supervised `x dev` restarts itself; an embedded startDev() passes onRestart)',
-    at: first === undefined ? '' : relative(root, first.pinned),
+    at: first === undefined ? '' : posixRelative(root, first.pinned),
   };
 }
 

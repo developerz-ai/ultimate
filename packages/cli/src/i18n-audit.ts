@@ -4,10 +4,10 @@
 
 // `node:` and not Bun: Bun exposes no existence check (`existsSync`, which is how a missing
 // `catalogs/` directory reads as "nothing shipped" instead of a throw) and no path API at all —
-// `join` builds the absolute path `Bun.file` reads, and `relative`/`sep` turn it back into the
+// `join` builds the absolute path `Bun.file` reads; `posixRelative` turns it back into the
 // root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
@@ -20,6 +20,7 @@ import {
   missingFrom,
   nestCatalog,
 } from '@ultimat3/i18n';
+import { posixRelative } from './posix-path';
 import { eachSourceFile, isTest } from './source-files';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
 
@@ -40,7 +41,7 @@ export async function scanSource(root: string): Promise<Extraction> {
     if (!isTest(file) && !isGuard(file)) files.push(file);
   }
   const extraction = await extractFromFiles(files.map((file) => join(root, file)));
-  const toRelative = (file: string): string => relative(root, file).split(sep).join('/');
+  const toRelative = (file: string): string => posixRelative(root, file);
   return {
     usages: extraction.usages.map((usage) => ({ ...usage, file: toRelative(usage.file) })),
     dynamic: extraction.dynamic.map((entry) => ({ ...entry, file: toRelative(entry.file) })),

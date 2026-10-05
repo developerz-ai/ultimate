@@ -39,7 +39,8 @@ export class ShotChromeMissingError extends UltimateError {
       // One literal, so `fix-scan.ts` can read it. A path is the one repair that works whatever the
       // browser is and wherever the distribution put it; `--cdp-url` is the answer for a box that
       // will never have one, and it is a flag `x shot` already ships.
-      fix: 'export CHROME_PATH=/usr/bin/google-chrome   # any Chrome or Chromium binary; a box that will never have one attaches instead: x shot / --cdp-url wss://cdp.example.com/session/abc',
+      // The `#` names the macOS and Windows spellings: one literal for every platform.
+      fix: 'export CHROME_PATH=/usr/bin/google-chrome   # any Chrome, Chromium or Edge binary — macOS: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows PowerShell: $env:CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" (Edge: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"); a box that will never have one attaches instead: x shot / --cdp-url wss://cdp.example.com/session/abc',
       meta: { tried: [...CHROME_CANDIDATES], vars: [...BROWSER_PATH_VARS] },
     });
   }
@@ -67,7 +68,8 @@ export const browserBinaryExists = (path: string): boolean => existsSync(path);
 /**
  * The path a run will launch, or `undefined` when this machine has no browser to launch.
  *
- * The last step is a PROBE — the four paths `cdp-launch.ts` tries for the e2e driver, imported
+ * The last step is a PROBE — the paths `cdp-launch.ts` tries for the e2e driver on THIS platform
+ * (`/usr/bin` on Linux, the app bundles on macOS, Chrome and Edge on Windows), imported
  * rather than restated, because two lists of Chrome locations that must agree is the drift axiom 2
  * refuses — so a box with no browser is refused before a dev-server boot, not one launch later.
  *

@@ -4,6 +4,7 @@
 // `typescript` devDependency compiles them.
 
 import { join } from 'node:path';
+import { localBin } from './local-bin';
 import { run } from './run';
 
 export const README_GLOB = 'packages/*/README.md';
@@ -169,10 +170,9 @@ export async function compileFixtures(
   await Bun.$`rm -rf ${dir}`.quiet();
   for (const fixture of fixtures) await Bun.write(join(dir, fixture.file), fixture.text);
   await Bun.write(join(dir, 'tsconfig.json'), TSCONFIG(exclude));
-  const result = await run(
-    [join(root, 'node_modules/.bin/tsc'), '--noEmit', '-p', join(dir, 'tsconfig.json')],
-    { cwd: root },
-  );
+  const result = await run([localBin(root, 'tsc'), '--noEmit', '-p', join(dir, 'tsconfig.json')], {
+    cwd: root,
+  });
   const diagnostics = parseDiagnostics(result.output);
   // A non-zero exit with nothing this can attribute is `tsc` refusing to run — TS18003, a missing
   // binary, a config error. Reporting that as "every example compiles" is the false green.

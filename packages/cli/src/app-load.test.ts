@@ -13,7 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';
-import { appModulePaths, loadApp } from './app-load';
+import { appModulePaths, loadApp, sortModulePaths } from './app-load';
+import { toPosix } from './posix-path';
 
 let root = '';
 
@@ -154,7 +155,10 @@ describe('unit · the app is imported in one order on every machine', () => {
         await Bun.write(join(root, `apps/web/app/${name}/page.tsx`), 'export {};\n');
         await Bun.write(join(root, `packages/${name}/src/index.ts`), 'export {};\n');
       }
-      const paths = (await appModulePaths(root)).map((path) => path.slice(root.length + 1));
+      // POSIX before the prefix tests: on Windows the glob answers `apps\web\…`.
+      const paths = (await appModulePaths(root)).map((path) =>
+        toPosix(path.slice(root.length + 1)),
+      );
       const app = paths.filter((path) => path.startsWith('apps/'));
       const packages = paths.filter((path) => path.startsWith('packages/'));
       expect(app).toEqual([...app].sort());
@@ -165,5 +169,16 @@ describe('unit · the app is imported in one order on every machine', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test('the order is the POSIX spelling, so a Windows glob sorts like a Linux one', () => {
+    // `\` sorts after `1`, `/` before it: sorted raw, Windows put `a1/` ahead of `a/`.
+    const windows = ['D:\\w\\apps\\web\\app\\a1\\page.tsx', 'D:\\w\\apps\\web\\app\\a\\page.tsx'];
+    const linux = windows.map(toPosix);
+    expect(sortModulePaths(windows).map(toPosix)).toEqual(sortModulePaths(linux));
+    expect(sortModulePaths(linux)).toEqual([
+      'D:/w/apps/web/app/a/page.tsx',
+      'D:/w/apps/web/app/a1/page.tsx',
+    ]);
   });
 });

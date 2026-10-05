@@ -96,7 +96,7 @@ export function shotBrowserChoice(input: ShotBrowserInput): ShotBrowserChoice {
       flag: 'browser',
       command: 'shot',
       reason: `no executable at "${executablePath}"`,
-      fix: 'x shot / --browser /usr/bin/chromium',
+      fix: 'x shot / --browser /usr/bin/chromium   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"',
     });
   }
   return { executablePath };

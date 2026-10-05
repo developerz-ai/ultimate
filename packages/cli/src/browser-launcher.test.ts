@@ -3,6 +3,7 @@
 // library is resolved from the app any more, so there is no install to be told about.
 
 import { describe, expect, test } from 'bun:test';
+import { CHROME_CANDIDATES } from '@ultimat3/testing';
 import {
   appBrowser,
   BROWSER_CDP_URL_VAR,
@@ -41,14 +42,13 @@ describe('unit · which binary a run launches', () => {
     ).toBe('/fallback/chrome');
   });
 
-  /** The last resort: the four paths `cdp-launch.ts` probes for the e2e driver, never a second list. */
+  /** The last resort: the paths `cdp-launch.ts` probes on this platform, never a second list. */
   test('nothing named falls back to the probe the e2e driver already uses', () => {
-    expect(executablePathFrom(undefined, {}, (path) => path === '/usr/bin/google-chrome')).toBe(
-      '/usr/bin/google-chrome',
-    );
-    // First hit wins, in the list's own order — the operator's `CHROME_PATH` is above all four.
-    expect(executablePathFrom(undefined, {}, (path) => path.startsWith('/usr/bin/chromium'))).toBe(
-      '/usr/bin/chromium',
+    const [first, second, third] = CHROME_CANDIDATES;
+    expect(executablePathFrom(undefined, {}, (path) => path === first)).toBe(first);
+    // First hit wins, in the list's own order — the operator's `CHROME_PATH` is above all of them.
+    expect(executablePathFrom(undefined, {}, (path) => path === second || path === third)).toBe(
+      second,
     );
     expect(executablePathFrom(undefined, { CHROME_PATH: '/named' }, () => true)).toBe('/named');
   });

@@ -20,6 +20,7 @@ interface Job {
 }
 
 interface Workflow {
+  readonly concurrency?: { readonly group?: string; readonly 'cancel-in-progress'?: boolean };
   readonly permissions?: Readonly<Record<string, string>>;
   readonly jobs?: Readonly<Record<string, Job>>;
 }
@@ -110,5 +111,15 @@ describe('unit · release.yml is resumable and pinned', () => {
     const tags = [...text.matchAll(/git tag\s+(\S+)/g)].map((match) => match[1]);
     expect(tags.length).toBeGreaterThan(0);
     for (const flag of tags) expect(flag).toBe('-a');
+  });
+});
+
+describe('unit · release.yml queues releases and never cancels one', () => {
+  // A per-ref group (`release-${{ github.ref }}`) serialized nothing across versions: two Releases
+  // cut minutes apart published side by side, and `latest` went to whichever finished last per
+  // package — a lockstep set split across two versions. One fixed group is one queue.
+  test('one fixed group for every release, and cancel-in-progress is false', () => {
+    expect(workflow.concurrency?.group).toBe('release');
+    expect(workflow.concurrency?.['cancel-in-progress']).toBe(false);
   });
 });

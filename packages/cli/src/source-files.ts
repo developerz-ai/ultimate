@@ -3,6 +3,7 @@
 // means a finding one of them can never see.
 
 import { hasPathSegment } from './path-segments';
+import { toPosix } from './posix-path';
 
 export const SOURCE_GLOBS = [
   'packages/*/src/**/*.{ts,tsx}',
@@ -38,7 +39,17 @@ export const isGenerated = (path: string): boolean => path.endsWith('.d.ts');
 export const isTest = (path: string): boolean => /\.test\.tsx?$/.test(path);
 
 /**
- * Every source file under `root`, repo-relative and deduplicated across the globs — in a SORTED
+ * Glob answers as the POSIX paths every consumer keys by, in code-unit order of that spelling.
+ * The glob answers in the host's separator: on Windows `guards\untranslated-string.ts` missed
+ * `i18n`'s `startsWith('guards/')`, so the example `t('…')` in its fix line became a key every
+ * fresh scaffold was missing — and `^packages\/` rules matched nothing at all.
+ */
+export function sortedPosix(paths: readonly string[]): string[] {
+  return paths.map(toPosix).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/**
+ * Every source file under `root`, repo-relative, POSIX and deduplicated across the globs — in a SORTED
  * order per pattern, `As of 2026-09-05`. `Bun.Glob.scan` yields in the filesystem's `readdir`
  * order, which ext4 hashes: the first offender a scan names was `index.ts` on one machine and
  * `tools.ts` on a GitHub runner, so a finding's `cause` depended on which disk held the checkout
@@ -52,8 +63,7 @@ export async function* eachSourceFile(root: string): AsyncGenerator<string> {
     for await (const path of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
       if (!isVendored(path)) matches.push(path);
     }
-    matches.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-    for (const path of matches) {
+    for (const path of sortedPosix(matches)) {
       if (seen.has(path)) continue;
       seen.add(path);
       yield path;

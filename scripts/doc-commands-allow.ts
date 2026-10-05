@@ -147,9 +147,9 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
   },
   {
     path: 'docs/idea/16-app-targets.md',
-    cites: 'x build --platform',
+    cites: 'x build --store',
     kind: 'proposed',
-    why: 'the flag `--target native|desktop` would share — and the first unknown flag on every `x build --platform … --store` line the page writes, so it covers `--store` too',
+    why: 'the store-submission flag the native targets would add; `--platform` itself shipped with the binary target in plan 101 sweep 8b',
   },
   {
     path: 'docs/idea/16-app-targets.md',

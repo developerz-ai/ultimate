@@ -76,6 +76,17 @@ SIGTERM
 
 Exceeding `DRAIN_TIMEOUT` throws `X_SHUTDOWN_TIMEOUT`; requests arriving during the drain get `X_DRAINING`.
 
+### Which signals start the drain
+
+Windows never sends SIGTERM to a console process, so the set is per platform — `drainSignals(platform)` in `@ultimat3/core`, installed by every role `As of 2026-10-05`:
+
+| Host | Drains on | Not a drain |
+|---|---|---|
+| Linux, macOS, any container (Docker Desktop on Windows included — the image is Linux) | `SIGTERM`, `SIGINT` (Ctrl-C) | `SIGHUP`: a terminal hang-up, not a stop |
+| native Windows (`x dev`, a local `x build --target binary` run) | `SIGTERM`, `SIGINT` (Ctrl-C), `SIGHUP` (the console window closing), `SIGBREAK` (Ctrl-Break) | `taskkill /F` and Task Manager's End task: no signal, an outright kill |
+
+**Stop a native Windows process with Ctrl-C or Ctrl-Break**, and the drain log line names the signal (`{"msg":"draining","signal":"SIGBREAK"}`). Closing the console window also drains, inside the few seconds Windows allows before it kills the process. A native Windows binary is for development and CI. Deploying on a Windows host means the Linux image under Docker Desktop, where SIGTERM works as on any other host.
+
 ### Why `sync` sends server-directed jittered reconnect
 
 Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubscribing, all asking "what changed since my LSN?" — a self-inflicted DDoS landing during a deploy when capacity is already reduced, and it is fractal: surviving nodes overload, drop connections, and the herd re-forms.

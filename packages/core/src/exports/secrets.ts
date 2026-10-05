@@ -47,6 +47,7 @@ export {
   SecretsPlaintextInvalidError,
   SecretsTamperedError,
 } from '../secrets-errors';
+export { SecretsKeyAclError } from '../secrets-key-file';
 export type {
   MasterKeyRef,
   MasterKeySource,
@@ -58,6 +59,7 @@ export {
   installSecrets,
   masterKeyIdOf,
   masterKeyPath,
+  promoteStagedMasterKey,
   readSecretsFile,
   requireMasterKey,
   SECRETS_FILE,
@@ -67,6 +69,7 @@ export {
   secretsFileExists,
   secretsPath,
   stagedMasterKeyPath,
+  stageMasterKeyFile,
   writeMasterKeyFile,
   writeSecretsFile,
 } from '../secrets-store';

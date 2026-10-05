@@ -18,6 +18,22 @@ import type { GeneratedFile } from './templates';
 /** Derived from this file, never from cwd, so the harness works from any working directory. */
 export const workspaceRoot = (): string => resolve(import.meta.dir, '..', '..', '..');
 
+/**
+ * A directory link any account can make: a `'dir'` symlink on Windows needs Developer Mode or an
+ * elevated shell (EPERM otherwise), a junction does not. POSIX ignores the type entirely.
+ */
+export const DIR_LINK = process.platform === 'win32' ? 'junction' : 'dir';
+
+/**
+ * The workspace's own `tsc`, resolved rather than spelled: on Windows `bun install` writes
+ * `node_modules/.bin/tsc.exe` and no extensionless `tsc`, so the spelled path never spawned. Not
+ * installed answers the bare path, so the failed spawn names what `bun install` would create.
+ */
+export const workspaceTsc = (root: string): string => {
+  const bin = join(root, 'node_modules', '.bin');
+  return Bun.which('tsc', { PATH: bin }) ?? join(bin, 'tsc');
+};
+
 export interface TypeDiagnostic {
   /** Sandbox-relative path, or '' for a diagnostic the compiler raised about the project itself. */
   readonly file: string;
@@ -203,10 +219,10 @@ export async function typecheckScaffold(options: TypecheckOptions = {}): Promise
     // The sandbox borrows the workspace's installed dependencies. The gate is about the
     // templates; whether a registry install succeeds is a different question, and a sealed
     // test cannot ask it.
-    symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'), 'dir');
+    symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'), DIR_LINK);
     await Bun.write(join(dir, OVERLAY), overlay(root, app));
     const result = await (options.runner ?? exec)(
-      [join(root, 'node_modules', '.bin', 'tsc'), '--noEmit', '--pretty', 'false', '-p', OVERLAY],
+      [workspaceTsc(root), '--noEmit', '--pretty', 'false', '-p', OVERLAY],
       { cwd: dir },
     );
     const output = [result.stdout, result.stderr].filter((part) => part.length > 0).join('\n');

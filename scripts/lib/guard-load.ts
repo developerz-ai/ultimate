@@ -11,6 +11,7 @@
 
 import type { Finding } from './log';
 import { report } from './log';
+import { insideRoot, toPosix } from './posix-path';
 import { repoRoot } from './run';
 
 export interface LoadFailure {
@@ -37,12 +38,18 @@ export function loadFailureOf(error: unknown): LoadFailure | undefined {
   return undefined;
 }
 
-/** Repo-relative when it can be, so the finding reads the same on every machine. */
-const shown = (module: string, root: string): string =>
-  module.startsWith(`${root}/`) ? module.slice(root.length + 1) : module;
+/**
+ * Repo-relative when it can be and `/`-spelt always, so the finding reads the same on every
+ * machine — a Windows `D:\repo\scripts\x.ts` included, which a `${root}/` prefix never matched.
+ */
+const shown = (module: string, root: string): string => insideRoot(root, module) ?? toPosix(module);
 
 /** What `bun run <script>` may carry: a `package.json` script name — never opening with `-`. */
 const SCRIPT_NAME = /^\w[\w-]*$/;
+
+/** The runtime's message with the checkout's prefix cut, in whichever separator it spelt it. */
+const withoutRoot = (message: string, root: string): string =>
+  message.replace(`${root}/`, '').replace(`${root}\\`, '');
 
 export function loadFinding(script: string, failure: LoadFailure, root: string): Finding {
   const module = shown(failure.module, root);
@@ -54,15 +61,19 @@ export function loadFinding(script: string, failure: LoadFailure, root: string):
   return {
     code: 'X_GUARD_LOAD_FAILED',
     at: module,
-    cause: `${script} could not load its imports — ${failure.message.replace(`${root}/`, '')} — so it checked nothing; a package in its import graph is mid-edit or broken`,
+    cause: `${script} could not load its imports — ${withoutRoot(failure.message, root)} — so it checked nothing; a package in its import graph is mid-edit or broken`,
     fix: `edit ${module} until bun run typecheck is clean, then rerun: ${rerun}`,
   };
 }
 
-/** The script a `bun --preload … scripts/<name>.ts` run is for, as `package.json` names it. */
-const scriptName = (argv: readonly string[]): string => {
-  const entry = argv.find((arg) => /scripts\/[\w-]+\.ts$/.test(arg)) ?? 'the guard';
-  return entry.replace(/^.*scripts\//, '').replace(/\.ts$/, '');
+/**
+ * The script a `bun --preload … scripts/<name>.ts` run is for, as `package.json` names it. Either
+ * separator: on Windows the entry is `…\scripts\<name>.ts`, and a `/`-only match fell back to
+ * `the guard` — a finding no reader could rerun.
+ */
+export const scriptName = (argv: readonly string[]): string => {
+  const entry = argv.find((arg) => /scripts[\\/][\w-]+\.ts$/.test(arg)) ?? 'the guard';
+  return entry.replace(/^.*scripts[\\/]/, '').replace(/\.ts$/, '');
 };
 
 function reportLoadFailure(script: string, failure: LoadFailure): never {

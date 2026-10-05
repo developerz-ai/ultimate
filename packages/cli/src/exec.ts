@@ -32,6 +32,12 @@ export interface ExecOptions {
    */
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly stdin?: string;
+  /**
+   * Told the child's pid the moment it exists. A gate step's deadline records it here
+   * (`verify-deadline.ts`): on Windows no process's environment is readable, so the tag sweep
+   * finds nothing and the pid recorded at spawn is the only handle on what the step started.
+   */
+  readonly onSpawn?: (pid: number) => void;
 }
 
 export type Runner = (command: readonly string[], options: ExecOptions) => Promise<ExecResult>;
@@ -112,6 +118,8 @@ export const exec: Runner = async (command, options) => {
     });
   }
   const proc = spawnOrRefuse([head, ...rest], options);
+  // Outside the refusal: a throwing observer is the caller's bug, never "could not run".
+  options.onSpawn?.(proc.pid);
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

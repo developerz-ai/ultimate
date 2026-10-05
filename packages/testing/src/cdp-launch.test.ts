@@ -3,6 +3,8 @@
 // the candidate order and the refusal.
 
 import { describe, expect, test } from 'bun:test';
+// why: whether the profile directory outlived the close is a filesystem question Bun has no sync answer to.
+import { existsSync } from 'node:fs';
 // why: a throwaway executable script is the fake browser; Bun has no mkdtemp, chmod or recursive rm of its own.
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: the scratch directory lives under the OS temp dir, which Bun does not expose.
@@ -13,11 +15,21 @@ import {
   CHROME_CANDIDATES,
   CHROME_PATH_ENV,
   CLOSE_GRACE_MS,
+  chromeCandidates,
   chromeLaunchFlags,
   findChrome,
   launchChrome,
   launchFoundChrome,
 } from './cdp-launch';
+import { launchAttempt } from './cdp-launch-attempt';
+import type { CdpWire } from './cdp-launch-wire';
+
+/**
+ * The fakes below are bash scripts that talk on fds 3 and 4: Windows runs neither a `#!` script nor
+ * that pipe (`cdp-launch-wire.ts`). There the launcher is proved against the machine's real Chrome
+ * — the last block of this file — which is what a fake stands in for everywhere else.
+ */
+const WINDOWS = process.platform === 'win32';
 
 const NOWHERE = '/nonexistent/definitely-not-a-browser';
 
@@ -44,7 +56,7 @@ describe('findChrome', () => {
   });
 
   test('the candidate list is ordered, and google-chrome comes before chromium', () => {
-    const order = [...CHROME_CANDIDATES];
+    const order = [...chromeCandidates('linux', {})];
 
     expect(order[0]).toBe('/usr/bin/google-chrome');
     // A guard on the needle's presence, because `indexOf` answers -1 for an absent name and -1 is
@@ -56,6 +68,59 @@ describe('findChrome', () => {
   });
 });
 
+describe('chromeCandidates', () => {
+  // A browser installed where the list never looks is an e2e suite SKIPPED in silence, and an
+  // `x shot` refused — which was every Windows and every macOS machine without CHROME_PATH.
+  const WINDOWS_ENV = {
+    ProgramFiles: 'C:\\Program Files',
+    'ProgramFiles(x86)': 'C:\\Program Files (x86)',
+    LOCALAPPDATA: 'C:\\Users\\ada\\AppData\\Local',
+  };
+
+  test('on Windows: Chrome under each install root, then Edge — the browser every Windows has', () => {
+    expect(chromeCandidates('win32', WINDOWS_ENV)).toEqual([
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Users\\ada\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    ]);
+  });
+
+  test('on Windows a root the environment does not name falls back, or is not guessed at', () => {
+    const found = chromeCandidates('win32', {});
+    expect(found[0]).toBe('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe');
+    // No LOCALAPPDATA: a per-user install has no default root worth inventing.
+    expect(found.some((path) => path.includes('AppData'))).toBe(false);
+  });
+
+  test('on macOS: the app bundles, system-wide then per-user', () => {
+    expect(chromeCandidates('darwin', { HOME: '/Users/ada' })).toEqual([
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Users/ada/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    ]);
+  });
+
+  test('CHROME_CANDIDATES is this machine’s list', () => {
+    expect(CHROME_CANDIDATES).toEqual(chromeCandidates(process.platform, process.env));
+  });
+
+  test('findChrome searches the list of the platform it is told, not only this one', async () => {
+    // A per-user macOS install, made real under a scratch HOME: found only by the darwin list.
+    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-'));
+    try {
+      const chrome = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
+      await Bun.write(chrome, '');
+      expect(await findChrome({ HOME: home }, 'darwin')).toBe(chrome);
+      expect(await findChrome({ HOME: home }, 'linux')).not.toBe(chrome);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('launchFoundChrome', () => {
   test('refuses by name when there is no browser, naming every path it tried', async () => {
     const thrown = await launchFoundChrome({ [CHROME_PATH_ENV]: NOWHERE }, 1_000).catch(
@@ -63,7 +128,9 @@ describe('launchFoundChrome', () => {
     );
 
     expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
-    expect((thrown as { cause?: string }).cause).toContain('/usr/bin/google-chrome');
+    // Rendered as JSON, so a Windows path's backslashes arrive doubled: compare like with like.
+    const first = JSON.stringify(chromeCandidates(process.platform, process.env)[0]).slice(1, -1);
+    expect((thrown as { cause?: string }).cause).toContain(first);
     expect((thrown as { fix?: string }).fix).toContain(CHROME_PATH_ENV);
   });
 });
@@ -86,7 +153,25 @@ describe('chromeLaunchFlags', () => {
   });
 });
 
-describe('launchChrome', () => {
+describe('launchChrome — a binary that cannot be started', () => {
+  // Bun throws from `spawn` itself for a path that is not there or not a format the OS executes —
+  // every fake below, on Windows. That throw escaped as a bare ENOENT, not X_CDP_LAUNCH_FAILED.
+  test('is X_CDP_LAUNCH_FAILED naming why, never a bare spawn error', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x-launch-none-'));
+    try {
+      const error = await launchChrome({
+        executable: join(dir, 'no-such-browser'),
+        timeoutMs: 1_000,
+      }).catch((e: unknown) => e);
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      expect((error as { cause: string }).cause).toContain('could not be started');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(WINDOWS)('launchChrome', () => {
   /** A fake browser: a shell script, written executable into a throwaway directory. */
   const fakeBrowser = async (script: string): Promise<{ fake: string; dir: string }> => {
     const dir = await mkdtemp(join(tmpdir(), 'x-launch-fake-'));
@@ -199,3 +284,45 @@ describe('launchChrome', () => {
     }
   });
 });
+
+const realChrome = await findChrome(process.env);
+/** `ci.yml` sets it, so a runner that lost its browser fails here instead of skipping in silence. */
+const browserRequired = process.env['E2E_BROWSER_REQUIRED'] === '1';
+
+describe.skipIf(realChrome === undefined && !browserRequired)(
+  'launchChrome — this machine’s Chrome',
+  () => {
+    // The pipe on Windows is skipped, not failed: the parent cannot hold Chrome's fds 3 and 4 there,
+    // which is why `defaultWire('win32')` is the port.
+    const wires: CdpWire[] = process.platform === 'win32' ? ['port'] : ['pipe', 'port'];
+
+    test.each(wires)(
+      'over the %s, it answers, closes, and leaves no process holding its profile',
+      async (wire) => {
+        if (realChrome === undefined)
+          expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
+        let profile = '';
+        const started = await launchAttempt({
+          executable: realChrome,
+          flags: (dir) => {
+            profile = dir;
+            return chromeLaunchFlags(dir, wire);
+          },
+          wire,
+          timeoutMs: 10_000,
+          launchTimeoutMs: 60_000,
+        });
+        if (!started.ok) expect.unreachable(`no launch: ${JSON.stringify(started.failure)}`);
+        try {
+          const version = await started.browser.connection.send('Browser.getVersion');
+          expect(JSON.stringify(version)).toContain('product');
+        } finally {
+          await started.browser.close();
+        }
+        // A profile still there is a browser process — on Windows, an orphaned child — holding it.
+        expect(existsSync(profile)).toBe(false);
+      },
+      150_000,
+    );
+  },
+);

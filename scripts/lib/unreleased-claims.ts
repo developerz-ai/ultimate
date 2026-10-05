@@ -3,6 +3,7 @@
 // so the docs told an agent the installable version did not have what it had. One rule, read off
 // the changelog's own dated headings, so it goes stale exactly when the release happens.
 
+import { toPosix } from './posix-path';
 import { UNRELEASED_CLAIM_PINS, UNRELEASED_PINS_FILE } from './unreleased-claim-pins';
 
 /** The pages a reader treats as current. `docs/plans/` is a dated record and is not one. */
@@ -107,7 +108,9 @@ export async function treeClaims(root: string, changelog: string): Promise<Unrel
   const dated = datedVersions(changelog);
   const paths = new Set<string>();
   for (const pattern of CLAIM_SURFACES) {
-    for (const path of new Bun.Glob(pattern).scanSync({ cwd: root })) {
+    for (const scanned of new Bun.Glob(pattern).scanSync({ cwd: root })) {
+      // `/`-spelt: the pins and `NOT_CURRENT` name pages with `/`, which a Windows path never matched.
+      const path = toPosix(scanned);
       if (!NOT_CURRENT.test(path) && !path.includes('node_modules/')) paths.add(path);
     }
   }

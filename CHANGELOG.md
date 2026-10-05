@@ -15,7 +15,19 @@ workarounds. Sweep 4 makes two implementations of one seam answer the same input
 closes seven open issues across navigation, ui, the MCP catalog and the dev error page. Sweep 6
 holds the CLI, its guards, the test harness and CI to what they claim. Sweep 7 deletes trash and
 twins, and ships the guard that keeps each one gone. Sweep 8a makes native Windows (PowerShell, no
-WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job.
+WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job;
+sweep 8b fixes what that job found.
+
+### Added
+
+- `x build --target binary --platform <bun-linux-x64|bun-linux-arm64|bun-windows-x64|bun-darwin-arm64>`
+  cross-compiles through Bun's `--target`; a Windows executable is written and reported as
+  `<out>.exe`.
+- core: `isCompiledBundle(dir)` (both `/$bunfs/` and Windows' `B:\~BUN\`; the scaffolded
+  `apps/web/server.ts` uses it), `drainSignals(platform)`, `stageMasterKeyFile` /
+  `promoteStagedMasterKey`, `SecretsKeyAclError` (`X_SECRETS_KEY_ACL_FAILED`).
+- guards: `bun run posix-relative` (`X_RELATIVE_PATH_NOT_POSIX`) — a host `relative()` answer that
+  reaches an import specifier, fix line or key goes through `toPosix`.
 
 ### Security
 
@@ -237,6 +249,26 @@ WSL) a supported platform for contributing and for building an app, gated by a `
 
 ### Fixed
 
+- Windows, part 2:
+  - On Windows every role drains on Ctrl-Break (SIGBREAK) and console close (SIGHUP).
+  - The master key file gets an owner-only `icacls` ACL, or is not written at all.
+  - The key rename retries briefly on EPERM/EBUSY.
+  - `launchChrome` drives Chrome over `--remote-debugging-port=0` with a `taskkill /T` reap, and finds
+    Chrome and Edge on Windows and the `.app` bundles on macOS.
+  - Stylesheet claims, the app root and CSS-module class names compare across `\` and `/`.
+  - App modules import in one order on every OS.
+  - `package-shape`, `i18n` and every source-walking step key paths with `/`.
+  - The island build ships one copy of each `@ultimat3/*` package even where a `file:` install nests
+    copies without symlinks.
+  - `x dev` stops its child over IPC.
+  - `X_PORT_IN_USE` names the holder (`netstat`/`tasklist`).
+  - Scripts and `policy` write repo paths with `/`, and repo tools resolve `node_modules/.bin/<tool>.exe`.
+  - Test fixtures link with junctions.
+  - `docker/test-services.env` dials `127.0.0.1`.
+  - `dummy/social-media-clone/AGENTS.md` is a real file kept equal to `CLAUDE.md`.
+- Release: `release.yml` queues every release in one group and never cancels a running one; two
+  versions no longer publish side by side and race npm's `latest`. `.maintainer.yml` turns the
+  platform's release-please off, so a GitHub Release only ever comes from the one release path.
 - Windows: every clone and every `x new` app checks out LF whatever `core.autocrlf` says (root
   `.gitattributes`); migration checksums and the `x db gen` schema hash ignore CRLF versus LF and
   path separators, so a Windows-built image never refuses a database a Linux one migrated (existing

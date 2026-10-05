@@ -14,8 +14,11 @@ export type ShutdownPhase = 'accept' | 'inflight' | 'close';
 
 export const SHUTDOWN_PHASES: readonly ShutdownPhase[] = ['accept', 'inflight', 'close'];
 
-/** Signals Ultimate reacts to. Narrower than `NodeJS.Signals` on purpose. */
-export type ProcessSignal = 'SIGTERM' | 'SIGINT' | 'SIGHUP' | 'SIGQUIT';
+/**
+ * Signals Ultimate reacts to. Narrower than `NodeJS.Signals` on purpose. `SIGBREAK` is Windows'
+ * Ctrl-Break — the one console signal there that is neither Ctrl-C nor a window closing.
+ */
+export type ProcessSignal = 'SIGTERM' | 'SIGINT' | 'SIGHUP' | 'SIGQUIT' | 'SIGBREAK';
 
 export interface ShutdownReason {
   readonly signal: string;

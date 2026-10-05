@@ -359,7 +359,8 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
   // Content-addressed, not path-addressed: a checkout at a different absolute path must produce
   // byte-identical CSS, which a hash over the absolute filename would not. The COMPILED CSS, not
   // the source: two `page.module.scss` with one source and different `@use`d partials hashed
-  // alike, emitted one class name with two bodies, and the later sheet won on both pages.
-  const scoped = scopeClasses(css, contentHash(`${file.split('/').pop() ?? file} ${css}`));
+  // alike, emitted one class name with two bodies, and the later sheet won on both pages. Split on
+  // both separators: on Windows Bun hands the path over as `D:\…`, and `/` alone kept all of it.
+  const scoped = scopeClasses(css, contentHash(`${file.split(/[\\/]/).pop() ?? file} ${css}`));
   return { css: scoped.css, classes: scoped.classes, dependencies };
 }

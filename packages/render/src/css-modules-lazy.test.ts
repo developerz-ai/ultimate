@@ -4,8 +4,10 @@
 
 import { expect, test } from 'bun:test';
 
+// Either separator: on Windows a module-cache key is `D:\...\node_modules\sass\...`, and a probe
+// that looked for `/sass/` alone reported Sass as never loaded, after the compile too.
 const PROBE = `
-const loaded = () => Object.keys(require.cache).some((key) => key.includes('/sass/'));
+const loaded = () => Object.keys(require.cache).some((key) => /[\\\\/]sass[\\\\/]/.test(key));
 const css = await import(${JSON.stringify(`${import.meta.dir}/css-modules.ts`)});
 const before = loaded();
 css.compileStylesheet('/tmp/probe.scss', 'a { b: c }');

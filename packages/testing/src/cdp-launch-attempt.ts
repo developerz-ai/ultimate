@@ -9,19 +9,24 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
-import { cdpConnectOver } from './cdp-connection';
 import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpTimeoutError } from './cdp-errors';
-import { pipeTransport } from './cdp-pipe';
+import { CLOSE_GRACE_MS, killTree } from './cdp-launch-reap';
+import type { CdpWire } from './cdp-launch-wire';
+import { pipeConnection, portConnection, wireStdio } from './cdp-launch-wire';
+
+export { CLOSE_GRACE_MS } from './cdp-launch-reap';
 
 export interface LaunchedBrowser {
-  /** The browser's own CDP connection, over its debugging pipe. Already answering. */
+  /** The browser's own CDP connection, over its debugging pipe or port. Already answering. */
   readonly connection: CdpConnection;
   /**
    * THE close, idempotent, and awaited by every caller: the connection closed, SIGTERM, SIGKILL
    * after `CLOSE_GRACE_MS`, then the browser's whole process group killed and the profile removed —
-   * bounded at three graces. A promise because a Chrome still shutting down competes with the next
+   * bounded at three graces. On Windows, which has no SIGTERM to grant grace to, the process TREE
+   * is killed outright (`killTree`) and awaited. A promise because a Chrome still shutting down competes with the next
    * launch on a 4-CPU runner, and its children re-create a profile removed before they are gone.
    */
   close(): Promise<void>;
@@ -31,6 +36,10 @@ export interface LaunchAttemptOptions {
   readonly executable: string;
   /** What the process is started with, given the profile directory this attempt made for it. */
   readonly flags: (profileDir: string) => readonly string[];
+  /** Which wire the flags opened — `cdp-launch-wire.ts`. */
+  readonly wire: CdpWire;
+  /** Whose process rules the reap follows. Defaults to this process's platform. */
+  readonly platform?: string | undefined;
   /** Every call's deadline AFTER the first. */
   readonly timeoutMs: number;
   /** The first call's deadline: how long a cold start may take. */
@@ -83,36 +92,15 @@ function stderrTail(stream: ReadableStream<Uint8Array>): {
  */
 const FAILURE_DRAIN_MS = 1_000;
 
-/** How long a closed Chrome gets to exit on SIGTERM before it is killed outright. */
-export const CLOSE_GRACE_MS = 5_000;
-
 const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
   Promise.race([work, Bun.sleep(ms)]);
-
-const GROUP_POLL_MS = 10;
-
-/**
- * Kill whatever is left of the browser's process group and wait until the group is EMPTY — the
- * condition, asked of the kernel, not a pause: signal 0 to a group with no member throws. Bounded
- * by `CLOSE_GRACE_MS` for a container whose init never reaps a zombie.
- */
-async function reapGroup(pgid: number): Promise<void> {
-  try {
-    process.kill(-pgid, 'SIGKILL');
-    for (let looks = CLOSE_GRACE_MS / GROUP_POLL_MS; looks > 0; looks -= 1) {
-      await Bun.sleep(GROUP_POLL_MS);
-      process.kill(-pgid, 0);
-    }
-  } catch {
-    // ESRCH: nothing is left in the group, which is the answer being waited for.
-  }
-}
 
 /**
  * Start the browser once and answer when it has answered one CDP call. With a pipe there is no
  * "DevTools listening" line to wait for — the first reply IS the readiness signal.
  */
 export async function launchAttempt(options: LaunchAttemptOptions): Promise<LaunchAttemptResult> {
+  const platform = options.platform ?? process.platform;
   const profileDir = mkdtempSync(join(tmpdir(), 'x-e2e-chrome-'));
   const removeProfile = (): void => {
     try {
@@ -122,45 +110,47 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     }
   };
   const began = performance.now();
-  const child = Bun.spawn([options.executable, ...options.flags(profileDir)], {
-    // Chrome's fd 3 is where it READS commands and fd 4 where it WRITES replies and events.
-    stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
-    // Its own process GROUP, so the zygote, GPU and network processes can be reaped with it
-    // (`reapGroup`). It still ends with this process: Chrome exits when its fd 3 closes.
-    detached: true,
-  });
+  let child: ReturnType<typeof spawnBrowser>;
+  try {
+    child = spawnBrowser(options, profileDir, platform);
+  } catch (error) {
+    // A binary that cannot be started at all — not there, not executable, not an executable FORMAT
+    // this OS runs (a `#!` script on Windows). Bun throws from `spawn`, synchronously, and that
+    // throw escaped as a bare ENOENT where every other way a launch fails is X_CDP_LAUNCH_FAILED.
+    removeProfile();
+    const stderr = `could not be started: ${renderThrowable(error)}`;
+    return {
+      ok: false,
+      failure: { why: 'closed', waitedMs: 0, exitCode: null, stderr },
+      reaped: true,
+    };
+  }
   const tail = stderrTail(child.stderr as ReadableStream<Uint8Array>);
-  const [, , , toBrowser, fromBrowser] = child.stdio as unknown as readonly number[];
-  const sink = Bun.file(toBrowser ?? -1).writer();
-  const connection = cdpConnectOver(
-    pipeTransport({
-      write: (bytes) => {
-        sink.write(bytes);
-        void sink.flush();
-      },
-      read: Bun.file(fromBrowser ?? -1).stream(),
-      end: () => {
-        void Promise.resolve(sink.end()).catch(() => undefined);
-      },
-    }),
-    options.timeoutMs,
-  );
+  let connection: CdpConnection | undefined =
+    options.wire === 'pipe' ? pipeConnection(child.stdio, options.timeoutMs) : undefined;
   let exiting: Promise<void> | undefined;
   const close = (): Promise<void> => {
     exiting ??= (async () => {
-      connection.close();
-      child.kill();
+      connection?.close();
       removeProfile();
-      const exited =
-        (await within(
-          CLOSE_GRACE_MS,
-          child.exited.then(() => true),
-        )) === true;
-      if (!exited) {
-        child.kill('SIGKILL');
+      if (platform === 'win32') {
+        // No SIGTERM to grant grace to: a kill on Windows is TerminateProcess, and taking the
+        // browser alone would orphan the children that hold the profile's files open.
+        await killTree(child.pid, platform);
         await within(CLOSE_GRACE_MS, child.exited);
+      } else {
+        child.kill();
+        const exited =
+          (await within(
+            CLOSE_GRACE_MS,
+            child.exited.then(() => true),
+          )) === true;
+        if (!exited) {
+          child.kill('SIGKILL');
+          await within(CLOSE_GRACE_MS, child.exited);
+        }
+        await killTree(child.pid, platform);
       }
-      await reapGroup(child.pid);
       // Again, now that nothing is writing: Chrome's network process outlives the browser process
       // and flushes into the profile, re-creating a directory removed a moment before. Measured on
       // Chrome 150, 30 launches each: left behind 6 and 12 times without the group reap, 0 with.
@@ -169,7 +159,16 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
     return exiting;
   };
   try {
-    await connection.send('Browser.getVersion', {}, undefined, options.launchTimeoutMs);
+    // The pipe needs no wait to exist; the port is not known until the browser writes it down, and
+    // finding it spends the same launch deadline the first answer does.
+    connection ??= await portConnection({
+      profileDir,
+      exited: () => child.exitCode !== null || child.signalCode !== null,
+      deadlineMs: options.launchTimeoutMs,
+      timeoutMs: options.timeoutMs,
+    });
+    const left = Math.max(1, options.launchTimeoutMs - (performance.now() - began));
+    await connection.send('Browser.getVersion', {}, undefined, left);
     return { ok: true, browser: { connection, close } };
   } catch (error) {
     const why = error instanceof CdpTimeoutError ? 'deadline' : 'closed';
@@ -189,4 +188,18 @@ export async function launchAttempt(options: LaunchAttemptOptions): Promise<Laun
       reaped: child.exitCode !== null || child.signalCode !== null,
     };
   }
+}
+
+/**
+ * The process, on its own process GROUP on POSIX so the zygote, GPU and network processes are
+ * reaped with it (`killTree`). It still ends with this process on the pipe wire: Chrome exits when
+ * its fd 3 closes. Windows has no group to make — `detached` there is a console flag — so not.
+ */
+function spawnBrowser(options: LaunchAttemptOptions, profileDir: string, platform: string) {
+  // Spread into a fresh tuple: Bun's `stdio` type takes a mutable tuple, never a readonly one.
+  const [stdin, stdout, stderr, ...extra] = wireStdio(options.wire);
+  return Bun.spawn([options.executable, ...options.flags(profileDir)], {
+    stdio: [stdin, stdout, stderr, ...extra],
+    detached: platform !== 'win32',
+  });
 }

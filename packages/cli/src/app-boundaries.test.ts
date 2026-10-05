@@ -193,6 +193,13 @@ describe('unit · app boundaries', () => {
     );
   });
 
+  test('relativeSpecifier writes a POSIX specifier from Windows-spelt paths — x fix never writes a backslash', () => {
+    expect(relativeSpecifier('apps\\web\\site\\pricing.tsx', 'apps\\web\\shared\\ui.ts')).toBe(
+      '../shared/ui',
+    );
+    expect(relativeSpecifier('apps\\web\\app\\a.tsx', 'apps/web/app/b.tsx')).toBe('./b');
+  });
+
   test('relativeSpecifier round-trips through resolveSpecifier — it is the same map, backwards', () => {
     const keys = new Set([
       'apps/web/app/panel.tsx',

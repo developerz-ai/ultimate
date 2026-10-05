@@ -52,6 +52,7 @@ export { type AsyncContext, asyncContext } from './async-context';
 export type { AsyncState } from './async-state';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
+export { isCompiledBundle } from './bunfs';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
@@ -441,6 +442,7 @@ export {
   masterKeyPath,
   openSecrets,
   parseMasterKey,
+  promoteStagedMasterKey,
   readSecretsFile,
   requireMasterKey,
   revealOptionalSecret,
@@ -452,6 +454,7 @@ export {
   SECRETS_KEY_MODE,
   SecretsFileInvalidError,
   SecretsFileMissingError,
+  SecretsKeyAclError,
   SecretsKeyInvalidError,
   SecretsKeyMismatchError,
   SecretsKeyMissingError,
@@ -463,6 +466,7 @@ export {
   secretsPath,
   serializeSecretValues,
   stagedMasterKeyPath,
+  stageMasterKeyFile,
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
@@ -592,7 +596,7 @@ export {
 } from './lifecycle-grace';
 export type { ReadinessCheck, ReadinessStatus } from './lifecycle-readiness';
 export type { SignalHandlerOptions } from './lifecycle-signals';
-export { installSignalHandlers } from './lifecycle-signals';
+export { drainSignals, installSignalHandlers } from './lifecycle-signals';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
 export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';

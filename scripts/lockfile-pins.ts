@@ -17,10 +17,11 @@
 //
 //   bun run scripts/lockfile-pins.ts [--write] [--json]
 
-import { dirname, relative } from 'node:path';
+import { dirname } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { posixRelative } from './lib/posix-path';
 import { repoRoot } from './lib/run';
 import { requireWorkspaceManifest, workspaceManifests } from './lib/workspaces';
 import { LOCK_BLOCK, LOCK_DEP, readInternalDeps } from './version-stamps';
@@ -145,7 +146,7 @@ export async function readDeclaredVersions(
 ): Promise<Readonly<Record<string, string>>> {
   const out: Record<string, string> = {};
   for (const path of await workspaceManifests(root)) {
-    const dir = relative(root, dirname(path));
+    const dir = posixRelative(root, dirname(path));
     // Same read `listWorkspaces` uses (#281): a cast let a `"version": 9` through as the string
     // `0.0.0` and this pass would then rewrite every lock block to it.
     const json = await requireWorkspaceManifest(path, `${dir}/package.json`);
@@ -160,7 +161,7 @@ export async function readDeclaredSections(
 ): Promise<Readonly<Record<string, Readonly<Record<string, DepSection>>>>> {
   const out: Record<string, Record<string, DepSection>> = {};
   for (const path of await workspaceManifests(root)) {
-    const dir = relative(root, dirname(path));
+    const dir = posixRelative(root, dirname(path));
     const json = await requireWorkspaceManifest(path, `${dir}/package.json`);
     const sections: Record<string, DepSection> = {};
     for (const name of Object.keys(json.devDependencies ?? {})) sections[name] = 'devDependencies';

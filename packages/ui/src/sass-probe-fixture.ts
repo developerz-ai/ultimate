@@ -22,10 +22,14 @@ function sassCompiler(): Promise<SassApi> {
   return loading;
 }
 
-/** Compile `source` as though it were the file at `path`, so its relative `@use`s resolve. */
+/**
+ * Compile `source` as though it were the file at `path`, so its relative `@use`s resolve. The URL is
+ * `Bun.pathToFileURL`'s, never `file://${path}`: that string made a `#` in a directory the start of
+ * a fragment, and a Windows `D:\…` path no file URL at all.
+ */
 export async function compileScss(source: string, path: string): Promise<string> {
   const sass = await sassCompiler();
-  return sass.compileString(source, { url: new URL(`file://${path}`) }).css;
+  return sass.compileString(source, { url: Bun.pathToFileURL(path) }).css;
 }
 
 /** Compile a stylesheet that exists on disk. */

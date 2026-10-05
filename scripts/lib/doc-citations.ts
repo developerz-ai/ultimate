@@ -7,6 +7,7 @@
 // one half-written module anywhere crashed this module's guards with a bare SyntaxError (DX ledger #10).
 import type { FixCitation } from '../../packages/cli/src/fix-command';
 import { fixCitations } from '../../packages/cli/src/fix-command';
+import { toPosix } from './posix-path';
 
 export interface MarkdownFile {
   readonly path: string;
@@ -101,7 +102,10 @@ export async function readMarkdown(
   skip: (path: string) => boolean = () => false,
 ): Promise<readonly MarkdownFile[]> {
   const files: MarkdownFile[] = [];
-  for await (const path of new Bun.Glob(glob).scan({ cwd: root, absolute: false, dot: true })) {
+  for await (const scanned of new Bun.Glob(glob).scan({ cwd: root, absolute: false, dot: true })) {
+    // `/`-spelt, so a page is one key on every host: Windows' `wiki\_Footer.md` was a second page
+    // beside the `wiki/_Footer.md` every pin and stamp names, and reported as unscanned.
+    const path = toPosix(scanned);
     if (skip(path)) continue;
     files.push({ path, text: await Bun.file(`${root}/${path}`).text() });
   }

@@ -78,7 +78,7 @@ describe('unit · x shot refuses before it boots anything', () => {
     );
     expect([error['code'], error['fix']]).toEqual([
       'X_CLI_BAD_FLAG',
-      'x shot / --browser /usr/bin/chromium',
+      expect.stringMatching(/^x shot \/ --browser \/usr\/bin\/chromium {3}# macOS: --browser "/),
     ]);
   });
 

@@ -55,23 +55,43 @@ export function descendantsIn(
 }
 
 /**
- * Every descendant of `pid`, depth first — asked while `pid` lives, or its children are init's.
- * ONE `ps` listing walked in memory, never a `pgrep` per level: this runs synchronously inside a
- * test's `finally`, where the test timeout cannot interrupt it, so the whole walk shares one bound.
+ * The `[pid, ppid]` listing command per platform. Windows has no `ps`: CIM's `Win32_Process` is
+ * the one table that carries the parent, printed in the same `pid ppid` lines `ps` gives.
  */
-export function descendantsOf(pid: number): readonly number[] {
-  const out = Bun.spawnSync(['ps', '-A', '-o', 'pid=,ppid='], { timeout: 5_000 }).stdout.toString();
-  const listing = out.split('\n').flatMap((line): (readonly [number, number])[] => {
+export function pidListingCommand(platform: string = process.platform): readonly string[] {
+  return platform === 'win32'
+    ? [
+        'powershell',
+        '-NoProfile',
+        '-Command',
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+      ]
+    : ['ps', '-A', '-o', 'pid=,ppid='];
+}
+
+/** `pid ppid` lines, whitespace-padded or CRLF-terminated, as `[pid, ppid]` pairs. */
+export function parsePidPairs(text: string): readonly (readonly [number, number])[] {
+  return text.split(/\r?\n/).flatMap((line): (readonly [number, number])[] => {
     const [child, parent] = line.trim().split(/\s+/).map(Number);
     return Number.isInteger(child) && Number.isInteger(parent) ? [[child ?? 0, parent ?? 0]] : [];
   });
-  return descendantsIn(listing, pid);
+}
+
+/**
+ * Every descendant of `pid`, depth first — asked while `pid` lives, or (POSIX) its children are
+ * init's. Windows never reparents, so there a dead supervisor's children still name it. ONE listing
+ * walked in memory, never a `pgrep` per level: this runs synchronously inside a test's `finally`,
+ * where the test timeout cannot interrupt it, so the whole walk shares one bound.
+ */
+export function descendantsOf(pid: number): readonly number[] {
+  const out = Bun.spawnSync([...pidListingCommand()], { timeout: 10_000 }).stdout.toString();
+  return descendantsIn(parsePidPairs(out), pid);
 }
 
 /**
  * Every process whose cwd is `dir` — a deleted one included, which Linux spells `<dir> (deleted)`.
  * The one question that finds an orphan after its parent is gone, when no process tree reaches it.
- * Empty where there is no `/proc` (macOS): the descendant walk is then the whole answer.
+ * Empty where there is no `/proc` (macOS, Windows): the descendant walk is then the whole answer.
  */
 export function processesIn(dir: string): readonly number[] {
   let pids: readonly string[];

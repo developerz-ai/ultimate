@@ -7,6 +7,7 @@
 // half has to be synchronous — and Bun ships neither a path API nor a `symlink`.
 import { mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { DIR_LINK } from '../scaffold-typecheck-fixture';
 import type { GeneratedFile } from './naming';
 
 /** `packages/cli/src/templates` → the repo root, four hops up. */
@@ -24,6 +25,12 @@ const FIXTURE_ROOT = join(REPO_ROOT, 'packages', 'cli', '.island-fixture');
 /** The package the fixture lives inside. Linking it would aim a symlink at its own ancestor. */
 const SELF = 'cli';
 
+/**
+ * `<dir>/package.json` → `<dir>`, from either separator: Windows' glob answers `ui\package.json`,
+ * where `indexOf('/')` is -1 and the slice cut the name to `ui\package.jso`.
+ */
+export const packageDirOf = (entry: string): string => entry.split(/[\\/]/)[0] ?? entry;
+
 export interface FixtureApp extends Disposable {
   /** Absolute path of the app root — what `buildIslands` globs from. */
   readonly path: string;
@@ -40,16 +47,16 @@ function linkDependencies(root: string): void {
   mkdirSync(scope, { recursive: true });
   const packages = join(REPO_ROOT, 'packages');
   for (const entry of new Bun.Glob('*/package.json').scanSync({ cwd: packages })) {
-    const name = entry.slice(0, entry.indexOf('/'));
+    const name = packageDirOf(entry);
     if (name === SELF) continue;
-    symlinkSync(join(packages, name), join(scope, name), 'dir');
+    symlinkSync(join(packages, name), join(scope, name), DIR_LINK);
   }
   // Resolved, never spelled as a path: the installer's layout is its own business and a hardcoded
   // `node_modules/solid-js` is a fixture that breaks on a linker change rather than on a real one.
   symlinkSync(
     dirname(Bun.resolveSync('solid-js/package.json', REPO_ROOT)),
     join(root, 'node_modules', 'solid-js'),
-    'dir',
+    DIR_LINK,
   );
 }
 

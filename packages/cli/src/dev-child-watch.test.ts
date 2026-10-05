@@ -1,12 +1,16 @@
-// The child's watch with its two facts faked: which parent the child has, and whether its root is
-// on disk. The real orphan — a SIGKILLed supervisor, a deleted root — is
+// The child's watch with its two facts faked: whether its supervisor is alive, and whether its root
+// is on disk. The real orphan — a SIGKILLed supervisor, a deleted root — is
 // `cmd-dev-orphan.live.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import {
   DEV_SUPERVISOR_PID_ENV,
   type DevChildGone,
+  defaultSupervisorAlive,
   hardExit,
+  isDevDrainMessage,
+  pidAlive,
+  signalExitCode,
   supervisorPid,
   watchDevChild,
 } from './dev-child-watch';
@@ -23,7 +27,7 @@ async function watched(
     root: '/app',
     env: options.env ?? SUPERVISED,
     leave: (why) => left.push(why),
-    parentPid: options.parent,
+    supervisorAlive: (pid) => options.parent() === pid,
     rootExists: options.exists,
     intervalMs: 5,
   });
@@ -38,6 +42,36 @@ describe('unit · supervisorPid', () => {
     expect(supervisorPid({})).toBeUndefined();
     expect(supervisorPid({ [DEV_SUPERVISOR_PID_ENV]: 'x' })).toBeUndefined();
     expect(supervisorPid({ [DEV_SUPERVISOR_PID_ENV]: '0' })).toBeUndefined();
+  });
+});
+
+describe('unit · is the supervisor alive', () => {
+  const failing = (code: string) => (): void => {
+    throw Object.assign(new Error(code), { code });
+  };
+
+  test('signal 0 delivered or refused for permission is alive; no such process is gone', () => {
+    expect(pidAlive(1, () => undefined)).toBe(true);
+    expect(pidAlive(1, failing('EPERM'))).toBe(true);
+    expect(pidAlive(1, failing('ESRCH'))).toBe(false);
+  });
+
+  test('Windows asks the process table — its ppid never changes — and POSIX the ppid', () => {
+    expect(defaultSupervisorAlive('win32')(process.pid)).toBe(true);
+    expect(defaultSupervisorAlive('linux')(process.ppid)).toBe(true);
+    // This process's own pid is alive but is not its parent: POSIX says gone, Windows alive.
+    expect(defaultSupervisorAlive('linux')(process.pid)).toBe(false);
+  });
+});
+
+describe('unit · the drain message', () => {
+  test("only the supervisor's own shape is a drain, and its code is the signal's", () => {
+    expect(isDevDrainMessage({ type: 'x-dev-drain', signal: 'SIGTERM' })).toBe(true);
+    expect(isDevDrainMessage({ type: 'x-dev-drain', signal: 'SIGKILL' })).toBe(false);
+    expect(isDevDrainMessage({ type: 'other', signal: 'SIGINT' })).toBe(false);
+    expect(isDevDrainMessage(null)).toBe(false);
+    expect(signalExitCode('SIGINT')).toBe(130);
+    expect(signalExitCode('SIGTERM')).toBe(143);
   });
 });
 

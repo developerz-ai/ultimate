@@ -7,11 +7,36 @@ export interface SignalHandlerOptions {
   readonly signals?: readonly ProcessSignal[] | undefined;
   /** Call `process.exit()` once drained. Off in tests. */
   readonly exit?: boolean | undefined;
+  /** Whose default signal set to install — `process.platform` unless a test names one. */
+  readonly platform?: string | undefined;
 }
 
-/** Install SIGTERM/SIGINT handling. Returns an uninstall function. */
+const POSIX_SIGNALS: readonly ProcessSignal[] = Object.freeze(['SIGTERM', 'SIGINT']);
+
+/**
+ * Windows never sends SIGTERM to a console process: a service stop or a closed console window
+ * arrives as SIGHUP, and Ctrl-Break as SIGBREAK. Listening for the POSIX pair alone meant either
+ * one killed the process outright, mid-request, with no drain. SIGHUP stays off POSIX on purpose:
+ * there it is a terminal hang-up a supervised process should not read as "stop".
+ */
+const WINDOWS_SIGNALS: readonly ProcessSignal[] = Object.freeze([
+  'SIGTERM',
+  'SIGINT',
+  'SIGHUP',
+  'SIGBREAK',
+]);
+
+/** The signals that start a drain on `platform`. */
+export function drainSignals(platform: string = process.platform): readonly ProcessSignal[] {
+  return platform === 'win32' ? WINDOWS_SIGNALS : POSIX_SIGNALS;
+}
+
+/**
+ * Install drain-on-signal handling — SIGTERM/SIGINT, plus SIGHUP/SIGBREAK on Windows
+ * (`drainSignals`). Returns an uninstall function.
+ */
 export function installSignalHandlers(options?: SignalHandlerOptions): () => void {
-  const signals: readonly ProcessSignal[] = options?.signals ?? ['SIGTERM', 'SIGINT'];
+  const signals = options?.signals ?? drainSignals(options?.platform);
   const handlers = new Map<ProcessSignal, () => void>();
 
   for (const signal of signals) {

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { defineService } from '@ultimat3/core';
 import { exec } from './exec';
 import {
@@ -18,6 +18,7 @@ import {
   registrations,
   roleLoadFinding,
   roleLoadFindings,
+  specifierFor,
 } from './verify-role-load';
 
 let root = '';
@@ -104,6 +105,12 @@ describe('unit · the gate compares what a worker registers with what the whole 
         'service "billing" is registered by importing apps/web/app/billing/registry.ts, which reaches a component or a stylesheet and which apps/web/api/index.ts does not import — so a worker and a scheduler, which import no document, run without it',
       fix: "edit apps/web/api/index.ts: add import '../app/billing/registry'; — or move the service out of apps/web/app/billing/registry.ts into a module that imports no .tsx and no stylesheet",
     });
+  });
+
+  test('the import a Windows run proposes is POSIX, the one a Linux run proposes', () => {
+    const module = 'apps/web/app/billing/registry.ts';
+    expect(specifierFor(module, win32)).toBe('../app/billing/registry');
+    expect(specifierFor(module)).toBe('../app/billing/registry');
   });
 
   test('registrations reads the registries a job resolves by name, one kind each', () => {

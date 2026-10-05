@@ -2,7 +2,7 @@
 // `finally` waits at most one timeout however deep the tree it reaps.
 
 import { describe, expect, test } from 'bun:test';
-import { descendantsIn, descendantsOf } from './dev-live-fixture';
+import { descendantsIn, descendantsOf, parsePidPairs, pidListingCommand } from './dev-live-fixture';
 
 describe('descendantsIn', () => {
   test('every descendant, depth first, from one pid → ppid listing', () => {
@@ -50,5 +50,21 @@ describe('descendantsOf', () => {
         }
       }
     }
+  });
+});
+
+describe('the listing on Windows', () => {
+  test('Windows asks CIM for the parent — it has no ps — and POSIX asks ps', () => {
+    expect(pidListingCommand('win32')[0]).toBe('powershell');
+    expect(pidListingCommand('win32').at(-1)).toContain('ParentProcessId');
+    expect(pidListingCommand('linux')).toEqual(['ps', '-A', '-o', 'pid=,ppid=']);
+  });
+
+  test('CRLF lines and ps padding parse alike; anything else is skipped', () => {
+    expect(parsePidPairs('4242 1000\r\n4243 4242\r\n\r\n')).toEqual([
+      [4242, 1000],
+      [4243, 4242],
+    ]);
+    expect(parsePidPairs('  10     1\nPID PPID\n')).toEqual([[10, 1]]);
   });
 });

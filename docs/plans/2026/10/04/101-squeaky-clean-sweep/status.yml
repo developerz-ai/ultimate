@@ -75,12 +75,26 @@ slices:                    # one row per independently merged sweep; `sweep` is 
     status: not_started
     percent: 0
     evidence: []
+  - file: 13-deploy-drain.md
+    tier: 3
+    sweep: "8c"
+    status: not_started
+    percent: 0
+    evidence: []
+    notes: "added by the owner 2026-10-05: frequent zero-downtime deploys; a working worker finishes, then restarts"
   - file: 09-realtime-islands.md
     tier: 3
     sweep: "9"
     status: not_started
     percent: 0
     evidence: []
+  - file: 14-dashboards.md
+    tier: 4
+    sweep: "9b"
+    status: not_started
+    percent: 0
+    evidence: []
+    notes: "added by the owner 2026-10-05: charts, tables, a sci-fi preset, mobile"
   - file: 10-carried-backlog.md
     tier: 0
     sweep: "10a"

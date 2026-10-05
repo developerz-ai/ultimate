@@ -7,6 +7,7 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { join } from 'node:path';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { GATED_APPS, PINS_FILE } from './gated-apps';
+import { toPosix } from './posix-path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -30,7 +31,8 @@ const trackedApps = async (root: string): Promise<readonly string[]> => {
       cwd: root,
       absolute: false,
     })) {
-      dirs.push(found.split('/').slice(0, -1).join('/'));
+      // `/`-spelt: on Windows the glob answers `examples\dummy\package.json`.
+      dirs.push(toPosix(found).split('/').slice(0, -1).join('/'));
     }
   }
   return dirs.sort();

@@ -2,6 +2,7 @@
 // handful of flags and must not grow a command tree — that is what `x` is for.
 
 import { report } from './log';
+import { insideRoot, toPosix } from './posix-path';
 import { repoRoot } from './run';
 import { ScriptError } from './script-error';
 
@@ -18,12 +19,21 @@ const INERT = /^[\w./:@,=+-]+$/;
 /** A value the typist meant as OFF. The corrected command drops the flag rather than enabling it. */
 const OFF = /^(?:false|0|no|off)$/i;
 
-/** The script being run, repo-relative — what `bun run` takes — single-quoted unless inert. */
-const scriptPath = (): string => {
-  const root = `${repoRoot()}/`;
-  const main = Bun.main.startsWith(root) ? Bun.main.slice(root.length) : Bun.main;
-  return INERT.test(main) ? main : `'${main.replaceAll("'", "'\\''")}'`;
+/**
+ * The script being run, repo-relative and `/`-spelt — what `bun run` takes on every host — and
+ * single-quoted unless inert. Compared `/`-normalised: on Windows `Bun.main` is `D:\…\x.ts`,
+ * a `${root}/` prefix never matched, and the fix pasted back the absolute, quoted path.
+ */
+export const scriptPathOf = (main: string, root: string): string => {
+  const path = insideRoot(root, main) ?? main;
+  return INERT.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
 };
+
+/** The script's name, as a JSON document's `script` names it: its file name, no extension. */
+export const scriptNameOf = (main: string): string =>
+  (toPosix(main).split('/').at(-1) || 'script').replace(/\.ts$/, '');
+
+const scriptPath = (): string => scriptPathOf(Bun.main, repoRoot());
 
 /**
  * The same invocation with `--<name>` spelled as a boolean: `--name=true` / `--name true` become
@@ -69,7 +79,7 @@ const refuseValue = (argv: readonly string[], name: string, value: string): neve
   // `--json`, the three-line form otherwise — never an uncaught stack trace a `--json` reader
   // cannot parse. Any other caller (a test, a wrapper) gets the throw.
   if (!ownArgv(argv)) throw refusal;
-  const script = (Bun.main.split('/').at(-1) ?? 'script').replace(/\.ts$/, '');
+  const script = scriptNameOf(Bun.main);
   return report(
     { ok: false, script, summary: 'refused', findings: [refusal.toFinding()] },
     wantsJson(argv),

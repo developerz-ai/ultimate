@@ -27,6 +27,7 @@ import { IslandBuildFailedError } from './errors';
 import { describeBuildError, sourcesContentOf, stableChunk, stripDebugId } from './island-identity';
 import type { BuiltOutput, LinkedFile } from './island-link';
 import { linkOutputs, sharedChunkName } from './island-link';
+import { frameworkDedupePlugins } from './island-package-dedupe';
 import {
   islandRealtimePlugin,
   REALTIME_ISLAND_ENTRY,
@@ -167,10 +168,13 @@ async function buildAll(
       //
       // The dedupe goes FIRST: it answers `solid-js` specifiers before either plugin loads a file,
       // so the `solid-js/web` helpers the JSX transform writes into a symlinked package resolve
-      // to the app's one copy. See `island-solid-dedupe.ts` for the measurement.
+      // to the app's one copy. See `island-solid-dedupe.ts` for the measurement. `@ultimat3/*`
+      // gets the same rule (`island-package-dedupe.ts`): a nested copy is a second module where no
+      // symlink folds it, which is every `file:` install on Windows.
       plugins: [
         ...(live[0] === undefined ? [] : [islandRealtimePlugin(root, live[0])]),
         solidDedupePlugin(root),
+        ...frameworkDedupePlugins(root),
         solidJsxPlugin,
         islandStylesPlugin,
       ],

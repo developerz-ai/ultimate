@@ -7,30 +7,37 @@ import type { CdpLaunchAttempt } from './cdp-errors';
 import { CdpBrowserMissingError, CdpLaunchFailedError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch-attempt';
 import { launchAttempt } from './cdp-launch-attempt';
+import { chromeCandidates } from './cdp-launch-candidates';
+import type { CdpWire } from './cdp-launch-wire';
+import { defaultWire, wireFlag } from './cdp-launch-wire';
 
 export type { LaunchedBrowser } from './cdp-launch-attempt';
 export { CLOSE_GRACE_MS } from './cdp-launch-attempt';
+export { chromeCandidates } from './cdp-launch-candidates';
+export type { CdpWire } from './cdp-launch-wire';
+export { defaultWire } from './cdp-launch-wire';
 
 /**
  * Where a Chrome is, in the order worth trying. `CHROME_PATH` first because it is the operator's
- * answer and the only one that can be right on a machine none of the rest describes; the two
- * `/usr/bin` names after it are what GitHub-hosted `ubuntu-latest` ships, which is what lets the
- * browser-backed suite run in CI with **no download step and no new dependency**.
+ * answer and the only one that can be right on a machine none of the rest describes; after it, the
+ * install locations of THIS platform (`cdp-launch-candidates.ts`) — on Linux the `/usr/bin` names
+ * GitHub-hosted `ubuntu-latest` ships, which is what lets the browser-backed suite run in CI with
+ * **no download step and no new dependency**; on Windows Chrome and Edge; on macOS the app bundles.
  */
 export const CHROME_PATH_ENV = 'CHROME_PATH';
-export const CHROME_CANDIDATES: readonly string[] = [
-  '/usr/bin/google-chrome',
-  '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-];
+export const CHROME_CANDIDATES: readonly string[] = chromeCandidates(process.platform, process.env);
 
-/** The first candidate that exists, or `undefined`. An absent browser is a SKIP, never a failure. */
+/**
+ * The first candidate that exists, or `undefined`. An absent browser is a SKIP, never a failure.
+ * `platform` is a parameter so the Windows and macOS lists are asserted on a Linux runner too.
+ */
 export async function findChrome(
   env: Readonly<Record<string, string | undefined>>,
+  platform: string = process.platform,
 ): Promise<string | undefined> {
   const declared = env[CHROME_PATH_ENV];
-  const candidates = declared === undefined || declared === '' ? CHROME_CANDIDATES : [declared];
+  const candidates =
+    declared === undefined || declared === '' ? chromeCandidates(platform, env) : [declared];
   for (const candidate of candidates) {
     if (await Bun.file(candidate).exists()) return candidate;
   }
@@ -52,15 +59,19 @@ export const CONTAINER_CHROME_ARGS: readonly string[] = ['--no-sandbox', '--disa
 /**
  * The flags, and every one of them earns its line.
  *
- * `--headless=new` is Chrome's own headless rather than the retired shim. `--remote-debugging-pipe`
- * is the wire (`cdp-pipe.ts` says why it is not the WebSocket): no port, so two suites on one
- * machine can never collide, and nothing but this process can drive the browser. A throwaway
- * `--user-data-dir` because a run sharing a profile with a real browser inherits its cookies and
- * locks its files.
+ * `--headless=new` is Chrome's own headless rather than the retired shim. The wire flag is
+ * `--remote-debugging-pipe` wherever the pipe can be held (`cdp-pipe.ts` says why it is not the
+ * WebSocket): no port, so two suites on one machine can never collide, and nothing but this process
+ * can drive the browser — and `--remote-debugging-port=0` on Windows (`cdp-launch-wire.ts`). A
+ * throwaway `--user-data-dir` because a run sharing a profile with a real browser inherits its
+ * cookies and locks its files.
  */
-export const chromeLaunchFlags = (profileDir: string): readonly string[] => [
+export const chromeLaunchFlags = (
+  profileDir: string,
+  wire: CdpWire = defaultWire(process.platform),
+): readonly string[] => [
   '--headless=new',
-  '--remote-debugging-pipe',
+  wireFlag(wire),
   `--user-data-dir=${profileDir}`,
   ...CONTAINER_CHROME_ARGS,
   '--disable-gpu',
@@ -102,6 +113,8 @@ export interface LaunchOptions {
   readonly timeoutMs: number;
   /** The first answer's deadline, per start. Defaults to the larger of `timeoutMs` and `LAUNCH_TIMEOUT_MS`. */
   readonly launchTimeoutMs?: number | undefined;
+  /** The wire. Defaults to this platform's (`defaultWire`): the pipe, and on Windows the port. */
+  readonly wire?: CdpWire | undefined;
 }
 
 /**
@@ -117,11 +130,13 @@ export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrow
     options.launchTimeoutMs ?? Math.max(options.timeoutMs, LAUNCH_TIMEOUT_MS),
     1,
   );
+  const wire = options.wire ?? defaultWire(process.platform);
   const failures: CdpLaunchAttempt[] = [];
   while (failures.length < LAUNCH_ATTEMPTS) {
     const started = await launchAttempt({
       executable: options.executable,
-      flags: chromeLaunchFlags,
+      flags: (profileDir) => chromeLaunchFlags(profileDir, wire),
+      wire,
       timeoutMs: options.timeoutMs,
       launchTimeoutMs,
     });
@@ -140,6 +155,8 @@ export async function launchFoundChrome(
   timeoutMs: number,
 ): Promise<LaunchedBrowser> {
   const executable = await findChrome(env);
-  if (executable === undefined) throw new CdpBrowserMissingError({ tried: CHROME_CANDIDATES });
+  if (executable === undefined) {
+    throw new CdpBrowserMissingError({ tried: chromeCandidates(process.platform, env) });
+  }
   return launchChrome({ executable, timeoutMs });
 }

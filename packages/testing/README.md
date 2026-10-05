@@ -727,17 +727,23 @@ declared edge and the reverse is a `bun run boundaries` failure.
 
 ## Launching Chrome
 
-`launchChrome({ executable, timeoutMs, launchTimeoutMs? })` — what the `e2e` step and `x shot` both
-start a browser with. Driven over `--remote-debugging-pipe`; the first answer is readiness.
+`launchChrome({ executable, timeoutMs, launchTimeoutMs?, wire? })` — what the `e2e` step and `x shot`
+both start a browser with. Driven over `--remote-debugging-pipe`, and on Windows — where the parent
+cannot hold Chrome's fds 3 and 4 — over `--remote-debugging-port=0` and the profile's
+`DevToolsActivePort` (`wire: 'pipe' | 'port'` overrides). The first answer is readiness.
+
+`CHROME_CANDIDATES` is this platform's install list, probed after `CHROME_PATH`: the `/usr/bin` names
+on Linux, the app bundles on macOS, Chrome under `%ProgramFiles%` / `%ProgramFiles(x86)%` /
+`%LOCALAPPDATA%` then Edge (`msedge.exe`) on Windows.
 
 | Export | What it is |
 |---|---|
 | `LAUNCH_TIMEOUT_MS` | `60_000` — the first answer's deadline per start. `launchTimeoutMs` defaults to the larger of this and `timeoutMs`; every later call has `timeoutMs` |
 | `LAUNCH_ATTEMPTS` | `2` — an unanswered start is reaped and started once more on a fresh profile. Never more |
 | `CdpLaunchAttempt` | one unanswered start, in `X_CDP_LAUNCH_FAILED`'s `meta.attempts`: `why` (`deadline` \| `closed`), `waitedMs`, `exitCode` (`null` when killed), `stderr` (its last lines) |
-| `LaunchedBrowser.close()` · `E2eBrowser.close()` | THE close, a promise, always awaited: the process, its whole process group, its profile directory. There is no synchronous close |
+| `LaunchedBrowser.close()` · `E2eBrowser.close()` | THE close, a promise, always awaited: the process, its whole process group (on Windows its process tree, `taskkill /T /F`), its profile directory. There is no synchronous close |
 
-`As of 2026-10-02`.
+`As of 2026-10-05`.
 
 ## The one assertion that waits
 
