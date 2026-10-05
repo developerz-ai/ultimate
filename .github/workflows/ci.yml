@@ -989,29 +989,6 @@ jobs:
             Get-Content $doc -Tail 40
           }
           exit $status
-      # TEMP-DIAG (sweep 8b, removed before merge): which modules the /posts island carries on Windows.
-      - name: TEMP-DIAG island inputs
-        if: ${{ !cancelled() && steps.app-setup.outcome == 'success' }}
-        continue-on-error: true
-        working-directory: ${{ runner.temp }}/winapp
-        run: |
-          $script = @'
-          const repo = process.env.GITHUB_WORKSPACE!.replaceAll('\\', '/');
-          const { solidDedupePlugin } = await import(`${repo}/packages/cli/src/island-solid-dedupe.ts`);
-          const { frameworkDedupePlugins } = await import(`${repo}/packages/cli/src/island-package-dedupe.ts`);
-          const { solidJsxPlugin } = await import(`${repo}/packages/cli/src/solid-loader.ts`);
-          const { islandStylesPlugin } = await import(`${repo}/packages/cli/src/island-styles.ts`);
-          const root = process.cwd();
-          const r = await Bun.build({ entrypoints: ['apps/web/app/post/post-form.island.tsx'], target: 'browser', minify: true, metafile: true, plugins: [solidDedupePlugin(root), ...frameworkDedupePlugins(root), solidJsxPlugin, islandStylesPlugin] });
-          const out = Object.values(r.metafile!.outputs)[0]!;
-          const rows = Object.entries(out.inputs).map(([k, v]) => [k, (v as { bytesInOutput: number }).bytesInOutput] as const).sort((a, b) => b[1] - a[1]);
-          for (const [k, b] of rows.slice(0, 90)) console.log(b, k);
-          console.log('INPUTS', rows.length, 'TOTAL', r.outputs[0]!.size);
-          '@
-          Set-Content -Path diag.ts -Value $script
-          bun diag.ts
-          Get-ChildItem node_modules/@ultimat3 | Select-Object Name, LinkType, Target | Format-Table -AutoSize | Out-String -Width 300
-          Get-ChildItem node_modules/@ultimat3/ui/node_modules/@ultimat3 -ErrorAction SilentlyContinue | Select-Object Name, LinkType, Target | Format-Table -AutoSize | Out-String -Width 300
       - name: x build --target binary
         id: binary
         if: ${{ !cancelled() && steps.check.outcome == 'success' }}
