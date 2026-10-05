@@ -84,11 +84,11 @@ const RATE_LIMITED = 'X_RATE_LIMITED';
  * UNCOUNTED — counted, a backlog of rate-limited jobs spent every attempt waiting and was
  * dead-lettered for it.
  *
- * The wait is the stated `Retry-After` (the policy's own backoff when none was stated), clamped by
- * `maxDelay`, then SPREAD over half of itself again: `[wait, 1.5 × wait)`. Never earlier — a wake
- * before the refill is refused again — and never all at once: a backlog refused together and woken
- * at the exact same instant is refused together again, a claim storm that repeats forever. The
- * spread can pass `maxDelay` by up to half; the clamp bounds the wait, the spread only staggers it.
+ * The stated `Retry-After` is the FLOOR, never clamped: a run woken before the refill is refused
+ * again, so clamping a 3600 s refusal to `maxDelay` re-ran the backlog every minute for an hour.
+ * With none stated, the policy's own backoff. On top, a spread in `[0, min(wait / 2, maxDelay))`:
+ * a backlog refused together and woken at one instant is refused together again, a claim storm
+ * that repeats forever. `maxDelay` bounds only that spread.
  */
 export function rateLimitDeferralMs(
   policy: RetryPolicy,
@@ -98,8 +98,8 @@ export function rateLimitDeferralMs(
 ): number | undefined {
   if (!isUltimateError(error) || error.code !== RATE_LIMITED) return undefined;
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
-  const wait = Math.min(statedDelayMs(error) ?? backoffDelayMs(policy, attempt), cap);
-  return wait + Math.floor(random() * (wait / 2));
+  const wait = statedDelayMs(error) ?? Math.min(backoffDelayMs(policy, attempt), cap);
+  return wait + Math.floor(random() * Math.min(wait / 2, cap));
 }
 
 /**

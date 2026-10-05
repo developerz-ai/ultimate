@@ -65,8 +65,12 @@ describe('withScopes', () => {
     // Sorted and complete, so one boot names every edit and two boots read alike.
     expect(error.uncovered).toEqual(['deleteAccount', 'orderById']);
     expect(error.cause).toContain('"deleteAccount", "orderById"');
+    // Pasteable from its first character: the names, exactly as a scope's list spells them — never
+    // a map with a `'<scope>'` placeholder the reader has to resolve before it parses.
+    expect(error.fix).toStartWith("['deleteAccount', 'orderById'] ");
+    expect(error.fix).not.toContain('<');
+    expect(error.fix).toContain('scopes');
     expect(error.fix).toContain('defineAppMcp');
-    expect(error.fix).toContain('deleteAccount');
   });
 
   test('a tool that arrived with its own scope is covered without a map entry', () => {

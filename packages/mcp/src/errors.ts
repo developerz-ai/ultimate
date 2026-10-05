@@ -316,7 +316,7 @@ export class McpScopeUncoveredError extends UltimateError {
     super({
       code: 'X_MCP_SCOPE_UNCOVERED',
       cause: `defineAppMcp was given a scopes map that names no scope for ${names}, so no token scope gates them`,
-      fix: `scopes: { '<scope>': [${names}] } — in defineAppMcp, under the scope a token must hold for each; or stop projecting them`,
+      fix: `[${input.uncovered.map((name) => `'${name}'`).join(', ')}] — append each to the list of the scope a token must hold for it, in the scopes map passed to defineAppMcp; or drop it from include/actions/queries/tools`,
     });
     this.uncovered = input.uncovered;
   }

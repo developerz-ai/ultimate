@@ -95,4 +95,4 @@ function failureOf(
  * it — the hive's answer goes wherever its caller sends it, a model's context included.
  */
 export const HIDDEN_MEMBER_CAUSE =
-  'the member failed inside the server; the details are withheld from this answer and are in the server logs';
+  'the member failed inside the server; the details are withheld from this answer; the server log records its code and where it failed';

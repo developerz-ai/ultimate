@@ -20,7 +20,8 @@ minor instead of waiting for 25.0.0.
 - `http`: an out-of-scope bearer token is a 404 in the `auth` stage, before CSRF, body validation
   and authz, so it no longer learns the input schema (422) or the policy reason (403). Under a
   mount prefix, a caller without a valid token gets a uniform 401 whether or not the path is
-  served, and a caller with one gets a uniform 404 (S2).
+  served, and a caller with one gets a uniform 404 (S2). On a rate-limited mount that 404 spends
+  the token's allowance, so probing for hidden routes costs what a served call costs.
 - `action`, `query`: a declared `rateLimit:` is spent at one point for every surface: HTTP, MCP,
   the in-app agent tool, `.job()`, paged reads and live subscribe, all from one shared bucket.
   Before this it applied to HTTP only (S4). An idempotent replay spends nothing. A nested `invoke`
@@ -30,12 +31,14 @@ minor instead of waiting for 25.0.0.
   resume served as an in-window delta from the change ring, a re-seat and a re-authorization are
   free; a client-supplied cursor never buys a free read. Anonymous sockets are keyed by the
   address resolved at upgrade (`TRUSTED_PROXY_HOPS`).
-- `jobs`: an `X_RATE_LIMITED` refusal reschedules the run at its `Retry-After` (capped by
-  `maxDelay`) without counting an attempt, so a backlog of rate-limited runs is never dead-lettered.
+- `jobs`: an `X_RATE_LIMITED` refusal reschedules the run no earlier than its `Retry-After`, plus
+  jitter of up to half the wait (at most `maxDelay`), without counting an attempt, so a backlog of
+  rate-limited runs is never dead-lettered and never re-runs before the refill.
   An anonymous job run spends its org's bucket (`org:<id>`); a run with neither shares
   `job:unattributed`, never the anonymous-HTTP bucket.
 - `ai`: a `hive()` member's failure follows the same disclosure rule as an agent tool result: a
-  5xx cause or a foreign error message is withheld from the answer and logged whole (S6).
+  5xx cause or a foreign error message is withheld from the answer (S6). A withheld tool or member
+  failure is logged as its code, error name and stack frames only, never its message or cause.
 - `http`: behind `TRUSTED_PROXY_HOPS >= 2` with a proxy that overwrites `x-forwarded-proto`,
   `ctx.https` is now true, so HSTS is sent and the CSRF self-origin is `https` (S13).
 - `auth`: a first OAuth sign-in whose provider address is unverified no longer creates an account

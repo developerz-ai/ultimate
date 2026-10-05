@@ -352,6 +352,41 @@ describe('the cut answers before body validation and authz', () => {
   });
 });
 
+// A 404 the mount answers a VALID token is a probe, and it costs what a served call costs: free,
+// a token could walk the cut (and the paths outside it) without ever touching its allowance — and
+// headers present on one 404 but not the other would tell hidden from unknown.
+describe('a refusal a valid token earns spends its allowance', () => {
+  const send = (pipeline: ReturnType<typeof pipelineFor>, method: string, path: string) =>
+    pipeline.handle(call(method, path, { authorization: 'Bearer tok-read' }), { role: 'web' });
+
+  test('out-of-scope and unserved 404s exhaust the bucket; the next in-scope call is 429', async () => {
+    const pipeline = pipelineFor(2);
+    const hidden = await send(pipeline, 'POST', '/v1/create-case');
+    const unknown = await send(pipeline, 'POST', '/v1/not-served');
+    expect([hidden.status, unknown.status]).toEqual([404, 404]);
+    expect(hidden.headers.get('ratelimit-remaining')).toBe('1');
+    expect(unknown.headers.get('ratelimit-remaining')).toBe('0');
+    const served = await send(pipeline, 'GET', '/v1/case-list');
+    expect(served.status).toBe(429);
+    expect(Number(served.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+
+  test('an exhausted token probing a hidden path is 429 too, not a free 404', async () => {
+    const pipeline = pipelineFor(1);
+    expect((await send(pipeline, 'GET', '/v1/case-list')).status).toBe(200);
+    expect((await send(pipeline, 'POST', '/v1/create-case')).status).toBe(429);
+  });
+
+  test('an in-scope served call is charged exactly once', async () => {
+    const pipeline = pipelineFor(3);
+    const first = await send(pipeline, 'GET', '/v1/case-list');
+    expect(first.status).toBe(200);
+    expect(first.headers.get('ratelimit-remaining')).toBe('2');
+    const second = await send(pipeline, 'GET', '/v1/case-list');
+    expect(second.headers.get('ratelimit-remaining')).toBe('1');
+  });
+});
+
 // A token that resolves to nobody never reaches the per-token allowance — there is no token to
 // key it on — so guessing tokens on the mount was unmetered. The `auth` stage's failure path
 // spends the address's allowance for it, as it does for every required route.

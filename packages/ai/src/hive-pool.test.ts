@@ -117,7 +117,10 @@ describe('a member failure discloses only what the caller may read', () => {
       code: 'X_INVARIANT',
       reason: HIDDEN_MEMBER_CAUSE,
     });
-    expect(coded.log).toContain('org-42');
+    // The log carries what identifies the failure, never what it says: the logger redacts by
+    // field NAME, so a cause or a message logged as text would carry its tenant and its PII.
+    expect(coded.log).not.toContain('org-42');
+    expect(coded.log).toContain('X_INVARIANT');
 
     // A driver's own throw, before anything coded it: the pg message names the row it hit.
     const foreign = await logged(new Error('Key (email)=(ceo@corp.com) already exists'));
@@ -128,7 +131,11 @@ describe('a member failure discloses only what the caller may read', () => {
       reason: HIDDEN_MEMBER_CAUSE,
     });
     expect(JSON.stringify(foreign.members)).not.toContain('ceo@corp.com');
-    expect(foreign.log).toContain('ceo@corp.com');
+    expect(foreign.log).not.toContain('ceo@corp.com');
+    expect(foreign.log).toContain('uncoded');
+    expect(foreign.log).toContain('"name":"Error"');
+    // The frames stay — they are where the operator starts — with the message line gone.
+    expect(foreign.log).toContain('hive-pool.test.ts');
   });
 
   test('a caller-facing code keeps its cause, and nothing is logged for it', async () => {

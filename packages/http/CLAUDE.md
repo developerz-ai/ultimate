@@ -73,6 +73,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   (422) and `authz` (403) could describe the primitive. **The prefix is opaque**: `<prefix>/*rest`
   for every method (`opaquePrefix`) answers no token / a bad token with the same 401 challenge a
   served path gives, and a valid token with the same 404 — never 404-vs-401 or a 405 naming methods.
+  That 404 SPENDS the token's allowance (once; a served call is charged in the handler), so a
+  token cannot walk the cut for free.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 
 ## Rules — the pipeline

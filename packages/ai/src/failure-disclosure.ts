@@ -1,9 +1,9 @@
 // The one rule for what of a thrown value a remote reader may see: an LLM tool result and a hive
 // member's reason both reach someone outside this process, so both ask this file — and the half
-// it withholds goes to the log, which is what makes "the details are in the server logs" true.
+// it withholds goes to the log as content-free facts (code, name, frames) — never its text.
 
 import type { Logger } from '@ultimat3/core';
-import { hasPublicCause, isUltimateError, renderThrowable, stringField } from '@ultimat3/core';
+import { hasPublicCause, isUltimateError, stringField } from '@ultimat3/core';
 import { statusFor } from '@ultimat3/http';
 
 /**
@@ -46,7 +46,32 @@ export function discloseFailure(
   };
 }
 
-/** The withheld half, logged whole — `renderThrowable` is total over a hostile value too. */
+/**
+ * A stack's FRAMES and nothing else: every line that is a frame (`    at …`), none that is not.
+ * The message is the first line — and, when it spans several, the lines after it until the first
+ * frame — so keeping only frame-shaped lines drops all of it, whatever it held. A frame is code
+ * position, which carries no caller data.
+ */
+const FRAME = /^\s+at\s/;
+
+function framesOf(error: unknown): string | null {
+  const stack = stringField(error, 'stack');
+  if (stack === undefined) return null;
+  const lines = stack.split('\n');
+  // Skip to the first frame line that FOLLOWS the message: a message may itself contain text
+  // shaped like a frame, and only lines after the message block are the stack.
+  const message = stringField(error, 'message') ?? '';
+  const skip = message === '' ? 1 : message.split('\n').length;
+  const frames = lines.slice(skip).filter((line) => FRAME.test(line));
+  return frames.length === 0 ? null : frames.join('\n');
+}
+
+/**
+ * The withheld half, logged as FACTS ONLY — the code, the error's name, and its frames. Never the
+ * message and never the cause: the logger redacts by field NAME, not by content, so a pg
+ * `Key (email)=(ceo@corp.com)` logged as text reached the logs whole. What identifies the failure
+ * is the code and where it was thrown, both of which survive this.
+ */
 function withheld(
   error: unknown,
   logger: Logger | undefined,
@@ -57,8 +82,9 @@ function withheld(
   logger?.error('ai.failure.withheld', {
     where,
     code: code ?? 'uncoded',
-    error: renderThrowable(error),
-    cause: stringField(error, 'cause') ?? null,
+    // `name`, read structurally: what kind of throw it was (`Error`, `TypeError`, a driver's own).
+    name: stringField(error, 'name') ?? typeof error,
+    frames: framesOf(error),
   });
   return { code, cause: undefined, fix };
 }

@@ -159,7 +159,11 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       }
       // Hidden, never forbidden: a 403 would confirm the primitive exists to a token that was
       // not issued for it — the enumeration MCP's catalog refuses the same way.
+      // And never free: the refusal spends the token's allowance as a served call does (which the
+      // handler charges, once, so the two paths never both spend) — else a token walks the cut
+      // unmetered, and `RateLimit-*` on one 404 but not another tells hidden from unknown.
       if (scope === null || !caller.scopes.has(scope)) {
+        await spend(tokenKey(token), ctx);
         throw routeNotFound(ctx.method, ctx.url.pathname);
       }
       callers.set(ctx, { caller, key: tokenKey(token) });

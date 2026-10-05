@@ -195,7 +195,7 @@ function resultOf(toolUseId: string, output: unknown): LlmToolResult {
  * it: the provider keeps every request it is sent, and a cause that reached it cannot be recalled.
  */
 export const HIDDEN_TOOL_CAUSE =
-  'the tool failed inside the server; the details are withheld from this conversation and are in the server logs';
+  'the tool failed inside the server; the details are withheld from this conversation; the server log records its code and where it failed';
 
 /**
  * `discloseFailure`'s verdict, rendered as the `tool_result` line — the same rule a hive member's

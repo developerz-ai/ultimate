@@ -89,10 +89,11 @@ describe('a rate-limit refusal reschedules without spending an attempt', () => {
     expect(nacks[0]?.delayMs).toBeLessThanOrEqual(45_000);
   });
 
-  test('the stated wait is clamped by the policy’s maxDelay before it is spread', async () => {
+  test('a stated wait longer than maxDelay is the floor: a 3600 s refusal defers ≥ 3600 s', async () => {
     const { nacks } = await runOnce(3, 1, refused(3_600));
-    expect(nacks[0]?.delayMs).toBeGreaterThanOrEqual(60_000);
-    expect(nacks[0]?.delayMs).toBeLessThanOrEqual(90_000);
+    // Before the refill the run is refused again; maxDelay bounds only the spread on top.
+    expect(nacks[0]?.delayMs).toBeGreaterThanOrEqual(3_600_000);
+    expect(nacks[0]?.delayMs).toBeLessThan(3_600_000 + 60_000);
   });
 
   test('any other failure still counts — the control', async () => {
@@ -115,6 +116,11 @@ describe('refused jobs do not wake together', () => {
     expect(rateLimitDeferralMs(policy, 1, refused(30), () => 0)).toBe(30_000);
     expect(rateLimitDeferralMs(policy, 1, refused(30), () => 0.999_999)).toBe(44_999);
     expect(rateLimitDeferralMs(policy, 1, refused(30), () => 0.5)).toBe(37_500);
+  });
+
+  test('the spread is bounded by maxDelay; the stated wait never is', () => {
+    expect(rateLimitDeferralMs(policy, 1, refused(3_600), () => 0)).toBe(3_600_000);
+    expect(rateLimitDeferralMs(policy, 1, refused(3_600), () => 0.999_999)).toBe(3_659_999);
   });
 
   test('a hundred refusals of one bucket wake at many moments, not one', () => {
