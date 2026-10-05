@@ -6,6 +6,7 @@
  * graph (axiom 6). WHEN it wakes is the route's `hydrate`, never a second declaration here.
  */
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { IslandInvalidError } from './errors';
 import type { JsonValue } from './island-props';
 import type { JsxProps } from './jsx';
@@ -195,7 +196,10 @@ function normalizeIsland(declaration: IslandDeclaration): IslandSpec {
     throw new IslandInvalidError(
       `island src ${JSON.stringify(src)} is not an island file: a module ships to the browser ` +
         `only if its name says so, and ${ISLAND_EXTENSION} is the one spelling that says it`,
-      `git mv -- ${src} ${stem}${ISLAND_EXTENSION}, then pass src: '${stem}${ISLAND_EXTENSION}'`,
+      // Screened (security audit of plan 101 sweep 1c, M1): `UNSAFE_SPECIFIER` lets `$(…)`, `;`,
+      // `|` and `&` through. A leading `./` is dropped first — the same path to a shell, and
+      // `renderFixShellArg` refuses a leading `.` — so the common specifier stays pasteable.
+      `git mv -- ${renderFixShellArg(src.replace(/^\.\//, ''), "'<module>'")} ${renderFixShellArg(`${stem.replace(/^\.\//, '')}${ISLAND_EXTENSION}`, `'<name>${ISLAND_EXTENSION}'`)}, then pass src: '${stem}${ISLAND_EXTENSION}'`,
     );
   }
 

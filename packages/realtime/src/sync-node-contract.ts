@@ -90,6 +90,12 @@ export interface SyncNodeOptions {
   /** WS endpoint. One path, no negotiation — the protocol version lives in the frames. */
   readonly path?: string;
   readonly drainSpreadMs?: number;
+  /**
+   * Sockets one principal — an actor, or an anonymous caller's network (IPv4, IPv6 /64) — may hold
+   * on this node. Default `DEFAULT_MAX_SOCKETS_PER_ACTOR` (16); the boot passes the app's
+   * `realtime.maxSocketsPerActor`. The next upgrade is 429 `X_SOCKET_LIMIT`.
+   */
+  readonly maxSocketsPerActor?: number;
 }
 
 export interface SyncNode {
@@ -97,6 +103,8 @@ export interface SyncNode {
   readonly ready: boolean;
   /** The one path it answers an upgrade on: a HOST has to route it, and must not restate it. */
   readonly path: string;
+  /** Sockets one principal (`actor:<id>` / `address:<network>`) holds here — the cap's count. */
+  principalSockets(principal: string): number;
   start(): Promise<void>;
   /**
    * Refuse new connections, keep every one this node holds. The SIGTERM `accept` phase calls it —

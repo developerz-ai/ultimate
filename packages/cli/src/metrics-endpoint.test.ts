@@ -13,7 +13,7 @@ import {
   resetListeners,
   resetMetrics,
 } from '@ultimat3/core';
-import { PORT_RANGE } from './flag-number';
+import { neighbouringPort, PORT_RANGE } from './flag-number';
 import {
   bindScrapePort,
   isAddressInUse,
@@ -257,4 +257,12 @@ describe('a scrape port that is not a number', () => {
       expect(asked).toEqual([80]);
     });
   });
+});
+
+// Plan 101 sweep 1c: the port is a number this file computed, screened all the same so the
+// fix-shell-arg guard reads the line as screened rather than trusting a sentence about it.
+test('the port-in-use fix is the neighbouring port, as a plain argument', () => {
+  expect(new MetricsPortInUseError({ port: 9090 }).fix).toBe(
+    `METRICS_PORT=${String(neighbouringPort(9090))} x dev --json`,
+  );
 });

@@ -9,7 +9,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 ## [Unreleased]
 
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
-Sweep 1 is security, in two PRs (1a, 1b). The behaviour changes under **Changed** are security fixes, so they ship in a
+Sweep 1 is security, in three PRs (1a, 1b, 1c). The behaviour changes under **Changed** are security fixes, so they ship in a
 minor instead of waiting for 25.0.0.
 
 ### Security
@@ -63,6 +63,26 @@ minor instead of waiting for 25.0.0.
   into a shell command (S12, storage half).
 - `cli`: `/media` stores a variant only for the framework-minted quality; any other `?q=` is
   served but never written to disk (S8).
+- `realtime`: one actor can no longer fill a sync node's live-query windows. Each actor holds at
+  most `realtime.maxSubscriptionsPerActor` subscriptions per node (default 1,000, across all its
+  sockets); an anonymous socket counts against the client address resolved at upgrade. Exceeding it
+  is `X_SUBSCRIPTION_LIMIT` with scope `actor`. New `LiveQueryRegistry({ maxPerActor })` and the
+  exported `DEFAULT_MAX_PER_ACTOR` / `DEFAULT_MAX_PER_SOCKET` (S7). A re-auth onto a principal with
+  no room refuses the overflow under each sid, and a socket with neither actor nor address is
+  counted under one shared principal, never uncapped.
+- `realtime`: one principal holds at most `realtime.maxSocketsPerActor` sockets per sync node
+  (default 16; an anonymous network gets 8× that, 128, so an office behind one NAT still reaches a
+  public live page); the next upgrade is `429` with the new `X_SOCKET_LIMIT`. Anonymous principals for
+  both caps are keyed by network: IPv4 exact, IPv6 by its /64, IPv4-mapped as IPv4, so rotating
+  through a /64 buys nothing. New `createSyncNode({ maxSocketsPerActor })`,
+  `DEFAULT_MAX_SOCKETS_PER_ACTOR`, and core's `addressNetwork()`.
+- `cli`, `db`, `entity`, `testing`, `storage`: every `fix:` line that splices a value into a shell
+  command screens it first (island names and directories, migration and table names, entity names,
+  test paths, the S3 KMS key id). `primaryKeyName`'s `psql` fix looks the table up by `relname`, so a
+  mixed-case name no longer breaks out of the quoted SQL (S12).
+- `scripts/fix-shell-arg`: the guard now reads a command after `: `, knows `aws`, `ls` and `df`,
+  scans the `fix` argument of exported factories at every call site, and no longer reads an earlier
+  `${…}` body as template text. The sites it newly saw are fixed rather than pinned (S12).
 
 ### Changed
 

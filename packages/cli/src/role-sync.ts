@@ -2,7 +2,7 @@
 // Split from `role-start.ts` because it is the one role with an authenticator, a presence registry
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
-import { createContext, logger, UltimateError } from '@ultimat3/core';
+import { createContext, logger, type RealtimeConfig, UltimateError } from '@ultimat3/core';
 import {
   clientAddress,
   configuredHttp,
@@ -164,13 +164,21 @@ export interface RunningSync {
  * close. And no default is defensible: one tenant is a single person and the next is five
  * thousand seats, so any number here is either unreachable or an outage on a Monday morning. The
  * per-socket 128 stands because a socket is one browser tab, which is a bound the framework can
- * actually know. A deployment that wants the tenant cap passes both:
+ * actually know, and so does the per-ACTOR 1,000 (`realtime.maxSubscriptionsPerActor`): one
+ * principal's share is knowable where a tenant's is not. A deployment that wants the tenant cap
+ * passes both:
  *
  *   new LiveQueryRegistry({ …, maxPerTenant: 5_000, tenantOf: (actor) => actor?.orgId ?? null })
  */
 export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegistry {
+  // `?.` because a caller that builds only the registry (`role-sync-resume.test.ts`) hands no
+  // runtime; unset is the registry's own `DEFAULT_MAX_PER_ACTOR`, which is what core leaves it.
+  const maxPerActor = options.runtime?.realtime?.maxSubscriptionsPerActor;
   const registry = new LiveQueryRegistry({
     source: new RingChangeBuffer(),
+    // One actor's — or one anonymous address's — share of this node's live queries, from the app's
+    // `realtime.maxSubscriptionsPerActor`. Without it 79 sockets of one actor filled the node.
+    ...(maxPerActor === undefined ? {} : { maxPerActor }),
     // A withheld row is a metric, never a frame and never an error: telling a client "there is a
     // row you may not see" is the leak the gate exists to prevent.
     onRowDenied: (event) => logger.debug('live.rows_denied', { ...event }),
@@ -213,6 +221,17 @@ export function syncClientAddressOf(
       socketAddress,
       urlProtocol: new URL(request.url).protocol,
     });
+}
+
+/**
+ * The node's half of the app's per-actor caps: `realtime.maxSocketsPerActor`, the sockets one
+ * principal may hold here. Absent, the node keeps its own default (16) — which is core's too.
+ */
+export function syncNodeCaps(realtime: RealtimeConfig | undefined): {
+  readonly maxSocketsPerActor?: number;
+} {
+  const max = realtime?.maxSocketsPerActor;
+  return max === undefined ? {} : { maxSocketsPerActor: max };
 }
 
 const healthDetailPeersOf = (
@@ -283,6 +302,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
     // the same list the web role reads. Unset, the node keeps its default (the box itself).
     ...healthDetailPeersOf(configuredHttp()?.healthDetailPeers),
     clientAddressOf: syncClientAddressOf(options.env),
+    ...syncNodeCaps(options.runtime.realtime),
     // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
     // list at all — the KV bucket the transport just created would hold nothing and every `sync`
     // container would run a presence-less protocol. It reads and writes `transport.shared`, so it

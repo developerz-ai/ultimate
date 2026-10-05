@@ -77,3 +77,28 @@ describe('the other four fix lines stay on `x test eval`', () => {
     });
   }
 });
+
+// Security audit of plan 101 sweep 1c: a baseline PATH is a file on disk, and the re-record line
+// used to carry it as an argument `x test eval` never takes. The command is the record run; the
+// path is named behind the `#`, where it is read and never run.
+test('the re-record line runs the eval suite and names the baseline only in its comment', () => {
+  const fix = new EvalBaselineInvalidError({
+    path: 'evals/$(touch pwned).json',
+    problem: 'is not JSON',
+  }).fix;
+  const [command] = fix.split('#');
+  expect(command?.trim()).toBe('ULTIMATE_EVAL_RECORD=1 x test eval');
+  expect(fix).toContain('evals/$(touch pwned).json');
+});
+
+// CodeRabbit on #651: a comment is inert only to the end of its line. `UltimateError` escapes every
+// control character in `fix` at construction (`singleLine`), so a newline in the path never reaches
+// the rendered line raw — pinned here so a change to that guarantee shows up as this failure.
+test('a newline in the baseline path cannot end the comment', () => {
+  const fix = new EvalBaselineInvalidError({ path: 'evals/a\n$(touch pwned).json', problem: 'x' })
+    .fix;
+  expect(fix).not.toContain('\n');
+  expect(fix).toBe(
+    String.raw`ULTIMATE_EVAL_RECORD=1 x test eval   # re-records evals/a\n$(touch pwned).json`,
+  );
+});

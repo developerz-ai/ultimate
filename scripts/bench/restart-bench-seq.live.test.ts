@@ -68,10 +68,13 @@ async function startNode(port: number): Promise<BenchNode> {
   const hub = new ChannelHub({ transport, sockets });
   const node: SyncNode = createSyncNode({
     hub,
-    registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
+    // Every client dials from 127.0.0.1 — one anonymous principal — so the per-principal caps are
+    // sized to the swarm, or the node refuses it at the upgrade and `subscribed` never comes true.
+    registry: new LiveQueryRegistry({ source: new RingChangeBuffer(), maxPerActor: CLIENTS }),
     transport,
     buildId: 'bench-seq-test',
     sockets,
+    maxSocketsPerActor: CLIENTS,
     accept: new AcceptBudget({ perSecond: 500, burst: 2000 }),
   });
   await node.start();

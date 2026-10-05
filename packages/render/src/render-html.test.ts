@@ -112,6 +112,25 @@ describe('renderComponent', () => {
     );
   });
 
+  // Security audit of plan 101 sweep 1c: the route file is author text on disk, and `$(…)` is a
+  // legal file name — the reproduce command must not run it.
+  test('the reproduce command never carries shell syntax from the file name', async () => {
+    const Broken = (): unknown => {
+      throw new TypeError('boom');
+    };
+    const fixOf = async (file: string): Promise<string> =>
+      renderComponent(Broken, {}, file).then(
+        () => '',
+        (error: unknown) => (error as { fix: string }).fix,
+      );
+    expect(await fixOf('apps/web/site/page.tsx')).toStartWith(
+      'run `bun test apps/web/site/page.test.ts` to reproduce',
+    );
+    expect(await fixOf('apps/web/site/$(touch pwned)/page.tsx')).toStartWith(
+      "run `bun test '<the route's test file>'` to reproduce",
+    );
+  });
+
   test('passes the props straight through', async () => {
     const Echo = (props: Record<string, unknown>): unknown => h('p', null, String(props['url']));
     expect(await renderComponent(Echo, { url: '/x' }, 'apps/web/site/page.tsx')).toBe('<p>/x</p>');

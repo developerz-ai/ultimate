@@ -10,14 +10,14 @@ import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import { type LiveCursor, makeCursor } from './cursor';
-import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
+import { LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { deliverChange } from './live-deliver';
 import { type FanoutDeps, snapshotFrame } from './live-fanout';
 import { floorAfterRead } from './live-floor';
 import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
-import { refuseSubscription } from './live-refusal';
+import { reauthorizeSocket } from './live-reauth';
 import { resumeOnto } from './live-resume';
 import { type Charge, type SubscribeArgs, spendOnce } from './live-spend';
 import { liveTenantOf, windowId } from './live-tenant';
@@ -291,92 +291,32 @@ export class LiveQueryRegistry {
     for (const subscription of this.#book.ofSocket(socketId)) {
       this.unsubscribe(socketId, subscription.sid);
     }
+    // Held or not: a socket re-authed while holding nothing is remembered by nothing else.
+    this.#book.forgetSocket(socketId);
   }
 
-  /**
-   * Actor changed mid-connection (login, logout, role change): re-run subscribe-time authz and drop
-   * what is no longer allowed. Survivors are marked desynced so the next flush re-snapshots them
-   * under the new actor's row policy. Returns the sids that were dropped — a denial and nothing
-   * else, so a caller may tell the client "you may no longer see this" and be right.
-   *
-   * A survivor whose actor now belongs to ANOTHER tenant cannot stay where it is: its window is the
-   * old org's. It is re-seated — dropped, subscribed again under the new tenant, and sent that
-   * window's snapshot under the same sid — or, when that cannot complete, refused on the socket
-   * under the sid (`refuseSubscription`), never kept on the old org's window.
-   */
-  async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
-    const dropped: string[] = [];
-    // The actor changed, so what tenant this socket's subscriptions count against may have too.
-    // Told here rather than derived per lookup: the per-tenant cap is an index now, and an index
-    // nobody updates is a count that drifts from the book for the rest of the process.
-    this.#book.retenant(socket);
-    for (const subscription of this.#book.ofSocket(socket.id)) {
-      let failed: { readonly error: unknown } | undefined;
-      try {
-        await subscription.definition.authorize?.({
-          actor: socket.actor,
-          input: subscription.input,
-        });
-      } catch (error) {
-        if (isPolicyDenial(error)) {
-          this.unsubscribe(socket.id, subscription.sid);
-          // Said under the sid, as a refused subscribe is: unsaid, the client kept the rows on
-          // screen in state `live` for a subscription this node no longer serves.
-          refuseSubscription(socket, subscription.sid, error);
-          dropped.push(subscription.sid);
-          continue;
-        }
-        // Not a decision — the gate never reached one. Destroying the subscription would report a
-        // database timeout as a revoked grant, and a client does not resubscribe to a denial. It
-        // survives, desynced: nothing is delivered from the window built under the old actor, and
-        // the row gate still decides every row under the new one, from the same policy `authorize`
-        // consults. The failure is counted and reported rather than silently absorbed.
-        this.#gate.failedAuthorize(
-          subscription.qid,
-          { sid: subscription.sid, actor: socket.actor },
-          error,
-        );
-        failed = { error };
-      }
-      if (await this.#reseat(socket, subscription, failed)) continue;
-      socket.markDesynced(subscription.sid);
-    }
-    return dropped;
+  /** Sockets the spanning caps still remember a key for. A leak is this number not falling. */
+  get trackedSockets(): number {
+    return this.#book.trackedSockets;
   }
 
-  /**
-   * Move one subscription onto its actor's CURRENT tenant's window. `false` when it is already
-   * there. A re-seat that cannot complete leaves the subscription dropped — never attached to the
-   * window of an org its actor has left — and REFUSED on the socket under its sid, the frame a
-   * refused subscribe gets, so the client's window renders `failed` instead of going quiet.
-   *
-   * `failed` is the `authorize` this pass already saw fail: it is not asked again — the store that
-   * just timed out is the one `subscribe` would ask — and it is not counted twice.
-   */
-  async #reseat(
-    socket: SyncSocket,
-    subscription: LiveSubscription,
-    failed: { readonly error: unknown } | undefined,
-  ): Promise<boolean> {
-    const { sid, input, definition } = subscription;
-    const wanted = windowId(queryHash(definition.name, input), liveTenantOf(socket.actor));
-    if (wanted === subscription.qid) return false;
-    this.unsubscribe(socket.id, sid);
-    if (failed !== undefined) {
-      refuseSubscription(socket, sid, failed.error);
-      return true;
-    }
-    try {
-      const { frame } = await this.#subscribe(
-        { socket, name: definition.name, input, sid },
-        { due: false },
-      );
-      if (!socket.send(frame)) socket.markDesynced(sid);
-    } catch (error) {
-      this.#gate.failedAuthorize(wanted, { sid, actor: socket.actor }, error);
-      refuseSubscription(socket, sid, error);
-    }
-    return true;
+  /** Live subscriptions one principal (`actor:<id>` / `address:<ip>`) holds on this node. */
+  actorCount(principal: string): number {
+    return this.#book.actorCount(principal);
+  }
+
+  /** Actor changed mid-connection — re-decided per subscription; `live-reauth.ts` owns how. */
+  reauthorize(socket: SyncSocket): Promise<readonly string[]> {
+    return reauthorizeSocket(
+      {
+        book: this.#book,
+        gate: this.#gate,
+        unsubscribe: (socketId, sid) => this.unsubscribe(socketId, sid),
+        // A re-seat is the subscription it already was, so it is never charged again.
+        resubscribe: (args) => this.#subscribe(args, { due: false }),
+      },
+      socket,
+    );
   }
 
   /**
@@ -417,6 +357,9 @@ export class LiveQueryRegistry {
     sid: string,
     cursor: LiveCursor,
   ): LiveSubscription {
+    // Before anything is written: a re-auth during the read may have moved this socket to a
+    // principal that never had room for it.
+    this.#book.assertAttachable(socket, sid);
     const subscription: LiveSubscription = {
       sid,
       qid: entry.qid,

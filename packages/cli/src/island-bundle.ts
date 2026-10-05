@@ -36,6 +36,7 @@ import {
 import { solidDedupePlugin } from './island-solid-dedupe';
 import { islandStylesPlugin } from './island-styles';
 import { hasPathSegment } from './path-segments';
+import { quoteArg } from './shell-quote';
 import { solidJsxPlugin } from './solid-loader';
 
 /**
@@ -404,10 +405,7 @@ function onlyMissing(only: string, discovered: readonly string[]): IslandInvalid
   // An app with no islands cannot be pointed at one, so the fix WRITES the file that was asked
   // for — the same command `entryMissing` hands back, split off the same path.
   if (nearest === undefined) {
-    return new IslandInvalidError(
-      cause,
-      `x g island ${posix.basename(only, ISLAND_EXTENSION)} --at ${posix.dirname(only)}`,
-    );
+    return new IslandInvalidError(cause, generateIslandFix(only));
   }
   return new IslandInvalidError(cause, `buildIslands(root, { only: '${nearest}' })`);
 }
@@ -452,8 +450,19 @@ function entryMissing(
   return new IslandInvalidError(
     `${routeFile} declares island src ${JSON.stringify(src)}, which resolves to ${target} — a ` +
       `file this build did not bundle (${known.length === 0 ? 'it found no islands at all' : `it found ${known.join(', ')}`})`,
-    `x g island ${posix.basename(target, ISLAND_EXTENSION)} --at ${posix.dirname(target)}`,
+    generateIslandFix(target),
   );
+}
+
+/**
+ * `x g island <name> --at <dir>`, split off a path the caller or a route file supplied. Each half is
+ * quoted (security audit of plan 101 sweep 1c, M1), and one opening with `-` is the placeholder:
+ * quoting does not stop `x` reading `--json` as a flag (L3).
+ */
+function generateIslandFix(path: string): string {
+  const name = posix.basename(path, ISLAND_EXTENSION);
+  const dir = posix.dirname(path);
+  return `x g island ${quoteArg(name.startsWith('-') ? '<name>' : name)} --at ${quoteArg(dir.startsWith('-') ? '<dir>' : dir)}`;
 }
 
 /** Write every chunk under the static export, at the same URL the documents already carry. */

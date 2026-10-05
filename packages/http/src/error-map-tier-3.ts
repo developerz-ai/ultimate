@@ -89,4 +89,6 @@ export const TIER_3_ERROR_STATUS = {
   X_IDEMPOTENCY_RESERVATION_LOST: 409,
   // @ultimat3/jobs — the queue holds no job with this id
   X_JOB_NOT_FOUND: 404,
+  // @ultimat3/realtime — one principal holds too many sockets on this node
+  X_SOCKET_LIMIT: 429,
 } satisfies Readonly<Record<string, number>>;

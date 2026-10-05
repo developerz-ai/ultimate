@@ -167,12 +167,17 @@ export interface JobsConfig {
  *
  * No `tier` either (deleted 2026-08-23): no file read it, so `tier: 'local-first'` bought nothing.
  * An app's realtime tier is what it DECLARES — a `channel()` topic, a `live: true` query, a local
- * store — never a config key; `transport` and `urlEnv` are the only fields any code reads.
+ * store — never a config key. `transport`, `urlEnv` and the two per-actor caps (read by the `sync`
+ * role into its registry and node) are the fields code reads.
  */
 export interface RealtimeConfig {
   readonly enabled: boolean;
   readonly transport: RealtimeTransport;
   readonly urlEnv: string | undefined;
+  /** Live subscriptions one actor (or anonymous network) may hold per sync node. Unset: 1,000. */
+  readonly maxSubscriptionsPerActor?: number | undefined;
+  /** Sockets one actor (or anonymous network) may hold per sync node. Unset: 16. */
+  readonly maxSocketsPerActor?: number | undefined;
 }
 
 export interface McpConfig {
@@ -320,6 +325,11 @@ function validate(config: AppConfig): void {
     routePathIssue('ai.mcp.path', config.ai.mcp.path),
     booleanIssue('realtime.enabled', config.realtime.enabled),
     oneOfIssue('realtime.transport', config.realtime.transport, REALTIME_TRANSPORTS),
+    ...(['maxSubscriptionsPerActor', 'maxSocketsPerActor'] as const).map((key) =>
+      config.realtime[key] === undefined
+        ? undefined
+        : countIssue(`realtime.${key}`, config.realtime[key], 1),
+    ),
     readinessGraceIssue(config.drain.readinessGraceMs),
     readinessModeIssue(config.health.readiness),
   ];

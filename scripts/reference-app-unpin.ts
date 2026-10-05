@@ -4,7 +4,7 @@
 
 // why: the host-separator path to the pins file; Bun ships no path API.
 import { join } from 'node:path';
-import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { quoteArg, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
 import type { ScriptResult } from './lib/log';
@@ -41,7 +41,9 @@ export const unpin = async (
   if (app === undefined) {
     return badFlag(
       `--unpin names ${request.app}, which is not a gated app`,
-      `bun run scripts/reference-app-gate.ts --unpin <${apps.map((a) => a.dir).join('|')}>:<step>`,
+      // One runnable token, quoted so `<step>` is not a redirection, and every directory screened —
+      // the line is pasted whole, the list after the dash included.
+      `bun run scripts/reference-app-gate.ts --unpin ${quoteArg(`${apps[0]?.dir ?? '<app>'}:<step>`)} — the gated apps: ${apps.map((a) => quoteArg(a.dir)).join(', ')}`,
     );
   }
   const declared = Object.keys(app.expectedRed);

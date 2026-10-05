@@ -78,4 +78,21 @@ describe('realtimeConfigOf, over the one loader', () => {
     expect(isUltimateError(error) ? error.code : 'not coded').toBe('X_CONFIG_INVALID');
     expect(isUltimateError(error) ? error.cause : '').toContain('realtime.transport');
   });
+
+  test('the per-actor live-query ceiling is read from the file, and a non-count is refused', async () => {
+    const set = await appRoot(
+      "export const config = { name: 'demo', realtime: { maxSubscriptionsPerActor: 250 } };\n",
+    );
+    expect((await loadRealtimeConfig(set)).maxSubscriptionsPerActor).toBe(250);
+    const zero = await appRoot(
+      "export const config = { name: 'demo', realtime: { maxSubscriptionsPerActor: 0 } };\n",
+    );
+    const error: unknown = await loadRealtimeConfig(zero).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error) ? error.cause : '').toContain(
+      'realtime.maxSubscriptionsPerActor',
+    );
+  });
 });

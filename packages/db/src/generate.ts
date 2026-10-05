@@ -23,7 +23,7 @@ import {
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
-import { addChangedKey, dropChangedKey } from './primary-key';
+import { addChangedKey, dropChangedKey, migrationNameArg } from './primary-key';
 import type { ReplicaIdentityInput } from './replica-identity';
 import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
 import type { MovedAside } from './retype-dependents';
@@ -335,7 +335,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
       if (options.allowDestructive !== true) {
         throw migrationIrreversible(
           `dropping "${entity.table}"."${column.name}" discards its rows and cannot be undone`,
-          `x db gen "${options.name}" --allow-destructive   # or keep the column and deprecate it`,
+          `x db gen ${migrationNameArg(options.name)} --allow-destructive   # or keep the column and deprecate it`,
         );
       }
       plan.up.push(
@@ -355,7 +355,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     if (options.allowDestructive !== true) {
       throw migrationIrreversible(
         `dropping table "${table.name}" discards every row and cannot be undone`,
-        `x db gen "${options.name}" --allow-destructive   # or delete the entity in two releases`,
+        `x db gen ${migrationNameArg(options.name)} --allow-destructive   # or delete the entity in two releases`,
       );
     }
   }

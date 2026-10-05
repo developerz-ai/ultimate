@@ -40,13 +40,21 @@ export function loadFailureOf(error: unknown): LoadFailure | undefined {
 const shown = (module: string, root: string): string =>
   module.startsWith(`${root}/`) ? module.slice(root.length + 1) : module;
 
+/** What `bun run <script>` may carry: a `package.json` script name — never opening with `-`. */
+const SCRIPT_NAME = /^\w[\w-]*$/;
+
 export function loadFinding(script: string, failure: LoadFailure, root: string): Finding {
   const module = shown(failure.module, root);
+  // The name is pasted into a shell. `scriptName` already cuts argv to `[\w-]+`, but its fallback
+  // is `the guard` and a caller of `loadOrReport` passes its own — so the command is emitted only
+  // for a real script name, and prose otherwise. This file imports no workspace package, so core's
+  // `renderFixShellArg` is out of reach.
+  const rerun = SCRIPT_NAME.test(script) ? `bun run ${script}` : 'rerun the guard you ran';
   return {
     code: 'X_GUARD_LOAD_FAILED',
     at: module,
     cause: `${script} could not load its imports — ${failure.message.replace(`${root}/`, '')} — so it checked nothing; a package in its import graph is mid-edit or broken`,
-    fix: `edit ${module} until bun run typecheck is clean, then rerun: bun run ${script}`,
+    fix: `edit ${module} until bun run typecheck is clean, then rerun: ${rerun}`,
   };
 }
 

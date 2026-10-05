@@ -57,8 +57,13 @@ export const config = defineRoute({
    * The 1,302 B over the measurement is Bun's tree-shaker flap (`island-bytes.test.ts`): a chunk is
    * up to 1,124 B larger on a run that keeps `schema-error-codes.ts`. It comes DOWN with the shared
    * island runtime (#505), as `/feed` does.
+   * raised 130.5kb → 131kb, measured 133,717 B (2026-10-05, plan 101 sweep 1c; CI's
+   * `x build --target static`): +1,387 B over 132,330, of which the client-reachable realtime error
+   * registry is the new part. `X_SOCKET_LIMIT` (the per-principal socket cap) and the `actor` scope
+   * of `X_SUBSCRIPTION_LIMIT`, each with the fix a refused client renders, plus 1b's retry-after
+   * wait on a rate-limited subscribe.
    */
-  budget: { js: '130.5kb' },
+  budget: { js: '131kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

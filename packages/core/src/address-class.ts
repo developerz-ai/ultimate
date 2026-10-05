@@ -119,16 +119,22 @@ function classifyV6(g: readonly number[]): AddressClass {
   return 'public';
 }
 
+/** The literal itself: trimmed, unbracketed, its IPv6 zone id dropped. */
+function literalOf(address: string): string {
+  let text = address.trim();
+  if (text.startsWith('[') && text.endsWith(']')) text = text.slice(1, -1);
+  const zone = text.indexOf('%');
+  if (zone !== -1 && text.includes(':')) text = text.slice(0, zone);
+  return text;
+}
+
 /**
  * The class of an IP address LITERAL — IPv4, IPv6, bracketed `[::1]`, a zone id `fe80::1%eth0`,
  * and every IPv6 form carrying an IPv4 address. `undefined` means "not an address literal": a
  * hostname must be resolved first and each resolved address classified, never this string.
  */
 export function classifyAddress(address: string): AddressClass | undefined {
-  let text = address.trim();
-  if (text.startsWith('[') && text.endsWith(']')) text = text.slice(1, -1);
-  const zone = text.indexOf('%');
-  if (zone !== -1 && text.includes(':')) text = text.slice(0, zone);
+  const text = literalOf(address);
   if (text.includes(':')) {
     const groups = parseV6(text);
     return groups === undefined ? undefined : classifyV6(groups);
@@ -140,4 +146,34 @@ export function classifyAddress(address: string): AddressClass | undefined {
 /** Fails CLOSED: anything but a literal classified `public` — a hostname included — is `false`. */
 export function isPublicAddress(address: string): boolean {
   return classifyAddress(address) === 'public';
+}
+
+/**
+ * The NETWORK a caller's address names, for keying a per-caller budget: IPv4 as itself, an
+ * IPv4-mapped IPv6 (`::ffff:a.b.c.d`) as the IPv4 it carries, any other IPv6 as its /64 in RFC 5952
+ * form (`2001:db8:1:2::/64`). A /64 is the smallest block one subscriber is handed, so keying on
+ * the full IPv6 string gave one host ~2^64 budgets. Anything that is not an address literal is
+ * returned unchanged — the caller's key stays whatever it was, never a guessed network.
+ */
+export function addressNetwork(address: string): string {
+  const text = literalOf(address);
+  if (!text.includes(':')) {
+    const v4 = parseV4(text);
+    return v4 === undefined ? address : text;
+  }
+  const g = parseV6(text);
+  if (g === undefined) return address;
+  if (g.slice(0, 5).every((group) => group === 0) && g[5] === 0xffff) {
+    const v4 = embeddedV4(g);
+    return [24, 16, 8, 0].map((shift) => String(Math.floor(v4 / 2 ** shift) % 256)).join('.');
+  }
+  const prefix = g.slice(0, 4);
+  // RFC 5952: the zero run reaching into the (zero) interface half is always the longest, so
+  // compression starts at the first zero group from which the prefix stays zero.
+  let cut = 4;
+  while (cut > 0 && prefix[cut - 1] === 0) cut -= 1;
+  return `${prefix
+    .slice(0, cut)
+    .map((group) => group.toString(16))
+    .join(':')}::/64`;
 }

@@ -3,7 +3,7 @@
 // points at. `diffTable` had no arm for it, so a changed `primaryKey` wrote no statement while the
 // snapshot beside it recorded the new key, and drift had no comparison to notice with.
 
-import { assert } from '@ultimat3/core';
+import { assert, renderFixLiteral, renderFixShellArg } from '@ultimat3/core';
 import { defaultExpression } from './column-default';
 import type { EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
@@ -12,6 +12,33 @@ import type { SchemaDescription, TableDescription } from './introspect';
 import { MAX_IDENTIFIER_BYTES } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
 import { identifier } from './sql';
+
+/**
+ * Inside shell double quotes a `$`, a backtick and a `!` still run; everything else — a quote, a
+ * `;`, a space — is inert once `JSON.stringify` has escaped `"` and `\\`.
+ */
+const DOUBLE_QUOTE_LIVE = /[$`!]/;
+
+/**
+ * A control character — C0, DEL, C1. `JSON.stringify` writes one as an escape (`\\n`), and inside
+ * shell double quotes that escape is passed on LITERALLY, so the pasted line would name a different
+ * migration than the one refused. The placeholder is honest; an escape is not.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/**
+ * A migration NAME as the one argument of `x db gen "…"`, for a `fix:` a reader pastes. It is a
+ * description (`add posts`), never an identifier, so it keeps its spaces; a name carrying shell
+ * syntax becomes the placeholder rather than a second command (plan 101 row S12). Lives here, the
+ * lowest of the three files echoing one, so `generate.ts` and `migrate.ts` share one rule.
+ */
+export const migrationNameArg = (name: string): string =>
+  renderFixLiteral(
+    // A leading `-` reads as a flag to `x db gen` however it is quoted (sweep 1c audit, L3).
+    DOUBLE_QUOTE_LIVE.test(name) || CONTROL.test(name) || name.startsWith('-') ? undefined : name,
+    '"<a migration name>"',
+  );
 
 /**
  * `<table>_pkey` — what Postgres names the constraint an inline `primary key (…)` creates, which is
@@ -27,7 +54,10 @@ export function primaryKeyName(table: string): string {
   assert(
     bytes <= MAX_IDENTIFIER_BYTES,
     `primary key constraint "${name}" is ${bytes} bytes; Postgres truncates at ${MAX_IDENTIFIER_BYTES}, so the name the database holds is not this one`,
-    `psql "$DATABASE_URL" -c "select conname from pg_constraint where contype = 'p' and conrelid = '${table}'::regclass"   # then write the drop constraint / add primary key pair by hand in a new migration`,
+    // By `relname`, not `'<table>'::regclass`: a regclass literal re-parses the name as SQL, so a
+    // mixed-case table needs inner double quotes — which end the shell string. A name that is not
+    // one plain shell word is also not a safe SQL literal, so it is the placeholder (plan 101 S12).
+    `psql "$DATABASE_URL" -c "select con.conname from pg_constraint con join pg_class rel on rel.oid = con.conrelid where con.contype = 'p' and rel.relname = '${renderFixShellArg(table, '<table>')}'"   # then write the drop constraint / add primary key pair by hand in a new migration`,
   );
   return name;
 }
@@ -111,7 +141,7 @@ export function dropChangedKey(
   if (inbound.length > 0) {
     throw migrationIrreversible(
       `changing the primary key of "${entity.table}" drops the constraint ${inbound.map((name) => `"${name}"`).join(', ')} ${inbound.length === 1 ? 'is' : 'are'} written against, and re-pointing another table's foreign key is not a change this generator can derive`,
-      `x db gen "${migration}"   # after removing the references() to "${entity.table}" behind ${inbound.join(', ')} — drop the keys in one migration, change the primary key in the next, restore them in a third`,
+      `x db gen ${migrationNameArg(migration)}   # after removing the references() to "${entity.table}" behind ${inbound.join(', ')} — drop the keys in one migration, change the primary key in the next, restore them in a third`,
     );
   }
   plan.up.push(dropPrimaryKey(entity.table, primaryKeyName(entity.table), true));
@@ -164,7 +194,7 @@ export function addChangedKey(
     const names = empty.map((column) => `"${column.column}"`).join(', ');
     throw migrationIrreversible(
       `the new primary key of "${entity.table}" names ${names}, which this same migration adds with no default that fills it: every existing row would hold NULL there, and a primary key cannot be added over a NULL`,
-      `x db gen "${migration}"   # with ${names} declared but left OUT of primaryKey — apply it, backfill the column, then put it in the key and run x db gen again`,
+      `x db gen ${migrationNameArg(migration)}   # with ${names} declared but left OUT of primaryKey — apply it, backfill the column, then put it in the key and run x db gen again`,
     );
   }
   plan.up.push(addPrimaryKey(entity.table, entity.primaryKey));

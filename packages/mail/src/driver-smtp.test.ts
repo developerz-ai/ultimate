@@ -345,6 +345,13 @@ test('a malformed percent-escape in the credentials is a coded refusal', () => {
     expect(codeOf(error)).toBe('X_CONFIG_INVALID');
     expect(isUltimateError(error) ? error.cause : '').not.toContain('pa%ss');
   }
+  // Plan 101 sweep 1c: the prompt label is one of two literals, screened so the guard can see it.
+  const fix = (url: string): string => {
+    const error = thrown(() => createSmtpDriver({ url, from: FROM }));
+    return isUltimateError(error) ? error.fix : '';
+  };
+  expect(fix('smtp://us%er:pass@mail.example.test')).toContain('prompt("user:")');
+  expect(fix('smtp://user:pa%ss@mail.example.test')).toContain('prompt("password:")');
 });
 
 // The deadline reaches `setTimeout(fn, timeoutMs)` in the conversation and in the socket, and

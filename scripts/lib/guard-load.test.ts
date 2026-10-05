@@ -44,6 +44,17 @@ describe('which failures are load failures', () => {
     expect(loadFailureOf('Export named')).toBeUndefined();
   });
 
+  // Plan 101 row S12: the script name is spliced into `bun run <script>`, and a fix is pasted.
+  test('a script name that is not one never reaches the command', () => {
+    const failure = { module: `${ROOT}/packages/entity/src/index.ts`, message: 'Export named' };
+    const fix = loadFinding('x$(touch pwned)', failure, ROOT).fix;
+    expect(fix).not.toContain('$(');
+    expect(fix).toContain('rerun the guard you ran');
+    expect(loadFinding('the guard', failure, ROOT).fix).not.toContain('bun run the guard');
+    // L4 of the sweep 1c audit: a leading `-` is a flag to `bun run`, not a script.
+    expect(loadFinding('--eval', failure, ROOT).fix).toContain('rerun the guard you ran');
+  });
+
   test('the finding names the module repo-relative and says what to run next', () => {
     const finding = loadFinding(
       'gate-codes',

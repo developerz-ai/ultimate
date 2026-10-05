@@ -130,6 +130,21 @@ describe('buildIslands', () => {
     expect(bundle.chunks.map((chunk) => chunk.file)).toEqual(['apps/web/app/panel.island.tsx']);
   });
 
+  // Security audit of plan 101 sweep 1c, M1: `only` is the caller's own argument, and both halves of
+  // it ride into `x g island <name> --at <dir>`.
+  test('only: a requested path carrying shell syntax is quoted, and a leading - is never an option', async () => {
+    const hostile = await buildIslands(ROOT, { only: 'apps/$(touch pwned)/a;b.island.tsx' }).then(
+      () => '',
+      fixOf,
+    );
+    expect(hostile).toBe("x g island 'a;b' --at 'apps/$(touch pwned)'");
+    const option = await buildIslands(ROOT, { only: 'apps/web/--json.island.tsx' }).then(
+      () => '',
+      fixOf,
+    );
+    expect(option).toBe("x g island '<name>' --at apps/web");
+  });
+
   test('only: an app with no islands at all is told to write the one it asked for', async () => {
     // Nothing to point at, so the fix cannot be a path — it is the command that creates the file,
     // split off the caller's own argument, exactly as an unresolvable page `src` is answered.

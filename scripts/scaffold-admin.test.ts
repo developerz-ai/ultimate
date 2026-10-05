@@ -10,7 +10,7 @@ import { DEV_BINDING } from '@ultimat3/cli';
 import type { AdminWalk } from './lib/admin-walk';
 import { adminFindings, filledForm, walkAdmin } from './lib/admin-walk';
 import type { AdminCheckIo } from './scaffold-admin';
-import { adminResource, checkAdmin, devRoleCookie } from './scaffold-admin';
+import { adminResource, appDirWord, checkAdmin, devRoleCookie } from './scaffold-admin';
 
 const BASE = 'http://127.0.0.1:4000';
 const WALK: AdminWalk = { base: BASE, resource: 'smoke_resources', roleCookie: 'demo_dev_role' };
@@ -245,9 +245,13 @@ describe('unit · the command: boot, walk, stop', () => {
   });
 
   /** An app directory holding only what the check READS; `has` says which of the three. */
-  const appDir = async (has: readonly ('manifest' | 'actor' | 'bin')[]): Promise<string> => {
-    const dir = await mkdtemp(`${tmpdir()}/scaffold-admin-`);
-    dirs.push(dir);
+  const appDir = async (
+    has: readonly ('manifest' | 'actor' | 'bin')[],
+    name?: string,
+  ): Promise<string> => {
+    const parent = await mkdtemp(`${tmpdir()}/scaffold-admin-`);
+    dirs.push(parent);
+    const dir = name === undefined ? parent : `${parent}/${name}`;
     if (has.includes('manifest')) {
       await Bun.write(`${dir}/x.manifest.json`, '{"entities":[{"name":"smoke_resources"}]}');
     }
@@ -365,6 +369,51 @@ describe('unit · the command: boot, walk, stop', () => {
     const cause = result.findings?.[0]?.cause ?? '';
     expect(cause).toContain(`http://${DEV_BINDING.hostname}:4000/admin`);
     expect(cause).toContain('ECONNREFUSED');
+  });
+
+  // Plan 101 row S12: the directory is spliced into `bun run scripts/scaffold-first-run.ts <dir> &&
+  // (cd <dir> && bin/setup)`, a line pasted whole — so a path carrying shell syntax is single-quoted.
+  test('a hostile directory never reaches the set-up command', async () => {
+    const parent = await appDir([]);
+    const dir = `${parent}/x$(touch pwned);y`;
+    await Bun.write(`${dir}/.keep`, '');
+    const { made } = io(fakeApp().fetcher);
+    const fix = (await checkAdmin(dir, made)).findings?.[0]?.fix ?? '';
+    // Single-quoted, so the hostile path is carried inert rather than lost (L5 of the 1c audit).
+    expect(fix).toBe(
+      `bun run scripts/scaffold-first-run.ts '${dir}' && (cd '${dir}' && bin/setup)`,
+    );
+    // A relative path, the common case, stays pasteable; a leading - never becomes a flag.
+    const relative = (await checkAdmin('./does-not-exist', io(fakeApp().fetcher).made)).findings;
+    expect(relative?.[0]?.fix).toBe(
+      'bun run scripts/scaffold-first-run.ts ./does-not-exist && (cd ./does-not-exist && bin/setup)',
+    );
+    const flag = (await checkAdmin('-rf', io(fakeApp().fetcher).made)).findings;
+    expect(flag?.[0]?.fix).toBe(
+      "bun run scripts/scaffold-first-run.ts '<app dir>' && (cd '<app dir>' && bin/setup)",
+    );
+    // An ordinary temp directory still travels verbatim.
+    const plain = await appDir(['actor', 'bin']);
+    const plainFix = (await checkAdmin(plain, io(fakeApp().fetcher).made)).findings?.[0]?.fix;
+    expect(plainFix).toBe(
+      `bun run scripts/scaffold-first-run.ts ${plain} && (cd ${plain} && bin/setup)`,
+    );
+  });
+
+  // CodeRabbit on #651: two of the three fixes still spliced `dir` raw. One helper, three lines.
+  test('every fix quotes the directory through the one rule', async () => {
+    const hostile = 'x$(touch pwned);y';
+    const noBin = await appDir(['manifest', 'actor'], hostile);
+    expect((await checkAdmin(noBin, io(fakeApp().fetcher).made)).findings?.[0]?.fix).toBe(
+      `cd '${noBin}' && bin/setup`,
+    );
+    const silent = await appDir(['manifest', 'actor', 'bin'], hostile);
+    const { made } = io(fakeApp().fetcher, { refusals: Number.POSITIVE_INFINITY });
+    expect((await checkAdmin(silent, made)).findings?.[0]?.fix).toBe(
+      `cd '${silent}' && bin/dev --port 4000`,
+    );
+    expect(appDirWord('-rf')).toBe('<app dir>');
+    expect(appDirWord('./my-app')).toBe('./my-app');
   });
 
   test('a directory that is not a set-up scaffold is refused before anything boots', async () => {

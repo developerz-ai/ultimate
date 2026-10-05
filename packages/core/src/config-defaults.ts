@@ -36,7 +36,16 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
     },
     // ON by default since 22.0.0, when the boot began obeying the key: an app with no section
     // keeps the `sync` node it always got, and `enabled: false` is the explicit opt-out.
-    realtime: { enabled: true, transport: 'memory', urlEnv: undefined },
+    // `maxSubscriptionsPerActor` unset means the sync node's own default, `DEFAULT_MAX_PER_ACTOR`
+    // (1,000) in `@ultimat3/realtime` — a tenth of its 10,000 windows, so no one actor fills it.
+    realtime: {
+      enabled: true,
+      transport: 'memory',
+      urlEnv: undefined,
+      maxSubscriptionsPerActor: undefined,
+      // Unset: the sync node's `DEFAULT_MAX_SOCKETS_PER_ACTOR` (16).
+      maxSocketsPerActor: undefined,
+    },
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true, path: '/mcp' } },
     // Read from the process env when the config is DEFINED — the same env the drain will run in.

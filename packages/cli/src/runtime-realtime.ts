@@ -1,6 +1,6 @@
-// `realtime.enabled`, `realtime.transport` and `realtime.urlEnv` for the boot, out of the config
-// `startServices` loads once (`app-config-load.ts`). Until 22.0.0 no boot read any of the three
-// and `NATS_URL` alone decided the bus.
+// The `realtime` section for the boot, out of the config `startServices` loads once
+// (`app-config-load.ts`). Until 22.0.0 no boot read `enabled`, `transport` or `urlEnv` and
+// `NATS_URL` alone decided the bus; the two per-actor caps are read by the `sync` role.
 
 import type { AppConfig, RealtimeConfig } from '@ultimat3/core';
 
@@ -9,6 +9,8 @@ export const REALTIME_DEFAULTS: RealtimeConfig = Object.freeze({
   enabled: true,
   transport: 'memory',
   urlEnv: undefined,
+  maxSubscriptionsPerActor: undefined,
+  maxSocketsPerActor: undefined,
 });
 
 /**

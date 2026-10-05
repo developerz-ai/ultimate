@@ -26,6 +26,7 @@ function fakeNode(log: string[]): SyncNode {
     sockets: undefined as unknown as SocketRegistry,
     ready: true,
     path: '/_x/sync',
+    principalSockets: () => 0,
     start: async () => undefined,
     stopAccepting: () => {
       log.push('stopAccepting');

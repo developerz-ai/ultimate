@@ -18,6 +18,7 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { neighbouringPort } from './flag-number';
+import { quoteArg } from './shell-quote';
 
 /**
  * A port of its own, and NOT the role's HTTP port, for one reason the chart makes concrete:
@@ -48,7 +49,7 @@ export class MetricsPortInUseError extends UltimateError {
     super({
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is already bound, so no role could open its scrape listener`,
-      fix: `METRICS_PORT=${neighbouringPort(input.port)} x dev --json`,
+      fix: `METRICS_PORT=${quoteArg(String(neighbouringPort(input.port)))} x dev --json`,
     });
   }
 }
@@ -114,7 +115,7 @@ export function bindScrapePort<T>(
     logger.warn('ultimate metrics port taken', {
       port,
       cause: `the metrics port ${String(port)} is already bound — another x dev, or a Prometheus — so this process listens on a free one`,
-      fix: `METRICS_PORT=${String(neighbouringPort(port))} x dev --json`,
+      fix: `METRICS_PORT=${quoteArg(String(neighbouringPort(port)))} x dev --json`,
     });
     return bind(0);
   }

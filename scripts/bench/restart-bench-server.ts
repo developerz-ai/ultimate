@@ -12,6 +12,7 @@ import {
   AcceptBudget,
   ChannelHub,
   createSyncNode,
+  DEFAULT_MAX_CONNECTIONS,
   InProcessTransport,
   LiveQueryRegistry,
   RingChangeBuffer,
@@ -62,10 +63,17 @@ if (import.meta.main) {
   const hub = new ChannelHub({ transport, sockets });
   const node = createSyncNode({
     hub,
-    registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
+    // The whole swarm dials from loopback, so it is ONE anonymous principal: the per-principal caps
+    // are sized to the node's own connection ceiling, so neither binds before `maxConnections` does
+    // — the benchmark measures the node's recovery, not one principal's share of it.
+    registry: new LiveQueryRegistry({
+      source: new RingChangeBuffer(),
+      maxPerActor: DEFAULT_MAX_CONNECTIONS,
+    }),
     transport,
     buildId: `bench-${process.pid}`,
     sockets,
+    maxSocketsPerActor: DEFAULT_MAX_CONNECTIONS,
     // Shipped default (see thundering-herd.ts): 500/s sustained, burst 2000. The benchmark measures
     // recovery *under this exact ceiling* — raising it here would measure a different framework.
     accept: new AcceptBudget({ perSecond: 500, burst: 2000 }),

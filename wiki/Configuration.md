@@ -140,13 +140,24 @@ There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retent
 
 ## `realtime`
 
-`RealtimeConfig` is three fields and no more `As of 2026-08-23` ([`packages/core/src/config.ts:123`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+`RealtimeConfig` is five fields and no more `As of 2026-10-05` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
 
 | field | type | default | notes |
 |---|---|---|---|
 | `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |
 | `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
 | `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
+| `realtime.maxSubscriptionsPerActor` | `number` | unset = `1000` | live-query subscriptions one actor may hold on one `sync` node, **across all its sockets**. An anonymous socket counts against the client NETWORK resolved at the upgrade — an IPv4 address exactly, an IPv6 address by its /64, an IPv4-mapped IPv6 as its IPv4 (`TRUSTED_PROXY_HOPS` honoured, as `ctx.ip` is). Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `actor`. A whole number ≥ 1, else `X_CONFIG_INVALID` |
+| `realtime.maxSocketsPerActor` | `number` | unset = `16` | sockets one signed-in actor may hold on one `sync` node. An anonymous NETWORK (keyed exactly as above) gets **8 ×** this — 128 at the default — because it is often many people: one office behind a corporate NAT viewing a public live page. The next upgrade is refused before a socket exists: `429 X_SOCKET_LIMIT`. Closing a socket frees its slot. 16 × the per-socket 128 subscriptions passes the 1,000 above, so normal tabs hit neither. A whole number ≥ 1, else `X_CONFIG_INVALID` |
+
+**Behind a proxy, set `TRUSTED_PROXY_HOPS`.** An anonymous socket is keyed by the client network the upgrade resolved (IPv6 grouped by /64, so one host cannot rotate through its block for fresh budgets). With nothing trusted, that address is the proxy's own, so every anonymous visitor shares ONE 1,000-subscription and 128-socket budget — the same failure as the anonymous rate-limit bucket. A socket that names no actor and no address at all shares one `address:unknown` budget. That fails closed: those sockets are still bounded, just together.
+
+**Why 1,000.** A node holds at most 10,000 live windows (`maxEntries`) and a socket 128 subscriptions, so before this cap one actor with 79 sockets filled the node and every other user's next subscribe was refused. A tenth of the node keeps any one principal out of reach of the node cap, and still fits eight tabs at the per-socket 128. Raise it for an app whose single users legitimately watch more; lower it for a public, anonymous surface:
+
+```ts
+// app.config.ts
+export const config = defineConfig({ name: 'shop', realtime: { maxSubscriptionsPerActor: 200 } });
+```
 
 At runtime the transport is chosen by `NATS_URL` rather than by this field — the config documents intent, the env decides ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
 
@@ -173,22 +184,24 @@ runtime. It fails at `x verify`'s `typecheck` step as `TS2353`, excess property 
 `Input<RealtimeConfig>` — and an app that builds its config into a variable before passing it loses
 excess-property checking and gets **no error at all** → [Known gaps](Known-Gaps).
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|
 | `maxPerSocket` | `new LiveQueryRegistry({ … })` | `128` | subscriptions per socket. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `socket`. **Always applies** |
 | `maxPerTenant` | same | none | subscriptions per tenant. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `tenant` |
 | `tenantOf` | same | none | `(actor) => tenantId \| null`. **Required for `maxPerTenant` to do anything** — `assertCapacity` returns early when either is absent |
+| `maxPerActor` | same | `1000` | subscriptions per actor (anonymous: per resolved client address) across its sockets. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `actor`. **Always applies**; the boot passes `realtime.maxSubscriptionsPerActor` |
 | `maxEntries` | same | `10000` | distinct `(query, input)` pairs this node will hold — a `qid` derives from client-chosen input, so each one is a matcher and a row window. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
 | `maxTopicsPerSocket` | `new ChannelHub({ … })` | `64` | channel topics one socket may join. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `socket` |
 | `maxTopicsPerNode` | same | `10000` | distinct topics this node bridges, one transport subscription each. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
+| `maxSocketsPerActor` | `createSyncNode({ … })` | `16` | sockets per actor at the upgrade; an anonymous network gets 8 × it (`ANONYMOUS_SOCKET_MULTIPLIER`). Exceeded → `429 X_SOCKET_LIMIT`. **Always applies**; the boot passes `realtime.maxSocketsPerActor` |
 | `maxBufferedBytes` | `createSyncNode({ … })` | `1 MiB`, exported as `DEFAULT_MAX_BUFFERED_BYTES` | outbound bytes queued on one socket before this node starts **dropping** its frames. A live-query patch is re-snapshotted; a channel frame is lost → [Realtime](Realtime) |
 | `maxDroppedFrames` | same | `32` | drops one socket may take before it is closed with `1013` (`overloaded`), reason `backpressure` |
 | `capacity` | `new RingChangeBuffer({ … })` | `1024` | retained patches per query hash; a reconnect inside the window is a delta, not a snapshot |
 | `maxQueries` | same | `4096` | retained query hashes, least-recently-written dropped first |
 
-**The per-tenant cap is reachable but not wired** `As of 2026-08`. It reads `socket.actor`, which was hardcoded `null` until WebSocket authentication landed, so it could not fire at all; and the boot ([`role-start.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/role-start.ts)) passes `source: new RingChangeBuffer()` and **no caps**. So a per-tenant limit is not protecting you today whatever you configure — set `maxPerTenant` **and** `tenantOf` on the registry yourself if you need one. The per-socket cap needs nothing and is enforced at its default.
+**The per-socket and per-actor caps are enforced by every boot; the per-tenant cap is opt-in** `As of 2026-10-04`. The `sync` role ([`role-sync.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/role-sync.ts)) passes `realtime.maxSubscriptionsPerActor` into the registry, or leaves the registry's 1,000. It sets **no tenant cap**: one tenant is one person and the next is five thousand seats, so no default is defensible — set `maxPerTenant` **and** `tenantOf` on the registry yourself if you need one (either alone arms nothing).
 
 ## `cache`
 

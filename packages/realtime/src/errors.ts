@@ -37,6 +37,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATION_TLS',
   'X_SOCKET_ORIGIN_REFUSED',
   'X_OFFLINE_QUEUE_ABANDONED',
+  'X_SOCKET_LIMIT',
 ] as const;
 
 /**
@@ -136,7 +137,7 @@ export type RealtimeErrorCode = (typeof REALTIME_ERROR_CODES)[number];
 
 export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, string>> = {
   X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
-  X_SUBSCRIPTION_LIMIT: 'socket, tenant or node hit its subscription cap',
+  X_SUBSCRIPTION_LIMIT: 'socket, actor, tenant or node hit its subscription cap',
   X_SUBSCRIPTION_ID_TAKEN: 'a subscribe frame reused a sid this socket already holds',
   X_FRAME_RATE_LIMIT: 'one socket sent frames faster than this node will route them',
   X_PROTOCOL_VERSION: 'client and sync node disagree on the wire protocol',
@@ -166,6 +167,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATION_TLS: 'the replication connection failed TLS',
   X_SOCKET_ORIGIN_REFUSED: 'the websocket upgrade came from another origin',
   X_OFFLINE_QUEUE_ABANDONED: 'a write was queued after its page changed principal',
+  X_SOCKET_LIMIT: 'one principal holds too many sockets on this node',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -214,17 +216,19 @@ export class TopicForbiddenError extends RealtimeError {
 }
 
 /**
- * Load shedding, not a crash: a socket, a tenant or this node asked for more than its cap.
+ * Load shedding, not a crash: a socket, a tenant, an actor or this node asked for more than its cap.
  *
  * `knob` is the option that raises it, and it is passed rather than derived because the `node`
  * scope has more than one — a live-query entry ceiling and a channel-topic ceiling are two
- * different numbers on two different objects. The fix names the constructor option, never an
- * `app.config.ts` field: there is none (`docs/architecture/07-realtime-internals.md:244`), and a
- * fix line naming a field that does not exist is an instruction that cannot be followed.
+ * different numbers on two different objects. Every scope but `actor` names a CONSTRUCTOR option:
+ * those have no `app.config.ts` field, and a fix naming a field that does not exist is an
+ * instruction that cannot be followed. The actor cap is the one that is app config —
+ * `realtime.maxSubscriptionsPerActor` — so its fix names that key and that file first, then the
+ * registry option a host that builds its own `LiveQueryRegistry` sets instead.
  */
 export class SubscriptionLimitError extends RealtimeError {
   constructor(args: {
-    scope: 'socket' | 'tenant' | 'node';
+    scope: 'socket' | 'tenant' | 'actor' | 'node';
     id: string;
     limit: number;
     knob?: string;
@@ -233,7 +237,10 @@ export class SubscriptionLimitError extends RealtimeError {
     super({
       code: 'X_SUBSCRIPTION_LIMIT',
       cause: `${args.scope} ${args.id} reached the subscription cap of ${args.limit}`,
-      fix: `raise ${knob} where this sync node is constructed, or unsubscribe unused live queries`,
+      fix:
+        args.scope === 'actor'
+          ? `defineConfig({ realtime: { maxSubscriptionsPerActor: ${args.limit * 2} } })   # in app.config.ts — realtime.maxSubscriptionsPerActor; or maxPerActor on new LiveQueryRegistry({…}) where a host builds its own; or unsubscribe unused live queries`
+          : `raise ${knob} where this sync node is constructed, or unsubscribe unused live queries`,
     });
   }
 }
@@ -389,6 +396,25 @@ export class SocketUnauthenticatedError extends RealtimeError {
       code: 'X_SOCKET_UNAUTHENTICATED',
       cause: `the websocket upgrade was refused: ${args.reason}`,
       fix: 'send the credential createSyncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
+    });
+  }
+}
+
+/**
+ * One principal — an actor, or an anonymous caller's network — already holds this node's per-
+ * principal share of sockets. Answered on the upgrade with 429, before a socket exists. The
+ * principal is the node's own key (`actor:<id>` / `address:<network>`), never request text.
+ */
+export class SocketLimitError extends RealtimeError {
+  constructor(args: { principal: string; limit: number }) {
+    // An anonymous network's cap is 8 x `maxSocketsPerActor` (`principal-sockets.ts`), so the
+    // value to set is derived from the actor cap either way, never the limit this socket hit.
+    const network = args.principal.startsWith('address:');
+    const perActor = network ? Math.ceil(args.limit / 8) : args.limit;
+    super({
+      code: 'X_SOCKET_LIMIT',
+      cause: `${args.principal} already holds ${args.limit} sockets on this sync node — the per-principal cap${network ? ' (an anonymous network gets 8 x realtime.maxSocketsPerActor)' : ''}`,
+      fix: `defineConfig({ realtime: { maxSocketsPerActor: ${perActor * 2} } })   # in app.config.ts — or maxSocketsPerActor on createSyncNode({…}) where a host builds its own; or close other tabs of this app`,
     });
   }
 }

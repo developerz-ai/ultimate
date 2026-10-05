@@ -12,6 +12,12 @@ export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly clock?: Clock;
   readonly maxPerSocket?: number;
   readonly maxPerTenant?: number;
+  /**
+   * Live subscriptions one actor — or one anonymous client address — may hold on this node across
+   * all its sockets. Defaults to `DEFAULT_MAX_PER_ACTOR` (1,000); the boot passes the app's
+   * `realtime.maxSubscriptionsPerActor`.
+   */
+  readonly maxPerActor?: number;
   readonly tenantOf?: (actor: Actor | null) => string | null;
   /**
    * Distinct `(query, input)` pairs this node will hold at once. A `qid` derives from

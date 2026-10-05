@@ -147,6 +147,7 @@ export {
   type PresenceRoster,
   presenceFrame,
 } from './presence';
+export { ANONYMOUS_SOCKET_MULTIPLIER, DEFAULT_MAX_SOCKETS_PER_ACTOR } from './principal-sockets';
 export {
   createEntry,
   DEFAULT_READ_DEADLINE_MS,
@@ -194,6 +195,7 @@ export type {
   Subscriber,
   SubscriberGateOptions,
 } from './subscriber-gate';
+export { DEFAULT_MAX_PER_ACTOR, DEFAULT_MAX_PER_SOCKET } from './subscription-book';
 export {
   GrantBook,
   type GrantSweepDeps,

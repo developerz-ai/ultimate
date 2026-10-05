@@ -42,7 +42,7 @@ export {
   withFacts,
 } from './actor';
 export type { AddressClass } from './address-class';
-export { classifyAddress, isPublicAddress } from './address-class';
+export { addressNetwork, classifyAddress, isPublicAddress } from './address-class';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';

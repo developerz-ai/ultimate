@@ -261,6 +261,32 @@ describe('generateMigration', () => {
     expect(error.fix).toContain('--allow-destructive');
   });
 
+  // Plan 101 row S12: the name the operator typed is echoed into `x db gen "…"`, and a fix is pasted.
+  test('the drop refusals screen the migration name they echo', () => {
+    const refusalFix = (entities: Parameters<typeof generateMigration>[0]['entities']): string => {
+      try {
+        generateMigration({
+          entities,
+          current: snapshotOf([
+            posts([column('id', { kind: 'uuid', primaryKey: true }), column('legacy')]),
+          ]),
+          name: 'drop $(touch pwned)',
+          now: at,
+        });
+      } catch (error) {
+        return (error as { fix: string }).fix;
+      }
+      return expect.unreachable('the destructive drop was generated');
+    };
+    for (const fix of [
+      refusalFix([posts([column('id', { kind: 'uuid', primaryKey: true })])]),
+      refusalFix([]),
+    ]) {
+      expect(fix).not.toContain('$(');
+      expect(fix).toStartWith('x db gen "<a migration name>" --allow-destructive');
+    }
+  });
+
   test('--allow-destructive emits the drop and says the down cannot restore data', () => {
     const before = snapshotOf([
       posts([column('id', { kind: 'uuid', primaryKey: true }), column('legacy')]),

@@ -67,6 +67,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
 | SIGTERM/SIGINT → the one drain | `lifecycle-signals.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |
+| the network a caller's address keys a per-caller budget on — `addressNetwork`: IPv4 exact, IPv4-mapped as IPv4, IPv6 as its /64 | `address-class.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
 | the registrar table one same-tier package reaches another through | `registrar.ts` |

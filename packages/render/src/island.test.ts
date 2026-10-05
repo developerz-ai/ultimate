@@ -73,6 +73,25 @@ describe('island · a declaration that cannot ship', () => {
     );
   });
 
+  // Security audit of plan 101 sweep 1c, M1: `UNSAFE_SPECIFIER` refuses quotes, whitespace and `\\`
+  // and lets `$(…)`, `;`, `|` and `&` through — so the `git mv` this fix hands out ran `id`.
+  test('the rename command never carries shell syntax from the specifier', () => {
+    const fixOf = (src: string): string => {
+      try {
+        island({ src });
+      } catch (error) {
+        return (error as UltimateError).fix;
+      }
+      return expect.unreachable('a non-island specifier was accepted');
+    };
+    expect(fixOf('./contact-modal.tsx')).toStartWith(
+      `git mv -- contact-modal.tsx contact-modal${ISLAND_EXTENSION},`,
+    );
+    for (const src of ['./$(id).tsx', './a;b.tsx', './a|b.tsx', './a&b.tsx']) {
+      expect(fixOf(src)).toStartWith(`git mv -- '<module>' '<name>${ISLAND_EXTENSION}',`);
+    }
+  });
+
   test('the fix names the rename, because the filename is what makes a file a client entry', () => {
     try {
       island({ src: './contact-modal.tsx' });

@@ -11,6 +11,7 @@ import {
   islandMountMissing,
   NetworkRaceError,
   NetworkSealedError,
+  RegistryLeakError,
   TESTING_ERROR_CODES,
   TESTING_ERROR_TITLES,
   TestEvalThresholdError,
@@ -182,5 +183,29 @@ describe(testName('unit', 'X_TEST_ISLAND_NO_MOUNT pastes names that resolve'), (
     expect(error.code).toBe('X_TEST_ISLAND_NO_MOUNT');
     expect(error.fix).toContain('x g island <name> --at apps/web/site');
     expect(error.cause).toContain('exports nothing');
+  });
+});
+
+// Plan 101 row S12: the leaked file's path arrives from `Bun.plugin`'s `onLoad`, and the trailing
+// `bun test <file>` rendered it with `renderFixLiteral` — double quotes, inside which `$(…)` and a
+// backtick still run when the line is pasted.
+describe('RegistryLeakError re-run command', () => {
+  const rerun = (file: string): string =>
+    new RegistryLeakError({ leaks: [{ file, tags: ['t'], tiers: [] }] }).fix.split(
+      'then re-run: ',
+    )[1] ?? '';
+
+  test('a path carrying a command substitution is never spliced into bun test', () => {
+    expect(rerun('a/$(touch pwned).test.ts')).toBe("bun test '<the file the cause names>'");
+    expect(rerun('a/`id`.test.ts')).toBe("bun test '<the file the cause names>'");
+  });
+
+  test('an ordinary path, and one with a quote JSON can escape, still travel', () => {
+    expect(rerun('packages/cli/src/cmd-dev.test.ts')).toBe(
+      'bun test "packages/cli/src/cmd-dev.test.ts"',
+    );
+    expect(rerun('a file" with a quote.test.ts')).toBe(
+      String.raw`bun test "a file\" with a quote.test.ts"`,
+    );
   });
 });

@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/testing';
 import { harnessPage, ISLAND_HARNESS_PATH } from './island-harness';
 import type { IslandSource } from './island-routes';
+import { quoteArg } from './shell-quote';
 
 /**
  * A getter, never the manifests: `x dev` rebuilds on the watcher tick, and a set captured when the
@@ -29,6 +30,10 @@ const refused = (cause: string, fix: string): Response =>
     { ok: false, error: { code: 'X_SHOT_ISLAND_UNPHOTOGRAPHABLE', cause, fix } },
     { status: 404 },
   );
+
+/** A value opening with `-` reads as a flag however it is quoted, so it becomes the placeholder. */
+const unflagged = (value: string, placeholder: string): string =>
+  value.startsWith('-') ? placeholder : value;
 
 export interface HarnessRouteInput {
   readonly islands: IslandSource;
@@ -71,7 +76,9 @@ export function islandHarnessRoutes(input: HarnessRouteInput): readonly Route[] 
         if (declared === undefined || target === undefined) {
           return refused(
             `${manifest.island} declares no state ${wanted === '' ? '(none named)' : wanted} in theme ${address.theme}`,
-            `x shot --island ${manifest.name} --state ${manifest.states[0]?.id ?? '<id>'} --json`,
+            // Every value here is read off a states file on disk: quoted where it enters the line,
+            // and one opening with `-` is the placeholder — quoting does not stop a flag (L3).
+            `x shot --island ${quoteArg(unflagged(manifest.name, '<island>'))} --state ${quoteArg(unflagged(manifest.states[0]?.id ?? '<id>', '<id>'))} --json`,
           );
         }
         // The chunk is looked up rather than built here: `x dev` already built every island at
@@ -81,7 +88,7 @@ export function islandHarnessRoutes(input: HarnessRouteInput): readonly Route[] 
         if (chunk === undefined) {
           return refused(
             `${manifest.island} is declared as an island's states file but this build has no chunk for it`,
-            `x g island ${manifest.name} --at ${manifest.island.split('/').slice(0, -1).join('/')}`,
+            `x g island ${quoteArg(unflagged(manifest.name, '<island>'))} --at ${quoteArg(unflagged(manifest.island.split('/').slice(0, -1).join('/'), '<dir>'))}`,
           );
         }
         return html(harnessPage({ target, state: declared, entry: chunk.url }));

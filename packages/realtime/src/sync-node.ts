@@ -16,14 +16,15 @@ import type { Topic } from './channel';
 import { ChannelSids } from './channel-sids';
 import { detach } from './detach';
 import { evictInChunks } from './drain-evictions';
-import { isClientFault, TopicForbiddenError } from './errors';
+import { isClientFault } from './errors';
 import type { TransportSubscription } from './fanout';
-import { refuseSubscription } from './live-refusal';
+import { PrincipalSockets } from './principal-sockets';
 import { CHANGE_SUBJECT_ALL } from './replicator';
 import { parseEnvelope, SeqGapDetector } from './replicator-envelope';
 import { CLOSE, SocketRegistry, SyncSocket } from './socket';
 import { DEFAULT_MAX_BUFFERED_BYTES } from './socket-defaults';
 import { idleSweepPeriodMs } from './socket-idle';
+import { actorChangeHandler } from './sync-actor-change';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter } from './sync-frames';
 import {
@@ -67,6 +68,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const path = options.path ?? '/_x/sync';
   const presence = options.presence;
   const grants = new GrantBook();
+  const principals = new PrincipalSockets(options.maxSocketsPerActor);
   const gaps = new SeqGapDetector();
   const channelSids = new ChannelSids();
   let reconnects: (() => void) | null = null;
@@ -120,6 +122,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     for (const name of topics) options.hub.unsubscribe(socket, name);
     sockets.remove(socket.id);
     grants.delete(socket.id);
+    principals.release(socket.id);
     if (sockets.count === 0) lastSocketLeft?.();
     // A closed socket is a leave, said now rather than left to TTL: everyone else would otherwise
     // keep rendering a member who is provably gone for the rest of its window. The write is on the
@@ -183,39 +186,20 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     return reauthPass;
   };
 
+  const onActor = actorChangeHandler({
+    sockets,
+    hub: options.hub,
+    registry: options.registry,
+    channelSids,
+    presence,
+  });
+
   const reauthPassOnce = async (): Promise<void> => {
     await sweepGrants({
       grants,
       clock,
       refreshDeadlineMs: options.grantRefreshDeadlineMs,
-      onActor: async (socketId, actor) => {
-        const socket = sockets.get(socketId);
-        if (!socket) return;
-        const rooms = new Set(options.hub.topicsOf(socket).filter(hasRoster));
-        // The hub sets `socket.actor` and drops the topics this actor may no longer read; the
-        // registry re-decides every live subscription (refusing each one it drops under its sid)
-        // and desyncs the survivors, so the next delivery re-snapshots them under the new
-        // authority rather than the old window.
-        for (const name of await options.hub.onActorChange(socket, actor)) {
-          // A dropped seat is SAID: unsaid, the client kept rendering the channel as live.
-          const sid = channelSids.sidOf(socket, name);
-          channelSids.delete(socket, name);
-          if (sid !== undefined) {
-            refuseSubscription(
-              socket,
-              sid,
-              new TopicForbiddenError({
-                topic: name,
-                actorId: socket.actorId,
-                reason: 'the session changed and the channel policy no longer admits it',
-              }),
-            );
-          }
-          if (presence && rooms.has(name))
-            detach(presence.leave(name, socket.id), 'presence.leave', name);
-        }
-        await options.registry.reauthorize(socket);
-      },
+      onActor,
       onRevoked: (socketId) => {
         const socket = sockets.get(socketId);
         if (!socket) return;
@@ -249,6 +233,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   return {
     sockets,
     path,
+    principalSockets: (principal) => principals.count(principal),
 
     get ready(): boolean {
       return ready;
@@ -356,7 +341,11 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           onGranted: (socketId, grant) => grants.set(socketId, grant),
           // The other half of recording the grant before the upgrade: an upgrade that never took
           // gets no `close` callback, so this is the only thing that can free its entry.
-          onUngranted: (socketId) => grants.delete(socketId),
+          onUngranted: (socketId) => {
+            grants.delete(socketId);
+            principals.release(socketId);
+          },
+          principals,
         },
         request,
         server,
@@ -437,6 +426,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           // The socket is already gone, but a grant recorded for an upgrade whose `open` never ran
           // is not — and nothing else would ever reach it.
           grants.delete(ws.data.socketId);
+          principals.release(ws.data.socketId);
           return;
         }
         teardown(socket);

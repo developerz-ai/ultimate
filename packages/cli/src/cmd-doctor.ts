@@ -40,6 +40,7 @@ import { portFree } from './port-probe';
 import { syncPortFor } from './role-sync';
 import { checkMigrationDrift } from './schema-drift';
 import { portFromEnv } from './serve-env';
+import { quoteArg } from './shell-quote';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -191,7 +192,7 @@ async function portFindings(probe: DoctorProbe): Promise<readonly Finding[]> {
       finding(
         'X_PORT_IN_USE',
         `port ${entry.port} is already listening, and \`x dev --port ${probe.port}\` binds it for the ${entry.role} role`,
-        `x dev --port ${portPairAfter(probe.port)}`,
+        `x dev --port ${quoteArg(String(portPairAfter(probe.port)))}`,
       ),
     );
   }
@@ -231,7 +232,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
         // `.env.example` is the committed projection of `envSchema`, so the copy lands every
         // declared key with its default and blank secrets; `x env example` writes it where an app
         // has none, and `X_ENV_EXAMPLE_DRIFT` is what reports that.
-        `cp ${ENV_EXAMPLE_PATH} ${ENV_DEVELOPMENT}`,
+        `cp ${quoteArg(ENV_EXAMPLE_PATH)} ${quoteArg(ENV_DEVELOPMENT)}`,
         ENV_DEVELOPMENT,
       ),
     );

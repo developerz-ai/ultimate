@@ -76,6 +76,16 @@ describe('unit · the offline fallback is resolved against the route table', () 
     ).toBeUndefined();
   });
 
+  // Plan 101 row S12: the fallback is app config, and its name rides into `x g route <name>`. Only a
+  // `GENERATABLE` slug ever reaches the command; anything else is the config edit, never a splice.
+  test('a fallback carrying shell syntax never reaches the generator command', () => {
+    for (const fallback of ['/$(touch pwned)', "/off'line", '/a;b']) {
+      const finding = offlineFallbackFinding(fact({ fallback, routes: [] }));
+      expect(finding?.fix).not.toContain('x g route');
+      expect(finding?.fix).not.toContain(fallback.slice(1));
+    }
+  });
+
   test('a nested fallback the generator cannot name is answered with the config edit', () => {
     const finding = offlineFallbackFinding(fact({ fallback: '/support/offline', routes: [] }));
     expect(finding?.fix).toContain(APP_CONFIG_FILE);

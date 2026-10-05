@@ -12,9 +12,12 @@ import {
 } from '@ultimat3/core';
 import {
   SocketAuthUnavailableError,
+  SocketLimitError,
   SocketOriginRefusedError,
   SocketUnauthenticatedError,
 } from './errors';
+import type { PrincipalSockets } from './principal-sockets';
+import { principalFor } from './subscription-book';
 import type { SyncAuthenticator, SyncGrant } from './sync-auth';
 import { upgradeOrigin } from './sync-origin';
 import { toWireError } from './sync-protocol';
@@ -102,6 +105,11 @@ export interface UpgradeDeps {
    * same "reserve, then release" shape `channel.ts` uses for a topic slot.
    */
   onUngranted(socketId: string): void;
+  /**
+   * One principal's sockets on this node, keyed as the live-query principal is. Admitted right
+   * before `server.upgrade`; `onUngranted` and the socket's close give the slot back.
+   */
+  readonly principals?: PrincipalSockets | undefined;
 }
 
 /**
@@ -188,6 +196,16 @@ export async function handleUpgrade(
     clientBuildId: url.searchParams.get('build') ?? deps.buildId,
     clientAddress: callerAddress(deps, request, server),
   };
+  // Beside the count recheck and for its reason: no await between this and `server.upgrade`, so a
+  // herd of one principal parked in `authenticate` cannot all pass one count.
+  const principal = principalFor(grant?.actor ?? null, data.clientAddress ?? null);
+  if (deps.principals !== undefined && !deps.principals.admit(data.socketId, principal)) {
+    refund();
+    return wireErrorResponse(
+      429,
+      new SocketLimitError({ principal, limit: deps.principals.limitFor(principal) }),
+    );
+  }
   // Before the upgrade, never after: `server.upgrade` runs `websocket.open` synchronously and does
   // not return until it has, so a grant recorded on the next line is one the socket was already
   // built without.

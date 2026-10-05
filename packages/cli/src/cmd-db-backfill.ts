@@ -106,7 +106,7 @@ function readShape(args: ParsedArgs): { readonly shape: BackfillShape; readonly 
     return refuseShape(
       second.startsWith('--') ? second.slice(2) : 'name',
       `x db backfill was asked for ${asked.join(' and ')} — one shape per invocation: --list, --pending, <name> or --all`,
-      `x db backfill ${asked[0]} --json`,
+      `x db backfill ${quoteArg(asked[0] ?? '--pending')} --json`,
     );
   }
   if (asked.length === 0) {

@@ -120,6 +120,23 @@ describe('unit · x db backfill', () => {
     expect(flags.filter((flag) => flag === 'name')).toHaveLength(1);
   });
 
+  // Plan 101 row S12: the two-shapes refusal echoes the FIRST shape asked for. The target is always
+  // listed last, so the echo is a flag literal — a hostile target is named in the cause, never run.
+  test('two shapes asked at once echo the flag, never the hostile target', async () => {
+    const driver = createMemoryDriver();
+    const thrown: unknown = await runBackfill(driver, [
+      'db',
+      'backfill',
+      '--all',
+      '$(touch pwned)',
+    ]).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(BadFlagError);
+    expect((thrown as BadFlagError).fix).toBe('x db backfill --all --json');
+  });
+
   test('a bare x db backfill refuses and names a shape that works', async () => {
     const driver = createMemoryDriver();
     const thrown: unknown = await runBackfill(driver, ['db', 'backfill']).then(

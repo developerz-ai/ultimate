@@ -15,7 +15,7 @@
 //
 //   bun run scripts/scaffold-admin.ts <app dir> [--json]
 
-import { DEV_BINDING } from '@ultimat3/cli';
+import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
@@ -59,6 +59,14 @@ export interface AdminCheckIo {
   readonly sleep: (ms: number) => Promise<void>;
 }
 
+/**
+ * The app directory as the three fixes here spell it — the ONE rule, always wrapped in `quoteArg`
+ * at the site so the fix-shell-arg guard reads the word as screened. Quoted, not refused: `dir` is
+ * whatever path the caller handed this script, and `./my-app`, the common case, has to stay
+ * pasteable. A leading `-` is a flag however it is quoted, so it is the placeholder.
+ */
+export const appDirWord = (dir: string): string => (dir.startsWith('-') ? '<app dir>' : dir);
+
 const refused = (summary: string, cause: string, fix: string, at: string): ScriptResult => ({
   ok: false,
   script: SCRIPT,
@@ -82,7 +90,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
       resource === undefined
         ? `${dir}/${MANIFEST} names no entity \`x g resource ${generatorName('resource')}\` wrote, so there is no admin screen to ask for`
         : `${dir}/${DEV_ACTOR} declares no DEV_ROLE_COOKIE, so no request can say which role it is`,
-      `bun run scripts/scaffold-first-run.ts ${dir} && (cd ${dir} && bin/setup)`,
+      `bun run scripts/scaffold-first-run.ts ${quoteArg(appDirWord(dir))} && (cd ${quoteArg(appDirWord(dir))} && bin/setup)`,
       dir,
     );
   }
@@ -91,7 +99,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     return refused(
       `no x binary at ${appBin(dir)}`,
       `${appBin(dir)} does not exist, so the scaffolded app cannot be booted`,
-      `cd ${dir} && bin/setup`,
+      `cd ${quoteArg(appDirWord(dir))} && bin/setup`,
       dir,
     );
   }
@@ -130,7 +138,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     return refused(
       `x dev did not answer in ${dir}`,
       `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms — the last dial at ${base}/admin: ${lastDial} — it printed: ${tail(output)}`,
-      `cd ${dir} && bin/dev --port ${String(port)}`,
+      `cd ${quoteArg(appDirWord(dir))} && bin/dev --port ${quoteArg(String(port))}`,
       dir,
     );
   }
