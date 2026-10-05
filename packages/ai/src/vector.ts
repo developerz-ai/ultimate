@@ -95,6 +95,15 @@ export interface StoredRecord extends VectorRecord {
   readonly tenant: string;
 }
 
+/** The row's primary key, `(tenant, id)` as the pg table declares it. NUL never occurs in a tenant. */
+const storageKey = (tenant: string, id: string): string => `${tenant}\u0000${id}`;
+
+/** A row and its score inside one ranking, before the tenant is dropped from the public hit. */
+interface Scored {
+  readonly record: StoredRecord;
+  readonly score: number;
+}
+
 export class MemoryVectorStore implements VectorStore {
   readonly name: string;
   readonly dimension: number;
@@ -134,7 +143,7 @@ export class MemoryVectorStore implements VectorStore {
     const tenant = this.scope.tenant ?? NO_TENANT;
     for (const record of records) {
       this.assertDimension(record.vector.length);
-      this.records.set(`${tenant}\u0000${record.id}`, { ...record, tenant });
+      this.records.set(storageKey(tenant, record.id), { ...record, tenant });
     }
   }
 
@@ -147,10 +156,9 @@ export class MemoryVectorStore implements VectorStore {
     this.assertDimension(vector.length);
     // `k` carries no default, so `??` never sees it and nothing else does either: `slice(0, NaN)`
     // is `[]`, which is a search that answers "no matches" for every query and reports success.
-    return this.candidates(filter)
-      .map((record) => this.hit(record, cosine(vector, record.vector)))
-      .sort(byScoreDesc)
-      .slice(0, finiteCount(SUBJECT, 'k', k));
+    return this.dense(vector, finiteCount(SUBJECT, 'k', k), filter).map(({ record, score }) =>
+      this.hit(record, score),
+    );
   }
 
   /** BM25 over the stored text. Real lexical scoring, so a rare exact term actually wins. */
@@ -160,7 +168,61 @@ export class MemoryVectorStore implements VectorStore {
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
     assertTenantRead(this.name, this.scope);
-    const width = finiteCount(SUBJECT, 'k', k);
+    return this.lexical(query, finiteCount(SUBJECT, 'k', k), filter).map(({ record, score }) =>
+      this.hit(record, score),
+    );
+  }
+
+  /**
+   * Reciprocal-rank fusion. Each ranking contributes `1 / (rrfK + rank)`, so only ORDER
+   * matters — the two score scales never have to be reconciled, and a document ranked first
+   * by exact term match beats one that merely leads a flat vector ranking.
+   *
+   * Fused on the stored `(tenant, id)`, as `hybridSql` groups: an unscoped read sees every
+   * tenant's rows, and two tenants may share an id. Fusing on the id alone summed both rows'
+   * ranks into whichever came first and dropped the other. `fuse` keys on `SearchHit.id`, so the
+   * rankings reach it under the row's storage key and leave under the caller's id again.
+   */
+  async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
+    assertTenantRead(this.name, this.scope);
+    this.assertDimension(input.vector.length);
+    // Three bounds, none of which `Math.max` screens — it PROPAGATES a `NaN`. A `NaN` `k` collapses
+    // both candidate widths and the final slice to `[]`; a `NaN` `rrfK` makes every fused score
+    // `NaN`, and the ranking this method exists to produce becomes whatever order the sort left.
+    const k = finiteCount(HYBRID, 'k', input.k);
+    const width = finiteCount(HYBRID, 'candidates', input.candidates ?? Math.max(k * 4, 20));
+    const rrfK = finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60);
+    const rows = new Map<string, StoredRecord>();
+    const keyed = (ranking: readonly Scored[]): readonly SearchHit[] =>
+      ranking.map(({ record, score }) => {
+        const key = storageKey(record.tenant, record.id);
+        rows.set(key, record);
+        return { ...this.hit(record, score), id: key };
+      });
+    const fused = fuse(
+      [
+        keyed(this.dense(input.vector, width, input.filter)),
+        keyed(this.lexical(input.query, width, input.filter)),
+      ],
+      rrfK,
+    );
+    // Re-sorted once the ids are the caller's again: the tie-break is `d."id" asc`, never the key.
+    return fused
+      .map((hit) => ({ ...hit, id: rows.get(hit.id)?.id ?? hit.id }))
+      .sort(byScoreDesc)
+      .slice(0, k);
+  }
+
+  /** The cosine ranking `search` answers and `hybrid` fuses, rows still carrying their tenant. */
+  private dense(vector: Float32Array, k: number, filter?: MetadataFilter): readonly Scored[] {
+    return this.candidates(filter)
+      .map((record) => ({ record, score: cosine(vector, record.vector) }))
+      .sort(byRankDesc)
+      .slice(0, k);
+  }
+
+  /** BM25 over the stored text, rows still carrying their tenant. Only a positive score matches. */
+  private lexical(query: string, width: number, filter?: MetadataFilter): readonly Scored[] {
     const candidates = this.candidates(filter);
     if (candidates.length === 0) return [];
     const docs = candidates.map((record) => ({ record, tokens: tokenize(record.text) }));
@@ -178,31 +240,11 @@ export class MemoryVectorStore implements VectorStore {
           const norm = this.k1 * (1 - this.b + (this.b * tokens.length) / avgLength);
           score += idf * ((tf * (this.k1 + 1)) / (tf + norm));
         }
-        return this.hit(record, score);
+        return { record, score };
       })
-      .filter((hit) => hit.score > 0)
-      .sort(byScoreDesc)
+      .filter((scored) => scored.score > 0)
+      .sort(byRankDesc)
       .slice(0, width);
-  }
-
-  /**
-   * Reciprocal-rank fusion. Each ranking contributes `1 / (rrfK + rank)`, so only ORDER
-   * matters — the two score scales never have to be reconciled, and a document ranked first
-   * by exact term match beats one that merely leads a flat vector ranking.
-   */
-  async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
-    // Three bounds, none of which `Math.max` screens — it PROPAGATES a `NaN`. A `NaN` `k` collapses
-    // both candidate widths and the final slice to `[]`; a `NaN` `rrfK` makes every fused score
-    // `NaN`, and the ranking this method exists to produce becomes whatever order the sort left.
-    const k = finiteCount(HYBRID, 'k', input.k);
-    const width = finiteCount(HYBRID, 'candidates', input.candidates ?? Math.max(k * 4, 20));
-    const rrfK = finiteOption(HYBRID, 'rrfK', input.rrfK ?? 60);
-    const [dense, lexical] = await Promise.all([
-      this.search(input.vector, width, input.filter),
-      this.searchText(input.query, width, input.filter),
-    ]);
-    return fuse([dense, lexical], rrfK).slice(0, k);
   }
 
   /** Scoped and filtered, exactly like `pruneSql`: everything `filter` matches but `keep`. */
@@ -279,4 +321,20 @@ export function fuse(
  * sort then resolves them by dense-list insertion order, which no SQL engine reproduces.
  */
 const byScoreDesc = (a: SearchHit, b: SearchHit): number =>
-  b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  byScore(a.score, b.score) || byId(a.id, b.id);
+
+/** The same order over a ranking's rows, which still carry their tenant. */
+const byRankDesc = (a: Scored, b: Scored): number =>
+  byScore(a.score, b.score) || byId(a.record.id, b.record.id);
+
+const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Descending, `NaN` last. A cosine against a zero-norm vector is `NaN`, and float8 orders `NaN`
+ * above every number, so pg's `order by distance` puts that row at the end. `b - a` alone is `NaN`
+ * for any pair holding one, which reads as a tie and leaves the sort inconsistent.
+ */
+function byScore(a: number, b: number): number {
+  if (Number.isNaN(a) || Number.isNaN(b)) return Number.isNaN(a) ? (Number.isNaN(b) ? 0 : 1) : -1;
+  return b - a;
+}

@@ -73,6 +73,39 @@ describe('requireOfflineFallback', () => {
     expect(fix).toContain('pwa.offline.fallback');
   });
 
+  /**
+   * The placeholders are precached and served as the answer to a failed request, so a URL off this
+   * origin is a cross-origin fetch at install and a third party's bytes in the app's cache. Same
+   * rule as `fallback`: a path on this origin — `/…`, never `//host` or `/\\host`, which a
+   * browser resolves to another host.
+   */
+  test.each([
+    ['image', 'https://cdn.example/offline.png'],
+    ['font', '//cdn.example/fallback.woff2'],
+    ['font', '/\\cdn.example/fallback.woff2'],
+    ['image', 'offline.png'],
+    ['fallback', '//evil.example/offline'],
+  ] as const)('refuses an off-origin %s: %s', (key, url) => {
+    let caught: unknown;
+    try {
+      requireOfflineFallback({ fallback: '/offline', [key]: url });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(PwaNoOfflineFallbackError);
+    expect(fixOf(caught)).toContain(`pwa.offline.${key}`);
+  });
+
+  test('a same-origin image and font pass', () => {
+    const fallback = requireOfflineFallback({
+      fallback: '/offline',
+      image: '/icons/offline.png',
+      font: '/assets/fonts/fallback.0a1b2c3d.woff2',
+    });
+    expect(fallback.image).toBe('/icons/offline.png');
+    expect(fallback.font).toBe('/assets/fonts/fallback.0a1b2c3d.woff2');
+  });
+
   test('emits a fallback handler covering navigations and images', () => {
     const fallback = requireOfflineFallback({ fallback: '/offline', image: '/offline.svg' });
     expect(fallback.document).toBe('/offline');
@@ -81,5 +114,82 @@ describe('requireOfflineFallback', () => {
     expect(source).toContain('"/offline"');
     expect(source).toContain("req.mode==='navigate'");
     expect(source).toContain("req.destination==='image'");
+  });
+
+  /**
+   * `pwa.offline.font` was accepted, typed and documented as read — and never reached `sw.js`, so a
+   * font request offline got the bare 503 whatever the app configured. The emitted handler is RUN
+   * here over a fake precache, never grepped: a name in the source proves nothing about the branch.
+   */
+  describe('the emitted handler, run', () => {
+    type Handler = (req: { mode: string; destination: string; url: string }) => Promise<Response>;
+
+    function handler(source: string, precached: Readonly<Record<string, string>>): Handler {
+      const caches = {
+        open: async () => ({
+          match: async (url: string) => {
+            const body = precached[url];
+            return body === undefined ? undefined : new Response(body);
+          },
+        }),
+      };
+      return new Function('caches', 'PRECACHE', `${source}\nreturn offlineFallback;`)(
+        caches,
+        'x-precache-test',
+      ) as Handler;
+    }
+
+    const precached = {
+      '/offline': 'offline page',
+      '/offline.svg': 'placeholder image',
+      '/offline.woff2': 'fallback font',
+    };
+
+    test('a configured font fallback reaches the emitted worker', async () => {
+      const fallback = requireOfflineFallback({ fallback: '/offline', font: '/offline.woff2' });
+      const run = handler(offlineFallbackSource(fallback), precached);
+      const font = await run({
+        mode: 'no-cors',
+        destination: 'font',
+        url: 'https://x.test/a.woff2',
+      });
+      expect(font.status).toBe(200);
+      expect(await font.text()).toBe('fallback font');
+      // The font placeholder answers fonts only: an image with no image fallback is still the 503.
+      const image = await run({
+        mode: 'no-cors',
+        destination: 'image',
+        url: 'https://x.test/a.png',
+      });
+      expect(image.status).toBe(503);
+    });
+
+    test('with no font configured a font request is the 503, not some other placeholder', async () => {
+      const fallback = requireOfflineFallback({ fallback: '/offline', image: '/offline.svg' });
+      const run = handler(offlineFallbackSource(fallback), precached);
+      const font = await run({
+        mode: 'no-cors',
+        destination: 'font',
+        url: 'https://x.test/a.woff2',
+      });
+      expect(font.status).toBe(503);
+      const image = await run({
+        mode: 'no-cors',
+        destination: 'image',
+        url: 'https://x.test/a.png',
+      });
+      expect(await image.text()).toBe('placeholder image');
+    });
+
+    test('a font fallback that was never precached falls through to the 503', async () => {
+      const fallback = requireOfflineFallback({ fallback: '/offline', font: '/missing.woff2' });
+      const run = handler(offlineFallbackSource(fallback), precached);
+      const font = await run({
+        mode: 'no-cors',
+        destination: 'font',
+        url: 'https://x.test/a.woff2',
+      });
+      expect(font.status).toBe(503);
+    });
   });
 });

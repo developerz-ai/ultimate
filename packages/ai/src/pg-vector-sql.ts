@@ -115,6 +115,8 @@ export interface PgSearchArgs {
  * `<=>` is cosine DISTANCE, so the score is `1 - distance` — the same scale the memory store
  * returns. The ordering stays on the raw distance, ascending, inside a subquery: HNSW answers
  * `order by embedding <=> $1` and nothing else, and `order by 1 - (...) desc` is a seq scan.
+ * Only the OUTER sort, over at most `k` rows, breaks a tie by `"id"` as `vector.ts` does — so
+ * which tied rows make the page at the `limit` boundary is still the index's call.
  */
 export function searchSql(
   target: PgVectorTable,
@@ -129,14 +131,14 @@ from (
   order by distance
   limit ${args.k}
 ) top
-order by distance`;
+order by distance, "id" asc`;
 }
 
 export function textSql(target: PgVectorTable, query: string, args: PgSearchArgs): SqlFragment {
   return sql`select "id", "content", "metadata", ts_rank_cd("tsv", q) as score
 from ${identifier(target.table)}, websearch_to_tsquery(${target.language}::regconfig, ${query}) q
 where "tsv" @@ q and ${conditionsSql(args.scope, args.filter)}
-order by score desc
+order by score desc, "id" asc
 limit ${args.k}`;
 }
 
@@ -149,7 +151,9 @@ export interface PgHybridArgs extends PgSearchArgs {
  * Reciprocal-rank fusion, done in SQL. Two candidate sets are ranked independently and fused by
  * `1 / (rrfK + rank)` — identical to `fuse()` in `vector.ts`, so dev and production order hits
  * the same way. Both CTEs carry the SAME scope conditions: fusing an unfiltered lexical ranking
- * into a filtered dense one would leak the other tenant's rows through the back door.
+ * into a filtered dense one would leak the other tenant's rows through the back door. A rank is a
+ * position, so each window breaks a tie by `"id"` as `vector.ts` does; the dense candidate scan
+ * keeps its bare `order by distance`, the shape HNSW answers.
  */
 export function hybridSql(
   target: PgVectorTable,
@@ -160,7 +164,7 @@ export function hybridSql(
   const table = identifier(target.table);
   const where = conditionsSql(args.scope, args.filter);
   return sql`with dense as (
-  select "tenant", "id", row_number() over (order by distance) as rank
+  select "tenant", "id", row_number() over (order by distance, "id" asc) as rank
   from (
     select "tenant", "id", "embedding" <=> ${vectorLiteral(vector)}::vector as distance
     from ${table}
@@ -169,12 +173,12 @@ export function hybridSql(
     limit ${args.candidates}
   ) top
 ), lexical as (
-  select "tenant", "id", row_number() over (order by relevance desc) as rank
+  select "tenant", "id", row_number() over (order by relevance desc, "id" asc) as rank
   from (
     select "tenant", "id", ts_rank_cd("tsv", q) as relevance
     from ${table}, websearch_to_tsquery(${target.language}::regconfig, ${query}) q
     where "tsv" @@ q and ${where}
-    order by relevance desc
+    order by relevance desc, "id" asc
     limit ${args.candidates}
   ) top
 ), fused as (

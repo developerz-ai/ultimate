@@ -53,13 +53,35 @@ export class TimeError extends UltimateError {
 /**
  * A wall-clock field outside its range. Separate from `X_DST_*`, which are about times that
  * are legitimately absent or doubled — this one is a spec the caller got wrong.
+ *
+ * A business calendar with no business day in it (`business.ts`) is the one refusal that is not
+ * about a number, and it has two causes with two different repairs, so the caller names which
+ * through `field`: `calendar.weekendDays` (the weekend covers the week — shorten it) or
+ * `calendar.holidays` (every remaining day is a holiday — remove some). A branch here rather than a
+ * second factory, so the code keeps one constructor. Each fix is a call that runs as written; the
+ * explanation is the cause's job.
  */
 export function scheduleInvalid(field: string, value: unknown, range: string): TimeError {
+  // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
+  // field or a config value as often as it is the `number` the in-package caller passes.
+  const cause = `${field} must be ${range}, got ${renderCauseValue(value)}`;
+  if (field === 'calendar.weekendDays') {
+    return new TimeError({
+      code: 'X_SCHEDULE_INVALID',
+      cause,
+      fix: "addBusinessDays(new Date(), 1, { zone: 'UTC', weekendDays: [6, 7] })",
+    });
+  }
+  if (field === 'calendar.holidays') {
+    return new TimeError({
+      code: 'X_SCHEDULE_INVALID',
+      cause,
+      fix: "addBusinessDays(new Date(), 1, { zone: 'UTC', holidays: [] })",
+    });
+  }
   return new TimeError({
     code: 'X_SCHEDULE_INVALID',
-    // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
-    // field or a config value as often as it is the `number` the in-package caller passes.
-    cause: `${field} must be ${range}, got ${renderCauseValue(value)}`,
+    cause,
     fix: `pass an integer in ${range} for ${field} — wall-clock fields are not wrapped or clamped, because a silently shifted schedule is worse than a failed one`,
   });
 }

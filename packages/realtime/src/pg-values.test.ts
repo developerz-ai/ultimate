@@ -38,6 +38,27 @@ describe('unit · instants', () => {
     expect((hours as Date).toISOString()).toBe('2026-08-09T07:00:00.000Z');
   });
 
+  test('a seconds offset decodes to the same instant', () => {
+    // Postgres writes a zone's LMT offset to the second for an instant before that zone adopted
+    // standard time — `America/New_York` before 1883 is `-04:56:02` — and `Date` has no spelling
+    // for a seconds offset. Kept as text, the live row held a string where the repository row
+    // (Bun's driver, binary) holds `1880-01-01T12:00:00.000Z`.
+    const lmt = decodeValue(TIMESTAMPTZ, '1880-01-01 07:03:58-04:56:02');
+    expect(lmt).toBeInstanceOf(Date);
+    expect((lmt as Date).toISOString()).toBe('1880-01-01T12:00:00.000Z');
+    const ahead = decodeValue(TIMESTAMPTZ, '1879-12-31 23:59:59.5+01:30:15');
+    expect((ahead as Date).toISOString()).toBe('1879-12-31T22:29:44.500Z');
+    // Seconds are only ever written after a colon-separated minute; a mixed spelling is not one
+    // postgres produces, so it keeps its text rather than being guessed at.
+    expect(decodeValue(TIMESTAMPTZ, '1880-01-01 07:03:58-0456:02')).toBe(
+      '1880-01-01 07:03:58-0456:02',
+    );
+    // A minute or second past 59 is not an offset; guessing one is a wrong instant.
+    expect(decodeValue(TIMESTAMPTZ, '1880-01-01 07:03:58-04:56:60')).toBe(
+      '1880-01-01 07:03:58-04:56:60',
+    );
+  });
+
   test('an offsetless timestamp is read as UTC, never as the process zone', () => {
     const value = decodeValue(TIMESTAMP, '2026-08-09 12:00:00');
     expect((value as Date).toISOString()).toBe('2026-08-09T12:00:00.000Z');

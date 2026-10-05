@@ -158,7 +158,9 @@ The weekend is configuration. `WEEKEND_SAT_SUN`, `WEEKEND_FRI_SAT` (much of the 
 
 `addBusinessDays(at, days, calendar)` keeps the **original** wall-clock time: every candidate is the
 calendar date plus the time the caller started with, so a spring-forward day on the way does not
-shift the days after it.
+shift the days after it. A calendar with no business day in it — every weekday in `weekendDays`, or
+every remaining day a holiday for ten years — is refused with `X_SCHEDULE_INVALID`, never answered
+with a weekend day.
 
 `businessDaysBetween(from, to, calendar)` counts `[from, to)` — half-open, on **local calendar
 days**, the same interval `daysBetween` measures. `from`'s own day counts, `to`'s does not, and
@@ -177,7 +179,7 @@ negated; an empty one is `0` in either direction, never `-0`.
 | `X_INSTANT_INVALID` | unparseable timestamp |
 | `X_LOCALE_INVALID` | a tag `Intl` cannot parse (`en_US`, `''`) reached any entry point taking a `locale`. Declared by `@ultimat3/core` `As of 2026-08`, thrown here unchanged — `@ultimat3/time` owned it until then. It answers **400**, not 500: the `locale` stage negotiates `Accept-Language` and never throws, so a tag that reaches this code came from a path, query or action input the caller wrote |
 | `X_CRON_NOT_DESCRIBABLE` | a valid 6-field cron whose seconds field `CronPhrases` has no words for |
-| `X_SCHEDULE_INVALID` | a wall-clock field out of range: `slot.hour`, `slot.minute`, `slot.second`, `slot.weekday` |
+| `X_SCHEDULE_INVALID` | a wall-clock field out of range: `slot.hour`, `slot.minute`, `slot.second`, `slot.weekday`; a fractional or non-finite `days`; a business calendar with no business day in it |
 
 ### Error classes
 

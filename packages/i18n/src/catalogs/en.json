@@ -65,7 +65,9 @@
       "action": "Try again"
     },
     "page": {
-      "builtWith": "Built with Ultimate"
+      "builtWith": "Built with Ultimate",
+      "code": "code",
+      "request": "request"
     }
   },
   "validation": {

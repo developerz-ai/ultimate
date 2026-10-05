@@ -157,7 +157,7 @@ export async function networkFirst(
   const cache = await env.open(options.cacheName);
   try {
     const response = await fromNetwork(request, env, options);
-    if (response.ok) await cache.put(request, response.clone());
+    if (response.ok) later(env, cache.put(request, response.clone()));
     return response;
   } catch (error) {
     const hit = await cache.match(request);
@@ -176,8 +176,8 @@ export async function staleWhileRevalidate(
   const cache = await env.open(options.cacheName);
   const hit = await cache.match(request);
   const refresh = fromNetwork(request, env, options)
-    .then(async (response) => {
-      if (response.ok) await cache.put(request, response.clone());
+    .then((response) => {
+      if (response.ok) later(env, cache.put(request, response.clone()));
       return response;
     })
     .catch(async () => (hit !== undefined ? hit : fallbackOrThrow(options)));
@@ -185,8 +185,8 @@ export async function staleWhileRevalidate(
   if (hit !== undefined) {
     // The refresh is handed to the event's `waitUntil` NOW, before the cached answer returns:
     // taken after `respondWith` settled, a browser refuses the extension (`InvalidStateError`) and
-    // may kill the worker mid-refresh. `later` also swallows its rejection, as `.catch` did.
-    env.wait?.(refresh.catch(() => undefined));
+    // may kill the worker mid-refresh. `later` also swallows its rejection.
+    later(env, refresh);
     return hit;
   }
   return refresh;
@@ -225,7 +225,7 @@ async function fetchAndStore(
 ): Promise<Response> {
   try {
     const response = await fromNetwork(request, env, options);
-    if (response.ok) await cache.put(request, response.clone());
+    if (response.ok) later(env, cache.put(request, response.clone()));
     return response;
   } catch (error) {
     if (options.fallback !== undefined) return options.fallback();
@@ -233,16 +233,33 @@ async function fetchAndStore(
   }
 }
 
+/**
+ * Work behind the answer: the emitted worker's `later`. A cache copy is never awaited — `Cache.put`
+ * reads the whole body, so awaiting it held a streamed document away from the tab, and a put that
+ * REJECTED (quota) turned a fresh network answer into the stale copy or a throw. The copy goes to
+ * the event's `waitUntil`, which keeps the worker alive until it lands; a failed copy costs the
+ * copy, never the response.
+ */
+function later(env: StrategyEnv, work: Promise<unknown>): void {
+  const settled = work.catch(() => undefined);
+  env.wait?.(settled);
+}
+
+/**
+ * Exhausted with nothing to answer: REJECT, as the other three strategies do on both halves. In a
+ * worker a rejected `respondWith` is the same network error `Response.error()` would be, and
+ * in-process the caller gets a code and a fix instead of a status-0 response it has to recognise.
+ */
 async function fallbackOrThrow(options: StrategyOptions): Promise<Response> {
   if (options.fallback !== undefined) return options.fallback();
   throw new PwaStrategyExhaustedError({ cacheName: options.cacheName });
 }
 
 /**
- * The emitted counterpart of the functions above. Kept as source strings because the
- * service worker is a generated artifact with no bundler in the loop — the shapes are
- * identical on purpose and `strategies.test.ts` asserts both halves stay in step. They open a
- * cache through the worker's `openCache`, never `caches.open`: the pages cache is a facade that
+ * The emitted counterpart of the functions above. Kept as source strings because the service
+ * worker is a generated artifact with no bundler in the loop — the shapes are identical on purpose
+ * and `strategies.test.ts` RUNS each source against the fake its twin gets. They open a cache
+ * through the worker's `openCache`, never `caches.open`: the pages cache is a facade that
  * partitions a per-member document by principal (`service-worker.ts`, `pagesCache`). And the cache
  * copy is NEVER awaited before answering: `Cache.put` reads the whole body, so awaiting it held a
  * streamed document away from the tab until it had ended. It goes to `later(wait, …)` instead —
@@ -262,7 +279,7 @@ export const STRATEGY_SOURCE = Object.freeze<Record<StrategyName, string>>({
   'stale-while-revalidate': `async function staleWhileRevalidate(req,cn,fb,wait,pre){
   const c=await openCache(cn);const hit=await c.match(req);
   const refresh=net(req,pre).then((r)=>{if(r.ok)later(wait,c.put(req,r.clone()));return r})
-    .catch(()=>hit||(fb?fb():Response.error()));
+    .catch((e)=>{if(hit)return hit;if(fb)return fb();throw e});
   if(hit){later(wait,refresh);return hit}
   return refresh
 }`,

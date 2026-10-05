@@ -124,6 +124,27 @@ describe('a refusal detail decides the stop reason', () => {
   });
 });
 
+describe('an empty refusal string is not a refusal', () => {
+  test('an empty refusal string is not a refusal on either path', () => {
+    // A gateway that always serialises the field writes `"refusal": ""` beside a real answer. The
+    // stream accumulates deltas and only an accumulated NON-empty string refuses; the non-streamed
+    // read took any string, so the same body was an answer streamed and a refusal not.
+    const openai = parseChatCompletion(
+      { choices: [{ message: { content: 'hello', refusal: '' }, finish_reason: 'stop' }] },
+      'openai',
+    );
+    const completion = new ChatCompletionStream('openai');
+    completion.push(frame({ choices: [{ delta: { content: 'hello', refusal: '' } }] }));
+    completion.push(frame({ choices: [{ delta: {}, finish_reason: 'stop' }] }));
+
+    for (const answer of [openai, completion.state()]) {
+      expect(answer.stopReason).toBe('end_turn');
+      expect(answer.stopDetails).toBeUndefined();
+      expect(answer.text).toBe('hello');
+    }
+  });
+});
+
 describe('a stop reason this build has never seen', () => {
   // One rule on every read path: FAIL CLOSED, as a cut-off answer. The OpenAI format read an
   // unknown `finish_reason` as `end_turn` (non-streamed) or as no finish at all (streamed) while

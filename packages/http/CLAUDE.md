@@ -177,8 +177,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   vocabulary; what the caller sent rides in `meta`; the parser's message goes through `renderThrowable`.
 - **A browser failing `auth: 'required'` is redirected; an agent gets the problem document**
   (`auth-redirect.ts`, in `error-map` before the overlay). `config.signInPath` is `null` until named.
-  `nextAfterSignIn` is the ONE `?next=` reader: same-origin paths only, a control character is
-  off-site, re-parsed against an unreachable origin, never throws.
+  `nextAfterSignIn` is the ONE `?next=` reader: same-origin paths only, decoded ONCE (by the
+  caller's parser, never again here — `%26` stays `%26`), any C0/DEL refused, non-ASCII
+  percent-encoded for `Location`, re-parsed against an unreachable origin, never throws. It
+  returns the RESOLVED path (never the raw string) and refuses one starting `//`; `locationFor`
+  never emits a same-origin pathname starting `//` (`/.//…` instead).
 - **A pathname in a `fix:` goes through `renderFixShellArg`** (`routeNotFound`). **A `code` is gated by
   core's `FRAMEWORK_CODE`** before `x errors explain <code>`, else `x errors list --json`. **A supplied
   `fix:` is taken only from a branded error** (`isUltimateError`).

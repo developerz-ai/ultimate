@@ -8,7 +8,7 @@ import { createPostgresClient, type PostgresClient, raw, sql, statementsOf } fro
 import { normalize } from './embeddings';
 import { PgVectorStore } from './pg-vector';
 import { searchSql } from './pg-vector-sql';
-import { fuse, type SearchHit, type VectorRecord } from './vector';
+import { fuse, MemoryVectorStore, type SearchHit, type VectorRecord } from './vector';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -182,6 +182,53 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       expect(hits[0]?.score).toBeCloseTo(1, 5);
       // Orthogonal vectors: cosine 0, so the score is the same number the memory store returns.
       expect(hits[2]?.score).toBeCloseTo(0, 5);
+    });
+
+    test('memory search ranks by cosine, not magnitude (pg parity)', async () => {
+      // The twin of `vector.test.ts`'s case, against the server: the same unnormalised corpus,
+      // the same order and scores from both stores. A tenant of its own, so no other read sees it.
+      const corpus: readonly VectorRecord[] = [
+        { id: 'blank', text: 'blank', vector: Float32Array.from([0, 0, 0, 0]) },
+        { id: 'long', text: 'long', vector: Float32Array.from([10, 10, 0, 0]) },
+        { id: 'aligned', text: 'aligned', vector: Float32Array.from([1, 0.05, 0, 0]) },
+      ];
+      const query = Float32Array.from([2, 0, 0, 0]);
+      const memory = new MemoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'parity' });
+      await memory.upsert(corpus);
+      await store.scoped({ tenant: 'parity' }).upsert(corpus);
+      const [inMemory, inPg] = await Promise.all([
+        memory.search(query, 10),
+        store.scoped({ tenant: 'parity' }).search(query, 10),
+      ]);
+      expect(ids(inPg)).toEqual(['aligned', 'long', 'blank']);
+      expect(ids(inMemory)).toEqual(ids(inPg));
+      expect(inPg[0]?.score).toBeCloseTo(inMemory[0]?.score ?? 0, 5);
+      expect(inPg[1]?.score).toBeCloseTo(inMemory[1]?.score ?? 0, 5);
+      // A zero-norm row is `NaN` in both: pgvector's 0/0, ordered last by float8.
+      expect(inPg[2]?.score).toBeNaN();
+      expect(inMemory[2]?.score).toBeNaN();
+    });
+
+    test('tied scores come back in id order on both stores', async () => {
+      // Inserted in REVERSE id order with identical vectors and text, so a statement with no
+      // tie-break answers in heap order — `z-tie` first — and only `"id" asc` reads `a-tie` first.
+      const corpus: readonly VectorRecord[] = ['z-tie', 'm-tie', 'a-tie'].map((id) => ({
+        id,
+        text: 'tied ledger entry',
+        vector: vec(0, 0, 0, 1),
+      }));
+      const memory = new MemoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'ties' });
+      const pg = store.scoped({ tenant: 'ties' });
+      await memory.upsert(corpus);
+      for (const record of corpus) await pg.upsert([record]);
+      const want = ['a-tie', 'm-tie', 'z-tie'];
+      for (const reader of [memory, pg]) {
+        expect(ids(await reader.search(vec(0, 0, 0, 1), 10))).toEqual(want);
+        expect(ids(await reader.searchText('ledger', 10))).toEqual(want);
+        expect(
+          ids(await reader.hybrid({ query: 'ledger', vector: vec(0, 0, 0, 1), k: 10 })),
+        ).toEqual(want);
+      }
     });
 
     test('searchText is Postgres FTS: the rare exact term wins and stemming applies', async () => {

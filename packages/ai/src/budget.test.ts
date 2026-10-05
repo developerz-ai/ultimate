@@ -6,9 +6,10 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { type Actor, userActor } from '@ultimat3/core';
 import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { BudgetLimits, BudgetStore } from './budget';
-import { BudgetLedger, estimateSpend, MemoryBudgetStore } from './budget';
+import { BudgetLedger, budgetKeysFor, estimateSpend, MemoryBudgetStore } from './budget';
 import type { GenerateRequest } from './provider';
 
 const usd = (minor: number) => ({ minor, currency: 'USD' });
@@ -341,5 +342,33 @@ describe('a BudgetStore whose take answers the wrong shape', () => {
     });
     expect(inner.spent('actor:u1')).toBe(0);
     expect((await ledger.report()).requestTokens).toBe(0);
+  });
+});
+
+/**
+ * `orgId` is a value off the wire, not one this process minted: a session row or an app's adapter
+ * can hand over `''` or `null` as readily as `undefined`. Each of the first two used to become a
+ * real key — `org:` and `org:null` — so every org-less caller in the deployment shared ONE org
+ * window, and one of them could spend the ceiling for all the others.
+ */
+describe('the keys a caller is counted under', () => {
+  test('an org-less actor carries no org key, in all three spellings', () => {
+    const absent = userActor({ id: 'u-1' });
+    const spellings: readonly Actor[] = [
+      absent,
+      userActor({ id: 'u-1', orgId: '' }),
+      // `null` is not in core's `Actor.orgId` type, and that is the point: it arrives anyway.
+      { ...absent, orgId: null } as unknown as Actor,
+    ];
+    for (const actor of spellings) {
+      expect(budgetKeysFor(actor)).toEqual({ actorKey: 'actor:user:u-1' });
+    }
+  });
+
+  test('an actor inside an org is counted under that org too — the non-vacuity half', () => {
+    expect(budgetKeysFor(userActor({ id: 'u-1', orgId: 'acme' }))).toEqual({
+      actorKey: 'actor:user:u-1',
+      orgKey: 'org:acme',
+    });
   });
 });

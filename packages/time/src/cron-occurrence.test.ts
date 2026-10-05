@@ -259,3 +259,26 @@ describe('the repeated hour of a fall-back night', () => {
     ]);
   });
 });
+
+// `count` bounds a loop. Unscreened, `NaN` failed `index < count` at once and answered `[]` — "no
+// occurrences" — `2.5` ran three times, and `Infinity` never stopped pushing.
+describe('nextCronOccurrences refuses a count that is not a whole number', () => {
+  const after = fromIso('2026-03-14T00:00:00Z');
+  const codeOf = (count: number): string => {
+    try {
+      nextCronOccurrences('0 3 * * *', UTC, after, count);
+    } catch (error) {
+      return String((error as { code?: unknown }).code);
+    }
+    return 'no-throw';
+  };
+
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1])('%p is refused', (count) => {
+    expect(codeOf(count)).toBe('X_INVARIANT');
+  });
+
+  test('zero is an empty answer, a whole count is that many', () => {
+    expect(nextCronOccurrences('0 3 * * *', UTC, after, 0)).toEqual([]);
+    expect(nextCronOccurrences('0 3 * * *', UTC, after, 2)).toHaveLength(2);
+  });
+});

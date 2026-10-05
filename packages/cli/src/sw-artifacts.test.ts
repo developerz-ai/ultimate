@@ -151,6 +151,31 @@ describe('serviceWorkerArtifacts', () => {
 // CSS is a page the visitor cannot read. It rode nowhere until 2026-09-06, because the CSS was
 // inside the document.
 describe('the precache manifest', () => {
+  // A placeholder the precache never holds answers nothing offline: the worker serves the image
+  // and font fallbacks from the precache alone, so the configured URLs must ride the manifest.
+  test('names the configured offline image and font placeholders', () => {
+    const built = serviceWorkerArtifacts({
+      pwa: pwa({
+        offline: {
+          fallback: '/offline',
+          image: '/offline.svg',
+          font: '/fonts/fallback.woff2',
+          neverCache: [],
+          personalPages: 'never',
+        },
+      }),
+      buildId: BUILD_ID,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+    });
+    if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
+
+    const urls = built.precache.entries.map((entry) => entry.url);
+    expect(urls).toContain('/offline.svg');
+    expect(urls).toContain('/fonts/fallback.woff2');
+  });
+
   test('names every surface stylesheet beside every island chunk', () => {
     const styles = styleBundleOf([
       { surface: 'site', css: '.hero{color:red}' },

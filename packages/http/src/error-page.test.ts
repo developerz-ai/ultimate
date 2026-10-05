@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { FRAMEWORK_CATALOG, placeholdersOf } from '@ultimat3/i18n';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { createContext, runWithContext } from '@ultimat3/core';
+import { FRAMEWORK_CATALOG, placeholdersOf, registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import { ERROR_STATUS } from './error-map';
 import {
   ERROR_PAGE_LINKS,
@@ -140,5 +141,47 @@ describe('the page itself', () => {
     expect(await response.text()).toBe(own);
     expect(response.status).toBe(404);
     expect(response.headers.get('content-type')).toContain('text/html');
+  });
+});
+
+// The page is served to every visitor, in their language. A label written into the template stays
+// English on a German request — and nothing else catches it, because English is what the `en`
+// catalog would have said anyway. So: a catalog in which EVERY framework string is marked, and a
+// page that may show nothing unmarked except what is the request's own (status, code, request id).
+describe('every visible label is a catalog key', () => {
+  afterEach(() => {
+    resetCatalogs();
+  });
+
+  const MARK = '«de»';
+  const marked = Object.fromEntries(
+    Object.entries(FRAMEWORK_CATALOG).map(([key, template]) => [
+      key,
+      `${MARK}${key}${placeholdersOf(template)
+        .map((name) => ` {${name}}`)
+        .join('')}`,
+    ]),
+  );
+  // The brand the footer links to is a domain name — a proper noun, not copy.
+  const BRAND = 'developerz.ai';
+
+  const visibleText = (page: string): string[] =>
+    page
+      .replace(/<style>[\s\S]*?<\/style>/g, '')
+      .replace(/<title>[\s\S]*?<\/title>/g, '')
+      .split(/<[^>]*>/)
+      .map((text) => text.trim())
+      .filter((text) => text !== '');
+
+  test.each([404, 403, 500, 503])('a %p page in German shows no English label', (status) => {
+    registerCatalog('de', marked);
+    const page = runWithContext(createContext({ locale: 'de' }), () =>
+      renderErrorPage(input({ status, code: 'X_SOMETHING', requestId: 'req-7', locale: 'de' })),
+    );
+    const own = new Set([String(status), 'X_SOMETHING', 'req-7', BRAND]);
+    const unmarked = visibleText(page).filter((text) => !own.has(text) && !text.startsWith(MARK));
+    expect(unmarked).toEqual([]);
+    expect(page).toContain(`${MARK}errors.page.code`);
+    expect(page).toContain(`${MARK}errors.page.request`);
   });
 });

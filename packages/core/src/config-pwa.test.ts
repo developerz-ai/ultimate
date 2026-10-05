@@ -184,7 +184,7 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     });
   });
 
-  test.each([undefined, null, '', 'offline', 7])(
+  test.each([undefined, null, '', 'offline', 7, '//evil.test/offline', '/\\evil.test/offline'])(
     'pwa.offline.fallback set to %p is refused: an installable app owes an offline document',
     (fallback) => {
       const cause = causeOf(() =>
@@ -204,6 +204,45 @@ describe('defineConfig · the pwa block an install can be built from', () => {
       expect(cause).toContain('pwa.offline.fallback is required');
     },
   );
+
+  // `//host` and `/\\host` start with `/` and are another host: the worker would precache that
+  // file and serve it as this app's placeholder.
+  test.each([
+    ['image', 'https://cdn.test/x.png'],
+    ['image', '//cdn.test/x.png'],
+    ['font', '/\\cdn.test/f.woff2'],
+    ['font', 'fonts/f.woff2'],
+  ] as const)(
+    'pwa.offline.%s set to %p is refused: a placeholder is a path on this origin',
+    (key, url) => {
+      const cause = causeOf(() =>
+        defineConfig({
+          name: 'myapp',
+          pwa: {
+            enabled: true,
+            name: 'My App',
+            colors: COLORS,
+            offline: { fallback: '/offline', [key]: url },
+          },
+        }),
+      );
+      expect(cause).toContain(`pwa.offline.${key} must be a path on this origin`);
+    },
+  );
+
+  test('a same-origin image and font placeholder pass', () => {
+    const config = defineConfig({
+      name: 'myapp',
+      pwa: {
+        enabled: true,
+        name: 'My App',
+        colors: COLORS,
+        offline: { fallback: '/offline', image: '/offline.svg', font: '/fonts/f.woff2' },
+      },
+    });
+    expect(config.pwa.offline.image).toBe('/offline.svg');
+    expect(config.pwa.offline.font).toBe('/fonts/f.woff2');
+  });
 
   // `INBOX_RETENTION_KEYS`' rule, one section over: a third scheme or a third colour added to the
   // types with no row in the screened list is a value an app can leave blank.

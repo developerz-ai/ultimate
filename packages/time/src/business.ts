@@ -3,7 +3,7 @@
  * much of the Gulf, Sunday-only in parts of Asia, Saturday/Sunday in the West.
  */
 
-import { scheduleInvalid } from './errors';
+import { scheduleInvalid, type TimeError } from './errors';
 import type { Instant } from './instant';
 import { daysBetween, fromZoned, isoDateInZone, toZoned, type ZonedDateTime } from './zoned';
 import { type TimeZone, utcEpoch } from './zones';
@@ -15,6 +15,7 @@ export const WEEKEND_SAT_SUN: readonly IsoWeekday[] = [6, 7];
 /** Gulf states, and the default in Israel (Fri/Sat). */
 export const WEEKEND_FRI_SAT: readonly IsoWeekday[] = [5, 6];
 export const WEEKEND_SUN_ONLY: readonly IsoWeekday[] = [7];
+const EVERY_WEEKDAY: readonly IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
 
 export interface BusinessCalendar {
   zone: TimeZone;
@@ -56,6 +57,11 @@ export function addBusinessDays(at: Instant, days: number, calendar: BusinessCal
     throw scheduleInvalid('days', days, 'a whole number of business days');
   }
   if (days === 0) return at;
+  // The misconfiguration this refusal is usually about, answered before ten years of walking.
+  const weekend = calendar.weekendDays ?? WEEKEND_SAT_SUN;
+  if (EVERY_WEEKDAY.every((day) => weekend.includes(day))) {
+    throw noBusinessDay(calendar);
+  }
   const step = days > 0 ? 1 : -1;
   const origin = toZoned(at, calendar.zone);
   let remaining = Math.abs(days);
@@ -71,10 +77,32 @@ export function addBusinessDays(at: Instant, days: number, calendar: BusinessCal
       landed = candidate;
     }
     guard += 1;
-    // A calendar with every day marked as a holiday would otherwise loop forever.
-    if (guard > Math.abs(days) * 7 + 3650) return localDay(origin, offset, calendar.zone) ?? landed;
+    // Ten years past the last day a full week could need without one business day: the calendar has
+    // none to give. It used to RETURN here — the day the guard stopped on, a weekend or a holiday —
+    // which a caller schedules against as if it were the business day it asked for.
+    if (guard > Math.abs(days) * 7 + 3650) throw noBusinessDay(calendar);
   }
   return landed;
+}
+
+/**
+ * The refusal for a calendar the loop above can never land in. Which list is at fault decides the
+ * repair: a weekend covering all seven days, or — the weekend leaving days — holidays covering them.
+ */
+function noBusinessDay(calendar: BusinessCalendar): TimeError {
+  const weekend = calendar.weekendDays ?? WEEKEND_SAT_SUN;
+  if (EVERY_WEEKDAY.every((day) => weekend.includes(day))) {
+    return scheduleInvalid(
+      'calendar.weekendDays',
+      weekend,
+      'ISO weekdays (1-7) that leave at least one business day',
+    );
+  }
+  return scheduleInvalid(
+    'calendar.holidays',
+    (calendar.holidays ?? []).length,
+    'dates that leave at least one business day in any ten-year window (remove some of them)',
+  );
 }
 
 /**

@@ -116,6 +116,25 @@ describe('PgVectorStore reads', () => {
     expect(client.statements[0]?.values).toEqual(['english', 'x_db_drift schema', 3]);
   });
 
+  test('tied scores come back in id order, as the memory store breaks them', async () => {
+    // `byScoreDesc` in `vector.ts` breaks a tie by `id asc`; a statement that orders by score
+    // alone hands tied rows back in whatever order the executor met them, so dev and prod differ.
+    const { client, store } = harness();
+    await store.search(vec(1, 0, 0, 0), 5);
+    await store.searchText('drift', 5);
+    await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });
+    const [search, text, hybrid] = client.texts;
+    // The INNER order stays bare distance — the only shape hnsw answers. Only the outer sort,
+    // over at most `k` rows, carries the tie-break.
+    expect(search).toContain('order by distance limit $2');
+    expect(search).toMatch(/\) top order by distance, "id" asc$/);
+    expect(text).toContain('order by score desc, "id" asc limit $3');
+    // The fused ranks are positions, so a tie inside either ranking must resolve the same way too.
+    expect(hybrid).toContain('row_number() over (order by distance, "id" asc) as rank');
+    expect(hybrid).toContain('row_number() over (order by relevance desc, "id" asc) as rank');
+    expect(hybrid).toContain('order by relevance desc, "id" asc limit $5');
+  });
+
   test('hybrid fuses both rankings in SQL with the same 1/(k+rank) the memory store uses', async () => {
     const { client, store } = harness();
     await store.hybrid({ query: 'drift', vector: vec(1, 0, 0, 0), k: 5 });

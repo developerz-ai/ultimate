@@ -61,11 +61,12 @@ detectSkew(clientBuildId, message.to); // 'current' | 'stale' | 'unknown'
 ```
 X_PWA_NO_OFFLINE_FALLBACK: no offline fallback route
   cause: app.config.ts has no `offline` block, so an offline navigation would show the browser's error page
-  fix:   x g route offline --surface site   # then set pwa.offline.fallback to '/offline' in app.config.ts
+  fix:   set pwa: { offline: { fallback: '/offline' } } in app.config.ts, then create the route it names: x g route offline --surface site
 ```
 
 `requireOfflineFallback(config)` runs inside `generateServiceWorker`, so the build fails
-before an un-shippable PWA exists.
+before an un-shippable PWA exists. `pwa.offline.image` and `pwa.offline.font` are the
+placeholders a failed image or font request gets — each served only from the precache.
 
 ## Capabilities are opt-in, and gate bytes
 
@@ -106,7 +107,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Export | Owns |
 |---|---|
 | `generateServiceWorker` | `sw.js` from the route table; deterministic for identical input |
-| `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table; a `personal` route is `network-only` |
+| `strategyFor`, `MODE_STRATEGY`, `cacheFirst`, … | the four strategies + the mapping table; a `personal` route is `network-only`. Each answers what its emitted `sw.js` twin answers: the cache copy goes to `env.wait` and is never awaited (a failed copy costs the copy, not the response), and an exhausted strategy with no fallback rejects — `staleWhileRevalidate` with `X_PWA_STRATEGY_EXHAUSTED` |
 | `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
 | `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |

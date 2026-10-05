@@ -29,7 +29,8 @@ const answer = await ai.scope(budgetKeysFor(actor), async () => {
 ## Budgets — and which of the three is fleet-wide
 
 `request` is one call chain. `actor` and `org` are counters across calls, keyed
-`actor:<kind>:<id>` and `org:<orgId>` (`budgetKeysFor`), so where they live decides what they mean:
+`actor:<kind>:<id>` and `org:<orgId>` (`budgetKeysFor`; an actor whose `orgId` is `undefined`, `null`
+or `''` has no org key — never a shared `org:` window), so where they live decides what they mean:
 
 | `budgetStore` | `actor` / `org` counts | Right for |
 |---|---|---|
@@ -141,7 +142,9 @@ and the test suite run on.
 const embedder = new RemoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY
 ```
 
-Vectors are L2-normalised on arrival, so `cosine` stays a dot product. A width other than the
+Vectors are L2-normalised on arrival. `cosine` is true cosine all the same — pgvector's `1 - (a <=> b)`,
+clamped to [-1, 1], `NaN` against a zero-norm vector — because a store holds whatever an app
+upserts, normalised or not. A width other than the
 declared `dimension` is `X_VECTOR_DIM_MISMATCH` **before** anything reaches a store — a store
 half-written at the wrong width has no error to report, only worse answers.
 
@@ -337,7 +340,6 @@ was a stand-in written for a test.
 
 An `agent()` returns an action, so **an agent is a tool of another agent** — a supervisor lists a
 sub-agent in its own `tools` and the sub-agent runs under the same actor, through the same policy.
-No `hive()`, no supervisor primitive: it falls out of the factory rule.
 
 | Rule | Why |
 |---|---|
@@ -353,9 +355,9 @@ No `hive()`, no supervisor primitive: it falls out of the factory rule.
 
 ## `hive()` — many members, one action
 
-Fan an action out over many inputs. The fourth factory over a primitive, after `llm()`,
-`backfill()` and `agent()`: a fan-out is still one server-authoritative operation with an input
-schema, an output schema and a policy.
+Fan an action out over many inputs. A factory over a primitive, like `llm()`, `backfill()` and
+`agent()`: a fan-out is still one server-authoritative operation with an input schema, an output
+schema and a policy.
 
 ```ts
 import { action, t } from '@ultimat3/action';
@@ -604,7 +606,9 @@ RRF fuses by *rank*, so the two score scales never have to be reconciled.
 `PgVectorStore` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
 (`websearch_to_tsquery` + `ts_rank_cd`, GIN) in **the same Postgres**, fused by `1/(k+rank)` in
 one statement. `MemoryVectorStore` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
-the same envelope.
+the same envelope, the same cosine (magnitude never ranks; a zero-norm row scores `NaN` and sorts
+last, as float8 does), and fusion on the same `(tenant, id)` key, so an unscoped hybrid keeps two
+tenants' same-id rows apart.
 
 `store.ddl()` returns one string: `create extension if not exists vector`, the table, and the
 three indexes (hnsw on `embedding`, GIN on `tsv`, GIN on `metadata`). **No command emits it,
