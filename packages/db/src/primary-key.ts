@@ -20,6 +20,14 @@ import { identifier } from './sql';
 const DOUBLE_QUOTE_LIVE = /[$`!]/;
 
 /**
+ * A control character — C0, DEL, C1. `JSON.stringify` writes one as an escape (`\\n`), and inside
+ * shell double quotes that escape is passed on LITERALLY, so the pasted line would name a different
+ * migration than the one refused. The placeholder is honest; an escape is not.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching them is the point.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+/**
  * A migration NAME as the one argument of `x db gen "…"`, for a `fix:` a reader pastes. It is a
  * description (`add posts`), never an identifier, so it keeps its spaces; a name carrying shell
  * syntax becomes the placeholder rather than a second command (plan 101 row S12). Lives here, the
@@ -28,7 +36,7 @@ const DOUBLE_QUOTE_LIVE = /[$`!]/;
 export const migrationNameArg = (name: string): string =>
   renderFixLiteral(
     // A leading `-` reads as a flag to `x db gen` however it is quoted (sweep 1c audit, L3).
-    DOUBLE_QUOTE_LIVE.test(name) || name.startsWith('-') ? undefined : name,
+    DOUBLE_QUOTE_LIVE.test(name) || CONTROL.test(name) || name.startsWith('-') ? undefined : name,
     '"<a migration name>"',
   );
 

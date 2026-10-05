@@ -223,7 +223,8 @@ export class TopicForbiddenError extends RealtimeError {
  * different numbers on two different objects. Every scope but `actor` names a CONSTRUCTOR option:
  * those have no `app.config.ts` field, and a fix naming a field that does not exist is an
  * instruction that cannot be followed. The actor cap is the one that is app config —
- * `realtime.maxSubscriptionsPerActor` — so its fix names that key and that file.
+ * `realtime.maxSubscriptionsPerActor` — so its fix names that key and that file first, then the
+ * registry option a host that builds its own `LiveQueryRegistry` sets instead.
  */
 export class SubscriptionLimitError extends RealtimeError {
   constructor(args: {
@@ -238,7 +239,7 @@ export class SubscriptionLimitError extends RealtimeError {
       cause: `${args.scope} ${args.id} reached the subscription cap of ${args.limit}`,
       fix:
         args.scope === 'actor'
-          ? `defineConfig({ realtime: { maxSubscriptionsPerActor: ${args.limit * 2} } })   # in app.config.ts — realtime.maxSubscriptionsPerActor; or unsubscribe unused live queries`
+          ? `defineConfig({ realtime: { maxSubscriptionsPerActor: ${args.limit * 2} } })   # in app.config.ts — realtime.maxSubscriptionsPerActor; or maxPerActor on new LiveQueryRegistry({…}) where a host builds its own; or unsubscribe unused live queries`
           : `raise ${knob} where this sync node is constructed, or unsubscribe unused live queries`,
     });
   }
@@ -413,7 +414,7 @@ export class SocketLimitError extends RealtimeError {
     super({
       code: 'X_SOCKET_LIMIT',
       cause: `${args.principal} already holds ${args.limit} sockets on this sync node — the per-principal cap${network ? ' (an anonymous network gets 8 x realtime.maxSocketsPerActor)' : ''}`,
-      fix: `defineConfig({ realtime: { maxSocketsPerActor: ${perActor * 2} } })   # in app.config.ts — or close other tabs of this app`,
+      fix: `defineConfig({ realtime: { maxSocketsPerActor: ${perActor * 2} } })   # in app.config.ts — or maxSocketsPerActor on createSyncNode({…}) where a host builds its own; or close other tabs of this app`,
     });
   }
 }

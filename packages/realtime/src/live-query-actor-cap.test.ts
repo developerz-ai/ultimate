@@ -105,6 +105,8 @@ describe('one actor cannot fill the node', () => {
     expect(refused?.cause).toContain('of 1');
     expect(refused?.fix).toContain('realtime.maxSubscriptionsPerActor');
     expect(refused?.fix).toContain('app.config.ts');
+    // A host building its own registry never reads that key: the option it sets is named too.
+    expect(refused?.fix).toContain('maxPerActor on new LiveQueryRegistry');
   });
 
   test('an anonymous address is bounded the same way, and another address is not', async () => {

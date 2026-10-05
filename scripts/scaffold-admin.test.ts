@@ -10,7 +10,7 @@ import { DEV_BINDING } from '@ultimat3/cli';
 import type { AdminWalk } from './lib/admin-walk';
 import { adminFindings, filledForm, walkAdmin } from './lib/admin-walk';
 import type { AdminCheckIo } from './scaffold-admin';
-import { adminResource, checkAdmin, devRoleCookie } from './scaffold-admin';
+import { adminResource, appDirWord, checkAdmin, devRoleCookie } from './scaffold-admin';
 
 const BASE = 'http://127.0.0.1:4000';
 const WALK: AdminWalk = { base: BASE, resource: 'smoke_resources', roleCookie: 'demo_dev_role' };
@@ -245,9 +245,13 @@ describe('unit · the command: boot, walk, stop', () => {
   });
 
   /** An app directory holding only what the check READS; `has` says which of the three. */
-  const appDir = async (has: readonly ('manifest' | 'actor' | 'bin')[]): Promise<string> => {
-    const dir = await mkdtemp(`${tmpdir()}/scaffold-admin-`);
-    dirs.push(dir);
+  const appDir = async (
+    has: readonly ('manifest' | 'actor' | 'bin')[],
+    name?: string,
+  ): Promise<string> => {
+    const parent = await mkdtemp(`${tmpdir()}/scaffold-admin-`);
+    dirs.push(parent);
+    const dir = name === undefined ? parent : `${parent}/${name}`;
     if (has.includes('manifest')) {
       await Bun.write(`${dir}/x.manifest.json`, '{"entities":[{"name":"smoke_resources"}]}');
     }
@@ -394,6 +398,22 @@ describe('unit · the command: boot, walk, stop', () => {
     expect(plainFix).toBe(
       `bun run scripts/scaffold-first-run.ts ${plain} && (cd ${plain} && bin/setup)`,
     );
+  });
+
+  // CodeRabbit on #651: two of the three fixes still spliced `dir` raw. One helper, three lines.
+  test('every fix quotes the directory through the one rule', async () => {
+    const hostile = 'x$(touch pwned);y';
+    const noBin = await appDir(['manifest', 'actor'], hostile);
+    expect((await checkAdmin(noBin, io(fakeApp().fetcher).made)).findings?.[0]?.fix).toBe(
+      `cd '${noBin}' && bin/setup`,
+    );
+    const silent = await appDir(['manifest', 'actor', 'bin'], hostile);
+    const { made } = io(fakeApp().fetcher, { refusals: Number.POSITIVE_INFINITY });
+    expect((await checkAdmin(silent, made)).findings?.[0]?.fix).toBe(
+      `cd '${silent}' && bin/dev --port 4000`,
+    );
+    expect(appDirWord('-rf')).toBe('<app dir>');
+    expect(appDirWord('./my-app')).toBe('./my-app');
   });
 
   test('a directory that is not a set-up scaffold is refused before anything boots', async () => {

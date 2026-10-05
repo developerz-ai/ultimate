@@ -51,6 +51,14 @@ describe('migrationNameArg', () => {
     expect(migrationNameArg('--allow-destructive')).toBe('"<a migration name>"');
   });
 
+  // CodeRabbit on #651: JSON writes a newline as `\\n`, which the shell passes on literally — the
+  // pasted line would name a DIFFERENT migration. A control character is the placeholder.
+  test('a control character in the name is the placeholder, not an escape', () => {
+    for (const hostile of ['add\nposts', 'add\tposts', 'add\u007fposts', 'add\u0085posts']) {
+      expect(migrationNameArg(hostile)).toBe('"<a migration name>"');
+    }
+  });
+
   test('a command substitution, a backtick or a history bang is never carried', () => {
     for (const hostile of ['re$(touch pwned)', 're`id`', 're!!']) {
       expect(migrationNameArg(hostile)).toBe('"<a migration name>"');

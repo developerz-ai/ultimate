@@ -90,3 +90,15 @@ test('the re-record line runs the eval suite and names the baseline only in its 
   expect(command?.trim()).toBe('ULTIMATE_EVAL_RECORD=1 x test eval');
   expect(fix).toContain('evals/$(touch pwned).json');
 });
+
+// CodeRabbit on #651: a comment is inert only to the end of its line. `UltimateError` escapes every
+// control character in `fix` at construction (`singleLine`), so a newline in the path never reaches
+// the rendered line raw — pinned here so a change to that guarantee shows up as this failure.
+test('a newline in the baseline path cannot end the comment', () => {
+  const fix = new EvalBaselineInvalidError({ path: 'evals/a\n$(touch pwned).json', problem: 'x' })
+    .fix;
+  expect(fix).not.toContain('\n');
+  expect(fix).toBe(
+    String.raw`ULTIMATE_EVAL_RECORD=1 x test eval   # re-records evals/a\n$(touch pwned).json`,
+  );
+});

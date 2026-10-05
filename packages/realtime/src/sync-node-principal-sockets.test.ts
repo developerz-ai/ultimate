@@ -30,6 +30,7 @@ class FakeWs implements WsLike {
 interface Dial {
   readonly status: number | null;
   readonly code: string | null;
+  readonly fix: string | null;
   readonly ws: FakeWs | null;
 }
 
@@ -75,9 +76,16 @@ const build = (
         },
       )
       .catch(() => undefined);
-    if (response === undefined) return { status: null, code: null, ws: opened };
-    const body = (await response.json().catch(() => null)) as { error?: { code: string } } | null;
-    return { status: response.status, code: body?.error?.code ?? null, ws: opened };
+    if (response === undefined) return { status: null, code: null, fix: null, ws: opened };
+    const body = (await response.json().catch(() => null)) as {
+      error?: { code: string; fix: string };
+    } | null;
+    return {
+      status: response.status,
+      code: body?.error?.code ?? null,
+      fix: body?.error?.fix ?? null,
+      ws: opened,
+    };
   };
   return { node, dial };
 };
@@ -92,6 +100,8 @@ describe('the per-principal socket cap at the upgrade', () => {
     const third = await dial(mallory, '198.51.100.3');
     expect(third.status).toBe(429);
     expect(third.code).toBe('X_SOCKET_LIMIT');
+    expect(third.fix).toContain('defineConfig({ realtime: { maxSocketsPerActor');
+    expect(third.fix).toContain('maxSocketsPerActor on createSyncNode');
     expect((await dial(userActor({ id: 'alice' }), '198.51.100.1')).status).toBeNull();
     await node.stop();
   });
