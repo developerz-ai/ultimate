@@ -189,6 +189,8 @@ The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through 
 | `4xx` (not `429`), a body past the cap, a redirect off the list or past the hop cap | **unavailable** | no restrictions, cached for the run |
 | `5xx`, `429`, a refused connection, the deadline, the run cancelled, a `fetchText` that rejects | **unreachable** | complete disallow — every path on the origin is `X_SCRAPE_ROBOTS_DISALLOWED` — and **not** cached: the next navigation asks again, so the run recovers when the file answers |
 
+`429` is the one row that is **our policy, not the RFC's**: RFC 9309 calls every `4xx` unavailable, `429` included. Ultimate refuses on it because a server rate-limiting the crawler has not said "no rules" — stricter than the RFC requires, never looser.
+
 A hand-written `fetchText` answers the text, `undefined` (no file) or `{ unreachable: '<why>' }`.
 
 Robots patterns are **walked**, not compiled — a wildcard-dense rule from a scraped site is linear rather than catastrophic backtracking on the worker's only thread.

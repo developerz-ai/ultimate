@@ -218,7 +218,7 @@ function isAbsentObject(error: unknown): boolean {
  */
 function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptions): void {
   if (putOptions?.metadata !== undefined || putOptions?.cacheControl !== undefined) {
-    const uri = renderFixShellArg(`s3://${bucket}/${key}`, '<s3-uri>');
+    const uri = renderFixShellArg(`s3://${bucket}/${key}`, "'<s3-uri>'");
     throw new NotImplementedError({
       cause:
         'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet) is not implemented by this driver — drop metadata/cacheControl from put(), or set them out of band with the command in fix',
@@ -234,7 +234,7 @@ function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptio
   throw new NotImplementedError({
     cause:
       'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption) is not implemented by this driver — set it bucket-wide with the command in fix, then drop serverSideEncryption from put()',
-    fix: `aws s3api put-bucket-encryption --bucket ${renderFixShellArg(bucket, '<bucket>')} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
+    fix: `aws s3api put-bucket-encryption --bucket ${renderFixShellArg(bucket, "'<bucket>'")} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
   });
 }
 
@@ -282,7 +282,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         DRIVER_NAME,
         key,
         error,
-        `aws s3api get-bucket-policy --bucket ${renderFixShellArg(options.bucket, '<bucket>')}`,
+        `aws s3api get-bucket-policy --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")}`,
       );
     };
 
@@ -300,7 +300,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         DRIVER_NAME,
         key,
         error,
-        `aws s3api head-object --bucket ${renderFixShellArg(options.bucket, '<bucket>')} --key ${renderFixShellArg(key, '<key>')}`,
+        `aws s3api head-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(key, "'<key>'")}`,
       );
     };
   const present = (key: string): Promise<boolean> =>
@@ -400,7 +400,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           safe,
           error,
           // `isSafeKey` admits `$(…)`, a backtick and `;` — legal key bytes, live shell syntax.
-          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, '<bucket>')} --key ${renderFixShellArg(safe, '<key>')}`,
+          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(safe, "'<key>'")}`,
         );
       }
     },
@@ -434,7 +434,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           DRIVER_NAME,
           prefix,
           error,
-          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, '<bucket>')}${prefix === '' ? '' : ` --prefix ${renderFixShellArg(prefix, '<prefix>')}`}`,
+          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")}${prefix === '' ? '' : ` --prefix ${renderFixShellArg(prefix, "'<prefix>'")}`}`,
         );
       }
       const objects: StorageListEntry[] = [];

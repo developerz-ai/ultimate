@@ -314,6 +314,8 @@ describe('a refusal fix never splices a path into the shell', () => {
     const fix = (refused as StorageError).fix;
     expect(fix).not.toContain('$(');
     expect(fix).toContain(`ls -ld ${root}`);
+    // Quoted: a bare `<the object file>` is a redirection from a file named `the`.
+    expect(fix).toContain("rm -f '<the object file>'");
   });
 
   test('a refused listing screens a hostile disk root', async () => {
@@ -323,5 +325,6 @@ describe('a refusal fix never splices a path into the shell', () => {
     const refused = await catchError(() => onAFile.list());
     expect(codeOf(refused)).toBe('X_STORAGE_LIST_FAILED');
     expect((refused as StorageError).fix).not.toContain('$(');
+    expect((refused as StorageError).fix).toContain("ls -ld '<the disk root>'");
   });
 });

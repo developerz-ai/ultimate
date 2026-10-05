@@ -171,6 +171,24 @@ describe('createSession inherits, it never extends', () => {
     );
   });
 
+  test.each([
+    ['createdAt', { createdAt: new Date(Number.NaN) }],
+    ['absoluteExpiresAt', { absoluteExpiresAt: new Date('not a date') }],
+  ])(
+    'an Invalid Date for %s is refused above the write, never stored',
+    async (field, inherited) => {
+      const { adapter, runtime } = fresh();
+      const thrown = await createSession(runtime, { userId: 'alice', ...inherited }).catch(
+        (error: unknown) => error,
+      );
+      if (!(thrown instanceof AuthError)) expect.unreachable('an Invalid Date reached the store');
+      expect(thrown.code).toBe('X_CONFIG_INVALID');
+      expect(thrown.cause).toContain(field);
+      // `now >= NaN` is false: a stored Invalid Date ceiling is a session that never expires.
+      expect(await adapter.listSessions('alice')).toEqual([]);
+    },
+  );
+
   test('an inherited earlier ceiling is kept as it is', async () => {
     const { runtime } = fresh();
     const issued = await createSession(runtime, {

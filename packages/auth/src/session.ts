@@ -7,7 +7,7 @@
 import type { Clock } from '@ultimat3/core';
 import { readCookie } from '@ultimat3/core';
 import type { AuthSession, SessionStore } from './adapter';
-import { sessionExpired, sessionUnknown } from './errors';
+import { AuthError, sessionExpired, sessionUnknown } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
 import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 
@@ -101,6 +101,29 @@ export interface CreateSessionInput {
   readonly absoluteExpiresAt?: Date | undefined;
 }
 
+/**
+ * An inherited instant that is not one. `X_CONFIG_INVALID`, core's code borrowed as
+ * `authPolicyNumberInvalid` borrows it: a caller handed this package a value it cannot honour. An
+ * Invalid Date ceiling is not a short session but one that never ends — `now >= NaN` is false.
+ */
+const inheritedInstantInvalid = (field: 'createdAt' | 'absoluteExpiresAt'): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause: `createSession({ ${field} }) is an Invalid Date, and stored as a ceiling it would never expire, because every comparison against NaN is false`,
+    fix: `createSession(runtime, { userId, createdAt: session.createdAt, absoluteExpiresAt: session.absoluteExpiresAt }) with the Dates read off a live session, or omit both for a new login`,
+    meta: { field },
+  });
+
+const inheritedMs = (
+  field: 'createdAt' | 'absoluteExpiresAt',
+  value: Date | undefined,
+): number | undefined => {
+  if (value === undefined) return undefined;
+  const ms = value.getTime();
+  if (!Number.isFinite(ms)) throw inheritedInstantInvalid(field);
+  return ms;
+};
+
 /** `<id>.<secret>`: the id is the row key, the secret is the half that is hashed. */
 export function parseSessionToken(token: string): { id: string; secret: string } | null {
   const dot = token.indexOf('.');
@@ -113,16 +136,20 @@ export async function createSession(
   input: CreateSessionInput,
 ): Promise<IssuedSession> {
   const now = runtime.clock.now();
+  // Screened ABOVE the write: `Math.min(NaN, …)` is NaN, so an Invalid Date stored a ceiling
+  // nothing ever reaches.
+  const inheritedBorn = inheritedMs('createdAt', input.createdAt);
+  const inheritedCeiling = inheritedMs('absoluteExpiresAt', input.absoluteExpiresAt);
   const id = randomToken(12);
   const secret = randomToken(32);
-  const born = Math.min(input.createdAt?.getTime() ?? now.getTime(), now.getTime());
+  const born = Math.min(inheritedBorn ?? now.getTime(), now.getTime());
   const ceiling = born + runtime.policy.absoluteTtlMs;
   const session = await runtime.store.createSession({
     id,
     userId: input.userId,
     tokenHash: sha256Hex(secret),
     createdAt: new Date(born),
-    absoluteExpiresAt: new Date(Math.min(input.absoluteExpiresAt?.getTime() ?? ceiling, ceiling)),
+    absoluteExpiresAt: new Date(Math.min(inheritedCeiling ?? ceiling, ceiling)),
     lastSeenAt: now,
     ip: input.ip ?? null,
     userAgent: input.userAgent ?? null,

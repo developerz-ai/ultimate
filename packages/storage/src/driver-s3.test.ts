@@ -427,7 +427,8 @@ describe('a refusal fix never splices a key, a prefix or a bucket into the shell
     const refused = (await catchError(() => driver.delete(key))) as StorageError;
     expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
     expect(refused.fix).not.toContain('$(');
-    expect(refused.fix).toContain('aws s3api delete-object --bucket b --key <key>');
+    // Quoted: a bare `<key>` is read by the shell as a redirection from a file named `key`.
+    expect(refused.fix).toContain("aws s3api delete-object --bucket b --key '<key>'");
   });
 
   test('a refused listing screens the prefix', async () => {
@@ -440,6 +441,6 @@ describe('a refusal fix never splices a key, a prefix or a bucket into the shell
     const refused = (await catchError(() => driver.list({ prefix: 'org/`id`;' }))) as StorageError;
     expect(codeOf(refused)).toBe('X_STORAGE_LIST_FAILED');
     expect(refused.fix).not.toContain('`id`');
-    expect(refused.fix).toContain('aws s3api list-objects-v2 --bucket b --prefix <prefix>');
+    expect(refused.fix).toContain("aws s3api list-objects-v2 --bucket b --prefix '<prefix>'");
   });
 });

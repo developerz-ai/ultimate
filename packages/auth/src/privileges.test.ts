@@ -9,7 +9,7 @@ import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
 import { updatePrivileges } from './privileges';
-import { createSession, type IssuedSession } from './session';
+import { createSession, type IssuedSession, type SessionRuntime } from './session';
 
 const START = 1_700_000_000_000;
 
@@ -241,5 +241,44 @@ describe('a privilege change on a session that is already gone', () => {
     expect(String(thrown)).toContain('X_UNAUTHENTICATED');
     // The lifted cookies the password change was made to kill are dead all the same.
     expect(await adapter.listSessions('alice')).toEqual([]);
+  });
+});
+
+/**
+ * A login that lands while the password change is in flight — after the early sweep, before the
+ * rotation finishes — was minted under the OLD password and must not survive the change.
+ */
+describe('a session minted mid-change does not outlive the password change', () => {
+  class InFlightLogin extends MemoryAdapter {
+    runtime: SessionRuntime | undefined;
+    override async deleteSession(id: string): Promise<boolean> {
+      const runtime = this.runtime;
+      this.runtime = undefined;
+      // The rotation's claim is the step between the two sweeps: a concurrent login lands here.
+      if (runtime !== undefined) await createSession(runtime, { userId: 'alice' });
+      return await super.deleteSession(id);
+    }
+  }
+
+  test('the final sweep ends it, keeps the replacement, and counts both sweeps', async () => {
+    const adapter = new InFlightLogin();
+    const auth = defineAuth({ adapter, clock: frozenClock(START) });
+    await adapter.createUser({
+      id: 'alice',
+      email: 'alice@corp.test',
+      passwordHash: 'old',
+      orgId: null,
+      roles: [],
+      createdAt: new Date(START),
+    });
+    const own = await createSession(auth.sessions, { userId: 'alice' });
+    await createSession(auth.sessions, { userId: 'alice' });
+    adapter.runtime = auth.sessions;
+
+    const result = await updatePrivileges(auth, 'alice', { passwordHash: 'new' }, own.session);
+
+    const live = await adapter.listSessions('alice');
+    expect(live.map((session) => session.id)).toEqual([result.session?.session.id ?? '']);
+    expect(result.sessionsRevoked).toBe(2);
   });
 });

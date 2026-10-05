@@ -82,6 +82,12 @@ export async function updatePrivileges(
     own !== undefined && auth.sessions.policy.rotateOnPrivilegeChange
       ? await rotateSession(auth.sessions, own)
       : undefined;
+  // And once more AFTER it: a login that landed between the early sweep and the rotation was minted
+  // under the old password too. The early sweep stays — it is what still runs when rotation
+  // refuses a session that is already gone — and this one keeps only the replacement.
+  if (credentialChanged && own !== undefined) {
+    sessionsRevoked += await auth.adapter.deleteOtherSessions(userId, issued?.session.id ?? own.id);
+  }
   if (issued === undefined) return { user, changed, sessionsRevoked };
   return {
     user,
