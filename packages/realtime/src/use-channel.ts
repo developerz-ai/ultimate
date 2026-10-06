@@ -1,9 +1,10 @@
 // A declared channel, held by a component. Every holder of one topic on the page shares ONE
-// membership on the page socket; its `records` land in the store (read them with `useRecord` /
-// `useQuery`), and only `events` and presence reach the handlers given here.
+// membership on the page socket — the page runtime's, reached off the page, never bundled here;
+// its `records` land in the store (read them with `useRecord` / `useQuery`), and only `events`
+// and presence reach the handlers given here.
 
 import type { ChannelHandlers, ChannelRef, ChannelState } from './client-channels';
-import { pageSocket } from './page-socket';
+import { installedPage } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import type { PresenceMember } from './sync-protocol';
 
@@ -32,7 +33,9 @@ export function useChannel<K extends string>(
       [Symbol.dispose]: nothing,
     });
   }
-  const membership = pageSocket('useChannel').holdChannel(declared, params, handlers);
+  const membership = installedPage('useChannel')
+    .services.socket('useChannel')
+    .holdChannel(declared, params, handlers);
   const [version, setVersion] = signal(0);
   const off = membership.onChange(() => setVersion(version() + 1));
   const read = (): ChannelState => {
@@ -70,16 +73,18 @@ export function usePresence<K extends string>(
   }
   const [version, setVersion] = signal(0);
   let members = new Map<string, PresenceMember>();
-  const membership = pageSocket('usePresence').holdChannel(declared, params, {
-    onPresence: (event) => {
-      if (event.presence === 'sync') members = new Map();
-      for (const member of event.members) {
-        if (event.presence === 'leave') members.delete(member.id);
-        else members.set(member.id, member);
-      }
-      setVersion(version() + 1);
-    },
-  });
+  const membership = installedPage('usePresence')
+    .services.socket('usePresence')
+    .holdChannel(declared, params, {
+      onPresence: (event) => {
+        if (event.presence === 'sync') members = new Map();
+        for (const member of event.members) {
+          if (event.presence === 'leave') members.delete(member.id);
+          else members.set(member.id, member);
+        }
+        setVersion(version() + 1);
+      },
+    });
   const read = (): readonly PresenceMember[] => {
     version();
     return [...members.values()];

@@ -1,8 +1,8 @@
 // The page socket, as four getters: whether it is up, when it redials, and whether a newer build
 // is live. Getters, never a snapshot, so a read inside a tracking scope stays live. Asking opens
-// the socket — this hook IS a question about it.
+// the socket — this hook IS a question about it — and the socket is the page runtime's.
 
-import { pageSocket } from './page-socket';
+import { installedPage } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 
 export interface Connection extends Disposable {
@@ -33,7 +33,7 @@ const SERVER_RENDER: Connection = Object.freeze({
 export function useConnection(): Connection {
   const signal = signalFor('useConnection');
   if (isServerRender()) return SERVER_RENDER;
-  const client = pageSocket('useConnection');
+  const client = installedPage('useConnection').services.socket('useConnection');
   const [version, setVersion] = signal(0);
   const release = client.onStatus(() => setVersion(version() + 1));
   return {

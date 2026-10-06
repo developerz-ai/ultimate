@@ -29,6 +29,12 @@ export interface IslandCollectorInput {
   readonly hydrate: HydrateStrategy;
   /** Specifier → built chunk URL. Identity in dev and in tests; the build supplies the real one. */
   readonly resolve?: (src: string) => string;
+  /**
+   * Which islands (by `src`, as the page wrote it) must not paint their server markup before they
+   * mount (`island-hold.ts`). The caller's to answer — the renderer cannot see what an island's
+   * graph imports. Absent, nothing is held.
+   */
+  readonly hold?: (src: string) => boolean;
 }
 
 /**
@@ -72,7 +78,8 @@ export function createIslandCollector(input: IslandCollectorInput): IslandCollec
 
       const bag = checkIslandProps(props, spec.propKeys, input.file, spec.moduleId);
       const instance = directives.filter((d) => d.moduleId === spec.moduleId).length + 1;
-      const directive = buildDirective(spec, strategy, entry, `${spec.moduleId}-${instance}`, bag);
+      const built = buildDirective(spec, strategy, entry, `${spec.moduleId}-${instance}`, bag);
+      const directive = input.hold?.(spec.src) === true ? { ...built, hold: true } : built;
       directives.push(directive);
       return directive;
     },

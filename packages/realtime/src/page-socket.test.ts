@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { pageClient, rescope } from '@ultimat3/core/page';
 import { FakeSocket, resetPage, signal } from './hooks-fixture';
+import { installPageRuntime } from './page-runtime';
 import { hasPageSocket, pageSocket, resetPageSocket } from './page-socket';
 import { BOOT_KEY, type BootHost, pageRealtime } from './page-store';
 import { installRealtime } from './reactivity';
@@ -58,8 +59,10 @@ afterEach(() => {
   resetPage();
 });
 
+/** A page as the bootstrap leaves it: the page runtime installed, then this bundle's signal. */
 function browserPage(sync: typeof TARGET | undefined): void {
   resetPage();
+  installPageRuntime();
   installRealtime(sync === undefined ? { signal } : { signal, sync });
 }
 

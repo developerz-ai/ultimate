@@ -11,13 +11,14 @@ import { join } from 'node:path';
 import { RECORD_ENV, resetEvals, resetPrompts } from '@ultimat3/ai';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { resetAppLoad } from './app-load';
+import { processRoot } from './process-root-fixture';
 import type { VerifyContext } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const COVERED = join(import.meta.dir, '..', '.eval-covered-fixture');
-const BARE = join(import.meta.dir, '..', '.eval-bare-fixture');
+const COVERED = processRoot(join(import.meta.dir, '..', '.eval-covered-fixture'));
+const BARE = processRoot(join(import.meta.dir, '..', '.eval-bare-fixture'));
 
 const promptModule = (id: string): string => `import { definePrompt } from '@ultimat3/ai';
 

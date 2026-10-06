@@ -152,6 +152,7 @@ describe('unit · a sealed column reaches no socket and no bus', () => {
       txid: '2',
       orgId: null,
       at: 1_000,
+      write: null,
     };
     ws.sent.length = 0;
     expect(await registry.deliver(change)).toBe(1);

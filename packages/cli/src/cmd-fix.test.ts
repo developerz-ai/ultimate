@@ -9,8 +9,9 @@ import { REQUIRED_BUN } from './app-root';
 import { fixCommand } from './cmd-fix';
 import type { CommandContext } from './command';
 import { msg } from './messages';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.cmd-fix-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.cmd-fix-fixture'));
 
 const FILES: Readonly<Record<string, string>> = {
   'app.config.ts': "export const config = { name: 'fixture' };\n",

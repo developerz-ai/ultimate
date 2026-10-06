@@ -11,10 +11,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resetAuthLimiters } from '@ultimat3/auth';
 import { registeredTiers } from '@ultimat3/cache';
+import { processRoot } from './process-root-fixture';
 import { resolveServices } from './runtime-bindings';
 import { startServices } from './runtime-services';
 
-const ROOT = join(import.meta.dir, '..', '.services-root-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.services-root-fixture'));
 const STATE = mkdtempSync(join(tmpdir(), 'x-state-elsewhere-'));
 
 afterAll(() => {

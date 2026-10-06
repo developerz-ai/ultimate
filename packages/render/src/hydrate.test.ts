@@ -243,11 +243,16 @@ describe('emitIslandProps', () => {
 describe('HYDRATE_RUNTIME_BODIES', () => {
   const STRATEGIES = ['idle', 'visible', 'interaction'] as const;
 
-  /** Every non-empty subset of the three strategies, as the directives a page would carry. */
+  /**
+   * Every non-empty subset of the three strategies, as the directives a page would carry — once
+   * with no island held and once with every one held (`island-hold.ts`).
+   */
   const subsets = (): readonly (readonly IslandDirective[])[] =>
-    Array.from({ length: 2 ** STRATEGIES.length - 1 }, (_unused, index) =>
-      STRATEGIES.filter((_s, bit) => ((((index + 1) as number) >> bit) & 1) === 1).map((strategy) =>
-        directive({ strategy }),
+    [false, true].flatMap((hold) =>
+      Array.from({ length: 2 ** STRATEGIES.length - 1 }, (_unused, index) =>
+        STRATEGIES.filter((_s, bit) => ((((index + 1) as number) >> bit) & 1) === 1).map(
+          (strategy) => directive({ strategy, hold }),
+        ),
       ),
     );
 

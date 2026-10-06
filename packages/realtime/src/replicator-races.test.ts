@@ -135,6 +135,7 @@ const change = (position: number): ChangeEvent => ({
   txid: String(position),
   orgId: 'o1',
   at: 0,
+  write: null,
 });
 
 const rig = (transport: Transport = new InProcessTransport()) => {

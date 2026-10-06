@@ -7,10 +7,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and Bun.spawn take one already joined.
 import { join } from 'node:path';
+import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve the way the framework's own
 // sources do; a dot-prefixed name keeps it out of every workspace glob.
-const ROOT = join(import.meta.dir, '..', '.app-manifest-jobs-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.app-manifest-jobs-fixture'));
 
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'jobs-fixture-app', version: '1.0.0' }),

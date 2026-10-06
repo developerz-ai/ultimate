@@ -6,8 +6,9 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; fixtures are joined to this file's directory.
 import { join } from 'node:path';
 import { loadAppRuntime } from './app-runtime';
+import { processRoot } from './process-root-fixture';
 
-const FIXTURES = join(import.meta.dir, '..', '.app-runtime-fixture');
+const FIXTURES = processRoot(join(import.meta.dir, '..', '.app-runtime-fixture'));
 
 const fixture = async (name: string, files: Readonly<Record<string, string>>): Promise<string> => {
   const root = join(FIXTURES, name);

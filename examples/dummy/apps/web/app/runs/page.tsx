@@ -62,8 +62,21 @@ export const config = defineRoute({
    * registry is the new part. `X_SOCKET_LIMIT` (the per-principal socket cap) and the `actor` scope
    * of `X_SUBSCRIPTION_LIMIT`, each with the fix a refused client renders, plus 1b's retry-after
    * wait on a rate-limited subscribe.
+   * raised 131kb → 162.5kb (plan 101 sweep 9, #505). measured: 164,827 B (2026-10-05;
+   * `x build --target static`, which now weighs this page AS SERVED — scoped, with its page boot),
+   * against 166,400. The document: the run console 73,444, the page boot 68,980 (now carrying the
+   * page runtime), the client router 19,940, the update banner 710, the inline runtime 1,753.
+   * why: the runtime left the island (111,554 → 73,444 B) for the boot, once per page, and the
+   * served document went 171,244 → 164,827 B (−6,417). 131kb never counted the boot: the static
+   * step rendered this page unscoped (an interim 146kb measured 148,220 B the same way, the runtime
+   * chunk charged in the boot's place). +1,573 B of headroom is Bun's tree-shaker flap, as above.
+   * raised 162.5kb → 164kb (plan 101 sweep 9, #506). measured: 166,600 B (2026-10-05;
+   * `x build --target static`), against 167,936. why: +794 B for the offline reload's first paint,
+   * as on `/feed` — the held-island runtime (+417 B), `catchUp`'s let-go after a mount it did not
+   * flush (+59 B) and `holdFirstPaint` in the run console (+318 B). The other +979 B is the page
+   * boot (68,980 → 69,531) and the console's own growth from the rest of sweep 9.
    */
-  budget: { js: '131kb' },
+  budget: { js: '164kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

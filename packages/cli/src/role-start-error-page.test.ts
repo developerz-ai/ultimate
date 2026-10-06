@@ -14,12 +14,13 @@ import { join } from 'node:path';
 import type { Route } from '@ultimat3/http';
 import { clearRoutes } from '@ultimat3/render';
 import { errorPageSource } from './error-pages';
+import { processRoot } from './process-root-fixture';
 import type { RunningRoles } from './role-start';
 import { selectRoles, startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
 import { appRoutes } from './runtime-render';
 
-const ROOT = join(import.meta.dir, '..', '.roles-error-page-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.roles-error-page-fixture'));
 
 let running: RunningRoles | undefined;
 

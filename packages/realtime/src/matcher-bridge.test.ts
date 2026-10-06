@@ -27,6 +27,7 @@ const update: ChangeEvent = {
   txid: '9',
   orgId: 'o1',
   at: 1_000,
+  write: null,
 };
 
 const shape: SubscriptionShape = {
@@ -147,6 +148,7 @@ describe('a patch carries the result set\u2019s columns, never the table\u2019s'
     txid: '11',
     orgId: 'o1',
     at: 1_000,
+    write: null,
   });
 
   test('narrowRow keeps the projection and drops the rest', () => {

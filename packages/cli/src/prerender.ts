@@ -19,7 +19,7 @@ import { renderStatic } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
-import { measureDocumentJs, writeBuildStats } from './budgets';
+import { measureDocumentJs, routeStatsRow, writeBuildStats } from './budgets';
 import { errorPageDocument, STATIC_ERROR_PAGE } from './error-pages';
 import { PrerenderLoadFailedError } from './errors';
 import { FAVICON_PATH, faviconBytes } from './favicon';
@@ -33,8 +33,10 @@ import { loadSpeculation, pageSpeculation } from './page-speculation';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import type { PrerenderedPage, PrerenderReport } from './prerender-report';
+import type { ServedMeasure } from './prerender-served';
+import { servedMeasure } from './prerender-served';
 import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
-import { routeDocument } from './runtime-render';
+import { routeDocument, servedDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
 import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
@@ -258,17 +260,25 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const measure = await measureScope({ origin, buildId });
   // Started on the first route that needs weighing, and released however the loop ends.
   const database = measureDatabase(options.root);
+  const documentOptions = {
+    resolveIsland: (file: string) => islands.resolverFor(file),
+    themeHead: theme.head,
+    ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
+    origin,
+    ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
+    ...(pwa === undefined
+      ? {}
+      : { pwaHead: (locale: string) => pwa.headFor(locale) + (swHead ?? '') }),
+  };
   const render = (entry: RouteEntry, data: { url: string; params: Record<string, string> }) =>
-    routeDocument(entry, data, {
-      resolveIsland: (file: string) => islands.resolverFor(file),
-      themeHead: theme.head,
-      ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
-      origin,
-      ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
-      ...(pwa === undefined
-        ? {}
-        : { pwaHead: (locale: string) => pwa.headFor(locale) + (swHead ?? '') }),
-    });
+    routeDocument(entry, data, documentOptions);
+  // The weigh-only branch measures the document a request is SERVED (`prerender-served.ts`):
+  // composed on the first route that needs it, so a build weighing none builds no page boot.
+  let weighing: Promise<ServedMeasure> | undefined;
+  const served = (): Promise<ServedMeasure> => {
+    weighing ??= servedMeasure(options.root, buildId, islands);
+    return weighing;
+  };
   const document = (
     locale: string,
     entry: RouteEntry,
@@ -303,16 +313,19 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
           let row: RouteStats | undefined;
           for (const { path, params } of plan.paths) {
             const data = { url: new URL(path, origin).href, params };
-            const html = await withAppUrl(origin, () => measure.run(() => render(entry, data)));
-            const measured = await measureDocumentJs(html, options.out);
+            const as = await served();
+            const html = await withAppUrl(origin, () =>
+              measure.run(() =>
+                servedDocument(entry, data, measure.actor, {
+                  ...documentOptions,
+                  ...as.document,
+                  buildId,
+                }),
+              ),
+            );
+            const measured = await measureDocumentJs(html, options.out, as.measure);
             if (row !== undefined && measured.jsBytes <= row.jsBytes) continue;
-            const chain = heaviestSource(islands, measured.entries);
-            row = {
-              path: entry.path,
-              jsBytes: measured.jsBytes,
-              frameworkJsBytes: measured.frameworkBytes,
-              ...(chain === undefined ? {} : { heaviestChain: chain }),
-            };
+            row = routeStatsRow(entry.path, measured, heaviestSource(islands, measured.entries));
           }
           if (row !== undefined) routes.push(row);
         } catch (error) {
@@ -382,14 +395,8 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
           bytes,
           assets: measured.entries.map((entry) => entry.url),
         });
-        const chain = heaviestSource(islands, measured.entries);
         if (heaviest !== undefined && heaviest.jsBytes >= measured.jsBytes) continue;
-        heaviest = {
-          path: entry.path,
-          jsBytes: measured.jsBytes,
-          frameworkJsBytes: measured.frameworkBytes,
-          ...(chain === undefined ? {} : { heaviestChain: chain }),
-        };
+        heaviest = routeStatsRow(entry.path, measured, heaviestSource(islands, measured.entries));
       }
       if (heaviest !== undefined) routes.push(heaviest);
     }

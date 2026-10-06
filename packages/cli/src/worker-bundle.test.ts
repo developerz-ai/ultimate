@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { processRoot } from './process-root-fixture';
 import {
   buildPageBoot,
   buildSyncWorker,
@@ -17,7 +18,7 @@ import {
   syncWorkerRoutes,
 } from './worker-bundle';
 
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'worker');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'worker'));
 const ENTRY = join(ROOT, 'sync-worker.ts');
 const WORKER = `const scope = self as unknown as { onconnect: ((event: MessageEvent) => void) | null };
 scope.onconnect = (event) => { event.ports[0]?.postMessage('ready'); };

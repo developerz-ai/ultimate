@@ -9,9 +9,12 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { measureDocumentJs } from './budgets';
+import { processRoot } from './process-root-fixture';
 
 const dirFor = (name: string): string =>
-  join(tmpdir(), `x-budget-shared-${Bun.hash(`${import.meta.path}:${name}`).toString(16)}`);
+  processRoot(
+    join(tmpdir(), `x-budget-shared-${Bun.hash(`${import.meta.path}:${name}`).toString(16)}`),
+  );
 
 const SHARED = `var p="${'u'.repeat(20_000)}";export{p as a};`;
 const entry = (label: string): string =>

@@ -21,8 +21,13 @@ import { from, query, registerQueries, resetRegistry, runQuery, t } from '@ultim
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.prerender-actor-fixture');
+// One root per PROCESS (`processRoot`): two processes run this file at once in one checkout (two
+// gate runs, or two agents' `bun test`), and on one fixed root a peer's `afterEach` rm took the
+// directory away mid-render (ENOENT) or its export landed in this run's `static/` first
+// (X_BUILD_OUT_UNSAFE).
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-actor-fixture'));
 
 const staticRoute = defineRoute({
   render: 'static',

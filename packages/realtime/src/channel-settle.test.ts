@@ -217,6 +217,7 @@ const change = (seq: number, over: Partial<ChangeEvent> = {}): ChangeEvent => ({
   txid: String(seq),
   orgId: 'o1',
   at: 0,
+  write: null,
   ...over,
 });
 

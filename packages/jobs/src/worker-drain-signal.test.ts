@@ -131,10 +131,12 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
     await drain('SIGTERM');
     const tookMs = systemClock.monotonic() - startedAt;
 
-    // Never told, the drain sat on it for the whole budget and abandoned it; told at SIGTERM, it
-    // was cut short with budget to spare. Told at the cut-off: after half, before all of it.
+    // Told at SIGTERM it would be cut short at once: the cut-off is never EARLY, because a timer
+    // only ever fires late, so this lower bound holds on any machine. There is no upper bound on
+    // the wall clock — a loaded CI runner measured 325.8 ms against the 300 ms budget (#663) — and
+    // none is needed: "finished, not abandoned at the deadline" is `processed: 1` below, since an
+    // abandoned run is handed back and never counted.
     expect(tookMs).toBeGreaterThanOrEqual(DEADLINE_MS / 2 - 5);
-    expect(tookMs).toBeLessThan(DEADLINE_MS);
     const stats = await app.worker.stats();
     expect(stats.state).toBe('stopped');
     expect(stats.processed).toBe(1);

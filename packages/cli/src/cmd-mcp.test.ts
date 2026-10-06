@@ -17,11 +17,12 @@ import type { Runner } from './exec';
 import { createDevMcpServer } from './mcp-host';
 import { renderJson } from './output';
 import { parseArgs } from './parse';
+import { processRoot } from './process-root-fixture';
 import { SPECS } from './registry';
 
 // Under `packages/cli/` so the fixture resolves `@ultimat3/*` through the same tsconfig paths the
 // framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const ROOT = join(import.meta.dir, '..', '.mcp-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.mcp-fixture'));
 
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'mcp-fixture', version: '2.1.0' }),

@@ -17,11 +17,12 @@ import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';
+import { processRoot } from './process-root-fixture';
 import type { ThrownShape } from './thrown-by-fixture';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const ROOT = join(import.meta.dir, '..', '.app-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.app-fixture'));
 
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'fixture-app', version: '2.1.0' }),
@@ -256,7 +257,7 @@ async function rejectedBy(call: () => Promise<unknown>): Promise<ThrownShape> {
 // The manifest's `app.version` IS the semver compatibility gate, so every way of not knowing the
 // app's identity has to fail here — a default would publish a contract the app never claimed.
 describe('unit · app identity', () => {
-  const IDENTITY_ROOT = join(import.meta.dir, '..', '.identity-fixture');
+  const IDENTITY_ROOT = processRoot(join(import.meta.dir, '..', '.identity-fixture'));
 
   const withPackageJson = async (
     contents: string | undefined,

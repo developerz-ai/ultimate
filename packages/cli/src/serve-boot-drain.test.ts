@@ -12,10 +12,11 @@ import {
   readinessGraceMs,
   resetLifecycle,
 } from '@ultimat3/core';
+import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
 import { lifecycleForRole } from './serve-boot';
 
-const ROOT = join(import.meta.dir, '..', '.serve-drain-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.serve-drain-fixture'));
 
 afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });

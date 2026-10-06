@@ -342,9 +342,13 @@ export class RecordStore implements RecordSink {
     this.#touched = result.touched;
   }
 
-  /** The one way an overlay leaves: its entry and the digest that named it go together. */
+  /**
+   * The one way an overlay leaves: its entry, the digest that named it and its server wait go
+   * together. A wait left behind ran for its whole bound after a later settle removed the overlay.
+   */
   #forget(key: string): boolean {
     this.#names.forget(key);
+    this.#wait.forget(key);
     return this.#overlays.delete(key);
   }
 

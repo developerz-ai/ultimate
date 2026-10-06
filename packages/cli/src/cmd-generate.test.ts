@@ -17,6 +17,7 @@ import { GENERATORS, generateCommand, writeFiles } from './cmd-generate';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
+import { processRoot } from './process-root-fixture';
 import { SPECS } from './registry';
 import type { GeneratedFile } from './templates';
 
@@ -212,7 +213,7 @@ describe('unit · x g writes inside the app and nowhere else', () => {
 describe('unit · x g keeps the manifest off a partial load', () => {
   // Under `packages/cli/` so the scaffold's `@ultimat3/*` imports resolve through the same tsconfig
   // paths the framework's own sources use; a dot-prefixed name stays out of every workspace glob.
-  const ROOT = join(import.meta.dir, '..', '.generate-fixture');
+  const ROOT = processRoot(join(import.meta.dir, '..', '.generate-fixture'));
   const BROKEN = 'apps/web/app/broken.ts';
   const COMMITTED = '{"buildId":"already-committed"}\n';
 
@@ -274,7 +275,7 @@ describe('unit · x g keeps the manifest off a partial load', () => {
 // invented a file the repo now has to keep in sync forever — and it announced a write the count
 // beside it did not include, so `x g island` said "wrote 2 file(s)" over three printed lines.
 describe('unit · x g refreshes a manifest and never invents one', () => {
-  const ROOT = join(import.meta.dir, '..', '.generate-manifest-fixture');
+  const ROOT = processRoot(join(import.meta.dir, '..', '.generate-manifest-fixture'));
 
   const contextFor = (name: string): CommandContext => ({
     args: {

@@ -25,6 +25,7 @@ const envelope = (
     txid: '1',
     orgId: null,
     at: 0,
+    write: null,
   },
   seq,
   producer,
@@ -118,10 +119,11 @@ describe('the write a change belongs to crosses the bus', () => {
   test('a digest survives the decode; anything else is dropped rather than refused', () => {
     const digest = 'a'.repeat(32);
     expect(parseChange(payload(digest))?.write).toBe(digest);
-    for (const malformed of ['likePost:raw-key', 7, null]) {
+    // Dropped to `null`, the one spelling of "no keyed write": `ChangeEvent.write` is required.
+    for (const malformed of ['likePost:raw-key', 7, null, undefined]) {
       const change = parseChange(payload(malformed));
       expect(change?.entity).toBe('posts');
-      expect(Object.hasOwn(change ?? {}, 'write')).toBe(false);
+      expect(change?.write).toBeNull();
     }
   });
 });

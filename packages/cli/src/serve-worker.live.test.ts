@@ -6,9 +6,10 @@ import { afterAll, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
+import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
 
-const ROOT = join(import.meta.dir, '..', '.serve-worker-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.serve-worker-fixture'));
 
 afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });

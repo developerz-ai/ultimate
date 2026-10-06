@@ -20,10 +20,11 @@ import { msg } from './messages';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
 import { registerPolicyFixture } from './policy-fixture';
+import { processRoot } from './process-root-fixture';
 import type { ThrownShape } from './thrown-by-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.policy-fixture');
-const BROKEN = join(import.meta.dir, '..', '.policy-broken-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.policy-fixture'));
+const BROKEN = processRoot(join(import.meta.dir, '..', '.policy-broken-fixture'));
 const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
 
 const contextFor = (

@@ -8,9 +8,10 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { resetHttpConfig } from '@ultimat3/http';
 import { helmDrainOverrides, readHelmDrainOverrides } from './cmd-deploy-drain';
+import { processRoot } from './process-root-fixture';
 
 // Inside the package, so the fixture's `@ultimat3/*` imports resolve (gitignored).
-const ROOT = join(import.meta.dir, '..', '.deploy-drain-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.deploy-drain-fixture'));
 
 afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });

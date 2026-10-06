@@ -35,8 +35,8 @@ export class RebaseConflictError extends RealtimeError {
 }
 
 /**
- * A hook ran IN A BROWSER in an island bundle whose bootstrap never called `installRealtime()`.
- * Per BUNDLE, not per page: every island carries its own copy of solid-js, so the signal factory a
+ * A hook ran IN A BROWSER in an island bundle whose bootstrap never called `installRealtime()`,
+ * or before the page runtime (`page-runtime.ts`, carried by the page boot) was installed. Per BUNDLE, not per page: every island carries its own copy of solid-js, so the signal factory a
  * hook renders through has to be that island's own — the page-wide store cannot hold one.
  *
  * A server render is deliberately not this error: no DOM means no reactive runtime to install,
@@ -46,8 +46,8 @@ export class RealtimeUninstalledError extends RealtimeError {
   constructor(args: { hook: string }) {
     super({
       code: 'X_REALTIME_UNINSTALLED',
-      cause: `${args.hook}() ran in a browser island whose bundle never called installRealtime()`,
-      fix: "x build   # the island bootstrap installs it; a hand-built island calls installRealtime({ signal: createSignal }) from '@ultimat3/realtime' before its first render",
+      cause: `${args.hook}() ran in a browser island whose bundle never called installRealtime(), or on a page whose runtime (@ultimat3/realtime/boot) never loaded`,
+      fix: "x build   # the island bootstrap installs it; a hand-built island imports '@ultimat3/realtime/boot' (the page runtime) and calls installRealtime({ signal: createSignal }) from '@ultimat3/realtime' before its first render",
     });
   }
 }

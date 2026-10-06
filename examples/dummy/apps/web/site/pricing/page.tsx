@@ -106,8 +106,12 @@ export const config = defineRoute({
    * contact form's `rpc` titles any refusal from the problem body and waits the server's stated
    * `Retry-After` on a 429/503, without shipping `@ultimat3/http` (whose undeclared `sideEffects`
    * had carried 11.5 kB of server code into this island until this sweep declared them).
+   * raised 23kb → 24kb (plan 101 sweep 9). measured: 23,611 B (2026-10-05;
+   * `x build --target static`), against 24,576. why: +59 B in the inline runtime — `catchUp` lets
+   * go of a press after a mount it did not flush (a held island's first click ran twice, #506); the
+   * other +223 B is the contact island's growth from the rest of sweep 9, measured here.
    */
-  budget: { js: '23kb' },
+  budget: { js: '24kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

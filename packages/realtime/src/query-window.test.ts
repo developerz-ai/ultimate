@@ -158,6 +158,7 @@ const change = (position: number, after: Row): ChangeEvent => ({
   txid: String(position),
   orgId: 'o1',
   at: 1_000,
+  write: null,
 });
 
 describe('the gap repair, end to end', () => {

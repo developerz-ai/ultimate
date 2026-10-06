@@ -10,13 +10,17 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
+import { describeRoutes, formatBytes, parseByteBudget, themeScriptBody } from '@ultimat3/render';
+import type { ChargedFile } from './budgets-charged';
+import { chargedClause, chargedMeta, heaviestFirst } from './budgets-charged';
 import {
-  describeRoutes,
-  formatBytes,
-  parseByteBudget,
-  SPECULATION_RULES_TYPE,
-  themeScriptBody,
-} from '@ultimat3/render';
+  artifactPath,
+  carriesJson,
+  ENTRY_ATTR,
+  loadedBy,
+  SCRIPT_TAG,
+  SRC_ATTR,
+} from './budgets-scan';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
@@ -41,6 +45,13 @@ export interface RouteStats {
   readonly frameworkJsBytes?: number;
   /** Import chain that pulled the heaviest module into this route. */
   readonly heaviestChain?: readonly string[];
+  /**
+   * Every app file `jsBytes` charged, heaviest first, at the URL the browser fetches. Optional
+   * for `frameworkJsBytes`' reason: a row from an older build has none, and absent is not empty.
+   */
+  readonly charged?: readonly ChargedFile[];
+  /** The app's inline script bytes inside `jsBytes` — the part no file in `charged` accounts for. */
+  readonly inlineJsBytes?: number;
 }
 
 export interface BuildStats {
@@ -59,8 +70,11 @@ export interface BuildStats {
  * `FRAMEWORK_SCRIPTS` exempted it. `2`: that exemption and the page-boot decision (ledger #28).
  * `3`: an island entry's imported chunks are charged, each once per document (shared chunks).
  * `4`: the exempt theme script's bytes moved — it also stamps `data-theme-default` (plan 101, 09).
+ * `5`: a URL is weighed at the path a browser resolves it to (`\` is `/`, `//host` is another
+ * origin), so two spellings of one fetch are charged once; and an app/ page is weighed as SERVED
+ * — its page boot charged, the runtime chunk that boot makes unfetched not (plan 101 sweep 9).
  */
-export const BUILD_STATS_RULES = 4;
+export const BUILD_STATS_RULES = 5;
 
 const chainOf = (stats: RouteStats): string =>
   stats.heaviestChain === undefined ? 'unknown import chain' : stats.heaviestChain.join(' -> ');
@@ -204,12 +218,14 @@ export function checkBudgets(
       continue;
     }
     if (js !== null && measured.jsBytes > js) {
+      const meta = chargedMeta(measured.jsBytes, measured.charged, measured.inlineJsBytes);
       findings.push({
         code: 'X_BUDGET_EXCEEDED',
-        cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}`,
+        cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}${chargedClause(measured.charged, measured.inlineJsBytes)}`,
         fix: exceededJsFix(route.url, fileOf(route.url), measured.jsBytes),
         docs: ERROR_DOCS_URL,
         at: route.url,
+        ...(meta === undefined ? {} : { meta }),
       });
     }
   }
@@ -224,59 +240,29 @@ export async function readBuildStats(root: string): Promise<BuildStats | undefin
   return read.measuredBy === BUILD_STATS_RULES ? read : { routes: [], stale: true };
 }
 
-const SCRIPT_TAG = /<script(?<attrs>[^>]*)>(?<body>[\s\S]*?)<\/script>/g;
-const SRC_ATTR = /\ssrc="(?<src>[^"]*)"/;
-const TYPE_ATTR = /\stype="(?<type>[^"]*)"/;
+/** What `measureDocumentJs` needs beyond the document and the artifact — both for served pages. */
+export interface MeasureOptions {
+  /**
+   * Scripts a document names that the PROCESS serves and the static artifact does not carry, by
+   * URL: the page boot (`/_x/page-boot/<id>.js`). Charged like any `<script src>` — ledger #28.
+   */
+  readonly served?: ReadonlyMap<string, string>;
+  /**
+   * The page boot's path prefix and the runtime chunks it supplies (#505): on a document carrying
+   * the boot an island awaits the runtime the boot installs and never imports the chunk, so the
+   * chunk is not charged there. A document without the boot is charged for it as before.
+   */
+  readonly boot?: { readonly prefix: string; readonly supplies: ReadonlySet<string> };
+}
 
-/**
- * `application/ld+json`, `application/json`, any `…+json`: the body is data, not code — the rule
- * `@ultimat3/render`'s `head.ts` already states, restated because its `carriesJson` reads a
- * `HeadTag` and is not exported, and this side has an attribute string off the emitted document.
- * Without it a page shipping only `meta.ld` structured data and island props measured 8kb of JS
- * and failed a 2kb budget with a `fix:` naming an import chain that does not exist.
- */
-const carriesJson = (attrs: string): boolean => {
-  // Everything from the first `;` is a MIME PARAMETER and not the type: a real document writes
-  // `type="application/ld+json; charset=utf-8"`, which does not END with `json`, so the suffix
-  // test alone charged an SEO structured-data block as executable JavaScript all over again.
-  const [type = ''] = (TYPE_ATTR.exec(attrs)?.groups?.['type'] ?? '').split(';');
-  const declared = type.trim().toLowerCase();
-  // Speculation rules are JSON under a type that does not say so: read by the browser's
-  // prefetcher, never executed — the one script a 0kb page may carry for free.
-  return declared.endsWith('json') || declared === SPECULATION_RULES_TYPE;
-};
-
-/**
- * An island's chunk is reached by `import()` from inside the hydration runtime, so it never appears
- * as a `<script src>` — and a document weighed by script tags alone was charged for the runtime and
- * never for the code that runtime boots. The entry attribute is that module URL, so it is read as
- * exactly what it is: a file the browser will execute.
- */
-const ENTRY_ATTR = /\sdata-x-entry="(?<url>[^"]*)"/g;
-
-/**
- * Static imports and `import()` both. A chunk reached by `import()` was INLINED into its island
- * before islands were split, so charging it keeps a route's number what it was; and it is fetched
- * the moment the island needs it, which is before the page does what it was loaded for.
- */
-const LOADS: ReadonlySet<string> = new Set(['import-statement', 'dynamic-import']);
-
-/** Same-origin paths `code`, served at `url`, makes the browser load. Cross-origin and bare are not this build's. */
-function loadedBy(url: string, code: string): readonly string[] {
-  let imports: readonly { readonly path: string; readonly kind: string }[];
-  try {
-    imports = new Bun.Transpiler({ loader: 'js' }).scanImports(code);
-  } catch {
-    // A file that does not parse as JavaScript imports nothing this gate can name; its own bytes
-    // are already charged.
-    return [];
+/** Whether a `<script src>` in `html` is the page boot `boot.prefix` names. */
+function carriesBoot(html: string, boot: MeasureOptions['boot']): boolean {
+  if (boot === undefined) return false;
+  for (const match of html.matchAll(SCRIPT_TAG)) {
+    const src = SRC_ATTR.exec(match.groups?.['attrs'] ?? '')?.groups?.['src'];
+    if (src !== undefined && artifactPath(src)?.startsWith(boot.prefix) === true) return true;
   }
-  const base = new URL(url, 'https://artifact.invalid');
-  return imports
-    .filter((one) => LOADS.has(one.kind) && /^\.{0,2}\//.test(one.path))
-    .map((one) => new URL(one.path, base))
-    .filter((target) => target.origin === base.origin)
-    .map((target) => target.pathname);
+  return false;
 }
 
 /** One executable module the document names, and what it weighs on disk. */
@@ -290,6 +276,8 @@ export interface MeasuredJs {
   readonly jsBytes: number;
   /** The framework's injected runtime, counted separately so it is reported and never charged. */
   readonly frameworkBytes: number;
+  /** The app's inline script bytes — the part of `jsBytes` that is not a file in `entries`. */
+  readonly inlineBytes: number;
   /** Every APP `src=`/`data-x-entry=` module, so a finding can name the heaviest by file. */
   readonly entries: readonly MeasuredEntry[];
 }
@@ -341,9 +329,14 @@ export const FRAMEWORK_INLINE_SCRIPTS: ReadonlySet<string> = new Set(
  * from the emitted HTML rather than from the declared graph, because the graph is what a route
  * *says* it ships and this gate exists to catch the case where those two disagree.
  */
-export async function measureDocumentJs(html: string, out: string): Promise<MeasuredJs> {
+export async function measureDocumentJs(
+  html: string,
+  out: string,
+  options: MeasureOptions = {},
+): Promise<MeasuredJs> {
   let jsBytes = 0;
   let frameworkBytes = 0;
+  let inlineBytes = 0;
   const entries: MeasuredEntry[] = [];
   // Deduped ONCE, across both readers below, and the unit is the FETCH: a browser downloads a URL
   // once however many times the document names it, so `budget.js` — a byte budget — counts it
@@ -359,13 +352,21 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
   // is not in this set for the same reason: two identical inline bodies are two copies of the
   // bytes in the document, so both are charged.
   const fetched = new Set<string>();
-  const weigh = async (url: string): Promise<void> => {
+  const served = options.served ?? new Map<string, string>();
+  // The runtime chunks this document's page boot makes unfetched: `awaitPageRuntime`'s rule, read
+  // the way it reads it — a `<script src>` under the boot's path is in the document.
+  const bootSupplied = carriesBoot(html, options.boot) ? (options.boot?.supplies ?? null) : null;
+  const weigh = async (named: string): Promise<void> => {
     // Only a path inside the artifact can be weighed; a cross-origin script is not this build's.
-    if (!url.startsWith('/') || fetched.has(url)) return;
+    const url = artifactPath(named);
+    if (url === undefined || fetched.has(url)) return;
     fetched.add(url);
+    // A script the process serves and the artifact does not carry (the page boot) is weighed from
+    // the bytes the build holds; everything else from the file the artifact will serve.
+    const held = served.get(url);
     const file = Bun.file(join(out, url.slice(1)));
-    const exists = await file.exists();
-    const bytes = exists ? file.size : 0;
+    const exists = held !== undefined || (await file.exists());
+    const bytes = held === undefined ? (exists ? file.size : 0) : Buffer.byteLength(held, 'utf8');
     // Counted and set aside, not skipped: the bytes are real and a reader is owed the number.
     // Kept out of `entries` as well as out of `jsBytes`, because `entries` is what a finding reads
     // to name the heaviest import — and on a fresh scaffold every route's `heaviestChain` was
@@ -380,7 +381,9 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     // and each is a fetch the browser makes before the island is whole. Through `weigh`, so a chunk
     // two islands share is charged once and a cycle ends at the first repeat.
     if (exists) {
-      for (const next of loadedBy(url, await file.text())) await weigh(next);
+      for (const next of loadedBy(url, held ?? (await file.text()))) {
+        if (bootSupplied?.has(next) !== true) await weigh(next);
+      }
     }
   };
 
@@ -391,8 +394,12 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     if (src === undefined) {
       const body = match.groups?.['body'] ?? '';
       const bytes = Buffer.byteLength(body, 'utf8');
-      if (FRAMEWORK_INLINE_SCRIPTS.has(body)) frameworkBytes += bytes;
-      else jsBytes += bytes;
+      if (FRAMEWORK_INLINE_SCRIPTS.has(body)) {
+        frameworkBytes += bytes;
+      } else {
+        jsBytes += bytes;
+        inlineBytes += bytes;
+      }
       continue;
     }
     await weigh(src);
@@ -402,7 +409,26 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     if (url === undefined) continue;
     await weigh(url);
   }
-  return { jsBytes, frameworkBytes, entries };
+  return { jsBytes, frameworkBytes, inlineBytes, entries };
+}
+
+/**
+ * The stats row for one measured document — the ONE place a row is assembled, so the static and
+ * the weigh-only branch of the build cannot record different facts about the same kind of page.
+ */
+export function routeStatsRow(
+  path: string,
+  measured: MeasuredJs,
+  chain: readonly string[] | undefined,
+): RouteStats {
+  return {
+    path,
+    jsBytes: measured.jsBytes,
+    frameworkJsBytes: measured.frameworkBytes,
+    ...(chain === undefined ? {} : { heaviestChain: chain }),
+    charged: heaviestFirst(measured.entries),
+    inlineJsBytes: measured.inlineBytes,
+  };
 }
 
 /**

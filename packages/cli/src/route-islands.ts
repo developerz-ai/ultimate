@@ -21,12 +21,25 @@ import { realtimeIslandFiles } from './island-realtime';
  * an island never declares its own timing, and `resolve` is the build's — identity when nothing
  * built any, which fails at the first island by name rather than emitting an unusable entry.
  */
-export const collectorFor = (entry: RouteEntry, options: DocumentOptions): IslandCollector =>
+export const collectorFor = (
+  entry: RouteEntry,
+  options: DocumentOptions,
+  scope: string | undefined,
+): IslandCollector =>
   createIslandCollector({
     file: entry.file,
     hydrate: entry.config.hydrate,
     ...(options.resolveIsland === undefined ? {} : { resolve: options.resolveIsland(entry.file) }),
+    // #506: on a document that carries the page boot (the same two conditions as `bootScript`), a
+    // realtime island's server markup is held off screen until it mounts over the restored store.
+    ...(scope === undefined || options.sync === undefined
+      ? {}
+      : { hold: (src: string) => reachesRealtime(entry, src) }),
   });
+
+/** Whether `src`, as the page at `entry` wrote it, is an island the last build found realtime. */
+const reachesRealtime = (entry: RouteEntry, src: string): boolean =>
+  realtimeIslandFiles().has(posix.join(posix.dirname(entry.file), src));
 
 /**
  * Realtime's page boot, as one deferred script — or nothing. Two conditions, both exact: the

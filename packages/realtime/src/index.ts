@@ -90,6 +90,12 @@ export {
   TransportUnavailableError,
   WindowReadTimeoutError,
 } from './errors';
+// ---- the page: one record store, one socket, installed by the island bootstrap ------------------
+export {
+  FIRST_PAINT_HOLD_MS,
+  type FirstPaintHold,
+  holdFirstPaint,
+} from './first-paint-hold';
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   changedColumns,
@@ -128,7 +134,6 @@ export {
   type PageOutbox,
   pageOutbox,
 } from './page-outbox';
-// ---- the page: one record store, one socket, installed by the island bootstrap ------------------
 export { hasPageSocket, type SyncTarget } from './page-store';
 export { installRealtime, type RealtimeInstall } from './reactivity';
 export { persistedTypes, type RecordPersister, recordPersister } from './record-persister';

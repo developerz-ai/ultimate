@@ -58,7 +58,7 @@ export function parseEnvelope(payload: string): ChangeEnvelope | null {
         at: typeof shape.at === 'number' ? shape.at : 0,
         // Only the minted shape crosses: a frame decoder refuses anything else, so a malformed
         // label here would cost every member the whole frame rather than one page its echo.
-        ...(isWriteDigest(shape.write) ? { write: shape.write } : {}),
+        write: isWriteDigest(shape.write) ? shape.write : null,
         ...(isNames(shape.omitted) ? { omitted: shape.omitted } : {}),
       },
       seq: typeof shape.seq === 'number' && Number.isFinite(shape.seq) ? shape.seq : null,

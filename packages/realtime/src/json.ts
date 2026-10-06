@@ -39,6 +39,12 @@ export interface RowPatch {
    * projection on the server. Absent means the key is the `id`.
    */
   readonly key?: string;
+  /**
+   * The write that made this patch's change (`ChangeEvent.write`), held only on the RETAINED
+   * patch so a delta resume can name it. Server-side only: a frame names its writes once, in
+   * `PatchFrame.writes`, so `live-resume.ts` strips it before sending and `decode` never reads it.
+   */
+  readonly write?: string;
 }
 
 export function isJsonObject(value: unknown): value is JsonObject {

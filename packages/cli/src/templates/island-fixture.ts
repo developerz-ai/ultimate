@@ -7,6 +7,7 @@
 // half has to be synchronous — and Bun ships neither a path API nor a `symlink`.
 import { mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { processRoot } from '../process-root-fixture';
 import { DIR_LINK } from '../scaffold-typecheck-fixture';
 import type { GeneratedFile } from './naming';
 
@@ -18,9 +19,11 @@ const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
  * fails every `@ultimat3/*` and every relative import inside it with `Could not resolve`, because
  * `Bun.build`'s resolver is scoped to the project `bun test` was started in and an app root outside
  * it cannot reach its own `node_modules`. `.prerender-fixture` is the same shape for the same
- * reason. The leading dot keeps it out of every `tsc` wildcard include.
+ * reason. The leading dot keeps it out of every `tsc` wildcard include. Each label is a base, and
+ * the root under it is this PROCESS's (`processRoot`): two runs of one file share the checkout.
  */
-const FIXTURE_ROOT = join(REPO_ROOT, 'packages', 'cli', '.island-fixture');
+const fixtureRoot = (label: string): string =>
+  processRoot(join(REPO_ROOT, 'packages', 'cli', '.island-fixture', label));
 
 /** The package the fixture lives inside. Linking it would aim a symlink at its own ancestor. */
 const SELF = 'cli';
@@ -62,14 +65,15 @@ function linkDependencies(root: string): void {
 
 /**
  * `Disposable`, so the idiom is `using root = await fixtureAppRoot(label, files)`. `label` is the
- * caller's, and is what keeps two test FILES off one directory: the path is fixed rather than
- * random, because a random one cannot be named in `.gitignore` and a crashed run leaves it behind.
+ * caller's, and is what keeps two test FILES off one directory; the pid beneath it keeps two
+ * PROCESSES off one. Never random: `.island-fixture/` is what `.gitignore` names, and a crashed
+ * run's root is reaped by the next run under that label, once its pid is gone.
  */
 export async function fixtureAppRoot(
   label: string,
   files: readonly GeneratedFile[],
 ): Promise<FixtureApp> {
-  const path = join(FIXTURE_ROOT, label);
+  const path = fixtureRoot(label);
   rmSync(path, { recursive: true, force: true });
   mkdirSync(path, { recursive: true });
   linkDependencies(path);

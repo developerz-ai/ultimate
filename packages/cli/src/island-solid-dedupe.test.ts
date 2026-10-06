@@ -17,10 +17,11 @@ import {
   solidDedupePlugin,
   solidSubpath,
 } from './island-solid-dedupe';
+import { processRoot } from './process-root-fixture';
 
 // Its own root under `.island-fixture`, never the parent: `island-bundle.test.ts` explains why
 // nobody owns that directory.
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'solid-dedupe');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'solid-dedupe'));
 const APP = join(ROOT, 'app');
 /** OUTSIDE the app, so the dependency's own `node_modules` is the one its real path finds. */
 const DEP = join(ROOT, 'dep-real');

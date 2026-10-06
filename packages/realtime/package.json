@@ -19,6 +19,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./boot": "./src/boot.ts",
+    "./page-runtime": "./src/page-runtime.ts",
+    "./page-runtime-wait": "./src/page-runtime-wait.ts",
     "./server": "./src/server.ts",
     "./sync-worker": "./src/sync-worker.ts"
   },

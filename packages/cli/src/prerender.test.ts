@@ -13,9 +13,10 @@ import { checkBudgets, readBuildStats } from './budgets';
 import { errorPageSource, STATIC_ERROR_PAGE } from './error-pages';
 import { faviconBytes } from './favicon';
 import { isPrerenderable, prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 import { readStaticReport } from './static-report';
 
-const ROOT = join(import.meta.dir, '..', '.prerender-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-fixture'));
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and these are the exact
 // configs `x new` writes for site/page.tsx and app/dashboard/page.tsx.

@@ -5,3 +5,12 @@
 
 @use 'tokens/theme';
 @use 'tokens/reset';
+
+// A held island's reveal that needs no script (`@ultimat3/render`'s `ISLAND_HOLD_REVEAL`, issue 506):
+// its wrapper animates to this after the hold's cap, so JS off or a blocked runtime still shows
+// the server's markup. The name is held equal to render's by `island-hold-replay.test.ts`.
+@keyframes ultimate-hold-reveal {
+  to {
+    visibility: visible;
+  }
+}

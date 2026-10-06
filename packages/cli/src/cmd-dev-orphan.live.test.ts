@@ -9,11 +9,14 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { alive, descendantsOf, leftovers, pump, reap, reapIn } from './dev-live-fixture';
+import { processRoot } from './process-root-fixture';
 
 const TIMEOUT_MS = 90_000;
 const BIN = join(import.meta.dir, 'bin.ts');
 /** "Within a few seconds": the child asks once a second, and its drain takes about one more. */
 const GONE_WITHIN_MS = 8_000;
+/** `.<name>` under this package, made this process's own: two runs may share one checkout. */
+const rootOf = (name: string): string => processRoot(join(import.meta.dir, '..', `.${name}`));
 
 const FILES = (name: string): Readonly<Record<string, string>> => ({
   'package.json': JSON.stringify({ name, version: '1.0.0' }),
@@ -86,7 +89,7 @@ async function withDev(
     readonly logs: { seen: () => string };
   }) => Promise<void>,
 ): Promise<void> {
-  const root = join(import.meta.dir, '..', `.${name}`);
+  const root = rootOf(name);
   await rm(root, { recursive: true, force: true });
   for (const [path, contents] of Object.entries(FILES(name)))
     await Bun.write(join(root, path), contents);
@@ -120,9 +123,7 @@ async function withDev(
   }
 }
 
-const ROOTS = ['dev-orphan-fixture', 'dev-root-gone-fixture'].map((name) =>
-  join(import.meta.dir, '..', `.${name}`),
-);
+const ROOTS = ['dev-orphan-fixture', 'dev-root-gone-fixture'].map(rootOf);
 
 afterEach(async () => {
   for (const root of ROOTS) await reapIn(root);
@@ -146,7 +147,7 @@ describe('a supervised x dev child stops when what it serves is gone', () => {
     'its app root deleted: the child exits X_DEV_ROOT_GONE and the supervisor stops, never respawns',
     async () => {
       await withDev('dev-root-gone-fixture', async ({ supervisor, worker, logs }) => {
-        await rm(join(import.meta.dir, '..', '.dev-root-gone-fixture'), {
+        await rm(rootOf('dev-root-gone-fixture'), {
           recursive: true,
           force: true,
         });

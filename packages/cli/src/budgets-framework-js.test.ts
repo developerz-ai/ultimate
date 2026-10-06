@@ -12,6 +12,7 @@ import { buildManifest } from '@ultimat3/manifest';
 import { themeScriptBody } from '@ultimat3/render';
 import type { BuildStats } from './budgets';
 import { checkBudgets, FRAMEWORK_SCRIPTS, measureDocumentJs } from './budgets';
+import { processRoot } from './process-root-fixture';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { SW_REGISTER_PATH, serviceWorkerHead } from './sw-artifacts';
 
@@ -42,7 +43,7 @@ const jsBytesOf = async (html: string, out: string): Promise<number> =>
 // `.x/` had been cleaned. A gate whose verdict depends on run order is not a gate.
 // -------------------------------------------------------------------------------------------
 describe("unit · the framework-injected runtime is not the app's JS", () => {
-  const root = join(tmpdir(), 'x-budget-framework');
+  const root = processRoot(join(tmpdir(), 'x-budget-framework'));
   const registration = '<script src="/x-sw-register.js" defer></script>';
 
   /** An installable app, as `loadPwaArtifacts` resolves one. `fallback` is what emits the tag. */

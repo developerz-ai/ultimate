@@ -4,11 +4,12 @@
 // `ack` is only ever a refusal.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock, isUltimateError, writeDigest } from '@ultimat3/core';
 import { LiveClient } from './client';
 import { defaultReconnectBudget, makeCursor, shouldResnapshot } from './cursor';
 import {
   FakeSocket,
+  flush,
   liveFeed,
   type PostRow,
   pageHarness,
@@ -16,13 +17,18 @@ import {
   querySids,
   resetPage,
 } from './hooks-fixture';
-import { PROTOCOL_VERSION } from './sync-protocol';
+import type { LocalTx } from './record-tx';
+import { type PatchFrame, PROTOCOL_VERSION } from './sync-protocol';
+import { type MutatorLike, useMutation } from './use-mutation';
 
 const LSN_0 = '0'.repeat(24);
 const LSN_1 = '1'.repeat(24);
 const DENIED = { code: 'X_FORBIDDEN', cause: 'denied by policy', fix: 'x policy explain --json' };
 
+const realFetch = globalThis.fetch;
+
 afterEach(() => {
+  globalThis.fetch = realFetch;
   resetPage();
 });
 
@@ -247,5 +253,118 @@ describe('a records frame', () => {
     });
     expect(page.store.peek('posts', 'p1')).toEqual({ id: 'p1', title: 'hello' });
     expect(batches).toBe(1);
+  });
+});
+
+// A live window over a row this page is writing. The node commits, fans the change out and only
+// then answers the POST, so the patch routinely beats the answer — and merged under the write's
+// still-pending overlay, the window painted the write twice (truth + overlay: a like counted 3
+// times for one member's one like) until the answer settled it.
+describe('a patch frame naming the write that produced it', () => {
+  const LIKE: MutatorLike = {
+    name: 'likePost',
+    local(tx: LocalTx, input: { readonly postId: string }) {
+      tx['posts']?.update(input.postId, (post) => ({ likeCount: Number(post['likeCount']) + 1 }));
+    },
+  };
+
+  /** A held POST: "the patch arrived before the answer" is then a state, not a race. */
+  function heldKeys(): string[] {
+    const keys: string[] = [];
+    globalThis.fetch = ((_url: string, init: RequestInit) => {
+      keys.push(new Headers(init.headers).get('idempotency-key') ?? '');
+      return new Promise<Response>(() => {});
+    }) as typeof fetch;
+    return keys;
+  }
+
+  async function likedWindow() {
+    const harness = pageHarness();
+    const { client, socket, clock } = harness;
+    socket.open();
+    const handle = client.subscribeLive<PostRow>(liveFeed, { orgId: 'o1' });
+    const sid = querySid(socket, 'add');
+    const rows: readonly PostRow[] = [{ id: 'p1', likedByMe: false, likeCount: 1 }];
+    socket.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid,
+      entity: 'posts',
+      rows,
+      cursor: makeCursor('liveFeed', LSN_0, rows, clock.now().getTime()),
+    });
+    const keys = heldKeys();
+    void useMutation(LIKE)({ postId: 'p1' });
+    await flush();
+    // Every like count the window rendered, one entry per notification.
+    const painted: number[] = [];
+    harness.page.store.subscribe(() => {
+      painted.push(Number(handle.rows()[0]?.likeCount));
+    });
+    const echo = (writes?: readonly string[]): PatchFrame => ({
+      type: 'patch',
+      v: PROTOCOL_VERSION,
+      sid,
+      lsn: LSN_1,
+      patches: [{ op: 'update', id: 'p1', row: { likeCount: 2 }, lsn: LSN_1 }],
+      ...(writes === undefined ? {} : { writes }),
+    });
+    const write = await writeDigest(keys[0] ?? '');
+    if (write === undefined)
+      expect.unreachable('Bun ships WebCrypto, so a digest is always minted');
+    return { ...harness, handle, painted, echo, write, sid };
+  }
+
+  test('settles the write in the same batch: the window never shows truth plus overlay', async () => {
+    const { page, socket, handle, painted, echo, write } = await likedWindow();
+    expect(handle.rows()[0]?.likeCount).toBe(2);
+    expect(page.store.pending()).toHaveLength(1);
+
+    socket.deliver(echo([write]));
+
+    expect(page.store.pending()).toEqual([]);
+    expect(handle.rows()[0]?.likeCount).toBe(2);
+    expect(painted).not.toContain(3);
+    expect(painted).toHaveLength(1);
+  });
+
+  test('an echo naming no write is truth UNDER the overlay: the twin replays on top', async () => {
+    const { page, socket, handle, echo } = await likedWindow();
+
+    socket.deliver(echo());
+
+    // The double count this frame field exists to remove — the control that proves the test above
+    // is measuring the settle and not something else.
+    expect(page.store.pending()).toHaveLength(1);
+    expect(handle.rows()[0]?.likeCount).toBe(3);
+  });
+
+  test('a snapshot naming the write settles it in the same batch too', async () => {
+    const { page, socket, handle, painted, write, sid } = await likedWindow();
+    const rows: readonly PostRow[] = [{ id: 'p1', likedByMe: false, likeCount: 2 }];
+
+    socket.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid,
+      entity: 'posts',
+      rows,
+      cursor: makeCursor('liveFeed', LSN_1, rows, 0),
+      writes: [write],
+    });
+
+    expect(page.store.pending()).toEqual([]);
+    expect(handle.rows()[0]?.likeCount).toBe(2);
+    expect(painted).not.toContain(3);
+    expect(painted).toHaveLength(1);
+  });
+
+  test('a digest this page never pushed changes nothing', async () => {
+    const { page, socket, handle, echo } = await likedWindow();
+
+    socket.deliver(echo(['f'.repeat(32)]));
+
+    expect(page.store.pending()).toHaveLength(1);
+    expect(handle.rows()[0]?.likeCount).toBe(3);
   });
 });

@@ -61,7 +61,8 @@ describe('resolveVersion', () => {
   });
 
   test('a manifest that exists but declares no version still throws, define or not', async () => {
-    const path = join(import.meta.dir, '.version-fixture-broken-publish.json');
+    // The pid, because two runs of this file share a checkout and would write one file.
+    const path = join(import.meta.dir, `.version-fixture-broken-publish-${process.pid}.json`);
     await Bun.write(path, JSON.stringify({ name: '@ultimat3/root', private: true }));
     try {
       expect(() => resolveVersion(path, '1.2.3')).toThrow(UltimateError);
@@ -90,7 +91,8 @@ describe('readPackageVersion', () => {
   const write = async (body: unknown): Promise<string> => {
     const path = join(
       import.meta.dir,
-      `.version-fixture-${Math.random().toString(36).slice(2)}.json`,
+      // The pid as well: the preload SEEDS `Math.random`, so every process draws the same names.
+      `.version-fixture-${process.pid}-${Math.random().toString(36).slice(2)}.json`,
     );
     await Bun.write(path, JSON.stringify(body));
     return path;

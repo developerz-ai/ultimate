@@ -13,8 +13,9 @@ import {
   readIslandStore,
   writeIslandStore,
 } from './island-store';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'store');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'store'));
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
 const SHARED = { sharedChunks: true } as const;
 const PLAIN = `export function mount(el: HTMLElement): void { el.textContent = 'plain'; }\n`;

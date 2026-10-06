@@ -11,8 +11,9 @@ import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { clearStylesheets } from '@ultimat3/render/server';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.prerender-locale-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-locale-fixture'));
 
 const page = defineRoute({
   render: 'static',

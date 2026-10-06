@@ -108,6 +108,7 @@ const change = (lsn: string): ChangeEvent => ({
   txid: lsn,
   at: 0,
   orgId: 'o1',
+  write: null,
 });
 
 const patched: BridgeResult = {
@@ -350,6 +351,7 @@ describe('a truncate empties the window it reads from', () => {
     txid: lsn,
     at: 0,
     orgId: null,
+    write: null,
   });
 
   test('the window is re-read now and every subscriber is re-snapshotted out of it', async () => {

@@ -8,6 +8,7 @@
 import type { HydrateStrategy } from '@ultimat3/core';
 import { HYDRATE_STRATEGIES } from '@ultimat3/core';
 import { escapeHtml, escapeJsonContent } from './html';
+import { ISLAND_HOLD_ATTRIBUTES, RUNTIME_HOLD } from './island-hold';
 
 export interface IslandDirective {
   /** Unique per INSTANCE: two of the same island on a page need two prop bags to find. */
@@ -26,6 +27,11 @@ export interface IslandDirective {
   readonly events?: readonly string[];
   /** `rootMargin` for `visible`. */
   readonly rootMargin?: string;
+  /**
+   * The server markup must not paint before the island mounts (`island-hold.ts`, #506): hidden
+   * from its first byte, booted at once, revealed by the mount or the cap. Never on `never`.
+   */
+  readonly hold?: boolean;
 }
 
 export const DEFAULT_REPLAY_EVENTS = ['click', 'input', 'change', 'submit', 'keydown'] as const;
@@ -74,6 +80,8 @@ export function emitIslandAttributes(directive: IslandDirective): string {
     if (directive.events !== undefined && directive.events.length > 0) {
       attrs.push(attr('data-x-events', directive.events.join(' ')));
     }
+    // A constant, so it needs no escaper — and nothing a caller supplies reaches it.
+    if (directive.hold === true) attrs.push(ISLAND_HOLD_ATTRIBUTES);
   }
   return attrs.join(' ');
 }
@@ -205,6 +213,9 @@ io.observe(el)})
 // `go` chains on the same `el.__x`, and the first flush empties `q` and sets `done`, so however many
 // ran, each caught event is replayed exactly once and an untouched island still lets go of its
 // listeners at mount — a listener left behind would replay every later click a second time.
+// An island something ELSE booted (a held island: `island-hold.ts` boots it at once) had no flush
+// to let go in, so `on` checks the mount marker — set in the same `.then` that settles `el.__x` —
+// and detaches instead of queueing: the press reaches its target natively, once.
 const RUNTIME_CATCH_UP = `
 function path(el,t){var p=[t&&t.tagName];
 for(;t&&t!==el&&t.parentNode;t=t.parentNode)p.unshift(Array.prototype.indexOf.call(t.parentNode.children,t));
@@ -219,7 +230,8 @@ var q=[],done=false;
 var off=function(){done=true;evs.forEach(function(n){el.removeEventListener(n,on,true)});q=[]};
 var go=function(){boot(el).then(function(){var r=q;off();
 r.forEach(function(e){var ev=e[0],c=new ev.constructor(ev.type,ev);aim(el,ev,e[1]).dispatchEvent(c)})},off)};
-var on=function(ev){if(done)return;q.push([ev,path(el,ev.target)]);go()};
+var on=function(ev){if(done)return;if(el.getAttribute('${ISLAND_MOUNTED_ATTRIBUTE}')!==null){off();return}
+q.push([ev,path(el,ev.target)]);go()};
 evs.forEach(function(n){el.addEventListener(n,on,true)});return go}
 `.trim();
 
@@ -249,9 +261,14 @@ const RUNTIME_ORDER: readonly Exclude<HydrateStrategy, 'never'>[] = HYDRATE_STRA
  * moment the runtime changes, and the failure it produces is an island that never boots on a page
  * that otherwise looks correct.
  */
-const runtimeBody = (needed: ReadonlySet<Exclude<HydrateStrategy, 'never'>>): string =>
+const runtimeBody = (
+  needed: ReadonlySet<Exclude<HydrateStrategy, 'never'>>,
+  held: boolean,
+): string =>
   [
     RUNTIME_PRELUDE,
+    // Right after the prelude: no strategy part below that throws can strand a held island.
+    ...(held ? [RUNTIME_HOLD] : []),
     // Emitted once for whichever of the two catch-up strategies the page uses; a `visible`-only
     // page never pays for it.
     ...(needed.has('idle') || needed.has('interaction') ? [RUNTIME_CATCH_UP] : []),
@@ -260,18 +277,22 @@ const runtimeBody = (needed: ReadonlySet<Exclude<HydrateStrategy, 'never'>>): st
     ),
   ].join('\n');
 
+/** Whether any island the runtime boots is held — a `never` island boots nothing to reveal it. */
+const holds = (directives: readonly IslandDirective[]): boolean =>
+  directives.some((directive) => directive.hold === true && directive.strategy !== 'never');
+
 /**
- * Every body `hydrateRuntime` can emit: one per non-empty subset of the three strategies, seven in
- * all, deterministic. A policy that admits inline script by HASH has to enumerate them before the
+ * Every body `hydrateRuntime` can emit: one per non-empty subset of the three strategies, with and
+ * without a held island — fourteen in all, deterministic. A policy that admits inline script by HASH has to enumerate them before the
  * socket opens — the alternative is a per-response nonce, which a `render: 'static'` page (a file
  * on disk) can never receive. Enumerated rather than derived from the route table because the
  * runtime is a function of the SET a document needs, and a table read at boot cannot answer for
  * a document assembled later.
  */
-export const HYDRATE_RUNTIME_BODIES: readonly string[] = Array.from(
-  { length: 2 ** RUNTIME_ORDER.length - 1 },
-  (_unused, index) =>
-    runtimeBody(new Set(RUNTIME_ORDER.filter((_s, bit) => (((index + 1) >> bit) & 1) === 1))),
+export const HYDRATE_RUNTIME_BODIES: readonly string[] = [false, true].flatMap((held) =>
+  Array.from({ length: 2 ** RUNTIME_ORDER.length - 1 }, (_unused, index) =>
+    runtimeBody(new Set(RUNTIME_ORDER.filter((_s, bit) => (((index + 1) >> bit) & 1) === 1)), held),
+  ),
 );
 
 /**
@@ -281,7 +302,7 @@ export const HYDRATE_RUNTIME_BODIES: readonly string[] = Array.from(
 export function hydrateRuntime(directives: readonly IslandDirective[]): string {
   const needed = requiredStrategies(directives);
   if (needed.size === 0) return '';
-  return `<script type="module">${runtimeBody(needed)}</script>`;
+  return `<script type="module">${runtimeBody(needed, holds(directives))}</script>`;
 }
 
 /** Rough emitted size of the hydration runtime for a page, for the budget check. */

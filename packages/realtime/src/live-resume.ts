@@ -11,11 +11,12 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
+import type { RowPatch } from './json';
 import type { SnapshotResult } from './live-contract';
-import { snapshotFrame } from './live-fanout';
+import { type NamedWrite, patchFrame, snapshotFrame } from './live-fanout';
 import { fillWindow, type QueryEntry } from './query-window';
 import type { Subscriber, SubscriberGate } from './subscriber-gate';
-import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import type { Frame } from './sync-protocol';
 
 export interface ResumeOntoDeps {
   readonly source: ResumeSource;
@@ -47,9 +48,13 @@ export async function resumeOnto(
     snapshot: () => deps.read(),
   });
   if (resumed.kind !== 'delta') {
+    // Read after every retained patch, so it holds their writes; `snapshotFrame` names only those
+    // behind a row this subscriber was given. Out of the ring's window there is nothing to name,
+    // and a write left unnamed settles on its own HTTP answer.
+    const named = retainedWrites(deps.source.since(entry.qid, cursor.lsn) ?? []);
     return {
       cursor: resumed.cursor,
-      frame: snapshotFrame(entry, who.sid, resumed.rows, resumed.cursor),
+      frame: snapshotFrame(entry, who.sid, resumed.rows, resumed.cursor, named),
     };
   }
   // The gate decides about whole rows out of the shared window, and an entry nothing has read
@@ -72,8 +77,34 @@ export async function resumeOnto(
   // another tenant's row id and the instant it went. The leak that branch closes, re-opened
   // one layer up. `live-fanout.ts` advances over `allowed` for exactly this reason.
   const seated = advance(cursor, patches, resumed.cursor.lsn, now);
-  return {
-    cursor: seated,
-    frame: { type: 'patch', v: PROTOCOL_VERSION, sid: who.sid, patches, lsn: seated.lsn },
-  };
+  const { bare, writes } = namedWrites(patches);
+  return { cursor: seated, frame: patchFrame(who.sid, bare, seated.lsn, writes) };
+}
+
+/**
+ * The writes behind the patches this subscriber is sent, each named once, and the patches as the
+ * wire spells them. Read off the FILTERED list: a write behind a row the gate withheld is another
+ * actor's, and naming it here would tell this page that write happened.
+ */
+function namedWrites(patches: readonly RowPatch[]): {
+  readonly bare: readonly RowPatch[];
+  readonly writes: readonly string[];
+} {
+  const writes = new Set<string>();
+  const bare = patches.map((patch) => {
+    if (patch.write === undefined) return patch;
+    writes.add(patch.write);
+    const { write: _named, ...rest } = patch;
+    return rest;
+  });
+  return { bare, writes: [...writes] };
+}
+
+/** Each retained write, by the record key of the row its patch made. */
+function retainedWrites(patches: readonly RowPatch[]): readonly NamedWrite[] {
+  const named: NamedWrite[] = [];
+  for (const patch of patches) {
+    if (patch.write !== undefined) named.push({ write: patch.write, key: patch.key ?? patch.id });
+  }
+  return named;
 }

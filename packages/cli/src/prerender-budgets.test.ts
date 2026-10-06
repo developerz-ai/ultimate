@@ -11,14 +11,16 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { clearRoutes, defineRoute, registerRoute, themeScriptBody } from '@ultimat3/render';
+import { clearRoutes, defineRoute, island, registerRoute, themeScriptBody } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
+import { isRuntimeChunk } from './island-runtime';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 import { serviceWorkerRegistration } from './sw-artifacts';
 
 // Its own directory: `prerender.test.ts` and `prerender-islands.test.ts` wrote the SAME root, and
 // under the gate's parallel workers each file's build read the other's `app.config.ts` and output.
-const ROOT = join(import.meta.dir, '..', '.prerender-budgets-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-budgets-fixture'));
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and this is the exact
 // config `x new` writes for `site/page.tsx` — `js: '0kb'` included, which is the promise under test.
@@ -112,5 +114,112 @@ describe('x build --target static · the framework`s bytes are counted, never ch
     expect(second?.frameworkJsBytes).toBe(first?.frameworkJsBytes);
     // The verdict, which is the thing that flipped: the same commit gated the same way twice.
     expect(second?.jsBytes).toBe(first?.jsBytes);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The breakdown `X_BUDGET_EXCEEDED` prints is only as good as the row the build wrote, and the
+// build writes rows on TWO branches — a published `static` page and an `app/` page rendered only
+// to weigh (the Windows job's `/posts`). Both go through `routeStatsRow`; this holds them to it,
+// against the real chunk on disk, so the clause can never name a file or a byte count the
+// artifact does not have.
+// ---------------------------------------------------------------------------------------------
+describe('x build --target static · each row names the files it charged', () => {
+  const PLAIN_ISLAND = `
+export function mount(el: HTMLElement): void {
+  el.textContent = 'ready';
+}
+`;
+  const Plain = island({ src: './plain.island.tsx' });
+
+  test.each([
+    ['a published static page', 'apps/web/site/plain/page.tsx', '/plain', 'static'],
+    ['an app/ page rendered only to weigh', 'apps/web/app/plain/page.tsx', '/plain', 'ssr'],
+  ] as const)(
+    '%s: its chunk at its on-disk size, and the hydration runtime as inline bytes',
+    async (_name, file, path, render) => {
+      await Bun.write(join(ROOT, file.replace('page.tsx', 'plain.island.tsx')), PLAIN_ISLAND);
+      registerRoute({
+        file,
+        config: defineRoute({
+          render,
+          hydrate: 'idle',
+          offline: render === 'static' ? 'precache' : 'runtime',
+          budget: { js: '20kb' },
+          meta: () => ({ title: 'Plain', description: 'one island' }),
+        }),
+        component: (): unknown => Plain({ children: '…' }),
+      });
+
+      const out = join(ROOT, 'static');
+      await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+      const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === path);
+
+      const [charged] = row?.charged ?? [];
+      expect(row?.charged).toHaveLength(1);
+      expect(charged?.url).toMatch(/^\/islands\/plain-[0-9a-f]{8}\.js$/);
+      expect(charged?.bytes).toBe(Bun.file(join(out, (charged?.url ?? '').slice(1))).size);
+      // The runtime is the one inline script an island page carries, so the parts sum to the whole.
+      expect(row?.inlineJsBytes).toBeGreaterThan(0);
+      expect((charged?.bytes ?? 0) + (row?.inlineJsBytes ?? 0)).toBe(row?.jsBytes ?? -1);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// #505: a realtime island loads the page runtime from the page boot where the document carries one
+// — a scoped app/ page as served — and from `/islands/page-runtime.<id>.js` everywhere else. The weigh
+// branch rendered app/ pages UNSCOPED, so it charged `/feed` and `/runs` a runtime chunk no scoped
+// page fetches and never the boot every one of them does. Both documents are below, end to end.
+// ---------------------------------------------------------------------------------------------
+describe('x build --target static · a realtime island is weighed as its document loads it', () => {
+  const LIVE_ISLAND = `import { useConnection } from '@ultimat3/realtime';
+export function mount(): void {
+  useConnection();
+}
+`;
+  const Live = island({ src: './live.island.tsx' });
+  const route = (render: 'static' | 'stream') =>
+    defineRoute({
+      render,
+      hydrate: 'idle',
+      offline: render === 'static' ? 'precache' : 'runtime',
+      budget: { js: '500kb' },
+      meta: () => ({ title: 'Live', description: 'one realtime island' }),
+    });
+
+  test('a scoped app/ page: its page boot is charged, the runtime chunk is not', async () => {
+    await Bun.write(join(ROOT, 'apps/web/app/live/live.island.tsx'), LIVE_ISLAND);
+    registerRoute({
+      file: 'apps/web/app/live/page.tsx',
+      config: route('stream'),
+      component: (): unknown => Live({ children: '…' }),
+      // A stream is always scoped (`private, no-store`) — the mode that needs no policy to be.
+      suspenseBoundaries: 1,
+    });
+
+    await prerenderSite({ root: ROOT, out: join(ROOT, 'static'), origin: 'https://example.test' });
+    const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/live');
+    const urls = (row?.charged ?? []).map((one) => one.url);
+
+    expect(urls.some((url) => url.startsWith('/_x/page-boot/'))).toBe(true);
+    expect(urls.some((url) => url.startsWith('/islands/live-'))).toBe(true);
+    expect(urls.some(isRuntimeChunk)).toBe(false);
+  });
+
+  test('a static export: no boot in the document, so the runtime chunk is charged', async () => {
+    await Bun.write(join(ROOT, 'apps/web/site/live/live.island.tsx'), LIVE_ISLAND);
+    registerRoute({
+      file: 'apps/web/site/live/page.tsx',
+      config: route('static'),
+      component: (): unknown => Live({ children: '…' }),
+    });
+
+    await prerenderSite({ root: ROOT, out: join(ROOT, 'static'), origin: 'https://example.test' });
+    const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/live');
+    const urls = (row?.charged ?? []).map((one) => one.url);
+
+    expect(urls.some(isRuntimeChunk)).toBe(true);
+    expect(urls.some((url) => url.startsWith('/_x/page-boot/'))).toBe(false);
   });
 });

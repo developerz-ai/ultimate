@@ -20,12 +20,13 @@ import {
   readBuildStats,
   writeBuildStats,
 } from './budgets';
+import { processRoot } from './process-root-fixture';
 import type { StaticReport } from './static-report';
 import { staticReportData } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
 
 /** What the rules were when `BUILD_STATS_RULES` was last set. Re-pin only together with a bump. */
-const RULES_PIN = { rules: 4, fingerprint: '48c7ca94980e1474' } as const;
+const RULES_PIN = { rules: 5, fingerprint: '28db24d404acbc3d' } as const;
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -137,7 +138,7 @@ describe('unit · budgets', () => {
 });
 
 describe('unit · measureJsBytes weighs the document, not the graph', () => {
-  const out = join(tmpdir(), 'x-budget-measure');
+  const out = processRoot(join(tmpdir(), 'x-budget-measure'));
 
   test('a page with no script ships no JS, measured rather than assumed', async () => {
     expect(await jsBytesOf('<html><body><h1>hi</h1></body></html>', out)).toBe(0);
@@ -245,7 +246,9 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
 
 describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', () => {
   test('round-trips through the path checkBudgets reads', async () => {
-    const root = join(tmpdir(), `x-budget-stats-${Bun.hash(import.meta.path).toString(16)}`);
+    const root = processRoot(
+      join(tmpdir(), `x-budget-stats-${Bun.hash(import.meta.path).toString(16)}`),
+    );
     const written = await writeBuildStats(root, { routes: [{ path: '/', jsBytes: 42 }] });
     expect(written).toEndWith(BUILD_STATS_FILE);
     expect(await readBuildStats(root)).toEqual({
@@ -259,9 +262,8 @@ describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', 
   // and the gate read yesterday's measurement as today's. A file the current rules did not write
   // is no measurement at all.
   test('a stats file an earlier measurement rule wrote is stale, never read as numbers', async () => {
-    const root = join(
-      tmpdir(),
-      `x-budget-stale-${Bun.hash(`${import.meta.path}stale`).toString(16)}`,
+    const root = processRoot(
+      join(tmpdir(), `x-budget-stale-${Bun.hash(`${import.meta.path}stale`).toString(16)}`),
     );
     await Bun.write(
       join(root, BUILD_STATS_FILE),
@@ -276,7 +278,9 @@ describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', 
   });
 
   test('a route the build never wrote stays unmeasured, so the gate reports it', async () => {
-    const root = join(tmpdir(), `x-budget-gap-${Bun.hash(`${import.meta.path}gap`).toString(16)}`);
+    const root = processRoot(
+      join(tmpdir(), `x-budget-gap-${Bun.hash(`${import.meta.path}gap`).toString(16)}`),
+    );
     await writeBuildStats(root, { routes: [{ path: '/', jsBytes: 0 }] });
     const measured = await readBuildStats(root);
     const findings = checkBudgets(
@@ -293,9 +297,8 @@ describe('unit · an ABSENT stats file is every budget unmeasured, not nothing t
   // step printed a green line. The step now reads `(await readBuildStats(root)) ?? { routes: [] }`,
   // which is exactly the substitution asserted here.
   test('no stats file reports one finding per route that declares a budget', async () => {
-    const root = join(
-      tmpdir(),
-      `x-budget-absent-${Bun.hash(`${import.meta.path}none`).toString(16)}`,
+    const root = processRoot(
+      join(tmpdir(), `x-budget-absent-${Bun.hash(`${import.meta.path}none`).toString(16)}`),
     );
     expect(await readBuildStats(root)).toBeUndefined();
     const manifest = manifestOf(
@@ -325,7 +328,9 @@ describe('unit · an ABSENT stats file is every budget unmeasured, not nothing t
  * the fingerprint by what it DOES. Every input a charging decision reads.
  */
 async function measurementRules(): Promise<string> {
-  const probe = join(tmpdir(), `x-budget-rules-${Bun.hash(import.meta.path).toString(16)}`);
+  const probe = processRoot(
+    join(tmpdir(), `x-budget-rules-${Bun.hash(import.meta.path).toString(16)}`),
+  );
   const kinds = [
     '',
     ' type="module"',
@@ -345,8 +350,27 @@ async function measurementRules(): Promise<string> {
   await Bun.write(join(probe, 'islands/lazy.js'), 'x');
   await Bun.write(join(probe, 'islands/e.js'), 'import"./dep.js";import("./lazy.js");');
   const followed = await measureDocumentJs('<div data-x-entry="/islands/e.js"></div>', probe);
+  // Which spellings of a URL are one fetch, and which are another origin (rules v5).
+  const spelled = await measureDocumentJs(
+    '<script src="/islands/dep.js"></script><script src="/islands\\dep.js"></script>' +
+      '<script src="/islands/./dep.js?v=1"></script><script src="//islands/dep.js"></script>',
+    probe,
+  );
+  // What a served document's page boot makes unfetched (rules v5, #505).
+  await Bun.write(join(probe, 'islands/live.js'), 'import("./realtime-r.js");');
+  await Bun.write(join(probe, 'islands/realtime-r.js'), 'x');
+  const booted = await measureDocumentJs(
+    '<script src="/_x/page-boot/b.js"></script><div data-x-entry="/islands/live.js"></div>',
+    probe,
+    {
+      served: new Map([['/_x/page-boot/b.js', 'x']]),
+      boot: { prefix: '/_x/page-boot/', supplies: new Set(['/islands/realtime-r.js']) },
+    },
+  );
   return JSON.stringify({
+    booted: booted.entries.map((entry) => entry.url),
     followed: followed.entries.map((entry) => entry.url).sort(),
+    spelled: spelled.entries.map((entry) => entry.url),
     scripts: [...FRAMEWORK_SCRIPTS].sort(),
     inline: [...FRAMEWORK_INLINE_SCRIPTS].map((body) => Bun.hash(body).toString(16)).sort(),
     charged,

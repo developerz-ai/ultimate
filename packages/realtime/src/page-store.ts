@@ -1,9 +1,14 @@
-// The page's realtime state: ONE record store and ONE sync target per tab, whichever island bundle
-// asks first. On `globalThis` under a `Symbol.for` key, because every island is its own bundle and
-// a module-scope singleton here is one store PER ISLAND — the bug this file exists to end.
+// The page's realtime state as every island READS it: one object per tab on `globalThis` under a
+// `Symbol.for` key, because every island is its own bundle and a module-scope singleton here is
+// one store PER ISLAND. Thin by design — the store, the socket and the transport behind it are the
+// page runtime's (`page-runtime.ts`), shipped once per page and never inside an island (#505).
 
-import { CLIENT_SCOPE_META, onRescope, pageClient } from '@ultimat3/core/page';
-import { RecordStore } from './record-store';
+import type { clientTransport } from '@ultimat3/core/page';
+import { CLIENT_SCOPE_META } from '@ultimat3/core/page';
+import type { queryClientMethodFor } from '@ultimat3/query/client';
+import type { LiveClient } from './client';
+import { RealtimeUninstalledError } from './page-errors';
+import type { RecordStore } from './record-store';
 
 /** Where the page's one socket dials. Resolved on the server and handed to the island bootstrap. */
 export interface SyncTarget {
@@ -15,7 +20,12 @@ export interface SyncTarget {
 
 /** Page-wide and shared by every bundle. Structural on purpose: no `instanceof` across copies. */
 export interface PageRealtime {
-  readonly store: RecordStore;
+  /**
+   * The page's ONE record store — `undefined` until the page runtime is installed (the page boot,
+   * or the runtime chunk an island loads where no boot is rendered). A hook reads it through
+   * `installedPage`, which refuses by code rather than answering a store nobody shares.
+   */
+  store: RecordStore | undefined;
   sync: SyncTarget | undefined;
   /** The socket client, once a live hook opened it. Typed by `page-socket.ts`, its one writer. */
   socket: unknown;
@@ -27,7 +37,29 @@ export interface PageRealtime {
    * the first frame can race it. Resolved at once on a page that carries no boot script.
    */
   readonly booted: Promise<void>;
+  /** What a hook calls instead of bundling it — installed with the store, by the page runtime. */
+  services: PageServices | undefined;
 }
+
+/**
+ * The runtime's half of every hook: the work whose code would otherwise ship in each island. An
+ * island calls these off the page object, so the socket stack, the query client and core's
+ * transport are in the page runtime once, however many islands the page renders.
+ */
+export interface PageServices {
+  /** The page's one socket, opened on the first ask. `hook` names the caller in a refusal. */
+  socket(hook: string): LiveClient;
+  /** A non-live query read over HTTP — `@ultimat3/query`'s client, through core's transport. */
+  read(name: string): ReturnType<typeof queryClientMethodFor>;
+  /** Core's one transport, for a write's POST. */
+  send: typeof clientTransport;
+}
+
+/** The page once its runtime is installed: what every hook works against. */
+export type InstalledPage = PageRealtime & {
+  readonly store: RecordStore;
+  readonly services: PageServices;
+};
 
 /** Every optimistic write on the page, counted per mutator name, and who renders the counts. */
 export interface PageWrites {
@@ -86,9 +118,32 @@ export function bootedPromise(): Promise<void> {
   return waiting;
 }
 
+/**
+ * Whether a deferred `<script>` of this document may still run. Not past `loading`, yes; past
+ * `complete`, no. In between (`interactive`) the deferred scripts run, then DOMContentLoaded fires —
+ * and `readyState` stays `interactive` until every image has loaded, so the navigation timing's
+ * `domContentLoadedEventStart` is what says they have all run (a boot that 404'd among them). A
+ * document with no such reading is assumed still running them: a caller then waits on DOMContentLoaded.
+ */
+export function deferredScriptsPending(): boolean {
+  if (typeof document === 'undefined') return false;
+  const state: unknown = document.readyState;
+  if (state === 'complete') return false;
+  if (state !== 'interactive') return true;
+  const timing: unknown =
+    typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function'
+      ? undefined
+      : performance.getEntriesByType('navigation')[0];
+  const started: unknown =
+    typeof timing === 'object' && timing !== null
+      ? Reflect.get(timing, 'domContentLoadedEventStart')
+      : undefined;
+  return !(typeof started === 'number' && started > 0);
+}
+
 function bootComing(): boolean {
   if (typeof document === 'undefined' || typeof addEventListener !== 'function') return false;
-  if (document.readyState === 'complete') return false;
+  if (!deferredScriptsPending()) return false;
   // A partial `document` (a component test's stand-in) has no query surface: no tag, no boot.
   if (typeof document.querySelector !== 'function') return false;
   return document.querySelector(`meta[name="${CLIENT_SCOPE_META}"]`) !== null;
@@ -96,31 +151,43 @@ function bootComing(): boolean {
 
 type Host = { [KEY]?: PageRealtime };
 
-/** Get-or-create. Installs the store as core's `RecordSink`, so HTTP answers adopt into it. */
+/**
+ * Get-or-create the page object — never its runtime: an island that asks before the runtime is
+ * installed (`installRealtime` seating a sync target) gets the object the runtime then fills.
+ */
 export function pageRealtime(): PageRealtime {
   const host = globalThis as Host;
   const existing = host[KEY];
   if (existing !== undefined) return existing;
-  const store = new RecordStore();
   const created: PageRealtime = {
-    store,
+    store: undefined,
     sync: undefined,
     socket: undefined,
     writes: { pending: new Map(), failed: 0, listeners: new Set() },
     get booted(): Promise<void> {
       return bootedPromise();
     },
+    services: undefined,
   };
   Object.defineProperty(host, KEY, { value: created, configurable: true });
-  pageClient().store = store;
-  // A new principal sees nothing of the previous one: every record goes, in memory, at once.
-  onRescope(() => store.clear());
   return created;
 }
 
 /** The page state when some island already made it — never creates one (a server render must not). */
 export function peekPageRealtime(): PageRealtime | undefined {
   return (globalThis as Host)[KEY];
+}
+
+/**
+ * The page with its runtime installed, or `X_REALTIME_UNINSTALLED` naming `hook`. An island `x
+ * build` wrapped never sees the refusal — its bootstrap awaits the runtime before any hook runs.
+ */
+export function installedPage(hook: string): InstalledPage {
+  const page = pageRealtime();
+  if (page.store === undefined || page.services === undefined) {
+    throw new RealtimeUninstalledError({ hook });
+  }
+  return page as InstalledPage;
 }
 
 /**
@@ -132,7 +199,7 @@ export function hasPageSocket(): boolean {
   return peekPageRealtime()?.socket !== undefined;
 }
 
-/** The page's record store. */
-export function pageStore(): RecordStore {
-  return pageRealtime().store;
+/** The page's record store, from its installed runtime. */
+export function pageStore(hook = 'pageStore'): RecordStore {
+  return installedPage(hook).store;
 }

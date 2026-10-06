@@ -433,6 +433,14 @@ never flushed into an island that did not mount. `ISLAND_MOUNTED_ATTRIBUTE` and
 from, exported for the same reason: anything waiting for hydration has to wait at least this long,
 and a second copy of the number is a settle that shoots early and calls a healthy page broken.
 
+**A held island** (`data-x-hold`, `As of 2026-10`) is one whose server markup must not paint before
+it mounts — an offline reload's cached count under a queued write (#506). The collector's
+`hold: (src) => boolean` names them (the host's call: `@ultimat3/cli` holds realtime islands on a
+document that carries the page boot); the wrapper is `visibility:hidden` from its first byte, the
+runtime boots it at once whatever the strategy, and reveals it when `mount()` settles either way or
+at `ISLAND_HOLD_MS` (3000), whichever comes first — and at the same cap by CSS alone (`ISLAND_HOLD_REVEAL`, keyframes in `@ultimat3/ui`'s `global.scss`), so a page with no script still shows the markup. Only a page holding an island pays for that part
+of the runtime, and `HYDRATE_RUNTIME_BODIES` carries both variants.
+
 ## Two entry points
 
 **Split 2026-08-22, and every claim in this section holds `As of 2026-08`.**
@@ -501,6 +509,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `setSassCacheDir`†, `sassCompilations`† | where the Sass compile cache lives (`.x/cache/sass` under cwd; a container's is the image's prebuilt store) and how many compiles this process ran instead of reading one |
 | `emitIslandAttributes`, `hydrateRuntime`, `HYDRATE_RUNTIME_BODIES` | the four hydration strategies, and every body the runtime script can hold — a host hashes that list into `script-src`, because the runtime is emitted inline and no `render: 'static'` file can receive a nonce |
 | `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
+| `ISLAND_HOLD_ATTRIBUTE`, `ISLAND_HOLD_MS`, `ISLAND_HOLD_REVEAL` | a held island's marker, and the cap after which it shows its server markup regardless |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |

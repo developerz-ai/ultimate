@@ -1,6 +1,7 @@
 // One record, by type and key, out of the page's store — the same object every island showing it
 // holds, moved once by whichever write lands first (an HTTP answer, a socket frame, an optimistic
-// twin). Imports no socket: an island that only reads records ships none of the lifecycle.
+// twin). A reader of the page runtime's store: an island that only reads records ships the hook and
+// none of the store, the socket or its lifecycle.
 
 import type { AsyncState, Row } from '@ultimat3/core/page';
 import { pageStore } from './page-store';
@@ -31,7 +32,7 @@ export function useRecord<R extends object = Row>(type: string, key: string): Re
       [Symbol.dispose]: releaseNothing,
     });
   }
-  const store = pageStore();
+  const store = pageStore('useRecord');
   const [version, setVersion] = signal(0);
   const target = recordKey(type, key);
   store.retain(type, key);
@@ -81,7 +82,7 @@ export function useRecords<R extends object = Row>(
       [Symbol.dispose]: releaseNothing,
     });
   }
-  const store = pageStore();
+  const store = pageStore('useRecord');
   const [version, setVersion] = signal(0);
   const targets = new Set(keys.map((key) => recordKey(type, key)));
   const present = (): R[] => {

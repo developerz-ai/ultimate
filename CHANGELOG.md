@@ -17,7 +17,8 @@ holds the CLI, its guards, the test harness and CI to what they claim. Sweep 7 d
 twins, and ships the guard that keeps each one gone. Sweep 8a makes native Windows (PowerShell, no
 WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job;
 sweep 8b fixes what that job found. Sweep 8c makes a deploy zero-downtime: a working worker finishes,
-then restarts. Sweep 8d root-causes the flaky tests.
+then restarts. Sweep 8d root-causes the flaky tests. Sweep 9 makes realtime cheaper and
+honest: one runtime per page, writes named on every frame, no stale first paint offline.
 
 ### Added
 
@@ -134,6 +135,16 @@ then restarts. Sweep 8d root-causes the flaky tests.
 
 ### Changed
 
+- **Breaking for a custom change feed:** `ChangeEvent.write` is required (`string | null`); a producer
+  that left it out must pass `write: null` (#507).
+- realtime: the page runtime (store, socket host, channel book, query client, transport) ships once per
+  page — in the page boot, or one `/islands/page-runtime.<id>.js` chunk on a page without one — and
+  islands carry thin hooks: `/posts/:id` serves 21.6 kB less, the like island 85.6 → 41.7 kB (#505).
+- `x build --target static` weighs an `app/` page as a signed-in request is served: its page boot is
+  charged, the runtime chunk it replaces is not. `examples/dummy`'s `/feed` (149kb) and `/runs`
+  (162.5kb) budgets rise because the boot was never counted before, while the bytes those pages
+  actually serve FELL by 12.2 kB and 6.7 kB. `X_BUDGET_EXCEEDED` names every file it charged, with
+  exact bytes, and a URL is weighed at the path a browser resolves it to.
 - A scaffolded app's bash `bin/setup`, `bin/dev` and `bin/check` are replaced by `bin/setup.ts` and
   `bin/check.ts`, run by Bun: `bun run setup`, `bun run dev` (`x dev`) and `bun run check` work the
   same in PowerShell, cmd and bash. Existing apps: delete the three bash files, copy the two `.ts`
@@ -258,6 +269,17 @@ then restarts. Sweep 8d root-causes the flaky tests.
 
 ### Fixed
 
+- realtime: a live-query `patch` frame names the writes that made it (`writes`; a delta resume names
+  every write it replays), and the page settles them in the frame's own batch, so a live list no
+  longer paints the server's truth and the pending overlay at once (#507).
+- realtime/render: an offline reload no longer paints a stale count first. Realtime islands on a
+  page-boot document are held (`data-x-hold`) and revealed together once every one has mounted over
+  the restored store and outbox, capped at 1 s for the disk and 3 s for the reveal (#506). A held
+  island's first click after the reveal is never replayed into it, and held islands reveal by CSS
+  after 3 s even without a script. Live-query snapshot frames name the writes they contain too, so
+  a re-snapshot or a resume that falls back to one settles the page's pending write in its batch.
+  An island whose page boot failed (a 404 after a deploy) loads the runtime at once instead of
+  waiting for every image; two realtime copies at different versions in one build are refused.
 - **Deploys no longer cut off running jobs.** On SIGTERM a worker stops claiming and lets held jobs
   finish inside `drain.deadlineMs`. Only at the deadline less a margin is `ctx.signal` aborted with
   `X_DRAINING`, and a step that completes in the drain is still recorded. The worker used to abort
@@ -295,6 +317,10 @@ then restarts. Sweep 8d root-causes the flaky tests.
   - **App stop and readiness:** an e2e app's `stop()` escalates to SIGKILL after its drain grace, and
     the `/readyz` wait is wall-clock.
   - **CDP errors:** a CDP WebSocket error carries the socket's own message.
+  - **Fixture roots:** every test fixture root is per-process (`processRoot`: `<base>/run-<pid>`, dead
+    runs reaped). Two processes running one test file in one checkout (two gate runs, two hive
+    workers) no longer delete each other's fixtures mid-build, which had read as bundler
+    non-determinism in `island-determinism`. `fixture-roots.test.ts` refuses a fixed root.
 - Windows, part 2:
   - On Windows every role drains on Ctrl-Break (SIGBREAK) and console close (SIGHUP).
   - The master key file gets an owner-only `icacls` ACL, or is not written at all.

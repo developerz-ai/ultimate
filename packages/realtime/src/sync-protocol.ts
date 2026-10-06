@@ -2,7 +2,12 @@
 // patches, presence and refusals come down. A client write is HTTP (`useMutation`), never a frame —
 // so there is one write path, with the action's authz, idempotency store and contract behind it.
 
-import { renderThrowable, stringField } from '@ultimat3/core/page';
+import {
+  isWriteDigest,
+  renderThrowable,
+  stringField,
+  WRITE_DIGEST_LENGTH,
+} from '@ultimat3/core/page';
 import type {
   ChannelEventsFrame,
   ChannelRecordsFrame,
@@ -118,6 +123,12 @@ export interface SnapshotFrame {
    * derives a key.
    */
   readonly keys?: readonly string[];
+  /**
+   * The writes this server truth already holds, named as `PatchFrame.writes` names them — only
+   * writes behind a row in `rows`, so never one this subscriber may not see. Optional and additive:
+   * no `PROTOCOL_VERSION` bump, for the reason `entity` needs none.
+   */
+  readonly writes?: readonly string[];
 }
 
 export interface PatchFrame {
@@ -126,6 +137,15 @@ export interface PatchFrame {
   readonly sid: string;
   readonly patches: readonly RowPatch[];
   readonly lsn: string;
+  /**
+   * The writes that made these patches: `writeDigest` of each keyed request's idempotency key
+   * (`@ultimat3/core`), never the key, as `ChannelRecordsFrame.write` names one. A live patch names
+   * at most one; a delta resume names every write behind a patch it replays. Absent when no keyed
+   * request made any of them. The page that holds one pending settles it in the frame's own batch.
+   * Additive and optional: a decoder one deploy behind drops it, and a frame without it is read as
+   * it always was — so no `PROTOCOL_VERSION` bump.
+   */
+  readonly writes?: readonly string[];
 }
 
 export interface AckFrame {
@@ -230,7 +250,9 @@ export function decode(raw: string | Uint8Array): Frame {
         cursor: cursor(parsed['cursor']),
       } as const;
       const entity = nullableStr(parsed, 'entity');
-      const scoped = entity === null ? base : { ...base, entity };
+      const writes = writesOf(parsed, 'snapshot.writes');
+      const named = writes.length === 0 ? base : { ...base, writes };
+      const scoped = entity === null ? named : { ...named, entity };
       if (parsed['keys'] === undefined) return scoped;
       const keys = list(parsed, 'keys', FRAME_LIMITS.rows).map((key) => {
         if (typeof key !== 'string') throw fail('snapshot.keys must hold strings');
@@ -239,14 +261,17 @@ export function decode(raw: string | Uint8Array): Frame {
       if (keys.length !== base.rows.length) throw fail('snapshot.keys must pair with rows');
       return { ...scoped, keys };
     }
-    case 'patch':
-      return {
+    case 'patch': {
+      const base = {
         type: 'patch',
         v: PROTOCOL_VERSION,
         sid: str(parsed, 'sid'),
         patches: list(parsed, 'patches', FRAME_LIMITS.patches).map(patch),
         lsn: str(parsed, 'lsn'),
-      };
+      } as const;
+      const writes = writesOf(parsed, 'patch.writes');
+      return writes.length === 0 ? base : { ...base, writes };
+    }
     case 'ack':
       return {
         type: 'ack',
@@ -304,6 +329,20 @@ function retryHintOf(error: unknown): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * `writes` on a `patch` or `snapshot`: digests only, capped at the patch ceiling (one write per
+ * patch at most; `snapshotFrame` caps what it sends to the same number). Absent, `null` and `[]`
+ * all name nothing, and read as the frame an older node sends.
+ */
+function writesOf(parsed: JsonObject, label: string): readonly string[] {
+  return list(parsed, 'writes', FRAME_LIMITS.patches, label).map((write) => {
+    if (!isWriteDigest(write)) {
+      throw fail(`${label} must hold ${WRITE_DIGEST_LENGTH}-character lowercase hex digests`);
+    }
+    return write;
+  });
 }
 
 function row(value: unknown): Row {

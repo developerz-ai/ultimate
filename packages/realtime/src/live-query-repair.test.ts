@@ -86,6 +86,7 @@ function change(after: Row, position: number): ChangeEvent {
     txid: String(position),
     orgId: 'o1',
     at: 1_000,
+    write: null,
   };
 }
 

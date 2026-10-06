@@ -70,6 +70,7 @@ export class RowWindows {
     type: string | null,
     rows: readonly Row[],
     keys?: readonly string[],
+    writes: readonly string[] = [],
   ): void {
     const next = type ?? registration.type;
     // The server's record key where it sent one; a row's `id` IS its key everywhere else.
@@ -80,12 +81,27 @@ export class RowWindows {
       keyed.map(([id]) => id),
       () => {
         for (const [id, row] of keyed) this.#store.merge(next, id, row);
+        // Settled in this batch, as `patch` settles: truth that holds the write, never under it.
+        settle(
+          this.#store,
+          writes,
+          keyed.map(([id]) => recordKey(next, id)),
+        );
       },
     );
   }
 
-  /** A patch list: values merged into the store, membership and order folded over the ids. */
-  patch(registration: Registration, sent: readonly RowPatch[]): void {
+  /**
+   * A patch list: values merged into the store, membership and order folded over the ids. `writes`
+   * are the writes the frame names (`PatchFrame.writes`): each this page still holds is settled
+   * against the rows merged here, INSIDE the same batch — so no holder ever renders the server's
+   * row with that write's twin replayed over it (truth plus overlay: one like counted twice).
+   */
+  patch(
+    registration: Registration,
+    sent: readonly RowPatch[],
+    writes: readonly string[] = [],
+  ): void {
     const type = registration.type;
     // A window holds RECORD keys: a patch the server keyed is folded under its key, not its id.
     const patches = sent.map((patch) =>
@@ -93,10 +109,16 @@ export class RowWindows {
     );
     // A `delete` is this window losing the row, never the store losing it: another holder keeps it.
     this.#reseat(registration, type, orderAfterPatches(registration.ids, patches), (held) => {
+      // Only a row merged here is truth this frame carried. A `delete` is membership, not the row:
+      // a write it names keeps its overlay on that row until the server's next word on it.
+      const carried = new Set<RecordKey>();
       for (const patch of patches) {
         if (patch.op === 'delete' || patch.row === null) continue;
-        if (held.has(patch.id)) this.#store.merge(type, patch.id, patch.row);
+        if (!held.has(patch.id)) continue;
+        this.#store.merge(type, patch.id, patch.row);
+        carried.add(recordKey(type, patch.id));
       }
+      settle(this.#store, writes, carried);
     });
   }
 
@@ -143,4 +165,11 @@ function holds(registration: Registration, changed: ReadonlySet<RecordKey>): boo
     if (changed.has(recordKey(registration.type, id))) return true;
   }
   return false;
+}
+
+/** Each named write this page still holds, settled against the rows the frame merged. */
+function settle(store: RecordStore, writes: readonly string[], merged: Iterable<RecordKey>): void {
+  if (writes.length === 0) return;
+  const carried = new Set(merged);
+  for (const write of writes) store.settleWrite(write, carried);
 }

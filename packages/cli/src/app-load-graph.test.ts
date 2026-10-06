@@ -18,10 +18,11 @@ import { clearStylesheets, renderComponent, stylesFor } from '@ultimat3/render/s
 import { loadApp, resetAppLoad } from './app-load';
 import { enableReloadTracking, takeStalePins } from './app-reload-graph';
 import { resetRegistries } from './cmd-dev-fixture';
+import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
 // which resolves through this package's own node_modules and not from /tmp.
-const ROOT = join(import.meta.dir, '..', '.app-graph-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.app-graph-fixture'));
 const DIR = join(ROOT, 'apps/web/app/hello');
 const PAGE = join(DIR, 'page.tsx');
 const CARD = join(DIR, 'card.tsx');

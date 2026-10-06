@@ -68,6 +68,7 @@ describe('decoded changes', () => {
       txid: '42',
       orgId: 'org-1',
       at: pgTimestampToEpochMs(0n),
+      write: null,
     });
     expect(feed.lastLsn()).toBe(changeLsn(0x1000n, 1));
     await feed.stop();

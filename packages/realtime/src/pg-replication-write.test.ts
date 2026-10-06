@@ -41,8 +41,7 @@ describe('a keyed write, read off the WAL', () => {
     server.push(xlog(commit(0x2000n, 0x2010n, 0n)));
     await settled(3);
 
-    expect(events.map((event) => event.write)).toEqual([DIGEST, DIGEST, undefined]);
-    expect(Object.hasOwn(events[2] ?? {}, 'write')).toBe(false);
+    expect(events.map((event) => event.write)).toEqual([DIGEST, DIGEST, null]);
     await feed.stop();
   });
 
@@ -65,7 +64,7 @@ describe('a keyed write, read off the WAL', () => {
     await settled(3);
 
     expect(events).toHaveLength(3);
-    expect(events.map((event) => event.write)).toEqual([undefined, undefined, undefined]);
+    expect(events.map((event) => event.write)).toEqual([null, null, null]);
     await feed.stop();
   });
 });

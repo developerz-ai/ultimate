@@ -13,10 +13,11 @@ import { clearRoutes, routeFor } from '@ultimat3/render';
 import { renderComponent } from '@ultimat3/render/server';
 import { loadApp, resetAppLoad } from './app-load';
 import { resetRegistries } from './cmd-dev-fixture';
+import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
 // which resolves through this package's own node_modules and not from /tmp.
-const ROOT = join(import.meta.dir, '..', '.app-reload-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.app-reload-fixture'));
 const PAGE = join(ROOT, 'apps/web/app/hello/page.tsx');
 const ACTIONS = join(ROOT, 'apps/web/app/hello/actions.ts');
 

@@ -22,6 +22,7 @@ import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
 import { reachesRealtime } from './island-realtime';
+import { processRoot } from './process-root-fixture';
 import { appRoutes } from './runtime-render';
 
 const BUILD_ID = 'build-under-test';
@@ -141,7 +142,7 @@ describe('unit · the persisted record types ride with the scope', () => {
 
 describe('unit · the page boot rides with the scope AND a realtime island', () => {
   const BOOT = '/_x/page-boot/abcd1234.js';
-  const ROOT = join(import.meta.dir, '..', '.boot-fixture');
+  const ROOT = processRoot(join(import.meta.dir, '..', '.boot-fixture'));
   const Live = island({ src: './live.island.tsx' });
   const Plain = island({ src: './plain.island.tsx' });
 

@@ -1,21 +1,14 @@
 // A client write, the one way: the mutator's optimistic twin into the store's OVERLAY (visible to
-// every island before this returns), then its action over HTTP through core's one transport with
-// an idempotency key. The answer's records are adopted before the overlay goes — no flicker — and
-// a refusal takes the overlay back. The socket carries no writes.
+// every island before this returns), then its action over HTTP through core's one transport — the
+// page runtime's, called off the page — with an idempotency key. The answer's records are adopted
+// before the overlay goes — no flicker — and a refusal takes the overlay back. No socket writes.
 
 import type { ConflictPolicy } from '@ultimat3/core/page';
-import {
-  actionPath,
-  clientTransport,
-  isSuperseded,
-  isUltimateError,
-  pageClient,
-  uuid,
-} from '@ultimat3/core/page';
+import { actionPath, isSuperseded, isUltimateError, pageClient, uuid } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 import { type OutboxHandle, peekOutbox } from './outbox-slot';
 import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
-import { type PageWrites, pageRealtime } from './page-store';
+import { installedPage, type PageWrites, pageRealtime } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import { carriedBy } from './record-store';
 
@@ -93,7 +86,7 @@ function watch(hook: string, writes: PageWrites | undefined): [() => number, () 
 function restoreOverlays(mutator: MutatorLike): void {
   const local = mutator.local;
   if (local === undefined) return;
-  const page = pageRealtime();
+  const page = installedPage('useMutation');
   // The boot opens the outbox; after it, so a queue the previous load left is on disk to read.
   void page.booted.then(async () => {
     const outbox = peekOutbox();
@@ -127,7 +120,7 @@ export function useMutation(mutator: MutatorLike): Mutate {
   const [version, release] = watch('useMutation', writes);
   const call = async (input: JsonValue): Promise<unknown> => {
     if (writes === undefined) throw new ServerRenderLiveError({ operation: 'useMutation()' });
-    const page = pageRealtime();
+    const page = installedPage('useMutation');
     const issued = pageClient().scope.epoch;
     const key = `${mutator.name}:${uuid()}`;
     const local = mutator.local;
@@ -175,7 +168,7 @@ export function useMutation(mutator: MutatorLike): Mutate {
     /** The records the answer carried, `type:key` — what the overlay may be settled against. */
     const carried = new Set<string>();
     try {
-      output = await clientTransport({
+      output = await page.services.send({
         method: 'POST',
         url: actionPath(mutator.name),
         body: input,

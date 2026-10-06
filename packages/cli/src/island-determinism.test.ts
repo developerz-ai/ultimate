@@ -28,10 +28,16 @@ import { join } from 'node:path';
 import { clearStylesheets, contentHash } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
 import { clearIslandChunkCache } from './island-identity';
+import { processRoot } from './process-root-fixture';
 
 // `.island-fixture/determinism`, never `.island-fixture` itself — `island-bundle.test.ts` wipes
 // its own subdirectory of that parent, and owning the parent deletes a sibling suite mid-build.
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'determinism');
+// And one directory per PROCESS beneath it (`processRoot`), because two processes run this file at
+// once in one checkout — two gate runs, or two agents' `bun test` calls. On one fixed root a peer's
+// `beforeAll` rm landed mid-build (`ENOENT: failed to open root directory`), and the peer's last
+// test rewrote `panel.module.scss` here, so "a rebuild serves the first byte string" saw a real
+// source change and failed, looking exactly like the bundler non-determinism this file catches.
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'determinism'));
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
 const SHARED = { sharedChunks: true } as const;
 const ISLAND = 'apps/web/app/graph.island.tsx';

@@ -10,8 +10,9 @@ import { join } from 'node:path';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.prerender-shared-chunks-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-shared-chunks-fixture'));
 
 const PAYLOAD_BYTES = 20_000;
 const UPLOAD = `

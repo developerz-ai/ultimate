@@ -25,10 +25,11 @@ import { SyncSocket } from '@ultimat3/realtime/server';
 import type { DevServer } from './cmd-dev';
 import { devCommand, startDev } from './cmd-dev';
 import { FakeWs, DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
+import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const ROOT = join(import.meta.dir, '..', '.dev-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.dev-fixture'));
 
 let server: DevServer;
 

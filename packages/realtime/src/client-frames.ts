@@ -79,7 +79,8 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
       registration.cursor = frame.cursor;
       registration.state = 'live';
       registration.error = undefined;
-      target.windows.snapshot(registration, frame.entity ?? null, frame.rows, frame.keys);
+      const { entity, rows, keys, writes } = frame;
+      target.windows.snapshot(registration, entity ?? null, rows, keys, writes);
       return;
     }
     case 'patch': {
@@ -95,7 +96,8 @@ export function applyFrame(frame: Frame, target: ClientFrameTarget): void {
           registration.cursor = next;
         }
         registration.state = 'live';
-        target.windows.patch(registration, frame.patches);
+        // The writes the frame names settle in the window's own batch, as a `records` frame's do.
+        target.windows.patch(registration, frame.patches, frame.writes);
         return;
       }
       // A patch names a live registration or nothing: a channel's rows ride `records` frames.

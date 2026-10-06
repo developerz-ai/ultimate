@@ -5,7 +5,7 @@
 
 import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
-import type { Ctx } from '@ultimat3/core';
+import type { Actor, Ctx } from '@ultimat3/core';
 import { CLIENT_SCOPE_HEADER, createSingleFlight } from '@ultimat3/core';
 import type {
   RouteMeta as HttpRouteMeta,
@@ -208,6 +208,42 @@ export async function routeDocument(
 }
 
 /**
+ * The document a request by `actor` is SERVED: `routeDocument` plus the scope the response would
+ * carry, which is what earns the page boot. The build weighs an app/ page through this, because a
+ * budget is a promise about what that page's browser downloads — and an unscoped render of a
+ * scoped page weighed a runtime chunk it never fetches and no boot it always does (#505).
+ */
+export async function servedDocument(
+  entry: RouteEntry,
+  ctx: DevRouteData,
+  actor: Actor,
+  options: DocumentOptions & { readonly buildId: string },
+): Promise<string> {
+  const data = await routeDataFor(entry.config, ctx);
+  return documentFrom(entry, ctx, data, options, documentScope(entry, options.buildId, actor));
+}
+
+/**
+ * Whether, and as whom, a mode's response is scoped — ONE decision for the request path and for
+ * `servedDocument`. A stream is always `private, no-store`; an ssr page carries the scope exactly
+ * when the headers `renderSsr` sends are private (an ungated page is `public, s-maxage`, and a CDN
+ * may hand it to anyone); a static or isr document is shareable by construction.
+ */
+function documentScope(entry: RouteEntry, buildId: string, actor: Actor): string | undefined {
+  switch (entry.config.render) {
+    case 'static':
+    case 'isr':
+      return undefined;
+    case 'stream':
+      return clientScopeOf(actor);
+    default:
+      return documentCarriesScope(ssrHeaders(entry, { buildId }))
+        ? clientScopeOf(actor)
+        : undefined;
+  }
+}
+
+/**
  * The document from data ALREADY resolved. Split from `routeDocument` so one request resolves
  * `load` exactly once: `stream` renders head and body separately, and resolving in each would let
  * a `<title>` describe content the body does not contain.
@@ -223,7 +259,7 @@ async function documentFrom(
   options: DocumentOptions,
   scope?: string,
 ): Promise<string> {
-  const islands = collectorFor(entry, options);
+  const islands = collectorFor(entry, options, scope);
   const [head, body] = await Promise.all([
     headFor(entry, ctx, data, options, scope),
     routeBody(entry, ctx, data, islands),
@@ -259,10 +295,11 @@ async function resultFor(
       // outside a Solid renderer, and this package's JSX factory is inert by design. A hole marker
       // has to be the framework's own. Until it exists the first flush carries the whole body —
       // correct output, no streaming benefit.
-      const islands = collectorFor(entry, options);
+      // A stream is always `private, no-store` (`streamResult`), so it always carries the scope.
+      const scope = documentScope(entry, options.buildId, ctx.actor);
+      const islands = collectorFor(entry, options, scope);
       const [head, shell] = await Promise.all([
-        // A stream is always `private, no-store` (`streamResult`), so it always carries the scope.
-        headFor(entry, request, data, options, clientScopeOf(ctx.actor)),
+        headFor(entry, request, data, options, scope),
         routeBody(entry, request, data, islands),
       ]);
       return withScope(
@@ -272,22 +309,20 @@ async function resultFor(
             // The runtime rides the first flush, with the shell it boots. A later chunk would leave
             // the window between flush one and the close with inert islands and no listeners on
             // them — which is exactly the first-click-lost failure `interaction` replay exists for.
-            shell: `${shell}${bootScript(entry, islands, options, clientScopeOf(ctx.actor))}${hydrateRuntime(islands.directives)}`,
+            shell: `${shell}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}`,
             holes: [],
           },
           { buildId: options.buildId },
           status,
         ),
-        clientScopeOf(ctx.actor),
+        scope,
       );
     }
     default: {
       // Asked of the headers `renderSsr` is about to send: a gated page is private and carries the
       // scope; an ungated one is `public, s-maxage` and a CDN may hand it to anyone, so it carries
       // none — absent, which core reads as "not rendered for anyone", never as anonymous.
-      const scope = documentCarriesScope(ssrHeaders(entry, { buildId: options.buildId }))
-        ? clientScopeOf(ctx.actor)
-        : undefined;
+      const scope = documentScope(entry, options.buildId, ctx.actor);
       return withScope(
         await renderSsr(
           { entry, params: request.params, url, ctx },
