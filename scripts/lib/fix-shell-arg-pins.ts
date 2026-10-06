@@ -117,7 +117,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       '`surfaces.ts:224` splices an ENTRY PATH into `x routes`. The path is a route file this build already resolved on disk, under `apps/*/`.',
   },
   scripts: {
-    count: 27,
+    count: 25,
     reason:
       "this repo's own gate rules, which run on a developer's machine and CI and ship to nobody: 20 splice a workspace name, a package directory or a leaf key into `bun run scripts/<rule>.ts --unpin <x>`, six a path into `git checkout --`, and the rest a package name into `gh` / `npm view`. Every value is a workspace directory, a file this tree contains or a key derived from its own source. The one that is not — `scaffold-first-run.ts:106`, a `cd <dir> && <the app bin>` — points at a temp directory this script created.",
   },

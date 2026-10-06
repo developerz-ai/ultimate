@@ -235,6 +235,7 @@ export type {
   ElementSnapshot,
   FrameRef,
   GotoOptions,
+  QueryOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
   ScrapeTarget,

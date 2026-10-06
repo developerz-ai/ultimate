@@ -7,10 +7,14 @@ import { configDeclaration, configLeaves } from './config-readers';
 import {
   configCitations,
   configKeyFindingFor,
+  DEFAULTS_PAGE,
   DOC_CONFIG_KEY_ALLOWANCES,
   DOC_CONFIG_PINS_FILE,
+  documentedDefaults,
   isKnownKey,
+  parseDefaultCell,
   staleAllowanceFindingFor,
+  staleDefaults,
   unknownConfigKeys,
 } from './doc-config-keys';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -161,5 +165,71 @@ describe('unit · this tree', () => {
   test('and the scan is not vacuous — the anchored lines it reads are many', () => {
     expect(configCitations('wiki/Page.md', '', leaves)).toEqual([]);
     expect(leaves.length).toBeGreaterThan(20);
+  });
+});
+
+describe('unit · a documented default is the one configDefaults() returns', () => {
+  const page = (rows: readonly string[]): string =>
+    ['| field | type | default | notes |', '|---|---|---|---|', ...rows, ''].join('\n');
+
+  test("the real page: every default it states is the framework's", async () => {
+    const markdown = await Bun.file(`${repoRoot()}/${DEFAULTS_PAGE}`).text();
+    const { checked, stale } = staleDefaults(markdown);
+    expect(
+      stale.map((one) => `${DEFAULTS_PAGE}:${String(one.line)} ${one.key} = ${one.stated}`),
+    ).toEqual([]);
+    // Not vacuous: the tables the parser reads hold this many comparable rows `As of 2026-10`.
+    expect(checked).toBeGreaterThanOrEqual(20);
+  });
+
+  /** The defect that made this rule: 22.0.0 turned realtime on, the page kept saying off. */
+  test('a default the page states wrongly is reported with its line', () => {
+    const { checked, stale } = staleDefaults(
+      page(['| `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |']),
+    );
+    expect(checked).toBe(1);
+    expect(stale.map((one) => [one.line, one.key, one.stated, one.actual])).toEqual([
+      [3, 'realtime.enabled', '`false`', true],
+    ]);
+  });
+
+  test('the literal forms the page writes all parse', () => {
+    expect(parseDefaultCell("`'en'`")).toEqual({ value: 'en' });
+    expect(parseDefaultCell('`60_000`')).toEqual({ value: 60000 });
+    expect(parseDefaultCell("`['request-memo', 'lru']`")).toEqual({
+      value: ['request-memo', 'lru'],
+    });
+    expect(parseDefaultCell('`null`')).toEqual({ value: null });
+    // Prose is not compared: nothing could read it.
+    expect(parseDefaultCell('required')).toBeUndefined();
+    expect(parseDefaultCell('every `ROLE`')).toBeUndefined();
+  });
+
+  test('"unset", "—" and `undefined` all mean no value in the config', () => {
+    const { stale } = staleDefaults(
+      page([
+        "| `realtime.maxSocketsPerActor` | `number` | unset = `16` | the sync node's own |",
+        '| `notify.inboxReadRetentionMs` | `number` | — | kept forever |',
+        '| `pwa.colors` | object | `undefined` | required when enabled |',
+      ]),
+    );
+    expect(stale).toEqual([]);
+    expect(
+      staleDefaults(page(['| `realtime.transport` | `string` | — | wrong |'])).stale,
+    ).toHaveLength(1);
+  });
+
+  test('a derived default is compared with its placeholder, and a deleted row is not read', () => {
+    const rows = documentedDefaults(
+      page([
+        "| `jobs.queues` | `string[]` | `['<name>-default']` | derived |",
+        '| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** |',
+        "| `theme.defaultMode` | `'light' \\| 'dark' \\| 'system'` | `'system'` | escaped pipes |",
+      ]),
+    );
+    expect(rows.map((row) => row.key)).toEqual(['jobs.queues', 'theme.defaultMode']);
+    expect(
+      staleDefaults(page(rows.map((row) => `| \`${row.key}\` | t | ${row.stated} | n |`))).stale,
+    ).toEqual([]);
   });
 });

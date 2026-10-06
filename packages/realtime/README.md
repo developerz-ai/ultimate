@@ -704,7 +704,13 @@ principal.
   the library's own KV abstraction expresses neither a per-message TTL nor a batch direct get.
   Reconnect and re-subscription are the library's: a lost connection is re-established underneath
   the caller, which is what makes `sync` stateless, and the jitter that spreads a restart herd is
-  handed to it as its reconnect delay rather than re-implemented above it.
+  handed to it as its reconnect delay rather than re-implemented above it. The one loss the
+  library does not recover is its own end: once its reconnect budget is spent it closes the
+  client for good and says so through the port's `onClosed`. `NatsTransport` then re-dials in the
+  background on the same backoff, one attempt at a time, until a client is up or `close()` runs;
+  callers meanwhile get `X_TRANSPORT_UNAVAILABLE` at once. Every live subscription is bound again
+  on the new client and the recovery is announced through `onReconnect`. Before 2026-10 the dead
+  client was handed out until the process was restarted.
   `transport.onReconnect(listener)` — a required member of `Transport` since 24.0.0 — announces
   each recovery and returns the unsubscribe: fanout is at-most-once, so whatever was published
   during the drop never arrived. `InProcessTransport` has no connection to lose and never calls it. The bucket needs

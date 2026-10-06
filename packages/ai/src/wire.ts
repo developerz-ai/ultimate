@@ -185,9 +185,14 @@ export class MessageStream {
     }
   }
 
-  /** True once `message_stop` arrived. False means the connection died mid-answer. */
+  /**
+   * True once `message_stop` arrived with every tool_use block closed. False means the connection
+   * died mid-answer — or the stream ended with a call's arguments still open, which drops the call
+   * (it is emitted whole or not at all), and for `llm()` that call IS the answer. `openai-wire.ts`
+   * refuses the same case.
+   */
   isComplete(): boolean {
-    return this.stopped;
+    return this.stopped && this.pending.size === 0;
   }
 
   state(): StreamState {

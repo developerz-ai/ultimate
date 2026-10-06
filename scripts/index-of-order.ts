@@ -27,9 +27,12 @@
 // safe (it over-reports, never under-reports), and the repair is the literal beside it.
 //
 // WHAT COUNTS AS A GUARD. Anything in the same test body that proves the needle is there:
-// `toBeGreaterThanOrEqual(0)`, `toBeGreaterThan(-1)`, `not.toBe(-1)`, `toBe(<a literal index>)`,
-// or a `toContain(<the same needle>)` on the haystack — which is the spelling this repo reaches
-// for most, and the one `generate-drop-order.test.ts` now writes above every comparison.
+// `toBeGreaterThanOrEqual(0)`, `toBeGreaterThan(-1 | 0 | n)`, `not.toBe(-1)`, `toBe(<a literal
+// index>)`, a `toContain(<the same needle>)` on THE SAME haystack — the spelling this repo reaches
+// for most — an order against another index (`x > anyIndex` proves `x >= 0`), or a value read at
+// the index (`haystack[x]` is `undefined` at -1). An operand that is a NAME is resolved to the
+// `indexOf` it was bound to in the same test (`scripts/lib/index-operand.ts`); the proofs read out
+// of other assertions live in `scripts/lib/index-presence.ts`.
 //
 // Both `indexOf` and `findIndex` are read — `findIndex` answers -1 identically, and
 // `migrate-lock.test.ts` uses it as an ordering bound.
@@ -40,7 +43,9 @@
 // ever needed, is an `OrderPin` passed in as `pins`, and it must carry its reason.
 
 import { flagBool, parseScriptArgs } from './lib/args';
-import { balancedClose } from './lib/balanced-paren';
+import { balancedClose, topLevelArguments } from './lib/balanced-paren';
+import { boundIndexInitialiser, indexReceiver } from './lib/index-operand';
+import { assertionsIn, provenByOrder, provenByValueAt } from './lib/index-presence';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { siteList, siteTarget } from './lib/ratchet-sites';
@@ -71,7 +76,8 @@ const FROM_INDEX = /\b(?:indexOf|findIndex)\s*\(/;
 /** A presence assertion, in any spelling this tree uses. */
 const GUARDS = [
   /^\s*\.\s*toBeGreaterThanOrEqual\s*\(\s*0\s*\)/,
-  /^\s*\.\s*toBeGreaterThan\s*\(\s*-1\s*\)/,
+  // `> -1`, and `> 0` or any other non-negative literal, which proves strictly more.
+  /^\s*\.\s*toBeGreaterThan\s*\(\s*(?:-1|\d+)\s*\)/,
   /^\s*\.\s*not\s*\.\s*toBe\s*\(\s*-1\s*\)/,
   /^\s*\.\s*toBe\s*\(\s*\d+\s*\)/,
 ] as const;
@@ -145,7 +151,8 @@ function guardsExpression(body: string, expression: string): boolean {
     const open = m.index + m[0].length - 1;
     const close = balancedClose(body, open);
     if (close < 0) continue;
-    if (normalised(body.slice(open + 1, close)) !== wanted) continue;
+    const subject = topLevelArguments(body.slice(open + 1, close))[0] ?? '';
+    if (normalised(subject) !== wanted) continue;
     const tail = body.slice(close + 1, close + 60);
     if (GUARDS.some((guard) => guard.test(tail))) return true;
   }
@@ -171,8 +178,8 @@ function literalOf(text: string): string | undefined {
  * as unguarded — the rule's own false positive, found by running it against a site a manual sweep
  * had already cleared.
  */
-function containsNeedle(body: string, needle: string): boolean {
-  if (body.includes(`toContain(${needle}`)) return true;
+function containsNeedle(body: string, needle: string, receiver: string | undefined): boolean {
+  if (receiver !== undefined && containedIn(body, needle, receiver)) return true;
   // `expect(names[0]).toBe('db migrate (empty)')` proves the value is in the haystack just as
   // totally as an index assertion does — the value-at-index spelling, the mirror of `toBe(0)`
   // which `GUARDS` already carries. Flagged at `scripts/scaffold-first-run.test.ts` without it.
@@ -180,15 +187,38 @@ function containsNeedle(body: string, needle: string): boolean {
   // `expect(BODY.split('return false').length - 1).toBe(1)` is a presence proof STRONGER than
   // `toContain`: it pins the exact number of occurrences. Two sites in this tree spell it that
   // way, and both read as unguarded until the rule learned it.
-  if (body.includes(`split(${needle})`) && /\.toBe\s*\(\s*[1-9]\d*\s*\)/.test(body)) return true;
+  return body.includes(`split(${needle})`) && /\.toBe\s*\(\s*[1-9]\d*\s*\)/.test(body);
+}
+
+/**
+ * Whether `expect(<receiver>).toContain(<needle, or a literal superstring of it>)` is in the body.
+ *
+ * ON THE SAME HAYSTACK, and any `toContain(<needle>)` counted until 2026-10: so
+ * `expect(down).toContain('drop x')` guarded `up.indexOf('drop x')`, and the ordering was checked on
+ * a string nothing proved held the needle. A `.not.toContain` was read as a guard by the same
+ * substring test; it is the opposite of one.
+ */
+function containedIn(body: string, needle: string, receiver: string): boolean {
   const wanted = literalOf(needle);
-  if (wanted === undefined || wanted === '') return false;
-  for (const m of body.matchAll(/\.toContain\s*\(/g)) {
+  for (const m of body.matchAll(/\bexpect\s*\(/g)) {
     const open = m.index + m[0].length - 1;
     const close = balancedClose(body, open);
     if (close < 0) continue;
-    const asserted = literalOf(body.slice(open + 1, close));
-    if (asserted?.includes(wanted)) return true;
+    if (normalised(body.slice(open + 1, close)).replace(/,$/, '') !== receiver) continue;
+    const matcher = /^\s*\.\s*toContain\s*\(/.exec(body.slice(close + 1));
+    if (matcher === null) continue;
+    const argOpen = close + matcher[0].length;
+    const argClose = balancedClose(body, argOpen);
+    if (argClose < 0) continue;
+    const asserted = body
+      .slice(argOpen + 1, argClose)
+      .trim()
+      .replace(/,$/, '')
+      .trim();
+    if (normalised(asserted) === normalised(needle)) return true;
+    if (wanted !== undefined && wanted !== '' && literalOf(asserted)?.includes(wanted) === true) {
+      return true;
+    }
   }
   return false;
 }
@@ -215,25 +245,39 @@ export function orderingSites(file: string, src: string): readonly OrderSite[] {
     // The asymmetry: only ONE side of each comparison can be passed by a phantom -1.
     const risky =
       matcher === 'toBeLessThan' || matcher === 'toBeLessThanOrEqual'
-        ? src.slice(open + 1, close)
+        ? // The first argument only: `expect(at, 'a failure message')` is about `at`.
+          (topLevelArguments(src.slice(open + 1, close))[0] ?? '')
         : argClose > 0
           ? src.slice(argOpen + 1, argClose)
           : '';
-    if (!FROM_INDEX.test(risky)) continue;
-    const body = enclosingTest(src, open);
     // `.trim()` is not enough: a matcher argument on its own line ends with a TRAILING COMMA, so
     // the needle regex anchored at `$` matched nothing and the site read as unguarded even with an
     // exact `toContain` beside it. A false positive, which this file's own header says is how a
     // rule gets switched off. Measured on `packages/db/src/migrate.test.ts`.
-    const operand = risky.trim().replace(/,\s*$/, '');
+    const written = risky.trim().replace(/,\s*$/, '');
+    const body = enclosingTest(src, open);
+    // Resolved only when the operand is no index itself: a bare NAME bound to one in this test —
+    // `const drop = up.indexOf('x'); expect(drop).toBeLessThan(alter)` — was no site at all.
+    const bound = FROM_INDEX.test(written) ? undefined : boundIndexInitialiser(body, written);
+    if (bound === undefined && !FROM_INDEX.test(written)) continue;
+    const operand = bound ?? written;
     const needle = /\b(?:indexOf|findIndex)\s*\(([\s\S]*)\)\s*$/.exec(operand)?.[1]?.trim();
-    const contained = needle !== undefined && needle !== '' && containsNeedle(body, needle);
+    const receiver = indexReceiver(operand);
+    const contained =
+      needle !== undefined && needle !== '' && containsNeedle(body, needle, receiver);
+    const assertions = assertionsIn(body);
+    const name = normalised(written);
     found.push({
       file,
       line: src.slice(0, open).split('\n').length,
       matcher,
-      risky: risky.replace(/\s+/g, ' ').trim(),
-      guarded: contained || guardsExpression(body, risky),
+      risky: bound === undefined ? normalised(risky) : `${written} = ${normalised(bound)}`,
+      guarded:
+        contained ||
+        guardsExpression(body, written) ||
+        (bound !== undefined && guardsExpression(body, bound)) ||
+        provenByOrder(body, assertions, name) ||
+        (receiver !== undefined && provenByValueAt(assertions, receiver, name)),
     });
   }
   return found;

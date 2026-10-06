@@ -1,7 +1,8 @@
 // Single responsibility: the production `Transport` — core NATS for fanout, JetStream KV for the
 // shared presence sets. The client underneath owns the wire and the reconnect, including
-// re-establishing subscriptions, which is what makes a `sync` node stateless: a lost connection is
-// re-dialled and re-subscribed underneath the caller, and this file keeps no socket state at all.
+// re-establishing subscriptions, which is what makes a `sync` node stateless. The one loss it does
+// not own is its own end: a client closed for good once its reconnect budget is spent is replaced
+// here, on our backoff, and every kept subscription is bound again on the new one.
 
 import {
   type Clock,
@@ -18,6 +19,7 @@ import { parseNatsUrl } from './nats-client';
 import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
+import { NatsSubscriptions } from './nats-subscriptions';
 import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
 
 const encoder = new TextEncoder();
@@ -55,6 +57,10 @@ export class NatsTransport implements Transport {
   #dialing: Promise<NatsClient> | undefined;
   #retries = 0;
   #closed = false;
+  /** Set while a client the library gave up on is being replaced; the attempt in flight. */
+  #redialing: number | undefined;
+  #wakeRedial: (() => void) | undefined;
+  readonly #subscriptions = new NatsSubscriptions();
   readonly #reconnectListeners = new Set<() => void>();
 
   constructor(options: NatsTransportOptions) {
@@ -98,23 +104,26 @@ export class NatsTransport implements Transport {
   }
 
   /**
-   * The subscription is the client's to keep: it survives a drop and comes back with the reconnect,
-   * so there is no intent map here to re-bind from — and therefore no way for a re-bind to run
-   * twice and double every change on the subject.
+   * A drop is the client's to recover: the subscription comes back with the library's reconnect,
+   * untouched by this file. It is also KEPT here, for the one loss the library does not recover —
+   * a client closed for good — and bound once on its replacement, never twice on one client.
    */
   async subscribe(subject: string, handler: TransportHandler): Promise<TransportSubscription> {
     const client = await this.#ensure();
     // Same seam as `publish`: a permissions violation on the subject is refused here, not later.
-    const live = this.#translating(`subscribe to ${subject}`, () =>
-      client.subscribe(subject, (message) => {
+    const release = this.#subscriptions.add(
+      client,
+      subject,
+      (message) => {
         try {
           handler(decoder.decode(message.payload), message.subject);
         } catch (error) {
           this.#report(error, message.subject);
         }
-      }),
+      },
+      (call) => this.#translating(`subscribe to ${subject}`, call),
     );
-    return { subject, unsubscribe: () => live.unsubscribe() };
+    return { subject, unsubscribe: release };
   }
 
   /**
@@ -132,6 +141,7 @@ export class NatsTransport implements Transport {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#wakeRedial?.();
     const client = this.#client;
     this.#client = undefined;
     await client?.close();
@@ -141,7 +151,9 @@ export class NatsTransport implements Transport {
    * One dial, shared by every caller that races it. A client that has already been handed out is
    * reused whatever its state: while it is reconnecting the library is re-establishing that same
    * connection and its subscriptions, and a second dial alongside it would double every delivery.
-   * A budget that ran out is a readiness failure, not a reason to start an unbounded retry here.
+   * A client closed for good is not handed out: `#lost` clears it and `#redial` replaces it, and a
+   * caller that lands meanwhile is refused at once rather than parked behind a dial that may take
+   * the library's whole connect budget.
    */
   #ensure(): Promise<NatsClient> {
     if (this.#closed) {
@@ -151,6 +163,19 @@ export class NatsTransport implements Transport {
     }
     const current = this.#client;
     if (current !== undefined) return Promise.resolve(current);
+    if (this.#redialing !== undefined) {
+      return Promise.reject(
+        new TransportUnavailableError({
+          transport: this.name,
+          reason: `the connection closed once its reconnect budget was spent, and re-dial attempt ${this.#redialing} is in progress`,
+        }),
+      );
+    }
+    return this.#dialOnce();
+  }
+
+  /** One dial, shared by every caller that races it. */
+  #dialOnce(): Promise<NatsClient> {
     this.#dialing ??= this.#dial().finally(() => {
       this.#dialing = undefined;
     });
@@ -164,6 +189,10 @@ export class NatsTransport implements Transport {
    * leaking one per retry.
    */
   async #dial(): Promise<NatsClient> {
+    // The client is only known once the dial resolves, and the library may give up on it before
+    // the bucket is asserted: both cases are caught by identity, never by a flag on the transport.
+    let opened: NatsClient | undefined;
+    let closedEarly = false;
     const client = await this.#connect({
       url: this.#options.url,
       name: 'ultimate',
@@ -173,9 +202,19 @@ export class NatsTransport implements Transport {
       reconnectDelay: () => policyDelay(this.#backoff, ++this.#retries, this.#rng),
       onError: (error) => this.#report(error, this.name),
       onReconnect: () => this.#recovered(),
+      onClosed: () => {
+        if (opened === undefined) closedEarly = true;
+        else this.#lost(opened);
+      },
     });
     try {
       await this.#ensureBucket(client);
+      if (closedEarly) {
+        throw new TransportUnavailableError({
+          transport: this.name,
+          reason: 'the connection closed for good while the KV bucket was being asserted',
+        });
+      }
       // `close()` can land while a dial is in flight, and it only closes what it can see:
       // publishing now would leave a connection open that nothing will ever close again.
       if (this.#closed) {
@@ -188,9 +227,74 @@ export class NatsTransport implements Transport {
       await client.close();
       throw error;
     }
+    opened = client;
     this.#client = client;
     this.#retries = 0;
     return client;
+  }
+
+  /**
+   * The library spent its reconnect budget and closed the client. Handing it out again is a node
+   * that refuses every publish until somebody restarts it — and the liveness probe never asks the
+   * bus — so it is forgotten here and replaced in the background, subscriptions included.
+   */
+  #lost(client: NatsClient): void {
+    if (this.#closed || this.#client !== client) return;
+    this.#client = undefined;
+    this.#subscriptions.orphan();
+    this.#report(
+      new TransportUnavailableError({
+        transport: this.name,
+        reason: 'the connection closed once its reconnect budget was spent; re-dialling',
+      }),
+      this.name,
+    );
+    void this.#redial();
+  }
+
+  /**
+   * Re-dial until a client is up or the transport is closed. Bounded by our backoff between
+   * attempts (capped at the policy's `maxMs`), and each attempt is itself a library dial with its
+   * own budget, so a long outage costs one dial per interval rather than a spin. A dial that lands
+   * re-binds every kept subscription and is announced: changes published in the gap are gone.
+   */
+  async #redial(): Promise<void> {
+    if (this.#redialing !== undefined) return;
+    try {
+      for (let attempt = 1; !this.#closed && this.#client === undefined; attempt += 1) {
+        this.#redialing = attempt;
+        try {
+          const client = await this.#dialOnce();
+          // Coded like a first subscribe's refusal; the subscription stays kept for the next client.
+          for (const failure of this.#subscriptions.bindAll(client)) {
+            this.#report(
+              this.#coded(`re-subscribe to ${failure.subject}`, failure.error),
+              failure.subject,
+            );
+          }
+          this.#announce();
+        } catch (error) {
+          if (this.#closed) return;
+          this.#report(error, this.name);
+          await this.#pause(policyDelay(this.#backoff, attempt, this.#rng));
+        }
+      }
+    } finally {
+      this.#redialing = undefined;
+    }
+  }
+
+  /** A wait `close()` can cut short, so a closed transport never holds a timer for `maxMs`. */
+  #pause(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        this.#wakeRedial = undefined;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      this.#wakeRedial = done;
+    });
   }
 
   #ensureBucket(client: NatsClient): Promise<void> {
@@ -216,6 +320,10 @@ export class NatsTransport implements Transport {
     if (client === undefined) return;
     // Not awaited: the library calls this from its status loop. The failure has one place to go.
     void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
+    this.#announce();
+  }
+
+  #announce(): void {
     for (const listener of [...this.#reconnectListeners]) {
       try {
         listener();
@@ -236,12 +344,16 @@ export class NatsTransport implements Transport {
     try {
       return call();
     } catch (error) {
-      if (isUltimateError(error)) throw error;
-      throw new TransportUnavailableError({
-        transport: this.name,
-        reason: `${what} was refused: ${renderThrowable(error)}`,
-      });
+      throw this.#coded(what, error);
     }
+  }
+
+  #coded(what: string, error: unknown): unknown {
+    if (isUltimateError(error)) return error;
+    return new TransportUnavailableError({
+      transport: this.name,
+      reason: `${what} was refused: ${renderThrowable(error)}`,
+    });
   }
 
   /**

@@ -75,6 +75,13 @@ const secrets = async (): Promise<readonly string[]> =>
     )
   ).map((row) => row.mfa_secret);
 
+// At file scope, never inside `describeLive`: Bun runs no hook in a skipped block, so a reset
+// parked there never fires when the suite is skipped (`bun run skip-if-cleanup`).
+afterAll(() => {
+  resetJobs();
+  resetTasks();
+});
+
 describeLive('live · postgres · x auth seal-mfa', () => {
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'x-auth-live-'));
@@ -84,8 +91,6 @@ describeLive('live · postgres · x auth seal-mfa', () => {
   });
 
   afterAll(async () => {
-    resetJobs();
-    resetTasks();
     rmSync(root, { recursive: true, force: true });
     await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
   });

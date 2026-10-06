@@ -23,11 +23,13 @@ export interface DropzoneProps {
   name?: string | undefined;
   /** The `accept` attribute, and the same list a dropped file is partitioned against. */
   accept?: string | undefined;
+  /** Without it the zone takes ONE file, dropped or picked — the rest are refused by `count`. */
   multiple?: boolean | undefined;
   required?: boolean | undefined;
   disabled?: boolean | undefined;
   /** Client-side ceiling. The server enforces its own; this only spares a doomed transfer. */
   maxBytes?: number | undefined;
+  /** Read only with `multiple`: a single-file zone's ceiling is one. */
   maxFiles?: number | undefined;
   /** 0..1 while an upload runs. Absent renders no bar at all — never one stuck at zero. */
   progress?: number | undefined;
@@ -52,7 +54,13 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
   // The input first, then the callback: a drop that only reaches `onSelect` leaves the real
   // control empty, and a refused file left in it is posted by the form anyway.
   const offer = (files: FileList | null | undefined, origin: 'drop' | 'pick'): void => {
-    const selection = selectFiles([...(files ?? [])], props);
+    // `multiple` limits a drop too: the picker enforces the attribute itself, but a drop never
+    // goes through the picker, so a single-file zone would otherwise take every file dropped on it.
+    const selection = selectFiles([...(files ?? [])], {
+      accept: props.accept,
+      maxBytes: props.maxBytes,
+      maxFiles: props.multiple === true ? props.maxFiles : 1,
+    });
     adoptAcceptedFiles(input, files, selection, origin);
     props.onSelect(selection);
   };

@@ -270,6 +270,14 @@ the port's. A caller that had to compute its own wrote
 `display !== 'none' && visibility !== 'hidden' && opacity !== '0'` a second time, which is the
 copy axiom 1 forbids.
 
+**An act scrolls its element into view; a read does not.** The `actionable` wait (every `click`,
+`type`, `fill`, `select`, `focus`, and `waitFor` at its default state) calls
+`ScrapeTarget.query(selector, { reveal: true })`, which scrolls the first match to the viewport's
+centre before measuring — `elementFromPoint` answers nothing off-screen, so an element below the
+fold read as covered. `text()`, `count()`, `values()` and `query()` never move the page. A target
+with no layout engine ignores `QueryOptions` (`cdp-target-reveal.test.ts`,
+`cdp-snapshot.e2e.test.ts`).
+
 **A frame verb reaches the FRAME.** `fill`, `type`, `select`, `clear`, `click` and `query` through
 a `ScrapeFrame` handle all address that frame's own document — never the parent's, even when the
 two carry the same ids, which is what an iframe'd SSO login looks like. `driver-parity-frames.test.ts`

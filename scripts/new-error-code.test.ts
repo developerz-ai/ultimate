@@ -55,6 +55,8 @@ describe('a new code, registered and documented in one edit', () => {
     const row = wiki.findIndex((line) => line.startsWith('| `X_MONEY_ROUNDING_LOST`'));
     const section = wiki.indexOf('## i18n, money, time');
     const next = wiki.findIndex((line, index) => index > section && line.startsWith('## '));
+    // Present first: a renamed heading answers -1, and `row > -1` passes for a row anywhere.
+    expect(section).toBeGreaterThanOrEqual(0);
     expect(row).toBeGreaterThan(section);
     expect(row).toBeLessThan(next);
     // In the table, not after it: the line above is a row too.

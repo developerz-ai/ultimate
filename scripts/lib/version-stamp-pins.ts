@@ -27,17 +27,27 @@ export const STAMP_PINS_FILE = 'scripts/lib/version-stamp-pins.ts';
 export const stampPinKey = (path: string, version: string): string => `${path}@${version}`;
 
 /**
- * Measured 2026-08-23, on the first run of the widened pattern: four sentences, no stamps.
+ * Measured 2026-08-23, on the first run of the widened pattern: four sentences, no stamps. Two
+ * more on 2026-10, the first run of the date-first alternative (`version-stamp-scan.ts`).
  * `AGENTS.md@3.0.0` is deliberately NOT here — that one is the defect the widening found.
  */
 export const VERSION_STAMP_PINS: Readonly<Record<string, string>> = {
   // why: the same sentence, moved out of root CLAUDE.md (its pin, `CLAUDE.md@2.0.0`, left with it).
   'docs/history/milestone-11.md@2.0.0':
     'moved from root CLAUDE.md on 2026-09-23 (plan 101 slice 17 f), unchanged: a claim about a PAST release — "of the four known gaps named in CHANGELOG.md, all four are closed in 2.0.0" — dated because the closure was, not because the tree ships 2.0.0.',
+  // why: read once the DATE-FIRST stamp joined the grammar (2026-10); a measurement, not a stamp.
+  'docs/history/query.md@20.2.1':
+    'a dated bundle MEASUREMENT taken on the 20.2.1 release ("**19,026 B** at 20.2.1 (raw `fetch`)"), kept in a history page because the number belongs to that build and moves to no later one.',
+  // why: the same measurement record as query.md's, for the storage island, by the same widening.
+  'docs/history/storage.md@20.2.1':
+    'a dated bundle MEASUREMENT taken on the 20.2.1 release ("**11,822 B** at 20.2.1"), history by design: re-measuring against a later build writes a new record rather than moving this one.',
   'docs/idea/16-app-targets.md@2.10.1':
     "TAURI's version, not this framework's. The sentence dates when Tauri was surveyed, and no `@ultimat3/*` package has ever declared 2.10.1.",
   'wiki/Building-Your-Own-Base.md@4.0.0':
     'names the release the page\'s fenced examples were last COMPILED against ("Re-run against 4.0.0"). A verification date, not a version stamp — re-running it against a later major moves this row rather than deleting it.',
+  // why: read by the date-first alternative (2026-10); a dated install note, true as written.
+  'wiki/Upgrading.md@7.0.0':
+    'the 5.x → 6.0.0 section\'s dated install note ("`npm view @ultimat3/core version` answers `7.0.0`, so 6.0.0 is behind `latest`"), which tells the reader to re-run the command; rewriting it to drop the version is a wiki edit, and deletes this row.',
   'wiki/Upgrading.md@2.0.0':
     "names which major's entries joined the page and when. The page walks every major by design, so it names all of them; only this one lands within reach of the date.",
 };

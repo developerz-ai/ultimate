@@ -123,9 +123,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **`selectTransport(env, realtime)` is the one place `realtime.transport` + env become a bus** (KV
   bucket and presence TTL come back with it). The config decides, the env supplies: `'nats'` refuses
   (`X_CONFIG_INVALID`) when the `urlEnv` variable is unset; `'memory'` refuses a set one.
-- **`nats` is imported only by `nats-lib-client.ts`**; reconnect and re-subscription are the
-  library's — `NatsTransport` never grows subscription bookkeeping. Above the port: the herd jitter
-  and presence's KV semantics (`nats-jetstream.ts`, `nats-kv.ts`). `nats-fake.ts` has server semantics.
+- **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. Only when it
+  GIVES UP (`onClosed`) does `NatsTransport` re-dial on backoff and re-bind kept subscriptions
+  (`nats-subscriptions.ts`); callers meanwhile are refused. KV semantics: `nats-jetstream`/`nats-kv`.
 - **Nothing leaves `NatsTransport` uncoded** — `#translating` wraps `publish`/`subscribe` refusals
   as `X_TRANSPORT_UNAVAILABLE`. `#ensure` reuses a mid-reconnect client on purpose;
   `Transport.onReconnect(listener)` (required) announces each recovery.

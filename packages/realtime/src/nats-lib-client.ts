@@ -4,7 +4,7 @@
 //
 // WHERE FAILURES ARE TRANSLATED, and it is deliberately not all here. This file coded the calls
 // that have no synchronous caller frame to catch them: `request`, `requestMany`, the dial, and the
-// background `#watch` that is the only place a lost connection is announced. `publish` and
+// background `#watch`/`#watchClosed`, the only places a lost connection is announced. `publish` and
 // `subscribe` are synchronous and stay raw — `NatsTransport.#translating` codes them, because
 // `NatsTransportOptions.connect` is a PUBLIC injection seam: translating in this class would cover
 // the one client the repo ships and leave every app-supplied one uncovered, and translating in both
@@ -72,6 +72,8 @@ class LibNatsClient implements NatsClient {
   readonly #timeoutMs: number;
   readonly #report: (error: unknown) => void;
   #connected = true;
+  /** Our own `close()` ends the status stream too, and that end is not the library giving up. */
+  #closing = false;
 
   constructor(connection: NatsConnection, target: NatsTarget, options: NatsClientOptions) {
     this.#connection = connection;
@@ -155,19 +157,22 @@ class LibNatsClient implements NatsClient {
   }
 
   async close(): Promise<void> {
+    this.#closing = true;
     this.#connected = false;
     await this.#connection.close();
   }
 
   /**
-   * The library's own status stream is the only place a background loss is announced. Nothing
+   * The library's own status stream is the only place a drop or a recovery is announced. Nothing
    * awaits it, so it can neither throw nor end the process: a drop reports and flips `connected`,
    * a reconnect flips it back and tells the transport its cluster may be a new one.
    */
   async #watch(options: NatsClientOptions): Promise<void> {
     const report = options.onError ?? ((): void => undefined);
+    const stream = this.#connection.status();
+    void this.#watchClosed(options, stream);
     try {
-      for await (const status of this.#connection.status()) {
+      for await (const status of stream) {
         if (status.type === Events.Disconnect) {
           this.#connected = false;
           report(unavailable(this.#target, 'the connection dropped'));
@@ -178,16 +183,40 @@ class LibNatsClient implements NatsClient {
           report(unavailable(this.#target, `the server reported ${String(status.data)}`));
         }
       }
-      // The iterator ends when the connection is done: either `close()` or a reconnect budget spent.
-      this.#connected = false;
-      const failure = await this.#connection.closed();
-      if (failure !== undefined) report(unavailable(this.#target, describe(failure)));
     } catch (error) {
       this.#connected = false;
       report(unavailable(this.#target, describe(error)));
     }
   }
+
+  /**
+   * The end of the connection, read off `closed()` — never off the status stream, which in
+   * nats@2.29.3 does NOT end when the connection closes (the library stops its protocol's
+   * listeners, not the connection's). A close we did not ask for is the library giving up on its
+   * reconnect budget: `onClosed`, so the transport replaces this client rather than handing a dead
+   * one out forever. The stream is stopped here, or every replaced client leaks a pending loop.
+   */
+  async #watchClosed(options: NatsClientOptions, stream: unknown): Promise<void> {
+    let failure: unknown;
+    try {
+      failure = await this.#connection.closed();
+    } catch (error) {
+      failure = error;
+    }
+    this.#connected = false;
+    stopStream(stream);
+    if (this.#closing) return;
+    if (failure !== undefined) options.onError?.(unavailable(this.#target, describe(failure)));
+    options.onClosed?.();
+  }
 }
+
+/** `QueuedIterator.stop()` is the library's, and missing from the `AsyncIterable` it is typed as. */
+const stopStream = (stream: unknown): void => {
+  if (typeof stream !== 'object' || stream === null || !('stop' in stream)) return;
+  const stop: unknown = stream.stop;
+  if (typeof stop === 'function') stop.call(stream);
+};
 
 /**
  * The production `NatsConnect`. The first dial retries on the same budget as a later loss

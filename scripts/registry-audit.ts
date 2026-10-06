@@ -16,7 +16,7 @@
 import { parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import { repoRoot, run } from './lib/run';
 import type { Workspace } from './lib/workspaces';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
 
@@ -55,7 +55,29 @@ export interface PublishState extends AuditTarget {
   readonly publishedBy?: string;
   /** Only for `unreachable`: how the request failed, in words a reader can act on. */
   readonly detail?: string;
+  /** Only for `behind`: whether `v<version>` is on the remote — `undefined` when git could not say. */
+  readonly tagged?: boolean;
 }
+
+/**
+ * Whether a release tag is on `origin`. The seam, injected like `RegistryFetch`, because the fix for
+ * a `behind` package depends on it: the daily audit can run after a bump lands and before its tag
+ * is pushed, and dispatching the workflow at a ref that does not exist is a fix that cannot run.
+ */
+export type TagProbe = (tag: string) => Promise<boolean | undefined>;
+
+/** `git ls-remote --exit-code` answers 0 for a match and 2 for none; anything else is no answer. */
+export const remoteTagProbe =
+  (root: string): TagProbe =>
+  async (tag) => {
+    const result = await run(
+      ['git', 'ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`],
+      {
+        cwd: root,
+      },
+    );
+    return result.code === 0 ? true : result.code === 2 ? false : undefined;
+  };
 
 /**
  * `@ultimat3/core` -> `@ultimat3%2fcore`. Only the separator is escaped: that is the path npm's own
@@ -170,11 +192,27 @@ const absentFinding = (state: PublishState): Finding => ({
   fix: `npm publish -w ${state.name} --access public --provenance=false   # PUBLISHING.md step 1, the one-time bootstrap; then bun run scripts/trust-publishers.ts`,
 });
 
+const dispatch = (version: string): string =>
+  `gh workflow run release.yml --ref v${version} -f version=${version}`;
+
+const behindFix = (state: PublishState): string => {
+  const tag = `v${state.version}`;
+  if (state.tagged === false) {
+    return `git tag -a ${tag} -m ${tag} && git push origin ${tag} && gh release create ${tag} --verify-tag --notes "${tag}"   # PUBLISHING.md "Ongoing releases" steps 2–3, once ci.yml is green on the bump commit; the Release triggers the publish`;
+  }
+  const alone = `   # when the run aborts EPUBLISHCONFLICT on a sibling already at ${state.version}, publish this one alone: npm publish -w ${state.name} --access public --provenance=false`;
+  if (state.tagged === true) return `${dispatch(state.version)}${alone}`;
+  return `git ls-remote --exit-code --tags origin refs/tags/${tag} && ${dispatch(state.version)}${alone}`;
+};
+
 const behindFinding = (state: PublishState): Finding => ({
   code: 'X_REGISTRY_VERSION_BEHIND',
   at: state.name,
-  cause: `this tree stamps ${state.name} at ${state.version} and the registry's newest is ${state.latest ?? 'none'}, so the release that should have published ${state.version} did not reach this package`,
-  fix: `gh workflow run release.yml --ref v${state.version} -f version=${state.version}   # when the run aborts EPUBLISHCONFLICT on a sibling already at ${state.version}, publish this one alone: npm publish -w ${state.name} --access public --provenance=false`,
+  cause:
+    state.tagged === false
+      ? `this tree stamps ${state.name} at ${state.version} and the registry's newest is ${state.latest ?? 'none'} — ${state.version} is not tagged on origin yet, so no release of it has run`
+      : `this tree stamps ${state.name} at ${state.version} and the registry's newest is ${state.latest ?? 'none'}, so the release that should have published ${state.version} did not reach this package`,
+  fix: behindFix(state),
 });
 
 const unattestedFinding = (state: PublishState): Finding => ({
@@ -206,6 +244,23 @@ export const findingFor = (state: PublishState): Finding | undefined =>
 export const registryFindings = (states: readonly PublishState[]): readonly Finding[] =>
   states.map(findingFor).filter((finding): finding is Finding => finding !== undefined);
 
+/** Each `behind` state told whether its tag exists — asked once per version, never per package. */
+async function withTags(
+  states: readonly PublishState[],
+  probe: TagProbe,
+): Promise<readonly PublishState[]> {
+  const answers = new Map<string, boolean | undefined>();
+  for (const state of states) {
+    if (state.kind === 'behind' && !answers.has(state.version)) {
+      answers.set(state.version, await probe(`v${state.version}`));
+    }
+  }
+  return states.map((state) => {
+    const tagged = state.kind === 'behind' ? answers.get(state.version) : undefined;
+    return tagged === undefined ? state : { ...state, tagged };
+  });
+}
+
 /**
  * The whole audit as one result, the floor first: a tree that enumerates no publishable workspace
  * answered "0/0 … every one attested", `ok: true` — a perfect registry and a wrong directory read
@@ -214,9 +269,10 @@ export const registryFindings = (states: readonly PublishState[]): readonly Find
 export async function registryAuditResult(
   workspaces: readonly Workspace[],
   fetcher: RegistryFetch = defaultFetch,
+  probe: TagProbe = remoteTagProbe(repoRoot()),
 ): Promise<ScriptResult> {
   const targets = publishOrder(workspaces);
-  const states = await auditRegistry(targets, fetcher);
+  const states = await withTags(await auditRegistry(targets, fetcher), probe);
   const findings = [...publishFloorFindings(workspaces), ...registryFindings(states)];
   const attested = states.filter((state) => state.kind === 'ok').length;
   const version = targets[0]?.version ?? 'unknown';

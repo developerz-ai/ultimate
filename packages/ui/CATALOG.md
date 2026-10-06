@@ -378,11 +378,11 @@ A drop surface that is a real `<label>` around a real, visually-hidden `<input t
 | `id` | `string` | — |  |
 | `name` | `string` | — |  |
 | `accept` | `string` | — | The `accept` attribute, and the same list a dropped file is partitioned against. |
-| `multiple` | `boolean` | — |  |
+| `multiple` | `boolean` | — | Without it the zone takes ONE file, dropped or picked — the rest are refused by `count`. |
 | `required` | `boolean` | — |  |
 | `disabled` | `boolean` | — |  |
 | `maxBytes` | `number` | — | Client-side ceiling. The server enforces its own; this only spares a doomed transfer. |
-| `maxFiles` | `number` | — |  |
+| `maxFiles` | `number` | — | Read only with `multiple`: a single-file zone's ceiling is one. |
 | `progress` | `number` | — | 0..1 while an upload runs. Absent renders no bar at all — never one stuck at zero. |
 | `progressLabel` | `string` | — | Already-translated accessible name for the progress bar. |
 | `class` | `string` | — |  |
@@ -689,7 +689,7 @@ Action menu: a trigger plus a `role="menu"` list with roving tabindex. Distinct 
 | `items` | `readonly MenuItem[]` | yes |  |
 | `open` | `boolean` | yes |  |
 | `onOpenChange` | `(open: boolean) => void` | yes |  |
-| `trigger` | `(control: { id: string; 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string; }) => JSX.Element` | yes |  |
+| `trigger` | `(control: { id: string; 'aria-haspopup': 'menu'; 'aria-expanded': boolean; 'aria-controls': string \| undefined; }) => JSX.Element` | yes | The menu button. `aria-controls` is present only while the list is mounted: an IDREF to an element not in the document names nothing. |
 | `label` | `string` | yes | Already-translated accessible name for the menu. |
 | `align` | `'start' \| 'end'` | — |  |
 | `class` | `string` | — |  |

@@ -115,6 +115,10 @@ export function releaseFacts(names: readonly string[]): readonly CountFact[] {
         /[Aa]ll\s+(\d+)\s+workspaces\b/g,
         /(\d+)\s+workspaces\s+(?:publish|resolve|move)/g,
         /(\d+)\s+tarballs\b/g,
+        // "all 29 published packages", which `docs/idea/19-mechanism-not-convention.md` wrote while
+        // the tree published 31. EXACT, unlike "all N packages": "published" names the set — every
+        // workspace publishes, the unscoped `create-ultimate` with them (CodeRabbit 4200667472).
+        /[Aa]ll\s+(\d+)\s+published\s+packages\b/g,
       ],
       // `wiki/The-Eight-Primitives.md` writes "25 in all" about the FILES in a generated slice.
       requires: /packages?\b|workspaces?\b|tarballs?\b/,

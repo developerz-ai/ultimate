@@ -129,12 +129,16 @@ approximately nothing. Verified `As of 2026-08`:
 | `@ultimat3/schema` | 0 | **none** |
 | `@ultimat3/money` | 1 | `@ultimat3/core`, `@ultimat3/schema` — both `@ultimat3/*` |
 
-Across all 29 published packages the only third-party runtime dependencies are **`nats`**
-(`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam, both
-under [`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion:
+Across all 31 published packages the only third-party runtime dependencies are **`nats`**
+(`@ultimat3/realtime`) and **`sass`** (`@ultimat3/render`), both at a driver/transport seam, and
+**`@babel/core`** + **`babel-preset-solid`** (`@ultimat3/cli`, the tier-5 build tool: Solid's
+reactivity is a compile-time contract the island bundler runs) — all under
+[`18-build-vs-wrap.md`](./18-build-vs-wrap.md)'s criterion. Verified `As of 2026-10`:
 
 ```sh
 jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ultimat3/' | sort -u
+# @babel/core
+# babel-preset-solid
 # nats
 # sass
 ```
@@ -142,7 +146,7 @@ jq -r '(.dependencies // {}) | keys[]' packages/*/package.json | grep -v '^@ulti
 So `bun add @ultimat3/money` is a reasonable thing to do in a project that is not an Ultimate app at
 all — a Bun sidecar beside a Rails monolith, a one-off script, somebody else's framework — and it
 costs three packages and no external code. Bun-only still applies: every package ships TypeScript
-source through `exports` and declares `engines.bun >= 1.3.0`, so the consumer must be a Bun project,
+source through `exports` and declares `engines.bun >= 1.4.2`, so the consumer must be a Bun project,
 just not an Ultimate one.
 
 The tier table is usually described as an internal discipline. It is also a **consumer guarantee**,

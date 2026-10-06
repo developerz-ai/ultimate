@@ -3,7 +3,7 @@
 // stand-in `x` that records its argv, so a dropped step, a lost `--json` or a swallowed exit code
 // is a failing assertion rather than something a newcomer meets on PowerShell.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no temp-directory or recursive-remove native; each case writes a throwaway app.
 import {
   chmodSync,
@@ -70,6 +70,14 @@ const appRoot = (): string => {
   return root;
 };
 
+/**
+ * One bin script's deadline. A script spawns `bun` for itself and once per `x` call it makes, so on a
+ * loaded runner one test outlives bun's default 5 s — the deadline below fired second, the test's
+ * own first (seen in CI, `--json reaches BOTH halves`). The test budget is DERIVED from it.
+ */
+const SCRIPT_DEADLINE_MS = 30_000;
+setDefaultTimeout(SCRIPT_DEADLINE_MS + 5_000);
+
 const runScript = (
   root: string,
   path: string,
@@ -82,7 +90,7 @@ const runScript = (
     stdout: 'pipe',
     stderr: 'pipe',
     // A bin script runs a stand-in `x` and exits; one that hangs fails the test instead of the run.
-    timeout: 30_000,
+    timeout: SCRIPT_DEADLINE_MS,
   });
   const log = join(root, 'x.log');
   const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [];

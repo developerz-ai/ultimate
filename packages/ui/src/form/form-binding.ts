@@ -106,6 +106,12 @@ export function createFormBinding<TValues, TResult>(
   let state: FormState<TResult> = IDLE_FORM_STATE;
   let touch: FormTouch = NO_FORM_TOUCH;
   let inFlight: Promise<FormState<TResult>> | null = null;
+  /**
+   * The paths changed since the in-flight submit read the form, or `null` with none in flight.
+   * Every edit counts, a revert to `initial` included: the server now holds what was submitted,
+   * not the opening value, so the baseline cannot say whether an edit made after the read is lost.
+   */
+  let editedInFlight: Set<string> | null = null;
 
   /**
    * A transition names the submit's own members; `touched`/`dirty` are added here, from the one
@@ -146,6 +152,9 @@ export function createFormBinding<TValues, TResult>(
   const run = async (values: TValues): Promise<FormState<TResult>> => {
     // Cleared, never carried: a stale message would mark a control invalid for a value the user
     // has already changed, on the one screen where the user is watching for exactly that.
+    // Opened BEFORE the publish: `onState` is synchronous, so a subscriber can edit in reaction
+    // to `submitting` itself, and that edit already postdates what this submit read.
+    editedInFlight = new Set();
     publish({ status: 'submitting', ...NO_FORM_ERRORS, result: undefined, issues: [] });
 
     try {
@@ -159,12 +168,16 @@ export function createFormBinding<TValues, TResult>(
         if (local.length > 0) return failed(local);
       }
       const result = await options.submit(values);
-      // The server accepted what the form held, so there is nothing left to lose. `touched` stays:
-      // the user has still visited those fields, and a hint that vanishes on save is a flicker.
-      touch = { touched: touch.touched, dirty: NO_FORM_TOUCH.dirty };
+      // The server accepted what the form held WHEN IT SUBMITTED, so only what changed since is
+      // left to lose — clearing that too let a navigation guard drop an edit typed during the save.
+      // `touched` stays: the user has still visited those fields, and a hint that vanishes on save
+      // is a flicker.
+      touch = { touched: touch.touched, dirty: editedInFlight ?? NO_FORM_TOUCH.dirty };
       return publish({ status: 'succeeded', ...NO_FORM_ERRORS, result, issues: [] });
     } catch (rejection) {
       return failed(issuesFromRejection(rejection));
+    } finally {
+      editedInFlight = null;
     }
   };
 
@@ -184,10 +197,14 @@ export function createFormBinding<TValues, TResult>(
     pending: () => state.status === 'submitting',
     firstInvalidField: () => firstInvalidField(state, fields),
     touch: (path) => publishTouch(markTouched(touch, path)),
-    edit: (path, value) =>
-      publishTouch(markDirty(touch, path, !sameFieldValue(value, baseline(path)))),
+    edit: (path, value) => {
+      editedInFlight?.add(path);
+      publishTouch(markDirty(touch, path, !sameFieldValue(value, baseline(path))));
+    },
     reset: () => {
       touch = NO_FORM_TOUCH;
+      // A reset mid-flight discards what was typed before it, the in-flight window's share too.
+      if (editedInFlight !== null) editedInFlight = new Set();
       publish(IDLE_FORM_STATE);
     },
   };

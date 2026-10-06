@@ -55,6 +55,24 @@ describe('parsing', () => {
   });
 });
 
+describe('a wildcard covers the LIST, never the row', () => {
+  // The audit's slip: `X_ROADMAP_*` made every `X_ROADMAP_…` code "listed", and the row check ran
+  // only over the explicit names — so a declared `X_ROADMAP_NEW` with no row of its own passed.
+  test('a declared code covered by a wildcard still needs its own table row', () => {
+    const gaps = check(PAGE, ['X_GATE_ONE', 'X_ROADMAP_STALE', 'X_ROADMAP_NEW']);
+    expect(gaps).toEqual([{ kind: 'no-row', code: 'X_ROADMAP_NEW' }]);
+    expect(gateCodeFinding(gaps[0] as never).fix).toContain('| `X_ROADMAP_NEW` |');
+  });
+
+  test('and the backlog pins one exactly as it pins a named code', () => {
+    expect(
+      check(PAGE, ['X_GATE_ONE', 'X_ROADMAP_STALE', 'X_ROADMAP_NEW'], {
+        noRow: ['X_ROADMAP_NEW'],
+      }),
+    ).toEqual([]);
+  });
+});
+
 describe('the two directions', () => {
   test('the good fixture is silent, so every finding below is the mutation', () => {
     expect(check(PAGE, ['X_GATE_ONE', 'X_ROADMAP_STALE'])).toEqual([]);
@@ -71,8 +89,9 @@ describe('the two directions', () => {
     ]);
   });
 
-  test('a wildcard entry covers its whole family', () => {
-    expect(check(PAGE, ['X_ROADMAP_STALE', 'X_ROADMAP_ANYTHING_AT_ALL'])).toEqual([]);
+  test('a wildcard entry LISTS its whole family — each member still owes a row (below)', () => {
+    const gaps = check(PAGE, ['X_ROADMAP_STALE', 'X_ROADMAP_ANYTHING_AT_ALL']);
+    expect(gaps.filter((gap) => gap.kind === 'unlisted')).toEqual([]);
   });
 
   test('a pin silences a finding, and only the one it names', () => {

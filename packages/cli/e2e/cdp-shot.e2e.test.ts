@@ -42,10 +42,11 @@ const chrome = await findChrome(process.env);
 /** Every call of the shot session after the launch. */
 const SHOT_TIMEOUT_MS = 20_000;
 /**
- * The open's designed budget, then the shot session's own: `open()`'s eight calls (attach a page,
- * enable four domains, two emulations — `cdp-shot-driver.ts`) and the `goto`.
+ * The open's designed budget, then the shot session's own: `open()`'s ten calls (attach a page,
+ * attach the browser target and enable Fetch on it — the allow list over popups — enable four
+ * domains, two emulations — `cdp-shot-driver.ts`) and the `goto`.
  */
-const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS + 9 * SHOT_TIMEOUT_MS;
+const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS + 11 * SHOT_TIMEOUT_MS;
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
 
 describe.skipIf(chrome === undefined && !required)('x shot’s browser, in a real Chrome', () => {

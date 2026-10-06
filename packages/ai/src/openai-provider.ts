@@ -28,6 +28,7 @@ import type {
 } from './provider';
 import { costOf, estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
 import { readSse } from './sse';
+import type { LlmToolCall } from './tools';
 
 const API_KEY_ENV = 'OPENAI_API_KEY';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -171,7 +172,7 @@ class OpenAiProvider implements Provider {
 
   /** One parsed answer, priced. The only place `cost` is applied — the provider owns prices. */
   private result(request: GenerateRequest, model: ModelId, answer: ChatAnswer): GenerateResult {
-    const usage = answer.usage ?? estimatedUsage(request, answer.text);
+    const usage = answer.usage ?? estimatedUsage(request, answer.text, answer.toolCalls);
     return {
       model,
       text: answer.text,
@@ -269,11 +270,22 @@ class OpenAiProvider implements Provider {
  * reconciling a real call against zero, which refunds the reservation in full and turns the ledger
  * into a decoration. An estimate is wrong by a few percent in the safe direction; zero is wrong by
  * all of it.
+ *
+ * The tool calls are output too, and for an `llm()` answer they are ALL of it: the answer is one
+ * `respond` call with no text beside it, so counting `text` alone estimated it at zero.
  */
-export function estimatedUsage(request: GenerateRequest, text: string): TokenUsage {
+export function estimatedUsage(
+  request: GenerateRequest,
+  text: string,
+  toolCalls: readonly LlmToolCall[],
+): TokenUsage {
+  let output = estimateTextTokens(text);
+  for (const call of toolCalls) {
+    output += estimateTextTokens(call.name) + estimateTextTokens(JSON.stringify(call.input));
+  }
   return {
     inputTokens: estimateInputTokens(request),
-    outputTokens: estimateTextTokens(text),
+    outputTokens: output,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
   };

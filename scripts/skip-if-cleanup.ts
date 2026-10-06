@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Refuse a test file that resets a PROCESS-GLOBAL registry from inside a `.skipIf(` block, where
-// the reset never runs in the configuration the block is skipped in.
+// Refuse a test file that resets a PROCESS-GLOBAL registry from inside a skippable block — a
+// `.skipIf(` or a `describe.skip` alias — where the reset never runs in the configuration the
+// block is skipped in.
 //
 // THE DEFECT THIS EXISTS FOR. Bun evaluates a skipped file's module body — so a module-scope
 // `entity()` REGISTERS — and then does not run a hook inside `describe.skipIf(true)`. A
@@ -19,9 +20,9 @@
 // green. That is why the rule has to be static: no test run in the normal configuration can
 // observe it.
 //
-// WHAT IT CHECKS. A file holding BOTH a `.skipIf(` and a call to a registry reset must make that
-// call from a hook at FILE scope — `afterAll(` / `beforeAll(` beginning at column 0 — not from one
-// nested inside a `describe`. Two spellings leak and the rule refuses both: the call inside the
+// WHAT IT CHECKS. A file holding BOTH a skip (`.skipIf(` or a `describe.skip` alias) and a call
+// to a registry reset must make that call from a hook at FILE scope — `afterAll(` / `beforeAll(`
+// beginning at column 0 — not from one nested inside a `describe`. Two spellings leak and the rule refuses both: the call inside the
 // skipped block's own teardown, and a file-scope hook whose body returns early on the same
 // condition the block skips on.
 //
@@ -98,7 +99,14 @@ export async function readTestSources(root: string): Promise<{
   return { sources, files };
 }
 
-const SKIP_IF = /\.skipIf\s*\(/;
+/**
+ * A skip in either spelling: `describe.skipIf(cond)(…)`, and the ALIAS — `const describeLive = url
+ * === undefined ? describe.skip : describe;` — which is the repo's commonest form and which this
+ * rule did not see until 2026-10, so 17 files were outside it. Bun runs no hook inside a
+ * `describe.skip` block either, so the two leak identically. `\b` after `skip` keeps `skipIf` from
+ * matching the second half twice.
+ */
+const SKIP_IF = /\.skipIf\s*\(|\b(?:describe|test|it)\.skip\b/;
 
 /**
  * A process-global registry reset, in both spellings, CAPTURING the callee — the reset is tracked
@@ -131,6 +139,32 @@ const localBindings = (src: string): ReadonlySet<string> =>
       (match) => match[1] as string,
     ),
   );
+
+/**
+ * Module-scope `let x;` / `let x: T;` — declared with NO initialiser and assigned ONLY inside a
+ * file-scope hook, so only a hook gives it a value. In a skipped file it stays `undefined`:
+ * `store.reset()` on it clears what the live suite created, never a registry the import left
+ * behind. Surfaced by the two rate-limit suites once the alias spelling was read; without it both
+ * were false findings. Every assignment is located by the same hook walk `cleanupFiles` uses, never
+ * by its column: `if (url) {\n  registry = make();\n}` at top level is indented and still runs at
+ * import, which a column-0 test read as hook-owned.
+ */
+const hookOwnedBindings = (src: string): ReadonlySet<string> => {
+  const declared = [...src.matchAll(/^(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?;/gm)].map(
+    (match) => match[1] as string,
+  );
+  const outside = new Set<string>();
+  let inHook = false;
+  for (const text of src.split('\n')) {
+    if (FILE_SCOPE_HOOK.test(text)) inHook = true;
+    else if (TOP_LEVEL.test(text)) inHook = false;
+    if (inHook) continue;
+    for (const name of declared) {
+      if (new RegExp(`(?<![\\w$.])${RegExp.escape(name)}\\s*=(?!=)`).test(text)) outside.add(name);
+    }
+  }
+  return new Set(declared.filter((name) => !outside.has(name)));
+};
 
 /** Every reset this line performs, by the name a repair would move. */
 const resetsOn = (text: string, local: ReadonlySet<string>): readonly string[] => [
@@ -195,7 +229,7 @@ export function cleanupFiles(sources: ReadonlyMap<string, string>): readonly Cle
   const out: CleanupFile[] = [];
   for (const [file, src] of sources) {
     if (!SKIP_IF.test(src)) continue;
-    const local = localBindings(src);
+    const local = new Set([...localBindings(src), ...hookOwnedBindings(src)]);
     const performed = new Set<string>();
     const reached = new Set<string>();
     let inHook = false;

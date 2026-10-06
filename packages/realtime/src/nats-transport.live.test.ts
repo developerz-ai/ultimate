@@ -48,11 +48,13 @@ interface Leg {
 async function relayTo(
   host: string,
   port: number,
+  /** Listen on this port rather than a fresh one: a relay "restarted" where the client dials. */
+  listenOn = 0,
 ): Promise<{ port: number; cut(): void; stop(): void }> {
   const clients = new Set<{ end(): void }>();
   const listener = Bun.listen<Leg>({
     hostname: '127.0.0.1',
-    port: 0,
+    port: listenOn,
     socket: {
       open(client) {
         client.data = { peer: undefined, early: [] };
@@ -224,6 +226,53 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     } finally {
       await bus.close();
       relay.stop();
+    }
+  }, 30_000);
+
+  // The failure the library does NOT recover: its reconnect budget spent, the client closed for
+  // good. Until 2026-10 the transport handed that dead client out until the pod was restarted.
+  test('a connection the library gave up on is re-dialled, and its subscriptions come back', async () => {
+    const target = parseNatsUrl(url ?? '');
+    const relay = await relayTo(target.host, target.port);
+    const credentials =
+      target.token !== undefined
+        ? `${encodeURIComponent(target.token)}@`
+        : target.user !== undefined && target.pass !== undefined
+          ? `${encodeURIComponent(target.user)}:${encodeURIComponent(target.pass)}@`
+          : '';
+    const reported: string[] = [];
+    const bus = new NatsTransport({
+      url: `nats://${credentials}127.0.0.1:${relay.port}`,
+      bucket: BUCKET,
+      // One attempt, so the budget is spent in milliseconds; zero wait for the frozen `Date.now()`.
+      maxReconnectAttempts: 1,
+      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+      onError: (error) => reported.push(String(error)),
+    });
+    started.push(bus);
+    const publisher = transport();
+    const seen: string[] = [];
+    const subject = `x.change.redial.${Bun.randomUUIDv7()}`;
+    let restarted: { stop(): void } | undefined;
+    try {
+      await bus.subscribe(subject, (payload) => seen.push(payload));
+      await publisher.publish(subject, 'before');
+      await waitFor(() => seen.length === 1);
+
+      relay.stop();
+      await waitFor(() => reported.some((line) => line.includes('reconnect budget was spent')));
+      expect(reported.some((line) => line.includes('reconnect budget was spent'))).toBe(true);
+      expect(bus.connected).toBe(false);
+
+      restarted = await relayTo(target.host, target.port, relay.port);
+      await waitFor(() => bus.connected);
+      expect(bus.connected).toBe(true);
+      await publisher.publish(subject, 'after');
+      await waitFor(() => seen.length === 2);
+      expect(seen).toEqual(['before', 'after']);
+    } finally {
+      await bus.close();
+      restarted?.stop();
     }
   }, 30_000);
 });

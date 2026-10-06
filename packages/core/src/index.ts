@@ -172,7 +172,7 @@ export type {
   PwaShortcut,
   PwaText,
 } from './config-pwa';
-export { PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
+export { isSameOriginPath, PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
 export type {
   SeoConfig,
   SeoConfigInput,

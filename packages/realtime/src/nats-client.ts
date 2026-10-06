@@ -33,8 +33,8 @@ export interface NatsRequestManyOptions {
 
 /**
  * What the bus needs from a NATS connection, and nothing more. A subscription outlives a reconnect —
- * the client re-establishes it underneath the caller — which is why nothing above this port keeps
- * subscription bookkeeping of its own.
+ * the client re-establishes it underneath the caller. It does not outlive the client: once the
+ * reconnect budget is spent (`onClosed`), the caller dials a new client and binds again.
  */
 export interface NatsClient {
   /** The connected server's version, as `assertServerVersion` reads it. */
@@ -75,6 +75,11 @@ export interface NatsClientOptions {
   readonly onError?: ((error: unknown) => void) | undefined;
   /** The library re-established the connection. The cluster behind it may be a different one. */
   readonly onReconnect?: (() => void) | undefined;
+  /**
+   * The library gave up: its reconnect budget is spent and this connection is closed for good,
+   * subscriptions included. Never called for the caller's own `close()`. The caller re-dials.
+   */
+  readonly onClosed?: (() => void) | undefined;
 }
 
 /** The one seam a test replaces: a client that never touches a socket. */

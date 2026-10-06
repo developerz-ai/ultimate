@@ -41,10 +41,36 @@ const RETURNS_ERROR = [
   /export const (\w+)\s*=\s*\([^)]*\):\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/g,
 ];
 
+/**
+ * The opening `(` of an exported function's parameter list, however long the list runs. Both
+ * patterns above stop at a `\n`, and past 100 columns Biome puts one parameter per line — so
+ * `notImplementedDriver`, `insufficientContrastError`, `explainActionPathMiss` and more were never
+ * in the set until 2026-10. The list's close comes from `balancedClose`, so a parameter TYPED as
+ * an error (`error: MailError,`) or an arrow-typed one (`(x: number) => Error`) is never read as
+ * the return type.
+ */
+const PARAMETERS_OPEN =
+  /export (?:function (\w+)\s*(?:<[^>(]*>)?|const (\w+)\s*=\s*(?:async\s*)?)\(/g;
+const RETURN_TYPE = /^\s*:\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/;
+
+function wrappedFactories(source: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of source.matchAll(PARAMETERS_OPEN)) {
+    const close = balancedClose(source, match.index + match[0].length - 1);
+    if (close < 0 || !RETURN_TYPE.test(source.slice(close + 1, close + 200))) continue;
+    names.push(match[1] ?? match[2] ?? '');
+  }
+  return names;
+}
+
 export function errorFactoriesIn(source: string): readonly string[] {
-  return RETURNS_ERROR.flatMap((pattern) =>
-    [...source.matchAll(pattern)].map((match) => match[1] ?? ''),
-  ).filter((name) => name !== '');
+  const names = [
+    ...RETURNS_ERROR.flatMap((pattern) =>
+      [...source.matchAll(pattern)].map((match) => match[1] ?? ''),
+    ),
+    ...wrappedFactories(source),
+  ];
+  return [...new Set(names)].filter((name) => name !== '');
 }
 
 const EXPECT = /\bexpect\(/g;

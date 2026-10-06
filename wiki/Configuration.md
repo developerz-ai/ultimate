@@ -144,7 +144,7 @@ There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retent
 
 | field | type | default | notes |
 |---|---|---|---|
-| `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |
+| `realtime.enabled` | `boolean` | `true` | **on by default since 22.0.0**, when the boot began obeying the key: an app with no `realtime` section keeps the `sync` node it always got. `enabled: false` is the opt-out — for an app that declares no `channel()` topic and no `live: true` query |
 | `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
 | `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
 | `realtime.maxSubscriptionsPerActor` | `number` | unset = `1000` | live-query subscriptions one actor may hold on one `sync` node, **across all its sockets**. An anonymous socket counts against the client NETWORK resolved at the upgrade — an IPv4 address exactly, an IPv6 address by its /64, an IPv4-mapped IPv6 as its IPv4 (`TRUSTED_PROXY_HOPS` honoured, as `ctx.ip` is). Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `actor`. A whole number ≥ 1, else `X_CONFIG_INVALID` |
@@ -159,7 +159,7 @@ There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retent
 export const config = defineConfig({ name: 'shop', realtime: { maxSubscriptionsPerActor: 200 } });
 ```
 
-At runtime the transport is chosen by `NATS_URL` rather than by this field — the config documents intent, the env decides ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
+Since 22.0.0 the transport is chosen by `realtime.transport`, never by `NATS_URL` alone — the config decides, the env supplies the URL `realtime.urlEnv` names. `'memory'` with `NATS_URL` set, and `'nats'` with the named variable unset, are both `X_CONFIG_INVALID` at boot ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
 
 **`realtime.tier` is gone**, `As of 2026-08-23` — the same shape as `jobs.driver` and
 `realtime.heartbeatMs` before it. It accepted

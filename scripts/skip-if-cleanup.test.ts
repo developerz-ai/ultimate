@@ -296,3 +296,99 @@ describe.skipIf(!ready)('live', () => {});
     expect(cleanupFiles(one(source))[0]?.cleared).toBe(true);
   });
 });
+
+describe('the skip spelled as an alias, not a `.skipIf(`', () => {
+  /**
+   * The repo's commonest spelling — 17 files `As of 2026-10` — and the rule only triggered on
+   * `.skipIf(`, so every one of them was outside it. Bun skips a `describe.skip` block's hooks
+   * exactly as it skips a `describe.skipIf(true)` block's.
+   */
+  test('`url === undefined ? describe.skip : describe` is a skip, and the parked reset leaks', () => {
+    const aliased = `import { afterAll, describe } from 'bun:test';
+const url = process.env['TEST_DATABASE_URL'];
+const describeLive = url === undefined ? describe.skip : describe;
+describeLive('live', () => {
+  afterAll(() => {
+    clearRegistry();
+  });
+});
+`;
+    expect(cleanupFiles(one(aliased))[0]?.cleared).toBe(false);
+  });
+
+  test('the same alias with the reset at file scope is the passing shape', () => {
+    const fixed = `import { afterAll, describe } from 'bun:test';
+const describeLive = url ? describe : describe.skip;
+describeLive('live', () => {});
+afterAll(() => {
+  clearRegistry();
+});
+`;
+    expect(cleanupFiles(one(fixed))[0]?.cleared).toBe(true);
+  });
+
+  test('a test.skip alias is the same skip', () => {
+    const aliased = `const liveTest = ready ? test : test.skip;
+describe('live', () => {
+  afterAll(() => {
+    resetLimiter();
+  });
+});
+`;
+    expect(cleanupFiles(one(aliased))[0]?.unreached).toEqual(['resetLimiter']);
+  });
+});
+
+describe('a reset of something only a hook creates', () => {
+  /**
+   * `let store: Store;` assigned in `beforeAll` is `undefined` in a skipped file — the module body
+   * creates nothing, so `store.reset()` clears rows the live suite made, not a registry the import
+   * left behind. Surfaced by the alias spelling in two rate-limit suites; reporting them would be a
+   * false finding, and a false finding is how a rule gets switched off.
+   */
+  test('`let store: Store;` + `store.reset()` in a bailed hook is not a registry', () => {
+    const hookOwned = `const describeLive = url === undefined ? describe.skip : describe;
+let store: PostgresRateLimitStore;
+beforeAll(async () => {
+  if (url === undefined) return;
+  store = postgresRateLimitStore({ executor });
+});
+beforeEach(async () => {
+  if (url === undefined) return;
+  await store.reset();
+});
+describeLive('live', () => {});
+`;
+    expect(cleanupFiles(one(hookOwned))).toEqual([]);
+  });
+
+  test('the same binding assigned in the module body IS import-time state', () => {
+    const imported = `const describeLive = url === undefined ? describe.skip : describe;
+let registry: Registry;
+registry = createRegistry();
+describeLive('live', () => {
+  afterAll(() => {
+    registry.reset();
+  });
+});
+`;
+    expect(cleanupFiles(one(imported))[0]?.unreached).toEqual(['registry.reset']);
+  });
+});
+
+describe('a binding assigned in the module body is never hook-owned, whatever its indent', () => {
+  test('an assignment inside a top-level `if` runs at import, so its reset is a registry', () => {
+    const conditional = `const describeLive = url === undefined ? describe.skip : describe;
+let registry: Registry;
+if (process.env['SEED'] !== undefined) {
+  registry = createRegistry();
+}
+describeLive('live', () => {
+  afterAll(() => {
+    registry.reset();
+  });
+});
+`;
+    expect(cleanupFiles(one(conditional))[0]?.unreached).toEqual(['registry.reset']);
+  });
+});

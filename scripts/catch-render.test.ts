@@ -264,3 +264,43 @@ describe('one hop: a field this package own errors.ts launders into a refusal', 
     expect(map.has('ai')).toBe(false);
   });
 });
+
+describe('unit · a promise `.catch` callback is a catch too', () => {
+  // The audit's slip: only `catch (x) {` blocks were read, so the same render in
+  // `.catch((error: unknown) => …)` — the spelling every fire-and-forget promise in the tree uses —
+  // was invisible. Same binding, same refusal, same crash in the handler.
+  test('an annotated block-bodied callback', () => {
+    expect(
+      kinds(
+        'run().catch((error: unknown) => { throw new E({ cause: String(error), fix: "x" }); });',
+      ),
+    ).toEqual(['cause:error:conversion']);
+  });
+
+  test('an expression-bodied callback, and a bare parameter', () => {
+    expect(kinds('run().catch((e) => new E({ detail: JSON.stringify(e) }));')).toEqual([
+      'detail:e:stringify',
+    ]);
+    expect(kinds('run().catch(e => fail({ cause: e instanceof Error ? 1 : 2 }));')).toEqual([
+      'cause:e:instanceof',
+    ]);
+  });
+
+  test('ANY annotation on the parameter, not only unknown/any', () => {
+    // CodeRabbit 4200667462: `.catch((error: Error) => …)` is legal on a promise and slipped.
+    expect(kinds('run().catch((error: Error) => fail({ cause: String(error) }));')).toEqual([
+      'cause:error:conversion',
+    ]);
+    expect(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+      kinds('run().catch((error: Error | undefined) => fail({ cause: `${error}` }));'),
+    ).toEqual(['cause:error:interpolation']);
+  });
+
+  test('the total renderer stays silent, and a field after the callback is not its', () => {
+    expect(
+      kinds('run().catch((error: unknown) => fail({ cause: renderThrowable(error) }));'),
+    ).toEqual([]);
+    expect(kinds('run().catch((e) => undefined); report({ cause: String(e) });')).toEqual([]);
+  });
+});

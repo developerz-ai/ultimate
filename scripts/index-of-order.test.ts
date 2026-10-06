@@ -249,3 +249,172 @@ describe('the OrEqual pair is the same assertion', () => {
     expect(sites[0]?.guarded).toBe(true);
   });
 });
+
+describe('an index bound to a name first', () => {
+  /**
+   * The audit's first slip: `const drop = up.indexOf('x'); expect(drop).toBeLessThan(alter)` held
+   * no `indexOf` in the operand, so it was no site at all — and it is the spelling a loop over
+   * steps writes, `scripts/ci-workflow-shape.test.ts`'s `scaffolds` among them.
+   */
+  test('is resolved to its initialiser in the same test, and reported', () => {
+    const sites = orderingSites(
+      FILE,
+      wrap(`    const drop = up.indexOf('drop x');\n    expect(drop).toBeLessThan(alter);`),
+    );
+    expect(sites).toHaveLength(1);
+    expect(sites[0]?.guarded).toBe(false);
+    expect(sites[0]?.risky).toContain("up.indexOf('drop x')");
+  });
+
+  test('a multi-line findIndex initialiser resolves too', () => {
+    const body = [
+      '    const at = steps.findIndex(',
+      "      (step) => step.run.includes('x -- new'),",
+      '    );',
+      '    expect(n).toBeGreaterThan(at);',
+    ].join('\n');
+    expect(orderingSites(FILE, wrap(body)).map((site) => site.guarded)).toEqual([false]);
+  });
+
+  test('a guard on the NAME or on the needle settles it', () => {
+    const bound = `    const drop = up.indexOf('drop x');\n`;
+    const guardedBy = (guard: string): boolean =>
+      orderingSites(FILE, wrap(`${bound}${guard}\n    expect(drop).toBeLessThan(alter);`))[0]
+        ?.guarded === true;
+    expect(guardedBy('    expect(drop).toBeGreaterThanOrEqual(0);')).toBe(true);
+    expect(guardedBy("    expect(up).toContain('drop x');")).toBe(true);
+  });
+
+  test('a name bound to something other than an index is still not a site', () => {
+    expect(
+      orderingSites(FILE, wrap(`    const n = rows.length;\n    expect(n).toBeLessThan(4);`)),
+    ).toEqual([]);
+  });
+
+  test('a name bound in a DIFFERENT test does not resolve here', () => {
+    const two = `describe('d', () => {
+  test('a', () => {
+    const drop = up.indexOf('drop x');
+  });
+
+  test('b', () => {
+    expect(drop).toBeLessThan(alter);
+  });
+});
+`;
+    expect(orderingSites(FILE, two)).toEqual([]);
+  });
+});
+
+describe('a toContain on the WRONG haystack', () => {
+  /**
+   * The audit's second slip: any `toContain(<the needle>)` in the test counted, whichever string it
+   * was asserted on — so `expect(down).toContain('drop x')` guarded `up.indexOf('drop x')`, and the
+   * order was checked on a haystack nothing proved held the needle.
+   */
+  test('does not guard the index on another receiver', () => {
+    const body = `    expect(down).toContain('drop x');\n    expect(up.indexOf('drop x')).toBeLessThan(n);`;
+    expect(orderingSites(FILE, wrap(body))[0]?.guarded).toBe(false);
+  });
+
+  test('nor does a superstring on another receiver', () => {
+    const body = `    expect(down).toContain('alter "p" drop x;');\n    expect(up.indexOf('drop x')).toBeLessThan(n);`;
+    expect(orderingSites(FILE, wrap(body))[0]?.guarded).toBe(false);
+  });
+
+  test('nor a `.not.toContain` on the right one', () => {
+    const body = `    expect(up).not.toContain('drop x');\n    expect(up.indexOf('drop x')).toBeLessThan(n);`;
+    expect(orderingSites(FILE, wrap(body))[0]?.guarded).toBe(false);
+  });
+
+  test('the same receiver, spelled across a line break, still guards', () => {
+    const body = `    expect(\n      up,\n    ).toContain('drop x');\n    expect(up.indexOf('drop x')).toBeLessThan(n);`;
+    expect(orderingSites(FILE, wrap(body))[0]?.guarded).toBe(true);
+  });
+});
+
+describe('presence proven by what the test already asserts', () => {
+  /**
+   * Resolving bound names surfaced six sites in the real tree that a phantom -1 CANNOT pass, each
+   * for a reason the rule did not read. Reporting them would be false findings, which this file's
+   * header says is how a rule gets switched off — so each proof is read, and each is sound.
+   */
+  const site = (body: string) => orderingSites(FILE, wrap(body))[0];
+
+  test('X > (an index) proves X >= 0, because every index is >= -1', () => {
+    // `packages/db/src/migrate.test.ts`: `expect(index).toBeGreaterThan(table)`, then `index` bounds.
+    const body = [
+      "    const table = texts.findIndex((t) => t.startsWith('create table'));",
+      "    const index = texts.findIndex((t) => t.startsWith('create index'));",
+      '    expect(index).toBeGreaterThan(table);',
+      "    expect(texts.indexOf('COMMIT')).toBeGreaterThan(index);",
+    ].join('\n');
+    const commit = orderingSites(FILE, wrap(body)).find((one) => one.risky.startsWith('index'));
+    expect(commit?.guarded).toBe(true);
+  });
+
+  test('and so does (an index) < X', () => {
+    const body = [
+      "    const a = up.indexOf('a');",
+      "    const b = up.indexOf('b');",
+      '    expect(a).toBeLessThan(b);',
+      '    expect(n).toBeGreaterThan(b);',
+    ].join('\n');
+    const later = orderingSites(FILE, wrap(body)).find((one) => one.matcher === 'toBeGreaterThan');
+    expect(later?.guarded).toBe(true);
+  });
+
+  test('but X >= (an index) proves nothing — -1 >= -1', () => {
+    const body = [
+      "    const a = up.indexOf('a');",
+      "    const b = up.indexOf('b');",
+      '    expect(b).toBeGreaterThanOrEqual(a);',
+      '    expect(n).toBeGreaterThan(b);',
+    ].join('\n');
+    const later = orderingSites(FILE, wrap(body)).find((one) => one.matcher === 'toBeGreaterThan');
+    expect(later?.guarded).toBe(false);
+  });
+
+  test('nor does X > (a value that is not an index)', () => {
+    const body = [
+      "    const b = up.indexOf('b');",
+      '    expect(b).toBeGreaterThan(offset);',
+      '    expect(n).toBeGreaterThan(b);',
+    ].join('\n');
+    expect(
+      orderingSites(FILE, wrap(body)).find((one) => one.risky.startsWith('b ='))?.guarded,
+    ).toBe(false);
+  });
+
+  test('a guard carrying a failure message is the same guard', () => {
+    // `packages/cli/src/compile-externals.test.ts`: `expect(at, 'binaryArgs does not …')`.
+    const body = [
+      '    const at = args.indexOf(specifier);',
+      "    expect(at, 'missing').toBeGreaterThanOrEqual(0);",
+      "    expect(at).toBeLessThan(args.indexOf('--outfile'));",
+    ].join('\n');
+    expect(site(body)?.guarded).toBe(true);
+    // And `> 0`, the spelling that file uses: stronger than `>= 0`, read as no guard at all.
+    expect(site(body.replace('toBeGreaterThanOrEqual(0)', 'toBeGreaterThan(0)'))?.guarded).toBe(
+      true,
+    );
+  });
+
+  test('a value read AT the index proves it, since haystack[-1] is undefined', () => {
+    // `packages/testing/src/cdp-e2e-session.test.ts`: `expect(on[pin]?.params).toEqual({ … })`.
+    const body = [
+      "    const pin = on.findIndex((call) => call.method === 'a');",
+      '    expect(on[pin]?.params).toEqual({ headers: 1 });',
+      "    expect(pin).toBeLessThan(on.findIndex((call) => call.method === 'b'));",
+    ].join('\n');
+    expect(site(body)?.guarded).toBe(true);
+  });
+
+  test('but not on another haystack, nor against undefined', () => {
+    const at = "    const pin = on.findIndex((call) => call.method === 'a');\n";
+    const ordered = "\n    expect(pin).toBeLessThan(on.findIndex((call) => call.method === 'b'));";
+    expect(site(`${at}    expect(off[pin]).toEqual({ a: 1 });${ordered}`)?.guarded).toBe(false);
+    expect(site(`${at}    expect(on[pin]).toBe(undefined);${ordered}`)?.guarded).toBe(false);
+    expect(site(`${at}    expect(on[pin]).not.toEqual({ a: 1 });${ordered}`)?.guarded).toBe(false);
+  });
+});

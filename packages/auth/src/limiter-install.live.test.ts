@@ -87,8 +87,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (url === undefined) return;
+  // Before the bail: a reset behind the skip condition never runs when the suite is skipped
+  // (`bun run skip-if-cleanup`), and clearing an install nobody made is a no-op.
   resetAuthLimiters();
+  if (url === undefined) return;
   await sql.unsafe('delete from x_auth_lockouts', []);
   await sql.end();
 });

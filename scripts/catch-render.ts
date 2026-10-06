@@ -27,6 +27,9 @@
 // `cause:` — legal at both ends, lethal end to end, and invisible to `error-render.ts` because
 // `logs` is annotated `string` and to this rule because `logs` was not a destination.
 //
+// And, since 2026-10, a promise's `.catch((error: unknown) => …)` callback beside the `catch (error)`
+// block — the same binding, read the same way.
+//
 // WHAT IT STILL CANNOT SEE: a caught value handed to a helper that renders it in a THIRD file, a
 // field laundered by a package other than the one holding the catch, a `.message` read on its own
 // (a getter can throw too), and a rethrow whose renderer is the constructor's. A floor, like the
@@ -39,6 +42,7 @@
 
 import type { SourceFile } from './boundaries';
 import { enclosingCallee, localDuckRenderers, maskToCode, valueEnd } from './error-render';
+import { balancedClose } from './lib/balanced-paren';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
@@ -139,6 +143,42 @@ export function launderedFields(errorsSource: string): ReadonlySet<string> {
   // nothing, and leaving them in would double-count a `cause:` inside `errors.ts`.
   for (const field of REFUSAL_FIELDS) fields.delete(field);
   return fields;
+}
+
+/**
+ * `.catch((error) => …)`, `.catch((error: unknown) => …)`, `.catch(error => …)` — a promise's
+ * catch, which this rule did not read until 2026-10: every fire-and-forget promise in the tree
+ * spells its handler this way, and a `String(error)` in one is the same crash in the same place.
+ * Group 1 is the parenthesised binding, group 2 the bare one. ANY annotation is read — unlike a
+ * `catch` clause, a promise callback may write `(error: Error)`, and that slipped until CodeRabbit
+ * 4200667462 found it.
+ */
+const PROMISE_CATCH =
+  /\.catch\s*\(\s*(?:async\s*)?(?:\(\s*([A-Za-z_$][\w$]*)\s*(?::[^()=]*)?\)|([A-Za-z_$][\w$]*))\s*=>/g;
+
+interface CaughtScope {
+  readonly binding: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Every place a caught value is in scope: a `catch (x) { … }` block, and a `.catch((x) => …)`
+ * callback — its body whether braced or an expression, up to the `.catch(` call's own `)`.
+ */
+function caughtScopes(code: string): readonly CaughtScope[] {
+  const scopes: CaughtScope[] = [];
+  for (const caught of code.matchAll(CATCH_BINDING)) {
+    const block = blockAfter(code, caught.index + caught[0].length - 1);
+    if (block !== undefined) scopes.push({ binding: caught[1] as string, ...block });
+  }
+  for (const caught of code.matchAll(PROMISE_CATCH)) {
+    const close = balancedClose(code, code.indexOf('(', caught.index));
+    if (close < 0) continue;
+    const binding = (caught[1] ?? caught[2]) as string;
+    scopes.push({ binding, start: caught.index + caught[0].length, end: close });
+  }
+  return scopes;
 }
 
 /** The span of the block opened after `from`, `{` to its matching `}`. */
@@ -243,10 +283,7 @@ export function scanCatchRenders(
   const seen = new Set<string>();
   const sites: CatchRenderSite[] = [];
   const patterns = laundered.size === 0 ? [FIELD_KEY] : [FIELD_KEY, launderedKey([...laundered])];
-  for (const caught of code.matchAll(CATCH_BINDING)) {
-    const binding = caught[1] as string;
-    const block = blockAfter(code, caught.index + caught[0].length - 1);
-    if (block === undefined) continue;
+  for (const { binding, ...block } of caughtScopes(code)) {
     const body = code.slice(block.start, block.end);
     for (const key of patterns.flatMap((pattern) => [...body.matchAll(pattern)])) {
       const start = block.start + key.index + key[0].length;

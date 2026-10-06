@@ -121,8 +121,11 @@ const MIGRATE_CEILING = 624;
  * `MIGRATE_CEILING` for 11, `realtime/src/sync-bus-handlers.ts` (the bus handlers, moved out so
  * `sync-node.ts` stays under the ceiling once `start()` is memoised and `stop()` waits it out), and
  * `storage/src/driver-memory-conflict.ts` (the memory disk refusing the key conflicts local does).
+ * raised 917 → 918, measured 918 (2026-10-06, plan 101 sweep 11b): `realtime/src/nats-subscriptions.ts`
+ * — the kept subscription list a `NatsTransport` re-binds once the library has closed its client for
+ * good, which left every realtime role dead until a manual restart.
  */
-const SERVING_ROLE_CEILING = 917;
+const SERVING_ROLE_CEILING = 918;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -164,8 +167,10 @@ const SERVING_ROLE_CEILING = 917;
  * `SERVING_ROLE_CEILING` for 10d (`admin/src/mcp-scopes.ts` is behind the admin mount's lazy import).
  * raised 1026 → 1029, measured 1029 (2026-10-06, plan 101 sweep 11): the three modules named on
  * `SERVING_ROLE_CEILING` for 11.
+ * raised 1029 → 1030, measured 1030 (2026-10-06, plan 101 sweep 11b): `realtime/src/nats-subscriptions.ts`,
+ * named on `SERVING_ROLE_CEILING` for 11b.
  */
-const WEB_ROLE_CEILING = 1029;
+const WEB_ROLE_CEILING = 1030;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
