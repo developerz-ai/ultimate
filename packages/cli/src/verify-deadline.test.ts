@@ -219,8 +219,10 @@ function pendingRunner(pids: readonly number[]): {
 
 describe('on Windows, the pids recorded at spawn', () => {
   test('expire() tree-kills every child still running, by the pid it reported at spawn', async () => {
+    // Never a literal pid: one that equals this process's own would be skipped as self.
+    const [a, b] = [process.pid + 1, process.pid + 2];
     const trees: number[] = [];
-    const { runner, finish } = pendingRunner([4100, 4200]);
+    const { runner, finish } = pendingRunner([a, b]);
     const seen: number[] = [];
     const guard = guardStep(
       runner,
@@ -230,7 +232,7 @@ describe('on Windows, the pids recorded at spawn', () => {
         platform: 'win32',
         killTree: async (pid) => {
           trees.push(pid);
-          finish(pid === 4100 ? 0 : 1);
+          finish(pid === a ? 0 : 1);
           return true;
         },
       },
@@ -241,14 +243,14 @@ describe('on Windows, the pids recorded at spawn', () => {
     });
     const second = guard.runner(['bun', 'test', 'b.test.ts'], { cwd: '.' });
     const expiry = await guard.expire();
-    expect(trees).toEqual([4100, 4200]);
+    expect(trees).toEqual([a, b]);
     expect(expiry.killed).toEqual([
-      { pid: 4100, command: 'bun test a.test.ts' },
-      { pid: 4200, command: 'bun test b.test.ts' },
+      { pid: a, command: 'bun test a.test.ts' },
+      { pid: b, command: 'bun test b.test.ts' },
     ]);
     expect(expiry.inFlight.map((run) => run.command[2])).toEqual(['a.test.ts', 'b.test.ts']);
     // The caller's own observer still hears the pid the guard recorded.
-    expect(seen).toEqual([4100]);
+    expect(seen).toEqual([a]);
     await Promise.all([first, second]);
   });
 
@@ -275,13 +277,18 @@ describe('on Windows, the pids recorded at spawn', () => {
   });
 
   test('a tree the kill could not end is not reported killed; this process never is', async () => {
+    // Derived from this process's pid, never literals: on a CI runner the test process itself got
+    // pid 4500 once, so the fixture's "child" WAS self and was rightly skipped — a red run no code
+    // change caused (#662, gate unit-1).
+    const gone = process.pid + 1;
+    const live = process.pid + 2;
     const spawned = new Map<number, readonly string[]>([
       [process.pid, ['self']],
-      [4400, ['gone']],
-      [4500, ['bun', 'test']],
+      [gone, ['gone']],
+      [live, ['bun', 'test']],
     ]);
-    expect(await killTrees(spawned, async (pid) => pid !== 4400)).toEqual([
-      { pid: 4500, command: 'bun test' },
+    expect(await killTrees(spawned, async (pid) => pid !== gone)).toEqual([
+      { pid: live, command: 'bun test' },
     ]);
   });
 });

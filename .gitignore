@@ -103,6 +103,7 @@ packages/cli/.mcp-host-fixture/
 packages/testing/.isolated-plugins-fixture/
 packages/cli/.roles-script-csp-fixture/
 packages/cli/.serve-drain-fixture/
+packages/cli/.deploy-drain-fixture/
 
 # Scratch credential files. A mis-set path once wrote an npm session token into the repo root.
 .npmrc-login

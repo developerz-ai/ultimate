@@ -548,7 +548,7 @@ The platform's own kill timer must outlast the sum, or SIGKILL truncates the dra
 | Helm | `x deploy --method helm` passes `drain.deadlineSeconds` and `drain.readinessGraceSeconds` from this section; the chart derives each role's `terminationGracePeriodSeconds` | preStop (web/sync, 1.30+) + grace (web/sync) + deadline + 10 s margin |
 | Compose | you: `stop_grace_period` in `docker-compose.prod.yml` | ≥ grace + deadline + 10 s (`40s` ships, for the defaults) |
 
-`http.drainTimeoutMs`, when an app declares it in `configureHttp`, still sets the budget on the `web` role — it is applied after this section, when the server is created.
+`http.drainTimeoutMs`, when an app declares it in `configureHttp`, still sets the budget on the `web` role — it is applied after this section, when the server is created. `x deploy --method helm` imports the app to read it and sizes the chart from the **larger** of the two, so a web pod is never killed inside its own HTTP drain. Its removal is queued for 25.0.0.
 
 ## Runtime overrides — `apps/<app>/runtime.ts`
 

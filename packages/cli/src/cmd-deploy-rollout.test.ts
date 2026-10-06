@@ -37,18 +37,23 @@ function appRoot(config: string, compose?: string): string {
 }
 
 /** Records every spawn; `ps -q worker` answers with the two containers serving now. */
-function recording(): {
+function recording(failing?: (command: readonly string[]) => number | undefined): {
   ran: string[][];
   context: (argv: string[], cwd: string) => CommandContext;
 } {
   const ran: string[][] = [];
+  let workerListings = 0;
   const runner: CommandContext['runner'] = async (command) => {
     ran.push([...command]);
-    const listing = command.includes('ps') && command.at(-1) === 'worker' ? 'w1\nw2\n' : '';
+    // The second listing of a failed roll sees the replica the failed `up` created.
+    const isWorkerPs = command.includes('ps') && command.at(-1) === 'worker';
+    if (isWorkerPs) workerListings += 1;
+    const listing = isWorkerPs ? (workerListings === 1 ? 'w1\nw2\n' : 'w1\nw2\nn1\n') : '';
+    const code = failing?.(command) ?? 0;
     const result: ExecResult = {
       command,
-      code: 0,
-      ok: true,
+      code,
+      ok: code === 0,
       stdout: listing,
       stderr: '',
       durationMs: 1,
@@ -86,6 +91,8 @@ describe('unit · a compose deploy starts the new container first where it can',
       'ps -q sync',
       'up -d --no-deps --wait --wait-timeout 300 sync',
       'ps -q worker',
+      'config --hash worker',
+      'docker inspect --format {{.Id}} {{.Created}} {{index .Config.Labels "com.docker.compose.config-hash"}} w1 w2',
       'up -d --no-deps --no-recreate --wait --wait-timeout 300 --scale worker=4 worker',
       'docker stop w1 w2',
       'docker rm w1 w2',
@@ -109,6 +116,24 @@ describe('unit · a compose deploy starts the new container first where it can',
     expect(byRole.get('web')?.why).toContain('3000');
     expect(byRole.get('migrate')?.strategy).toBeUndefined();
     expect((result.lines ?? []).join('\n')).toContain('--scale worker=4 worker');
+  });
+});
+
+describe('unit · a failed start-first roll names what it could not clean up', () => {
+  test('a stop of the unhealthy replica that fails is in the X_DEPLOY_FAILED finding, with its ids', async () => {
+    const root = appRoot("{ name: 'demo-app' }", COMPOSE);
+    const { context } = recording((command) =>
+      command.includes('--no-recreate') ? 1 : command[1] === 'stop' ? 5 : undefined,
+    );
+    const result = await deployCommand.run(context(['deploy', '--image', 'repo/app:2'], root));
+    expect(result.ok).toBe(false);
+    const finding = result.findings?.[0];
+    expect(finding?.code).toBe('X_DEPLOY_FAILED');
+    expect(finding?.cause).toContain('role "worker" step exited 1');
+    expect(finding?.cause).toContain('docker stop n1');
+    expect(finding?.cause).toContain('exited 5');
+    // The fix stays the command that failed, to rerun.
+    expect(finding?.fix).toContain('--scale worker=4 worker');
   });
 });
 

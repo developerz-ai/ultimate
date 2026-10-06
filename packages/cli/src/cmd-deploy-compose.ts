@@ -1,9 +1,8 @@
 // The compose half of `x deploy`'s rollout: which serving roles can start their new container
-// BEFORE the old one stops, read off the app's compose file, and the sequence that does it.
+// BEFORE the old one stops, read off the app's compose file. The sequence that does it is
+// `cmd-deploy-start-first.ts`.
 // `docker compose up -d <role>` alone is stop-first — it recreates, so the role serves nothing
 // between the old container's exit and the new one's healthcheck.
-
-import type { ExecOptions, Runner } from './exec';
 
 /**
  * How one serving role is rolled. `start-first` is the zero-downtime path; `stop-first` is
@@ -15,13 +14,6 @@ export type ComposeStrategy =
 
 /** The roles that stay up serving — the only ones a rollout strategy applies to. */
 export const SERVING_ROLES = ['web', 'sync', 'worker', 'scheduler'] as const;
-
-/**
- * Bounds `--wait`: a new container that never reports healthy fails the step rather than holding
- * the deploy open. Five minutes is past any `start_period` the scaffold declares (30s) plus a cold
- * boot, and `--wait` already returns at once when a container turns `unhealthy` or exits.
- */
-export const COMPOSE_WAIT_TIMEOUT_SECONDS = 300;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -99,86 +91,4 @@ export function composeStrategies(text: string | undefined): ReadonlyMap<string,
 export async function readComposeFile(path: string): Promise<string | undefined> {
   const file = Bun.file(path);
   return (await file.exists()) ? file.text() : undefined;
-}
-
-/** The `up` that starts the new replicas beside the running ones; `--no-recreate` keeps the old. */
-export function startFirstUp(
-  base: readonly string[],
-  role: string,
-  scale: number | undefined,
-): readonly string[] {
-  const wait = ['--wait', '--wait-timeout', String(COMPOSE_WAIT_TIMEOUT_SECONDS)];
-  return scale === undefined
-    ? [...base, 'up', '-d', '--no-deps', ...wait, role]
-    : [
-        ...base,
-        'up',
-        '-d',
-        '--no-deps',
-        '--no-recreate',
-        ...wait,
-        '--scale',
-        `${role}=${scale}`,
-        role,
-      ];
-}
-
-export type StartFirstOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly code: number; readonly command: readonly string[] };
-
-const idsOf = (stdout: string): readonly string[] =>
-  stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-/**
- * Start-first for one role. The containers running now are listed first; the new ones are
- * created BESIDE them (`--scale running + replicas --no-recreate`, so compose builds the extra
- * containers from the new definition and leaves the old ones alone) and waited on until their
- * healthcheck — `/readyz` for web and sync, the scrape port for the others — answers. Only then
- * are the old containers stopped (SIGTERM, then compose's `stop_grace_period`, which compose
- * stamped on each container as its stop timeout) and removed.
- *
- * A new replica that never turns healthy is stopped and removed, and the old ones keep serving:
- * a failed deploy leaves the role exactly as it found it. The same sequence `docker-rollout`
- * performs, because `deploy.update_config.order: start-first` is a Swarm field `docker compose`
- * ignores.
- */
-export async function runStartFirst(step: {
-  readonly role: string;
-  readonly base: readonly string[];
-  readonly replicas: number;
-  readonly runner: Runner;
-  readonly options: ExecOptions;
-}): Promise<StartFirstOutcome> {
-  const { role, base, runner, options } = step;
-  const run = async (command: readonly string[]) => {
-    const result = await runner(command, options);
-    return { result, failed: { ok: false as const, code: result.code, command } };
-  };
-  const listing = await run([...base, 'ps', '-q', role]);
-  if (!listing.result.ok) return listing.failed;
-  const old = idsOf(listing.result.stdout);
-  if (old.length === 0) {
-    const fresh = await run(startFirstUp(base, role, undefined));
-    return fresh.result.ok ? { ok: true } : fresh.failed;
-  }
-  const up = await run(startFirstUp(base, role, old.length + step.replicas));
-  if (!up.result.ok) {
-    // Only what this step created is taken away. A listing that fails here leaves the new
-    // replicas to the operator, and the failure reported stays the `up` that caused it.
-    const after = await runner([...base, 'ps', '-q', role], options);
-    const created = after.ok ? idsOf(after.stdout).filter((id) => !old.includes(id)) : [];
-    if (created.length > 0) {
-      await runner(['docker', 'stop', ...created], options);
-      await runner(['docker', 'rm', ...created], options);
-    }
-    return up.failed;
-  }
-  const stopped = await run(['docker', 'stop', ...old]);
-  if (!stopped.result.ok) return stopped.failed;
-  const removed = await run(['docker', 'rm', ...old]);
-  return removed.result.ok ? { ok: true } : removed.failed;
 }

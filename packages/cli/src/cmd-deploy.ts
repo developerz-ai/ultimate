@@ -5,13 +5,7 @@
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
-import {
-  type ComposeStrategy,
-  composeStrategies,
-  readComposeFile,
-  runStartFirst,
-  startFirstUp,
-} from './cmd-deploy-compose';
+import { type ComposeStrategy, composeStrategies, readComposeFile } from './cmd-deploy-compose';
 import { readHelmDrainOverrides } from './cmd-deploy-drain';
 import {
   type HelmTarget,
@@ -22,6 +16,7 @@ import {
   readRollout,
 } from './cmd-deploy-helm';
 import { deploySpec } from './cmd-deploy-spec';
+import { runStartFirst, startFirstUp } from './cmd-deploy-start-first';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
@@ -320,6 +315,19 @@ export async function readDeployRequest(
   };
 }
 
+/**
+ * What a failed start-first roll could not undo. The unhealthy replicas it created are stopped and
+ * removed; when that cleanup fails too, the containers it names are still running beside the old
+ * ones, and saying nothing would leave an operator rerunning a deploy over them unaware.
+ */
+const cleanupNote = (outcome: {
+  readonly ok: false;
+  readonly cleanup?: { readonly code: number; readonly command: readonly string[] } | undefined;
+}): string =>
+  outcome.cleanup === undefined
+    ? ''
+    : `; its cleanup \`${outcome.cleanup.command.map(quoteArg).join(' ')}\` exited ${outcome.cleanup.code}, so the containers it names are still running — stop and remove them before rerunning`;
+
 const stepLine = (env: Readonly<Record<string, string>>, command: readonly string[]): string =>
   [
     ...Object.entries(env).map(([name, value]) => `${name}=${quoteArg(value)}`),
@@ -423,7 +431,7 @@ export const deployCommand: CliCommand = {
           findings: [
             {
               code: 'X_DEPLOY_FAILED',
-              cause: `role "${step.role}" step exited ${outcome.code}`,
+              cause: `role "${step.role}" step exited ${outcome.code}${cleanupNote(outcome)}`,
               fix: `${stepLine(plan.env, outcome.command)}   # run it directly to see the full output`,
               docs: ERROR_DOCS_URL,
             },

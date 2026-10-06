@@ -268,6 +268,9 @@ then restarts. Sweep 8d root-causes the flaky tests.
 - Helm: every role has a `/readyz` readiness probe and `minReadySeconds`, and each role's
   `terminationGracePeriodSeconds` is derived from the `drain.*` values, which `x deploy --method helm`
   sets from `app.config.ts`. `x new` writes the same chart.
+- A compose start-first rerun finishes a half-done deploy instead of adding replicas, and a failed
+  cleanup is named in `X_DEPLOY_FAILED`. Helm grace periods are sized from the larger of
+  `drain.deadlineMs` and `configureHttp({ drainTimeoutMs })`.
 - `migrate()` / `ROLE=migrate` accept a rollback onto a newer build's ledger: nothing applied, the
   newer rows logged and returned in `ahead`. Rolling back the image no longer fails the pre-upgrade
   Job.
