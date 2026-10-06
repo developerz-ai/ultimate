@@ -115,7 +115,7 @@ One container running `ROLE=web` and one Postgres — there is **no** `ROLE=all`
 
 ### Can I use it without the realtime tiers?
 
-Yes. `realtime: { enabled: false }` is the default, and there is no tier key to set — a tier is what your app **declares** (a `channel()` topic, a `live: true` query), never a config value. An app that declares none needs no `sync` role, no `replicator`, and no NATS. That is a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
+Yes. Realtime is on by default (`realtime.enabled` is `true` since 22.0.0); `realtime: { enabled: false }` in `app.config.ts` is the opt-out, and there is no tier key to set — a tier is what your app **declares** (a `channel()` topic, a `live: true` query), never a config value. An app that declares none needs no `sync` role, no `replicator`, and no NATS. That is a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
 
 ## Risk
 

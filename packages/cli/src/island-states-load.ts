@@ -53,6 +53,12 @@ export async function discoverIslandStates(root: string): Promise<readonly strin
 async function manifestsIn(root: string, file: string): Promise<readonly IslandStatesManifest[]> {
   const absolute = join(root, file);
   assertIslandStatesPure(file, await Bun.file(absolute).text());
+  // Evicted first: Bun caches `import()` by path, and `x dev` loads the states on every shot
+  // request in one process — so an edited states file was never read again until a restart, and
+  // `app-load.ts`'s reload skips this file by name. The check above read the NEW text; this makes
+  // the import evaluate that same text. A states file imports no relative module (the purity rule
+  // refuses one), so the file itself is the whole of what can be stale.
+  delete require.cache[absolute];
   const module: unknown = await import(absolute);
   const exported = typeof module === 'object' && module !== null ? Object.values(module) : [];
   const found = exported.filter(isIslandStatesManifest);

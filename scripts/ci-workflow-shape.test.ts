@@ -163,11 +163,17 @@ describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot',
   // snapshot lives under the APP's own `.x/cache`, named for the PGlite version that wrote it.
   const SNAPSHOTS = '.x/cache/pglite-*.snapshot';
   const cached = [
-    { name: 'reference-app-verify', root: expr('matrix.app'), before: 'reference-app-gate.ts' },
+    {
+      name: 'reference-app-verify',
+      root: expr('matrix.app'),
+      before: 'reference-app-gate.ts',
+      scaffold: false,
+    },
     {
       name: 'scaffold-smoke',
       root: `${expr('runner.temp')}/${expr('matrix.app')}`,
       before: 'scaffold-gate.ts',
+      scaffold: true,
     },
   ];
   const cacheStep = (target: Job): number =>
@@ -178,16 +184,23 @@ describe('unit · ci.yml · the embedded Postgres boots from a cached snapshot',
     );
 
   test('every job that boots one restores it from the app`s own .x/cache, before the boot', () => {
-    for (const { name, root, before } of cached) {
+    for (const { name, root, before, scaffold } of cached) {
       const steps = job(name).steps ?? [];
       const at = cacheStep(job(name));
       expect({ [name]: at >= 0 }).toEqual({ [name]: true });
       expect(steps[at]?.with?.['path']).toBe(`${root}/${SNAPSHOTS}`);
       const boots = steps.findIndex((step) => text(step.run).includes(before));
       expect(boots).toBeGreaterThan(at);
-      // After `x new`: the scaffold refuses a directory that already exists.
+      // After `x new`: the scaffold refuses a directory that already exists. Per job, and the
+      // presence first: a bare `toBeLessThan(at)` passed on the -1 of a job that never scaffolds,
+      // so deleting `x -- new` from scaffold-smoke left it green (`bun run index-of-order`).
       const scaffolds = steps.findIndex((step) => text(step.run).includes('x -- new'));
-      expect(scaffolds).toBeLessThan(at);
+      if (scaffold) {
+        expect(scaffolds).toBeGreaterThanOrEqual(0);
+        expect(scaffolds).toBeLessThan(at);
+      } else {
+        expect({ [name]: scaffolds }).toEqual({ [name]: -1 });
+      }
     }
   });
 

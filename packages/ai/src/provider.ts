@@ -281,7 +281,8 @@ export class AnthropicProvider implements Provider {
     if (!message.isComplete()) {
       throw new AiTransportError({
         provider: this.name,
-        detail: 'the stream ended before message_stop — the answer is truncated',
+        detail:
+          'the stream ended before message_stop, or with a tool call still open — the answer is truncated',
       });
     }
     const state = message.state();

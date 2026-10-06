@@ -141,6 +141,41 @@ describe('the factory set is derived from source, never listed', () => {
   });
 });
 
+describe('a signature Biome wrapped is still a declaration', () => {
+  /**
+   * Past 100 columns Biome puts one parameter per line, and both patterns stop at a `\n` — so
+   * `notImplementedDriver`, `insufficientContrastError` and three more were never in the set, and
+   * a sync `toThrow` over a call to either could not be reported.
+   */
+  test('the return type after the wrapped parameter list is read', () => {
+    const source = [
+      'export function notImplementedDriver(',
+      '  driver: string,',
+      '  capability: string,',
+      '): NotImplementedError {',
+      'export const explain = (',
+      '  method: string,',
+      '  pathname: string,',
+      '): ContractDriftError | undefined => {',
+      'export function wrappedCount(',
+      '  a: (x: number) => Error,',
+      '): ErrorCount {',
+    ].join('\n');
+    expect([...errorFactoriesIn(source)].sort()).toEqual(['explain', 'notImplementedDriver']);
+  });
+
+  test('a parameter typed as an error does not make the function a factory', () => {
+    const source = ['export function report(', '  error: MailError,', '): string {'].join('\n');
+    expect(errorFactoriesIn(source)).toEqual([]);
+  });
+
+  test('each name is read once, whichever pattern reads it', () => {
+    expect(errorFactoriesIn('export function sendFailed(input: X): MailError {')).toEqual([
+      'sendFailed',
+    ]);
+  });
+});
+
 describe('the rule does not read its own fixtures', () => {
   test('a bad shape written as a STRING is a fixture, not an assertion this file makes', () => {
     // Every `gaps("expect(() => new MailError(…))…")` above is one of these. Without the

@@ -41,7 +41,24 @@ export const STAMP_GLOBS: readonly string[] = [
  * within reach of a date; those are pinned, one page and version at a time, in
  * `scripts/lib/version-stamp-pins.ts`, never excused by narrowing this back.
  */
-const STAMP = /(?<![\w.-])v?(\d+\.\d+\.\d+)(?![\w.-])[^`\n]{0,40}?`As of\b/g;
+const VERSION_FIRST = /(?<![\w.-])v?(\d+\.\d+\.\d+)(?![\w.-])[^`\n]{0,40}?`As of\b/;
+
+/**
+ * THE DATE MAY COME FIRST, `As of 2026-10`: `PUBLISHING.md` opened with "**`As of 2026-08-20`: 31
+ * workspaces publish, all 30 are on the registry at 4.0.0**" and said "`As of 2026-08-20` `git
+ * describe` answers `v4.0.0`" further down, both two majors stale, and neither was a stamp to the
+ * version-first grammar. The version must sit in the SAME SENTENCE — no `. ` between them — within
+ * 80 characters, and be the object of a STATE verb: "at", "answers", "is", "reads". Measured: the
+ * same window without the verb read 34 sentences across 20 pages, every one a dated record of a
+ * past release ("(21.0.0; plan …)"), a third party ("Bun 1.3.14") or a fix ("the 1.1.0 fix") —
+ * none a claim about what this tree ships now. Backticks may sit in the gap: the claim quotes the
+ * command that answered it.
+ */
+const DATE_FIRST =
+  /`As of \d{4}-\d{2}(?:-\d{2})?`(?:[^\n.]|\.(?!\s|$)){0,80}?\b(?:at|answers|is|are|reads|says)\s+[`*_]*(?<![\w.-])v?(\d+\.\d+\.\d+)(?![\w.-])/;
+
+/** Group 1 is a version-first stamp's version, group 2 a date-first one's. */
+const STAMP = new RegExp(`${VERSION_FIRST.source}|${DATE_FIRST.source}`, 'g');
 
 /** `docs/plans/` is a dated record; `CHANGELOG.md` names every past version by design. */
 export const skipStampPath = (path: string): boolean =>
@@ -75,7 +92,7 @@ export function readStamps(file: MarkdownFile): readonly VersionStamp[] {
   const lines = file.text.split('\n');
   for (const index of proseLineIndices(lines)) {
     for (const match of (lines[index] ?? '').matchAll(STAMP)) {
-      found.push({ path: file.path, line: index + 1, version: match[1] as string });
+      found.push({ path: file.path, line: index + 1, version: (match[1] ?? match[2]) as string });
     }
   }
   return found;
@@ -97,13 +114,21 @@ export function rewriteStamps(
   const lines = file.text.split('\n');
   let moved = 0;
   for (const index of proseLineIndices(lines)) {
-    lines[index] = (lines[index] ?? '').replace(STAMP, (whole: string, found: string) => {
-      if (found === version) return whole;
-      moved += 1;
-      // `whole` starts AT the version (the optional `v` is inside the match), so the first
-      // occurrence of `found` in it is the stamp and never the date behind it.
-      return whole.replace(found, version);
-    });
+    const line = lines[index] ?? '';
+    lines[index] = line.replace(
+      STAMP,
+      (whole: string, first: string | undefined, last: string | undefined) => {
+        const found = first ?? last ?? version;
+        if (found === version) return whole;
+        moved += 1;
+        // A version-first `whole` starts AT the version (the optional `v` is inside the match), so
+        // its first occurrence is the stamp and never the date behind it. A date-first `whole`
+        // ENDS at it — and a first-occurrence replace there would hit `14.0.0-rc1` before `4.0.0`.
+        return first !== undefined
+          ? whole.replace(found, version)
+          : `${whole.slice(0, whole.length - found.length)}${version}`;
+      },
+    );
   }
   return { text: lines.join('\n'), moved };
 }

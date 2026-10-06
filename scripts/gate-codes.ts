@@ -83,7 +83,12 @@ export function checkGateCodes(input: GateCodeInput): readonly GateCodeGap[] {
   const rows = tableRows(input.page);
   const gaps: GateCodeGap[] = [];
 
-  const noRow = [...listed].filter((code) => !code.endsWith('*') && !rows.has(code));
+  // Every code the list stands for: the names it spells, AND each declared code a wildcard covers.
+  // The row check read only the first until 2026-10, so `X_ROADMAP_*` listed a whole family and
+  // excused every member of it from having a row — a covered code was documented by an asterisk.
+  const named = [...listed].filter((code) => !code.endsWith('*'));
+  const family = input.declared.filter((code) => !listed.has(code) && covers(listed, code));
+  const noRow = [...new Set([...named, ...family])].filter((code) => !rows.has(code));
   for (const code of noRow) {
     if (input.noRowPins.includes(code)) continue;
     gaps.push({ kind: 'no-row', code });

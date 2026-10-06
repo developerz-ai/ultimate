@@ -227,6 +227,35 @@ describe('pricing', () => {
     expect(result.usage.inputTokens).toBeGreaterThan(0);
     expect(result.usage.outputTokens).toBeGreaterThan(0);
   });
+
+  // Every `llm()` answer is a `respond` tool call with no text beside it, so an estimate read off
+  // `text` alone billed the whole answer as zero output and refunded the reservation for it.
+  test('a no-usage answer that is only a tool call estimates its arguments as output', async () => {
+    const argumentsJson = JSON.stringify({ summary: 'x'.repeat(4_096) });
+    const { provider: openai } = provider(() =>
+      jsonResponse(
+        completion(
+          {
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'respond', arguments: argumentsJson },
+              },
+            ],
+          },
+          'tool_calls',
+        ),
+      ),
+    );
+    const result = await openai.generate(request());
+    expect(result.text).toBe('');
+    expect(result.toolCalls).toHaveLength(1);
+    // ~4 characters a token: a 4 KB argument is on the order of a thousand output tokens.
+    expect(result.usage.outputTokens).toBeGreaterThanOrEqual(1_024);
+    expect(result.cost.minor).toBeGreaterThan(0);
+  });
 });
 
 describe('streaming', () => {

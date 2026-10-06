@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
 import { onFileBoundary } from './file-boundary';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
+import { installGlobals } from './island-globals';
 import type { ResizeInput } from './island-observers';
 import { deliverResize } from './island-observers';
 import { createScratchDir, removeScratchDir } from './island-scratch';
@@ -148,40 +149,6 @@ const modulePathFor = (dir: string, code: string): string =>
   join(dir, `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
 
 /**
- * DESCRIPTORS, not values, and all-or-nothing.
- *
- * A saved value cannot tell "no such global" from "a global holding `undefined`", so a teardown
- * reading one deletes both — and `key in globalThis` flips behind whoever owned it. It also cannot
- * put an accessor back as an accessor.
- *
- * The rollback is the half with teeth. This runs BEFORE `mountIsland`'s own `try`, so an
- * assignment that throws — a getter-only own global among the caller's `globals` — would leave the
- * fake `document` already installed ahead of it for the whole rest of the process, which is the
- * exact leak the `catch` below exists to prevent.
- */
-function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
-  const host = globalThis as unknown as Record<string, unknown>;
-  const saved = Object.keys(values).map(
-    (key) => [key, Object.getOwnPropertyDescriptor(host, key)] as const,
-  );
-  const restore = (): void => {
-    for (const [key, descriptor] of saved) {
-      if (descriptor === undefined) delete host[key];
-      else Object.defineProperty(host, key, descriptor);
-    }
-  };
-  try {
-    // Assignment, not `defineProperty`: a global with a setter is meant to see the write, and
-    // `Object.assign` over the lot would report the same failure with nothing rolled back.
-    for (const [key, value] of Object.entries(values)) host[key] = value;
-  } catch (error) {
-    restore();
-    throw error;
-  }
-  return restore;
-}
-
-/**
  * The island fixture. Everything it installs is process-global, so the result is `Disposable` and
  * the idiom is `using mounted = await mountIsland(…)` — a mount left installed hands a fake
  * `document` to every later FILE in the run.
@@ -194,9 +161,12 @@ function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
  * clears (a listener on `document`, an interval whose callback reads it) was made against that one.
  */
 /**
- * Every mount not yet disposed. A worker runs many files in one global (22.7), so a mount a file
- * forgot to `using` is disposed at the file boundary (`file-boundary.ts`) instead of handing its
- * fake `window`/`document` to every later file.
+ * Every mount not yet disposed — from the moment it installs its globals, not from when `mount`
+ * answers. A worker runs many files in one global (22.7), so a mount a file forgot to `using` is
+ * disposed at the file boundary (`file-boundary.ts`) instead of handing its fake
+ * `window`/`document` to every later file. Registered BEFORE the awaits, because a mount that
+ * never settles — a test that timed out inside an island's `mount` — was otherwise nobody's: its
+ * globals stayed installed and its scratch directory stayed in the temp dir, one per timeout.
  */
 const liveMounts = new Set<() => void>();
 
@@ -244,6 +214,24 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   let dir: string | undefined;
+  let unmount: (() => void) | undefined;
+  let disposed = false;
+  const dispose = (): void => {
+    // Once: `using` and an `afterAll` that also disposes by hand are both real, and Solid's own
+    // disposer is idempotent while an island's `clearInterval` wrapper need not be.
+    if (disposed) return;
+    disposed = true;
+    liveMounts.delete(dispose);
+    try {
+      unmount?.();
+    } finally {
+      // Whatever the disposer did — including throw, which is the test's to see — the process
+      // gets its globals back, or the fake `document` reaches every later file in the run.
+      restore();
+      if (dir !== undefined) removeScratchDir(dir);
+    }
+  };
+  liveMounts.add(dispose);
   try {
     dir = createScratchDir();
     const scratch = dir;
@@ -267,24 +255,16 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     // island's `mount` resumed AFTER the `restore()` below had taken the fake `document` back out
     // — so it failed with `document is not defined` inside whichever later test happened to be
     // running, with no thread back here.
-    const unmount = disposerOf(await entry.mount(el, options.props));
-    let disposed = false;
-    const dispose = (): void => {
-      // Once: `using` and an `afterAll` that also disposes by hand are both real, and Solid's own
-      // disposer is idempotent while an island's `clearInterval` wrapper need not be.
-      if (disposed) return;
-      disposed = true;
-      liveMounts.delete(dispose);
+    const stop = disposerOf(await entry.mount(el, options.props));
+    if (disposed) {
+      // The boundary took this mount back while `mount` was still running — its test is long
+      // over. What it started is stopped now, and nobody is left to see a throw from it.
       try {
-        unmount?.();
-      } finally {
-        // Whatever the disposer did — including throw, which is the test's to see — the process
-        // gets its globals back, or the fake `document` reaches every later file in the run.
-        restore();
-        removeScratchDir(scratch);
+        stop?.();
+      } catch {
+        // Its `document` is already gone; the stop was best-effort for that reason.
       }
-    };
-    liveMounts.add(dispose);
+    } else unmount = stop;
     const resolve = (target: string | FakeElement | null | undefined): FakeElement | null =>
       typeof target === 'string' ? el.querySelector(target) : (target ?? null);
     return {
@@ -320,8 +300,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   } catch (error) {
     // A mount that throws restores the process before it rethrows: the alternative leaves every
     // later file in the run holding a fake `document`, which fails somewhere with no thread back.
-    restore();
-    if (dir !== undefined) removeScratchDir(dir);
+    dispose();
     throw error;
   }
 }

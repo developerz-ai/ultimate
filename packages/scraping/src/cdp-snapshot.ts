@@ -8,16 +8,24 @@
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import { browserRecord } from './browser-record';
-import type { ElementSnapshot } from './target';
+import type { ElementSnapshot, QueryOptions } from './target';
 
 /**
  * Returns JSON TEXT, not an object: a CDP round trip serialises the result anyway, and a string
  * has one deserialiser here — `parse` against the schema below — instead of an implicit one in
  * the library plus a cast.
+ *
+ * `reveal` scrolls BEFORE the loop, so every box below is measured where the page now is — the
+ * centre a click must land on, and the point `elementFromPoint` is asked about (`QueryOptions`).
  */
-export const snapshotExpression = (selector: string): string => `(() => {
+export const snapshotExpression = (
+  selector: string,
+  options: QueryOptions = {},
+): string => `(() => {
   const out = [];
-  for (const el of document.querySelectorAll(${JSON.stringify(selector)})) {
+  const matches = document.querySelectorAll(${JSON.stringify(selector)});
+  ${options.reveal === true ? "matches[0]?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });" : ''}
+  for (const el of matches) {
     const style = getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     const attrs = {};

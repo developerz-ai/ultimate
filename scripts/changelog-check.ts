@@ -151,8 +151,10 @@ export function parseUpgradeSections(text: string): ReadonlySet<string> {
  * The oldest released version CHANGELOG.md still carries — the RETENTION BOUNDARY, derived from the
  * file rather than configured, so trimming the file again is deleting sections and nothing else.
  *
- * CHANGELOG.md is capped at 1,000 lines and older sections are deleted, because they are one
- * `git show v<tag>:CHANGELOG.md` away and a file nobody scrolls is a file nobody reads.
+ * CHANGELOG.md is trimmed BY HAND — older sections deleted, because they are one
+ * `git show v<tag>:CHANGELOG.md` away and a file nobody scrolls is a file nobody reads. No length
+ * cap is enforced (it once claimed 1,000 lines while carrying 9,654); this boundary is what makes a
+ * trim safe, whenever one is made.
  * wiki/Upgrading.md is NOT trimmed with it: a reader upgrading across four majors needs every
  * walkthrough in order, where a reader of the changelog wants the last release. Two documents, two
  * jobs — so a row naming a section BELOW this boundary is the archive working, not a stale row,

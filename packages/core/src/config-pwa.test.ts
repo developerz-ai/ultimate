@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type AppConfig, defineConfig } from './config';
-import { PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
+import { isSameOriginPath, PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
 import { isUltimateError, type UltimateError } from './errors';
 
 describe('defineConfig · the pwa block an install can be built from', () => {
@@ -184,7 +184,20 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     });
   });
 
-  test.each([undefined, null, '', 'offline', 7, '//evil.test/offline', '/\\evil.test/offline'])(
+  test.each([
+    undefined,
+    null,
+    '',
+    'offline',
+    7,
+    '//evil.test/offline',
+    '/\\evil.test/offline',
+    // The URL parser strips a tab or newline before it reads the host: `/\t/evil.test/x` IS
+    // `//evil.test/x`, so a check made on the raw string passed another host.
+    '/\t/evil.test/x',
+    '/\n/evil.test/x',
+    '/\r\\evil.test/x',
+  ])(
     'pwa.offline.fallback set to %p is refused: an installable app owes an offline document',
     (fallback) => {
       const cause = causeOf(() =>
@@ -212,6 +225,8 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     ['image', '//cdn.test/x.png'],
     ['font', '/\\cdn.test/f.woff2'],
     ['font', 'fonts/f.woff2'],
+    ['image', '/\t/cdn.test/x.png'],
+    ['font', '/.//cdn.test/f.woff2'],
   ] as const)(
     'pwa.offline.%s set to %p is refused: a placeholder is a path on this origin',
     (key, url) => {
@@ -259,5 +274,37 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     expect(schemes.sort()).toEqual(Object.keys(colors).sort());
     expect(keys.sort()).toEqual(Object.keys(colors.light).sort());
     expect(keys.sort()).toEqual(Object.keys(colors.dark).sort());
+  });
+});
+
+describe('isSameOriginPath — the one predicate for a URL precached as an offline answer', () => {
+  test.each([
+    '//evil.test/x',
+    '/\\evil.test/x',
+    '/\t/evil.test/x',
+    '/\n/evil.test/x',
+    '/\r/evil.test/x',
+    '/\u0000x',
+    '/\u007fx',
+    // A dot segment hides `//`: on this origin, with a pathname another reader takes as a host.
+    '/.//evil.test/x',
+    '/x/..//evil.test',
+    'https://evil.test/x',
+    'offline',
+    '',
+  ])('%p is refused', (value) => {
+    expect(isSameOriginPath(value)).toBe(false);
+  });
+
+  test.each(['/', '/offline', '/icons/offline.png', '/a b', '/x?y=1#z', '/caf\u00e9'])(
+    '%p is a path on this origin',
+    (value) => {
+      expect(isSameOriginPath(value)).toBe(true);
+    },
+  );
+
+  test('a value that is not a string is refused', () => {
+    expect(isSameOriginPath(undefined)).toBe(false);
+    expect(isSameOriginPath(7)).toBe(false);
   });
 });

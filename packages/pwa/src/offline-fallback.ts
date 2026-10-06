@@ -4,7 +4,7 @@
  * requires it and `requireOfflineFallback` fails the build if it is missing.
  */
 
-import { CLIENT_NAVIGATION_HEADER } from '@ultimat3/core';
+import { CLIENT_NAVIGATION_HEADER, isSameOriginPath } from '@ultimat3/core';
 import { PwaNoOfflineFallbackError } from './errors';
 import type { PersonalPages } from './pages-cache-source';
 
@@ -79,7 +79,9 @@ export function requireOfflineFallback(
       `set pwa.offline.fallback to '/${fallback.replace(/^\/+/, '')}' in app.config.ts`,
     );
   }
-  if (!sameOriginPath(fallback)) throw offOrigin('fallback', fallback, '/offline');
+  // Core's predicate, judged by resolution: every URL here is precached at install and served as
+  // the answer to a failed request, so an off-origin one is a third party's bytes in the cache.
+  if (!isSameOriginPath(fallback)) throw offOrigin('fallback', fallback, '/offline');
 
   return {
     document: fallback,
@@ -88,15 +90,6 @@ export function requireOfflineFallback(
     neverCache: config.neverCache ?? [],
     personalPages: config.personalPages === 'last-member' ? 'last-member' : 'never',
   };
-}
-
-/**
- * A path on THIS origin: `/…`, never `//host` or `/\host` — both start with `/` and a browser
- * resolves both to another host. Every URL here is precached at install and served as the answer
- * to a failed request, so an off-origin one is a third party's bytes in the app's cache.
- */
-function sameOriginPath(url: string): boolean {
-  return url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\');
 }
 
 function offOrigin(key: string, url: string, example: string): PwaNoOfflineFallbackError {
@@ -113,7 +106,7 @@ function placeholder(
   example: string,
 ): string | null {
   if (url === undefined || url === null) return null;
-  if (!sameOriginPath(url)) throw offOrigin(key, url, example);
+  if (!isSameOriginPath(url)) throw offOrigin(key, url, example);
   return url;
 }
 

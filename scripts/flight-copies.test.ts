@@ -124,6 +124,23 @@ describe('the same curve under another spelling', () => {
     expect(codes(file('packages/x/src/wait.ts', source))).toEqual(['X_FLIGHT_SECOND_CURVE']);
   });
 
+  test('a bit shift is the exponent of two with no operator to read', () => {
+    // `1 << attempt` is `2 ** attempt`, and `base << attempt` is `base * 2 ** attempt`: the audit
+    // found the rule read neither, so the commonest C-style curve slipped it.
+    const one =
+      'export const wait = (a: number, b: number, m: number) => Math.min(b * (1 << a), m);\n';
+    const based = 'export const wait = (a: number, m: number) => Math.min(250 << a, m);\n';
+    expect(codes(file('packages/x/src/wait.ts', one))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+    expect(codes(file('packages/x/src/wait.ts', based))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+  });
+
+  test('but a shift by a CONSTANT is byte packing, clamp or no clamp', () => {
+    // `packages/core/src/image/png-bytes.ts`'s Adler-32: `(b << 16) | a` beside `Math.min(n, 5552)`.
+    const source =
+      'export const sum = (a: number, b: number, n: number) => {\n  const k = Math.min(n, 5552);\n  return ((b << 16) | a) + k;\n};\n';
+    expect(codes(file('packages/x/src/word.ts', source))).toEqual([]);
+  });
+
   test('but a ternary with no exponent near it is an ordinary choice', () => {
     const source = 'export const pick = (a: number, b: number) => (a > b ? b : a);\n';
     expect(codes(file('packages/x/src/pick.ts', source))).toEqual([]);

@@ -8,96 +8,9 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: joining the script and marker paths.
 import { join } from 'node:path';
-import type { CdpTransport } from '@ultimat3/testing';
-import { cdpConnectOver, launchChrome } from '@ultimat3/testing';
-import type { ShotClock, ShotSessionInit } from './browser-launcher-port';
+import { launchChrome } from '@ultimat3/testing';
 import { cdpShotDriver } from './cdp-shot-driver';
-
-interface Call {
-  readonly method: string;
-  readonly params: Record<string, unknown>;
-  readonly sessionId?: string | undefined;
-}
-
-type Answer = (call: Call) => Record<string, unknown> | undefined;
-
-/** One browser on the other end of a transport: answers by method, emits events on demand. */
-function fakeWire(answer: Answer = () => undefined) {
-  let handlers: Parameters<CdpTransport['listen']>[0] | undefined;
-  const calls: Call[] = [];
-  const transport: CdpTransport = {
-    send(text) {
-      const frame = JSON.parse(text) as Call & { id: number };
-      calls.push({ method: frame.method, params: frame.params, sessionId: frame.sessionId });
-      queueMicrotask(() =>
-        handlers?.message(JSON.stringify({ id: frame.id, result: answer(frame) ?? {} })),
-      );
-    },
-    close: () => undefined,
-    listen(next) {
-      handlers = next;
-    },
-  };
-  const connection = cdpConnectOver(transport, 1_000);
-  return {
-    connection,
-    calls,
-    emit(method: string, params: Record<string, unknown>, sessionId = 'S1') {
-      handlers?.message(JSON.stringify({ method, params, sessionId }));
-    },
-    methods: (): string[] => calls.map((call) => call.method),
-  };
-}
-
-/** Sleeping IS advancing: a 30-second deadline finishes in microseconds. */
-const testClock = (): ShotClock => {
-  let mono = 0;
-  return {
-    now: () => new Date(1_700_000_000_000 + mono),
-    monotonic: () => mono,
-    sleep: async (ms) => {
-      mono += ms;
-      await Promise.resolve();
-    },
-  };
-};
-
-const init = (overrides: Partial<ShotSessionInit> = {}): ShotSessionInit => ({
-  name: 'x shot',
-  rules: { allowHosts: ['localhost'] },
-  clock: testClock(),
-  timeoutMs: 1_000,
-  ...overrides,
-});
-
-const attach: Answer = (call) => {
-  if (call.method === 'Target.createTarget') return { targetId: 'T1' };
-  if (call.method === 'Target.attachToTarget') return { sessionId: 'S1' };
-  return undefined;
-};
-
-const evaluating =
-  (values: (expression: string) => unknown): Answer =>
-  (call) =>
-    call.method === 'Runtime.evaluate'
-      ? { result: { value: values(String(call.params['expression'])) } }
-      : attach(call);
-
-const opened = async (answer: Answer = attach, overrides: Partial<ShotSessionInit> = {}) => {
-  const wire = fakeWire(answer);
-  let closed = 0;
-  const driver = cdpShotDriver({
-    executablePath: '/usr/bin/chrome',
-    launch: async () => ({
-      connection: wire.connection,
-      close: async () => {
-        closed += 1;
-      },
-    }),
-  });
-  const session = await driver.open(init(overrides));
-  return { wire, session, page: session.page, closedCount: () => closed };
-};
+import { attach, evaluating, fakeWire, init, opened } from './cdp-shot-wire-fixture';
 
 const element = (over: Record<string, unknown> = {}) =>
   JSON.stringify([
@@ -120,9 +33,11 @@ describe('unit · a session is one page, configured before it loads anything', (
     expect(wire.methods()).toEqual([
       'Target.createTarget',
       'Target.attachToTarget',
+      'Target.attachToBrowserTarget',
       'Runtime.enable',
       'Page.enable',
       'Network.enable',
+      'Fetch.enable',
       'Fetch.enable',
       'Emulation.setDeviceMetricsOverride',
       'Emulation.setScrollbarsHidden',
@@ -130,6 +45,9 @@ describe('unit · a session is one page, configured before it loads anything', (
     const metrics = wire.calls.find((call) => call.method === 'Emulation.setDeviceMetricsOverride');
     expect(metrics?.params).toMatchObject({ width: 800, height: 600 });
     expect(metrics?.sessionId).toBe('S1');
+    // Interception on the page AND on the browser, so a popup is screened too.
+    const fetches = wire.calls.filter((call) => call.method === 'Fetch.enable');
+    expect(fetches.map((call) => call.sessionId)).toEqual(['S1', 'B1']);
   });
 
   // A classic scrollbar took 15px of the layout, so a "1440" picture was of a 1425px page, and a

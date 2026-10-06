@@ -58,8 +58,7 @@ export function Form(props: FormProps): JSX.Element {
    * the path grammar does not accept, which is the allowlist that keeps a caller's string out of a
    * selector — no accepted name can carry a quote or close the attribute.
    */
-  const invalidControl = (): HTMLElement | null => {
-    const name = props.invalidField;
+  const invalidControl = (name: string | undefined): HTMLElement | null => {
     if (name === undefined || element === undefined) return null;
     const selector = fieldSelector(name);
     return selector === null ? null : element.querySelector<HTMLElement>(selector);
@@ -68,13 +67,27 @@ export function Form(props: FormProps): JSX.Element {
   // `tabindex="-1"` alone was a focus target nothing ever aimed at: `summaryId` is internal, so no
   // caller could move focus here, and the component never did either. A failed submit that leaves
   // focus on the button leaves a keyboard user to hunt for what went wrong.
+  //
+  // Focus moves when the FAILURE changes, never merely when the effect re-runs. Bound to
+  // `useForm`, both props read the form's state signal, which `touch()`/`edit()` republish on every
+  // keystroke — so an effect that focused on each run dragged the user back to the first invalid
+  // field while they were fixing the second. A new submit clears both props while it is in flight,
+  // so a second failure naming the same field is still a change, and still moves focus.
+  let aimed: { readonly field: string | undefined; readonly error: string | undefined } = {
+    field: undefined,
+    error: undefined,
+  };
   rt.createEffect(() => {
-    const control = invalidControl();
+    const field = props.invalidField;
+    const error = props.error;
+    if (field === aimed.field && error === aimed.error) return;
+    aimed = { field, error };
+    const control = invalidControl(field);
     if (control !== null) {
       control.focus();
       return;
     }
-    if (props.error !== undefined) summary?.focus();
+    if (error !== undefined) summary?.focus();
   });
 
   /**

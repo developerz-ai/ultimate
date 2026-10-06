@@ -341,7 +341,7 @@ missing one — `costOf` answers confidently either way, and the missing entry s
 | `strict: true` is claimed only when the schema **can keep the promise** | on this wire `strict` is checked by the server: one optional field and the request is a 400. The flag is derived from the projected schema, never forwarded |
 | `max_completion_tokens`, never `max_tokens` | the old field is rejected outright by every current reasoning model |
 | `stream_options: { include_usage: true }` on every streamed call | without it the final chunk carries no `usage`, and the budget reconciles a real call against nothing |
-| Usage absent anyway → **estimated**, never zero | a compatible server that ignores `stream_options` would otherwise refund the whole reservation |
+| Usage absent anyway → **estimated**, never zero — output counts the text AND every tool call's arguments | a compatible server that ignores `stream_options` would otherwise refund the whole reservation, and an `llm()` answer is one `respond` call with no text |
 | `prompt_tokens` minus `cached_tokens` is the input count | this format counts the cached prefix inside `prompt_tokens`; Anthropic's excludes it, and reporting it as-is bills the cached half twice |
 | Tool-call deltas are merged by `tool_calls[].index` | id and name arrive on the first fragment only — merging by array position builds one call per chunk |
 | A tool call is emitted **whole**, at the finish reason | there is no per-block stop event here, and a fragment is not an argument list |

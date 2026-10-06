@@ -30,6 +30,7 @@ import type {
   AxNode,
   CaptureOptions,
   ElementSnapshot,
+  QueryOptions,
   ScrapeCookie,
   ScrapeDownloadFile,
   ScrapeTarget,
@@ -80,9 +81,13 @@ const toValue = (snapshot: ElementSnapshot): ElementValue => ({
   attrs: snapshot.attrs,
 });
 
-async function first(resolve: Resolve, selector: string): Promise<ElementSnapshot | undefined> {
+async function first(
+  resolve: Resolve,
+  selector: string,
+  options?: QueryOptions,
+): Promise<ElementSnapshot | undefined> {
   const target = await resolve();
-  return (await target.query(selector))[0];
+  return (await target.query(selector, options))[0];
 }
 
 function frameOver(
@@ -103,14 +108,18 @@ function frameOver(
   ): Promise<ElementSnapshot> => {
     const target = await resolve();
     lastUrl = target.url();
+    const state = options?.state ?? fallback;
+    // Only `actionable` reads `hitTarget`, so only it pays for moving the page — on every poll,
+    // because a layout shift between two can carry the element back out of view.
+    const query: QueryOptions = { reveal: state === 'actionable' };
     return awaitActionable({
       selector,
       url: lastUrl,
-      state: options?.state ?? fallback,
+      state,
       timeoutMs: timeoutFor(options),
       clock: ctx.clock,
       signal: ctx.signal,
-      snapshot: () => first(resolve, selector),
+      snapshot: () => first(resolve, selector, query),
     });
   };
 

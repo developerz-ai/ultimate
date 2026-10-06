@@ -125,6 +125,9 @@ afterEach(async () => {
   runtime = undefined;
   resetJobs();
   resetTasks();
+  // Also here, at file scope, and not only in the `finally` of the tests that install a store: a
+  // reset inside `describeLive` never runs when the suite is skipped (`bun run skip-if-cleanup`).
+  resetNotifyStores();
   if (root !== undefined) rmSync(root, { recursive: true, force: true });
   root = undefined;
   if (url !== undefined) await on(url, `drop database if exists ${PROBE_DB} with (force)`);

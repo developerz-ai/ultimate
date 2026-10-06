@@ -134,3 +134,20 @@ describe('unit · the set is checked as a set', () => {
     expect(all[0]?.states.map((one) => one.id)).toEqual(['empty']);
   });
 });
+
+describe('unit · an edited states file is read again', () => {
+  // `x dev` loads the states on every shot request in ONE process, and Bun caches `import()` by
+  // path: without the eviction an edit to `*.island.states.ts` was never seen until a restart.
+  test('load, rewrite the file, load again: the new states', async () => {
+    const root = scratch();
+    await writeIsland(root);
+    const file = join(root, `${AT}/settings.island.states.ts`);
+    await Bun.write(file, statesSource());
+    const first = await loadIslandStates(root);
+    expect(first[0]?.states.map((state) => state.id)).toEqual(['empty']);
+
+    await Bun.write(file, statesSource().replace("id: 'empty'", "id: 'over-quota'"));
+    const second = await loadIslandStates(root);
+    expect(second[0]?.states.map((state) => state.id)).toEqual(['over-quota']);
+  });
+});

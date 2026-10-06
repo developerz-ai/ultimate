@@ -10,9 +10,10 @@
 //
 // THE RULE: `publishOrder(listWorkspaces())` is the repo's own definition of publishable, and the
 // workflow must name all of it and nothing else. Two spellings satisfy the first half BY
-// CONSTRUCTION rather than by listing — `npm publish --workspaces`, where npm resolves the set from
-// the root manifest, and a step that derives its own list from `scripts/list-workspaces.ts`, which
-// is literally the `listWorkspaces()` this file compares against. Under either, the rule still
+// CONSTRUCTION rather than by listing — a real (never `--dry-run`) `npm publish --workspaces`, where
+// npm resolves the set from the root manifest, and a step that CALLS `$(bun run
+// scripts/list-workspaces.ts …)`, which is literally the `listWorkspaces()` this file compares
+// against; a mere mention of either derives nothing. Under either, the rule still
 // asserts three things: that a publish step exists at all, that every LITERAL `-w` names something
 // this tree can publish, and that the derivation is the repo's own and not a second copy of it.
 //
@@ -64,7 +65,21 @@ const stripComments = (line: string): string => line.replace(/(^|\s)#.*$/, '$1')
 const indentOf = (line: string): number => line.length - line.trimStart().length;
 
 /**
- * Every `run:` scalar that invokes `npm publish`, whole — a folded `run: >` list of flags and a
+ * Each `npm publish` invocation in a block, from the command to the end of it: a newline, a shell
+ * separator, the close of a `$(…)`, or the next `npm publish`. Per invocation, because a flag only
+ * means something to the command it is passed to.
+ */
+export const publishInvocations = (block: string): readonly string[] =>
+  [...block.matchAll(/npm publish(?:(?!npm publish)[^\n;&|)`])*/g)].map((match) => match[0]);
+
+/** `--dry-run` publishes nothing, whatever else the command says; `--dry-run=false` is a publish. */
+const DRY_RUN = /(?:^|\s)--dry-run(?:=(?!false(?:\s|$))\S*)?(?:\s|$)/;
+
+export const isRealPublish = (invocation: string): boolean => !DRY_RUN.test(invocation);
+
+/**
+ * Every `run:` scalar that invokes `npm publish` for real — a dry run alone publishes nothing, so a
+ * block holding only previews is not one — whole — a folded `run: >` list of flags and a
  * `run: |` shell script alike. The WHOLE block and not the text after `npm publish`, because a
  * script builds its argument list in the lines ABOVE the command, and those lines are what say
  * whether the list was derived or typed. Scanning the file instead would read a `-w` out of any
@@ -78,7 +93,12 @@ export function publishCommands(workflow: string): readonly string[] {
     if (key === null) continue;
     // The column the `run:` key sits at. Its scalar is everything indented past it.
     const base = key.index;
-    const parts = [line.slice(base + key[0].length)];
+    const head = line.slice(base + key[0].length);
+    // A `|` scalar keeps its newlines, and a newline ends a shell command — so a dry run on one line
+    // cannot lend its flags to the real publish on the next. A `>` or plain scalar is ONE command
+    // folded across lines, so its continuations join with a space.
+    const literal = /^\s*\|/.test(head);
+    const parts = [head];
     for (let next = index + 1; next < lines.length; next += 1) {
       const following = lines[next] ?? '';
       // A blank line is inside a `|` script, not the end of it — the indent of the NEXT real line
@@ -87,8 +107,8 @@ export function publishCommands(workflow: string): readonly string[] {
       if (indentOf(following) <= base) break;
       parts.push(following.trim());
     }
-    const block = parts.join(' ');
-    if (block.includes('npm publish')) blocks.push(block);
+    const block = parts.join(literal ? '\n' : ' ');
+    if (publishInvocations(block).some(isRealPublish)) blocks.push(block);
   }
   return blocks;
 }
@@ -109,9 +129,20 @@ export const workspaceFlags = (command: string): readonly string[] =>
  */
 export const WORKSPACE_ENUMERATOR = 'scripts/list-workspaces.ts';
 
-/** Either npm resolves the whole set itself, or the step derives it. No explicit list can go stale. */
+/**
+ * Either a real `npm publish` resolves the whole set itself, or the step CALLS the enumerator. Each
+ * half is read narrowly on purpose: a `--dry-run --workspaces` preview publishes nothing, and an
+ * `echo` naming the script derives nothing — either, read loosely, would silence `missing` beside a
+ * hand-kept list, which is how `@ultimat3/flags` went unpublished. The call is the command
+ * substitution the real workflow uses, `$(bun run scripts/list-workspaces.ts …)`.
+ */
+const ENUMERATOR_CALL = `$(bun run ${WORKSPACE_ENUMERATOR}`;
+
 export const publishesEveryWorkspace = (command: string): boolean =>
-  /(?:^|\s)(?:-ws|--workspaces)(?:\s|=|$)/.test(command) || command.includes(WORKSPACE_ENUMERATOR);
+  publishInvocations(command).some(
+    (invocation) =>
+      isRealPublish(invocation) && /(?:^|\s)(?:-ws|--workspaces)(?:\s|=|$)/.test(invocation),
+  ) || command.includes(ENUMERATOR_CALL);
 
 /**
  * How the workflow decides what to publish. Reported, not just used: "every one named" and "the

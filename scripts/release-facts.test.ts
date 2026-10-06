@@ -43,6 +43,15 @@ describe('the ambiguous phrasings', () => {
     expect(gaps('All 28 publish to npm')).toEqual(['All 28 publish']);
   });
 
+  test('"all N published packages" — an adjective between the count and its noun', () => {
+    // `docs/idea/19-mechanism-not-convention.md` said "Across all 29 published packages" while the
+    // tree published 31, and `[Aa]ll\s+(\d+)\s+packages` demanded the noun right after the number.
+    expect(gaps('Across all 28 published packages the only deps')).toEqual([
+      'all 28 published packages',
+    ]);
+    expect(gaps('Across all 30 published packages the only deps')).toEqual([]);
+  });
+
   test('"N in all" about something that is not a package is left alone', () => {
     // wiki/The-Eight-Primitives.md counts the FILES in a generated slice this way.
     expect(gaps('an entity, a policy, a route — 25 in all')).toEqual([]);

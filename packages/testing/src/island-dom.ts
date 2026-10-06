@@ -201,7 +201,12 @@ export class FakeClassList {
 
 export class FakeElement extends FakeNode {
   readonly attributes = new Map<string, string>();
-  readonly listeners = new Map<string, (event: unknown) => void>();
+  /**
+   * EVERY listener per type, in the order added, deduplicated by identity — the DOM's own rule. One
+   * per type was a double that lost listeners: `@ultimat3/ui`'s Menu closes on an Escape it
+   * registers on `document`, and its focus trap's keydown, registered next, replaced it.
+   */
+  readonly listeners = new Map<string, Set<(event: unknown) => void>>();
   /** Plain object, so `delete el.dataset.theme` behaves as the DOM's `DOMStringMap` does. */
   readonly dataset: Record<string, string> = {};
   readonly classList: FakeClassList = new FakeClassList(this);
@@ -246,10 +251,25 @@ export class FakeElement extends FakeNode {
     else this.attributes.delete(name);
   }
   addEventListener(name: string, fn: (event: unknown) => void): void {
-    this.listeners.set(name, fn);
+    const held = this.listeners.get(name);
+    if (held === undefined) this.listeners.set(name, new Set([fn]));
+    else held.add(fn);
   }
-  removeEventListener(name: string): void {
-    this.listeners.delete(name);
+  /** By IDENTITY: a different function — even one that does the same thing — removes nothing. */
+  removeEventListener(name: string, fn: (event: unknown) => void): void {
+    const held = this.listeners.get(name);
+    if (held === undefined) return;
+    held.delete(fn);
+    if (held.size === 0) this.listeners.delete(name);
+  }
+  /** Every listener of `name`, as one call — `undefined` when there is none to run. */
+  listenerFor(name: string): ((event: unknown) => void) | undefined {
+    const held = this.listeners.get(name);
+    if (held === undefined || held.size === 0) return undefined;
+    return (event: unknown): void => {
+      // A snapshot: a listener that removes itself, or adds another, changes the NEXT dispatch.
+      for (const fn of [...held]) fn(event);
+    };
   }
   override cloneNode(deep?: boolean): FakeElement {
     const copy = new FakeElement(this.tagName);
@@ -295,7 +315,7 @@ export class FakeElement extends FakeNode {
       if (options.left !== undefined) this.scrollLeft = options.left;
       if (options.top !== undefined) this.scrollTop = options.top;
     }
-    this.listeners.get('scroll')?.({ currentTarget: this, target: this });
+    this.listenerFor('scroll')?.({ currentTarget: this, target: this });
   }
   /**
    * A compound of tag, `#id`, `.class`, `[attr]` and `[attr="value"]`, joined by the descendant
@@ -414,7 +434,8 @@ export function createIslandDocument(): IslandDocument {
     // reaches them through the surface `MountedIsland` already exposes.
     addEventListener: (name: string, fn: (event: unknown) => void): void =>
       documentElement.addEventListener(name, fn),
-    removeEventListener: (name: string): void => documentElement.removeEventListener(name),
+    removeEventListener: (name: string, fn: (event: unknown) => void): void =>
+      documentElement.removeEventListener(name, fn),
   };
   return {
     documentElement,
@@ -434,7 +455,7 @@ export function createIslandDocument(): IslandDocument {
   };
 }
 
-/** The delegated handler Solid parks on the node as `$$click`, or a listener it attached with
+/** The delegated handler Solid parks on the node as `$$click`, or EVERY listener attached with
  *  `addEventListener` — a compiled island uses one or the other and a driver must accept both. */
 export function handlerFor(
   element: FakeElement,
@@ -442,5 +463,5 @@ export function handlerFor(
 ): ((event: unknown) => void) | undefined {
   const delegated = (element as unknown as Record<string, unknown>)[`$$${type}`];
   if (typeof delegated === 'function') return delegated as (event: unknown) => void;
-  return element.listeners.get(type);
+  return element.listenerFor(type);
 }

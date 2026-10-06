@@ -156,6 +156,7 @@ describe('PgLogicalReplicationFeed', () => {
     expect(question).not.toContain('not_decoded_here');
     const asked = server.queries.indexOf(question);
     const slot = server.queries.findIndex((sql) => sql.includes('pg_replication_slots'));
+    expect(asked).toBeGreaterThanOrEqual(0);
     expect(asked).toBeLessThan(slot);
   });
 

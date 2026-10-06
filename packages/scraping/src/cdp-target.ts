@@ -125,8 +125,10 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     if (pending === undefined) return;
     if (originOf(init.page.url()) !== pending.origin || pending.origin === '') return;
     pendingStorage = undefined;
+    // PAIRS, never an object literal: `{"__proto__": "…"}` in the page sets the literal's
+    // prototype and files no key, so a token stored under that legal name was never restored.
     await init.page.evaluate(
-      `(() => { const entries = ${JSON.stringify(pending.storage)}; for (const key of Object.keys(entries)) localStorage.setItem(key, entries[key]); })()`,
+      `(() => { for (const [key, value] of ${JSON.stringify(Object.entries(pending.storage))}) localStorage.setItem(key, value); })()`,
     );
   };
 
@@ -149,9 +151,9 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     ...parent,
     url: () => frame.url(),
     content: () => guard('content', () => frame.content()),
-    query: (selector) =>
+    query: (selector, options) =>
       guard('query', async () =>
-        parseSnapshots(await frame.evaluate(snapshotExpression(selector))),
+        parseSnapshots(await frame.evaluate(snapshotExpression(selector, options))),
       ),
     click: (selector) => guard('click', () => frame.click(selector)),
     type: (selector, text) => guard('type', () => frame.type(selector, text)),
@@ -206,9 +208,9 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         await applyPendingStorage();
       }),
     content: () => guard('content', () => init.page.content()),
-    query: (selector) =>
+    query: (selector, options) =>
       guard('query', async () =>
-        parseSnapshots(await init.page.evaluate(snapshotExpression(selector))),
+        parseSnapshots(await init.page.evaluate(snapshotExpression(selector, options))),
       ),
     click: (selector) => guard('click', () => init.page.click(selector)),
     type: (selector, text) => guard('type', () => init.page.type(selector, text)),

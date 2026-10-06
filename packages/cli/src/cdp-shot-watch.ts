@@ -2,6 +2,7 @@
 // tail with a count of what the bound threw away. And the allow list, enforced in the browser:
 // every request is paused (`Fetch.requestPaused`) and refused unless its host is allowed, so an
 // injected `<img src="http://169.254.169.254/…">` never leaves — it is recorded as `refused`.
+// Paused at the BROWSER too, so a popup the page opens is decided by the same `hostDecision`.
 import { hostDecision } from '@ultimat3/core';
 import type { CdpConnection } from '@ultimat3/testing';
 import type {
@@ -123,14 +124,22 @@ export interface PageWatch {
  * Subscribe BEFORE the domains are enabled (the caller's order), so the first request of the first
  * navigation is already counted. Only events on `sessionId` are read: a remote browser carries
  * other people's pages.
+ *
+ * `browserSessionId` is the browser target's session, whose `Fetch` pauses what page-level
+ * interception never sees: a `target=_blank` link or a `window.open` is a NEW target, and on the
+ * page session alone it reached an off-list host unrefused. Its pauses are decided by the same
+ * `hostDecision` and answered on the session they arrived on. A page request is decided at the
+ * page first — an allowed one is continued again here, a refused one never arrives — so each
+ * refusal is one ring entry.
  */
 export function watchPage(input: {
   readonly connection: CdpConnection;
   readonly sessionId: string;
+  readonly browserSessionId?: string | undefined;
   readonly clock: ShotClock;
   readonly allowHosts: readonly string[];
 }): PageWatch {
-  const { connection, sessionId } = input;
+  const { connection, sessionId, browserSessionId } = input;
   const lines = new Tail<ConsoleLine>();
   const errors = new Tail<PageError>();
   const requests = new Tail<NetworkEntry>();
@@ -191,38 +200,33 @@ export function watchPage(input: {
           requests.update(id, { ...held, status });
       }),
     ),
-    connection.on(
-      'Fetch.requestPaused',
-      mine((params) => {
-        const pausedId = text(params['requestId']) ?? '';
-        const request = record(params['request']);
-        const url = text(request?.['url']) ?? '';
-        if (hostDecision(url, input.allowHosts).allowed) {
-          void connection
-            .send('Fetch.continueRequest', { requestId: pausedId }, sessionId)
-            .catch(() => undefined);
-          return;
-        }
-        const id = text(params['networkId']) ?? pausedId;
-        const held = requests.get(id);
-        const refused: NetworkEntry = {
-          method: text(request?.['method']) ?? held?.method ?? 'GET',
-          url,
-          resourceType: resourceType(params['resourceType']),
-          at: held?.at ?? now(),
-          refused: 'host',
-        };
-        if (held === undefined) requests.put(refused, id);
-        else requests.update(id, refused);
+    connection.on('Fetch.requestPaused', (params, on) => {
+      // The page's session or the browser's: anything else is somebody else's interception.
+      if (on === undefined || (on !== sessionId && on !== browserSessionId)) return;
+      const pausedId = text(params['requestId']) ?? '';
+      const request = record(params['request']);
+      const url = text(request?.['url']) ?? '';
+      if (hostDecision(url, input.allowHosts).allowed) {
         void connection
-          .send(
-            'Fetch.failRequest',
-            { requestId: pausedId, errorReason: 'BlockedByClient' },
-            sessionId,
-          )
+          .send('Fetch.continueRequest', { requestId: pausedId }, on)
           .catch(() => undefined);
-      }),
-    ),
+        return;
+      }
+      const id = text(params['networkId']) ?? pausedId;
+      const held = requests.get(id);
+      const refused: NetworkEntry = {
+        method: text(request?.['method']) ?? held?.method ?? 'GET',
+        url,
+        resourceType: resourceType(params['resourceType']),
+        at: held?.at ?? now(),
+        refused: 'host',
+      };
+      if (held === undefined) requests.put(refused, id);
+      else requests.update(id, refused);
+      void connection
+        .send('Fetch.failRequest', { requestId: pausedId, errorReason: 'BlockedByClient' }, on)
+        .catch(() => undefined);
+    }),
   ];
 
   let stopped = false;

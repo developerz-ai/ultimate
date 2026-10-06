@@ -16,6 +16,7 @@
 //
 //   bun run scripts/doc-config-keys.ts [--json]
 
+import { configDefaults } from '../packages/core/src/config-defaults';
 import { CONFIG_FILE, configDeclaration, configLeaves } from './config-readers';
 import { parseScriptArgs } from './lib/args';
 /** Where an allowance would be written: this file, which holds none since 12.0.0. */
@@ -181,6 +182,119 @@ export async function unknownConfigKeys(
     unknown: found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line)),
     staleAllowances: allow.filter((one) => !used.has(one)),
   };
+}
+
+/**
+ * THE OTHER HALF OF A CITATION: the value the page says a key has when nobody sets it. A key that
+ * exists with the wrong default passes everything above — `wiki/Configuration.md` said
+ * `realtime.enabled` defaults to `false` for every release since 22.0.0 turned it on, so an app
+ * that wanted no `sync` node read that it had none. Only `wiki/Configuration.md`'s
+ * `| field | type | default | notes |` tables are read: they are the one page that states a
+ * default per key, and every other mention links there.
+ */
+export const DEFAULTS_PAGE = 'wiki/Configuration.md';
+
+/** `defineConfig({ name })` — the placeholder the page writes inside a derived default. */
+const NAME_PLACEHOLDER = '<name>';
+
+export interface DocumentedDefault {
+  readonly line: number;
+  readonly key: string;
+  /** The default cell, verbatim. */
+  readonly stated: string;
+  readonly value: unknown;
+}
+
+const DEFAULTS_HEADER = /^\|\s*field\s*\|\s*type\s*\|\s*default\s*\|\s*notes\s*\|\s*$/;
+const KEY_CELL = /^`([A-Za-z][\w$]*(?:\.[A-Za-z][\w$]*)*)`$/;
+const UNSET = Symbol('unset');
+
+/**
+ * A default cell as a value, or `undefined` when it is prose (`required`, `every \`ROLE\``) that
+ * no comparison can read. `—` and `unset = …` both say "no value in the config" — the number after
+ * `unset =` is the CONSUMER's fallback, which `configDefaults()` deliberately does not hold.
+ */
+export function parseDefaultCell(cell: string): { readonly value: unknown } | undefined {
+  const text = cell.trim();
+  if (text === '—' || /^unset\b/.test(text)) return { value: UNSET };
+  const literal = /^`([^`]+)`$/.exec(text)?.[1];
+  if (literal === undefined) return undefined;
+  if (literal === 'undefined') return { value: UNSET };
+  // The page writes JS literals: single quotes, `60_000`. JSON is the parser, after two rewrites.
+  const json = literal.replace(/'([^']*)'/g, (_, inner: string) => JSON.stringify(inner));
+  try {
+    return { value: JSON.parse(json.replace(/(?<=\d)_(?=\d)/g, '')) as unknown };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every `key → default` row of the page's defaults tables, struck-through (deleted) rows skipped. */
+export function documentedDefaults(markdown: string): readonly DocumentedDefault[] {
+  const found: DocumentedDefault[] = [];
+  const lines = markdown.split('\n');
+  let inTable = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] as string;
+    if (DEFAULTS_HEADER.test(line)) {
+      inTable = true;
+      continue;
+    }
+    if (!line.startsWith('|')) {
+      inTable = false;
+      continue;
+    }
+    if (!inTable) continue;
+    // A cell may hold an escaped pipe (`'light' \| 'dark'`); split on the bare ones only.
+    const cells = line.split(/(?<!\\)\|/).slice(1, -1);
+    const key = KEY_CELL.exec((cells[0] ?? '').trim())?.[1];
+    const stated = cells[2];
+    if (key === undefined || stated === undefined) continue;
+    const parsed = parseDefaultCell(stated);
+    if (parsed === undefined) continue;
+    found.push({ line: index + 1, key, stated: stated.trim(), value: parsed.value });
+  }
+  return found;
+}
+
+/** The value at a dotted path, `UNSET` for `undefined`, or `missing` when a step is absent. */
+const valueAt = (root: unknown, key: string): { readonly value: unknown } | 'missing' => {
+  let current: unknown = root;
+  for (const step of key.split('.')) {
+    if (typeof current !== 'object' || current === null || !Object.hasOwn(current, step)) {
+      return 'missing';
+    }
+    current = (current as Record<string, unknown>)[step];
+  }
+  return { value: current === undefined ? UNSET : current };
+};
+
+export interface StaleDefault extends DocumentedDefault {
+  readonly actual: unknown;
+}
+
+/**
+ * Every documented default `configDefaults()` disagrees with. A key `configDefaults()` does not
+ * hold (`site`, `seo`, `navigation`, `islands`, `mail` default in their own files) is not
+ * compared, and `checked` says how many were — so a page reshaped out of the parser's reach reads
+ * as zero checked, never as green.
+ */
+export function staleDefaults(markdown: string): {
+  readonly checked: number;
+  readonly stale: readonly StaleDefault[];
+} {
+  const defaults = configDefaults(NAME_PLACEHOLDER);
+  const stale: StaleDefault[] = [];
+  let checked = 0;
+  for (const documented of documentedDefaults(markdown)) {
+    const actual = valueAt(defaults, documented.key);
+    if (actual === 'missing') continue;
+    checked += 1;
+    if (!Bun.deepEquals(actual.value, documented.value)) {
+      stale.push({ ...documented, actual: actual.value === UNSET ? undefined : actual.value });
+    }
+  }
+  return { checked, stale };
 }
 
 /** What this rule contributes to `x verify`'s `errors` step, through `docFixFindings`. */

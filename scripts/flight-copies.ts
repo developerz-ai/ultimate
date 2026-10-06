@@ -57,11 +57,14 @@ const CSPRNG_CALL = /(?<![.\w$])(?:globalThis\s*\.\s*)?crypto\s*\.\s*getRandomVa
  * clamping the result, and multiplying it by a roll.
  */
 /**
- * Raising something to an attempt, in BOTH spellings. `Math.pow(2, attempt)` is `2 ** attempt` with
+ * Raising something to an attempt, in EVERY spelling. `Math.pow(2, attempt)` is `2 ** attempt` with
  * a name in front, and a rule that read only the operator was the `PwaRenderMode` failure again —
- * this file's own header says the shape is what is matched, never the spelling.
+ * this file's own header says the shape is what is matched, never the spelling. `1 << attempt` is
+ * the third, and slipped until 2026-10. A shift counts only when its AMOUNT is a name: byte packing
+ * shifts by a constant (`b << 16`), and `packages/core/src/image/png-bytes.ts`'s Adler-32 does that
+ * beside a `Math.min` chunk size — a shift by any amount read it as a curve.
  */
-const EXPONENT = /\*\*|Math\s*\.\s*pow\s*\(/g;
+const EXPONENT = /\*\*|Math\s*\.\s*pow\s*\(|<<=?\s*\(?\s*[A-Za-z_$]/g;
 
 /** `Math.min(…)` — the cap. `Math.max` is a FLOOR and is not one: see `ternaryClamp`. */
 const CLAMP = /Math\s*\.\s*min\s*\(/;

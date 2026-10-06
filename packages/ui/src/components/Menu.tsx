@@ -24,11 +24,15 @@ export interface MenuProps {
   items: readonly MenuItem[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * The menu button. `aria-controls` is present only while the list is mounted: an IDREF to an
+   * element not in the document names nothing.
+   */
   trigger: (control: {
     id: string;
     'aria-haspopup': 'menu';
     'aria-expanded': boolean;
-    'aria-controls': string;
+    'aria-controls': string | undefined;
   }) => JSX.Element;
   /** Already-translated accessible name for the menu. */
   label: string;
@@ -85,7 +89,7 @@ export function Menu(props: MenuProps): JSX.Element {
         id: `${menuId}-trigger`,
         'aria-haspopup': 'menu',
         'aria-expanded': props.open,
-        'aria-controls': menuId,
+        'aria-controls': props.open ? menuId : undefined,
       })}
       {props.open ? (
         <div

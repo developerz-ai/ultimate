@@ -8,22 +8,22 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08-20`: 31 workspaces publish, all 30 are on the registry at 4.0.0, and every 4.0.0
-tarball carries a provenance attestation.** `v4.0.0` is tagged and pushed, its GitHub Release is
-published, and the run that Release triggered is what put those 30 versions on npm — the second
-workflow-published release in a row, after 3.0.0 ended the gap since 1.2.0.
+**This page states no current version, deliberately** — a version written into prose is stale on
+the next tag. The commands below are the answer: every publishable workspace on npm at the stamped
+version, every tarball carrying a provenance attestation, the tag annotated and pushed, its GitHub
+Release published by the run that put them there.
 
 One command answers the whole table below at once: **`bun run scripts/registry-audit.ts --json`**,
-which resolves every derived name against npm and either says `30/30 publishable packages are on npm
-at 4.0.0, every one attested` or names each gap with a runnable `fix:`. `registry-audit.yml` runs it
-daily and files a `registry-drift` issue on a gap.
+which resolves every derived name against npm and either says `<n>/<n> publishable packages are on
+npm at <version>, every one attested` or names each gap with a runnable `fix:`.
+`registry-audit.yml` runs it daily and files a `registry-drift` issue on a gap.
 
 | Fact | Read it yourself |
 |---|---|
 | what npm serves | `npm view @ultimat3/core version` |
-| attested, and by whom | `npm view @ultimat3/core@4.0.0 dist.attestations _npmUser` |
+| attested, and by whom | `npm view @ultimat3/core@<version> dist.attestations _npmUser` |
 | the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
-| the repository is stamped at one version | `bun run scripts/release.ts --check 4.0.0` |
+| the repository is stamped at one version | `bun run scripts/release.ts --check <version>` |
 | every package is on npm at that version | `bun run scripts/registry-audit.ts --json` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
@@ -452,8 +452,8 @@ pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUB
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
 the comparison to the version read off the tag.
 
-`As of 2026-08-20` `git describe` answers `v4.0.0` and `bun run scripts/release.ts --check 4.0.0`
-passes, and the check itself is a step of the workflow
+`git describe` names the tag and `bun run scripts/release.ts --check <version>` passes against it
+— run both rather than reading a version here — and the check itself is a step of the workflow
 ([`.github/workflows/release.yml`](.github/workflows/release.yml), the `bun run scripts/release.ts
 --check` run). Earlier in 2026-08 this repo was in exactly the broken state: `git describe` answered
 `v1.10.1-37-g837adfa` with every `package.json` at `1.2.0`, and the workflow ran no such check

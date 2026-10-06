@@ -26,7 +26,7 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 sweep 10d the tier 5 ones: admin scopes, a scaffold that boots as a binary on every OS, and the AI
 package's first step to apps bringing their own models and providers. Sweep 11 is an audit of
 every file earlier waves had not reached: 36 proven defects fixed, and the guards that let some
-of them through tightened.
+of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
 
 ### Added
 
@@ -423,6 +423,30 @@ of them through tightened.
 
 ### Fixed
 
+- **realtime (availability):** a `NatsTransport` whose client the library closed for good (its
+  reconnect budget spent, about 1–2.5 minutes of outage) left every realtime role down until a
+  manual restart. It now re-dials in the background on its backoff and re-binds every live
+  subscription; the `NatsClient` port gains an optional `onClosed`.
+- **cli (security):** `x shot` (and MCP `ui.interact`) enforces its host allow list on popups
+  (`target=_blank`, `window.open`) by pausing requests at the browser target, as scraping does.
+- **ui:** `<Form>` focuses the first invalid field once per failed submit; touching or editing
+  afterwards no longer pulls focus back. A successful submit keeps the fields edited while it was in
+  flight dirty. `Dropzone` without `multiple` accepts one dropped file. A closed `Menu`'s trigger
+  gets `'aria-controls': undefined` (its type widens to `string | undefined`).
+- scraping: `click`/`type`/`fill`/`select`/`focus`/`waitFor` scroll the element into view before the
+  actionability check, so an element below the fold is no longer "covered" (new `QueryOptions`,
+  `ScrapeTarget.query(selector, { reveal })`); `restore()` keeps a `localStorage` key `__proto__`.
+- ai: OpenAI-format usage estimates count tool-call arguments as output (a no-usage `llm()` answer
+  was billed as free); an Anthropic stream ending with a tool call still open is a truncation.
+- core, pwa: `pwa.offline.fallback`/`.image`/`.font` are judged by how the URL resolves (new export
+  `isSameOriginPath`): `'/\t/evil.example/x'` is refused as off-origin.
+- testing: island mounts restore the real globals in any dispose order (a non-LIFO dispose left a
+  fake `document` for every later file in the worker); a mount that never settles is cleaned up;
+  scratch directories carry their pid and a run sweeps those of killed runs. The micro-DOM keeps
+  every listener per event type (`FakeElement.listeners` is a `Map<string, Set<fn>>`).
+- cli: `x dev` re-reads an edited `*.island.states.ts`.
+- docs: `realtime.enabled` defaults to `true` (since 22.0.0); the wiki said `false`. The defaults
+  `wiki/Configuration.md` states are now checked against `configDefaults()`.
 - **ai (security):** a `costPerCall: { minor: NaN }` budget switched the per-call money ceiling off,
   and `derive()` with `NaN` widened a stricter gateway ceiling. `NaN`, `Infinity` and negatives are
   now refused (`X_INVARIANT`) at `createGateway`, `BudgetLedger`, `derive`, and under
@@ -9636,9 +9660,10 @@ every primitive declaration, where `scripts/config-readers.ts` only ever saw `Ap
 
 ## Older releases
 
-`10.0.0` and everything before it are **in git history, not in this file**. This file is capped at
-1,000 lines: a changelog nobody scrolls to the bottom of is a changelog nobody reads, and every
-deleted line is one `git show` away.
+`10.0.0` and everything before it are **in git history, not in this file**. No length cap is
+enforced: trimming is a deliberate edit that deletes the oldest `## X.Y.Z` sections, because a
+changelog nobody scrolls to the bottom of is a changelog nobody reads, and every deleted line is
+one `git show` away.
 
 | Want | Run |
 |---|---|

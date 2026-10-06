@@ -86,7 +86,7 @@ is its own entry point and not part of the barrel.
 | The micro-DOM is the fixture's, once **for islands** | `island-dom.ts`. `packages/ui/src/fake-dom-fixture.ts` is a second one for keyboard code, and `ui -> testing` is upward: not a copy to collapse. `bun test` has no DOM and no DOM library may be added |
 | `style` and `classList` RECORD | `FakeStyle` is one declaration map behind all four spellings compiled Solid uses (static attribute, `setProperty`, `cssText`, `removeAttribute`), so a test can assert the component set `--form-gap` |
 | `classList` is the class attribute | not a list of its own, so `classList.toggle` — which the compiler emits INLINE for `classList={{ … }}`, no runtime helper between — and `className` can never answer one element two ways. |
-| A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. One handler per type, last wins |
+| A `document` listener is the documentElement's | no bubbling: `document.addEventListener` registers on `documentElement`, and `fire(mounted.documentElement, 'keydown', …)` drives it. Every listener per type runs; removal is by function identity |
 | `querySelector` skips `this` | descendants only, as the DOM's does. Matching the element it is called on made a host `<div>` answer `find('div')` with the container the test built rather than the markup the island rendered |
 | The selector grammar is SMALL and REFUSES | `island-selector.ts`: compounds of tag, `#id`, `.class`, `[attr]`, `[attr="value"]`, joined by space or `>`. Anything else is `X_TEST_ISLAND_SELECTOR_UNSUPPORTED` with the offset, never an empty answer |
 | The box is 0 until a test writes it | `clientHeight`, `scrollTop`, `scrollHeight` and the rest are writable numbers, default 0; `getBoundingClientRect()` derives from the offset box |
@@ -105,7 +105,7 @@ is its own entry point and not part of the barrel.
 | The island EXTENSION is not restated here | `.island.tsx` is `@ultimat3/render`'s `ISLAND_EXTENSION` and `render` is not a dependency of this package. |
 | A mount imports from its own temp DIRECTORY | `island-scratch.ts`: per mount (identical chunks stay two modules); removed on dispose, at the file boundary and in the run's `afterAll` — `exit` never fires under `bun test`. Never a `data:` URL (coverage panics past ~4 kB) |
 | Attaching a node MOVES it | `appendChild`, `insertBefore`, `replaceChild` detach it from its old parent first; `removeChild` clears `parentNode` |
-| Globals install all-or-nothing | `installGlobals` saves DESCRIPTORS, not values — a saved value cannot tell "no such global" from "a global holding `undefined`", and the teardown deleted both |
+| Globals install in layers | `island-globals.ts`: a key's real DESCRIPTOR is saved by the first live mount, restored by the last, in any dispose order |
 | Which command shards | `bun test` is one process on one database — what a scaffolded app's `test` script runs |
 
 ## The frozen instant and the seed are screened

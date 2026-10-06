@@ -665,9 +665,12 @@ refuses the submit again because Enter in a text field touches no button at all.
 
 A failed submit focuses the **first invalid control** (`form.firstInvalidField()`, in declaration
 order — a server may report the last field first), and the announced summary keeps the focus only
-when the rejection names no control at all. `form.touch(path)` and `form.edit(path, value)` record
-touched and dirty against the binding's `initial`; an empty control and an absent baseline are the
-same thing, so deleting what you just typed leaves the form clean.
+when the rejection names no control at all. Focus moves once per failure: a `touch()` or `edit()`
+afterwards re-renders the form but never pulls focus back, so the user can work down the list.
+`form.touch(path)` and `form.edit(path, value)` record touched and dirty against the binding's
+`initial`; an empty control and an absent baseline are the same thing, so deleting what you just
+typed leaves the form clean. A successful submit clears dirty except for the fields edited while it
+was in flight — the server never saw those, so a navigation guard still has something to protect.
 
 Blur-time validation is deliberately **absent**: this binding is server-authoritative, the local
 parse's value is already discarded, and a client-side "is this field valid" would be a second source

@@ -86,6 +86,10 @@ describe('requireOfflineFallback', () => {
     ['font', '/\\cdn.example/fallback.woff2'],
     ['image', 'offline.png'],
     ['fallback', '//evil.example/offline'],
+    // The URL parser strips the tab: this IS `//evil.example/x` once a browser reads it.
+    ['fallback', '/\t/evil.example/x'],
+    ['image', '/\n/cdn.example/offline.png'],
+    ['font', '/.//cdn.example/fallback.woff2'],
   ] as const)('refuses an off-origin %s: %s', (key, url) => {
     let caught: unknown;
     try {

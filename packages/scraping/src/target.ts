@@ -15,6 +15,18 @@ import type { SessionSnapshot } from './session-state';
  */
 export const ROOT_SELECTOR = 'html';
 
+/** What a `query()` may do to the page before it measures. */
+export interface QueryOptions {
+  /**
+   * Scroll the FIRST match into the viewport before measuring. `elementFromPoint` answers nothing
+   * for a point off-screen, so without it every element below the fold read `hitTarget: false` —
+   * "covered" — and each act on it waited out its whole timeout as `X_SCRAPE_NOT_ACTIONABLE`.
+   * Only the `actionable` wait asks (`page-over-target.ts`): a READ must not move the page, or the
+   * next screenshot is of somewhere else. A driver with no layout engine ignores it.
+   */
+  readonly reveal?: boolean | undefined;
+}
+
 export interface ElementBox {
   readonly x: number;
   readonly y: number;
@@ -134,7 +146,7 @@ export interface ScrapeTarget {
   goto(url: string, options: GotoOptions): Promise<void>;
   /** Serialised HTML of THIS target — the document for a page, the subtree for a frame. */
   content(): Promise<string>;
-  query(selector: string): Promise<readonly ElementSnapshot[]>;
+  query(selector: string, options?: QueryOptions): Promise<readonly ElementSnapshot[]>;
   /**
    * Clicks the FIRST match. It took an `index` until 2026-08 that `html-target.ts` honoured and
    * `cdp-target.ts` dropped — its implementations are `click: (selector) => …`, so puppeteer

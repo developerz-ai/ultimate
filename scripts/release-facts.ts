@@ -124,6 +124,9 @@ export function releaseFacts(names: readonly string[]): readonly CountFact[] {
       accepts: [scoped, total],
       patterns: [
         /[Aa]ll\s+(\d+)\s+(?:packages|publish)\b/g,
+        // An adjective between them — "all 29 published packages", which
+        // `docs/idea/19-mechanism-not-convention.md` wrote while the tree published 31.
+        /[Aa]ll\s+(\d+)\s+published\s+packages\b/g,
         /(\d+)\s+packages,\s*\d+\s+tiers/g,
         // A stat strip's folded line — `31 packages published in lockstep`. MEMBERSHIP and not an
         // exact count, for this file's own stated reason: the phrasing does not say which set it

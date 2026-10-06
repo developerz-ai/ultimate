@@ -298,6 +298,39 @@ describe('createFormBinding', () => {
     expect([...state.touched]).toEqual(['title']);
   });
 
+  // The server took what the form held WHEN IT SUBMITTED. A field changed while that request was in
+  // flight is a change the server never saw, and clearing it let a navigation guard drop it.
+  test('a successful submit keeps dirty the fields edited while it was in flight', async () => {
+    let accept = (_saved: Saved): void => {};
+    const form = createFormBinding<{ title: string; body: string }, Saved>({
+      fields: ['title', 'body'],
+      messageFor: raw,
+      initial: { title: '', body: '' },
+      submit: () =>
+        new Promise<Saved>((resolve) => {
+          accept = resolve;
+        }),
+    });
+    form.edit('title', 'Hello');
+    const flight = form.submit({ title: 'Hello', body: '' });
+    form.edit('body', 'typed during the save');
+    // Back to its OPENING value — but the server now holds 'Hello', so this is still a change it
+    // never saw. The baseline cannot answer for an edit made after the submit read the form.
+    form.edit('title', '');
+    await Bun.sleep(0);
+    accept({ id: 'post-1' });
+    const state = await flight;
+
+    expect(state.status).toBe('succeeded');
+    expect([...state.dirty]).toEqual(['body', 'title']);
+
+    // The NEXT save starts its own window: what the first one left dirty, it clears.
+    form.edit('body', 'typed during the save');
+    const second = form.submit({ title: '', body: 'typed during the save' });
+    accept({ id: 'post-1' });
+    expect([...(await second).dirty]).toEqual([]);
+  });
+
   test('reset returns the form to idle', async () => {
     const form = createFormBinding<{ title: string }, Saved>({
       fields: ['title'],

@@ -157,6 +157,30 @@ describe('MessageStream', () => {
     expect(message.isComplete()).toBe(false);
   });
 
+  // A `message_stop` with a tool_use block still open is a truncation, not a finish: the call's
+  // arguments never closed, so the call is dropped — and `isComplete()` answering true resolved an
+  // `llm()` answer without the `respond` call that IS the answer. The OpenAI twin refuses this too.
+  test('a message_stop while a tool_use block is still open is not a complete answer', () => {
+    const message = new MessageStream();
+    const chunks = drive(message, [
+      START,
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 'toolu_1', name: 'respond', input: {} },
+      },
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'input_json_delta', partial_json: '{"ok":' },
+      },
+      { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 9 } },
+      { type: 'message_stop' },
+    ]);
+    expect(chunks.filter((chunk) => chunk.type === 'tool-call')).toEqual([]);
+    expect(message.isComplete()).toBe(false);
+  });
+
   test('an in-band error becomes a retryable transport failure', () => {
     const message = new MessageStream();
     let thrown: unknown;

@@ -180,6 +180,64 @@ describe('unit · what the rule asserts when the list is not explicit', () => {
   });
 });
 
+describe('unit · a preview or a mention is not a derivation', () => {
+  /**
+   * The audit's slip: ANY publish block mentioning `--workspaces` or the enumerator's path counted
+   * the whole workflow as derived, so a `--dry-run --workspaces` preview beside a hand-kept real
+   * publish, or an `echo` naming the script, silenced `missing` — the `flags`-never-published
+   * incident again, behind a line that publishes nothing.
+   */
+  const handKept = [
+    '      - name: publish tier 0',
+    '        run: npm publish -w @ultimat3/core -w @ultimat3/schema',
+  ];
+
+  test('a `--dry-run --workspaces` preview beside a hand-kept publish is not derived', () => {
+    const workflow = [
+      '      - name: preview',
+      '        run: npm publish --dry-run --workspaces',
+      ...handKept,
+    ].join('\n');
+    const found = findings(tree({ workflow }));
+    expect(found.map((one) => one.cause)).toEqual([expect.stringContaining('@ultimat3/flags')]);
+    expect(publishListMode(workflow)).toBe('listed');
+  });
+
+  test('a dry run inside the same script as the real publish is still ignored', () => {
+    const workflow = [
+      '        run: |',
+      '          npm publish --workspaces --dry-run',
+      '          npm publish -w @ultimat3/core -w @ultimat3/schema',
+    ].join('\n');
+    expect(findings(tree({ workflow })).map((one) => one.code)).toEqual([
+      'X_PUBLISH_LIST_INCOMPLETE',
+    ]);
+  });
+
+  test('a workflow whose only publish is a dry run publishes nothing', () => {
+    const workflow = '        run: npm publish --workspaces --dry-run\n';
+    expect(checkPublishList(tree({ workflow }))[0]?.kind).toBe('unreadable');
+    expect(publishListMode(workflow)).toBe('none');
+  });
+
+  test('an `echo` naming the enumerator is not a call to it', () => {
+    const workflow = [
+      '        run: |',
+      '          echo "the list lives in scripts/list-workspaces.ts"',
+      '          npm publish -w @ultimat3/core -w @ultimat3/schema',
+    ].join('\n');
+    expect(findings(tree({ workflow })).map((one) => one.code)).toEqual([
+      'X_PUBLISH_LIST_INCOMPLETE',
+    ]);
+    expect(publishListMode(workflow)).toBe('listed');
+  });
+
+  test('`--dry-run=false` is a real publish', () => {
+    const workflow = '        run: npm publish --workspaces --dry-run=false\n';
+    expect(findings(tree({ workflow }))).toEqual([]);
+  });
+});
+
 describe('unit · reading the workflow', () => {
   test('a folded `run: >` block is one command, flags on every continuation line', () => {
     const commands = publishCommands(

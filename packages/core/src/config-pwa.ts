@@ -244,12 +244,29 @@ function manifestIssues(pwa: PwaConfig, issues: string[]): void {
   }
 }
 
-/** A path on this origin: a leading `/`, and not `//` or `/\`, which a browser reads as another host. */
-function isSameOriginPath(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.startsWith('/') &&
-    !value.startsWith('//') &&
-    !value.startsWith('/\\')
-  );
+/** An origin no relative path can reach: a value that resolves anywhere else left this origin. */
+const PROBE_ORIGIN = 'http://x.invalid';
+
+/**
+ * A path on THIS origin, as a browser will resolve it — the one predicate for every URL the worker
+ * precaches and serves as an offline answer (`@ultimat3/pwa`'s build asks the same question).
+ * Judged by RESOLUTION, never by the raw prefix: the URL parser strips a tab, CR or LF anywhere and
+ * reads `\` as `/`, so `/\t/evil.test/x` is `//evil.test/x` once parsed. Every C0 control and DEL
+ * is refused before the parse, as `@ultimat3/http`'s sign-in redirect does; a dot segment that
+ * leaves a `//` pathname (`/.//evil.test`) is refused after it, since any reader without the base
+ * takes that pathname as a host.
+ */
+export function isSameOriginPath(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.startsWith('/')) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  let resolved: URL;
+  try {
+    resolved = new URL(value, PROBE_ORIGIN);
+  } catch {
+    return false;
+  }
+  return resolved.origin === PROBE_ORIGIN && !resolved.pathname.startsWith('//');
 }

@@ -46,6 +46,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | what each key is when no layer says | `config-defaults.ts` |
 | the shape screens that run before any rule reads a value — section, list, boolean, closed set, path, locale list | `config-shape.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
+| `isSameOriginPath(value)` — a path on THIS origin as a browser resolves it: refuses `//host`, `/\host`, a C0 control or DEL (`/\t/evil.example` parses to `//evil.example`) and a dot segment leaving a `//` pathname. The one predicate for every URL precached as an offline answer, `@ultimat3/pwa`'s build included | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | which of two route patterns wins a pathname (`routeRank`) | `route-rank.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |

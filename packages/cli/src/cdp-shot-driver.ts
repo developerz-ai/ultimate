@@ -122,10 +122,22 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
             detail: 'the browser opened a page and answered no target or session id',
           });
         }
+        // The BROWSER's own session, for the allow list on every target the page opens — a popup
+        // is a new target the page session's `Fetch` never pauses. A browser that refuses the
+        // attach refuses the session: a rule that would hold on one tab only is not a rule.
+        const browserAttached = await connection.send('Target.attachToBrowserTarget');
+        const browserSessionId = field(browserAttached.result, 'sessionId');
+        if (browserSessionId === undefined) {
+          throw new CdpCallFailedError({
+            method: 'Target.attachToBrowserTarget',
+            detail: 'the browser answered no session id, so a popup could not be screened',
+          });
+        }
         // Watching BEFORE the domains are on, so the first request is already counted.
         const watch = watchPage({
           connection,
           sessionId,
+          browserSessionId,
           clock: init.clock,
           allowHosts: init.rules.allowHosts,
         });
@@ -136,6 +148,11 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
         await on('Page.enable');
         await on('Network.enable');
         await on('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+        await connection.send(
+          'Fetch.enable',
+          { patterns: [{ urlPattern: '*', requestStage: 'Request' }] },
+          browserSessionId,
+        );
         // Before the first navigation, like the metrics below: a header set after `goto` would
         // photograph a document negotiated in the machine's own language.
         if (init.headers !== undefined && Object.keys(init.headers).length > 0) {

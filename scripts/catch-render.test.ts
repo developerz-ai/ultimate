@@ -264,3 +264,32 @@ describe('one hop: a field this package own errors.ts launders into a refusal', 
     expect(map.has('ai')).toBe(false);
   });
 });
+
+describe('unit · a promise `.catch` callback is a catch too', () => {
+  // The audit's slip: only `catch (x) {` blocks were read, so the same render in
+  // `.catch((error: unknown) => …)` — the spelling every fire-and-forget promise in the tree uses —
+  // was invisible. Same binding, same refusal, same crash in the handler.
+  test('an annotated block-bodied callback', () => {
+    expect(
+      kinds(
+        'run().catch((error: unknown) => { throw new E({ cause: String(error), fix: "x" }); });',
+      ),
+    ).toEqual(['cause:error:conversion']);
+  });
+
+  test('an expression-bodied callback, and a bare parameter', () => {
+    expect(kinds('run().catch((e) => new E({ detail: JSON.stringify(e) }));')).toEqual([
+      'detail:e:stringify',
+    ]);
+    expect(kinds('run().catch(e => fail({ cause: e instanceof Error ? 1 : 2 }));')).toEqual([
+      'cause:e:instanceof',
+    ]);
+  });
+
+  test('the total renderer stays silent, and a field after the callback is not its', () => {
+    expect(
+      kinds('run().catch((error: unknown) => fail({ cause: renderThrowable(error) }));'),
+    ).toEqual([]);
+    expect(kinds('run().catch((e) => undefined); report({ cause: String(e) });')).toEqual([]);
+  });
+});
