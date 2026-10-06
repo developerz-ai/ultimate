@@ -25,4 +25,4 @@ export { createResendEventReceiver } from './resend-event-receiver';
 export { DEFAULT_SVIX_TOLERANCE_MS } from './resend-signature';
 export type { SesEventReceiverOptions } from './ses-event-receiver';
 export { createSesEventReceiver, DEFAULT_SNS_TOLERANCE_MS } from './ses-event-receiver';
-export type { SnsCertificateFetch } from './sns-signature';
+export type { SnsCertificateFetch } from './sns-certificate-cache';

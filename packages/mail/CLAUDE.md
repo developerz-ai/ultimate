@@ -22,6 +22,7 @@
 | `delivery-event.ts` | `DeliveryEvent` / `DeliveryOutcome`, the capped body read, the ISO instant |
 | `delivery-event-errors.ts` | the three receiver refusals (`X_MAIL_EVENT_*`) |
 | `sns-signature.ts` | SNS message verification: topic allow-list, pinned cert URL, canonical string, RSA v1/v2 |
+| `sns-certificate-cache.ts` | the downloaded SNS certificates, bounded against forgery floods |
 | `x509-spki.ts` | the public key out of a PEM certificate (Web Crypto imports no certificate) |
 | `ses-event-receiver.ts` | `createSesEventReceiver`: body → verify → normalise; SubscriptionConfirmation |
 | `delivery-event-ses.ts` | SES notification JSON (`notificationType` or `eventType`) → events |
@@ -223,6 +224,12 @@
   (`timingSafeEqual`, every `v1,` entry, no early exit) → window. "stale" therefore always means
   authentic. A SubscriptionConfirmation's URL is returned and fetched only with
   `confirmSubscriptions: true`, pinned the same way, never following a redirect.
+- **A pinned certificate URL is reached BEFORE any signature, so its download is bounded**
+  (`As of 2026-10-06`, `sns-certificate-cache.ts`). An allowed topic ARN is no secret, so a forger
+  can name a fresh `SimpleNotificationService-<32 hex>.pem` per request (the only path accepted,
+  as AWS publishes it). LRU of 8 verified certificates (a hit refreshes, so the one in use is never
+  evicted by a flood); a failed URL is answered from memory for 5 min; at most 2 downloads in
+  flight, beyond that `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503); identical lookups share one promise.
 - The SNS test key and its X.509 certificate are generated per run (`delivery-event-fixture.ts`);
   no private key is committed. The DER was checked once against openssl (`openssl verify`, and
   `openssl x509 -pubkey` gave the SPKI `x509-spki.ts` extracts).

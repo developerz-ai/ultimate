@@ -30,8 +30,8 @@ export class McpConfirmationPendingError extends UltimateError {
     super({
       code: 'X_MCP_CONFIRMATION_PENDING',
       cause: `${subject.tool} needs a human's approval before it runs: confirmation ${subject.id} is pending until ${until(subject)}`,
-      fix: `confirmations({ id, decision: 'approve' })   # as a person, through ${decider(subject.decider)}, with id ${subject.id} (or 'reject'); then repeat the same tools/call with the same arguments before ${until(subject)}`,
-      callerFix: `ask a person who may approve it to approve confirmation ${subject.id}, then call ${subject.tool} again with exactly the same arguments before ${until(subject)}`,
+      fix: `confirmations({ id, decision: 'view' })   # as a person, through ${decider(subject.decider)}, with id ${subject.id}; then confirmations({ id, decision: 'approve', arguments }) with exactly what view returned (or decision: 'reject'), and the agent repeats the same tools/call before ${until(subject)}`,
+      callerFix: `ask a person who may approve it to view confirmation ${subject.id} and approve it with exactly the arguments it shows, then call ${subject.tool} again with exactly the same arguments before ${until(subject)}`,
       meta: meta(subject),
     });
   }
@@ -58,7 +58,7 @@ export class McpConfirmationRejectedError extends UltimateError {
     super({
       code: 'X_MCP_CONFIRMATION_REJECTED',
       cause: `a person rejected confirmation ${subject.id}: ${subject.tool} did not run`,
-      fix: `{ method: 'tools/call', params: { name, arguments } }   # only with CHANGED arguments: ${subject.tool} as asked was rejected — ask the person who rejected ${subject.id} what to change`,
+      fix: `{ method: 'tools/call', params: { name, arguments } }   # ${subject.tool} with arguments changed after asking the person who rejected ${subject.id}; the same arguments are rejected again`,
       meta: meta(subject),
     });
   }
@@ -82,7 +82,7 @@ export class McpConfirmationUnknownError extends UltimateError {
     super({
       code: 'X_MCP_CONFIRMATION_UNKNOWN',
       cause: `no MCP confirmation has id ${id}`,
-      fix: `confirmations({ id, decision })   # id from the X_MCP_CONFIRMATION_PENDING answer the agent received; one past its expiry may be purged — ask the agent to call the tool again`,
+      fix: `confirmations({ id, decision: 'view' })   # with the id from the X_MCP_CONFIRMATION_PENDING answer the agent received; one past its expiry may be purged — ask the agent to call the tool again`,
       meta: { confirmation: id },
     });
   }
@@ -130,7 +130,7 @@ export class McpConfirmationArgumentsMismatchError extends UltimateError {
     super({
       code: 'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
       cause: `confirmation ${subject.id} for ${subject.tool} was not decided: ${why}`,
-      fix: `confirmations({ id, decision: 'view' })   # then approve with exactly the arguments it returns for ${subject.id}; a rotated one: ask the agent to call ${subject.tool} again`,
+      fix: `confirmations({ id, decision: 'view' })   # for ${subject.id}, then confirmations({ id, decision: 'approve', arguments }) with exactly the arguments it returns; a rotated one: ask the agent to call ${subject.tool} again`,
       meta: { ...meta(subject), reason: subject.reason },
     });
   }

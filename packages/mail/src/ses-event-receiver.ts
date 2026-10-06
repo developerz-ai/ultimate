@@ -20,6 +20,7 @@ import {
 import { deliveryEventInvalid, deliveryProviderUnreachable } from './delivery-event-errors';
 import { sesDeliveryEvents } from './delivery-event-ses';
 import type { MailFetch } from './driver-resend';
+import { createSnsCertificateCache } from './sns-certificate-cache';
 import {
   isPinnedSubscribeUrl,
   type SnsCertificateFetch,
@@ -89,8 +90,10 @@ export function createSesEventReceiver(options: SesEventReceiverOptions): Delive
     topicArns,
     toleranceMs,
     clock: options.clock,
-    fetchCertificate: options.fetchCertificate ?? defaultCertificateFetch(doFetch),
-    certificates: new Map<string, Promise<Uint8Array<ArrayBuffer>>>(),
+    certificates: createSnsCertificateCache({
+      fetchCertificate: options.fetchCertificate ?? defaultCertificateFetch(doFetch),
+      clock: options.clock,
+    }),
   };
 
   return {
