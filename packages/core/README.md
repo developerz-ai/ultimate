@@ -78,6 +78,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `assertNever`, `invariant` | `assert.ts` |
 | the one HTML character table — `escapeHtml`, text and attributes alike (`& < > " '`) | `html-escape.ts` |
 | the one `Cookie:` reader — `readCookie(header, name)`, `null` when absent, never a throw | `cookie.ts` |
+| the one `Set-Cookie` writer — `serializeSetCookie(name, value, options?)`; defaults `Path=/; HttpOnly; Secure; SameSite=Lax`, the value percent-encoded so `readCookie` returns it exactly, `X_COOKIE_INVALID` for a non-token name, a pair over 4096 octets, `SameSite=None`/`Partitioned` without `Secure`, a broken `__Secure-`/`__Host-` prefix rule, or an injectable `Path`/`Domain`. `Expires` is an IMF-fixdate in UTC | `cookie.ts` |
+| the one AWS Signature V4 signer — `signAwsRequest({ method, url, headers?, payload?, credentials, region, service, clock? })` → the URL, every header to send (`authorization`, `x-amz-date`, `x-amz-security-token`, `x-amz-content-sha256` by default on `s3`), the canonical request and string-to-sign. `payload`: `{ body }`, a pre-taken `{ sha256Hex }`, or `UNSIGNED_PAYLOAD`. S3 encodes the path once, every other service twice. Web Crypto, no SDK; proven on the aws-c-auth SigV4 suite and S3's worked examples. Shared by `storage`'s s3 disk and `mail`'s SES driver | `aws-sigv4.ts` |
 | 32-bit FNV-1a — a BUCKET (rollouts, factory seeds), never a sharing key (`fingerprint` is) | `fnv1a.ts` |
 | `PgExecutor` — the structural `query(text, values)` seam every Postgres store takes | `pg-executor.ts` |
 | a declared retirement as headers — `renderDeprecation` (RFC 9745 `Deprecation`, RFC 8594 `Sunset`, the `successor-version` link) and `recordDeprecatedCall` on the one `deprecated_calls_total`; `action` and `query` both project through it | `deprecation.ts` |
@@ -197,6 +199,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `ConfigInvalidError` | `X_CONFIG_INVALID` | `src/errors.ts` |
+| `CookieInvalidError` | `X_COOKIE_INVALID` | `src/cookie.ts` |
 | `CursorInvalidError` | `X_CURSOR_INVALID` | `src/cursor.ts` |
 | `CursorSecretDevError` | `X_CURSOR_SECRET_DEV` | `src/dev-secrets.ts` |
 | `EnvExampleDriftError` | `X_ENV_EXAMPLE_DRIFT` | `src/env-example.ts` |

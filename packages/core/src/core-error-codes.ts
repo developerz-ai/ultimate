@@ -71,6 +71,7 @@ const CORE_CODE_TITLES = {
   X_TIMEOUT: 'operation exceeded its deadline',
   X_UNREACHABLE: 'unreachable branch was reached',
   X_SECRETS_KEY_ACL_FAILED: 'key file ACL not owner-only',
+  X_COOKIE_INVALID: 'a Set-Cookie value would be dropped, misread or injectable',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

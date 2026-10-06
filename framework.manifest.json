@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a5980070c247f7935cab78024cd7db89d7bddb0a0400c7ca9781d008dafdeae2",
+  "buildId": "856a253cad9121b44cf3f010215f96e69bcbe09dfa4141880e9fc67d3a1294b6",
   "tiers": {
     "0": [
       "core",
@@ -888,6 +888,11 @@
       "code": "X_CONTRACT_DRIFT",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_COOKIE_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_CORPUS_UNSCANNED",
@@ -3761,6 +3766,11 @@
     },
     {
       "code": "X_STORAGE_NOT_PENDING",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_OBJECT_LOCKED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

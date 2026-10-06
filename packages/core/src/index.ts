@@ -50,6 +50,13 @@ export { assert, assertNever, type InvariantOptions, invariant } from './assert'
 export { type AsyncContext, asyncContext } from './async-context';
 /** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
 export type { AsyncState } from './async-state';
+export type {
+  AwsCredentials,
+  AwsPayload,
+  SignAwsRequestInput,
+  SignedAwsRequest,
+} from './aws-sigv4';
+export { signAwsRequest, UNSIGNED_PAYLOAD } from './aws-sigv4';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
 export { isCompiledBundle } from './bunfs';
@@ -171,8 +178,9 @@ export {
   useService,
   withChildContext,
 } from './context';
-/** The one `Cookie:` reader — auth, http and i18n each parsed the header and could not share it. */
-export { readCookie } from './cookie';
+/** The one cookie codec — auth, http and i18n each parsed `Cookie:` and spelled `Set-Cookie`. */
+export type { CookiePriority, CookieSameSite, SetCookieOptions } from './cookie';
+export { CookieInvalidError, readCookie, serializeSetCookie } from './cookie';
 export type { CursorPayload } from './cursor';
 export {
   CursorInvalidError,

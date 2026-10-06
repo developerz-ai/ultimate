@@ -126,6 +126,36 @@ through `JSON.stringify` as itself, and is the literal Postgres accepts and retu
 
 `@ultimat3/entity`'s `date()` column is the one that stores it.
 
+## Months clamp
+
+A month has no fixed length, so month arithmetic clamps the day to the target month's last day —
+the same rule for a plain date and for a zoned instant.
+
+| Function | Answers |
+|---|---|
+| `addPlainMonths(date, months)` | `2026-01-31 + 1` → `2026-02-28`; `2024-01-31 + 1` → `2024-02-29`; `2026-03-31 − 1` → `2026-02-28`. Negative counts go back, the year rolls. A whole number of months, a result in `0000`-`9999`, or `X_SCHEDULE_INVALID` |
+| `addMonthsInZone(at, months, timeZone)` | the same LOCAL wall-clock time, `months` calendar months away; the local date clamps as above. `timeZone` is required |
+| `plainDateRange(start, end, { exclusive?, stepDays? })` | a frozen array of dates, `[start, end]` by default, `[start, end)` with `exclusive: true`. A reversed range, a step below 1 or a span over `MAX_PLAIN_DATE_RANGE_DAYS` (3660) is `X_SCHEDULE_INVALID` |
+
+`addMonthsInZone` resolves a target wall time that does not exist, or exists twice, by Temporal's
+`'compatible'` rule — fixed, not an option:
+
+| Target wall time | Resolves to |
+|---|---|
+| spring-forward **gap** | moved **forward** by the gap: 02:30 New York → 03:30 EDT; 02:15 Lord Howe (30-minute shift) → 02:45 |
+| fall-back **overlap** | the **earlier** instant: 01:30 New York → 01:30 EDT |
+
+**A recurring date is computed from its anchor, never chained.** A clamp does not compose:
+`2026-01-31 + 1 + 1` is `2026-03-28`, `2026-01-31 + 2` is `2026-03-31`.
+
+```ts
+import { addMonthsInZone, fromIso } from '@ultimat3/time';
+
+const anchor = fromIso('2026-01-31T00:00:00-05:00');
+const renewal = (n: number) => addMonthsInZone(anchor, n, 'America/Bogota');
+// renewal(1): Feb 28 00:00, renewal(2): Mar 31 00:00 — never stuck on the 28th
+```
+
 ## Cron
 
 `parseCron` handles 5 or 6 fields, `*/n`, ranges, lists, named months and days, `@daily`
@@ -161,6 +191,22 @@ calendar date plus the time the caller started with, so a spring-forward day on 
 shift the days after it. A calendar with no business day in it — every weekday in `weekendDays`, or
 every remaining day a holiday for ten years — is refused with `X_SCHEDULE_INVALID`, never answered
 with a weekend day.
+
+**Closures are dates.** A multi-week closure is a range spread into the one holiday list — there is
+no second `closures` field. `isHoliday` builds a `Set` once per list and reuses it, so a long list
+costs one lookup per day walked; replace the list (rather than editing it in place) to change it.
+
+```ts
+import { type BusinessCalendar, plainDate, plainDateRange } from '@ultimat3/time';
+
+const calendar: BusinessCalendar = {
+  zone: 'Europe/Berlin',
+  holidays: [
+    '2026-10-03',
+    ...plainDateRange(plainDate('2026-12-20'), plainDate('2027-01-10')),
+  ],
+};
+```
 
 `businessDaysBetween(from, to, calendar)` counts `[from, to)` — half-open, on **local calendar
 days**, the same interval `daysBetween` measures. `from`'s own day counts, `to`'s does not, and

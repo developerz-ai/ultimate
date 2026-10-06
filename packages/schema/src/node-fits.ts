@@ -2,6 +2,7 @@
 // `coerce.ts` asks to pick the union member a raw HTTP value was written for.
 
 import { isPlainObject } from './builder';
+import { isJsonShape } from './json-value';
 import type { SchemaNode } from './node';
 
 /**
@@ -42,6 +43,8 @@ export function fits(node: SchemaNode, value: unknown): boolean {
     }
     case 'union':
       return (node.anyOf ?? []).some((member) => fits(member, value));
+    case 'json':
+      return isJsonShape(value);
     default:
       return false;
   }

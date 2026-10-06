@@ -11,6 +11,7 @@ type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query c
 | the introspectable IR every generator walks | `node.ts` |
 | `Schema` factory, `Infer` machinery, `.refine()` | `builder.ts` |
 | how a rejected value is described — its shape, never its content | `describe-value.ts` |
+| `JsonValue`, `t.json()` / `jsonSchema()`, `JSON_MAX_DEPTH` | `json-value.ts` |
 | a union routed by one literal key | `discriminated-union.ts` |
 | `configureSchemaProvider()` — the swap point | `provider.ts` |
 | schema → JSON Schema (OpenAPI + MCP) | `json-schema.ts` |
@@ -39,7 +40,7 @@ type PublishPost = Infer<typeof publishPost>;
 | Value schemas | Factories | Methods |
 |---|---|---|
 | `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.refine(r)` |
-| `money` `timezone` `locale` `slug` `cursor` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
+| `money` `timezone` `locale` `slug` `cursor` `json()` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
 `nullable` is a value the row holds; `optional` is the caller omitting the key. Both ship as a
 namespace member (`t.nullable`) and a free function (`nullableSchema`) — symmetrically.
@@ -54,6 +55,27 @@ Refused at the boundary rather than guessed at (`As of 2026-10`):
 | `t.url` | leading / trailing spaces and C0 controls, a tab or newline anywhere | the URL parser strips them in silence and the validator returns the string as written. Trim before parsing |
 | `t.object` `t.record` `t.money` | anything whose prototype is not `Object.prototype` or `null` — a `Map`, a `Date`, a class instance | none has the own keys the schema declared, so it parsed to `{}` |
 | `.default(v)` | a `v` the schema itself rejects — `X_SCHEMA_DEFAULT_INVALID`, thrown where it is declared | an omitted field parsed to a value the same schema refuses when sent |
+
+### `t.json()` — a payload whose shape is somebody else's
+
+```ts
+import { t, type Infer, type JsonValue } from '@ultimat3/schema';
+
+export const hook = t.object({ event: t.slug, payload: t.json() });
+export const payload: JsonValue = ({} as Infer<typeof hook>).payload;
+// entity column: json(t.json()) — a jsonb that stores what it was sent
+```
+
+| Accepts | Refuses (with the issue's path) |
+|---|---|
+| `null`, booleans, finite numbers, strings, arrays and plain / null-prototype objects of them, recursively | `undefined` (an array hole too), functions, symbols, bigints, `NaN` / `±Infinity`, a `Date`, a `Map` / `Set` / class instance / typed array, a cycle |
+| every key, `__proto__` and `constructor` included — answered on a null-prototype copy | a NUL or a lone UTF-16 surrogate in a string or a key — Postgres `jsonb` refuses both (measured, PG 17) |
+| at most `JSON_MAX_DEPTH` (256) nested containers | one more: the walk recurses per level, and an unbounded one was a `RangeError` |
+
+A path into a JSON object is the entry's **position** (`payload[2][0]`), never its key — the
+`t.record` rule. A value shared twice is walked once, so a DAG is linear, not exponential. The
+JSON Schema is `{}` with the depth bound in `description`; the bound is fixed — narrow it with
+`.refine()`. Node `kind: 'json'`, distinct from `unknown` ("the IR cannot say").
 
 Every string-backed schema (`string` `uuid` `email` `url` `timezone` `locale` `slug` `cursor`, with
 any `.min/.max/.pattern`) and every `t.record` key **refuses U+0000** — the one character Postgres

@@ -20,7 +20,7 @@ import { QueryInputUnencodableError } from './errors';
 import { PAGE_CONTROL_KEYS } from './page-controls';
 
 /** Node kinds whose value is a structure, not characters. `money` is `{ minor, currency }`. */
-const STRUCTURAL = new Set(['object', 'record', 'money']);
+const STRUCTURAL = new Set(['object', 'record', 'money', 'json']);
 
 /**
  * The first key this input could not put on a wire, or `undefined`. One key, not a list: a fix

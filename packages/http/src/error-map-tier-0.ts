@@ -57,4 +57,6 @@ export const TIER_0_ERROR_STATUS = {
   X_RECORD_REJECTED: 500,
   X_SYNC_UNCONFIGURED: 500,
   X_INTERNAL: 500,
+  // @ultimat3/core — a Set-Cookie value would be dropped, misread or injectable
+  X_COOKIE_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

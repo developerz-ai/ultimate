@@ -21,6 +21,9 @@
 | `business.ts` | weekends as config, holidays as local dates |
 | `context.ts` | request timezone: which source wins, and reading core's `Ctx.tz` back off the ALS |
 | `plain-date.ts` | `PlainDate` — a calendar date with no time and no zone, and the two conversions to an instant |
+| `plain-date-range.ts` | `plainDateRange` — the bounded, frozen list of dates between two `PlainDate`s |
+| `months.ts` | `addPlainMonths` / `addMonthsInZone` — month steps, the day clamped to the target month |
+| `holidays.ts` | `holidaySet` — the memoised `Set` `isHoliday` reads, one per holiday list |
 
 ## Rules
 
@@ -165,6 +168,18 @@
   matching read `marzipan` as March. Extra `-` and `/` parts are refused, not dropped.
 - **A `PlainDate` has four year digits.** `plainDateUtc` (and so `addPlainDays`) and `plainDateIn`
   refuse a year outside 0000-9999 rather than brand `10000-01-01`, which `isPlainDate` rejects.
+- **Months clamp, and the zoned step is Temporal's `'compatible'`, `As of 2026-10`.**
+  `addMonthsInZone` moves the LOCAL date by `addPlainMonths` and resolves the original wall time
+  once, `{ gap: 'next', overlap: 'first' }` — forward by the gap, the earlier offset in an overlap.
+  Not an option: a second rule is a second answer. `months === 0` returns a copy, because
+  re-resolving an overlap's second pass would answer the first. A recurring date is computed from
+  its anchor; a clamp does not compose (`months.test.ts` pins both).
+- **The holiday `Set` is keyed on the LIST, in a `WeakMap`, with its length.** Keyed on the
+  calendar, a replaced `holidays` would answer stale; the length catches an in-place push. The
+  WeakMap is the bound — no entry outlives its list. `holidays.test.ts` counts builds through a
+  Proxy, so a lost memo is a failing number.
+- **`plainDateRange` refuses a span over `MAX_PLAIN_DATE_RANGE_DAYS` (3660) before allocating**, and
+  a reversed range rather than answering it empty.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.

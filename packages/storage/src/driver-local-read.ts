@@ -9,7 +9,8 @@ import { parseSidecar, type Sidecar } from './driver-local-sidecar';
 import { pendingPathOf, sidecarPathOf } from './driver-local-write';
 import { isStorageError, objectNotFound, readFailed } from './errors';
 
-async function readSidecar(root: string, key: string): Promise<Sidecar | undefined> {
+/** The sidecar as recorded — trusted or not. The lock check reads it whole: a doubt never unlocks. */
+export async function readSidecar(root: string, key: string): Promise<Sidecar | undefined> {
   const file = Bun.file(`${root}/${sidecarPathOf(key)}`);
   if (!(await file.exists())) return undefined;
   try {

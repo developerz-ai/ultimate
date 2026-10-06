@@ -57,15 +57,16 @@ export type { LocalDriverOptions } from './driver-local';
 export { localDriver } from './driver-local';
 export type { MemoryDriverOptions, MemoryStorageDriver } from './driver-memory';
 export { memoryDriver } from './driver-memory';
+export type { S3DriverOptions } from './driver-s3';
+export { s3Driver } from './driver-s3';
 export type {
   S3ClientLike,
-  S3DriverOptions,
   S3FileLike,
   S3ListEntryLike,
   S3ListResultLike,
   S3StatLike,
-} from './driver-s3';
-export { s3Driver } from './driver-s3';
+} from './driver-s3-client';
+export type { S3FetchLike } from './driver-s3-signed';
 export type { StorageErrorCode, StorageErrorInit } from './errors';
 export {
   checksumMismatch,
@@ -120,6 +121,14 @@ export {
   VARIANT_FORMATS,
   variantKey,
 } from './image';
+export type {
+  LockedAction,
+  ObjectLock,
+  ObjectLockOptions,
+  ObjectRetention,
+  RetentionMode,
+} from './object-lock';
+export { isLocked, ObjectLockedError, RETENTION_MODES } from './object-lock';
 
 export {
   assertSafeKey,

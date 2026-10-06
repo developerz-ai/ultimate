@@ -38,14 +38,18 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 
 | File | Owns |
 |---|---|
-| `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
+| `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
 | `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |
 | `driver-local-sidecar.ts` | the sidecar shape and its one parser |
 | `signing-secret.ts` | `DEV_SIGNING_SECRET`, `usesDevStorageSecret`, `resolveSigningSecret` |
 | `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`signing-secret.ts`), the one rule both share |
-| `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
+| `driver-s3.ts` | the s3 disk: Bun where it can, the signed wire where it cannot |
+| `driver-s3-client.ts` | `S3*Like` + `buildClient`, lazy (import never opens a socket) |
+| `driver-s3-signed.ts` | signed requests: Bun's addressing restated, `requireEnv`, `fetch`, refusal as `S3Error` fields |
+| `driver-s3-lock.ts` | the signed PUT's headers; `?retention` / `?legal-hold` |
+| `object-lock.ts` | lock types, the `put()` screen, `isLocked`, the local/memory refusals |
 | `driver-s3-region.ts` | a provider's wrong-region refusal → `X_CONFIG_INVALID` whose fix names `S3_REGION` |
 | `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
@@ -91,8 +95,7 @@ Gotchas:
   one secret, so the canonical string must name the disk. Path, not origin — the verifying route
   sees a path — and `signedUrlBasePath` is how an absolute `baseUrl` is compared.
 - **`isWithinOrg` never throws**: an org id that cannot be one contains nothing.
-- **A variant key keeps the whole source key** (`hero.png@w640.webp`), so two sources differing
-  only by extension are two cache identities.
+- **A variant key keeps the whole source key** (`hero.png@w640.webp`): two cache identities.
 - **A driver's semantics are pinned in ONE test with the other driver beside them.**
   `driver-parity.test.ts` drives `localDriver` over a temp dir and `s3Driver` over `FakeS3Client`
   in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
@@ -113,11 +116,8 @@ Gotchas:
   object `a.txt` — so a caller able to name a key rewrote another object's recorded `contentType`.
   The whole SEGMENT is compared, never a prefix: `.metadata/a.json` is an ordinary key and stays
   one, and `path.test.ts` pins both halves.
-- **`disk(name)` resolves through a `Map`, never `config.disks[name]`.** The bracket read walked
-  the prototype chain, so `disk('constructor')` handed back the `Object` function and the next
-  `.put()` was a bare `TypeError` — `X_STORAGE_DISK_UNKNOWN` unreachable for `constructor`,
-  `toString`, `valueOf`, `hasOwnProperty` and `__proto__`, in a function whose own
-  `default:` check already read `Object.keys`.
+- **`disk(name)` resolves through a `Map`, never `config.disks[name]`**: the bracket read walked
+  the prototype chain (`disk('constructor')` was the `Object` function, not `X_STORAGE_DISK_UNKNOWN`).
 - **`list()` is idempotent for an EMPTY disk and for nothing else** (`As of 2026-08`) — exactly
   `delete()`'s rule, one call to the left, and both drivers broke it in opposite directions. The
   local one caught EVERYTHING and answered `{ objects: [], truncated: false }`, so `EACCES` on the
@@ -125,17 +125,15 @@ Gotchas:
   for the http error map to render but a 500. `sweepOrphans` walks `list()`, so the local swallow
   was a false-erasure report a layer up. `ENOENT` (a root nobody has written to) is still an empty
   page; everything else is `X_STORAGE_LIST_FAILED`, whose `fix` the DRIVER supplies.
-- **`head()` and `list()` NEVER read an object's bytes.** A listing that cannot know an etag
-  reports `''`, as the s3 listing does. `get()` hashes bytes it already holds; `copy()` passes
-  `hash: true` so the destination sidecar never records `etag: ''`.
-- **`put({ metadata })` / `put({ cacheControl })` is the one `PutOptions` pair the disks disagree
-  about, and it is pinned rather than resolved.** Bun's `S3File.write` exposes `type`, `acl` and
-  `storageClass` and no header hook for `x-amz-meta-*` or `Cache-Control`, so `s3Driver` refuses
-  (`X_NOT_IMPLEMENTED`, with the out-of-band `aws s3 cp` in the fix) while `localDriver` stores both
-  in its sidecar and reads them back. **Do not "fix" this by making the local disk refuse too** —
-  that deletes a working capability and the two `StorageListEntry` fields that carry it, to buy
-  symmetry with a limitation that is Bun's and temporary. The day the hook lands, the s3 half of
-  `driver-parity.test.ts` fails and the resolution is to make s3 store them.
+- **`head()` and `list()` NEVER read an object's bytes** — an unknowable etag is `''`, as on s3.
+  `get()` hashes bytes it holds; `copy()` passes `hash: true`, so no sidecar records `etag: ''`.
+- **s3 `put()` with `metadata`/`cacheControl`/`retention`/`legalHold` is ONE signed PUT** (core's
+  `signAwsRequest`; Bun's `write` takes no header); a plain `put()` stays on Bun. Reads stay Bun's
+  HEAD, so s3 `get()` reports neither field — pinned in `driver-parity.test.ts`.
+- **Object Lock: local/memory REFUSE delete/overwrite/copy-onto** (`X_STORAGE_OBJECT_LOCKED`);
+  S3 accepts both (delete marker, new version; the locked version stays). Pinned divergence: one
+  version per key. A pair in doubt never unlocks. `NoSuchObjectLockConfiguration` is a 404.
+- **A live suite signs on a wall clock** (`performance`): `Date` is frozen → `RequestTimeTooSkewed`.
 - **`signedUrl({ maxBytes })` is signed on `local` and unenforceable on `s3`, and the s3 driver may
   NOT refuse it.** `grantUpload` passes `maxBytes: policy.maxBytes` on every grant, so a refusal
   would break every s3 upload an app mints. S3 has no request header for a size and Bun's `presign`

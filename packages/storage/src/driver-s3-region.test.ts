@@ -9,8 +9,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import type { S3ClientLike, S3FileLike } from './driver-s3';
 import { s3Driver } from './driver-s3';
+import type { S3ClientLike, S3FileLike } from './driver-s3-client';
 import { bytesOf, catchError } from './driver-s3-fixture';
 
 const wrongRegion = (sent: string, expected: string, quote = '"'): Error =>

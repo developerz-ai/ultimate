@@ -1,12 +1,56 @@
 // Single responsibility: the local disk's sidecar — the JSON file under `.meta/` holding what a
-// POSIX file has nowhere to keep (content type, etag, cache-control, user metadata), and the one
-// parser that reads it back as untrusted bytes off a disk.
+// POSIX file has nowhere to keep (content type, etag, cache-control, user metadata, the object
+// lock), and the one parser that reads it back as untrusted bytes off a disk.
 
-export interface Sidecar {
+import { isRetentionMode, type ObjectLock, type RetentionMode } from './object-lock';
+
+/** The lock as JSON holds it: the instant as an ISO string, the hold only when it is on. */
+export interface SidecarLock {
+  readonly retention?: { readonly mode: RetentionMode; readonly retainUntil: string } | undefined;
+  readonly legalHold?: true | undefined;
+}
+
+export interface Sidecar extends SidecarLock {
   readonly contentType: string;
   readonly etag: string;
   readonly cacheControl?: string | undefined;
   readonly metadata?: Readonly<Record<string, string>> | undefined;
+}
+
+/** `ObjectLock` → the fields a sidecar records. Nothing when nothing locks the object. */
+export function sidecarLock(lock: ObjectLock | undefined): SidecarLock {
+  if (lock === undefined) return {};
+  return {
+    ...(lock.retention === undefined
+      ? {}
+      : {
+          retention: {
+            mode: lock.retention.mode,
+            retainUntil: lock.retention.retainUntil.toISOString(),
+          },
+        }),
+    ...(lock.legalHold ? { legalHold: true } : {}),
+  };
+}
+
+/** The recorded lock as `ObjectLock`. A retention that does not parse is no retention. */
+export function lockOfSidecar(sidecar: SidecarLock | undefined): ObjectLock {
+  const recorded = sidecar?.retention;
+  return {
+    ...(recorded === undefined
+      ? {}
+      : { retention: { mode: recorded.mode, retainUntil: new Date(recorded.retainUntil) } }),
+    legalHold: sidecar?.legalHold === true,
+  };
+}
+
+function parseRetention(raw: unknown): SidecarLock['retention'] {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const mode = (raw as Record<string, unknown>)['mode'];
+  const until = (raw as Record<string, unknown>)['retainUntil'];
+  if (!isRetentionMode(mode) || typeof until !== 'string') return undefined;
+  if (!Number.isFinite(Date.parse(until))) return undefined;
+  return { mode, retainUntil: until };
 }
 
 // `!Array.isArray` is the load-bearing clause, matching `isPlainObject` in
@@ -29,10 +73,13 @@ export function parseSidecar(raw: unknown): Sidecar | undefined {
   // truncated what was just written, even though `Sidecar` itself declares both.
   const cacheControl = record['cacheControl'];
   const metadata = record['metadata'];
+  const retention = parseRetention(record['retention']);
   return {
     contentType,
     etag,
     ...(typeof cacheControl === 'string' ? { cacheControl } : {}),
     ...(isStringRecord(metadata) ? { metadata } : {}),
+    ...(retention === undefined ? {} : { retention }),
+    ...(record['legalHold'] === true ? { legalHold: true } : {}),
   };
 }

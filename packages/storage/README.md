@@ -23,7 +23,7 @@ Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs
 | Driver | Backing | For | Signed URLs |
 |---|---|---|---|
 | `localDriver` | `Bun.file`/`Bun.write`, one root dir | dev, tests, single-node | HMAC + dev route |
-| `s3Driver` | `Bun.s3` | prod: any S3-compatible endpoint — AWS, R2, a self-hosted gateway | provider presign |
+| `s3Driver` | `Bun.s3`, plus core's `signAwsRequest` over `fetch` for the requests Bun has no option for | prod: any S3-compatible endpoint — AWS, R2, a self-hosted gateway | provider presign |
 | `memoryDriver` | a `Map` in this process | a TEST's disk — never a deployment's: a restart is every object gone | HMAC, the local disk's own |
 
 `memoryDriver()` is what a suite holds instead of a temp directory or a hand-written fake: it
@@ -64,10 +64,16 @@ network, but never this process's heap. Both arguments go through `assertSafeKey
 One S3 driver covers all three backends — the difference is `endpoint` + `forcePathStyle`.
 Credentials are **env var NAMES** (`accessKeyIdEnv`, default `S3_ACCESS_KEY_ID`), never
 literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MISSING`.
+`s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
+global `fetch` and `systemClock`); `S3FetchLike` is the shape.
 `localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
 sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in
-`list()`. `s3Driver` cannot: it refuses `cacheControl`/`metadata` on `put()` (`X_NOT_IMPLEMENTED`,
-Bun exposes no header hook yet).
+`list()`. `s3Driver` STORES both — a `put()` carrying `cacheControl`, `metadata`, `retention` or
+`legalHold` goes past the Bun client as one SigV4-signed PUT (`x-amz-meta-*`, `Cache-Control`,
+`Content-MD5`), against the same endpoint, region and credentials — but its `get()`/`stat()` read
+through Bun's HEAD, which exposes neither, so there they are absent rather than invented. A plain
+`put()` stays on the Bun client. A metadata name must be a header token and every value printable
+ASCII (`X_INVARIANT` otherwise): S3 carries them as headers.
 
 **The local disk writes an object by rename, in an order no crash can make lie.** An object there
 is two files, so a `put()` or `copy()` stages bytes, sidecar and a *pending marker* (the new etag)
@@ -150,6 +156,36 @@ defaulting to that disk's `maxPutBytes`. An object past it is `X_STORAGE_TOO_LAR
 the disk's own size (a HEAD on s3) before a byte is read — and is read with `stream()`. It exists
 because an object's size is not the server's to choose: a presigned PUT lands in a bucket
 unmeasured, so a later `get()` of it was heap growth the uploader picked.
+
+## Write-once objects (S3 Object Lock)
+
+```ts
+import { systemClock } from '@ultimat3/core';
+import { disk, isLocked } from '@ultimat3/storage';
+
+const key = 'org/o1/ledger.csv';
+const bytes = new TextEncoder().encode('a,b\n');
+const now = systemClock.now();
+await disk('ledger').put(key, bytes, {
+  retention: { mode: 'COMPLIANCE', retainUntil: new Date(now.getTime() + 7 * 86_400_000) },
+  legalHold: true,
+});
+const lock = await disk('ledger').retentionOf?.(key); // { retention: { mode, retainUntil }, legalHold: true }
+isLocked(lock, now); // a hold, or a retention still ahead
+```
+
+| | s3 | local, memory |
+|---|---|---|
+| `put({ retention, legalHold })` | `x-amz-object-lock-mode` / `-retain-until-date` (ISO) / `-legal-hold` (`ON`/`OFF`) on the signed PUT — the bucket must be CREATED with Object Lock | recorded in the sidecar (local) or beside the bytes (memory) |
+| `retentionOf(key)` | signed `GET ?retention` + `?legal-hold`; a bucket without Object Lock, or an object with none, is `{ legalHold: false }` | from what `put()` recorded |
+| `delete` / overwrite of a locked object | sent: S3 locks a VERSION, so a DELETE writes a delete marker and a PUT a newer version — the locked version stays | **refused** — `X_STORAGE_OBJECT_LOCKED` (`ObjectLockedError`, HTTP 409; `.lock` carries the lock) — until it lapses: one version per key, so refusing is the only way to keep the bytes |
+
+`retainUntil` must be a valid instant in the future and `mode` `GOVERNANCE` or `COMPLIANCE`
+(`X_INVARIANT` before a byte moves). `COMPLIANCE` cannot be shortened by anyone; extending a
+retention, releasing a hold or bypassing `GOVERNANCE` is out of band:
+`aws s3api put-object-retention` / `put-object-legal-hold`. A `copy()` does not carry the source's
+lock — on S3 it is per version and set by the request. The local refusal is in-process
+(`keyedQueue`), like every other local write rule.
 
 ## Server-side encryption, storage classes, lifecycle
 
@@ -349,9 +385,10 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
 | `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
+| `X_STORAGE_OBJECT_LOCKED` | local, memory: a delete, overwrite or copy onto a key under retention or a legal hold; the cause names the key, the mode and `retainUntil` or the hold, and the bytes are unchanged. Never raised by s3, where the provider keeps the locked version |
 | `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |
 | `X_STORAGE_KEY_CONFLICT` | local disk only: the key's path is another key's directory, or the reverse (`a` and `a/b`) |
-| `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
+| `X_NOT_IMPLEMENTED` | `serverSideEncryption` on any driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |

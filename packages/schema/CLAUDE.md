@@ -15,8 +15,9 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
 Module order (no cycles):
-`char-count → describe-value → node → builder → money-value → validators → discriminated-union →
-provider → t`. `char-count.ts` is imported by BOTH `validators.ts` (which rejects on length) and
+`char-count → describe-value → node → builder → money-value → json-value → validators →
+discriminated-union → provider → t` (`node-fits` and `json-schema` read `json-value` too).
+`char-count.ts` is imported by BOTH `validators.ts` (which rejects on length) and
 `describe-value.ts` (which renders the length in the same message), because they disagreed: the
 rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`
 with "at least 3 chars, received a string of 3 characters".
@@ -185,6 +186,13 @@ Gotchas:
   a schema change is not allowed to edit. `refinements` and `discriminant` are both fields for that
   reason: a refined string still reads as a string, and a discriminated union still reads as a
   union, everywhere. `lazy` and `tuple` cannot be — which is why neither has shipped.
+- **`t.json()` is a `SchemaKind`, the one exception to the line above** (`As of 2026-10`):
+  `unknown` means the IR cannot describe a value, `json` that it can — and every foreign
+  `default:` already projects it correctly (`{}`, raw pass-through, a `null` sample, admin's JSON
+  textarea). `JsonValue` in `json-value.ts` is the framework's one declaration; `cli`, `render`,
+  `manifest` and `realtime` still restate it. Its path segments are POSITIONS (the `t.record`
+  rule), shared values are memoised by height so a DAG is linear, and `JSON_MAX_DEPTH` is fixed:
+  a caller-set bound needs a declaration-time refusal code this package does not have yet.
 - A refinement is carried as a **declaration** (`name`, `message`, `path`), never a closure: a
   predicate cannot cross into OpenAPI or an MCP tool schema, and `refine`'s `message` is rendered
   verbatim on both — so it states the rule and never interpolates a value.

@@ -112,3 +112,40 @@ a current fact: the rules that still hold are in that file, and where the two di
 
 - **The signed base, before it was stated once on the driver** (moved from the package notes,
   2026-10): Before that, the base was stated twice (`/_storage/local` in the driver, `/_storage` in `verifySignedUrl`'s default) and NO genuine URL verified at all: the key parsed as `local/<key>`.
+
+## Object Lock (plan 101 sweep 10a, `As of 2026-10-06`)
+
+- **Why the s3 disk has a second transport.** `Bun.S3Client`'s `write` takes a type, an ACL and a
+  storage class and no header, so `x-amz-meta-*`, `Cache-Control` and `x-amz-object-lock-*` could
+  not be sent — the driver refused metadata and cache-control with `X_NOT_IMPLEMENTED`, and Object
+  Lock was not in `PutOptions` at all. Core's `signAwsRequest` (the framework's one SigV4 signer,
+  shared with the SES driver) made a signed `fetch` possible. Only a `put()` carrying one of those
+  options takes it; a plain `put()`, every read, `copy`, `list`, `delete` and the presign stay on
+  Bun. One signed path for EVERY put (plan 102/03, with a checksum on each) was not taken: it
+  rewrites every fake-client test for no new capability. The signed path restates Bun's
+  addressing (path style unless `forcePathStyle === false`, `auto` region, AWS regional endpoint)
+  from the same options, and a refusal is read into `S3Error`'s `code`/`message`/`statusCode`, so
+  `regionMismatch` and `isAbsentObject` classify it unchanged. The PUT always carries
+  `Content-MD5`: S3 requires one with a retention, and it turns a body changed in flight into
+  `BadDigest`.
+- **Why local and memory refuse while s3 does not.** S3 locks a VERSION. A DELETE with no version
+  id writes a delete marker and succeeds; a PUT writes a newer version and succeeds; the locked
+  version stays (measured on a versioned Versity gateway). The local and memory disks keep one
+  version per key, so the only way to keep locked bytes is to refuse the delete, the overwrite and
+  the copy onto the key. The refusal was first `X_STORAGE_DELETE_FAILED`/`X_STORAGE_PUT_FAILED`
+  and became its own code, `X_STORAGE_OBJECT_LOCKED` (409, `ObjectLockedError`): a lock is the
+  object's state, not the disk failing, and a caller must tell the two apart. The divergence is
+  pinned in `driver-parity.test.ts`.
+- **The lock is read from the sidecar as RECORDED**, even when the pending marker puts the pair in
+  doubt: a torn write must never unlock an object. The check runs inside the key's `keyedQueue`,
+  so it is in-process only, like every other local write rule.
+- **`retentionOf` answers `{ legalHold: false }` for "nothing locks it"** — no configuration on the
+  object (`NoSuchObjectLockConfiguration`, a 404, so asked before `isAbsentObject`) and a bucket
+  made without Object Lock (`InvalidRequest … Object Lock`) alike: the question a caller asks is
+  "may I delete this?". A denied read of EITHER half is the answer, never "unlocked".
+- **A malformed lock option stays `X_INVARIANT`** — a mode outside the two, an invalid instant, a
+  `retainUntil` already past (S3 answers it 400; a local disk would store a lock that never held).
+- **`retentionOf` is optional on `StorageDriver`**, like `registerAs`: required, it breaks every
+  hand-written driver in other packages' tests. All three shipped disks implement it.
+- A `copy()` does not carry the source's lock: on S3 a lock is per version and set by the request.
+

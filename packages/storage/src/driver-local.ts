@@ -30,10 +30,17 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
-import { etagOfFile, headObject, readObjectBytes } from './driver-local-read';
-import type { Sidecar } from './driver-local-sidecar';
+import { etagOfFile, headObject, readObjectBytes, readSidecar } from './driver-local-read';
+import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
 import { commitObject, keyedQueue, pendingPathOf, sidecarPathOf } from './driver-local-write';
 import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
+import {
+  assertObjectLockOptions,
+  isLocked,
+  type ObjectLock,
+  ObjectLockedError,
+  requestedLock,
+} from './object-lock';
 import { assertSafeKey, META_DIR } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
@@ -136,6 +143,22 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const measured = (key: string): Promise<StorageListEntry | undefined> =>
     oneAtATime(key, () => headObject(root, key, () => etagOfFile(root, key, registered)));
 
+  /**
+   * The lock the sidecar RECORDS, read whole even when the pair is in doubt: a torn write never
+   * unlocks an object. `undefined` when nothing on disk locks it now.
+   */
+  const lockAt = async (key: string): Promise<ObjectLock | undefined> => {
+    const lock = lockOfSidecar(await readSidecar(root, key));
+    return isLocked(lock, clock.now()) ? lock : undefined;
+  };
+  /** Called INSIDE the key's queue, so no writer of this process lands between check and commit. */
+  const refuseOverwrite = async (key: string, action: 'overwrite' | 'copy onto'): Promise<void> => {
+    const lock = await lockAt(key);
+    if (lock !== undefined) {
+      throw new ObjectLockedError({ disk: registered, key, action, lock, sidecar: metaPath(key) });
+    }
+  };
+
   /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
   const removeIfPresent = async (path: string, key: string): Promise<void> => {
     try {
@@ -169,6 +192,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       const safe = assertSafeKey(key);
       refuseUnsupportedPut(putOptions);
       assertPutOptions(DRIVER_NAME, putOptions);
+      assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
       const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
@@ -180,10 +204,12 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         etag: etagOf(bytes),
         cacheControl: putOptions?.cacheControl,
         metadata: putOptions?.metadata,
+        ...sidecarLock(requestedLock(putOptions)),
       };
-      await oneAtATime(safe, () =>
-        commitObject({ root, key: safe, disk: registered, body: bytes, sidecar }),
-      );
+      await oneAtATime(safe, async () => {
+        await refuseOverwrite(safe, 'overwrite');
+        await commitObject({ root, key: safe, disk: registered, body: bytes, sidecar });
+      });
       return {
         key: safe,
         size: bytes.byteLength,
@@ -242,15 +268,16 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         cacheControl: entry.cacheControl,
         metadata: entry.metadata,
       };
-      await oneAtATime(destination, () =>
-        commitObject({
+      await oneAtATime(destination, async () => {
+        await refuseOverwrite(destination, 'copy onto');
+        await commitObject({
           root,
           key: destination,
           disk: registered,
           body: Bun.file(filePath(source)),
           sidecar,
-        }),
-      ).catch(async (error: unknown) => {
+        });
+      }).catch(async (error: unknown) => {
         // The source was deleted while this copy waited its turn on the destination.
         if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(registered, source);
         throw error;
@@ -269,6 +296,16 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       // is not — a read-only mount or a root this process cannot write reports the bytes gone
       // when they are still on disk, which is the one lie an erasure sweep must never repeat.
       await oneAtATime(safe, async () => {
+        const lock = await lockAt(safe);
+        if (lock !== undefined) {
+          throw new ObjectLockedError({
+            disk: registered,
+            key: safe,
+            action: 'delete',
+            lock,
+            sidecar: metaPath(safe),
+          });
+        }
         await removeIfPresent(filePath(safe), safe);
         await removeIfPresent(metaPath(safe), safe);
         await removeIfPresent(`${root}/${pendingPathOf(safe)}`, safe);
@@ -277,6 +314,15 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
     async exists(key: string): Promise<boolean> {
       return Bun.file(filePath(assertSafeKey(key))).exists();
+    },
+
+    /** From the sidecar, as recorded — a lapsed retention is still reported, as S3 reports it. */
+    async retentionOf(key: string): Promise<ObjectLock> {
+      const safe = assertSafeKey(key);
+      return oneAtATime(safe, async () => {
+        if (!(await Bun.file(filePath(safe)).exists())) throw objectNotFound(registered, safe);
+        return lockOfSidecar(await readSidecar(root, safe));
+      });
     },
 
     async list(listOptions?: ListOptions): Promise<ListPage> {

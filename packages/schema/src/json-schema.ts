@@ -5,6 +5,7 @@
 
 import { describeValue } from './describe-value';
 import { SchemaUnsupportedError } from './errors';
+import { JSON_MAX_DEPTH } from './json-value';
 import { CURRENCY_CODE_PATTERN, MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode, type SchemaRefinement } from './node';
 import { PROTOTYPE_KEYS } from './prototype-keys';
@@ -158,10 +159,22 @@ function patternNote(node: SchemaNode): string | undefined {
     : `pattern is applied with RegExp flags "${flags}"`;
 }
 
+/**
+ * JSON Schema has no keyword for nesting depth, so `t.json()`'s bound is stated in prose — the
+ * narrower-of-the-two rule this file's header states: `{}` alone promised a document 300 levels
+ * deep that the parser refuses.
+ */
+function jsonNote(node: SchemaNode): string | undefined {
+  return node.kind === 'json'
+    ? `any JSON value, nested at most ${JSON_MAX_DEPTH} levels deep`
+    : undefined;
+}
+
 function convert(node: SchemaNode): JsonSchema {
   const refinements = node.refinements ?? [];
   const notes = [
     node.description,
+    jsonNote(node),
     patternNote(node),
     ...refinements.map((refinement) => refinement.message),
   ].filter((part): part is string => part !== undefined);
@@ -282,6 +295,10 @@ function convert(node: SchemaNode): JsonSchema {
         additionalProperties: false,
       });
     }
+    // No `type`: an empty schema is JSON Schema's own spelling of "any JSON value", and every
+    // instance it validates is JSON already. The depth bound rides in `description` (`jsonNote`).
+    case 'json':
+      return annotate({});
     default:
       return annotate({});
   }
