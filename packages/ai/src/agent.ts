@@ -41,7 +41,7 @@ import {
 } from './errors';
 import type { LlmBudget } from './llm';
 import { answerAttributes } from './llm';
-import { describedModel, resolveModel } from './model-resolve';
+import { describedModel, type ModelSource, resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
@@ -204,6 +204,14 @@ export function agent<
   return built;
 }
 
+const modelFact = (described: {
+  readonly model: string;
+  readonly from: ModelSource;
+}): Pick<AgentFact, 'model' | 'modelFrom'> => ({
+  model: described.model,
+  modelFrom: described.from,
+});
+
 function factsOf<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
@@ -214,7 +222,10 @@ function factsOf<
     prompt: def.prompt.ref,
     promptId: def.prompt.id,
     promptHash: def.prompt.hash,
-    model: describedModel(def.model, def.prompt.model),
+    // The run's own precedence, so the row names the model a call would use NOW: read when the
+    // facts are, at describe time, like every name in the row. `modelFrom` says which place
+    // answered — `gateway` and `built-in-default` depend on the gateway installed at that moment.
+    ...modelFact(describedModel(def.model, def.prompt.model, installedGateway()?.defaultModel)),
     maxTurns: def.maxTurns ?? DEFAULT_MAX_TURNS,
     maxToolResultChars: def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
     tools: [...def.tools.map(toolLabel)].sort(),

@@ -5,7 +5,7 @@
 
 import { counter, logger } from '@ultimat3/core';
 import { isBuiltInRow } from './model-origin';
-import type { ModelId } from './models';
+import type { ModelId, ModelSpec } from './models';
 
 /** What the app leaned on. Bounded: two kinds. */
 export type AiDeprecationKind = 'default-model' | 'built-in-price';
@@ -40,26 +40,44 @@ function record(
 }
 
 /**
- * A model was resolved with none declared, at `site`, so the built-in default answered. The fix
- * names the two app-side places a model is chosen, and no model: which one is the app's call.
+ * A model was resolved with none declared, at `site`, so the built-in default answered. The fix is
+ * the shape of the two app-side places a model is chosen, and the cause says what `modelId` is —
+ * never a model of its own: which one is the app's call.
  */
 export function recordDefaultModel(site: ModelSite, model: ModelId): void {
   record('default-model', site, {
     site,
     model,
-    fix: `createGateway({ providers, defaultModel: '<your model id>' }), or model: '<your model id>' on the llm()/agent() declaration — the built-in default is removed in ${REMOVED_IN}`,
+    cause: `${site} resolved no model — no declaration, prompt or createGateway({ defaultModel }) named one — so the built-in "${model}" answered (modelId: an id your app registerModel-ed and a configured provider lists)`,
+    fix: 'createGateway({ …, defaultModel: modelId })   # your existing call — or model: modelId on the llm()/agent() declaration',
   });
 }
 
 /**
- * `model` was priced by a row this package registered, not the app. Recorded once per ROW, because
- * the fix is that row's own `registerModel`, with the prices the app's contract names.
+ * A row as the TypeScript an app pastes: identifier keys, `undefined` kept (a `reasoning` key the
+ * type requires even when unset), every value the built-in row holds — so the paste re-registers
+ * exactly what is priced today, and the app edits the prices to its contract from there.
  */
-export function recordBuiltInPrice(model: ModelId): void {
-  if (!isBuiltInRow(model)) return;
-  record('built-in-price', model, {
-    model,
-    fix: `registerModel({ id: '${model}', contextWindow, maxOutput, inputPerMillion, outputPerMillion, cacheMinimumTokens, reasoning }) at boot — built-in catalogue rows are removed in ${REMOVED_IN}`,
+function literal(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return `[${value.map(literal).join(', ')}]`;
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value).map(([key, inner]) => `${key}: ${literal(inner)}`);
+    return `{ ${entries.join(', ')} }`;
+  }
+  return typeof value === 'string' ? `'${value}'` : String(value);
+}
+
+/**
+ * `spec` priced a call and is a row this package registered, not the app. Recorded once per ROW,
+ * because the fix is that row's own `registerModel`: the row written out whole, runnable as pasted.
+ */
+export function recordBuiltInPrice(spec: ModelSpec): void {
+  if (!isBuiltInRow(spec.id)) return;
+  record('built-in-price', spec.id, {
+    model: spec.id,
+    cause: `"${spec.id}" was priced by the built-in catalogue row, which the app never registered (removed in ${REMOVED_IN}); the fix is that row as it stands — set the prices to your contract's`,
+    fix: `registerModel(${literal(spec)})   # at boot, before configureAi; this row's ai.deprecation line then stops`,
   });
 }
 

@@ -156,8 +156,10 @@ export interface SessionAuthenticatorOptions {
 }
 
 /**
- * A session cookie is that session's user, or \`X_SESSION_UNKNOWN\` for one that is expired, revoked
- * or forged — never a fallback to anyone else. No cookie is the development viewer or nobody.
+ * A session cookie is that session's user, or a refusal — never a fallback to anyone else:
+ * \`X_SESSION_EXPIRED\` for a session past its absolute or idle expiry, \`X_UNAUTHENTICATED\` for
+ * one that is unknown, revoked or forged, or whose user is disabled. No cookie is the development
+ * viewer or nobody.
  */
 export const sessionAuthenticator =
   (options: SessionAuthenticatorOptions) =>

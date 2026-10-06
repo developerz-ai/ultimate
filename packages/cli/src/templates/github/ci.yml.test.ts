@@ -172,19 +172,38 @@ const expr = (body: string): string => ['$', '{{ ', body, ' }}'].join('');
 
 interface Runs {
   readonly name?: string;
-  readonly jobs?: Readonly<Record<string, { readonly 'runs-on'?: unknown }>>;
+  readonly jobs?: Readonly<
+    Record<
+      string,
+      {
+        readonly 'runs-on'?: unknown;
+        readonly defaults?: { readonly run?: { readonly shell?: string } };
+      }
+    >
+  >;
 }
 
-describe('unit · the runner every emitted workflow asks for', () => {
+describe('unit · the runner each emitted workflow asks for', () => {
+  const jobsOf = (path: string) => (YAML.parse(emitted(githubFiles(app), path)) as Runs).jobs ?? {};
+
   // A free GitHub-hosted runner is the default — the owner's rule — and a repository variable is
-  // the override, so moving to a bigger or self-hosted runner is a setting, never an edit to a
-  // file `x new` wrote and a later scaffold would diff against.
-  test('every job runs on vars.CI_RUNNER, falling back to the free ubuntu-latest', () => {
-    for (const file of githubFiles(app)) {
-      const doc = YAML.parse(String(file.contents)) as Runs;
-      for (const job of Object.values(doc.jobs ?? {})) {
-        expect(job['runs-on']).toBe(expr("vars.CI_RUNNER || 'ubuntu-latest'"));
-      }
+  // the override, so moving the gate to a bigger or self-hosted runner is a setting, never an edit
+  // to a file `x new` wrote and a later scaffold would diff against.
+  test('the gate runs on vars.CI_RUNNER, falling back to the free ubuntu-latest', () => {
+    for (const job of Object.values(jobsOf(CI_WORKFLOW_PATH))) {
+      expect(job['runs-on']).toBe(expr("vars.CI_RUNNER || 'ubuntu-latest'"));
+    }
+  });
+
+  // The image job's steps are bash and Docker. On a Windows label the default shell is pwsh and
+  // `${SHA::7}` is a syntax error, so a green gate would publish nothing: it never follows the
+  // variable, and it names its shell.
+  test('the image job stays on ubuntu-latest, in bash, whatever CI_RUNNER says', () => {
+    const jobs = Object.values(jobsOf('.github/workflows/image.yml'));
+    expect(jobs.length).toBe(1);
+    for (const job of jobs) {
+      expect(job['runs-on']).toBe('ubuntu-latest');
+      expect(job.defaults?.run?.shell).toBe('bash');
     }
   });
 });

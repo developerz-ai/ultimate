@@ -64,5 +64,7 @@ test('an editor that waves a vague draft through is caught, case by case', async
     'overall',
     'english/ready',
     'english/revise',
+    // "Muy bien." — one sentence, the right verdict, and nothing a writer can act on.
+    'spanish/ready',
   ]);
 });

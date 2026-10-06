@@ -164,7 +164,7 @@ export interface Provider {
 export function costOf(model: ModelId, usage: TokenUsage): Money {
   const spec = modelSpec(model);
   // The one price lookup, so the one place a built-in row's price is noticed (removed in 25.0.0).
-  recordBuiltInPrice(model);
+  recordBuiltInPrice(spec);
   const input = spec.inputPerMillion.minor;
   // In TWENTIETHS of a minor unit, so the standard multipliers stay integral on any whole price:
   // a cache read is 0.1x input (2/20) and a 5-minute write 1.25x (25/20) unless the row states

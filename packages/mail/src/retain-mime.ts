@@ -57,23 +57,29 @@ export interface RetainMimeOptions {
   readonly onRetained?: ((entry: RetainedMimeEntry) => void | Promise<void>) | undefined;
 }
 
-/** Refused at construction, where every other driver option is, and never on the first send. */
+/**
+ * Refused at construction, where every other driver option is, and never on the first send — and
+ * by `selectMailDriver` before it picks a transport, so the ceiling is one verdict whatever env
+ * selects. `key` is where the option was written, named in the refusal: `retainMime` for a call,
+ * `mail.retainMime` when a boot read it from `app.config.ts`.
+ */
 export function resolveRetainMime(
   driver: string,
   options: RetainMimeOptions | undefined,
+  key = 'retainMime',
 ): RetainMimeOptions | undefined {
   if (options === undefined) return undefined;
   const maxBytes = finiteCount(
     driver,
-    'retainMime.maxBytes',
+    `${key}.maxBytes`,
     options.maxBytes ?? DEFAULT_RETAIN_MIME_MAX_BYTES,
     1,
   );
   if (maxBytes > RETAIN_MIME_CEILING_BYTES) {
     throw new ConfigInvalidError({
-      cause: `${driver} retainMime.maxBytes is ${maxBytes}, above the ${RETAIN_MIME_CEILING_BYTES}-byte ceiling a retained message may hold`,
-      fix: `retainMime: { maxBytes: ${DEFAULT_RETAIN_MIME_MAX_BYTES} } — or drop maxBytes for that default`,
-      meta: { driver },
+      cause: `${driver} ${key}.maxBytes is ${maxBytes}, above the ${RETAIN_MIME_CEILING_BYTES}-byte ceiling a retained message may hold`,
+      fix: `${key}: { maxBytes: ${DEFAULT_RETAIN_MIME_MAX_BYTES} } — or drop maxBytes for that default`,
+      meta: { driver, key: `${key}.maxBytes` },
     });
   }
   return { maxBytes, onRetained: options.onRetained };

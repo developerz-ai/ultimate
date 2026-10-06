@@ -1,6 +1,6 @@
-// The one `runs-on:` every workflow `x new` writes: a free GitHub-hosted runner unless the
-// repository says otherwise. Spelled once so the gate and the image build can never disagree
-// about the machine they assume.
+// The `runs-on:` the workflows `x new` writes: the gate on a free GitHub-hosted runner unless the
+// repository says otherwise, the image build always on that default — it needs bash and Docker,
+// which a configured label need not have. Spelled once so the two cannot drift.
 
 /** The repository variable that overrides the runner — Settings → Secrets and variables → Actions. */
 export const RUNNER_VARIABLE = 'CI_RUNNER';

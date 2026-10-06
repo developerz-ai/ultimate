@@ -33,7 +33,14 @@ package's first step to apps bringing their own models and providers.
 - admin: an `AdminAction` marked `readonly: true` is gated on `admin:read`, and `destructive` still
   wins. Admin MCP tools carry real scopes (`admin:read` / `admin:write` / `admin:destroy`), enforced by
   the MCP scope gate (`X_MCP_SCOPE_DENIED`); `adminMcp({ actor })` may return `tokenScopes`.
-- ai: `createGateway({ defaultModel })` is read by `llm()` and `agent()` before any built-in default.
+- ai: `createGateway({ defaultModel })` is read by `llm()` and `agent()` before any built-in default,
+  and `describeAgents()` reports the model a call would use, with `AgentFact.modelFrom`
+  (`declaration` / `prompt` / `gateway` / `built-in-default`).
+- admin: an action declaring `matching` always needs `admin:write`, even with `readonly`, because it
+  changes every row a list matches.
+- mail: `selectMailDriver` refuses a `retainMime.maxBytes` above the ceiling before choosing a
+  transport, on every branch; `retainMimeKey` names where the option came from. The scaffolded image
+  workflow always runs on `ubuntu-latest`, whatever `CI_RUNNER` says.
 - `x new` writes `.github/workflows/image.yml` (GHCR, after a green `ci`); both workflows run on
   `vars.CI_RUNNER`, defaulting to the free `ubuntu-latest`.
 - mcp: `mcpConfirmations({ tools, permission, store })` — a person approves a named tool's call

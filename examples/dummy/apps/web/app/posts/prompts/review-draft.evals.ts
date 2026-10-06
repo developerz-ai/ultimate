@@ -4,7 +4,7 @@
  * `summarize.evals.ts` gives: the gate reads this module without importing a test.
  *
  * Deterministic scorers only. A verdict is checked against the one each case was written to earn,
- * and the notes against the prompt's own three-sentence rule.
+ * and the notes against the prompt's own rules: three sentences at most, and no praise.
  */
 
 import type { Scorer } from '@ultimat3/ai';
@@ -67,11 +67,27 @@ export const withinThreeSentences: Scorer = {
   },
 };
 
+/**
+ * The prompt's other rule: no praise. A verdict carried by "Muy bien." says nothing a writer can
+ * act on — and three short sentences of it pass the length rule, so length alone cannot catch it.
+ * Words, not a judge model, in both locales the cases are written in.
+ */
+const PRAISE =
+  /\b(great|good job|nice|lovely|excellent|well done|ship it|looks good|perfect)\b|muy bien|genial|excelente|buen trabajo|perfecto/i;
+
+export const noPraise: Scorer = {
+  name: 'no-praise',
+  score({ output }) {
+    const notes = parsed(output)?.notes;
+    return typeof notes === 'string' && !PRAISE.test(notes) ? 1 : 0;
+  },
+};
+
 export const reviewDraftEval = defineEval({
   name: 'posts.review-draft',
   prompt: reviewDraftPrompt,
   baseline: import.meta.resolve('./review-draft.v1.baseline.json'),
   tolerance: 0.05,
-  scorers: [jsonSchemaValid(['verdict', 'notes']), verdictMatches, withinThreeSentences],
+  scorers: [jsonSchemaValid(['verdict', 'notes']), verdictMatches, withinThreeSentences, noPraise],
   cases: reviewDraftCases,
 });

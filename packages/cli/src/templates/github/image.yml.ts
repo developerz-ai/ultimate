@@ -3,7 +3,7 @@
 // default branch. It runs no gate of its own — a second gate is a second definition of one — and
 // it deploys nothing: the image digest is the handoff, axiom 7's one deploy artifact.
 
-import { RUNS_ON } from './runner';
+import { DEFAULT_RUNNER } from './runner';
 
 /** Where the workflow lands, beside the gate it waits on. */
 export const IMAGE_WORKFLOW_PATH = '.github/workflows/image.yml';
@@ -45,7 +45,13 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == github.event.repository.default_branch &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ${RUNS_ON}
+    # NOT \`vars.CI_RUNNER\`: the gate may move to any runner, but this job needs bash (\`\${SHA::7}\`,
+    # \`\${GITHUB_REPOSITORY,,}\`) and a Docker daemon, and a Windows or self-hosted label may have
+    # neither — a green gate would then publish nothing. The free GitHub-hosted Linux runner has both.
+    runs-on: ${DEFAULT_RUNNER}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 30
     steps:
       # The commit the gate judged, not the tip of the branch when this run started.

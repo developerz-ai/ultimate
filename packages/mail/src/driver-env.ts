@@ -9,7 +9,7 @@ import { createMemoryDriver, createUnconfiguredDriver, type MailDriver } from '.
 import { createResendDriver } from './driver-resend';
 import { createSesDriver } from './driver-ses';
 import { createSmtpDriver } from './driver-smtp';
-import type { RetainMimeOptions } from './retain-mime';
+import { type RetainMimeOptions, resolveRetainMime } from './retain-mime';
 
 /**
  * The MAIL keys read here, and nothing else. Named once so docs and tests cannot drift from the
@@ -39,6 +39,11 @@ const SELECTING_KEYS = ['SMTP_URL', 'RESEND_API_KEY', 'SES_REGION'] as const;
  */
 export interface MailSelectOptions {
   readonly retainMime?: RetainMimeOptions | undefined;
+  /**
+   * Where `retainMime` was written, named in a refusal so it points at the line to edit. Default
+   * `retainMime`; `@ultimat3/cli`'s boot passes `mail.retainMime`, the `app.config.ts` key.
+   */
+  readonly retainMimeKey?: string | undefined;
 }
 
 export type MailEnvironment = Readonly<Record<string, string | undefined>>;
@@ -108,6 +113,10 @@ export function selectMailDriver(
   env: MailEnvironment,
   options: MailSelectOptions = {},
 ): MailSelection {
+  // The cap first, before any branch: only SMTP and SES build a retaining transport, so a cap
+  // above the ceiling booted on memory, unconfigured and Resend, and the same options refused the
+  // boot the day `SMTP_URL` was set. One check, `resolveRetainMime`, the transports' own.
+  resolveRetainMime('selectMailDriver', options.retainMime, options.retainMimeKey);
   const selected = SELECTING_KEYS.filter((key) => nonEmpty(env[key]) !== undefined);
   if (selected.length > 1) {
     throw new ConfigInvalidError({

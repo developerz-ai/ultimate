@@ -66,6 +66,7 @@ describe('describeAgents', () => {
         promptId: prompt.id,
         promptHash: prompt.hash,
         model: 'claude-opus-5',
+        modelFrom: 'built-in-default',
         maxTurns: 3,
         maxToolResultChars: 500,
         // Sorted, so a manifest diff is about the catalogue and not about declaration order.
@@ -77,6 +78,37 @@ describe('describeAgents', () => {
         },
         mcp: true,
       },
+    ]);
+  });
+
+  // The row names the model a call would run on: `run()` reads the gateway's `defaultModel` after
+  // the declaration and its prompt, so a row that skipped it described a model nobody calls.
+  test("an undeclared model is the gateway's defaultModel, and says so", () => {
+    configureAi({
+      gateway: createGateway({ providers: [new EchoProvider()], defaultModel: 'claude-sonnet-5' }),
+    });
+    const prompt = promptFor();
+    const base = {
+      input: Input,
+      output: Output,
+      vars: ({ input }: { input: { orderId: string } }) => ({ orderId: input.orderId }),
+      tools: [],
+      policy: allow(),
+    };
+    registerAction('defaultedAgent', agent({ ...base, prompt }));
+    registerAction(
+      'pinnedAgent',
+      agent({ ...base, prompt: promptFor(), model: 'claude-haiku-4-5' }),
+    );
+
+    const facts = describeAgents().map(({ name, model, modelFrom }) => ({
+      name,
+      model,
+      modelFrom,
+    }));
+    expect(facts).toEqual([
+      { name: 'defaultedAgent', model: 'claude-sonnet-5', modelFrom: 'gateway' },
+      { name: 'pinnedAgent', model: 'claude-haiku-4-5', modelFrom: 'declaration' },
     ]);
   });
 

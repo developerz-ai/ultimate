@@ -177,6 +177,15 @@ export const summarizePosts = hive({
 });
 
 /**
+ * The draft as the review prompt's DATA: it rides inside `<post_title>` / `<post_body>` tags, so a
+ * post that writes its own closing tag could end the data early and speak as the prompt. The tags'
+ * closers are the one sequence the writer cannot keep verbatim; everything else reaches the model
+ * exactly as written.
+ */
+export const asDraftData = (text: string): string =>
+  text.replace(/<\/(post_title|post_body)>/gi, '<\\/$1>');
+
+/**
  * "Is my draft ready?" — a tool-using model run, still an action: `agent()` returns one, so it has
  * a route, an MCP tool and a contract like the rest. Its one tool is `summarize`, the action above,
  * run under the SAME actor through its own policy — the model can ask how the feed will present the
@@ -191,7 +200,7 @@ export const reviewDraft = agent({
   prompt: reviewDraftPrompt,
   vars: async ({ input, ctx }) => {
     const post = await ctx.posts.byId(postId(input.postId));
-    return { title: post.title, body: post.body, locale: ctx.locale };
+    return { title: asDraftData(post.title), body: asDraftData(post.body), locale: ctx.locale };
   },
   tools: [summarize],
   maxTurns: 3,

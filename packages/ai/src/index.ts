@@ -123,6 +123,7 @@ export type { LlmAction, LlmBudget, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
+export type { ModelSource } from './model-resolve';
 export type {
   ContentKind,
   DeclaredReasoning,

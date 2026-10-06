@@ -162,7 +162,10 @@ SMTP and SES (the transports that build the MIME). The exact bytes handed to the
 persisted. Cap: default 256 KiB, at most 10 MiB; **over it only `{ kind: 'digest-only', sha256,
 byteLength }` is kept, never a truncated message.** A throwing `onRetained` is logged
 (`mail.retain_mime.failed`) and does not fail the send. `selectMailDriver(env, { retainMime })`
-refuses it for Resend, which builds the MIME on its own side.
+refuses it for Resend, which builds the MIME on its own side, and judges the cap BEFORE it picks a
+transport — a cap over the ceiling is `X_CONFIG_INVALID` on every branch, memory included.
+`retainMimeKey` names where the option was written in that refusal (`mail.retainMime` from an
+`app.config.ts`); default `retainMime`.
 
 ### Delivery events
 

@@ -4,6 +4,7 @@
 // 500-line ceiling.
 
 import { describeValue } from './error-render';
+import { isJsonObject } from './json-object';
 
 /**
  * Keep the exact MIME bytes the SMTP and SES transports hand their provider, bounded — the audit
@@ -43,9 +44,10 @@ export function mergeMail(layers: readonly MailSectionInput[]): MailSection {
     const said = layer.mail?.retainMime;
     if (said === undefined) continue;
     if (said === true) retainMime = { maxBytes: undefined };
-    else if (typeof said === 'object' && said !== null) retainMime = { maxBytes: said.maxBytes };
-    // `false`, or a wrong value from an untyped file carried through AS WRITTEN for `mailIssues`
-    // to refuse — read as an object it became `{ maxBytes: undefined }`, retention switched on.
+    else if (isJsonObject(said)) retainMime = { maxBytes: said['maxBytes'] as number | undefined };
+    // `false`, or a wrong value from an untyped file — `'yes'`, `[]` — carried through AS WRITTEN
+    // for `mailIssues` to refuse: read as an object it became `{ maxBytes: undefined }`, retention
+    // switched on. `isJsonObject`, never `typeof`: a list is an object to `typeof`.
     else retainMime = said as MailConfig['retainMime'];
   }
   return { mail: { retainMime } };
@@ -56,13 +58,13 @@ export function mailIssues(config: MailSection, issues: string[]): void {
   // `unknown`: an untyped config file reaches this validator with whatever it wrote.
   const retain: unknown = config.mail.retainMime;
   if (retain === false) return;
-  if (typeof retain !== 'object' || retain === null) {
+  if (!isJsonObject(retain)) {
     issues.push(
       `mail.retainMime must be true, false or { maxBytes }, not ${describeValue(retain)}`,
     );
     return;
   }
-  const maxBytes: unknown = (retain as { readonly maxBytes?: unknown }).maxBytes;
+  const maxBytes: unknown = retain['maxBytes'];
   if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || (maxBytes as number) < 1)) {
     issues.push(
       `mail.retainMime.maxBytes must be a whole number of bytes above 0, not ${describeValue(maxBytes)}`,

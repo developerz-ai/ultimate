@@ -223,7 +223,7 @@ export const suspendUser: AdminAction = {
 | `batch` | the list's batch bar — checked rows, or every row the list's URL matches — each row through the button's gate and on the audit log, answered with `done` / `refused` / `failed` / `queued` / `remaining`. 200 rows inline per request (`MAX_BATCH_ROWS`), 1,000 queued (`MAX_BATCH_QUEUED_ROWS`); "all matching" continues from where it stopped |
 | `matching` | "all matching" as ONE set-based call: handed the list's `where` (row scope, scope, filters), it answers `{ affected, remaining }` — a store's bounded bulk verb. Decided and audited once (`admin.batch.matching`); a destructive one types `<entity>:all matching`. Checked rows still run row by row. Requires `batch` |
 | `batch.threshold` | past it, one `admin.batch` job per `chunk` (default: the threshold), run by a worker as the operator who queued it. The worker must load the module calling `defineAdmin` (`X_ADMIN_MOUNT_MISSING`) |
-| `readonly` | the action changes nothing (an export, a verification): its admin-level gate is `admin:read`, not `admin:write`, so a read-only staff role and an `admin:read` MCP token may run it. `destructive` wins over it |
+| `readonly` | the action changes nothing (an export, a verification): its admin-level gate is `admin:read`, not `admin:write`, so a read-only staff role and an `admin:read` MCP token may run it. `destructive` (`admin:destroy`) and `matching` (`admin:write`) win over it |
 | destructive | gated on `admin:destroy`; one row: type `<entity>:<id>`; a batch: type `<entity>:<n> rows` |
 | MCP | still ONE tool, `admin.action.<name>`; a batch action's takes `ids: [...]` |
 | `labelKey` | the button's, the form's and the batch bar's label; absent: `admin.action.<name>` |
@@ -441,8 +441,11 @@ export const mcp = adminMcp({ app: admin, actor: (session) => actorFor(session.t
 adminMcpTools(admin, ctx); // admin.post.list · admin.post.read · admin.search · admin.action.post.publish
 ```
 
-Every tool carries a **scope**, the admin-level permission it needs, checked by the MCP registry
-BEFORE the actor's policy (`X_MCP_SCOPE_DENIED` naming it):
+Every tool carries a **scope**, the admin-level permission it needs. The MCP registry asks, in
+order: visibility — the actor's own admin authz (`adminMcpTools`); a tool it denies is ABSENT and
+answers tool-not-found, whatever the token holds — then the token's scope (`X_MCP_SCOPE_DENIED`
+naming it, before any argument is validated or a handler runs), then the call's own row-level
+decision inside the tool:
 
 | Scope | Tools |
 |---|---|

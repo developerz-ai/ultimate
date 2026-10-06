@@ -345,4 +345,15 @@ describe('a readonly action is gated on admin:read', () => {
   test('destructive wins over readonly: the stricter gate, never the looser', () => {
     expect(permissionsForAction({ ...verify, destructive: true })[0]).toBe('admin:destroy');
   });
+
+  // `matching` is a set-based write over every row a list matches: read-only staff never run it.
+  test('a readonly action with matching still needs admin:write', () => {
+    const bulk: AdminAction = {
+      ...verify,
+      batch: true,
+      matching: async () => ({ affected: 0, remaining: 0 }),
+    };
+    expect(permissionsForAction(bulk)[0]).toBe('admin:write');
+    expect(actionButtons({ actions: [bulk], actor: reader, authz: readOnlyStaff })).toEqual([]);
+  });
 });

@@ -51,6 +51,10 @@ describe('mail — default, merge and refusal', () => {
         defineConfig({ name: 'app', mail: { retainMime: 'yes' as unknown as boolean } }),
       ),
     ).toContain('mail.retainMime must be true, false or { maxBytes }');
+    // A list is an object to `typeof`: read as one it became `{ maxBytes: undefined }`, retention on.
+    expect(
+      causeOf(() => defineConfig({ name: 'app', mail: { retainMime: [] as unknown as boolean } })),
+    ).toContain('mail.retainMime must be true, false or { maxBytes }');
     expect(
       causeOf(() => defineConfig({ name: 'app', mail: null as unknown as { retainMime: true } })),
     ).toContain('mail must be an object');

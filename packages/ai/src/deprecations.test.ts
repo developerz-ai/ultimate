@@ -72,9 +72,11 @@ describe('resolving a model through the built-in DEFAULT_MODEL', () => {
     const fix = String(found[0]?.['fix']);
     expect(fix).toContain('createGateway({');
     expect(fix).toContain('defaultModel');
-    expect(fix).toContain('model:');
-    expect(fix).toContain('25.0.0');
+    expect(fix).toContain('model: modelId');
     expect(fix).not.toMatch(VENDOR);
+    // The fix is a shape; the cause names what its one variable is.
+    expect(String(found[0]?.['cause'])).toContain('modelId: an id your app registerModel-ed');
+    expect(found[0]?.['removedIn']).toBe('25.0.0');
   });
 
   test("the gateway's defaultModel is consulted by llm(), and records nothing", async () => {
@@ -127,7 +129,21 @@ describe('pricing a model through a built-in catalogue row', () => {
     expect(found.map((line) => line['model'])).toEqual([DEFAULT_MODEL, 'gpt-5.6-luna']);
     const fix = String(found[0]?.['fix']);
     expect(fix).toContain(`registerModel({ id: '${DEFAULT_MODEL}'`);
-    expect(fix).toContain('25.0.0');
+    expect(String(found[0]?.['cause'])).toContain('25.0.0');
+  });
+
+  // Runnable as pasted: the fix is the row written out whole, so running it re-registers exactly
+  // what was priced — as the app's own row now — and the notice for that row stops.
+  test("the fix, run as written, makes the row the app's and prices it the same", () => {
+    const before = costOf('claude-haiku-4-5', USAGE);
+    const fix = String(recorded('built-in-price')[0]?.['fix']);
+    const call = fix.split('   #')[0] ?? '';
+    new Function('registerModel', call)(registerModel);
+
+    resetAiDeprecations();
+    lines = [];
+    expect(costOf('claude-haiku-4-5', USAGE)).toEqual(before);
+    expect(recorded('built-in-price')).toEqual([]);
   });
 
   test('a row the app registered records nothing — a new id or a built-in id restated', () => {
@@ -142,9 +158,14 @@ describe('pricing a model through a built-in catalogue row', () => {
 
 describe('no fix line names a vendor as the default', () => {
   test('X_AI_GATEWAY_MISSING leaves the provider to the app', () => {
-    const fix = new AiGatewayMissingError({ prompt: 'p@1' }).fix;
-    expect(fix).toContain('createGateway({ providers: [yourProvider] })');
-    expect(fix).not.toContain('new AnthropicProvider()');
+    const error = new AiGatewayMissingError({ prompt: 'p@1' });
+    expect(error.fix).toBe(
+      'configureAi({ gateway: createGateway({ providers: [provider] }) }) at boot',
+    );
+    // `provider` is named in the cause, every peer adapter beside the app's own, none first-class.
+    expect(error.cause).toContain('(provider: new AnthropicProvider()');
+    expect(error.cause).toContain('openAiProvider({ baseUrl, models })');
+    expect(error.cause).toContain('or your own Provider');
   });
 
   test('a reasoning refusal does not tell the app to switch to the built-in default', () => {
@@ -157,12 +178,20 @@ describe('no fix line names a vendor as the default', () => {
       try {
         run();
       } catch (error) {
-        if (error instanceof AiRequestInvalidError) return error.fix ?? '';
+        if (error instanceof AiRequestInvalidError) return { fix: error.fix, cause: error.cause };
       }
       return expect.unreachable('the request was not refused');
     });
     expect(fixes).toHaveLength(3);
-    for (const fix of fixes) expect(fix).not.toContain(DEFAULT_MODEL);
+    for (const { fix, cause } of fixes) {
+      expect(fix).not.toContain(DEFAULT_MODEL);
+      // An agent() caller can act on it too — not only an llm() one — and `modelId` is defined.
+      expect(fix).toMatch(
+        /agent\(\{ …, model: modelId \}\)|on the agent\(\) or llm\(\) declaration/,
+      );
+      expect(fix).toContain('model: modelId');
+      expect(cause).toContain('modelId: a registered id');
+    }
   });
 });
 

@@ -8,6 +8,7 @@ import type { MailDriver, MailMessage, MemoryMailDriver } from './driver';
 import { createMemoryDriver, isMemoryDriver } from './driver';
 import { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
 import { driverUnavailable } from './errors';
+import { RETAIN_MIME_CEILING_BYTES } from './retain-mime';
 
 const FROM = 'Postly <no-reply@postly.test>';
 const SMTP_URL = 'smtps://user:pass@mail.postly.test:465';
@@ -366,5 +367,54 @@ describe('selectMailDriver — SES', () => {
     expect(thrown(() => selectMailDriver(SES, { retainMime: { maxBytes: 0 } })).code).toBe(
       'X_INVARIANT',
     );
+  });
+});
+
+describe('selectMailDriver — the retention ceiling is one verdict, whatever transport env selects', () => {
+  const ABOVE = { retainMime: { maxBytes: RETAIN_MIME_CEILING_BYTES + 1 } };
+  const SES_ENV = {
+    SES_REGION: 'eu-west-1',
+    SES_ACCESS_KEY_ID: 'AKIDEXAMPLE',
+    SES_SECRET_ACCESS_KEY: 'secret',
+    MAIL_FROM: FROM,
+  };
+
+  // The cap was checked only where SMTP or SES is BUILT, so with neither selected a cap above the
+  // ceiling booted — and the same options refused the boot the day `SMTP_URL` was set.
+  test('a cap above the ceiling is refused with no transport env, with SMTP, and with SES', () => {
+    for (const env of [
+      { ULTIMATE_ENV: 'development' },
+      { ULTIMATE_ENV: 'production' },
+      { SMTP_URL, MAIL_FROM: FROM },
+      SES_ENV,
+    ]) {
+      const error = thrown(() => selectMailDriver(env, ABOVE));
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain(`above the ${RETAIN_MIME_CEILING_BYTES}-byte ceiling`);
+    }
+  });
+
+  test('before Resend’s own refusal, too: the cap is judged first', () => {
+    const error = thrown(() =>
+      selectMailDriver({ RESEND_API_KEY: 're_x', MAIL_FROM: FROM }, ABOVE),
+    );
+    expect(error.cause).toContain('ceiling');
+  });
+
+  // A caller that read the option from a file of its own names it, so the refusal points at the
+  // line to edit: `@ultimat3/cli`'s boot passes `mail.retainMime` for `app.config.ts`.
+  test('the refusal names the key the caller says the option came from', () => {
+    const error = thrown(() =>
+      selectMailDriver({}, { ...ABOVE, retainMimeKey: 'mail.retainMime' }),
+    );
+    expect(error.cause).toContain('mail.retainMime.maxBytes is');
+    expect(error.fix).toContain('mail.retainMime: { maxBytes:');
+    expect(thrown(() => selectMailDriver({}, ABOVE)).cause).toContain(' retainMime.maxBytes is');
+  });
+
+  test('at the ceiling it is accepted, on every branch', () => {
+    const at = { retainMime: { maxBytes: RETAIN_MIME_CEILING_BYTES } };
+    expect(selectMailDriver({ ULTIMATE_ENV: 'development' }, at).driver).toBeDefined();
+    expect(selectMailDriver(SES_ENV, at).driver.name).toBe('ses');
   });
 });

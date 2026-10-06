@@ -20,4 +20,7 @@ export function mailSelectOptionsOf(config: AppConfig | undefined): MailSelectOp
 export const selectAppMailDriver = (
   env: MailEnvironment,
   config: AppConfig | undefined,
-): MailSelection => selectMailDriver(env, mailSelectOptionsOf(config));
+): MailSelection =>
+  // `retainMimeKey`: mail judges the cap before it picks a transport — the ceiling is its number —
+  // and names the `app.config.ts` key in the refusal, so the boot restates no check of its own.
+  selectMailDriver(env, { ...mailSelectOptionsOf(config), retainMimeKey: 'mail.retainMime' });

@@ -153,7 +153,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`app.config.ts\` | the one config file |
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
 | \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run check\`, on push and pull request |
-| \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`. Both run on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
+| \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`, always on \`ubuntu-latest\` (bash and Docker). \`ci.yml\` runs on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 
 const composeDev = (

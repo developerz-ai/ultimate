@@ -19,12 +19,26 @@ export function resolveModel(
   return DEFAULT_MODEL;
 }
 
+/** Which of the app's places a model came from — or the deprecated built-in, when none. */
+export type ModelSource = 'declaration' | 'prompt' | 'gateway' | 'built-in-default';
+
+const SOURCES: readonly ModelSource[] = ['declaration', 'prompt', 'gateway'];
+
 /**
- * The same answer WITHOUT recording, for a fact published about a declaration (`describeAgents()`),
- * which is read at describe time with no gateway in hand: recording there would warn an app whose
- * gateway does declare a `defaultModel`, telling it to do what it already did.
+ * The same answer as `resolveModel`, over the same three candidates in the same order, WITHOUT
+ * recording — and with where it came from. For a fact published about a declaration
+ * (`describeAgents()`): a reader describing an app is not a call leaning on the default, and
+ * recording there would warn an app that has already chosen.
  */
-export function describedModel(...candidates: readonly (ModelId | undefined)[]): ModelId {
-  for (const candidate of candidates) if (candidate !== undefined) return candidate;
-  return DEFAULT_MODEL;
+export function describedModel(
+  declared: ModelId | undefined,
+  prompt: ModelId | undefined,
+  gateway: ModelId | undefined,
+): { readonly model: ModelId; readonly from: ModelSource } {
+  const candidates = [declared, prompt, gateway];
+  for (const [at, candidate] of candidates.entries()) {
+    const from = SOURCES[at];
+    if (candidate !== undefined && from !== undefined) return { model: candidate, from };
+  }
+  return { model: DEFAULT_MODEL, from: 'built-in-default' };
 }

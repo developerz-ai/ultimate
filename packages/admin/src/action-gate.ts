@@ -58,6 +58,9 @@ export function adminPermissionForAction<Input, Output>(
   action: AdminAction<Input, Output>,
 ): AdminPermission {
   if (action.destructive === true) return ADMIN_DESTROY;
+  // `matching` CHANGES every row the list matches (its contract answers how many it changed), so a
+  // `readonly` beside it is the same contradiction as beside `destructive`: the write gate holds.
+  if (action.matching !== undefined) return ADMIN_WRITE;
   return action.readonly === true ? ADMIN_READ : ADMIN_WRITE;
 }
 

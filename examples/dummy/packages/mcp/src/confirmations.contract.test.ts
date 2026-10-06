@@ -91,7 +91,10 @@ test('a rejected publish never runs, and the agent is told so', async ({ seed, a
     bruno: 'member:bruno',
     ada: 'member:ada',
   });
-  const args = { postId: draft.id, orgId: draft.orgId, notify: false };
+  // Its OWN confirmation key — `notify: true` is another argument digest — so the row this test
+  // leaves rejected can never be the one the approval test above opens, in either order: the store
+  // is module-scoped and keyed by actor, tool and digest.
+  const args = { postId: draft.id, orgId: draft.orgId, notify: true };
 
   const asked = textOf(await postlyMcp().server.handle(publishCall(args), agentFor(bruno)));
   const id = UUID.exec(asked)?.[1] ?? expect.unreachable(`no confirmation id in: ${asked}`);

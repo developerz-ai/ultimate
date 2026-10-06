@@ -326,8 +326,8 @@ export function reasoningBody(
 
   if (effort !== undefined && !rules.effort) {
     throw new AiRequestInvalidError({
-      detail: `model "${model}" has no effort control; output_config.effort is a 400 on it`,
-      fix: `drop effort from definePrompt, or set model: '<id>' on the llm() declaration — a model whose registerModel row has reasoning.effort: true`,
+      detail: `model "${model}" has no effort control; output_config.effort is a 400 on it (modelId: a registered id whose registerModel row has reasoning.effort: true)`,
+      fix: 'agent({ …, model: modelId })   # or the llm() declaration, or definePrompt — or drop effort from definePrompt',
     });
   }
   // Only what the caller asked for. `output_config`, not a top-level `effort` — a top-level one
@@ -338,8 +338,8 @@ export function reasoningBody(
   if (!rules.adaptive) {
     if (thinking === 'adaptive') {
       throw new AiRequestInvalidError({
-        detail: `model "${model}" predates adaptive thinking; a thinking block is a 400 on it`,
-        fix: `set model: '<id>' on the llm() declaration — one whose registerModel row has reasoning.adaptive: true — or drop thinking from definePrompt`,
+        detail: `model "${model}" predates adaptive thinking; a thinking block is a 400 on it (modelId: a registered id whose registerModel row has reasoning.adaptive: true)`,
+        fix: 'agent({ …, model: modelId })   # or the llm() declaration, or definePrompt — or drop thinking from definePrompt',
       });
     }
     // No `thinking` field at all is exactly "no thinking" on a pre-4.6 model, so `disabled`
@@ -365,8 +365,8 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
   const cap = rules.disableThinkingUpTo;
   if (cap === 'never') {
     throw new AiRequestInvalidError({
-      detail: `model "${model}" has thinking always on; thinking: 'disabled' is a 400 on it at every effort`,
-      fix: `effort: 'low'   # in definePrompt, in place of thinking: 'disabled' — or set model: '<id>' on the llm() declaration, one whose registerModel row lets thinking be disabled`,
+      detail: `model "${model}" has thinking always on; thinking: 'disabled' is a 400 on it at every effort (modelId: a registered id whose registerModel row lets thinking be disabled)`,
+      fix: `effort: 'low'   # in definePrompt, in place of thinking: 'disabled' — or model: modelId on the agent() or llm() declaration`,
     });
   }
   if (cap === undefined || rankOf(effort) <= rankOf(cap)) return;

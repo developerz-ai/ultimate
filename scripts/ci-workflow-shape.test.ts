@@ -270,13 +270,17 @@ describe('unit · ci.yml · what the split may not change', () => {
     expect(ci.env?.['ULTIMATE_TEST_SEED']).toBe('20260101');
   });
 
-  // A job allowed to fail is not part of the gate: the run concludes `success` over it, and that
-  // conclusion is the one `release.yml` publishes on.
-  test('every job is required — no continue-on-error on a job', () => {
-    const optional = Object.entries(ci.jobs ?? {}).filter(
-      ([, target]) => target['continue-on-error'] !== undefined,
-    );
-    expect(optional.map(([name]) => name)).toEqual([]);
+  // A job or a step allowed to fail is not part of the gate: the run concludes `success` over it,
+  // and that conclusion is the one `release.yml` publishes on. Both scopes, in every job — a step
+  // marked `continue-on-error` hides its red exactly as a job marked so does.
+  test('every job and every step is required — no continue-on-error at either scope', () => {
+    const optional = Object.entries(ci.jobs ?? {}).flatMap(([name, target]) => [
+      ...(target['continue-on-error'] === undefined ? [] : [name]),
+      ...(target.steps ?? [])
+        .filter((step) => step['continue-on-error'] !== undefined)
+        .map((step) => `${name} › ${step.name ?? step.uses ?? step.run ?? '?'}`),
+    ]);
+    expect(optional).toEqual([]);
   });
 
   test('no job in the gate waits on a job outside it', () => {

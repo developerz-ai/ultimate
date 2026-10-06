@@ -250,7 +250,8 @@ export interface AdminAction<Input = Readonly<Record<string, unknown>>, Output =
   /**
    * The action changes nothing — an export, a verification, a recount — so its admin-level gate is
    * `admin:read` rather than `admin:write`, and a read-only staff role (or an `admin:read` MCP
-   * token) may run it. `destructive` wins over it: the stricter gate is the one that applies.
+   * token) may run it. `destructive` and `matching` (a set-based write) win over it: the stricter
+   * gate is the one that applies.
    */
   readonly readonly?: boolean;
   /** Absent: `admin.action.<name>` — `actionLabelKey`, the one spelling every screen reads. */
