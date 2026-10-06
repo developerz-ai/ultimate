@@ -180,6 +180,20 @@ describe('unit · the admin mount', () => {
     expect(ADMIN_MOUNT_FILE).toBe('@ultimat3/admin');
   });
 
+  test("a screen carries the app's brand after its stylesheet, and none without one", async () => {
+    const brand = '<style>:root{--color-accent:1 2 3}</style>';
+    const branded = createServer({
+      routes: adminMountRoutes({ buildId: BUILD_ID, brandHead: brand }),
+      role: 'web',
+      config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
+      hooks: { authenticate: () => VIEWER },
+    });
+    const response = await branded.fetch(new Request('http://dev.test/admin/cli_admin_parts'));
+    const head = (await response.text()).split('</head>')[0] ?? '';
+    expect(head).toContain(brand);
+    expect(await (await get(VIEWER, '/admin/cli_admin_parts')).text()).not.toContain(brand);
+  });
+
   test('the detail and the form routes answer under the same catch-all', async () => {
     expect((await get(VIEWER, `/admin/cli_admin_parts/${rowId}`)).status).toBe(200);
     const form = await get(OPERATOR, `/admin/cli_admin_parts/${rowId}/edit`);

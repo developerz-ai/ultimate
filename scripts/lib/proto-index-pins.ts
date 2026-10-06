@@ -83,7 +83,8 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
   },
   time: { count: 1, reason: '`duration.ts:52` scales by a duration unit this package declares.' },
   ui: {
-    count: 4,
+    // why: `components/chart-frame-view.ts` SHAPES[shape] and `tokens/colour-vision.ts` MACHADO[vision] index closed literal tables by their own closed unions (`MarkerShape`, `ColourVision`).
+    count: 5,
     reason:
       'token and widget tables keyed by a semantic role. `fake-dom-fixture.ts:79` was one of the thirteen — `querySelectorAll("[constructor]")` matched every element — and is repaired.',
   },

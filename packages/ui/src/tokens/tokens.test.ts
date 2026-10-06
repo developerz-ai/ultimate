@@ -6,6 +6,7 @@ import { UI_ERROR_CODES } from '../errors';
 import {
   assertColorRole,
   breakpointTokens,
+  CHART_ROLES,
   COLOR_ROLES,
   color,
   colorRgb,
@@ -14,9 +15,11 @@ import {
   fontWeightTokens,
   lineHeightTokens,
   radiusTokens,
+  SHADOW_NAMES,
   shadowTokens,
   spaceTokens,
   strokeTokens,
+  touchTokens,
   zTokens,
 } from './tokens';
 
@@ -75,15 +78,48 @@ describe('SCSS <-> TS token parity', () => {
     const type = await scss('_typography.scss');
     expect(parseScssMap(type, 'font-weight')).toEqual(mirror(fontWeightTokens));
     expect(parseScssMap(type, 'line-height')).toEqual(mirror(lineHeightTokens));
+    expect(parseScssMap(await scss('_touch.scss'), 'touch')).toEqual(mirror(touchTokens));
   });
 
   test('shadows differ per theme so dark elevation stays visible', async () => {
     const source = await scss('_shadow.scss');
     expect(parseScssMap(source, 'shadow-light')).toEqual(mirror(shadowTokens.light));
     expect(parseScssMap(source, 'shadow-dark')).toEqual(mirror(shadowTokens.dark));
-    for (const rung of Object.keys(shadowTokens.light)) {
+    expect(Object.keys(shadowTokens.light)).toEqual([...SHADOW_NAMES]);
+    expect(Object.keys(shadowTokens.dark)).toEqual([...SHADOW_NAMES]);
+    for (const rung of SHADOW_NAMES) {
       expect(shadowTokens.dark[rung]).not.toBe(shadowTokens.light[rung]);
     }
+  });
+
+  /**
+   * A glow and a tinted lift are drawn from the ACCENT role, never a channel literal: the one
+   * shadow that has to follow a brand's accent is the one that names it. A literal here would keep
+   * the shipped blue under a `defineTheme()` cyan.
+   */
+  test('the glow and tinted rungs read the accent role in both themes', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      for (const rung of SHADOW_NAMES.filter((name) => /^(glow|tinted)-/.test(name))) {
+        expect(`${theme}.${rung}: ${shadowTokens[theme][rung]}`).toMatch(
+          /: 0 \d+(px)? \d+px rgb\(var\(--color-accent\) \/ 0\.\d+\)$/,
+        );
+      }
+    }
+    // A glow has no offset — it is a halo, not a drop. A tinted lift has one, or it is a glow.
+    expect(shadowTokens.light['glow-md']).toStartWith('0 0 ');
+    expect(shadowTokens.light['tinted-md']).not.toStartWith('0 0 ');
+  });
+
+  test('the touch target is the 44px WCAG 2.5.5 floor, as rem so it scales with text', () => {
+    expect(Number.parseFloat(touchTokens.target) * 16).toBe(44);
+    expect(touchTokens.target).toEndWith('rem');
+  });
+
+  test('the chart series are eight roles, numbered, and part of the colour role list', () => {
+    expect([...CHART_ROLES] as string[]).toEqual(
+      Array.from({ length: 8 }, (_, i) => `chart-${i + 1}`),
+    );
+    for (const role of CHART_ROLES) expect(COLOR_ROLES as readonly string[]).toContain(role);
   });
 
   /**
@@ -164,12 +200,13 @@ describe('every emitted scale has an accessor', () => {
    * through four themed blocks and a `channels` mixin, shadows through `levels($map)` — and both
    * already have their accessor (`role()`, `shadow()`).
    *
-   * `--font-sans` / `--font-mono` are the one exemption: they are the two slots `defineTheme()`
+   * `--font-sans` / `--font-mono` / `--font-data` are the one exemption: the slots `defineTheme()`
    * REPLACES, not rungs on a scale, so a stack is picked whole and there is nothing for a
    * `font('sans')` to compose.
    */
   const EMITTED: readonly (readonly [string, readonly string[]])[] = [
     ['_typography.scss', ['font', 'text', 'weight', 'leading', 'tracking']],
+    ['_touch.scss', ['touch']],
     ['_space.scss', ['space']],
     ['_radius.scss', ['radius']],
     ['_stroke.scss', ['stroke']],

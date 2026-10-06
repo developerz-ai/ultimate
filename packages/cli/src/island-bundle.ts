@@ -21,9 +21,11 @@
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { basename, join, posix, relative, sep } from 'node:path';
-import { ISLAND_EXTENSION, IslandInvalidError, islandModuleId } from '@ultimat3/render';
+import { ISLAND_EXTENSION, islandModuleId } from '@ultimat3/render';
 import { loadAppConfig } from './app-config-load';
 import { IslandBuildFailedError } from './errors';
+import { refuseDuplicatedModules } from './island-duplicate-refusal';
+import { entryMissing, onlyMissing } from './island-entry-missing';
 import { describeBuildError, sourcesContentOf, stableChunk, stripDebugId } from './island-identity';
 import type { BuiltOutput, LinkedFile } from './island-link';
 import { linkOutputs, sharedChunkName } from './island-link';
@@ -41,7 +43,6 @@ import type { SourcePaths } from './island-sources';
 import { sourcesOnDisk } from './island-sources';
 import { islandStylesPlugin } from './island-styles';
 import { hasPathSegment } from './path-segments';
-import { quoteArg } from './shell-quote';
 import { solidJsxPlugin } from './solid-loader';
 
 /**
@@ -201,6 +202,10 @@ async function buildAll(
       // output has. See `graphHash`. Measured on 1.4.0 against a 131 kB island: 277ms with it and
       // 276ms without, so the map costs nothing worth naming.
       sourcemap: 'external',
+      // The fifth: which inputs each output carries, so one module bundled twice is refused below
+      // rather than shipped (`island-duplicates.ts`). Measured on 1.4.2 against examples/dummy's
+      // feed island, five interleaved builds each way: 44 ms without, 48 ms with, noise-level.
+      metafile: true,
     });
   } catch (error) {
     throw await blame(root, files, error, splitting, runtimes);
@@ -211,6 +216,13 @@ async function buildAll(
       logs: built.logs.map((log) => String(log)).join('; '),
     });
   }
+  if (built.metafile === undefined) {
+    throw new IslandBuildFailedError({
+      file: files.join(', '),
+      logs: 'the bundler returned no metafile',
+    });
+  }
+  await refuseDuplicatedModules(files.join(', '), built.metafile);
   const sources = new Map<string, SourcePaths>();
   const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
   const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime);
@@ -409,32 +421,6 @@ export async function buildIslands(
   return islandBundle(...mergeBuilds(solo));
 }
 
-/**
- * Same code as an unbuildable `src`: "this path cannot become a client entry" is one condition.
- *
- * Two fixes, because there are two causes and only one of them can be repaired by naming a path.
- * The line was `pass only: '<app-root-relative path>.island.tsx'` — a placeholder nobody can run,
- * which no gate could see: `fixProblem` fails a fix only for ADVICE with no command token, and a
- * sentence with neither is not advice. Both forms below are constructed from what the caller
- * already handed in, so neither can name a path this app does not have.
- */
-function onlyMissing(only: string, discovered: readonly string[]): IslandInvalidError {
-  const cause =
-    `buildIslands was asked for ${JSON.stringify(only)} alone, which is not one of the ` +
-    `${discovered.length} islands this app has (${discovered.length === 0 ? 'none' : discovered.join(', ')})`;
-  // The basename match first: a filter that misses normally missed on the PREFIX — a route-relative
-  // specifier where `discoverIslands`' app-root-relative path was wanted — and the filename
-  // survives that. Falling back to the first keeps the fix a real path rather than a shape.
-  const nearest =
-    discovered.find((file) => posix.basename(file) === posix.basename(only)) ?? discovered[0];
-  // An app with no islands cannot be pointed at one, so the fix WRITES the file that was asked
-  // for — the same command `entryMissing` hands back, split off the same path.
-  if (nearest === undefined) {
-    return new IslandInvalidError(cause, generateIslandFix(only));
-  }
-  return new IslandInvalidError(cause, `buildIslands(root, { only: '${nearest}' })`);
-}
-
 export function islandBundle(
   chunks: readonly IslandChunk[],
   shared: readonly SharedChunk[] = [],
@@ -458,36 +444,6 @@ export function islandBundle(
     assetAt: (url: string): IslandChunk | SharedChunk | undefined =>
       byUrl.get(url) ?? sharedByUrl.get(url),
   };
-}
-
-/**
- * The specifier named no file the build could bundle. `X_ISLAND_INVALID` is render's and is
- * borrowed rather than renamed here: "this src cannot become a client entry" is the condition that
- * code already means, and a second name for it is a second thing to look up.
- */
-function entryMissing(
-  routeFile: string,
-  src: string,
-  target: string,
-  chunks: readonly IslandChunk[],
-): IslandInvalidError {
-  const known = chunks.map((chunk) => chunk.file);
-  return new IslandInvalidError(
-    `${routeFile} declares island src ${JSON.stringify(src)}, which resolves to ${target} — a ` +
-      `file this build did not bundle (${known.length === 0 ? 'it found no islands at all' : `it found ${known.join(', ')}`})`,
-    generateIslandFix(target),
-  );
-}
-
-/**
- * `x g island <name> --at <dir>`, split off a path the caller or a route file supplied. Each half is
- * quoted (security audit of plan 101 sweep 1c, M1), and one opening with `-` is the placeholder:
- * quoting does not stop `x` reading `--json` as a flag (L3).
- */
-function generateIslandFix(path: string): string {
-  const name = posix.basename(path, ISLAND_EXTENSION);
-  const dir = posix.dirname(path);
-  return `x g island ${quoteArg(name.startsWith('-') ? '<name>' : name)} --at ${quoteArg(dir.startsWith('-') ? '<dir>' : dir)}`;
 }
 
 /** Write every chunk under the static export, at the same URL the documents already carry. */

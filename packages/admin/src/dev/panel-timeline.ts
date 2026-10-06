@@ -1,11 +1,12 @@
 // Panel: Request timeline.
-// Kills: "where did the 800ms go?" — a flamegraph of one request: SQL, cache hits, action
+// Kills: "where did the 800ms go?" — a waterfall of one request: SQL, cache hits, action
 // calls, and policy decisions on one axis, with the N+1 already counted for you — counted by
 // `x dev`'s statement ledger and read here through `statementLoops()`, never re-derived.
 
 import { DevSourceUnavailableError } from '../errors';
 import type { RequestTrace, SpanKind, StatementLoopFact, TimelineSpan } from './facts';
 import type { DevPanel } from './panel';
+import { timelineHtml } from './timeline-waterfall';
 
 export interface FlameRow {
   readonly span: TimelineSpan;
@@ -104,5 +105,12 @@ export const timelinePanel: DevPanel<TimelinePanelData> = {
       nPlusOne:
         loops === null ? null : loops.filter((loop) => loop.requestId === selected?.requestId),
     };
+  },
+  /**
+   * The waterfall, drawn from the data above — never a second read of the traces. With no data
+   * handed there is nothing to draw, and the server folds the payload under an empty body.
+   */
+  async html(_params, tabPath, data) {
+    return data === undefined ? '' : timelineHtml(data, tabPath);
   },
 };

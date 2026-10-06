@@ -18,9 +18,9 @@ One panel per file. Each kills one question, and each is available as `--json` �
 | Panel | Kills |
 |---|---|
 | `routes` | which handler serves this? — render mode, offline strategy, revalidate tags, budget |
-| `timeline` | where did the time go? — flamegraph of SQL, cache, action, policy spans + the N+1 count |
+| `timeline` | where did the time go? — a server-rendered waterfall of SQL, cache, action, policy spans (one row per span, bar placed by the payload's own `offset`/`width`), time per kind, and the N+1 detector's verdicts with their fix lines; the payload folded under it |
 | `live` | what does each subscriber receive, and **why** — the matcher's decision trace |
-| `jobs` | the admin's own jobs overview (`/admin/jobs`'s component) over this process's queue; the payload — queue depth, step traces, retry-from-step target, dead letter — folded under it |
+| `jobs` | a ring of the recent runs by state (`DonutChart`), then the admin's own jobs overview (`/admin/jobs`'s component) over this process's queue; the payload — queue depth, step traces, retry-from-step target, dead letter — folded under it |
 | `db` | psql in a tab (read-only twice: `assertReadOnly` refuses DML, and `readOnlySql(client)` — what a host wires as `runSql` — runs it in a `BEGIN READ ONLY` transaction with a timeout and `DEV_SQL_MAX_ROWS`), schema + drift (`null` unless a host wires the check) |
 | `mail` | caught mail, rendered, per locale, with the locale gaps listed |
 | `cache` | the tag graph — what invalidated what, and which tags are orphans |
@@ -36,6 +36,8 @@ const authz = staticAuthz(['admin:read']);
 const actors = [{ id: 'dev-admin', roles: ['admin'] }];
 
 const dev = devDashboard({ sources: defaultDevSources({ authz, actors }) }); // throws in prod
+// A drawn tab renders ui's components; their rules are in the app surface's stylesheet, so a host
+// names its URL: devDashboard({ …, stylesheetHref: () => styleBundle().hrefFor('app') })
 const response = await dev.handle(request); // null when the path is not /_x
 await dev.json('jobs'); // the same payload /_x/jobs renders from
 ```
@@ -61,6 +63,14 @@ export const admin = defineAdmin({ entities: [posts, users], db });
 `x dev` and the container mount it: `/admin`, `/admin/posts`, `/admin/posts/new`,
 `/admin/posts/<id>`, `/admin/posts/<id>/edit`, plus `/admin/search`, `/admin/audit` and the jobs
 dashboard (`/admin/jobs`, below).
+
+`/admin` itself opens on a KPI row — one `StatTile` per resource the actor may list, its figure
+that resource's `AdminRepo.count()` over its `rows` scope, each tile a link to the list — and a
+`DonutChart` of the same counts, then the permission matrix per resource. A resource the actor may
+not list has no tile, no segment and no matrix; a repo with no `count()`, or one whose count the
+store refuses (`X_TENANCY_UNSCOPED` for an actor with no org), has no tile and never fails the page.
+A count reads no row, so it is not audited. One `count()` per listable resource per visit. Each
+matrix is a closed `<details>` whose summary reads "N of M allowed".
 
 | Input | What it is | Omitted |
 |---|---|---|

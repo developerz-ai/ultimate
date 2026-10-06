@@ -13,6 +13,13 @@ describe('shellIds', () => {
 
   test('two shells on one page never collide', () => {
     expect(shellIds('a').mainId).not.toBe(shellIds('b').mainId);
+    expect(shellIds('a').navId).not.toBe(shellIds('b').navId);
+  });
+
+  test('the menu button opens the nav by the same id the nav carries', () => {
+    const ids = shellIds('shell-7');
+    expect(ids.navId).toBe('shell-7-nav');
+    expect(ids.navId).not.toBe(ids.mainId);
   });
 });
 

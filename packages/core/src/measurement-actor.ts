@@ -46,6 +46,16 @@ export async function measurementActor(): Promise<Actor> {
   return actor;
 }
 
+/**
+ * The factory declared now, or `undefined` for the default — read, never called. The test
+ * preload's file boundary snapshots it beside the other process registries: `app.config.ts`
+ * declares at module scope, ONCE per process, so a file that imported an app's config left every
+ * later file measuring as that app's actor (`prerender-actor.test.ts`, denied X_FORBIDDEN).
+ */
+export function declaredMeasurementActor(): MeasurementActorFactory | undefined {
+  return declared;
+}
+
 /** Back to the default. For a test, and for nothing else. */
 export function resetMeasurementActor(): void {
   declared = undefined;

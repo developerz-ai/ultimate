@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-62 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Kbd` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `QrCode` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
+68 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Breadcrumb` · `Button` · `Card` · `ChartFrame` · `Checkbox` · `Combobox` · `CommandPalette` · `Container` · `CopyButton` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LocaleSwitcher` · `Menu` · `Meter` · `Money` · `PageHeader` · `Pagination` · `Popover` · `QrCode` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Sparkline` · `Spinner` · `Stack` · `StatTile` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -47,17 +47,18 @@ Inline message bound to the page, not the viewport. `danger`/`warning` use `role
 
 ### AppShell
 
-The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo. Stateless on purpose — below `md` the sidebar becomes a band above the content instead of growing an open/closed flag, because an off-canvas menu is already `Drawer` and axiom 1 allows exactly one of those.
+The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo. Stateless, and scriptless: below `md` the sidebar `<nav>` is a native `popover` panel at the inline-start edge, opened by a `popovertarget` menu button — the browser holds the open state, Esc and light dismiss, so the frame on every page costs no island. Not `Drawer`: that is a modal `<dialog>` opened from an effect, so it needs a hydrated island, and a `<dialog>` cannot also be the in-flow `navigation` landmark at `md` and up. An engine with no popovers keeps the old band.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `children` | `JSX.Element` | yes | The page. Rendered inside the one `<main>`, which is the skip link's target. |
 | `header` | `JSX.Element` | — |  |
-| `sidebar` | `JSX.Element` | — | Rendered inside a `<nav>` landmark at the inline start. |
+| `sidebar` | `JSX.Element` | — | Rendered inside a `<nav>` landmark: the inline-start column at `md` and up, a panel below. |
 | `footer` | `JSX.Element` | — |  |
 | `sidebarLabel` | `string` | — | Accessible name for the sidebar landmark. Defaults to the translated `ui.navigation`. |
 | `skipLabel` | `string` | — | Skip-link text. Defaults to the translated `ui.skip`. |
-| `sidebarWidth` | `string` | — | Sidebar track width at `md` and up. Any CSS length. |
+| `menuLabel` | `string` | — | The menu button's text below `md`. Defaults to the translated `ui.menu`. |
+| `sidebarWidth` | `string` | — | Sidebar track width at `md` and up, and the panel's width below. Any CSS length. |
 | `stickyHeader` | `boolean` | — | Keeps the header pinned while the main region scrolls. |
 | `class` | `string` | — |  |
 
@@ -103,14 +104,18 @@ Small status label. Tone maps straight onto the status colour roles so the same 
 
 ### BarChart
 
-A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top): SVG bars, HTML axis labels. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. The labels sit outside the svg because text inside a viewBox scales with it — a speck at phone width. Geometry lives in `bar-chart-view.ts`.
+A bar chart of one series — clicks per day, signups per week — or two stacked (done, and failed on top): SVG bars, HTML axis labels. No charting library: the framework's own docs use a sparkline pulling one in as the cautionary example, and a route's JS budget counts raw minified bytes. `<rect>` bars cost nothing to hydrate, so the server-rendered shell IS the chart. The labels sit outside the svg because text inside a viewBox scales with it — a speck at phone width. It stands in a `ChartFrame`: a legend for two series, and a hidden table of the same numbers.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `label` | `string` | yes | The accessible name for the whole chart, already translated. |
 | `points` | `readonly ChartPoint[]` | yes | Oldest first. Every bar comes from exactly this array — the caller zero-fills gaps. |
 | `highlightLast` | `boolean` | — | Draw the last bar at full strength — the eye lands where the live number is. Default on. |
-| `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, read by each rect's `<title>`. Give them when a point carries `secondary`: a stacked bar with no name for its top is two numbers and no key. |
+| `seriesLabels` | `{ readonly primary: string; readonly secondary: string }` | — | Names of the two series, already translated, read by each rect's `<title>`, the legend and the data table. Give them when a point carries `secondary`: a stacked bar with no name for its top is two numbers and no key. |
+| `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
+| `format` | `((value: number) => string)` | — | Formats every value. Default: `Intl.NumberFormat` in the page's locale. |
+| `focusable` | `boolean` | — | Give every bar a tab stop and a hover/focus readout. Default off: no tab stops. |
+| `showCaption` | `boolean` | — | Show the caption above the plot. Default off — it names the figure either way. |
 | `class` | `string` | — | Lands on the root `<figure>`, which holds the svg and its HTML axis labels. |
 
 ### Breadcrumb
@@ -160,6 +165,19 @@ Surface container. Elevation is a token rung, and because the shadow tokens are 
 | `interactive` | `boolean` | — | Adds hover affordance. Only use when the whole card is a link/button. |
 | `as` | `'div' \| 'article' \| 'section' \| 'li'` | — |  |
 | `class` | `string` | — |  |
+
+### ChartFrame
+
+The frame every chart stands in: a `<figure>` named by its `<figcaption>`, the plot, a legend that wraps under the plot on a narrow container and stands beside it on a wide one, and a visually-hidden `<table>` of the same numbers — what a screen reader and a reader who cannot tell the colours apart get instead of the picture. Server-rendered HTML: no island, no JS.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The chart's name, already translated: the `<figcaption>`, and the data table's caption. |
+| `children` | `JSX.Element` | yes | The plot — the chart's own svg and HTML axis labels. |
+| `showCaption` | `boolean` | — | Show the caption above the plot. Off by default: a chart usually sits under a Card's own heading, and the caption names the figure for assistive tech either way. |
+| `legend` | `readonly ChartLegendItem[]` | — | One entry per series. Omitted or empty renders no legend. |
+| `table` | `ChartTable` | — | The same data as rows, rendered visually hidden (`chartTable`). |
+| `class` | `string` | — | Lands on the root `<figure>`. |
 
 ### Checkbox
 
@@ -251,7 +269,7 @@ Copies one string to the clipboard and says so — the control beside a short UR
 
 ### DataTable
 
-Data-driven table: sortable headers, cursor pagination, and the four states a real list always has (loading, error, empty, data). The error state renders an UltimateError with the same code/cause/fix strings the terminal prints.  The four-way decision itself is NOT here — it is `asyncBranch`, shared with `AsyncRegion`, so a table and a card list cannot disagree about what "loading with stale rows" looks like. Only the PLACEHOLDER is local, because a table's is table-shaped: rows of cells, not lines of text.
+Data-driven table: sortable headers, cursor pagination, and the four states a real list always has (loading, error, empty, data). The error state renders an UltimateError with the same code/cause/fix strings the terminal prints.  The four-way decision itself is NOT here — it is `asyncBranch`, shared with `AsyncRegion`, so a table and a card list cannot disagree about what "loading with stale rows" looks like. Only the PLACEHOLDER is local, because a table's is table-shaped: rows of cells, not lines of text.  A narrow table is the SAME table restyled as labelled cards (`DataTable.module.scss`), never a second copy: a duplicate is read twice or, hidden, is links the reader is told are not there.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -268,6 +286,8 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `nextCursor` | `string` | — | Opaque cursors from the query result; absent means no further page. |
 | `prevCursor` | `string` | — |  |
 | `stickyHeader` | `boolean` | — |  |
+| `stickyFirstColumn` | `boolean` | — | Pins the first column while the table scrolls sideways. |
+| `narrow` | `DataTableNarrow` | — | What a table narrower than `sm` becomes. Default `cards`. |
 | `density` | `'comfortable' \| 'compact'` | — |  |
 | `skeletonRows` | `number` | — | Placeholder row count while loading. Match the usual page size. |
 | `class` | `string` | — |  |
@@ -314,6 +334,23 @@ A rule. Always an explicit `role="separator"` with an orientation; pass `label` 
 | `orientation` | `'horizontal' \| 'vertical'` | — |  |
 | `label` | `string` | — | Visible, already-translated caption rendered inside the rule. |
 | `class` | `string` | — |  |
+
+### DonutChart
+
+Parts of one whole — traffic by device, runs by outcome — as a ring of segments with the total (or the caller's figure) in its centre, a legend giving each part's value and share, and a hidden data table. Each segment carries its series' marker shape and a gap from its neighbours, so the ring reads in greyscale. SVG geometry from `donut-chart-view.ts`; text is HTML.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The chart's name, already translated: the figure's caption and the svg's accessible name. |
+| `segments` | `readonly DonutSegment[]` | yes | Clockwise from twelve o'clock, in the order the legend lists them. |
+| `centreValue` | `string` | — | The figure in the ring's centre, already formatted. Default: the formatted total. |
+| `centreLabel` | `string` | — | A short line under the centre figure, already translated — "Total", "Sessions". |
+| `keyLabel` | `string` | — | The segment column's head in the data table, already translated — "Device". |
+| `valueLabel` | `string` | — | The value column's head in the data table, already translated. Default: `label`. |
+| `format` | `((value: number) => string)` | — | Formats every value. Default: `Intl.NumberFormat` in the page's locale. |
+| `focusable` | `boolean` | — | Give every drawn segment a tab stop and a hover/focus readout. Default off. |
+| `showCaption` | `boolean` | — | Show the caption above the chart. Default off — it names the figure either way. |
+| `class` | `string` | — | Lands on the root `<figure>`. |
 
 ### Drawer
 
@@ -435,6 +472,19 @@ Form shell. Owns the one thing every form needs and always forgets: a top-of-for
 | `aria-label` | `string` | — |  |
 | `onSubmit` | `JSX.EventHandlerUnion<HTMLFormElement, SubmitEvent>` | — |  |
 
+### Gauge
+
+One value against its maximum as a 270° dial — CPU, a quota, a queue's fill — with the reading in its centre and its label under it. A `meter` role carries the value for assistive tech, the way `Meter` does; the readout is HTML over the svg so it keeps its size on a phone.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | What is measured, already translated: shown under the dial, and the meter's name. |
+| `value` | `number` | yes |  |
+| `max` | `number` | yes |  |
+| `tone` | `Tone` | — | The fill's colour role. Default `accent`; a caller picks `warning`/`danger` by threshold. |
+| `format` | `((value: number, max: number) => string)` | — | The readout, from the value and max. Default: the share as a percentage in the page's locale. |
+| `class` | `string` | — | Lands on the root `<figure>`. |
+
 ### Grid
 
 Grid layout primitive. The default is an intrinsic responsive grid (`auto-fit` + `minmax`) so most layouts need no breakpoint at all.
@@ -511,6 +561,18 @@ An endless list that degrades to pagination: the foot is always a real `rel="nex
 | `rootMargin` | `string` | — | How far below the fold loading starts. A CSS length, as IntersectionObserver takes it. |
 | `class` | `string` | — |  |
 
+### InlineBar
+
+A figure with a bar drawn to its share of a maximum — the in-cell bar a dashboard table uses to make a column of numbers scannable. The text is the fact and is what assistive tech reads; the bar is `Meter`'s decorative form, so the share rule and its clamping are written once. The figure arrives formatted, as `StatTile`'s does: this component never guesses a locale.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `value` | `number` | yes |  |
+| `max` | `number` | yes | The whole the bar is a share of — usually the largest value in the column. |
+| `text` | `string` | yes | The figure as the cell shows it, already formatted (`Intl.NumberFormat`, `formatMoney`). |
+| `tone` | `Tone` | — |  |
+| `class` | `string` | — |  |
+
 ### Input
 
 Single-line text control. No `type="number"` convenience wrapper: numeric input uses `inputmode` + a text type so locale decimal separators survive.
@@ -547,6 +609,38 @@ A keyboard key or chord as the user reads it — "⌘K", "Esc", "/". A native `<
 |---|---|---|---|
 | `children` | `JSX.Element` | yes | The key or chord, already translated where a key name is a word. |
 | `class` | `string` | — |  |
+
+### LineChart
+
+A line chart of one or more series over the same keys — signups per day, p95 per hour — and `AreaChart`, the same chart with each series' area filled to the baseline. SVG lines on a nice 1-2-5 value axis, HTML axis labels (text inside a viewBox scales to a speck on a phone), a legend, and a hidden data table. Every series has its own dash and marker, never colour alone.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The chart's name, already translated: the figure's caption and the svg's accessible name. |
+| `keys` | `readonly string[]` | yes | The x axis, oldest first, already formatted for display — "17 Sep", "14:00". |
+| `series` | `readonly ChartSeries[]` | yes | One entry per line. `values[i]` belongs to `keys[i]`; `null` is a gap, never a zero. |
+| `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
+| `format` | `((value: number) => string)` | — | Formats every value and tick. Default: `Intl.NumberFormat` in the page's locale. |
+| `zero` | `boolean` | — | Start the value axis at zero. Default on; off fits the axis to the data. |
+| `focusable` | `boolean` | — | Give every point a tab stop and a hover/focus readout. Default off: no tab stops. |
+| `showCaption` | `boolean` | — | Show the caption above the plot. Default off — it names the figure either way. |
+| `class` | `string` | — | Lands on the root `<figure>`. |
+
+### AreaChart
+
+A line chart of one or more series over the same keys — signups per day, p95 per hour — and `AreaChart`, the same chart with each series' area filled to the baseline. SVG lines on a nice 1-2-5 value axis, HTML axis labels (text inside a viewBox scales to a speck on a phone), a legend, and a hidden data table. Every series has its own dash and marker, never colour alone.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | The chart's name, already translated: the figure's caption and the svg's accessible name. |
+| `keys` | `readonly string[]` | yes | The x axis, oldest first, already formatted for display — "17 Sep", "14:00". |
+| `series` | `readonly ChartSeries[]` | yes | One entry per line. `values[i]` belongs to `keys[i]`; `null` is a gap, never a zero. |
+| `keyLabel` | `string` | — | The key column's head in the data table, already translated — "Day". |
+| `format` | `((value: number) => string)` | — | Formats every value and tick. Default: `Intl.NumberFormat` in the page's locale. |
+| `zero` | `boolean` | — | Start the value axis at zero. Default on; off fits the axis to the data. |
+| `focusable` | `boolean` | — | Give every point a tab stop and a hover/focus readout. Default off: no tab stops. |
+| `showCaption` | `boolean` | — | Show the caption above the plot. Default off — it names the figure either way. |
+| `class` | `string` | — | Lands on the root `<figure>`. |
 
 ### Link
 
@@ -827,7 +921,7 @@ Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a
 
 ### Table
 
-Presentational table. Owns two things every hand-rolled table gets wrong: a sticky header, and horizontal overflow contained inside the table's own scroll container so the page body never scrolls sideways.
+Presentational table. Owns what every hand-rolled table gets wrong: a sticky header, a first column that stays put while the rest scrolls, and horizontal overflow contained inside the table's own scroll container so the page body never scrolls sideways.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -835,6 +929,8 @@ Presentational table. Owns two things every hand-rolled table gets wrong: a stic
 | `children` | `JSX.Element` | yes |  |
 | `hideCaption` | `boolean` | — | Hide the caption visually while keeping it for assistive tech. |
 | `stickyHeader` | `boolean` | — |  |
+| `stickyFirstColumn` | `boolean` | — | Pins the first column at the inline start while the table scrolls sideways. Off by default. |
+| `explicitRoles` | `boolean` | — | Declares `role="table"` on the element itself. For a caller that restyles the table's `display` (DataTable's card view): WebKit drops a table's semantics once `display` changes, and the explicit role is what keeps it a table. The rows and cells are the caller's to mark. |
 | `density` | `'comfortable' \| 'compact'` | — |  |
 | `striped` | `boolean` | — | Zebra striping. Off by default — a border is usually enough. |
 | `class` | `string` | — |  |
@@ -997,6 +1093,14 @@ charts and email.
 | `info` | `--color-info` |
 | `info-soft` | `--color-info-soft` |
 | `info-fg` | `--color-info-fg` |
+| `chart-1` | `--color-chart-1` |
+| `chart-2` | `--color-chart-2` |
+| `chart-3` | `--color-chart-3` |
+| `chart-4` | `--color-chart-4` |
+| `chart-5` | `--color-chart-5` |
+| `chart-6` | `--color-chart-6` |
+| `chart-7` | `--color-chart-7` |
+| `chart-8` | `--color-chart-8` |
 
 ### Space — `--space-*`
 

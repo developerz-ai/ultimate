@@ -14,6 +14,7 @@ const snap = (over: Partial<ProcessRegistrySnapshot>): ProcessRegistrySnapshot =
   roleSites: {},
   tasks: [],
   catalogDeclarations: 0,
+  measurementActor: undefined,
   ...over,
 });
 

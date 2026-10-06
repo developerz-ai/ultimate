@@ -20,10 +20,32 @@ channels** so `rgb(var(--color-accent) / 0.12)` gives a tint with no extra token
 | `scrim` | modal backdrops |
 | `accent` / `accent-strong` / `accent-fg` | primary action, its hover, text on it |
 | `success` / `warning` / `danger` / `info` | status solid, each with a `-soft` tint and a `-fg` text-on-solid |
+| `chart-1` … `chart-8` | categorical chart series, in assignment order (`CHART_ROLES`) |
+
+The chart series are Okabe–Ito-derived and **measured, not picked** (`As of 2026-10`): each clears
+3:1 against all four surfaces in both themes (WCAG 1.4.11, in `CONTRAST_PAIRS`), and every pair
+stays at least `CHART_DISTINCT_MIN` (ΔE 10) apart under protanopia, deuteranopia and tritanopia
+simulation (`colour-vision.test.ts`). A ninth series reuses `chart-1` with a second encoding — a
+dash, a pattern, a label — never a ninth hue.
 
 Scales: `--space-*` (4px base), `--stroke-*` (line weights: `hairline thick heavy`), `--text-*` (fluid `clamp()`), `--radius-*`,
 `--shadow-*` (themed — dark gets deeper, higher-alpha shadows), `--duration-*`,
-`--easing-*`, `--z-*` (named ladder, no magic numbers).
+`--easing-*`, `--z-*` (named ladder, no magic numbers), `--touch-target` (44px, as `2.75rem`).
+
+| Shadow rung (`t.shadow('…')`) | What it is |
+|---|---|
+| `xs` `sm` `md` `lg` `xl` | elevation: a drop shadow, deeper and darker in dark |
+| `glow-sm` `glow-md` `glow-lg` | a halo drawn from the **accent** role, no offset — a live tile, a focused panel, a selected series |
+| `tinted-sm` `tinted-md` `tinted-lg` | coloured elevation: a drop shadow in the accent hue |
+
+Glow and tinted rungs read `--color-accent`, so a brand's accent recolours them with no second
+override. `SHADOW_NAMES` / `ShadowName` is the list.
+
+| Font slot | Default stack | Read by |
+|---|---|---|
+| `--font-sans` | `system-ui` … | body copy |
+| `--font-mono` | `ui-monospace` … | `code` and `pre`, error frames |
+| `--font-data` | `ui-monospace`, `'Cascadia Mono'`, `'JetBrains Mono'` … | `@include t.data-text` — figures in tables, axes and stat tiles, ids, `Kbd` |
 
 Authoring helpers, from the same `@use '@ultimat3/ui/tokens' as t` — an app writes no mixin of its own for any of them:
 
@@ -34,6 +56,11 @@ Authoring helpers, from the same `@use '@ultimat3/ui/tokens' as t` — an app wr
 | `@include t.respond-between(md, lg)` | `@media (min-width: 768px) and (max-width: 1023.98px)` |
 | `t.rem(24px)` | `1.5rem` — px, rem or a unitless px count in; `t.rem(20px, 10px)` states another root |
 | `t.fluid(1rem, 2rem, 20rem, 80rem)` | `clamp(1rem, 0.6666666667rem + 1.6666666667vw, 2rem)` — the first size at a 20rem viewport, the second at 80rem (the default range), linear between. Takes px too; a size that shrinks is legal |
+| `@include t.data-text` | `font-family: var(--font-data); font-variant-numeric: tabular-nums` — columns of figures that do not wobble |
+| `@include t.touch-target` | `min-block-size` + `min-inline-size` of `var(--touch-target)` — the box itself is hittable |
+| `@include t.touch-target($extend: true)` | the box keeps its size; a centred `::after` grows the HIT AREA to the target — a chart point, a dense icon row |
+| `@include t.glow-edge` | `box-shadow: inset 0 0 0 var(--stroke-hairline) <accent / 0.55>, var(--shadow-glow-sm)` — `t.glow-edge('glow-lg', 0.8)` picks rung and ring alpha |
+| `@include t.grid-texture` | a faint accent grid on a `t.space(6)` pitch with scanlines over it, as `background-image` only; `t.grid-texture(t.space(4), 0.1, false)` drops the scanlines. Withdrawn under `prefers-contrast: more` and `forced-colors: active`; animates nothing |
 
 A rung is `sm md lg xl 2xl`, quoted or bare. Prefer a container query (`t.container` + `t.container-query`) to all three breakpoint mixins.
 
@@ -47,7 +74,7 @@ A rung is `sm md lg xl 2xl`, quoted or bare. Prefer a container query (`t.contai
 | No physical directions | `margin-inline`, `inset-inline-start`, `text-align: start` — RTL needs no second stylesheet. Centring is `inset-inline` + `margin-inline: auto`, never a 50% logical inset beside a physical −50% translate, and an edge shadow's physical x offset gets a `[dir='rtl']` mirror (`components/rtl-sheets.test.ts`) |
 | No hardcoded strings | labels are props, or `t()` through `UI_KEYS` |
 | One token source | `src/tokens/*.scss` is canonical; `tokens.ts` mirrors it and `x verify` fails on drift |
-| AA contrast, both themes | `contrast.test.ts` measures every pairing a component renders — text, status fills, soft tints, focus rings, borders |
+| AA contrast, both themes | `contrast.test.ts` measures every pairing a component renders — text, status fills, soft tints, focus rings, borders, chart series (3:1 on every surface) |
 
 ## Contrast
 
@@ -157,10 +184,31 @@ Four composites cover the frame of an app screen. Below them are `Container`,
 | `Section` | a labelled `section` with a real heading and `aria-labelledby` | second-level structure inside a page |
 | `Toolbar` | `role="toolbar"` strip, start + end slots, arrow-key roving between its buttons (`As of 2026-08`) | filters and actions above a table or list |
 
-`AppShell` holds no state: below `md` the sidebar becomes a band above the content,
-and an off-canvas menu is `Drawer` — the one component that already does that.
+`AppShell` holds no state: below `md` the sidebar is a native `popover` panel behind a menu
+button (`menuLabel`), opened, closed and dismissed by the browser with no script; where `popover`
+is unsupported it stays a band above the content. A modal off-canvas panel is still `Drawer`.
 Heading levels are props (`headingTag`, `nextHeadingLevel`), so a nested `Section`
 never skips a level.
+
+### Data display
+
+Server-rendered, no island and no JS: a chart costs a route nothing until it asks to be focusable.
+Every chart stands in a `ChartFrame` — a `figure`, its caption, a legend and a visually-hidden data
+table — and every series has a dash and a marker as well as a colour (`chart-1` … `chart-8`).
+
+| Component | Renders | Use for |
+|---|---|---|
+| `LineChart` / `AreaChart` | multi-series line on a 1-2-5 axis (filled for `AreaChart`); `null` is a gap | a trend over keys |
+| `BarChart` | bars, an optional stacked second series with a legend | a count per key |
+| `DonutChart` | ring segments, a centre figure, a legend with value and share | parts of a whole |
+| `Gauge` | a 270° `meter` dial with a tone and a visible label | one value against its max |
+| `ChartFrame` | the figure, caption, legend and data table every chart stands in | a custom chart |
+| `niceTicks` · `chartTable` · `seriesStyle` | axis ticks, the fallback table, a series' dash and marker | building a custom chart |
+| `DataTable` | sort, cursor paging, states; `narrow: 'cards'` (default) collapses rows to labelled cards below `sm`; `Column.priority` hides a column behind a per-row disclosure, never losing its value; `stickyFirstColumn` | any list of records |
+| `Table` | a captioned table with a sticky header; `stickyFirstColumn` | static tabular data |
+| `InlineBar` | a caller-formatted figure with a decorative proportional bar | a number in a table cell |
+| `StatTile` / `Meter` / `Sparkline` | a KPI with its delta; a bar against a max; an inline mini line | the KPI row |
+
 
 ```tsx
 <AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>
@@ -281,8 +329,13 @@ Components cancel theirs on cleanup, so a filter never fires into a tree that is
 override, no forked package, no second entry point — one call, validated, rendered
 as the custom properties that beat `theme.scss` at every specificity level it emits.
 
+An app declares it once, as `export const brand` in `apps/web/shared/theme.ts`. `x dev`, the
+container, `x build`'s static export and `/admin` inline it after the surface stylesheet, with its
+`sha256` in `style-src`; with no such module nothing is emitted. There is nothing to paste.
+
 ```ts
-import { brandStyleCspSource, brandStyleTag, defineTheme } from '@ultimat3/ui';
+// apps/web/shared/theme.ts
+import { defineTheme } from '@ultimat3/ui';
 
 export const brand = defineTheme({
   colors: {
@@ -292,26 +345,55 @@ export const brand = defineTheme({
   radius: { md: '0.125rem', lg: '0.25rem' },
   font: { sans: "Inter, system-ui, sans-serif" },
 });
-
-// in <head>, AFTER global.scss
-`${brandStyleTag(brand)}`;
-
-// …and the one source that admits it under the framework's locked CSP. The baseline is
-// `style-src 'self' 'sha256-…'` with no 'unsafe-inline', so a tag whose hash the header does
-// not carry is a stylesheet the browser parses zero rules out of.
-`Content-Security-Policy: style-src 'self' ${brandStyleCspSource(brand)}`;
 ```
+
+`brandStyleTag(brand)` and `brandStyleCspSource(brand)` are what the framework emits — exported
+for a host that renders documents itself.
 
 | Slot | Accepts | Refused with |
 |---|---|---|
 | `colors.light` / `colors.dark` | any `ColorRole`, as `R G B` channels | `X_TOKEN_UNKNOWN` for the role, `X_UI_INVALID_VALUE` for the value |
 | `radius` | any `RadiusName`, as a bare CSS length | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
-| `font` | `sans`, `mono`, as a `font-family` list | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+| `font` | `sans`, `mono`, `data`, as a `font-family` list | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+| `shadows.light` / `shadows.dark` | any `ShadowName`, as a `box-shadow`: comma-separated layers of lengths plus `rgb(R G B / a)` or `rgb(var(--color-<role>) / a)`, or `none` | `X_TOKEN_UNKNOWN` for the rung, `X_UI_INVALID_VALUE` for the value |
+| `preset` | a `THEME_PRESETS` name — `'scifi'` | `X_UI_INVALID_VALUE` |
 
 Values are validated, never escaped: the output goes into a `<style>` element, so
 anything carrying `;`, `}` or `</style>` is a refusal at the app's entry point rather
 than a CSS injection. Every component in the system follows the override — they only
 ever read the roles, never a colour.
+
+### The sci-fi preset
+
+`defineTheme({ preset: 'scifi' })` swaps the whole palette for a dashboard look: near-black
+panels in dark (`bg` `5 7 13`), cool paper in light, a cyan `accent` whose `accent-strong` (hover)
+is magenta, its own eight chart series, sharper radii, and — dark only — every elevation rung
+redrawn as an accent hairline plus a halo, so each card and popover has a glowing edge with no
+stylesheet of yours. It is a **base**: every other slot layers onto it role by role, and the
+merged palette is what `CONTRAST_PAIRS` measures.
+
+```ts
+import { defineTheme } from '@ultimat3/ui';
+
+export const brand = defineTheme({
+  preset: 'scifi',
+  colors: { dark: { 'chart-1': '120 220 255' } },   // scifi, with your own first series
+});
+```
+
+The preset ships tokens only (axiom 8). The texture and the edge are yours to place:
+
+```scss
+@use '@ultimat3/ui/tokens' as t;
+
+.main { background-color: t.role('bg'); @include t.grid-texture; }
+.tile { @include t.surface; @include t.glow-edge; }
+.tile[aria-current='true'] { @include t.glow-edge('glow-lg', 0.8); }
+```
+
+A dashboard that should open dark whatever the OS says sets the app default theme
+(`data-theme-default`, [Theme resolution](#theme-resolution)) — the preset never forces a theme.
+Like every brand, export it from `apps/web/shared/theme.ts` and the framework ships it with its CSP hash.
 
 ## The two render paths
 

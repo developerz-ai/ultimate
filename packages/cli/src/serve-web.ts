@@ -8,7 +8,7 @@ import { describeRoutes } from '@ultimat3/render';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { mountAppMcp } from './app-mcp';
-import { errorPageStyleSources } from './error-page-csp';
+import { errorPageStyleBodies } from './error-page-csp';
 import { islandRoutes } from './island-routes';
 import type { LoadedIslands } from './island-store';
 import { loadOrBuildIslands } from './island-store';
@@ -30,13 +30,14 @@ import { styleRoutes } from './style-routes';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
 import { loadThemeMode, themeBoot } from './theme-boot';
+import { loadThemeBrand } from './theme-brand';
 
 /** Everything `startRoles` is handed that only a process serving documents has. */
 export interface WebSurface {
   readonly routes: readonly Route[];
   /** The theme boot and the speculation rules: the two inline bodies every document may carry. */
   readonly inlineScripts: readonly string[];
-  /** The app's own error pages' `<style>` bodies, which the enforced policy must admit. */
+  /** The app's error pages' and its brand's `<style>` bodies, which the enforced policy admits. */
   readonly inlineStyles: readonly string[];
   /** Where a browser that opened a guarded page is sent — the declaration `x dev` reads. */
   readonly signInPath: string | null;
@@ -60,6 +61,8 @@ export async function webSurface(
   // prevent, and it is the one an operator cannot see without installing the app.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
+  // The app's brand (`apps/web/shared/theme.ts`), or nothing: the same reader `x dev` calls.
+  const brand = await loadThemeBrand(options.root);
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(options.root);
   const origin = publicOrigin(options.env, site);
@@ -135,6 +138,7 @@ export async function webSurface(
     ...adminMountRoutes({
       buildId: buildId,
       themeHead: theme.head,
+      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(origin === undefined ? {} : { origin }),
     }),
     ...appRoutes({
@@ -144,6 +148,7 @@ export async function webSurface(
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
+      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       // A `static` page is the same bytes for every request of this process: rendered once.
       memoStatic: true,
@@ -158,8 +163,11 @@ export async function webSurface(
     routes,
     inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
     // The enforced policy this process sends must admit the app's own error pages' `<style>` and
-    // the theme boot the documents carry; `x dev` is report-only, so only here was it a blank page.
-    inlineStyles: await errorPageStyleSources(options.root),
+    // the brand's; `x dev` is report-only, so only here was a missing hash an unstyled page.
+    inlineStyles: [
+      ...(await errorPageStyleBodies(options.root)),
+      ...(brand === undefined ? [] : [brand.style]),
+    ],
     // Same declaration `x dev` reads. Without it a container answers a browser that opened a
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),

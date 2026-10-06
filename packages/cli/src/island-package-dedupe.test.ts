@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, symlink } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
+import { IslandInvalidError } from '@ultimat3/render';
 import { buildIslands } from './island-bundle';
 import {
   appPackagePath,
@@ -15,6 +16,7 @@ import {
   frameworkDedupePlugins,
   hasNestedFrameworkCopies,
   resolveAppPackage,
+  sameModule,
   splitFrameworkSpecifier,
 } from './island-package-dedupe';
 import { processRoot } from './process-root-fixture';
@@ -118,6 +120,36 @@ describe('the island bundler ships one copy of each framework package', () => {
     );
     expect(chunk?.code).toContain('ALPHA_APP_COPY');
     expect(chunk?.code).not.toContain('ALPHA_NESTED_COPY');
+  });
+});
+
+describe('unit · Bun’s own answer is kept only under the very spelling the plugin would give', () => {
+  // Bun keys a module by its path STRING. Linux's resolver answers a realpath, so there a realpath
+  // comparison and a string comparison agree; Windows' answers the junction spelling, which a
+  // realpath comparison called "the same module" and left beside the realpath spelling every
+  // folded nest received — one file, two modules (the windows job's `/posts`: 81,306 B vs 59,849 B).
+  const LINK = join(ROOT, 'alpha-link');
+
+  test('a spelling that only a realpath folds is taken over', async () => {
+    await symlink(ALPHA, LINK, process.platform === 'win32' ? 'junction' : 'dir');
+    const path = join(ALPHA, 'index.js');
+    expect(sameModule(path, '@ultimat3/alpha', ISLAND, () => join(LINK, 'index.js'))).toBe(false);
+  });
+
+  test('the identical spelling is left to Bun, and so is the real resolver’s on this host', () => {
+    const path = join(ALPHA, 'index.js');
+    expect(sameModule(path, '@ultimat3/alpha', ISLAND, () => path)).toBe(true);
+    if (process.platform !== 'win32')
+      expect(sameModule(path, '@ultimat3/alpha', ISLAND)).toBe(true);
+  });
+
+  test('a specifier Bun cannot resolve from the importer is the plugin’s to answer', () => {
+    const unresolvable = (): string => {
+      throw new IslandInvalidError('fixture: unresolvable', 'bun install');
+    };
+    expect(sameModule(join(ALPHA, 'index.js'), '@ultimat3/alpha', ISLAND, unresolvable)).toBe(
+      false,
+    );
   });
 });
 

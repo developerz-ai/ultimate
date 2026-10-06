@@ -153,6 +153,42 @@
       "description": "Four screens, four policies. Nothing on this page is readable without the permission the route declares — including this page.",
       "title": "Dashboard",
       "eyebrow": "Signed in",
+      "stats": {
+        "posts": { "label": "Your posts", "hint": "not deleted" },
+        "likes": { "label": "Likes on your posts", "hint": "across every post you wrote" },
+        "friends": { "label": "Friends", "hint": "accepted, either direction" },
+        "waiting": { "label": "Waiting on you", "hint": "friend requests to answer" }
+      },
+      "activity": {
+        "title": "Activity you can see",
+        "range": "The 14 days up to the newest post you can see, UTC",
+        "label": "Posts and likes per day, on posts you can see",
+        "key": "Day",
+        "posts": "Posts",
+        "likes": "Likes"
+      },
+      "connections": {
+        "title": "Your connections",
+        "label": "Your friendships by state",
+        "key": "State",
+        "value": "People",
+        "total": "people",
+        "friends": "Friends",
+        "incoming": "Asked you",
+        "outgoing": "You asked",
+        "declined": "Declined"
+      },
+      "top": {
+        "title": "Most-liked posts you can see",
+        "caption": "The most-liked of the newest posts you can see",
+        "post": "Post",
+        "author": "Author",
+        "likes": "Likes",
+        "comments": "Comments",
+        "published": "Published",
+        "empty": "No post is visible to you yet"
+      },
+      "goTo": "Go to",
       "card": {
         "friends": {
           "title": "Friends",

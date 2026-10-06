@@ -1,7 +1,36 @@
-// The dashboard's own layer. The whole card is the link — a card with a link inside it gives a
-// pointer a large target and a keyboard a small one, and they should be the same target.
+// The dashboard's own layer: the figures, the two charts and the table stacked on a phone, the
+// charts side by side once the trend has room for its fourteen day labels. The whole destination
+// card is the link — a card with a link inside it gives a pointer a large target and a keyboard a
+// small one, and they should be the same target.
 
 @use '../../shared/tokens' as t;
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(8);
+  min-inline-size: 0;
+}
+
+.charts {
+  display: grid;
+  gap: t.space(8);
+  min-inline-size: 0;
+
+  @include t.respond-to('lg') {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}
+
+// A post body is prose of any length: two lines in the table, the rest is one click away.
+.excerpt {
+  @include t.line-clamp(2);
+
+  max-inline-size: 40ch;
+  // A table cell holds its text on one line; a body is prose, so it wraps before it clamps.
+  white-space: normal;
+}
 
 .grid {
   display: grid;

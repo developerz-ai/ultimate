@@ -12,7 +12,7 @@ import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { mountAppMcp } from './app-mcp';
 import type { DevDashboardInput } from './dev-dashboard';
 import { devDashboardRoutes } from './dev-dashboard';
-import { errorPageStyleSources } from './error-page-csp';
+import { errorPageStyleBodies } from './error-page-csp';
 import type { IslandBundle } from './island-bundle';
 import { islandHarnessRoutes } from './island-harness-route';
 import { islandRoutes } from './island-routes';
@@ -34,6 +34,7 @@ import { serviceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerRoutes } from './sw-routes';
 import type { ThemeBoot } from './theme-boot';
 import { loadThemeMode, themeBoot } from './theme-boot';
+import { loadThemeBrand } from './theme-brand';
 
 export interface DevRouteTableInput {
   readonly root: string;
@@ -68,8 +69,11 @@ export interface DevRouteTable {
   readonly theme: ThemeBoot;
   /** The speculation rules, admitted the same way — `undefined` when no document carries any. */
   readonly speculation: PageSpeculation | undefined;
-  /** The app's own error pages' inline styles, admitted the same way. */
-  readonly errorStyles: readonly string[];
+  /**
+   * Every inline `<style>` body these routes put in a document: the app's error pages' and its
+   * brand's (`theme-brand.ts`) — what `startRoles({ inlineStyles })` hashes into `style-src`.
+   */
+  readonly inlineStyles: readonly string[];
   /** Where the app's default MCP endpoint was mounted, or `null`. */
   readonly mcpPath: string | null;
   /** Every mounted MCP endpoint's path, default first — one per population the app serves. */
@@ -81,6 +85,8 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // is mounted, and the 0kb baseline is not spent on a `<link>` to a file that does not exist.
   const pwa = await loadPwaArtifacts(input.root);
   const theme = themeBoot(await loadThemeMode(input.root));
+  // Read at boot, like the theme mode: a save to the theme module is applied on the next `x dev`.
+  const brand = await loadThemeBrand(input.root);
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(input.root);
   const origin = publicOrigin(input.env, site);
@@ -95,7 +101,10 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     config: await loadSpeculation(input.root),
     client: declared.surfaces,
   });
-  const errorStyles = await errorPageStyleSources(input.root);
+  const inlineStyles = [
+    ...(await errorPageStyleBodies(input.root)),
+    ...(brand === undefined ? [] : [brand.style]),
+  ];
   // Built once at boot and NOT rebuilt with the islands on a watcher tick: a service worker that
   // changes under a page it controls is the update path, and one per keystroke exercises it per save.
   const serviceWorker =
@@ -166,6 +175,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     ...adminMountRoutes({
       buildId: input.buildId,
       themeHead: theme.head,
+      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(origin === undefined ? {} : { origin }),
     }),
     ...appRoutes({
@@ -176,6 +186,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),
       themeHead: theme.head,
+      ...(brand === undefined ? {} : { brandHead: brand.head }),
       ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
       ...(origin === undefined ? {} : { origin }),
       ...(pwa === undefined
@@ -188,7 +199,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     routes,
     theme,
     speculation,
-    errorStyles,
+    inlineStyles,
     mcpPath: mcpMount.path,
     mcpPaths: mcpMount.paths,
   };

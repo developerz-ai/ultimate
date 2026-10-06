@@ -100,9 +100,11 @@ export const config = defineConfig({
     // failure the block exists to prevent.
     offline: { fallback: '/offline' },
     name: 'Social Demo',
+    // The sci-fi preset's `bg` per theme (`apps/web/shared/theme.ts`), so the install splash and
+    // the address bar are the colour the first frame paints: `240 245 250` and `5 7 13`.
     colors: {
-      light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
-      dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
+      light: { themeColor: '#f0f5fa', backgroundColor: '#f0f5fa' },
+      dark: { themeColor: '#05070d', backgroundColor: '#05070d' },
     },
   },
   ai: { mcp: { expose: true, path: '/mcp' } },

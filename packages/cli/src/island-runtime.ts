@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';
 import type { IslandChunk, SharedChunk } from './island-bundle';
+import { realSpelling } from './island-duplicates';
 import { describeBuildError, graphHash, stableChunk, stripDebugId } from './island-identity';
 import { frameworkDedupePlugins } from './island-package-dedupe';
 import type { SourcePaths } from './island-sources';
@@ -69,10 +70,13 @@ export interface RuntimeChunk {
 export function runtimeBuilder(root: string, basePath: string): Runtimes {
   let first: { readonly copy: RealtimeCopy; readonly chunk: Promise<RuntimeChunk> } | undefined;
   return async (island: string): Promise<RuntimeChunk> => {
-    // From the island's own directory: the resolution the island itself gets.
+    // From the island's own directory: the resolution the island itself gets — by its REAL path,
+    // the spelling the framework dedupe gives every other `@ultimat3/*` file. Windows' resolver
+    // answers a junction's spelling, and Bun keys a module by its path string, so the barrel's own
+    // relative imports would ship again beside the realpath ones (`island-duplicates.ts`).
     const copy = await realtimeCopy(
       island,
-      Bun.resolveSync('@ultimat3/realtime', dirname(join(root, island))),
+      realSpelling(Bun.resolveSync('@ultimat3/realtime', dirname(join(root, island)))),
     );
     if (first === undefined) {
       first = { copy, chunk: buildRuntime(root, island, copy.barrel, basePath) };
@@ -113,7 +117,7 @@ async function realtimeCopy(island: string, barrel: string): Promise<RealtimeCop
 /** A subpath of the realtime at `realtime`, through its `exports` — never a path into its source. */
 function exported(island: string, realtime: string, specifier: string): string {
   try {
-    return Bun.resolveSync(specifier, dirname(realtime));
+    return realSpelling(Bun.resolveSync(specifier, dirname(realtime)));
   } catch {
     throw new IslandBuildFailedError({
       file: island,

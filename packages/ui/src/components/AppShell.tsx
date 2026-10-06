@@ -1,28 +1,35 @@
 // The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo.
-// Stateless on purpose — below `md` the sidebar becomes a band above the content instead of
-// growing an open/closed flag, because an off-canvas menu is already `Drawer` and axiom 1 allows
-// exactly one of those.
+// Stateless, and scriptless: below `md` the sidebar `<nav>` is a native `popover` panel at the
+// inline-start edge, opened by a `popovertarget` menu button — the browser holds the open state,
+// Esc and light dismiss, so the frame on every page costs no island. Not `Drawer`: that is a modal
+// `<dialog>` opened from an effect, so it needs a hydrated island, and a `<dialog>` cannot also be
+// the in-flow `navigation` landmark at `md` and up. An engine with no popovers keeps the old band.
 
 import type { JSX } from 'solid-js';
 import { LIVE_REGION_LEVELS, liveRegionAttrs, useId } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
+import { iconMenu } from '../icons/glyphs/menu';
+import { iconX } from '../icons/glyphs/x';
 import { useUi } from '../theme/context';
 import styles from './AppShell.module.scss';
 import { shellIds } from './app-shell-view';
+import { Icon } from './Icon';
 
 export interface AppShellProps {
   /** The page. Rendered inside the one `<main>`, which is the skip link's target. */
   children: JSX.Element;
   header?: JSX.Element | undefined;
-  /** Rendered inside a `<nav>` landmark at the inline start. */
+  /** Rendered inside a `<nav>` landmark: the inline-start column at `md` and up, a panel below. */
   sidebar?: JSX.Element | undefined;
   footer?: JSX.Element | undefined;
   /** Accessible name for the sidebar landmark. Defaults to the translated `ui.navigation`. */
   sidebarLabel?: string | undefined;
   /** Skip-link text. Defaults to the translated `ui.skip`. */
   skipLabel?: string | undefined;
-  /** Sidebar track width at `md` and up. Any CSS length. */
+  /** The menu button's text below `md`. Defaults to the translated `ui.menu`. */
+  menuLabel?: string | undefined;
+  /** Sidebar track width at `md` and up, and the panel's width below. Any CSS length. */
   sidebarWidth?: string | undefined;
   /** Keeps the header pinned while the main region scrolls. */
   stickyHeader?: boolean | undefined;
@@ -41,13 +48,44 @@ export function AppShell(props: AppShellProps): JSX.Element {
       <a class={styles['skip']} href={ids.skipHref}>
         {props.skipLabel ?? ui.t(UI_KEYS.skip)}
       </a>
-      {props.header === undefined ? null : (
-        <header class={cx(styles['header'], props.stickyHeader !== false && styles['sticky'])}>
-          {props.header}
-        </header>
+      {props.header === undefined && props.sidebar === undefined ? null : (
+        // The menu button sits beside the banner, not inside it: the header holds exactly what
+        // the app handed it, and the bar is what sticks.
+        <div
+          class={cx(
+            styles['top'],
+            // A bar holding only the menu button is shown only where that button is.
+            props.header === undefined && styles['menuOnly'],
+            props.stickyHeader !== false && styles['sticky'],
+          )}
+        >
+          {props.sidebar === undefined ? null : (
+            <button type="button" class={styles['menuButton']} popovertarget={ids.navId}>
+              <Icon glyph={iconMenu} size="md" />
+              <span class={styles['menuLabel']}>{props.menuLabel ?? ui.t(UI_KEYS.menu)}</span>
+            </button>
+          )}
+          {props.header === undefined ? null : (
+            <header class={styles['header']}>{props.header}</header>
+          )}
+        </div>
       )}
       {props.sidebar === undefined ? null : (
-        <nav class={styles['sidebar']} aria-label={props.sidebarLabel ?? ui.t(UI_KEYS.navigation)}>
+        <nav
+          id={ids.navId}
+          class={styles['sidebar']}
+          popover="auto"
+          aria-label={props.sidebarLabel ?? ui.t(UI_KEYS.navigation)}
+        >
+          <button
+            type="button"
+            class={styles['close']}
+            popovertarget={ids.navId}
+            popovertargetaction="hide"
+            aria-label={ui.t(UI_KEYS.close)}
+          >
+            <Icon glyph={iconX} size="md" />
+          </button>
           {props.sidebar}
         </nav>
       )}

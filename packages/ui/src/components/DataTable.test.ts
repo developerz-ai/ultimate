@@ -11,7 +11,17 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import {
+  byTag,
+  fire,
+  isProbeNode,
+  one,
+  type ProbeNode,
+  probe,
+  renderNodes,
+  unprobe,
+  withAttr,
+} from '../jsx-probe';
 import { DataTable, type DataTableProps } from './DataTable';
 import type { SortState } from './sort-state';
 
@@ -70,12 +80,7 @@ describe('DataTable', () => {
       const rows = byTag(nodes, 'tr').filter((node) => node.props['data-row'] !== undefined);
 
       expect(rows.map((node) => node.props['data-row'])).toEqual(['r1', 'r2']);
-      expect(byTag(nodes, 'td').map((node) => node.props['children'])).toEqual([
-        'alpha',
-        '3',
-        'beta',
-        '5',
-      ]);
+      expect(byTag(nodes, 'td').map(cellValue)).toEqual(['alpha', '3', 'beta', '5']);
       expect(one(byTag(nodes, 'caption'), '<caption>').props['children']).toBe('Invoices');
     });
 
@@ -110,12 +115,7 @@ describe('DataTable', () => {
       expect(
         byTag(nodes, 'tr').filter((node) => node.props['data-row'] !== undefined),
       ).toHaveLength(2);
-      expect(byTag(nodes, 'td').map((node) => node.props['children'])).toEqual([
-        'alpha',
-        '3',
-        'beta',
-        '5',
-      ]);
+      expect(byTag(nodes, 'td').map(cellValue)).toEqual(['alpha', '3', 'beta', '5']);
       // Still busy: the reader is told the table is working, without losing what it says.
       expect(one(byTag(nodes, 'tbody'), '<tbody>').props['aria-busy']).toBe('true');
     });
@@ -227,8 +227,12 @@ describe('DataTable', () => {
 
     test('the direction indicator is decoration, and matches the state it indicates', () => {
       const glyph = (sort: SortState | undefined): unknown =>
-        one(withAttr(byTag(table(sort === undefined ? {} : { sort }), 'span'), 'aria-hidden'), 'i')
-          .props['children'];
+        one(
+          withAttr(byTag(table(sort === undefined ? {} : { sort }), 'span'), 'aria-hidden').filter(
+            (node) => node.props['data-label'] === undefined,
+          ),
+          'indicator',
+        ).props['children'];
 
       expect(glyph(undefined)).toBe('↕');
       expect(glyph({ key: 'name', direction: 'asc' })).toBe('▲');
@@ -387,3 +391,12 @@ describe('DataTable, a placeholder count that is not a count', () => {
     expect(byTag(nodes, 'td')).toHaveLength(0);
   });
 });
+
+/** A cell's content with its card label taken out. */
+function cellValue(cell: ProbeNode): unknown {
+  const children = cell.props['children'];
+  const rest = (Array.isArray(children) ? children : [children]).filter(
+    (child) => !(isProbeNode(child) && child.props['data-label'] !== undefined),
+  );
+  return rest.length === 1 ? rest[0] : rest;
+}

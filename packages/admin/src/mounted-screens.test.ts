@@ -241,9 +241,10 @@ describe('unit · defineAdmin({ entities, db }) serves its screens', () => {
     expect(first).not.toContain('Sprocket');
     const href = /<a href="([^"]+)" rel="next"/.exec(first)?.[1] ?? '';
     expect(href).toContain(`${BASE}?cursor=`);
-    // The only `<button>` is the exhausted side, disabled: an enabled one with a handler would be
+    // The only `<button>`s are the exhausted side, disabled, and the shell's menu buttons, which the
+    // browser drives through `popovertarget` with no script: an enabled one with a handler would be
     // a dead control on a page that never hydrates.
-    expect(first).not.toMatch(/<button type="button"(?![^>]*disabled)/);
+    expect(first).not.toMatch(/<button type="button"(?![^>]*(disabled|popovertarget))/);
 
     const second = (await askOf(small, 'viewer', href)).html;
     expect(second).toContain('Sprocket');
@@ -387,10 +388,11 @@ describe('unit · the dashboard is the decision, rendered', () => {
     expect(operator.html).not.toContain('denied —');
   });
 
-  test('no row is read to draw it — the dashboard is not one query per entity', async () => {
+  test('no row is read to draw it — its figures are counts, and a count is not an audited read', async () => {
     const before = (await admin.audit.entries()).length;
     await ask('viewer', '/admin');
-    // A list read is audited; a dashboard render that leaves the log alone read no table.
+    // A list read is audited; the dashboard's KPI row is one `count()` per listable resource,
+    // which reads no row, so the log is left alone.
     expect((await admin.audit.entries()).length).toBe(before);
   });
 });

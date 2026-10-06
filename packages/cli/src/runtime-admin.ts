@@ -28,7 +28,8 @@ const declared = (): ReadonlyMap<string, AdminApp> => {
   return held instanceof Map ? (held as ReadonlyMap<string, AdminApp>) : new Map();
 };
 
-export interface AdminMountOptions extends Pick<DocumentOptions, 'themeHead' | 'origin'> {
+export interface AdminMountOptions
+  extends Pick<DocumentOptions, 'themeHead' | 'brandHead' | 'origin'> {
   readonly buildId: string;
 }
 
@@ -103,6 +104,8 @@ async function answer(
     () =>
       routeDocument(entry, data, {
         ...(options.themeHead === undefined ? {} : { themeHead: options.themeHead }),
+        // The app's brand restyles its admin too: a screen is a document of the `app/` surface.
+        ...(options.brandHead === undefined ? {} : { brandHead: options.brandHead }),
         ...(options.origin === undefined ? {} : { origin: options.origin }),
       }),
     { buildId: options.buildId, status: response.status },

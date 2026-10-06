@@ -33,6 +33,13 @@ export interface DocumentOptions {
    */
   readonly themeHead?: string;
   /**
+   * The app's brand `<style>` from `theme-brand.ts`, or absent for an app with no
+   * `apps/web/shared/theme.ts`. Rendered AFTER the surface stylesheet `<link>`, never in the head
+   * block `themeHead` rides: the brand answers `theme.scss` at equal specificity, so only a later
+   * position in the cascade lets it win.
+   */
+  readonly brandHead?: string;
+  /**
    * The page's sync target — `pageSync(…).head` — rendered as render's `clientSyncTags` on every
    * document this process serves. Principal-free, so a shareable document carries it too; absent
    * for a caller that serves no socket at all (the static export).

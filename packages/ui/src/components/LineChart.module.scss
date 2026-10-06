@@ -1,0 +1,147 @@
+@use '../tokens' as t;
+
+// Value labels | plot, then the key labels under the plot. The grid is the container the label
+// density is decided against — the plot's own width, not the viewport's.
+.chart {
+  @include t.container(line-chart);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'values box'
+    '. keys';
+  column-gap: t.space(2);
+  row-gap: t.space(1);
+  // The svg does not mirror in a right-to-left page, so the labels positioned over it must not
+  // either: inline-start IS the svg's x = 0 here.
+  direction: ltr;
+}
+
+.box {
+  grid-area: box;
+  position: relative;
+  min-inline-size: 0;
+}
+
+.plot {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  overflow: visible;
+}
+
+.grid {
+  stroke: t.role('line', 0.55);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  // Hairlines stay hairlines however wide the chart is stretched.
+  vector-effect: non-scaling-stroke;
+}
+
+.line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.area {
+  fill: var(--series);
+  fill-opacity: 0.16;
+  stroke: none;
+}
+
+.marker {
+  fill: var(--series);
+  // A ring of the surface around each marker keeps it legible where two lines cross.
+  stroke: t.role('surface');
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+// --- Labels: HTML text, so it keeps its type step at every chart width (issue 494) -----------
+
+.tick,
+.key {
+  @include t.data-text;
+  font-size: t.text(xs);
+  line-height: t.leading(tight);
+  color: t.role('fg-muted');
+  white-space: nowrap;
+}
+
+// Every value label in one cell, each offset to its grid line: the column is as wide as the
+// widest label and exactly as tall as the plot it stands beside.
+.values {
+  grid-area: values;
+  display: grid;
+}
+
+.tick {
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: end;
+  position: relative;
+  inset-block-start: var(--at);
+  translate: 0 -50%;
+}
+
+.keys {
+  grid-area: keys;
+  display: grid;
+  min-inline-size: 0;
+}
+
+// Capped at a third of the axis: three labels on a stride of at least half the axis cannot meet.
+.key {
+  @include t.truncate;
+  grid-area: 1 / 1;
+  max-inline-size: calc(100% / 3);
+}
+
+.edge-start {
+  justify-self: start;
+  margin-inline-start: var(--at);
+}
+
+.edge-middle {
+  justify-self: start;
+  margin-inline-start: var(--at);
+  translate: -50% 0;
+}
+
+.edge-end {
+  justify-self: end;
+  margin-inline-end: calc(100% - var(--at));
+}
+
+// Narrow first — a 390px phone: three key labels, every other value label.
+.key[data-narrow='false'] {
+  display: none;
+}
+
+.tick[data-minor='true'] {
+  // `visibility`, never `display`: the column keeps the width of its widest label either way.
+  visibility: hidden;
+}
+
+// A plot this wide holds six key labels (each capped at 2/15 of the axis: ⅔ of a fifth) and
+// every value label.
+@include t.container-query(line-chart, 36rem) {
+  .key[data-narrow='false'] {
+    display: block;
+  }
+
+  .key[data-wide='false'] {
+    display: none;
+  }
+
+  .key {
+    max-inline-size: calc(100% * 2 / 15);
+  }
+
+  .tick[data-minor='true'] {
+    visibility: visible;
+  }
+}

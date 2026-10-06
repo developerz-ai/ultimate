@@ -32,7 +32,7 @@ import {
  * "Idiomatic to leave filled" says nothing about a file that calls `clear*()`/`reset*()` and takes
  * a module-scope declaration from every file after it — a module evaluates once per process, so the
  * next file's own `import` is a cache hit that declares nothing. That is what `registry-snapshot.ts`
- * repairs, and it repairs FOUR registries out of the set that has one:
+ * repairs, and it repairs SIX registries out of the set that has one:
  *
  *   | registry | reset export | owner | in the snapshot? |
  *   |---|---|---|---|
@@ -41,6 +41,7 @@ import {
  *   | routes | `clearRoutes` | `@ultimat3/render` | **no** |
  *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
  *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
+ *   | measurement actor | `resetMeasurementActor` | `@ultimat3/core` | yes |
  *   | actions | `resetRegistry` | `@ultimat3/action` | **no** |
  *   | queries | `resetRegistry` | `@ultimat3/query` | **no** |
  *   | models / prompts / agents | `resetModels` / `resetPrompts` / `resetAgents` | `@ultimat3/ai` | **no** |

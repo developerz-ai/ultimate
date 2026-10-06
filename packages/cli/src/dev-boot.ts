@@ -201,7 +201,7 @@ async function bootDev(
   // ttl); attached, so a tag bust reaches it too. Released with the roles.
   const { isr, release: releaseIsr } = attachedIsr({ buildId });
   acquired.push(releaseIsr);
-  const { routes, theme, speculation, errorStyles, mcpPath, mcpPaths } = await devRouteTable({
+  const { routes, theme, speculation, inlineStyles, mcpPath, mcpPaths } = await devRouteTable({
     isr,
     root: options.root,
     env: options.env,
@@ -235,9 +235,9 @@ async function bootDev(
     signInPath: await loadSignInPath(options.root),
     // The same seam `serve.ts` passes: the app's own error page is a FILE under this root.
     root: options.root,
-    // The `/_x` shell, the harness's frame, and the app's own error pages — the inline bodies this
-    // process serves; the app's surfaces are content-hashed files `'self'` admits.
-    inlineStyles: [await devShellStyle(), FRAME_STYLE, ...errorStyles],
+    // The `/_x` shell, the harness's frame, the app's own error pages and its brand — the inline
+    // bodies this process serves; the app's surfaces are content-hashed files `'self'` admits.
+    inlineStyles: [await devShellStyle(), FRAME_STYLE, ...inlineStyles],
     inlineScripts: [theme.cspSource, ...(speculation === undefined ? [] : [speculation.cspSource])],
     // The overlay renders this request's own loops under the error it is already showing.
     // `serve.ts` boots through the same `startRoles` and passes nothing (axiom 6).

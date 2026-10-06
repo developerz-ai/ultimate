@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { cspHashSource } from '@ultimat3/http';
-import { errorPageStyleSources, inlineStyleBodies } from './error-page-csp';
+import { errorPageStyleBodies, inlineStyleBodies } from './error-page-csp';
 import { ERROR_PAGE_DIR } from './error-pages';
+import { inlineStyleSources } from './style-csp';
 
 let root = '';
 
@@ -35,20 +36,27 @@ describe('unit · <style> bodies are taken exactly as the browser hashes them', 
 
 describe("unit · the app's error pages are admitted to style-src", () => {
   test('an app with no error pages extends nothing', async () => {
-    expect(await errorPageStyleSources(root)).toEqual([]);
+    expect(await errorPageStyleBodies(root)).toEqual([]);
   });
 
-  test('one hash per distinct body across every page, sorted and deduplicated', async () => {
-    await writePage(404, '<style>a{}</style><style>b{}</style>');
+  test('one entry per distinct body across every page, sorted and deduplicated', async () => {
+    await writePage(404, '<style>b{}</style><style>a{}</style>');
     await writePage(500, '<style>a{}</style>');
-    expect(await errorPageStyleSources(root)).toEqual(
-      [cspHashSource('a{}'), cspHashSource('b{}')].sort(),
-    );
+    expect(await errorPageStyleBodies(root)).toEqual(['a{}', 'b{}']);
   });
 
   test('a stray non-html file in the directory is not read', async () => {
     await writePage(404, '<style>a{}</style>');
     await Bun.write(join(root, ERROR_PAGE_DIR, 'notes.txt'), '<style>zzz{}</style>');
-    expect(await errorPageStyleSources(root)).toEqual([cspHashSource('a{}')]);
+    expect(await errorPageStyleBodies(root)).toEqual(['a{}']);
+  });
+});
+
+describe("integration · the policy a boot builds admits the error page's own <style>", () => {
+  // Both boots hand this module's answer to `startRoles({ inlineStyles })`, which hashes what
+  // it is given (`inlineStyleSources`). Handed a hash, it hashed the hash: the page stayed blocked.
+  test('what a boot hands startRoles hashes to the body the page carries', async () => {
+    await writePage(404, '<style>a{}</style>');
+    expect(inlineStyleSources(await errorPageStyleBodies(root))).toEqual([cspHashSource('a{}')]);
   });
 });

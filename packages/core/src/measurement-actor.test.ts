@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from './actor';
 import {
+  declaredMeasurementActor,
   defineMeasurementActor,
   MEASUREMENT_ACTOR_ID,
   measurementActor,
@@ -32,5 +33,16 @@ describe('unit · the measurement actor', () => {
   test('a factory that answers no actor is refused by name rather than rendered as nobody', async () => {
     defineMeasurementActor(() => undefined as never);
     expect(await measurementActor().catch((e: unknown) => e)).toBeUltimateError('X_INVARIANT');
+  });
+
+  // The reader the test preload's file boundary snapshots: the factory itself, never its answer,
+  // so putting it back is `defineMeasurementActor(read)` and the restored one is the same function.
+  test('the declaration reads back as the factory itself, and as undefined once reset', () => {
+    expect(declaredMeasurementActor()).toBeUndefined();
+    const factory = () => userActor({ id: 'm-2', roles: ['member'] });
+    defineMeasurementActor(factory);
+    expect(declaredMeasurementActor()).toBe(factory);
+    resetMeasurementActor();
+    expect(declaredMeasurementActor()).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8f8a68c19e48648a387825df2a87bb54ff5b39cf7f7b6cd02418a5a256007c21",
+  "buildId": "a5980070c247f7935cab78024cd7db89d7bddb0a0400c7ca9781d008dafdeae2",
   "tiers": {
     "0": [
       "core",
@@ -1903,6 +1903,11 @@
       "code": "X_ISLAND_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ISLAND_MODULE_DUPLICATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ISLAND_NOT_HYDRATED",

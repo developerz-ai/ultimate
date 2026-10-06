@@ -10,8 +10,14 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { createRaster, encodeImage, userActor } from '@ultimat3/core';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import {
+  createRequestContext,
+  createServer,
+  defineHttpConfig,
+  UltimateRequest,
+} from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
+import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import { defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
 import type { DevDashboardInput } from './dev-dashboard';
@@ -19,6 +25,8 @@ import { devRouteTable } from './dev-route-table';
 import { islandBundle } from './island-bundle';
 import { MEDIA_BASE_PATH } from './runtime-assets';
 import { STORAGE_READ_PERMISSION } from './runtime-storage';
+import { inlineStyleSources } from './style-csp';
+import { APP_THEME_MODULE } from './theme-brand';
 
 const SOURCE_KEY = 'covers/hero.png';
 let root = '';
@@ -34,6 +42,7 @@ afterEach(async () => {
   clearPermissions();
   clearRoles();
   resetStorage();
+  clearRoutes();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -89,5 +98,68 @@ describe('unit · x dev route table', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('from the app driver');
     expect(asked).toEqual([`${SOURCE_KEY}@16`]);
+  });
+});
+
+/** The table with inert stand-ins for everything a page document does not read. */
+const pageTable = () =>
+  devRouteTable({
+    root,
+    env: {},
+    buildId: 'dev-route-table',
+    storage: defineStorage({ disks: { local: localDriver({ root: join(root, '.s') }) } }),
+    dashboard: {
+      root,
+      runtime: { mail: { name: 'unused' }, db: {} },
+      status: () => ({}),
+    } as unknown as DevDashboardInput,
+    islands: () => islandBundle([]),
+    realtime: { enabled: false },
+  });
+
+const pageOf = async (routes: Awaited<ReturnType<typeof pageTable>>['routes']) => {
+  const server = createServer({
+    routes,
+    role: 'web',
+    config: defineHttpConfig({
+      dev: true,
+      buildId: 'dev-route-table',
+      rateLimit: { scope: 'process' },
+    }),
+  });
+  return (await server.fetch(new Request('http://dev.test/'))).text();
+};
+
+describe("unit · x dev carries the app's brand", () => {
+  beforeEach(() => {
+    registerRoute<{ url: string; params: Record<string, string> }>({
+      file: 'apps/web/site/page.tsx',
+      suspenseBoundaries: 0,
+      config: defineRoute<{ url: string; params: Record<string, string> }>({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        meta: () => ({ title: 'home', description: 'the page the brand is asked of' }),
+      }),
+    });
+  });
+
+  test('the theme module: the tag in the document, and its body for style-src', async () => {
+    const ui = join(import.meta.dir, '../../ui/src/index.ts');
+    await Bun.write(
+      join(root, APP_THEME_MODULE),
+      `import { defineTheme } from '${ui}';\nexport const brand = defineTheme({ preset: 'scifi' });\n`,
+    );
+    const { brandStyleCspSource, brandStyleTag, defineTheme } = await import('@ultimat3/ui');
+    const brand = defineTheme({ preset: 'scifi' });
+    const table = await pageTable();
+    expect((await pageOf(table.routes)).split('</head>')[0]).toContain(brandStyleTag(brand));
+    expect(inlineStyleSources(table.inlineStyles)).toEqual([brandStyleCspSource(brand)]);
+  });
+
+  test('no theme module: no <style>, and nothing for style-src', async () => {
+    const table = await pageTable();
+    expect(await pageOf(table.routes)).not.toContain('<style');
+    expect(table.inlineStyles).toEqual([]);
   });
 });

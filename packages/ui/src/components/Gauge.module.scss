@@ -1,0 +1,48 @@
+@use '../tokens' as t;
+
+@include t.tone-classes;
+
+// A gauge is a tile, not a row: its caption sits centred under the dial.
+.gauge {
+  text-align: center;
+
+  // ChartFrame writes the caption first, for the reading order; a gauge SHOWS it under the dial.
+  > figcaption {
+    order: 1;
+  }
+}
+
+.dial {
+  position: relative;
+  inline-size: 100%;
+  max-inline-size: t.rem(192px);
+  margin-inline: auto;
+}
+
+.plot {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+.track {
+  fill: t.role('line', 0.4);
+}
+
+.fill {
+  fill: var(--tone);
+}
+
+// HTML over the dial's centre, so the figure keeps its type step at every gauge size. The ring's
+// centre is not the box's — the open quarter is cropped — so `--centre` carries where it is.
+.readout {
+  @include t.data-text;
+  position: absolute;
+  inset-block-start: var(--centre);
+  inset-inline: 0;
+  translate: 0 -50%;
+  font-size: t.text(xl);
+  font-weight: t.weight(semibold);
+  line-height: t.leading(tight);
+  color: t.role('fg-strong');
+}

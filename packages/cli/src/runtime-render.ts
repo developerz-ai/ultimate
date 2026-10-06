@@ -164,6 +164,10 @@ const styleTag = (entry: RouteEntry): string => {
   return href === undefined ? '' : `<link rel="stylesheet" href="${href}">`;
 };
 
+/** The surface stylesheet, then the app's brand — the order that lets the brand win the cascade. */
+const stylesFor = (entry: RouteEntry, options: DocumentOptions): string =>
+  styleTag(entry) + (options.brandHead ?? '');
+
 /**
  * The route's rendered body, inside the hydration root. Every mode goes through here — an empty
  * root is what a module exporting no component renders, and nothing else: `spa` was the one mode
@@ -265,7 +269,7 @@ async function documentFrom(
     routeBody(entry, ctx, data, islands),
   ]);
   return (
-    `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head>` +
+    `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head>` +
     `<body>${body}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}</body></html>`
   );
 }
@@ -305,7 +309,7 @@ async function resultFor(
       return withScope(
         streamResult(
           {
-            head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
+            head: `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head><body>`,
             // The runtime rides the first flush, with the shell it boots. A later chunk would leave
             // the window between flush one and the close with inert islands and no listeners on
             // them — which is exactly the first-click-lost failure `interaction` replay exists for.

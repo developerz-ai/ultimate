@@ -38,6 +38,7 @@ import type { Finding } from './output';
 import type { DevServices } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
 import { loopFacts } from './statement-loop';
+import { styleBundle } from './style-bundle';
 
 export interface DevStatus {
   readonly url: string;
@@ -241,6 +242,9 @@ export function devDashboardRoutes(input: DevDashboardInput): readonly Route[] {
     basePath: DEV_BASE_PATH,
     panels,
     sources: devSources(input),
+    // The drawn tabs render ui's components, whose rules ride the `app/` surface's bundle — the
+    // same URL an `app/` document links, asked per request because a rebuild moves the hash.
+    stylesheetHref: () => styleBundle().hrefFor('app'),
     ...(input.env === undefined ? {} : { env: input.env }),
   });
 

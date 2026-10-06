@@ -31,7 +31,7 @@ export function parseChannels(value: string): Channels {
 }
 
 // sRGB → linear, then the ITU-R BT.709 luma weights WCAG specifies.
-function linearize(channel: number): number {
+export function linearize(channel: number): number {
   const v = channel / 255;
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }

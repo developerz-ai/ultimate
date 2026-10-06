@@ -3,30 +3,43 @@
 // level it emits. There is deliberately no SCSS `@use ... with ()` seam — two ways to change the
 // accent colour is the ambiguity axiom 1 exists to delete.
 
-import {
-  insufficientContrastError,
-  invalidBrandTokenError,
-  runtimeMissingError,
-  unknownTokenError,
-} from '../errors';
-import { contrastRatio, parseChannels } from '../tokens/contrast';
+import { insufficientContrastError, invalidBrandTokenError, runtimeMissingError } from '../errors';
+import { contrastRatio } from '../tokens/contrast';
 import { CONTRAST_PAIRS } from '../tokens/contrast-pairs';
 import {
   COLOR_ROLES,
   type ColorRole,
   colorTokens,
   type RadiusName,
-  radiusTokens,
+  SHADOW_NAMES,
+  type ShadowName,
+  shadowTokens,
   type Theme,
 } from '../tokens/tokens';
+import {
+  colorDeclarations,
+  fontDeclarations,
+  radiusDeclarations,
+  shadowDeclarations,
+} from './brand-declarations';
+import type { FontSlot, ThemePreset } from './preset-shape';
+import { THEME_PRESET_NAMES, THEME_PRESETS, type ThemePresetName } from './presets';
 
-/** The two font slots `_typography.scss` emits. */
-export const FONT_SLOTS = ['sans', 'mono'] as const;
-export type FontSlot = (typeof FONT_SLOTS)[number];
+export type { FontSlot } from './preset-shape';
+export { FONT_SLOTS } from './preset-shape';
+
+type Themed<K extends string> = Partial<Record<Theme, Partial<Record<K, string>>>>;
 
 export interface BrandInput {
+  /**
+   * A shipped palette to start from (`THEME_PRESETS`). Every other slot layers onto it role by
+   * role, so `{ preset: 'scifi', colors: { dark: { accent: … } } }` is scifi with your accent.
+   */
+  preset?: ThemePresetName | undefined;
   /** Channel overrides per theme. Omit a theme to leave it at the shipped palette. */
-  colors?: Partial<Record<Theme, Partial<Record<ColorRole, string>>>> | undefined;
+  colors?: Themed<ColorRole> | undefined;
+  /** Shadow overrides per theme, by rung (`SHADOW_NAMES`) — elevation is themed like colour. */
+  shadows?: Themed<ShadowName> | undefined;
   radius?: Partial<Record<RadiusName, string>> | undefined;
   font?: Partial<Record<FontSlot, string>> | undefined;
 }
@@ -36,49 +49,89 @@ export interface Brand {
   readonly css: string;
 }
 
-/** `0` or a number with a CSS length unit. No `calc()`, no `var()` — a scale rung is a value. */
-const LENGTH_PATTERN = /^(0|\d+(\.\d+)?(px|rem|em|ch|%))$/;
-
-/** Family names, quotes and separators only: everything a `font-family` list legitimately needs. */
-const FONT_STACK_PATTERN = /^[\w\s,'"-]{1,200}$/;
-
-const LENGTH_EXPECTED = 'a bare CSS length such as "0.5rem", "4px" or "0"';
-const STACK_EXPECTED = 'a font-family list such as "Inter, system-ui, sans-serif"';
-const CHANNELS_EXPECTED = 'space-separated RGB channels such as "31 110 178"';
-
 /**
  * Validate and freeze a brand. Every value is checked here rather than at render time, so a bad
  * override fails at the app's entry point with the role that broke it named — not as a silently
  * dropped declaration a human has to spot in devtools.
  */
 export function defineTheme(input: BrandInput): Brand {
-  const blocks: string[] = [];
-  const light = colorDeclarations(input.colors?.light, 'colors.light');
-  const dark = colorDeclarations(input.colors?.dark, 'colors.dark');
+  const base = presetOf(input.preset);
+  const colors = {
+    light: layer(base?.colors.light, input.colors?.light),
+    dark: layer(base?.colors.dark, input.colors?.dark),
+  };
+  const shadows = {
+    light: layer(base?.shadows?.light, input.shadows?.light),
+    dark: layer(base?.shadows?.dark, input.shadows?.dark),
+  };
+  const light = [
+    ...colorDeclarations(colors.light, 'colors.light'),
+    ...shadowDeclarations(shadows.light, 'shadows.light'),
+  ];
+  const dark = [
+    ...colorDeclarations(colors.dark, 'colors.dark'),
+    ...shadowDeclarations(shadows.dark, 'shadows.dark'),
+  ];
   // Measured AFTER the channels parse and BEFORE a single declaration is rendered: a palette that
   // fails AA is not a stylesheet with a warning attached, it is a refusal. The pairings are the
   // ones the framework's own palette is held to (`CONTRAST_PAIRS`), so an app cannot ship a brand
-  // the design system would have failed its own tests over.
-  assertContrast('light', input.colors?.light);
-  assertContrast('dark', input.colors?.dark);
+  // the design system would have failed its own tests over. A preset is measured as part of the
+  // palette it builds — the merged result is what renders.
+  assertContrast('light', colors.light);
+  assertContrast('dark', colors.dark);
   const root: string[] = [
     ...light,
-    ...radiusDeclarations(input.radius),
-    ...fontDeclarations(input.font),
+    ...radiusDeclarations(layer(base?.radius, input.radius)),
+    ...fontDeclarations(layer(base?.font, input.font)),
   ];
+  const blocks: string[] = [];
   if (root.length > 0) blocks.push(rule(':root', root));
 
   // `theme.scss` emits light at `:root`, dark behind the media query, and BOTH again under
   // `html[data-theme]`. A brand that only wrote `:root` would lose to those attribute rules on
   // specificity, so every level it emits is answered here, in the same order.
   if (light.length > 0) blocks.push(rule("html[data-theme='light']", light));
-  const media = darkMediaDeclarations(input.colors);
+  const media = [
+    ...darkMediaDeclarations('color', COLOR_ROLES, colors, colorTokens.dark),
+    ...darkMediaDeclarations('shadow', SHADOW_NAMES, shadows, shadowTokens.dark),
+  ];
   if (media.length > 0) {
     blocks.push(`@media (prefers-color-scheme: dark) {\n${indent(rule(':root', media))}\n}`);
   }
   if (dark.length > 0) blocks.push(rule("html[data-theme='dark']", dark));
 
   return Object.freeze({ css: blocks.join('\n\n') });
+}
+
+/**
+ * The named preset, or `undefined` for none. Own-property lookup: a brand read from a JSON config
+ * reaches here untyped, and `'toString'` must be a refusal, not `Object.prototype.toString`.
+ */
+function presetOf(name: ThemePresetName | undefined): ThemePreset | undefined {
+  if (name === undefined) return undefined;
+  if (!Object.hasOwn(THEME_PRESETS, name)) {
+    const known = THEME_PRESET_NAMES.map((preset) => `"${preset}"`).join(', ');
+    throw invalidBrandTokenError('input', 'preset', name, `a preset @ultimat3/ui ships: ${known}`);
+  }
+  return THEME_PRESETS[name];
+}
+
+/**
+ * `overrides` on top of `base`, key by key. An `undefined` value is no override — a spread would
+ * copy it and erase the preset's value for that key, rendering the shipped default in its place.
+ */
+function layer<V extends string>(
+  base: Readonly<Partial<Record<string, V>>> | undefined,
+  overrides: Readonly<Partial<Record<string, V>>> | undefined,
+): Record<string, V> | undefined {
+  if (base === undefined && overrides === undefined) return undefined;
+  const out: Record<string, V> = {};
+  for (const source of [base, overrides]) {
+    for (const [key, value] of Object.entries(source ?? {})) {
+      if (value !== undefined) out[key] = value;
+    }
+  }
+  return out;
 }
 
 /** The exact tag to inline, after `global.scss` so the overrides land later in the cascade. */
@@ -113,82 +166,26 @@ function indent(block: string): string {
 }
 
 /**
- * The dark media `:root` must answer every role the brand's own `:root` touched. That `:root`
+ * The dark media `:root` must answer every token the brand's own `:root` touched. That `:root`
  * (light) comes after `theme.scss`'s dark media `:root` at equal specificity, so a role overridden
  * in light only would otherwise reach an OS-dark document with no `data-theme` — scripting off, or
  * storage throwing in the boot script — on the dark palette it was never measured against. Such a
- * role is answered with the SHIPPED dark channels. Called after both scopes were validated.
+ * token is answered with the SHIPPED dark value. Called after both scopes were validated.
  */
-function darkMediaDeclarations(colors: BrandInput['colors']): string[] {
-  const out: string[] = [];
-  for (const role of COLOR_ROLES) {
-    const value =
-      colors?.dark?.[role] ??
-      (colors?.light?.[role] === undefined ? undefined : colorTokens.dark[role]);
-    if (value !== undefined) out.push(`--color-${role}: ${value};`);
-  }
-  return out;
-}
-
-/**
- * Ordered by the canonical role list, not by the caller's object — a brand file rendered twice
- * must be byte-identical, or every consumer's CSP hash and diff churns for nothing.
- */
-function colorDeclarations(
-  overrides: Partial<Record<ColorRole, string>> | undefined,
-  scope: string,
+function darkMediaDeclarations<K extends string>(
+  prefix: string,
+  names: readonly K[],
+  scopes: {
+    readonly light: Partial<Record<string, string>> | undefined;
+    readonly dark: Partial<Record<string, string>> | undefined;
+  },
+  shippedDark: Readonly<Record<K, string>>,
 ): string[] {
-  if (overrides === undefined) return [];
-  for (const role of Object.keys(overrides)) {
-    if (!(COLOR_ROLES as readonly string[]).includes(role)) {
-      throw unknownTokenError('color', role, COLOR_ROLES);
-    }
-  }
   const out: string[] = [];
-  for (const role of COLOR_ROLES) {
-    const value = overrides[role];
-    if (value === undefined) continue;
-    assertChannels(scope, role, value);
-    out.push(`--color-${role}: ${value};`);
-  }
-  return out;
-}
-
-function radiusDeclarations(overrides: Partial<Record<RadiusName, string>> | undefined): string[] {
-  if (overrides === undefined) return [];
-  const known = Object.keys(radiusTokens) as RadiusName[];
-  for (const name of Object.keys(overrides)) {
-    if (!(known as readonly string[]).includes(name)) {
-      throw unknownTokenError('radius', name, known, '_radius.scss');
-    }
-  }
-  const out: string[] = [];
-  for (const name of known) {
-    const value = overrides[name];
-    if (value === undefined) continue;
-    if (!LENGTH_PATTERN.test(value)) {
-      throw invalidBrandTokenError('radius', name, value, LENGTH_EXPECTED);
-    }
-    out.push(`--radius-${name}: ${value};`);
-  }
-  return out;
-}
-
-function fontDeclarations(overrides: Partial<Record<FontSlot, string>> | undefined): string[] {
-  if (overrides === undefined) return [];
-  for (const slot of Object.keys(overrides)) {
-    if (!(FONT_SLOTS as readonly string[]).includes(slot)) {
-      throw unknownTokenError('font', slot, FONT_SLOTS, '_typography.scss');
-    }
-  }
-  const out: string[] = [];
-  for (const slot of FONT_SLOTS) {
-    const value = overrides[slot];
-    if (value === undefined) continue;
-    if (!FONT_STACK_PATTERN.test(value)) {
-      throw invalidBrandTokenError('font', slot, value, STACK_EXPECTED);
-    }
-    out.push(`--font-${slot}: ${value};`);
+  for (const name of names) {
+    const value =
+      scopes.dark?.[name] ?? (scopes.light?.[name] === undefined ? undefined : shippedDark[name]);
+    if (value !== undefined) out.push(`--${prefix}-${name}: ${value};`);
   }
   return out;
 }
@@ -214,13 +211,5 @@ function assertContrast(
     const ratio = contrastRatio(fg, bg);
     if (ratio >= pair.minimum) continue;
     throw insufficientContrastError(theme, pair.what, pair.fg, pair.bg, ratio, pair.minimum);
-  }
-}
-
-function assertChannels(scope: string, role: string, value: string): void {
-  try {
-    parseChannels(value);
-  } catch {
-    throw invalidBrandTokenError(scope, role, value, CHANNELS_EXPECTED);
   }
 }

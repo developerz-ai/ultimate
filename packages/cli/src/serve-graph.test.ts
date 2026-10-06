@@ -111,8 +111,13 @@ const SERVING_ROLE_CEILING = 894;
  * `SERVING_ROLE_CEILING`, #506) and `cli/src/island-runtime.ts` (#505: the page runtime built once
  * per page instead of inlined into every realtime island; split out so `island-bundle.ts` stays
  * under the ceiling).
+ * raised 994 → 998, measured 998 (2026-10-05, plan 101 sweep 9b): `cli/src/theme-brand.ts` (the one
+ * reader of an app's `apps/web/shared/theme.ts` brand, inlined with its CSP hash), and the island
+ * build's duplicate-module guard — `island-duplicates.ts` (detection), `island-duplicate-refusal.ts`
+ * (refuse a framework duplicate, warn on a third-party one) and `island-entry-missing.ts` (the
+ * refusals moved out so `island-bundle.ts` stays under the 500-line ceiling).
  */
-const WEB_ROLE_CEILING = 994;
+const WEB_ROLE_CEILING = 998;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

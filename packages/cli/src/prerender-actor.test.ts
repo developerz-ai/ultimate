@@ -3,11 +3,19 @@
 // `can()` denied with X_UNAUTHENTICATED, and the route was X_BUDGET_UNMEASURED — so an app with a
 // signed-in surface could not be green. Its own file, with its own fixture directory, because
 // `prerender.test.ts` sits at the line ceiling and two files sharing one directory would race.
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { clientTransport, MEASUREMENT_ACTOR_ID, useContext } from '@ultimat3/core';
+import type { MeasurementActorFactory } from '@ultimat3/core';
+import {
+  clientTransport,
+  declaredMeasurementActor,
+  defineMeasurementActor,
+  MEASUREMENT_ACTOR_ID,
+  resetMeasurementActor,
+  useContext,
+} from '@ultimat3/core';
 import { db, sql } from '@ultimat3/db';
 import { useRequestHeader } from '@ultimat3/http';
 import {
@@ -37,7 +45,20 @@ const staticRoute = defineRoute({
   meta: () => ({ title: 'Home', description: 'the landing page' }),
 });
 
+// Every test here is about core's DEFAULT measurement actor, so the file establishes it rather
+// than inheriting one: an `app.config.ts` imported earlier in the process declares its own, and a
+// demo-org member lacks `thing:read` (X_FORBIDDEN). Whatever was declared is handed back after.
+let inherited: MeasurementActorFactory | undefined;
+beforeAll(() => {
+  inherited = declaredMeasurementActor();
+});
+afterAll(() => {
+  if (inherited === undefined) resetMeasurementActor();
+  else defineMeasurementActor(inherited);
+});
+
 beforeEach(async () => {
+  resetMeasurementActor();
   clearRoutes();
   await rm(ROOT, { recursive: true, force: true });
   await Bun.write(
