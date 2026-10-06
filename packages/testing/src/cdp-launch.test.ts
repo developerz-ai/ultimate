@@ -172,7 +172,9 @@ describe('launchChrome — a binary that cannot be started', () => {
         why: 'spawn',
         exitCode: null,
         stderr: '',
-        detail: expect.stringContaining('ENOENT'),
+        // The platform's own words for a missing binary: `ENOENT` on POSIX, "Executable not found"
+        // from Bun on Windows (the windows job, #664). The test is about the shape, not the errno.
+        detail: expect.stringMatching(/ENOENT|Executable not found/),
       };
       expect(meta?.['attempts']).toMatchObject([never, never]);
     } finally {

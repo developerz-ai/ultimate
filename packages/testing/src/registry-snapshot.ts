@@ -3,11 +3,17 @@
 // module declares at MODULE scope evaluates once per `bun test` process — a neighbour's clear is
 // permanent and there is no second evaluation left to redo it.
 //
-// FOUR registries, out of roughly nine that publish a `clear*`/`reset*`. The missing ones and what
+// SIX registries, out of roughly nine that publish a `clear*`/`reset*`. The missing ones and what
 // each still needs are tabulated in `registry-leak-guard.ts` beside `RegistrySample` — every one of
 // them needs a RESTORE in its owning package first, the way `restorePermissions` / `restoreRoles`
 // were added to `@ultimat3/policy` for the two rows below.
 
+import type { MeasurementActorFactory } from '@ultimat3/core';
+import {
+  declaredMeasurementActor,
+  defineMeasurementActor,
+  resetMeasurementActor,
+} from '@ultimat3/core';
 import type { Catalog, Locale, LocaleConfig } from '@ultimat3/i18n';
 import {
   catalogDeclarationCount,
@@ -53,6 +59,13 @@ export interface ProcessRegistrySnapshot {
   readonly tasks: readonly TaskHandle[];
   /** `defineCatalogs()` calls so far — see `@ultimat3/i18n`'s `catalogDeclarationCount`. */
   readonly catalogDeclarations: number;
+  /**
+   * `defineMeasurementActor()`'s factory, `undefined` for core's default. An `app.config.ts`
+   * declares it at module scope, so a test body that imported a tracked app's config
+   * (`buildIslands(examples/dummy)`) made every later file's `x build` measure as that app's
+   * member — and `prerender-actor.test.ts`'s policy-guarded load was denied X_FORBIDDEN.
+   */
+  readonly measurementActor: MeasurementActorFactory | undefined;
 }
 
 export function captureProcessRegistries(): ProcessRegistrySnapshot {
@@ -65,6 +78,7 @@ export function captureProcessRegistries(): ProcessRegistrySnapshot {
     roleSites: roleDeclarationSites(),
     tasks: registeredTasks(),
     catalogDeclarations: catalogDeclarationCount(),
+    measurementActor: declaredMeasurementActor(),
   };
 }
 
@@ -81,6 +95,8 @@ export function restoreProcessRegistries(snapshot: ProcessRegistrySnapshot): voi
   restorePermissions(snapshot.permissions, snapshot.permissionSites);
   restoreRoles(snapshot.roles, snapshot.roleSites);
   restoreTasks(snapshot.tasks);
+  if (snapshot.measurementActor === undefined) resetMeasurementActor();
+  else defineMeasurementActor(snapshot.measurementActor);
 }
 
 /**
@@ -147,6 +163,8 @@ export function mergeSnapshots(
     roleSites: { ...older.roleSites, ...newer.roleSites },
     tasks: [...tasks.values()],
     catalogDeclarations: Math.max(older.catalogDeclarations, newer.catalogDeclarations),
+    // Last declaration wins, as `defineMeasurementActor` itself has it; "none" never erases one.
+    measurementActor: newer.measurementActor ?? older.measurementActor,
   };
 }
 

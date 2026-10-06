@@ -609,6 +609,7 @@ export { setLogSink } from './logger';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export type { MeasurementActorFactory } from './measurement-actor';
 export {
+  declaredMeasurementActor,
   defineMeasurementActor,
   MEASUREMENT_ACTOR_ID,
   measurementActor,

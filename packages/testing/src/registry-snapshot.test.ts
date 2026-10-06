@@ -1,4 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { userActor } from '../../core/src/actor';
+import {
+  declaredMeasurementActor,
+  defineMeasurementActor,
+  MEASUREMENT_ACTOR_ID,
+  measurementActor,
+  resetMeasurementActor,
+} from '../../core/src/measurement-actor';
 import { flattenCatalog } from '../../i18n/src/catalog';
 import {
   catalogFor,
@@ -22,7 +30,11 @@ import {
   roleDeclarationSites,
   roleDefinitions,
 } from '../../policy/src/roles';
-import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
+import {
+  captureProcessRegistries,
+  mergeSnapshots,
+  restoreProcessRegistries,
+} from './registry-snapshot';
 
 /**
  * Every test here mutates process globals; each one hands them back the way it found them.
@@ -244,5 +256,51 @@ describe('captureProcessRegistries / restoreProcessRegistries', () => {
 
       expect(knownPermissions()).toEqual(['post:read']);
       expect(localeConfig().supported).toEqual(snapshot.locales.supported);
+    }));
+
+  // What failed `prerender-actor.test.ts` in one `bun test ./packages/cli` process: a test body
+  // built examples/dummy's islands, which imports its `app.config.ts`, whose module-scope
+  // `defineMeasurementActor` made every later file's build measure as a demo-org member.
+  test('a measurement actor declared after the capture is gone after the restore', () =>
+    around(() => {
+      resetMeasurementActor();
+      const snapshot = captureProcessRegistries();
+
+      defineMeasurementActor(() => userActor({ id: MEASUREMENT_ACTOR_ID, roles: ['member'] }));
+      restoreProcessRegistries(snapshot);
+
+      expect(declaredMeasurementActor()).toBeUndefined();
+    }));
+
+  test('a measurement actor a file reset is declared again, the same factory', async () => {
+    const outer = captureProcessRegistries();
+    try {
+      const factory = () => userActor({ id: 'app-measure', roles: ['member'] });
+      defineMeasurementActor(factory);
+      const snapshot = captureProcessRegistries();
+
+      resetMeasurementActor();
+      restoreProcessRegistries(snapshot);
+
+      expect(declaredMeasurementActor()).toBe(factory);
+      expect((await measurementActor()).id).toBe('app-measure');
+    } finally {
+      restoreProcessRegistries(outer);
+    }
+  });
+
+  test('a merge keeps the newer declaration, and an undeclared newer never erases an older one', () =>
+    around(() => {
+      const older = () => userActor({ id: 'older', roles: [] });
+      const newer = () => userActor({ id: 'newer', roles: [] });
+      defineMeasurementActor(older);
+      const withOlder = captureProcessRegistries();
+      defineMeasurementActor(newer);
+      const withNewer = captureProcessRegistries();
+      resetMeasurementActor();
+      const without = captureProcessRegistries();
+
+      expect(mergeSnapshots(withOlder, withNewer).measurementActor).toBe(newer);
+      expect(mergeSnapshots(withOlder, without).measurementActor).toBe(older);
     }));
 });

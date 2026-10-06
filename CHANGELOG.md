@@ -355,6 +355,9 @@ honest: one runtime per page, writes named on every frame, no stale first paint 
   - **App stop and readiness:** an e2e app's `stop()` escalates to SIGKILL after its drain grace, and
     the `/readyz` wait is wall-clock.
   - **CDP errors:** a CDP WebSocket error carries the socket's own message.
+  - **Measurement user:** the test preload restores the declared build-measurement actor at every
+    file boundary (`declaredMeasurementActor()` in core). A test that loads an app's
+    `app.config.ts` no longer makes later files' build measurements run as that app's member.
   - **Fixture roots:** every test fixture root is per-process (`processRoot`: `<base>/run-<pid>`, dead
     runs reaped). Two processes running one test file in one checkout (two gate runs, two hive
     workers) no longer delete each other's fixtures mid-build, which had read as bundler
