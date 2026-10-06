@@ -4,16 +4,13 @@
 
 import { expect, unitTest } from '@ultimat3/testing';
 import {
-  clearedSessionCookie,
   hashToken,
   newSessionToken,
   readCookie,
   readSessionToken,
   SESSION_COOKIE_PLAIN,
   SESSION_COOKIE_SECURE,
-  sessionCookie,
   sessionCookieName,
-  setResponseCookie,
 } from './session';
 
 unitTest('the __Host- prefix is chosen by the same flag that makes it legal', () => {
@@ -22,33 +19,6 @@ unitTest('the __Host- prefix is chosen by the same flag that makes it legal', ()
   expect(sessionCookieName(true)).toBe(SESSION_COOKIE_SECURE);
   expect(sessionCookieName(false)).toBe(SESSION_COOKIE_PLAIN);
   expect(SESSION_COOKIE_SECURE.startsWith('__Host-')).toBe(true);
-});
-
-unitTest('a secure cookie carries every attribute __Host- requires', () => {
-  const cookie = sessionCookie({ token: 'abc', secure: true, maxAgeSeconds: 600 });
-  expect(cookie.startsWith(`${SESSION_COOKIE_SECURE}=abc`)).toBe(true);
-  // `__Host-` demands Secure and Path=/ and forbids Domain. All three, or the browser drops it.
-  for (const attribute of ['Path=/', 'Secure', 'HttpOnly', 'SameSite=Lax', 'Max-Age=600']) {
-    expect(cookie).toContain(attribute);
-  }
-  expect(cookie).not.toContain('Domain=');
-});
-
-unitTest('an insecure cookie is still HttpOnly — the prefix is the only thing that moves', () => {
-  const cookie = sessionCookie({ token: 'abc', secure: false, maxAgeSeconds: 600 });
-  expect(cookie).toContain('HttpOnly');
-  expect(cookie).toContain('SameSite=Lax');
-  // No `Secure` over http, and therefore no `__Host-` name either. One fact, both effects.
-  expect(cookie).not.toContain('Secure');
-  expect(cookie.startsWith(`${SESSION_COOKIE_PLAIN}=`)).toBe(true);
-});
-
-unitTest('clearing keeps the name and the attributes and zeroes the lifetime', () => {
-  // A browser only drops a cookie it can match exactly, so a "clear" that changed the name would
-  // leave the real cookie in place and look like a sign-out.
-  const cleared = clearedSessionCookie(false);
-  expect(cleared.startsWith(`${SESSION_COOKIE_PLAIN}=;`)).toBe(true);
-  expect(cleared).toContain('Max-Age=0');
 });
 
 unitTest('the token is stored as a hash, and the hash is not the token', () => {
@@ -92,15 +62,4 @@ unitTest('the secure name wins when a browser is holding both', () => {
   expect(readSessionToken(header)).toBe('new');
   expect(readSessionToken(`${SESSION_COOKIE_PLAIN}=only`)).toBe('only');
   expect(readSessionToken('')).toBe(null);
-});
-
-unitTest('setting a cookie off-request reports failure instead of pretending', () => {
-  // A job, a scheduler, a unit test: there is no response to put a header on, and silently
-  // succeeding would issue a session token nobody can ever present.
-  expect(setResponseCookie({}, 'a=b')).toBe(false);
-  expect(setResponseCookie(null, 'a=b')).toBe(false);
-
-  const ctx = { headers: new Headers() };
-  expect(setResponseCookie(ctx, 'a=b')).toBe(true);
-  expect(ctx.headers.get('set-cookie')).toBe('a=b');
 });

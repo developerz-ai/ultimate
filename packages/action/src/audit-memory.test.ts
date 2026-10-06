@@ -13,7 +13,9 @@ import { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
 
 const recordAt = (n: number): AuditRecord => ({
   at: new Date(1_700_000_000_000 + n),
+  name: `act${n}`,
   action: `act${n}`,
+  primitive: 'action',
   mutator: false,
   surface: 'http',
   // A fresh context per record, so an evicted one is identifiable by IDENTITY.

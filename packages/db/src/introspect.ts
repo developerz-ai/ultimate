@@ -125,6 +125,19 @@ export interface TableDescription {
    * mistake `checks` and `checkNames` exist as two fields to prevent.
    */
   readonly replicaIdentityFull?: true | undefined;
+  /**
+   * That a migration gave this table the append-only trigger (`generate-append-only.ts`). The
+   * SNAPSHOT's half: `true` or absent, never `false`, for the reason `replicaIdentityFull` gives.
+   * `introspect()` never writes it — the catalog's half is `triggerNames`.
+   */
+  readonly appendOnly?: true | undefined;
+  /**
+   * The CATALOG's half of `appendOnly`: the names of the ENABLED, non-internal triggers on the
+   * table (`tgenabled` `O` or `A` — a disabled or replica-only trigger refuses nothing in an
+   * ordinary session, so it is not held). A separate field for the reason `checkNames` is one.
+   * Written by `introspect()` always, `[]` included; absent means nobody asked the catalog.
+   */
+  readonly triggerNames?: readonly string[] | undefined;
 }
 
 export interface SchemaDescription {
@@ -177,6 +190,12 @@ interface ForeignKeyRow {
 interface CheckRow {
   readonly table_name: string;
   readonly constraint_name: string;
+}
+
+/** An enabled trigger's NAME — the half of `appendOnly` the catalog can answer. */
+interface TriggerNameRow {
+  readonly table_name: string;
+  readonly trigger_name: string;
 }
 
 const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : 1);
@@ -297,7 +316,19 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
     order by src.relname, c.conname
   `);
 
-  return buildSchema(schema, excluded, columns, indexes, foreignKeys, checks);
+  // Names only, as `checks` above: an append-only table is judged by whether its trigger is THERE
+  // and firing, never by `pg_get_triggerdef`'s text. `tgisinternal` is a foreign key's own.
+  const triggers = await client.query<TriggerNameRow>(sql`
+    select src.relname as table_name, t.tgname as trigger_name
+    from pg_trigger t
+    join pg_class src on src.oid = t.tgrelid
+    join pg_namespace n on n.oid = src.relnamespace
+    where not t.tgisinternal and t.tgenabled in ('O', 'A')
+      and n.nspname = ${schema} and src.relkind = 'r'
+    order by src.relname, t.tgname
+  `);
+
+  return buildSchema(schema, excluded, columns, indexes, foreignKeys, checks, triggers);
 }
 
 /** Pure, so the row -> description mapping is testable without a database. */
@@ -308,6 +339,8 @@ export function buildSchema(
   indexes: readonly IndexRow[],
   foreignKeys: readonly ForeignKeyRow[],
   checks: readonly CheckRow[] = [],
+  /** Absent leaves `triggerNames` off every table: nobody asked the catalog. */
+  triggers?: readonly TriggerNameRow[],
 ): SchemaDescription {
   const names = [...new Set(columns.map((row) => row.table_name))]
     .filter((name) => !excluded.includes(name))
@@ -359,6 +392,14 @@ export function buildSchema(
         .filter((row) => row.table_name === name)
         .map((row) => row.constraint_name)
         .sort(),
+      ...(triggers === undefined
+        ? {}
+        : {
+            triggerNames: triggers
+              .filter((row) => row.table_name === name)
+              .map((row) => row.trigger_name)
+              .sort(),
+          }),
     };
   });
 

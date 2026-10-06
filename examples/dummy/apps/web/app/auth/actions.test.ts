@@ -35,6 +35,9 @@ describe('ending the demo session', () => {
     // `document.cookie = '…'`, and a script write cannot overwrite an HttpOnly cookie — after one
     // sign-out that instruction would silently do nothing.
     expect(cookie?.toLowerCase()).not.toContain('httponly');
+    // Nor Secure: a script on `http://localhost` cannot overwrite a Secure cookie either.
+    expect(cookie?.toLowerCase()).not.toContain('secure');
+    expect(cookie).toContain('Path=/');
     // And the browser drops the previous member's storage and cached pages.
     expect(request.headers.get('clear-site-data')).not.toBeNull();
   });

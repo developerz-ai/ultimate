@@ -5,7 +5,7 @@
 // to them without this package importing it (same-tier packages must not depend on each other).
 
 import type { Clock } from '@ultimat3/core';
-import { readCookie } from '@ultimat3/core';
+import { readCookie, serializeSetCookie } from '@ultimat3/core';
 import type { AuthSession, SessionStore } from './adapter';
 import { AuthError, sessionExpired, sessionUnknown } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
@@ -324,12 +324,16 @@ export function sessionCookie(
           'the cookie carries an attribute that is not delta-seconds, so the browser drops it and keeps the session cookie for the whole browsing session',
           0,
         );
-  return `${name}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  return serializeSetCookie(name, token, { maxAge });
 }
 
-/** Same attributes, empty value, `Max-Age=0` — a mismatched attribute set leaves a live twin. */
+/**
+ * Same attributes, empty value, `Max-Age=0` — a mismatched attribute set leaves a live twin. Both
+ * go through core's `serializeSetCookie`, whose defaults ARE `Path=/; HttpOnly; Secure;
+ * SameSite=Lax`, so the two lines cannot drift apart by one hand-edited attribute.
+ */
 export function clearSessionCookie(policy: SessionPolicy, name?: string): string {
-  return `${name ?? policy.cookieName}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+  return serializeSetCookie(name ?? policy.cookieName, '', { maxAge: 0 });
 }
 
 /**

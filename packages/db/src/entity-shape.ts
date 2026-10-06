@@ -112,4 +112,9 @@ export interface EntityDescriptionLike {
    * none", which is what every hand-built description in this package's own tests is.
    */
   readonly invariants?: readonly InvariantDescriptionLike[] | undefined;
+  /**
+   * `entity({ appendOnly: true })`: the table refuses UPDATE and DELETE (`generate-append-only.ts`).
+   * Optional for the reason `invariants` is, and absent reads as "rows may change".
+   */
+  readonly appendOnly?: boolean | undefined;
 }

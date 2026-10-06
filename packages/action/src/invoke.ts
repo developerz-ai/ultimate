@@ -138,7 +138,10 @@ async function core(
   const draft = {
     // When the attempt began, from the context's clock — never `new Date()`.
     at: ctx.now(),
+    name,
+    // The deprecated alias of `name`, written with the same value until 25.0.0 (plan 101, M9).
     action: name,
+    primitive: 'action',
     // The brand `mutator()` stamps, read structurally — the same read `describeAction` makes,
     // and for the same reason: importing `isMutator` would point this module at the one that
     // imports it, for a check that needs the brand and not the predicate.

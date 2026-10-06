@@ -38,6 +38,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `column-kinds.ts` | `kindsOf(relation)`: a column's DECLARED kind, from `QueryShape.entity` |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
+| `audit-gate.ts` | `audit: true` — **the only** file that calls an `AuditSink` (core's): one record per call, an audited source per `execute()` |
+| `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` (titles in `errors.ts`) |
 | `deprecation.ts` | `Deprecation` + RFC 9745/8594 render + `deprecated_calls_total` — TWINNED with `@ultimat3/action`'s |
 
 ## Invariants — the read path
@@ -111,6 +113,20 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A live read keyed on a sealed column is refused at subscribe** (`assertNoSealedKey`, called by
   `toLiveQuery`): a change row carries none, so the window would be read once and never patched.
   The refusal names the column, never the filter's value.
+
+## Invariants — audit
+
+- **`audit: true` observes the read path, never forks it**: `buildSource` fills the trace (`input`,
+  parsed-or-nothing on a pre-parse denial); `readRowsIn` sets `replayed`. The record shape and the
+  sink are `@ultimat3/core`'s (`AuditRecord`, `setAuditSink`) — shared with `@ultimat3/action`, and
+  `AUDIT_RECORD_FIELDS` is the parity pin both packages' tests assert (`audit.test.ts`).
+- **A memo or cache hit is recorded** (`replayed: true`): an audit of a read is who saw what.
+- **One record per CALL**: `runQuery` and `readCall` (`.page()`) record the whole call;
+  `sourceFor` hands out an audited source (one record per `execute()`, `@ultimat3/mcp`'s served
+  tool included) and records a refused build at once. An `unenforced` build records nothing.
+- **Never the rows.** The sink is resolved before the parse (`X_QUERY_AUDIT_SINK_MISSING`); a
+  refused allowed record withholds the rows (`X_QUERY_AUDIT_SINK_FAILED`); a refused denied/failed
+  record is logged and the original error wins. `audit-surfaces.test.ts`.
 
 ## Invariants — the client
 

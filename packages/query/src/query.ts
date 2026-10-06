@@ -158,6 +158,13 @@ export interface QueryDef<
    * router feature; see the README.
    */
   readonly deprecated?: Deprecation;
+  /**
+   * Record every call through the installed `AuditSink` (`@ultimat3/core`'s, the one an action's
+   * `audit: true` writes to) — allowed, denied and failed, and a memo or cache hit too: an audit of
+   * a read is who saw what, not what was computed. Off unless declared; no sink installed is
+   * `X_QUERY_AUDIT_SINK_MISSING` before the input is parsed.
+   */
+  readonly audit?: boolean;
 }
 
 export interface QueryOptions {
@@ -249,6 +256,7 @@ export interface AnyQueryDef {
   readonly mcp?: QueryMcp;
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
+  readonly audit?: boolean;
 }
 
 export interface AnyQuery {

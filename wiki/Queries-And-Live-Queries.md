@@ -27,6 +27,7 @@ export const liveFeed = query({
 | `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
+| `audit` | no — default `false` | `true` records every call in the installed `AuditSink` — allowed, denied, failed, and a memo or cache hit (`replayed: true`). See [Audit](#audit-who-saw-what) |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
 Nothing else is a query field. Sorting, paging, and filtering are `input` fields consumed by `sql`.
@@ -260,6 +261,24 @@ Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes))
 The memo collapses the *same* read asked twice. Fifty *different* row lookups collapse one layer down, in the repo: `findById` issued across one microtask of a request is one `where "id" in (…)` ([Entities and migrations → Point lookups batch themselves](Entities-And-Migrations#point-lookups-batch-themselves)) — or, named on the chain instead of inferred from a loop, one `preload()` per relation ([Entities and migrations → Preload states a relation the loop would infer](Entities-And-Migrations#preload-states-a-relation-the-loop-would-infer)).
 
 Fifty *counts* collapse neither way — one `count()` per row is fifty different questions, so nothing above the repo can batch them. The repo answers them in one statement instead: `db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId')` is a map keyed by the column's values, biggest group first, with a value nothing matched absent rather than `0` ([Entities and migrations → A count per row is one grouped count](Entities-And-Migrations#a-count-per-row-is-one-grouped-count)).
+
+## Audit: who saw what
+
+`query({ audit: true })` writes one record per call into the sink an action's `audit: true` writes to — one contract, `@ultimat3/core`'s `AuditRecord` / `AuditSink`, one installed sink (`setAuditSink` from `@ultimat3/core`, or the same function from `@ultimat3/action`). `As of 2026-10`.
+
+| Rule | |
+|---|---|
+| What is a call | `read(input)`, `.as()`, the HTTP GET, `.page()`, `.tool().read()` — one record each. `sourceFor(…)` + `execute()` (how `@ultimat3/mcp` serves a tool): one per `execute()`, or one at the build when it is refused |
+| A memo or cache hit | **recorded**, `replayed: true` — an audit of a read is who saw what, not what the database computed |
+| Outcomes | `allowed` · `denied` (a policy refusal, before or after the input parse) · `failed` (an unparsed input, a spent rate limit, a throwing source) |
+| `surface` | `server` · `http` · `mcp` — the same vocabulary an action's record uses |
+| `name` | the export name. `action` holds the same value, **deprecated**, removed in 25.0.0 — read `name` |
+| `primitive` | `'query'` (an action's record says `'action'`) — what tells a read from a write in one sink |
+| `input` | the parsed input, never the raw payload; a persisting sink redacts it through `auditableInput` |
+| rows | **never on the record**, as an action's result never is |
+| Not recorded | `explain()`, `describeSql()`, the shared live window: built `unenforced`, no caller to attribute |
+| No sink installed | `X_QUERY_AUDIT_SINK_MISSING`, before the input parse |
+| The sink refuses | a denied/failed record: logged (`audit.sink.failed`), the caller gets the original error. An allowed record: the rows are withheld, `X_QUERY_AUDIT_SINK_FAILED` — a read commits nothing, so retry |
 
 ## Every cached query carries a tag
 

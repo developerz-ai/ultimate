@@ -23,6 +23,8 @@ export type DriftKind =
   | 'missing-check'
   | 'missing-foreign-key'
   | 'changed-foreign-key'
+  // Constructed in `drift-append-only.ts`: an `appendOnly` table whose refusing trigger is gone.
+  | 'missing-append-only-trigger'
   // Constructed in `object-drift.ts`: a trigger, function, view, type or sequence in the live
   // database that replaying the migrations does not create.
   | 'unexpected-object';
@@ -59,7 +61,7 @@ const UNSPELLABLE = `${CARRIES}, so no statement here can spell it`;
  * this database and never "in a new migration": drift means this database left the migrations,
  * and a migration would re-apply the repair to every database that is already right.
  */
-const repair = (path: string, statements: string, note = RE_CHECK): string =>
+export const repair = (path: string, statements: string, note = RE_CHECK): string =>
   `${psqlCommand(`${path}${statements}`)}   # ${note}`;
 
 /**
@@ -81,7 +83,7 @@ const DEFAULT_SCHEMA = 'public';
  * `tenant_a` fails, or lands on a same-named table in `public`. `null` for a schema no statement
  * can spell.
  */
-const pathTo = (schema: string): string | null => {
+export const pathTo = (schema: string): string | null => {
   if (schema === DEFAULT_SCHEMA) return '';
   const name = shellInertIdentifier(schema);
   return name === null ? null : `set search_path = ${name}; `;

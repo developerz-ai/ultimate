@@ -112,6 +112,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `FIX_SHELL_ARG_PINS`). `${provider}` is registry-validated boot config, not foreign.
 - Cookies are read through `@ultimat3/core`'s `readCookie` (`readSessionCookie`, the oauth
   handshake), which never throws on a malformed value (`decodeURIComponent('%')`).
+  They are WRITTEN through its `serializeSetCookie`, never a literal (`bun run set-cookie-literals`,
+  `X_SET_COOKIE_HAND_BUILT`); `cookie-golden.test.ts` pins the bytes.
 - A token endpoint's HTTP 200 is not success — read `error`.
 - Link by address only when the provider **and** the local account both verified it
   (`link: 'verified-email'`, default; `'never'` is the only other value).

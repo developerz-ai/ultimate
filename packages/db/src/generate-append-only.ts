@@ -1,0 +1,96 @@
+// Single responsibility: the trigger an `entity({ appendOnly: true })` table carries, emitted once.
+// The repository refuses update and delete above the driver; this is the same guarantee held by the
+// DATABASE, so raw SQL, a second app on the same schema and a hand-written driver are refused too.
+// Recorded on the snapshot (`appendOnly: true`), which is what stops it being re-emitted.
+
+import type { EntityDescriptionLike } from './entity-shape';
+import type { Plan } from './foreign-key-plan';
+import { findTable, type SchemaDescription } from './introspect';
+import { identifier } from './sql';
+
+/**
+ * The trigger's name — the SAME on every table, because a trigger name is unique per table, never
+ * per schema. A per-table name (`<table>_append_only`) would pass 63 bytes on a long table name,
+ * Postgres would truncate it in silence, and drift would compare the untruncated name forever.
+ */
+export const APPEND_ONLY_TRIGGER = 'ultimate_append_only';
+
+/**
+ * One function for every append-only table: `tg_table_name` says which table refused. Not `x_`
+ * prefixed — that namespace is framework bookkeeping created at boot (`FRAMEWORK_TABLE_PREFIX`), and
+ * this function is created by the app's own migrations, so the schema dump files it with them.
+ */
+export const APPEND_ONLY_FUNCTION = 'ultimate_refuse_append_only';
+
+/**
+ * `create or replace`, so every migration that adds a trigger may define it again: no migration has
+ * to know whether an earlier one already did, and a database where it was dropped by hand gets it
+ * back on the next one. One line, because the drift repair (`drift-append-only.ts`) is the same
+ * text as one `psql -c` word.
+ *
+ * The message LEADS with the code an app searches for, and the SQLSTATE is `23001`
+ * (`restrict_violation`): class 23 is "an integrity constraint refused this", which is what an
+ * append-only table is — so a caller that already treats class 23 as terminal, never retried,
+ * treats this the same. These bytes are in migrations on disk; changing them changes nothing that
+ * already shipped.
+ */
+export const APPEND_ONLY_FUNCTION_SQL =
+  `create or replace function ${identifier(APPEND_ONLY_FUNCTION).text}() returns trigger ` +
+  'language plpgsql as $append_only$ begin raise exception ' +
+  "'X_ENTITY_APPEND_ONLY: % on %.% is refused, the table is append-only', " +
+  "tg_op, tg_table_schema, tg_table_name using errcode = '23001', hint = 'insert a new row " +
+  "instead; to allow rewrites, remove appendOnly from the entity and run x db gen'; end; " +
+  '$append_only$;';
+
+/**
+ * `before update or delete … for each row`: a row-level BEFORE trigger raises before the row moves,
+ * and it covers `insert … on conflict do update` too — the conflict arm IS an update. `truncate` is
+ * deliberately not refused: it is no row-level write, `destructive.ts` already gates it in a
+ * migration, and the testing package's reusable database empties every table with it.
+ */
+export const appendOnlyTriggerSql = (table: string): string =>
+  `create trigger ${identifier(APPEND_ONLY_TRIGGER).text} before update or delete on ` +
+  `${identifier(table).text} for each row execute function ` +
+  `${identifier(APPEND_ONLY_FUNCTION).text}();`;
+
+/** `if exists`: a revert must not fail on a database where the trigger was already dropped by hand. */
+export const dropAppendOnlyTriggerSql = (table: string): string =>
+  `drop trigger if exists ${identifier(APPEND_ONLY_TRIGGER).text} on ${identifier(table).text};`;
+
+/** Whether the recorded schema says this table carries the trigger. Absent is "not recorded". */
+const recorded = (current: SchemaDescription, table: string): boolean =>
+  findTable(current, table)?.appendOnly === true;
+
+/**
+ * Both directions. Declared and not recorded: define the function (once per migration) and add the
+ * trigger; its `down` drops the trigger, except on a table this migration creates, whose `down` is
+ * already `drop table`. Recorded and no longer declared: drop it, and `down` puts it back.
+ *
+ * A table dropped outright needs nothing — the trigger goes with it, and the snapshot stops naming
+ * the table. The function is never dropped: other tables may still call it, and a function left with
+ * no trigger refuses nothing.
+ */
+export function appendOnlyPlan(
+  plan: Plan,
+  entities: readonly EntityDescriptionLike[],
+  current: SchemaDescription,
+  created: ReadonlySet<string>,
+): void {
+  const changed = entities.filter(
+    (entity) => (entity.appendOnly === true) !== recorded(current, entity.table),
+  );
+  const added = changed.filter((entity) => entity.appendOnly === true).map((e) => e.table);
+  const removed = changed.filter((entity) => entity.appendOnly !== true).map((e) => e.table);
+  if (added.length > 0) plan.up.push(APPEND_ONLY_FUNCTION_SQL);
+  for (const table of added) {
+    plan.up.push(appendOnlyTriggerSql(table));
+    if (!created.has(table)) plan.down.push(dropAppendOnlyTriggerSql(table));
+  }
+  for (const table of removed) {
+    plan.up.push(dropAppendOnlyTriggerSql(table));
+    plan.down.push(appendOnlyTriggerSql(table));
+  }
+  // `down` is reversed whole, so the function pushed LAST here runs FIRST there — before the
+  // triggers that call it are re-created.
+  if (removed.length > 0) plan.down.push(APPEND_ONLY_FUNCTION_SQL);
+}

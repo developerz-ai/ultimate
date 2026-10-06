@@ -257,6 +257,7 @@ X_DB_DRIFT: schema differs from migrations
 | index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
 | foreign key, rule moved | `foreign key "K" on "T" (C) to "R" is on delete cascade, not what migrations declare` — `K` is the constraint the database holds | `psql "$DATABASE_URL" -c '<the drop constraint + add constraint pair>'` — one command, against the drifted database — then `x db migrate` |
 | column nullability differs (`changed-column`) | `table "T" allows NULL in column "C" that migrations declare not null` / `forbids NULL in column "C" that migrations declare nullable` | `psql "$DATABASE_URL" -c 'alter table "T" alter column "C" set not null;'` (or `drop not null`) — one command, then `x db migrate`. A table read from a schema other than `public` gets `set search_path = "<schema>";` ahead of the statement, in the same `psql -c` word, so it and every table it references resolve there. A name `shellInertIdentifier()` refuses degrades every one of these three to `psql "$DATABASE_URL"   # <the steps>`: still a command that runs, with no name in it |
+| append-only trigger gone (`missing-append-only-trigger`, `As of 2026-10-06`) — raised as `X_APPEND_ONLY_TRIGGER_MISSING`, the one kind with its own code | `table "T" is declared appendOnly, and its trigger ultimate_append_only is missing or disabled` — a disabled (`D`) or replica-only (`R`) trigger counts as missing, because an ordinary session fires neither | `psql "$DATABASE_URL" -c '<create or replace function …; create trigger "ultimate_append_only" …>'` — the two statements `x db gen` wrote, against the drifted database — then `x db migrate` |
 | primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id) as constraint "T_pkey", and migrations declare (slug)` — the constraint named is the one the DATABASE holds — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
@@ -265,6 +266,25 @@ them all as findings and exits non-zero; a `ROLE=migrate` container throws the f
 the exit code — and a deploy that rolled on past a schema nobody can reconstruct is the failure
 drift exists to catch. There is no `x db drift`, and `x verify`'s `drift` step is the *source*
 detector (`checkSourceDrift`), which needs no database and never calls this.
+
+## Append-only tables
+
+`EntityDescriptionLike.appendOnly` (from `entity({ appendOnly: true })`) is a trigger, written by
+`x db gen` (`generate-append-only.ts`) and recorded on the snapshot as `appendOnly: true`:
+
+```sql
+create or replace function "ultimate_refuse_append_only"() returns trigger language plpgsql as $append_only$ begin raise exception 'X_ENTITY_APPEND_ONLY: % on %.% is refused, the table is append-only', tg_op, tg_table_schema, tg_table_name using errcode = '23001', hint = '…'; end; $append_only$;
+create trigger "ultimate_append_only" before update or delete on "ledger" for each row execute function "ultimate_refuse_append_only"();
+```
+
+| | |
+|---|---|
+| Names | fixed: the trigger is `ultimate_append_only` on every table (a trigger name is per table, so no 63-byte truncation), the function one shared `ultimate_refuse_append_only()` |
+| Refuses | UPDATE, DELETE, and the update arm of `insert … on conflict do update`. Not `truncate` — no row write, and `destructive.ts` already gates it |
+| The error | message leads with `X_ENTITY_APPEND_ONLY`, SQLSTATE `23001` (`restrict_violation`, class 23: an integrity rule refused it, so never retried) |
+| On / off | adding `appendOnly` emits the function (once per migration) and the trigger, `down` drops the trigger; removing it drops the trigger, `down` restores both. A dropped table takes its trigger with it; the function is never dropped |
+| Engines | Postgres and PGlite alike (`generate-append-only.live.test.ts`, `generate-append-only-embedded.test.ts`) |
+| Drift | `introspect()` writes `triggerNames` (enabled, non-internal) on every table — the catalog half; `appendOnly` is the snapshot half, never read from the catalog |
 
 ## The schema dump
 

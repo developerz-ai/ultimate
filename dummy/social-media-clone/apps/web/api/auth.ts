@@ -12,14 +12,9 @@ import { NEXT_PARAM, nextAfterSignIn, setRedirect, useRequestHeader } from '@ult
 import { allow } from '@ultimat3/policy';
 import type { IssuedSession } from '../app/auth/service';
 import { signIn, signOut, signUp } from '../app/auth/service';
+import { clearSessionCookie, writeSessionCookie } from '../app/auth/session-cookie';
 import { CAPTCHA_FIELD } from '../shared/auth-policy';
-import {
-  clearedSessionCookie,
-  isSecureRequest,
-  readSessionToken,
-  sessionCookie,
-  setResponseCookie,
-} from '../shared/session';
+import { isSecureRequest, readSessionToken } from '../shared/session';
 
 /** The handle rule, enforced here as well as by the `users` CHECK — one predicate, two places. */
 const handleInput = t.string
@@ -39,17 +34,12 @@ const sessionOutput = t.object({
  * Write the cookie onto the response the pipeline is assembling. `secure` comes from the request's
  * own scheme, so one deployment cannot end up with a `__Host-` name and no TLS behind it.
  */
-const attach = (ctx: unknown, issued: IssuedSession, now: Date): void => {
-  const secure = isSecureRequest(ctx);
-  setResponseCookie(
-    ctx,
-    sessionCookie({
-      token: issued.token,
-      secure,
-      maxAgeSeconds: Math.floor((issued.expiresAt.getTime() - now.getTime()) / 1000),
-    }),
+const attach = (ctx: unknown, issued: IssuedSession, now: Date): void =>
+  writeSessionCookie(
+    issued.token,
+    isSecureRequest(ctx),
+    (issued.expiresAt.getTime() - now.getTime()) / 1000,
   );
-};
 
 /**
  * The form field the sign-in page carries, and the only reason these two actions differ from
@@ -152,7 +142,7 @@ export const destroySession = action({
     const revoked = await signOut(readSessionToken(useRequestHeader('cookie')));
     // Cleared regardless. The browser forgetting the token is the half this process controls, and
     // the row expires on its own clock — `sessions.expiresAt` is absolute for exactly this reason.
-    setResponseCookie(ctx, clearedSessionCookie(isSecureRequest(ctx)));
+    clearSessionCookie(isSecureRequest(ctx));
     // The same browser/agent split the other two actions make. Without it the header's sign-out
     // form — a native POST, because nothing on these pages hydrates — leaves the reader looking
     // at `{"ok":true,"next":"/","revoked":true}` in the viewport. The session really was revoked;

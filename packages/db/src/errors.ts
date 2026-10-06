@@ -41,6 +41,7 @@ export const DB_OWNED_ERROR_CODES = [
   'X_DB_TRANSACTION_ABORTED',
   'X_DB_COMMIT_UNKNOWN',
   'X_DB_SIBLING_SCOPE_TIMEOUT',
+  'X_APPEND_ONLY_TRIGGER_MISSING',
 ] as const;
 
 /**
@@ -89,6 +90,7 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_TRANSACTION_ABORTED: 'the server rolled the transaction back',
   X_DB_COMMIT_UNKNOWN: 'the connection was lost while COMMIT was in flight',
   X_DB_SIBLING_SCOPE_TIMEOUT: 'a nested transaction scope waited too long for its sibling',
+  X_APPEND_ONLY_TRIGGER_MISSING: 'an append-only table has lost its refusing trigger',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

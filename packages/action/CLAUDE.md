@@ -50,7 +50,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust) and `liveTransaction` (the settle) |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
-| `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the installed-sink store |
+| `audit.ts` | the audit seam, re-exported from `@ultimat3/core` (shared with `query`) |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
 | `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
@@ -273,6 +273,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. The
   vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
   duplicate that unifying would need core for.
+- **Records carry `name` + `primitive`**; `action` is its deprecated alias (M9). Read `name`.
 - **The memory sink DROPS** — a ring at `DEFAULT_MAX_AUDIT_RECORDS`, oldest first, counting `dropped`;
   no spelling of "unbounded".
 - **A durable sink writes what `audit-input.ts` allows**: input redacted through core's

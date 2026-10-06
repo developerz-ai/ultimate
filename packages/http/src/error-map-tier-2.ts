@@ -115,4 +115,6 @@ export const TIER_2_ERROR_STATUS = {
   X_POLICY_SURFACE_UNKNOWN: 500,
   // @ultimat3/auth — a stored totp secret is not sealed, so it is never read as one
   X_MFA_SECRET_UNSEALED: 500,
+  // @ultimat3/entity — an append-only entity was asked to rewrite or remove a row
+  X_ENTITY_APPEND_ONLY: 409,
 } satisfies Readonly<Record<string, number>>;

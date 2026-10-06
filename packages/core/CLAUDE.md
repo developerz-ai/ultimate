@@ -80,6 +80,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | a write's public name | `write-digest.ts` (`writeDigest`, `isWriteDigest`, also on `./page`) + `write-origin.ts` (`withWriteOrigin`, `currentWriteOrigin`, `WRITE_ORIGIN_WAL_PREFIX`, server-only) | SHA-256 of an idempotency key, 32 hex; carried action → entity → WAL → realtime `records` frame. A malformed value runs the work unnamed: a label, never a gate |
 | which row survives a conflict | `conflict-policy.ts` (`ConflictPolicy`, `resolveConflict`, `Row`) | read by `action`'s mutator and `realtime`'s rebase |
 | the four shapes of an async region | `async-state.ts` (`AsyncState`) | `realtime` returns it, `ui` renders it. `bun run render-modes` refuses a second status union sharing three members |
+| the audit record + one sink | `audit.ts` | `action` + `query`; `AUDIT_RECORD_FIELDS` pins both |
 | is this `unknown` a keyed record? | `json-object.ts` (`isJsonObject`) | narrows a shape; does not certify provenance |
 | may a caller read this 5xx `cause`? | `public-cause.ts` (`hasPublicCause`) | one table for http, mcp, ai. `registerPublicCause` is `@ultimat3/http`'s `registerProblemMeta` writing it — never an app's door |
 | is this field a credential? | `logger.ts` (`isRedactedKey`) | exact keys + `CREDENTIAL_NAME`; a bare `token` suffix is NOT one (`idempotencyToken`, `maxTokens`). Log line, monitor envelope and `action`'s audit ask it |
@@ -109,7 +110,7 @@ top-level `UltimateError` use in `error-codes.ts`.
   is `x2`, never an edit.
 - **`schema-error-codes.ts` registers `@ultimat3/schema`'s codes** (schema cannot call core), and
   derives their retry classification from the same set. It is a `SIDE_EFFECTS_ANCHORS` entry.
-- `timing-safe-equal.ts` is the one constant-time comparison (`@ultimat3/auth`, `@ultimat3/storage`).
+- `timing-safe-equal.ts` is the one constant-time comparison (`auth`, `storage`).
 - **`canonical-json.ts`: `canonicalJson` is INJECTIVE and `fingerprint` is SHA-256/16 of it** — the
   hash every in-memory sharing key is taken over (`query`'s `queryHash`, `realtime`'s `qid`).
   `NaN`, `±Infinity` and `-0` are bare tokens; `Date`, `Map` and `Set` are TAGGED. Never a
@@ -121,8 +122,7 @@ top-level `UltimateError` use in `error-codes.ts`.
   caller that knows the column's kind may ask (`@ultimat3/entity`'s `compareByKind`) — never
   `@ultimat3/query`, whose `OrderKey` has no kind.
 - **`format-bytes.ts`: one `formatBytes(bytes)`, 1024-base, `b|kb|mb|gb`** for byte counts in error
-  messages. Not `@ultimat3/ui`'s locale-formatted decimal one. Not mechanised — review catches a
-  third copy.
+  messages. Not `@ultimat3/ui`'s locale-formatted decimal one. Unmechanised: review catches a third.
 - **The flight layer** (`backoff.ts`, `retry.ts`, `single-flight.ts`, `flight-gate.ts`,
   `generation-fence.ts`, `retryable-status.ts`, `client-flight.ts`, `client-wire.ts`) imports
   nothing but this package, runs nothing at import, and injects every source of non-determinism
@@ -218,8 +218,8 @@ bun test packages/core/src    # from the REPO ROOT, never from packages/core
 bun run typecheck
 ```
 
-The root is not a preference: `bunfig.toml`'s preload installs `@ultimat3/testing`'s matchers, and
-Bun reads `bunfig.toml` from the cwd (`scripts/coverage-gate.ts` runs from the root too).
+The root is load-bearing: Bun reads `bunfig.toml` (its preload installs `@ultimat3/testing`'s
+matchers) from the cwd.
 
 Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.

@@ -4,6 +4,7 @@
 // by the framework contract; `x verify` fails on it and `--json` carries every difference.
 
 import { baseClient, type DbClient } from './client';
+import { APPEND_ONLY_DRIFT_CODE, compareAppendOnly } from './drift-append-only';
 import type { DriftDifference } from './drift-findings';
 import {
   changedColumn,
@@ -222,6 +223,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   differences.push(...compareIndexes(live, expected));
   differences.push(...compareChecks(live, expected));
   differences.push(...compareForeignKeys(live, expected));
+  differences.push(...compareAppendOnly(live, expected));
   return differences;
 }
 
@@ -246,7 +248,8 @@ export function diffSchema(live: SchemaDescription, expected: SchemaDescription)
 
 export function driftError(difference: DriftDifference): DbError {
   return new DbError({
-    code: 'X_DB_DRIFT',
+    // One kind carries its own code — the guarantee it names is the entity's, not a column's.
+    code: difference.kind === 'missing-append-only-trigger' ? APPEND_ONLY_DRIFT_CODE : 'X_DB_DRIFT',
     cause: difference.cause,
     fix: difference.fix,
     meta: { kind: difference.kind, table: difference.table, column: difference.column },

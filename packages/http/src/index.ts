@@ -228,6 +228,8 @@ export type {
   WebSocketMount,
 } from './server';
 export { createServer } from './server';
+export type { DeleteCookieOptions } from './set-cookie';
+export { deleteCookie, setCookie } from './set-cookie';
 // The stage vocabulary comes from its declaration site, beside the fourteen implementations it
 // names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';

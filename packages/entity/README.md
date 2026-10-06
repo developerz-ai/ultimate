@@ -665,6 +665,45 @@ and never unwritten.
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 | Rows read back | **only when something can still refuse them.** A `check` or a `unique` invariant is a constraint Postgres enforced on the statement, so the answer is a count and the statement carries no `returning *`. Only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on the result — and then the match is counted first and refused past `MAX_ASSERTED_ROWS` (50,000), naming `inBatches(1000)`, because a refusal issued after `returning *` is already holding what it is refusing. On Postgres the statement and that judgement share one transaction (a SAVEPOINT inside an open one), for `update(id, patch)` too, so a refused write is rolled back rather than left committed |
 
+## Append-only entities
+
+`appendOnly: true` declares a table whose rows are written once and never changed or removed — a
+ledger, an audit trail, an event log. Held twice, like an invariant: the repository refuses, and
+`x db gen` emits a trigger that refuses the same statement in raw SQL.
+
+```ts
+import { database, entity, integer, newId, text, timestamp, uuid } from '@ultimat3/entity';
+
+export const entries = entity('ledger_entries', {
+  columns: {
+    id: uuid().primaryKey(),
+    account: text({ max: 40 }),
+    amountMinor: integer(),
+    reverses: uuid().nullable(), // a correction is a NEW row naming the one it reverses
+    createdAt: timestamp().defaultNow(),
+  },
+  appendOnly: true,
+});
+
+const db = database({ entries });
+const first = await db.entries.insert({ id: newId(), account: 'cash', amountMinor: 100 });
+// Skips a row already stored, never overwrites it — the one upsert an append-only table takes.
+await db.entries.upsertAll([first], { onConflict: ['id'], onMatch: 'nothing' });
+// Rejects with X_ENTITY_APPEND_ONLY, as do delete, updateWhere and deleteWhere.
+await db.entries.update(first.id, { amountMinor: 0 }).catch((refused: unknown) => refused);
+```
+
+| | |
+|---|---|
+| Refused | `update`, `delete`, `updateWhere`, `deleteWhere`, and `upsertAll` unless `onMatch: 'nothing'` (the default is `'update'`). Rejected before any statement exists, in both drivers, so memory and Postgres answer the same code. `entries.$appendOnly` says which entities carry it |
+| Refused at declaration | a `deletedAt` column (a soft delete is an UPDATE), an `onUpdateNow()` column (nothing would ever stamp it), a `.transitions()` column (a transition is an UPDATE) — `X_INVARIANT_VIOLATED` naming the column |
+| The database | `x db gen` writes `create trigger "ultimate_append_only" before update or delete … for each row` calling one shared `ultimate_refuse_append_only()`; raw SQL, an `on conflict do update` and a second app on the same schema get `X_ENTITY_APPEND_ONLY: UPDATE on public.<table> is refused`, SQLSTATE `23001`. PGlite runs the same trigger. `truncate` is not refused — it is no row write, a migration already marks it destructive, and the test harness empties tables with it; revoke `TRUNCATE` from the web role if that matters |
+| Drift | a trigger missing or disabled in the live database is `X_APPEND_ONLY_TRIGGER_MISSING` from `x db migrate`'s post-migrate check, with the two statements that restore it as the fix |
+| Turning it on or off | a migration: `x db gen` adds the trigger or drops it, and `down` reverses it. Dropping the table drops the trigger |
+| Backfills and seeds | refused too — no bypass. A `backfill()` that must rewrite existing rows is a two-migration change: drop `appendOnly`, backfill, put it back. A seed's `ctx.insert` is `onMatch: 'nothing'` and works; `ctx.upsert` updates, so it is refused |
+| Tenancy | unchanged — the refusal comes first and judges no tenant; an insert is scoped exactly as on any entity |
+| The seam | `appendOnlyRepo(entity, repo)`, wrapped outside `sealedRepo` by both drivers — so `database()`, a seed's `driver.repo()` and a hand-held `postgresRepo(entity)` agree. A driver written outside this package returns through `appendOnlyRepo(entity, sealedRepo(entity, repo))` |
+
 ## Writing many rows
 
 ```ts

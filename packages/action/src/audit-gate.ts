@@ -63,7 +63,7 @@ export async function auditSettled(sink: AuditSink, record: AuditRecord): Promis
   try {
     await sink.write(record);
   } catch (error) {
-    throw new AuditSinkFailedError(record.action, error, record.idempotencyKey !== null);
+    throw new AuditSinkFailedError(record.name, error, record.idempotencyKey !== null);
   }
 }
 
@@ -84,7 +84,7 @@ export async function auditThrew(sink: AuditSink, record: AuditRecord): Promise<
     // the same reason `cache-gate.ts` gives. Never the record — rendering an input the sink just
     // choked on is the second throw this branch exists to prevent.
     logger.error('audit.sink.failed', {
-      action: record.action,
+      action: record.name,
       outcome: record.outcome,
       error,
     });

@@ -1,7 +1,7 @@
 // The session cookie and the token behind it: what the cookie is called, how the token is hashed
 // before it is stored, and how it is parsed back out of a `Cookie:` header. `shared/` is a leaf, so
 // nothing here reads a database or a request — `app/auth/viewer.ts` turns the token into an actor,
-// and `app/auth/authenticator.ts` is what hands it the header.
+// `app/auth/authenticator.ts` is what hands it the header, and `app/auth/session-cookie.ts` writes it.
 
 import { readCookie as readCookieValue } from '@ultimat3/core';
 
@@ -56,56 +56,6 @@ export const readCookie = (header: string | null, name: string): string | null =
 /** Both names are read, because the same browser may hold a cookie set before TLS was in front. */
 export const readSessionToken = (header: string | null): string | null =>
   readCookie(header, SESSION_COOKIE_SECURE) ?? readCookie(header, SESSION_COOKIE_PLAIN);
-
-export interface SessionCookieOptions {
-  readonly token: string;
-  /** `true` in production. Selects the `__Host-` name AND the `Secure` attribute, from one fact. */
-  readonly secure: boolean;
-  readonly maxAgeSeconds: number;
-}
-
-/**
- * `SameSite=Lax` rather than `Strict`: the sign-in flow is a top-level POST from a page on this
- * origin, which Lax allows and Strict would too — but a link followed in from anywhere else must
- * still arrive signed in, or every shared URL logs the reader out.
- */
-export const sessionCookie = (options: SessionCookieOptions): string =>
-  [
-    `${sessionCookieName(options.secure)}=${options.token}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    `Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds))}`,
-    ...(options.secure ? ['Secure'] : []),
-  ].join('; ');
-
-/** Same name and attributes, zero lifetime: a browser only drops a cookie it can match exactly. */
-export const clearedSessionCookie = (secure: boolean): string =>
-  sessionCookie({ token: '', secure, maxAgeSeconds: 0 });
-
-/**
- * A context that is carrying response headers. Read structurally rather than cast, because this is
- * the one thing the app cannot prove: the object the pipeline publishes through ALS is
- * `@ultimat3/http`'s `RequestContext` cast to core's `Ctx` (`packages/http/src/context.ts:102`),
- * and `Ctx` declares no `headers`. A context with none — a job, a unit test — must answer "no",
- * not throw.
- */
-const carriesHeaders = (ctx: unknown): ctx is { readonly headers: Headers } =>
-  typeof ctx === 'object' && ctx !== null && 'headers' in ctx && ctx.headers instanceof Headers;
-
-/**
- * Put a `Set-Cookie` on the response the pipeline is about to send, and say whether it landed.
- *
- * The pipeline's last stage copies `ctx.headers` onto whatever the handler returned
- * (`packages/http/src/pipeline.ts:341`), so this is how an action — whose return value is JSON and
- * nothing else — sets a cookie. The boolean is not decoration: a caller that silently succeeded
- * off-request would issue a session token nobody can ever present.
- */
-export const setResponseCookie = (ctx: unknown, cookie: string): boolean => {
-  if (!carriesHeaders(ctx)) return false;
-  ctx.headers.set('set-cookie', cookie);
-  return true;
-};
 
 /** `https` in production only. The same fact picks the cookie name and the `Secure` attribute. */
 export const isSecureRequest = (ctx: unknown): boolean =>

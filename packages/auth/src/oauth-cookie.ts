@@ -6,7 +6,7 @@
 // format at one trust level.
 
 import type { Clock } from '@ultimat3/core';
-import { EnvMissingError, readCookie, systemClock } from '@ultimat3/core';
+import { EnvMissingError, readCookie, serializeSetCookie, systemClock } from '@ultimat3/core';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
 import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
@@ -189,7 +189,7 @@ export function handshakeCookie(
   const maxAge = Math.floor(handshakeTtlMs(options) / 1000);
   // The handshake already names its provider, so the two legs cannot disagree about the name.
   const name = options?.name ?? handshakeCookieName(handshake.provider);
-  return `${name}=${sealHandshake(handshake, options)}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  return serializeSetCookie(name, sealHandshake(handshake, options), { maxAge });
 }
 
 /**
@@ -200,7 +200,7 @@ export function handshakeCookie(
  * clear nothing, and clearing every provider's would cancel a login running in another tab.
  */
 export function clearHandshakeCookie(provider: OAuthProviderId, name?: string): string {
-  return `${name ?? handshakeCookieName(provider)}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+  return serializeSetCookie(name ?? handshakeCookieName(provider), '', { maxAge: 0 });
 }
 
 /** Reads the cookie set on the redirect and returns the handshake `completeOAuthLogin` takes. */

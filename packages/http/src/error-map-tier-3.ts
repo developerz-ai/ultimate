@@ -93,4 +93,8 @@ export const TIER_3_ERROR_STATUS = {
   X_SOCKET_LIMIT: 429,
   // @ultimat3/action — an idempotent replay would return a field redacted at rest
   X_IDEMPOTENT_REPLAY_REDACTED: 409,
+  // @ultimat3/query — a query declares audit: true and no audit sink is installed
+  X_QUERY_AUDIT_SINK_MISSING: 500,
+  // @ultimat3/query — an audited read was refused because the audit sink rejected its record
+  X_QUERY_AUDIT_SINK_FAILED: 503,
 } satisfies Readonly<Record<string, number>>;

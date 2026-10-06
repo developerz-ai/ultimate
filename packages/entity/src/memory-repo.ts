@@ -8,6 +8,7 @@
 
 import { aggregateColumnOf } from './aggregate';
 import { foldAggregate } from './aggregate-fold';
+import { appendOnlyRepo } from './append-only';
 import { keyOf } from './batch-read';
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
@@ -426,8 +427,12 @@ export const memoryRepo = <Row>(
     },
   };
   // The memory driver seals too: it stores what Postgres would, so a test that passes here is not
-  // passing over plaintext production never holds.
-  return sealedRepo<Row, MemoryRepo<Row>>(entity, repo);
+  // passing over plaintext production never holds. Append-only outermost, in both drivers: a
+  // refused rewrite seals nothing and sends nothing.
+  return appendOnlyRepo<Row, MemoryRepo<Row>>(
+    entity,
+    sealedRepo<Row, MemoryRepo<Row>>(entity, repo),
+  );
 };
 
 let txCounter = 0;

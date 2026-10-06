@@ -16,6 +16,7 @@ import {
 } from '@ultimat3/db';
 import { aggregateColumnOf, aggregateMinor, assertOneUnit } from './aggregate';
 import { decodeAggregate } from './aggregate-decode';
+import { appendOnlyRepo } from './append-only';
 import {
   conflictKeys,
   insertChunks,
@@ -477,7 +478,8 @@ export const postgresRepo = <Row>(
     },
   };
   // The one sealing seam, shared with `memoryRepo()`: sealed on the way in, opened on the way out.
-  return sealedRepo(entity, repo);
+  // Append-only outermost, as there: a refused rewrite seals nothing and sends no statement.
+  return appendOnlyRepo(entity, sealedRepo(entity, repo));
 };
 
 /**

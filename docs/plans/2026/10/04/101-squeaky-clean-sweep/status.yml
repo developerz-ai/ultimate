@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 78
-current_focus: "sweep 10a (B1–B5); carried rows B17 (dummy likedByMe), B18 (windows binary boot), B19, B20 placed in 10c/10d by tier"
+percent: 82
+current_focus: "sweep 10b (B6, B8, B9; B7 waits on owner O-1, which has no default)"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -106,13 +106,13 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 10-carried-backlog.md
     tier: 0
     sweep: "10a"
-    status: in_progress
-    percent: 0
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#665"]
   - file: 10-carried-backlog.md
     tier: 1
     sweep: "10b"
-    status: not_started
+    status: in_progress
     percent: 0
     evidence: []
   - file: 10-carried-backlog.md

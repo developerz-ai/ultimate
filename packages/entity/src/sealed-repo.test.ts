@@ -227,6 +227,7 @@ describe('unit · the sealed refusals are terminal', () => {
     expect(ENTITY_ERROR_RETRY).toEqual({
       X_ENTITY_SEALED_PREDICATE: 'terminal',
       X_ENTITY_SEALED_IN_VIEW: 'terminal',
+      X_ENTITY_APPEND_ONLY: 'terminal',
     });
     const repo = memoryRepo(connections);
     const thrown = await repo
