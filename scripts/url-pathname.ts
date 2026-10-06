@@ -9,7 +9,10 @@
 // sweep 8a (W5) replaced every site with `Bun.fileURLToPath(new URL(…))` or `join(import.meta.dir, …)`.
 //
 // WHAT COUNTS: `new URL(…, import.meta.url)` — or `new URL(import.meta.url)` — followed by
-// `.pathname`, and a `const`/`let` bound to one and later read as `<name>.pathname` in the same file.
+// `.pathname`, destructured as `const { pathname } = …`, or bound to a `const`/`let` later read as
+// `<name>.pathname` in the same file. And any `new URL(…)` whose input or base is a `file://` string
+// built by template or `+` (`file://${from}`): the path is pasted in unencoded, so a `#` or `?` in
+// a directory ends it and a Windows `C:\` is not a path at all — `Bun.pathToFileURL(path)` is.
 // Strings count as well as code: a template that emits the shape into an app hands every app the
 // bug. Comments do not — naming the removed shape cannot run. An HTTP URL's `pathname` is a route,
 // and is never read here: only a URL resolved against the module's own location is a file.
@@ -39,10 +42,14 @@ const MODULE_URL = 'import.meta.url';
 const OPEN = /\bnew\s+URL\s*\(/g;
 const BINDING = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*URL)?\s*=\s*$/;
 const PATHNAME = /^\s*\.\s*pathname\b/;
+const DESTRUCTURED = /\b(?:const|let|var)\s*\{[^{}]*\bpathname\b[^{}]*\}\s*=\s*$/;
+const FILE_STRING = /`file:\/\/[^`]*\$\{|(['"])file:\/\/[^'"]*\1\s*\+/;
 
 export interface UrlPathnameSite {
   readonly path: string;
   readonly line: number;
+  /** `pathname`: a module URL read as a path. `file-string`: a file URL pasted from a path. */
+  readonly kind: 'pathname' | 'file-string';
 }
 
 /**
@@ -72,24 +79,43 @@ function closeOf(text: string, from: number): number {
 /** Every `.pathname` read off a module-relative URL in one file, by line. */
 export function scanUrlPathname(path: string, source: string): readonly UrlPathnameSite[] {
   const text = stripComments(source);
-  const offsets: number[] = [];
+  const found: { readonly at: number; readonly kind: UrlPathnameSite['kind'] }[] = [];
   const names = new Set<string>();
   for (const open of text.matchAll(OPEN)) {
     const start = open.index + open[0].length;
     const end = closeOf(text, start);
-    if (end === -1 || !text.slice(start, end).includes(MODULE_URL)) continue;
-    if (PATHNAME.test(text.slice(end))) offsets.push(open.index);
-    const bound = BINDING.exec(text.slice(Math.max(0, open.index - 120), open.index))?.[1];
+    if (end === -1) continue;
+    const args = text.slice(start, end);
+    if (FILE_STRING.test(args)) found.push({ at: open.index, kind: 'file-string' });
+    if (!args.includes(MODULE_URL)) continue;
+    const before = text.slice(Math.max(0, open.index - 120), open.index);
+    if (PATHNAME.test(text.slice(end)) || DESTRUCTURED.test(before)) {
+      found.push({ at: open.index, kind: 'pathname' });
+    }
+    const bound = BINDING.exec(before)?.[1];
     if (bound !== undefined) names.add(bound);
   }
   for (const name of names) {
     const read = new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}\\s*\\.\\s*pathname\\b`, 'g');
-    for (const match of text.matchAll(read)) offsets.push(match.index);
+    for (const match of text.matchAll(read)) found.push({ at: match.index, kind: 'pathname' });
   }
-  return offsets.sort((a, b) => a - b).map((at) => ({ path, line: lineOf(source, at) }));
+  return found
+    .sort((a, b) => a.at - b.at)
+    .filter((one, index, all) => index === 0 || all[index - 1]?.at !== one.at)
+    .map(({ at, kind }) => ({ path, line: lineOf(source, at), kind }));
 }
 
-export const urlPathnameFindingFor = (site: UrlPathnameSite): Finding => ({
+export const urlPathnameFindingFor = (site: UrlPathnameSite): Finding =>
+  site.kind === 'file-string'
+    ? {
+        code: 'X_URL_PATHNAME_AS_PATH',
+        cause: `${site.path}:${String(site.line)} builds a file URL by pasting a path into a 'file://' string — the path is never percent-encoded, so a # or ? in a directory ends it and a Windows C:\\ path is not a file URL at all`,
+        fix: `Bun.pathToFileURL(<path>) in place of the 'file://' string at ${site.path}:${String(site.line)} — and Bun.fileURLToPath(<url>) to read a path back out of it`,
+        at: `${site.path}:${String(site.line)}`,
+      }
+    : pathnameFinding(site);
+
+const pathnameFinding = (site: UrlPathnameSite): Finding => ({
   code: 'X_URL_PATHNAME_AS_PATH',
   cause: `${site.path}:${String(site.line)} reads .pathname off a URL built from import.meta.url and uses it as a filesystem path — it percent-encodes a space (%20) and answers /C:/… on Windows, so the path names nothing`,
   fix: `Bun.fileURLToPath(new URL('<specifier>', import.meta.url)) in place of the .pathname read at ${site.path}:${String(site.line)} — or join(import.meta.dir, '<segment>', …) from node:path`,

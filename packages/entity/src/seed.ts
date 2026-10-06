@@ -113,7 +113,8 @@ export interface SeedContext {
    * One row whose id the TABLE owns, matched on the natural key `by` names. Reads first so the
    * answer can be `'skipped'`, then writes with a single `on conflict … do update`, which is what
    * settles the race between two containers booting at once — the read is for the report, never
-   * for the decision.
+   * for the decision. On an `appendOnly` entity the write is `on conflict do nothing`: an absent
+   * row is appended, and a stored row the seed would CHANGE is refused (`X_ENTITY_APPEND_ONLY`).
    */
   upsert<Row, C extends ColumnMap>(
     entity: EntityCore<Row, C>,
@@ -319,6 +320,20 @@ export const defineSeed = (
             ) {
               metrics.skipped += 1;
               return 'skipped';
+            }
+            if (stored === undefined && entity.$appendOnly) {
+              // An appendOnly table refuses `do update` outright, even with nothing to update; a
+              // do-nothing conflict still settles two boots racing on the key, and the loser's row
+              // was the winner's — the same seed — so it is reported skipped, never a refusal.
+              // A CHANGED stored row still falls through below, to the append-only refusal.
+              const written = await repo.upsertAll([row], {
+                ...undo,
+                onConflict: key.by,
+                onMatch: 'nothing',
+              });
+              const outcome: SeedWrite = written.length > 0 ? 'inserted' : 'skipped';
+              metrics[outcome] += 1;
+              return outcome;
             }
             const write: SeedWrite = stored === undefined ? 'inserted' : 'updated';
             await repo.upsertAll([stored === undefined ? row : withoutPreserved(row, preserve)], {

@@ -422,6 +422,23 @@ describe('llm() screens its completion ceiling where the app writes it', () => {
     expect(error.cause).toContain('tokensIn');
   });
 
+  test('a declared money ceiling is screened too, under budget.costPerCall.minor', async () => {
+    // Unscreened, a `NaN` here beat every stricter ceiling in `derive` and capped nothing at all.
+    for (const minor of [...NOT_A_BOUND, -1]) {
+      const bounded = declare(promptFor(`cost-bound-${String(minor)}`), {
+        budget: { costPerCall: { minor, currency: 'USD' } },
+      });
+      const { provider, seen } = stub(ANSWER);
+      install(provider);
+      const error = await asyncRefusal(() =>
+        bounded({ postId: POST_ID }, { ctx: createContext() }),
+      );
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('budget.costPerCall.minor');
+      expect(seen.length).toBe(0);
+    }
+  });
+
   test('an honest ceiling still runs the call — the non-vacuity half', async () => {
     const bounded = declare(promptFor('budget-ok'), { maxTokens: 512 });
     const { provider, seen } = stub(ANSWER);

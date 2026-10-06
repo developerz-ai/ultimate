@@ -29,7 +29,7 @@ import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { BudgetLimits } from './budget';
-import { budgetKeysFor, currentBudget, withBudget } from './budget';
+import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import {
   LlmOutputInvalidError,
   LlmRefusedError,
@@ -394,7 +394,9 @@ function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
     ...(budget?.tokensIn === undefined
       ? {}
       : { tokensIn: finiteCount('llm', 'budget.tokensIn', budget.tokensIn) }),
-    ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
+    ...(budget?.costPerCall === undefined
+      ? {}
+      : { costPerCall: screenedMoney('llm', 'budget.costPerCall', budget.costPerCall) }),
   };
 }
 

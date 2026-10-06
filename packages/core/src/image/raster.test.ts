@@ -7,6 +7,7 @@ import { ImageDecodeFailedError, ImageTooLargeError } from './errors';
 import {
   assertPixelBudget,
   createRaster,
+  cropRaster,
   hasAlpha,
   MAX_IMAGE_PIXELS,
   type Raster,
@@ -134,5 +135,22 @@ describe('hasAlpha', () => {
     const raster = opaque(2, 2);
     raster.pixels.fill(0, 0, 3);
     expect(hasAlpha(raster)).toBe(false);
+  });
+});
+
+describe('cropRaster', () => {
+  test('copies exactly the region, row by row', () => {
+    const raster = createRaster(3, 3, 'test');
+    for (let i = 0; i < 9; i += 1) raster.pixels[i * 4] = i;
+    const out = cropRaster(raster, { x: 1, y: 1, width: 2, height: 2 });
+    expect([out.width, out.height]).toEqual([2, 2]);
+    expect([0, 1, 2, 3].map((i) => out.pixels[i * 4])).toEqual([4, 5, 7, 8]);
+  });
+
+  test('a region outside the raster is inconsistent geometry, refused by code', () => {
+    const raster = createRaster(2, 2, 'test');
+    expect(() => cropRaster(raster, { x: 1, y: 0, width: 2, height: 1 })).toThrow(
+      ImageDecodeFailedError,
+    );
   });
 });

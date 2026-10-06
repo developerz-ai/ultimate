@@ -25,8 +25,13 @@
 // reported; `a === b` is not, and never will be. False positives are PINNED with the sentence
 // saying what the value actually is — a search token, a job state, a route path — because narrowing
 // the vocabulary to make one finding go away is how the next real one gets through.
-// `scripts/lib/secret-compare-pins.ts` is that table, 53 sites across 14 packages on day one, and
-// `@ultimat3/auth` is not one of them.
+// `scripts/lib/secret-compare-pins.ts` is that table, and `@ultimat3/auth` is not in it. PER SITE
+// since plan 101 sweep 11 — `<path>: <comparison>` — because a per-package count let a pinned false
+// positive be deleted and a real unsafe comparison added in the same package with no number moving.
+//
+// A TEMPLATE is read for what it interpolates: `` sig === `sha256=${hmac(body)}` `` is a value
+// computed at run time, and until sweep 11 its backtick alone made it a constant. `a.equals(b)` and
+// `Buffer.compare(a, b)` stop at the first differing byte too, and are read like `deepEquals`.
 //
 // WHAT IT DOES NOT REPORT, and both were measured rather than guessed: a comparison against an
 // INERT operand (`token === null`, `secret.length === 0`, `state === 'running'`), which
@@ -34,8 +39,9 @@
 // which matches 362 sites and is needed by none of `@ultimat3/auth`'s twelve real comparisons.
 //
 //   bun run secret-compare  ·  bun run scripts/secret-compare.ts [--json]
-//   bun run scripts/secret-compare.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
+//   bun run scripts/secret-compare.ts --unpin <path>[,<path>]   # shrink the ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { balancedClose } from './lib/balanced-paren';
@@ -54,6 +60,7 @@ import {
 } from './lib/secret-compare-operands';
 import { SECRET_COMPARE_PINS, SECRET_PINS_FILE } from './lib/secret-compare-pins';
 import { isTestPath, lineOf } from './lib/source-scan';
+import { withInterpolations } from './lib/template-interpolations';
 
 const SCRIPT = 'secret-compare';
 const EXPLAIN = 'bun run scripts/secret-compare.ts --explain --json lists every one';
@@ -70,7 +77,13 @@ export {
   SECRET_WORDS,
 } from './lib/secret-compare-operands';
 
-export type SecretCompareKind = 'equality' | 'includes' | 'prefix' | 'switch' | 'deep-equal';
+export type SecretCompareKind =
+  | 'equality'
+  | 'includes'
+  | 'prefix'
+  | 'switch'
+  | 'deep-equal'
+  | 'buffer-equal';
 
 export interface SecretCompareSite {
   readonly path: string;
@@ -116,6 +129,25 @@ const CASE = /\bcase\s+([^:\n]+):/g;
  */
 const DEEP_EQUAL = /(?<![\w$.])(?:Bun\s*\.\s*)?deepEquals\s*\(/g;
 
+/**
+ * `Buffer.compare(a, b)` — a byte-order sort that returns at the first differing byte, which is
+ * the same oracle `===` is. Its instance sibling `a.equals(b)` is below, with `.equals(`.
+ */
+const BUFFER_COMPARE = /(?<![\w$.])Buffer\s*\.\s*compare\s*\(/g;
+
+/** The two-argument comparisons, each read on every argument. */
+const CALLS: readonly (readonly [RegExp, SecretCompareKind])[] = [
+  [DEEP_EQUAL, 'deep-equal'],
+  [BUFFER_COMPARE, 'buffer-equal'],
+];
+
+/**
+ * `a.equals(b)` — `Buffer#equals`, `Uint8Array`-alike `equals`: a byte loop that stops at the
+ * first difference. SYMMETRIC, like a prefix test: the secret may be either the receiver or the
+ * argument, and `timingSafeEqual` takes both in either order.
+ */
+const EQUALS = /\.equals\s*\(/g;
+
 /** One call's arguments, split on TOP-LEVEL commas. */
 const argumentsOf = (inner: string): readonly string[] => {
   const args: string[] = [];
@@ -159,8 +191,10 @@ const closingBrace = (code: string, from: number): number => {
 export function scanSecretCompares(
   path: string,
   source: string,
-  code: string = maskLiterals(source),
+  masked: string = maskLiterals(source),
 ): readonly SecretCompareSite[] {
+  // A `${…}` body is code that runs: read it, never the template's static text.
+  const code = withInterpolations(source, masked);
   const sites: SecretCompareSite[] = [];
   const elementAt = predicateElementAt(code);
   for (const match of code.matchAll(EQUALITY)) {
@@ -226,25 +260,53 @@ export function scanSecretCompares(
       });
     }
   }
-  for (const match of code.matchAll(DEEP_EQUAL)) {
-    const open = match.index + match[0].length - 1;
-    const close = balancedClose(code, open);
-    if (close === -1) continue;
-    const args = argumentsOf(code.slice(open + 1, close)).filter((one) => !isInert(one));
-    const name = args.map((one) => namesASecret(one)).find((one) => one !== undefined);
+  for (const [pattern, kind] of CALLS) {
+    for (const match of code.matchAll(pattern)) {
+      const open = match.index + match[0].length - 1;
+      const close = balancedClose(code, open);
+      if (close === -1) continue;
+      const args = argumentsOf(code.slice(open + 1, close)).filter((one) => !isInert(one));
+      const name = args.map((one) => namesASecret(one)).find((one) => one !== undefined);
+      if (name === undefined) continue;
+      sites.push({
+        path,
+        line: lineOf(code, match.index),
+        kind,
+        name,
+        source: `${match[0].replace(/\s+/g, '')}${args.join(', ')})`,
+      });
+    }
+  }
+  for (const match of code.matchAll(EQUALS)) {
+    const receiver = operandBefore(code, match.index);
+    const argument = operandAfter(code, match.index + match[0].length);
+    if (isInert(receiver) || isInert(argument)) continue;
+    const element = elementAt(match.index);
+    const name = namesASecret(argument, element) ?? namesASecret(receiver, element);
     if (name === undefined) continue;
     sites.push({
       path,
       line: lineOf(code, match.index),
-      kind: 'deep-equal',
+      kind: 'buffer-equal',
       name,
-      source: `${match[0].trim()}${args.join(', ')})`,
+      source: `${receiver}.equals(${argument})`,
     });
   }
   return sites.sort((a, b) => a.line - b.line);
 }
 
 export type SecretCompareGap = RatchetGap<SecretCompareSite>;
+
+/**
+ * The pin row a site answers to: its file and the comparison as the rule quotes it, whitespace
+ * squeezed so a Biome rewrap is the same row. Never its line — an edit above it moves that.
+ */
+export const secretCompareSiteKey = (site: SecretCompareSite): string =>
+  `${site.path}: ${site.source.replace(/\s+/g, ' ').trim()}`;
+
+/** `--unpin <path>` names every row of that file. */
+export const secretCompareUnpinRows = (name: string, pins: PinTable): readonly string[] =>
+  Object.keys(pins).filter((key) => key === name || key.startsWith(`${name}: `));
 
 export interface SecretCompareInput {
   readonly files: readonly SourceFile[];
@@ -261,43 +323,46 @@ export const checkSecretCompares = (input: SecretCompareInput): readonly SecretC
     ),
     input.pins,
     input.files.length > 0,
+    secretCompareSiteKey,
   );
+
+/** The file a site row names: everything before the first `: `. */
+const fileOf = (key: string): string => key.slice(0, Math.max(0, key.indexOf(': '))) || key;
 
 const at = (site: SecretCompareSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
 /**
- * EVERY comparison, never only the first — `ratchet.ts`'s `sites` says why: the first site of a
- * package is usually pinned already, and the one that took it over the pin is the newest.
+ * One row's comparisons over its count. The row is ONE site, so the fix names it outright: the
+ * copies the cause lists are the same comparison, and the one this change added is among them.
  */
 const overFinding = (gap: SecretCompareGap): Finding => {
-  const sites = gap.sites ?? (gap.first === undefined ? [] : [gap.first]);
   const listed = siteList(gap, (site) => `${at(site)} \`${site.source}\``, EXPLAIN);
-  const [only] = sites;
-  const where =
-    sites.length === 1 && only !== undefined
-      ? `the comparison at ${at(only)}`
-      : `${String(gap.found - gap.pinned)} of the ${String(sites.length)} comparisons the cause lists — the one this change added —`;
-  const named = sites.length === 1 && only !== undefined ? `"${only.name}"` : 'the value';
+  const lead = leadSite(gap);
+  const named = lead === undefined ? 'the value' : `"${lead.name}"`;
+  const row =
+    gap.pinned === 0
+      ? `add the row '${gap.pkg}': { count: ${String(gap.found)}, reason: '<what ${named} is>' } to SECRET_COMPARE_PINS in ${SECRET_PINS_FILE}`
+      : `raise the row '${gap.pkg}' in ${SECRET_PINS_FILE} to ${String(gap.found)} with a // why: on it`;
   return {
     code: 'X_SECRET_COMPARED_UNSAFELY',
-    cause: `${gap.pkg} compares a value named as a secret with a short-circuiting operator in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${listed} — whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
-    fix: `replace ${where} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, add ${gap.pkg} to SECRET_COMPARE_PINS in ${SECRET_PINS_FILE} with the sentence saying what it is`,
-    at: at(leadSite(gap)),
+    cause: `${gap.pkg} — a value named as a secret compared with a short-circuiting operator in ${String(gap.found)} place(s), pinned at ${String(gap.pinned)} — ${listed} — whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
+    fix: `replace the comparison at ${at(lead)} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, ${row}`,
+    at: at(lead),
   };
 };
 
 const staleFinding = (gap: SecretCompareGap): Finding => ({
   code: 'X_SECRET_COMPARE_PIN_STALE',
-  cause: `${gap.pkg} is pinned at ${String(gap.pinned)} secret-named comparison(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/secret-compare.ts --unpin ${gap.pkg}`,
+  cause: `the row '${gap.pkg}' is pinned at ${String(gap.pinned)} comparison(s) and the tree has ${String(gap.found)} — the row is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
+  fix: `bun run scripts/secret-compare.ts --unpin ${renderFixShellArg(fileOf(gap.pkg), '<the file the row names>')}`,
   at: SECRET_PINS_FILE,
 });
 
 const unexplainedFinding = (gap: SecretCompareGap): Finding => ({
   code: 'X_SECRET_COMPARE_PIN_UNEXPLAINED',
-  cause: `${gap.pkg} is pinned with a blank reason, so nothing records what its ${String(gap.found)} secret-named comparison(s) really compare — a count with no sentence is the waiver this table exists to refuse, and the pin holds nothing`,
-  fix: `write what each remaining value in ${gap.pkg} actually is — a search token, a job state, a route path — in ${SECRET_PINS_FILE}; or replace the comparisons with timingSafeEqual(a, b) from @ultimat3/core and run bun run scripts/secret-compare.ts --unpin ${gap.pkg}`,
+  cause: `the row '${gap.pkg}' is pinned with a blank reason, so nothing records what its ${String(gap.found)} comparison(s) really compare — a count with no sentence is the waiver this table exists to refuse, and the pin holds nothing`,
+  fix: `write what the value at '${gap.pkg}' actually is — a search token, a job state, a route path — in ${SECRET_PINS_FILE}; or replace the comparison with timingSafeEqual(a, b) from @ultimat3/core and run bun run scripts/secret-compare.ts --unpin ${renderFixShellArg(fileOf(gap.pkg), '<the file the row names>')}`,
   at: SECRET_PINS_FILE,
 });
 
@@ -332,7 +397,7 @@ const PROBE: SiteProbe<SecretCompareSite> = {
 export const secretCompareGaps = async (root: string): Promise<readonly SecretCompareGap[]> =>
   newSitesFirst(
     root,
-    ratchetGaps(await secretCompareSites(root), SECRET_COMPARE_PINS, true),
+    ratchetGaps(await secretCompareSites(root), SECRET_COMPARE_PINS, true, secretCompareSiteKey),
     PROBE,
   );
 
@@ -348,7 +413,9 @@ if (import.meta.main) {
     sites: secretCompareSites,
     findingFor: secretCompareFindingFor,
     probe: PROBE,
+    groupOf: secretCompareSiteKey,
+    unpinRows: secretCompareUnpinRows,
     clean:
-      'no package compares a secret-named value with ===, !==, .includes(), .indexOf(), a prefix test, a switch or deepEquals above its pin',
+      'no secret-named value is compared with ===, !==, .includes(), .indexOf(), a prefix test, a switch, deepEquals, .equals() or Buffer.compare() outside a pinned site',
   });
 }

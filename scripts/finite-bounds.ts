@@ -61,8 +61,12 @@
 //      own assert reads as unchecked here, and the answer is to refuse it where it is written too —
 //      which is the layered form `backfill()` and `inBatches()` already use.
 //   4. a default that is not a numeric LITERAL and not a `SCREAMING_SNAKE` constant this corpus
-//      declares as one. `?? 0` and `?? 1` are excluded outright: they are accumulator identities
-//      (`map.get(k) ?? 0`), not configuration, and they were the whole of the noise floor.
+//      declares as one. `?? 0` and `?? 1` are excluded: they are accumulator identities
+//      (`map.get(k) ?? 0`), not configuration, and they were the whole of the noise floor — EXCEPT,
+//      since plan 101 sweep 11, when the left side is read off an options bag (`options.`, `opts.`,
+//      `config.`, `settings.`, at any depth) or the default lands straight on a
+//      bound (`length:`, `new Array(`, `.slice(`, a timer's delay). `Array.from({ length:
+//      options.concurrency ?? 1 })` is the `hive()` defect above, and the exemption hid it.
 //
 // WHAT WAS LOOKED FOR AND FOUND CLEAN, 2026-08-26, so the next agent does not re-derive it:
 //   `Number(process.env.…)` — 24 hits, every one a COMMENT or a `fix:` string. This tree never does
@@ -185,6 +189,28 @@ export function numericTables(files: readonly SourceFile[]): ReadonlySet<string>
 const DEFAULTED =
   /(?<![\w$.?])([A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*)+)\s*\?\?\s*([\w$.]+(?:\[[^\]\n]+\])?)(?![\w$(.])/g;
 
+/**
+ * A path segment that names an options bag — the one place a NAME decides, and only for 0 / 1.
+ * The bare words only: a `…Options` suffix was measured at two sites in this tree, both a duration
+ * the worker itself measured (`nackOptions.durationMs`), and no defect.
+ */
+const OPTIONS_SEGMENT = /^(?:options|opts|config|settings)$/;
+
+/** Text in front of a `??` that puts its answer straight on a bound. */
+const BOUND_BEFORE =
+  /(?:\blength\s*:|\bnew\s+Array\s*\(|\.slice\s*\((?:[^,;()]*,)?|\b(?:setTimeout|setInterval)\s*\([^;]*,)\s*$/;
+
+/**
+ * Whether a `?? 0` / `?? 1` is still configuration: read off an options bag, or landing on a bound.
+ * Elsewhere it is an accumulator identity and the rule stays quiet.
+ */
+const identityIsConfiguration = (path: string, before: string): boolean =>
+  path
+    .split(/\??\./)
+    .slice(0, -1)
+    .some((segment) => OPTIONS_SEGMENT.test(segment.replace(/^#/, ''))) ||
+  BOUND_BEFORE.test(before);
+
 /** `DEFAULT_TTL_MS[input.purpose]` — a table read, whose TABLE name is what settles it. */
 const INDEXED_FALLBACK = /^([A-Za-z_$][\w$]*)\[/;
 
@@ -270,8 +296,12 @@ export function scanFiniteBounds(
   const sites: FiniteBoundSite[] = [];
   for (const match of code.matchAll(DEFAULTED)) {
     const fallback = (match[2] as string).trim();
-    // Accumulator identities, not configuration — and the whole of the noise floor.
-    if (fallback === '0' || fallback === '1') continue;
+    const lineStart = code.lastIndexOf('\n', match.index) + 1;
+    const before = code.slice(lineStart, match.index);
+    // Accumulator identities, not configuration — and the whole of the noise floor — unless the
+    // read is an option or the answer is a bound.
+    const identity = fallback === '0' || fallback === '1';
+    if (identity && !identityIsConfiguration(match[1] as string, before)) continue;
     const indexed = INDEXED_FALLBACK.exec(fallback);
     const isDefault =
       indexed === null
@@ -280,8 +310,7 @@ export function scanFiniteBounds(
     if (!isDefault) continue;
     const path0 = match[1] as string;
     const option = path0.slice(path0.lastIndexOf('.') + 1);
-    const lineStart = code.lastIndexOf('\n', match.index) + 1;
-    const assigned = ASSIGNED.exec(code.slice(lineStart, match.index));
+    const assigned = ASSIGNED.exec(before);
     const subjects = assigned === null ? [option] : [option, assigned[1] as string];
     if (repaired(spans, subjects)) continue;
     sites.push({

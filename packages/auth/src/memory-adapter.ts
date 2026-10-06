@@ -21,6 +21,24 @@ import { timingSafeEqual } from './tokens';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 
+/**
+ * `BuiltinAdapter`'s `order by email collate "C"`: byte order over UTF-8, which is CODE-POINT order
+ * — never `localeCompare` (the machine's locale) and never `<` on strings, whose UTF-16 code units
+ * put an astral character (a lead surrogate, 0xD8xx) ahead of U+E000–U+FFFF.
+ */
+const byCodePoint = (a: string, b: string): number => {
+  const left = a[Symbol.iterator]();
+  const right = b[Symbol.iterator]();
+  for (;;) {
+    const x = left.next();
+    const y = right.next();
+    if (x.done === true || y.done === true)
+      return (x.done === true ? 0 : 1) - (y.done === true ? 0 : 1);
+    const delta = (x.value.codePointAt(0) ?? 0) - (y.value.codePointAt(0) ?? 0);
+    if (delta !== 0) return delta;
+  }
+};
+
 export class MemoryAdapter implements AuthAdapter {
   readonly name = 'memory';
   readonly #clock: Clock;
@@ -178,7 +196,7 @@ export class MemoryAdapter implements AuthAdapter {
       .filter((user) => user.orgId === orgId)
       .filter((user) => query?.includeDisabled === true || user.disabledAt === null)
       .filter((user) => query?.role === undefined || user.roles.includes(query.role))
-      .sort((a, b) => a.email.localeCompare(b.email));
+      .sort((a, b) => byCodePoint(a.email, b.email));
   }
 
   async getSession(id: string): Promise<AuthSession | null> {

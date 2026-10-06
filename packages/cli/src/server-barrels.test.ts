@@ -50,6 +50,17 @@ describe('an import of a server barrel', () => {
     expect(barrelImports("// import { x } from '@ultimat3/entity';\n", map)).toEqual([]);
   });
 
+  // A side-effect import binds nothing and still EVALUATES the barrel — the whole server half,
+  // SQL renderer included, lands in the island exactly as a value import does.
+  test('a side-effect import is one, with its line', () => {
+    const source = ["import '@ultimat3/entity/record';", '', 'import "@ultimat3/entity";'].join(
+      '\n',
+    );
+    expect(barrelImports(source, map)).toEqual([
+      { line: 3, barrel: '@ultimat3/entity', entry: '@ultimat3/entity/record' },
+    ]);
+  });
+
   test('one mixed clause still runs the barrel: a value beside a type', () => {
     expect(
       barrelImports("import { type Row, recordKey } from '@ultimat3/entity';", map),

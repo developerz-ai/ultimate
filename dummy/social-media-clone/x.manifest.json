@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "92b47d5d1ee4eea9",
+  "buildId": "dcf87a4276aa6d1b",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -1880,7 +1880,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -1946,7 +1948,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.queue.resume",
@@ -1955,7 +1959,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -2011,7 +2017,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.task.resume",
@@ -2020,7 +2028,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.task.run-now",
@@ -2029,7 +2039,9 @@
               "input": false,
               "when": false,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -2218,7 +2230,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             },
             {
               "name": "job.retry-from-step",
@@ -2227,7 +2241,9 @@
               "input": true,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.run-now",
@@ -2236,7 +2252,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             },
             {
               "name": "job.cancel",
@@ -2245,7 +2263,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.remove",
@@ -2254,7 +2274,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             }
           ]
         }

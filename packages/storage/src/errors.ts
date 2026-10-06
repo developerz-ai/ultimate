@@ -66,7 +66,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_LIST_FAILED: 'the objects could not be listed',
   X_STORAGE_QUARANTINED: 'the object is still in quarantine',
   X_STORAGE_NOT_PENDING: 'the key is not a pending upload',
-  X_STORAGE_KEY_CONFLICT: 'the key collides with another key on the local disk',
+  X_STORAGE_KEY_CONFLICT: 'the key collides with another key on a local or memory disk',
   X_STORAGE_PUT_FAILED: 'the object could not be written',
   X_STORAGE_READ_FAILED: 'the object could not be read',
   X_STORAGE_OBJECT_LOCKED: 'the object is under retention or a legal hold',
@@ -201,8 +201,9 @@ export const getTooLarge = (
 /**
  * The local disk stores an object as a FILE at its key, so a key cannot also be the directory of
  * another: `put('a')` then `put('a/b')`, or the reverse, or the same pair one tree over in the
- * sidecars (`a` and `a.json/b`). It surfaced as a bare `ENOTDIR` / `EISDIR`. S3 and the memory
- * disk hold both — this is the local disk's own limit, refused by name rather than hidden.
+ * sidecars (`a` and `a.json/b`). It surfaced as a bare `ENOTDIR` / `EISDIR`. S3 holds both —
+ * this is the local disk's own limit, refused by name rather than hidden, and the memory disk
+ * emulates it (`driver-memory-conflict.ts`) because a test's disk stands in for the dev disk.
  *
  * The `fix` lists what is in the way: the remedy is storing one of the two under another key, and
  * which one is only decidable by a reader who can see both.
@@ -210,7 +211,7 @@ export const getTooLarge = (
 export const keyConflict = (disk: string, key: string, blocking: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_KEY_CONFLICT',
-    cause: `the "${disk}" disk is a local one and cannot store "${key}": "${blocking}" is already on it, and a POSIX path is a file or a directory, never both — so one key cannot be a path prefix of another here. Store one of the two under a different key; an s3 disk holds both`,
+    cause: `the "${disk}" disk stores keys as POSIX paths (a local disk, or the memory disk standing in for one) and cannot store "${key}": "${blocking}" is already on it, and a POSIX path is a file or a directory, never both — so one key cannot be a path prefix of another here. Store one of the two under a different key; an s3 disk holds both`,
     // The REGISTERED name, never the driver kind: `disk('local')` on a disk registered as
     // `uploads` lists another disk, or answers X_STORAGE_DISK_UNKNOWN.
     fix: `disk(${renderFixLiteral(disk, "'local'")}).list({ prefix: ${renderFixLiteral(blocking, "'a/'")} })`,

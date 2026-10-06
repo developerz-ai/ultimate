@@ -213,10 +213,11 @@ export class ChannelHub {
    * Every open records topic is presumed to have missed a change: a new epoch, and every member
    * told `replay-gap`. The `sync` node calls it beside `LiveQueryRegistry.invalidate()` — seq is
    * minted here from the changes this node SEES, so a change the bus dropped leaves a hole the
-   * ring cannot detect and would replay as complete history.
+   * ring cannot detect and would replay as complete history. Given an `entity`, only the topics
+   * carrying it: what a bulk write the in-process replicator could not shape as rows stales.
    */
-  invalidate(): number {
-    return this.#logs.invalidate();
+  invalidate(entity?: string): number {
+    return this.#logs.invalidate(entity);
   }
 
   /**

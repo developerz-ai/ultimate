@@ -85,6 +85,47 @@ describe('niceTicks', () => {
   });
 });
 
+/**
+ * A range at the edge of float64 used to hang the process: the ladder climbs to a step whose
+ * `ceil(hi / step) * step` overflows to `Infinity`, the next rung IS `Infinity`, `min`/`max` go
+ * `NaN`, and `NaN <= cap` is false forever — one LineChart SSR pinned a core. A synchronous loop
+ * cannot be interrupted in-process, so the hostile inputs run in a child with a hard timeout.
+ */
+describe('niceTicks — a range float64 cannot step through', () => {
+  const HOSTILE: readonly (readonly [number, number])[] = [
+    [0, 1.5e308],
+    [-1.7e308, 1.7e308],
+    [1.5e308, 1.5e308],
+    [-Number.MAX_VALUE, Number.MAX_VALUE],
+    [Number.MAX_VALUE, Number.MAX_VALUE],
+    [0, 5e-324],
+  ];
+
+  test('returns a finite scale bounding the data instead of looping', () => {
+    const script = `
+      import { niceTicks } from ${JSON.stringify(`${import.meta.dir}/chart-ticks-view.ts`)};
+      const out = ${JSON.stringify(HOSTILE)}.map(([lo, hi]) => niceTicks(lo, hi, 6));
+      process.stdout.write(JSON.stringify(out));
+    `;
+    const child = Bun.spawnSync([process.execPath, '-e', script], { timeout: 5_000 });
+    expect({ exit: child.exitCode, err: child.stderr.toString() }).toEqual({ exit: 0, err: '' });
+    const scales: unknown = JSON.parse(child.stdout.toString());
+    expect(Array.isArray(scales) && scales.length).toBe(HOSTILE.length);
+    for (const [index, [lo, hi]] of HOSTILE.entries()) {
+      const scale = (scales as { min: number; max: number; step: number; ticks: number[] }[])[
+        index
+      ];
+      // JSON writes a non-finite number as `null`, so a NaN or Infinity fails these too.
+      expect([lo, scale?.min !== undefined && scale.min <= lo]).toEqual([lo, true]);
+      expect([hi, scale?.max !== undefined && scale.max >= hi]).toEqual([hi, true]);
+      expect(scale?.ticks.every((tick) => Number.isFinite(tick))).toBe(true);
+      expect(scale?.ticks.length).toBeGreaterThanOrEqual(2);
+      expect(scale?.ticks.length).toBeLessThanOrEqual(6);
+      expect(typeof scale?.step === 'number' && scale.step > 0).toBe(true);
+    }
+  });
+});
+
 describe('niceTicks — integer data', () => {
   test('a small count gets whole steps, never 0.4 or 0.5 between two whole numbers', () => {
     expect(niceTicks(0, 3, 6, { integer: true }).ticks).toEqual([0, 1, 2, 3]);

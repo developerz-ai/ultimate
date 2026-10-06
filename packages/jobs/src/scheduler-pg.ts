@@ -46,7 +46,6 @@ export function pgSchedulerState(executor: PgExecutor): SchedulerState {
         fired: number | string;
         id: string | null;
         run_id: string | null;
-        idempotency_key: string | null;
       }>(SQL_SCHEDULER_FIRE, [
         fire.task,
         fire.occurrenceMs,
@@ -65,17 +64,20 @@ export function pgSchedulerState(executor: PgExecutor): SchedulerState {
         fire.watermarkMs ?? null,
       ]);
       if (Number(rows[0]?.fired ?? 0) === 0) return undefined;
+      // Keyed on the id THIS statement minted (`ids[index]`), never on the idempotency key: the
+      // key is unique per (name, tenant, key), so two jobs of one occurrence may share it, and a
+      // map by key told both callers the second one's id — where the memory store tells each its own.
       const queued = new Map(
         rows.flatMap((row) =>
-          row.id === null || row.run_id === null || row.idempotency_key === null
+          row.id === null || row.run_id === null
             ? []
-            : [[row.idempotency_key, { id: row.id, runId: row.run_id }] as const],
+            : [[row.id.toLowerCase(), { id: row.id, runId: row.run_id }] as const],
         ),
       );
       // A job absent from the answer met a LIVE row of its key — a fire from before this
       // statement existed, still in flight. It is that row's work, so it is reported deduped.
-      return fire.jobs.map((request) => {
-        const inserted = queued.get(request.idempotencyKey);
+      return fire.jobs.map((_, index) => {
+        const inserted = queued.get(String(ids[index]).toLowerCase());
         return inserted === undefined
           ? { id: '', runId: '', deduped: true }
           : { ...inserted, deduped: false };

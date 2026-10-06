@@ -49,6 +49,21 @@ describe('parsePgUrl', () => {
     expect(target.database).toBe('my db');
   });
 
+  test('an unencoded % in the user, password or database is X_REPLICATION_FAILED, never a URIError', () => {
+    for (const [url, part] of [
+      ['postgres://ali%ce:pass@db.example.test/app', 'user'],
+      ['postgres://alice:50%off@db.example.test/app', 'password'],
+      ['postgres://alice:pass@db.example.test/a%pp', 'database'],
+    ] as const) {
+      const error = thrown(() => parsePgUrl(url));
+      expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+      const cause = isUltimateError(error) ? error.cause : '';
+      expect(cause).toContain(part);
+      expect(cause).not.toContain('%');
+      expect(isUltimateError(error) ? error.fix : '').toContain('encodeURIComponent');
+    }
+  });
+
   test('postgresql: is accepted as a scheme', () => {
     expect(parsePgUrl('postgresql://db.example.test/db').host).toBe('db.example.test');
   });

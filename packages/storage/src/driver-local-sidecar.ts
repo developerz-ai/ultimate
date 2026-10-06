@@ -15,6 +15,12 @@ export interface Sidecar extends SidecarLock {
   readonly etag: string;
   readonly cacheControl?: string | undefined;
   readonly metadata?: Readonly<Record<string, string>> | undefined;
+  /**
+   * The write's instant as ISO, read off the disk's injected `Clock` — what `put()`/`copy()`
+   * returned, so a later `stat`/`get`/`list` reports the same instant (the memory disk's rule).
+   * Absent on a sidecar written before it was recorded: the file's mtime answers instead.
+   */
+  readonly lastModified?: string | undefined;
 }
 
 /** `ObjectLock` → the fields a sidecar records. Nothing when nothing locks the object. */
@@ -74,11 +80,16 @@ export function parseSidecar(raw: unknown): Sidecar | undefined {
   const cacheControl = record['cacheControl'];
   const metadata = record['metadata'];
   const retention = parseRetention(record['retention']);
+  const lastModified = record['lastModified'];
   return {
     contentType,
     etag,
     ...(typeof cacheControl === 'string' ? { cacheControl } : {}),
     ...(isStringRecord(metadata) ? { metadata } : {}),
+    // An instant that does not parse is no instant — never an invalid `Date` handed to a reader.
+    ...(typeof lastModified === 'string' && Number.isFinite(Date.parse(lastModified))
+      ? { lastModified }
+      : {}),
     ...(retention === undefined ? {} : { retention }),
     ...(record['legalHold'] === true ? { legalHold: true } : {}),
   };

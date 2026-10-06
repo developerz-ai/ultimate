@@ -101,8 +101,10 @@ describe('the repairs the rule RECOGNISES rather than pins', () => {
     expect(keys(`${table}const v = Object.hasOwn(T, key) ? T[key] : undefined;`)).toEqual([]);
   });
 
-  test('an `in` guard settles it too', () => {
-    expect(keys(`${table}if (key in T) {\n  return T[key];\n}`)).toEqual([]);
+  test('an Object.hasOwn guard on the line above settles it, spaced however Biome wraps it', () => {
+    expect(
+      keys(`${table}if (Object.hasOwn( T,  input.key )) {\n  return T[input.key];\n}`),
+    ).toEqual([]);
   });
 
   test('a WRITE builds the table, and the prototype answer never reaches a caller', () => {
@@ -122,6 +124,48 @@ describe('the repairs the rule RECOGNISES rather than pins', () => {
   test('a name that is not a Record object literal is not this rule subject', () => {
     expect(keys('const rows: string[] = [];\nconst v = rows[index];')).toEqual([]);
     expect(keys('const m = new Map<string, number>();\nconst v = m.get(key);')).toEqual([]);
+  });
+});
+
+// Sweep 11 R4: four ways a read slipped the rule.
+describe('the guards the rule no longer takes on trust', () => {
+  const table = 'const T: Record<string, number> = {};\n';
+
+  test('`key in T` walks the prototype chain — "constructor" in {} is true — so it guards nothing', () => {
+    expect(keys(`${table}if (key in T) {\n  return T[key];\n}`)).toEqual(['T[key]']);
+  });
+
+  test('an Object.hasOwn check on a DIFFERENT key does not guard this one', () => {
+    expect(keys(`${table}const v = Object.hasOwn(T, other) ? T[key] : undefined;`)).toEqual([
+      'T[key]',
+    ]);
+  });
+
+  test('the guarded key read back through a type assertion is still the same key', () => {
+    expect(keys(`${table}if (Object.hasOwn(T, d)) return T[d as Dialect];`)).toEqual([]);
+    expect(keys(`${table}if (Object.hasOwn(T, d)) return T[e as Dialect];`)).toEqual([
+      'T[e as Dialect]',
+    ]);
+  });
+
+  test('an optional-chained read is a read', () => {
+    expect(keys(`${table}const v = T?.[key];`)).toEqual(['T[key]']);
+    expect(keys(`${table}const v = Object.hasOwn(T, key) ? T?.[key] : 0;`)).toEqual([]);
+  });
+
+  test('a literal typed by `satisfies Record<…>` or `as Record<…>` is a Record table', () => {
+    expect(keys('const S = { a: 1 } satisfies Record<string, number>;\nconst v = S[key];')).toEqual(
+      ['S[key]'],
+    );
+    expect(
+      keys('const A = {\n  a: 1,\n} as Readonly<Record<string, number>>;\nconst v = A[key];'),
+    ).toEqual(['A[key]']);
+    expect(
+      keys(
+        'const N = { __proto__: null, a: 1 } satisfies Record<string, number>;\nconst v = N[k];',
+      ),
+    ).toEqual([]);
+    expect(keys('const P = { a: 1 } as const;\nconst v = P[key];')).toEqual([]);
   });
 });
 

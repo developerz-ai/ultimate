@@ -22,3 +22,13 @@ export function thrownBy(call: () => unknown): ThrownShape {
   // prints the assertion the caller wrote instead of a stack from inside this helper.
   return expect.unreachable('expected a throw');
 }
+
+/** `thrownBy` for a call that rejects rather than throws — the same shape, read off the rejection. */
+export async function thrownByAsync(call: () => Promise<unknown>): Promise<ThrownShape> {
+  try {
+    await call();
+  } catch (error) {
+    return error as ThrownShape;
+  }
+  return expect.unreachable('expected a rejection');
+}

@@ -9,8 +9,10 @@
 // WHAT IT SEES, over comment-stripped source — every package, every script, and BOTH tracked
 // apps, because an app's modules bundle for the browser exactly as a package's do:
 //   - `new AsyncLocalStorage`, `new ALS` where `ALS` is an alias bound by an import of
-//     `node:async_hooks`, and `new hooks.AsyncLocalStorage` through a namespace import;
-//   - the IMPORT itself — any binding of the class, aliased or namespaced, outside the seam.
+//     `node:async_hooks`, and `new hooks.AsyncLocalStorage` through a namespace or DEFAULT import;
+//   - the IMPORT itself — any binding of the class, aliased, namespaced or defaulted, outside the
+//     seam — and any RE-EXPORT of it (`export { AsyncLocalStorage as X } from …`, `export *`),
+//     which hands the class to every importer under a name this scan never sees again.
 //     That second rule is what makes the first hard to walk around: a construction needs a
 //     binding, and the binding is one line an alias cannot hide.
 //
@@ -65,7 +67,11 @@ interface Bindings {
 /** `import <clause> from '<module>'`, with the clause and the module captured separately. */
 const IMPORT = /\bimport\s+([^;]*?)\s*from\s*(['"])([^'"]+)\2/g;
 const NAMESPACE = /\*\s+as\s+([A-Za-z_$][\w$]*)/;
+/** `import hooks from …` / `import hooks, { … } from …` — the module object, as `* as` is. */
+const DEFAULT = /^(?!type\s)([A-Za-z_$][\w$]*)\s*(?:,|$)/;
 const NAMED = /\{([^}]*)\}/;
+/** `export <clause> from '<module>'` — a re-export binds nothing here and hands everything on. */
+const RE_EXPORT = /\bexport\s+([^;]*?)\s*from\s*(['"])([^'"]+)\2/g;
 /** `new Foo`, `new ns.Foo` — the generic argument and the argument list are irrelevant here. */
 const CONSTRUCTION = /\bnew\s+([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?/g;
 
@@ -84,10 +90,10 @@ export function asyncStorageBindings(code: string, file: string): Bindings {
     if (!HOOKS_MODULE.test(found[3] ?? '')) continue;
     const clause = found[1] ?? '';
     const bound: string[] = [];
-    const namespace = NAMESPACE.exec(clause);
-    if (namespace?.[1] !== undefined) {
-      namespaces.add(namespace[1]);
-      bound.push(`${namespace[1]}.${CLASS}`);
+    const whole = NAMESPACE.exec(clause)?.[1] ?? DEFAULT.exec(clause.trim())?.[1];
+    if (whole !== undefined) {
+      namespaces.add(whole);
+      bound.push(`${whole}.${CLASS}`);
     }
     for (const member of (NAMED.exec(clause)?.[1] ?? '').split(',')) {
       const parts = member.trim().split(/\s+as\s+/);
@@ -97,6 +103,17 @@ export function asyncStorageBindings(code: string, file: string): Bindings {
     }
     const line = lineAt(code, found.index);
     for (const name of bound) sites.push({ file, line, kind: 'binding', name });
+  }
+  for (const found of code.matchAll(RE_EXPORT)) {
+    if (!HOOKS_MODULE.test(found[3] ?? '')) continue;
+    const clause = (found[1] ?? '').replace(/^type\s+/, '');
+    const line = lineAt(code, found.index);
+    if (/^\*/.test(clause.trim())) sites.push({ file, line, kind: 'binding', name: '*' });
+    for (const member of (NAMED.exec(clause)?.[1] ?? '').split(',')) {
+      const parts = member.trim().split(/\s+as\s+/);
+      if (parts[0]?.replace(/^type\s+/, '') !== CLASS) continue;
+      sites.push({ file, line, kind: 'binding', name: parts[1] ?? CLASS });
+    }
   }
   return { direct, namespaces, sites };
 }

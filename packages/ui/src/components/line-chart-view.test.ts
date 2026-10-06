@@ -106,6 +106,25 @@ describe('lineLayout — the paths', () => {
   });
 });
 
+describe('lineLayout — values at the edge of float64', () => {
+  test('every coordinate stays finite, so the SSR draws a line rather than NaN', () => {
+    // `max - min` of the full range overflows to Infinity, and Infinity / Infinity is NaN.
+    for (const values of [
+      [-Number.MAX_VALUE, Number.MAX_VALUE],
+      [Number.MAX_VALUE, Number.MAX_VALUE],
+      [0, 1.5e308],
+    ]) {
+      const layout = layoutOf([values], false);
+      const ys = [...layout.ticks, ...(layout.series[0]?.points ?? [])].map((p) => p.y);
+      expect([values, ys.every(Number.isFinite), Number.isFinite(layout.baselineY)]).toEqual([
+        values,
+        true,
+        true,
+      ]);
+    }
+  });
+});
+
 describe('markedPoints', () => {
   test(`every point carries its marker up to ${MARKERS_ON_EVERY_POINT_UP_TO} keys`, () => {
     const points = layoutOf([[1, 2, 3]]).series[0]?.points ?? [];

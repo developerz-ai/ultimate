@@ -28,6 +28,8 @@ import {
   scanSecretCompares,
   secretCompareFindingFor,
   secretCompareGaps,
+  secretCompareSiteKey,
+  secretCompareUnpinRows,
 } from './secret-compare';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -38,21 +40,66 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 const names = (source: string): readonly string[] =>
   scanSecretCompares('packages/auth/src/a.ts', source).map((site) => site.name);
 
+const A_SITE = 'packages/auth/src/a.ts: a.tokenHash === b.tokenHash';
+const pin = (
+  count: number,
+  reason = 'a content hash this process computed, to detect a change',
+) => ({
+  count,
+  reason,
+});
+
 describe('a secret compared with a short-circuiting operator', () => {
-  test('a package over its pin has EVERY comparison named, not only its first', () => {
+  test('a pin holds ITS site only: a second comparison in the same package is its own finding', () => {
     const gaps = checkSecretCompares({
       files: [
         { path: 'packages/auth/src/a.ts', source: 'if (a.tokenHash === b.tokenHash) return;' },
         { path: 'packages/auth/src/b.ts', source: 'if (x.apiSecret === y.apiSecret) return;' },
       ],
-      pins: { auth: 1 },
+      pins: { [A_SITE]: pin(1) },
     });
+    expect(gaps.map((gap) => gap.pkg)).toEqual([
+      'packages/auth/src/b.ts: x.apiSecret === y.apiSecret',
+    ]);
     const finding = secretCompareFindingFor(gaps[0] as never);
-    expect(finding.cause).toContain('in 2 place(s) and is pinned at 1');
-    expect(finding.cause).toContain('packages/auth/src/a.ts:1');
-    expect(finding.cause).toContain('packages/auth/src/b.ts:1');
+    expect(finding.cause).toContain('in 1 place(s), pinned at 0');
     expect(finding.cause).toContain('x.apiSecret === y.apiSecret');
-    expect(finding.fix).toContain('1 of the 2 comparisons the cause lists');
+    expect(finding.at).toBe('packages/auth/src/b.ts:1');
+    expect(finding.fix).toContain(
+      "add the row 'packages/auth/src/b.ts: x.apiSecret === y.apiSecret'",
+    );
+  });
+
+  // Sweep 11 R4: per-package counts let a pinned false positive be swapped for a real one.
+  test('a pinned comparison deleted and a real one added in its place is still reported', () => {
+    const gaps = checkSecretCompares({
+      files: [
+        {
+          path: 'packages/auth/src/a.ts',
+          source: 'if (session.token === presented.token) return;',
+        },
+      ],
+      pins: { [A_SITE]: pin(1) },
+    });
+    expect(gaps.map((gap) => [gap.kind, gap.pkg])).toEqual([
+      ['stale', A_SITE],
+      ['over', 'packages/auth/src/a.ts: session.token === presented.token'],
+    ]);
+    expect(secretCompareFindingFor(gaps[0] as never).fix).toBe(
+      'bun run scripts/secret-compare.ts --unpin packages/auth/src/a.ts',
+    );
+  });
+
+  test('a site key is the file and the comparison, whitespace squeezed — never the line', () => {
+    const [site] = scanSecretCompares('packages/x/src/a.ts', '\n\nif (a.tokenHash ===\n    b) {}');
+    if (site === undefined) expect.unreachable('the scan found the site');
+    expect(secretCompareSiteKey(site)).toBe('packages/x/src/a.ts: a.tokenHash === b');
+  });
+
+  test('--unpin <path> names every row of that file and nothing of another', () => {
+    const pins = { [A_SITE]: pin(1), 'packages/auth/src/a.tsx: x === tokenHash': pin(1) };
+    expect(secretCompareUnpinRows('packages/auth/src/a.ts', pins)).toEqual([A_SITE]);
+    expect(secretCompareUnpinRows(A_SITE, pins)).toEqual([A_SITE]);
   });
 
   test('is reported, and the finding names timingSafeEqual', () => {
@@ -264,25 +311,30 @@ describe('the operand walk', () => {
 });
 
 describe('the ratchet moves in one direction', () => {
-  test('a package over its pin is a finding; at its pin it is not', () => {
+  const X_SITE = 'packages/x/src/a.ts: a.tokenHash === b.tokenHash';
+
+  test('a site over its pin is a finding; at its pin it is not', () => {
     const files = [
       { path: 'packages/x/src/a.ts', source: 'if (a.tokenHash === b.tokenHash) return;' },
     ];
     expect(checkSecretCompares({ files, pins: {} })).toHaveLength(1);
-    expect(checkSecretCompares({ files, pins: { x: { count: 1, reason: 'a fixture' } } })).toEqual(
-      [],
-    );
+    expect(checkSecretCompares({ files, pins: { [X_SITE]: pin(1) } })).toEqual([]);
+    // A per-PACKAGE row holds nothing any more: the key names no site.
+    expect(checkSecretCompares({ files, pins: { x: pin(1) } }).map((gap) => gap.kind)).toEqual([
+      'over',
+      'stale',
+    ]);
   });
 
   test('a pin above what the tree holds is stale, with the command that lowers it', () => {
     const gaps = checkSecretCompares({
       files: [{ path: 'packages/x/src/a.ts', source: 'const a = 1;' }],
-      pins: { x: { count: 2, reason: 'a fixture' } },
+      pins: { [X_SITE]: pin(2) },
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['stale']);
     const finding = secretCompareFindingFor(gaps[0] as never);
     expect(finding.code).toBe('X_SECRET_COMPARE_PIN_STALE');
-    expect(finding.fix).toBe('bun run scripts/secret-compare.ts --unpin x');
+    expect(finding.fix).toBe('bun run scripts/secret-compare.ts --unpin packages/x/src/a.ts');
   });
 
   test('an empty corpus is UNSCANNED, never a clean tree', () => {
@@ -291,38 +343,46 @@ describe('the ratchet moves in one direction', () => {
   });
 
   test('every pin carries a sentence saying what the value is — a blank one is a waiver', () => {
-    for (const [pkg, pin] of Object.entries(SECRET_COMPARE_PINS)) {
-      expect(`${pkg}: ${pin.reason}`.length).toBeGreaterThan(pkg.length + 60);
-      expect(pin.count).toBeGreaterThan(0);
+    for (const [site, row] of Object.entries(SECRET_COMPARE_PINS)) {
+      expect(row.reason.trim().length).toBeGreaterThan(40);
+      expect(row.count).toBeGreaterThan(0);
+      expect(site).toMatch(/^[\w./-]+\.tsx?: \S/);
     }
   });
 
   /** `@ultimat3/auth` is the package this rule was written for, and it is at zero. */
   test('auth holds no pin, because every comparison there goes through timingSafeEqual', () => {
-    expect(Object.hasOwn(SECRET_COMPARE_PINS, 'auth')).toBe(false);
+    expect(
+      Object.keys(SECRET_COMPARE_PINS).filter((site) => site.startsWith('packages/auth/')),
+    ).toEqual([]);
   });
 
-  test('--unpin lowers a count to what is measured and refuses to raise one', async () => {
+  test('--unpin lowers a site row to what is measured, deletes it at zero, refuses to raise', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-secret-pins-'));
     const path = join(dir, SECRET_PINS_FILE);
     await Bun.write(path, await Bun.file(join(repoRoot(), SECRET_PINS_FILE)).text());
+    const triple = 'packages/manifest/src/docs-search.ts: !matched.includes(token)';
+    const single = 'packages/time/src/cron-parse.ts: list.indexOf(token)';
     const fixture: Readonly<Record<string, SecretComparePin>> = {
-      jobs: { count: 5, reason: 'a fixture' },
-      time: { count: 1, reason: 'a fixture' },
+      [triple]: pin(3),
+      [single]: pin(1),
     };
 
-    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['jobs'], { jobs: 9 }, fixture)).toEqual([]);
-    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['jobs'], { jobs: 2 }, fixture)).toEqual([
-      'jobs -> 2',
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, [triple], { [triple]: 9 }, fixture)).toEqual([]);
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, [triple], { [triple]: 2 }, fixture)).toEqual([
+      `${triple} -> 2`,
     ]);
     expect(await Bun.file(path).text()).toContain('count: 2,');
 
-    // Zero deletes the whole entry, reason and all — a row claiming a debt of zero reads as a
-    // rule still in force over nothing.
-    expect(await applyUnpin(dir, SECRET_PINS_FILE, ['time'], {}, fixture)).toEqual(['time -> 0']);
+    // Zero deletes the whole entry — its `// why:`, count and reason — since a row claiming a
+    // debt of zero reads as a rule still in force over nothing.
+    expect(await applyUnpin(dir, SECRET_PINS_FILE, [single], {}, fixture)).toEqual([
+      `${single} -> 0`,
+    ]);
     const after = await Bun.file(path).text();
-    expect(after).not.toContain('  time: {');
-    expect(after).toContain('  jobs: {');
+    expect(after).not.toContain(single);
+    expect(after).toContain(triple);
+    expect(after).not.toContain('cron field `token`');
   });
 });
 
@@ -390,8 +450,13 @@ describe('a pin with a blank reason waives nothing', () => {
     source: 'export const ok = (a: string, b: string) => a.tokenHash === b.tokenHash;\n',
   };
 
+  const site = 'packages/x/src/a.ts: a.tokenHash === b.tokenHash';
+
   test('the count is not honoured, and the finding says the sentence is missing', () => {
-    const gaps = checkSecretCompares({ files: [file], pins: { x: { count: 1, reason: '  ' } } });
+    const gaps = checkSecretCompares({
+      files: [file],
+      pins: { [site]: { count: 1, reason: '  ' } },
+    });
     expect(gaps.map((gap) => gap.kind)).toContain('unexplained');
     const finding = secretCompareFindingFor(
       gaps.find((gap) => gap.kind === 'unexplained') as never,
@@ -404,7 +469,7 @@ describe('a pin with a blank reason waives nothing', () => {
     const gaps = checkSecretCompares({
       files: [file],
       pins: {
-        x: {
+        [site]: {
           count: 1,
           reason: 'a content hash this process computed, compared to detect a change',
         },

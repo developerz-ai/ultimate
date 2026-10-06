@@ -27,9 +27,12 @@ export interface BarrelImport {
   readonly entry: string;
 }
 
-/** `import` / `export … from` / `import()` of a VALUE from the barrel. `import type` runs nothing. */
+/**
+ * `import` / `export … from` / `import()` of a VALUE from the barrel, and the side-effect
+ * `import '…'` that binds nothing yet evaluates the whole module. `import type` runs nothing.
+ */
 const IMPORTS =
-  /\b(?:import|export)\s+(?!type\s)[^;'"]*?\bfrom\s*(['"])([^'"]+)\1|\bimport\s*\(\s*(['"])([^'"]+)\3\s*\)/g;
+  /\b(?:import|export)\s+(?!type\s)[^;'"]*?\bfrom\s*(['"])([^'"]+)\1|\bimport\s*\(\s*(['"])([^'"]+)\3\s*\)|\bimport\s*(['"])([^'"]+)\5/g;
 
 export function barrelImports(
   source: string,
@@ -41,7 +44,7 @@ export function barrelImports(
   const lineAt = lineIndex(code);
   const found: BarrelImport[] = [];
   for (const match of code.matchAll(IMPORTS)) {
-    const spec = match[2] ?? match[4] ?? '';
+    const spec = match[2] ?? match[4] ?? match[6] ?? '';
     const entry = barrels.get(spec);
     if (entry === undefined) continue;
     // `import { type A, type B } from …` binds nothing at runtime either.

@@ -5,7 +5,13 @@
 
 import { parseColor } from './color';
 import { imageUnsupported } from './errors';
-import { assertPixelBudget, createRaster, type ImageSize, type Raster } from './raster';
+import {
+  assertPixelBudget,
+  createRaster,
+  type ImageRegion,
+  type ImageSize,
+  type Raster,
+} from './raster';
 
 export type ImageFit = 'cover' | 'contain';
 
@@ -69,7 +75,15 @@ export interface Layout {
   readonly pad: number;
   /** The area inside the padding the artwork may occupy. */
   readonly inner: ImageSize;
-  /** What the source is resampled to before it is placed. */
+  /**
+   * The part of the source that is resampled, when it is not all of it: an UPSCALING `cover`
+   * whose aspect disagrees with the box. Resampling first would draw the whole source past the
+   * box only to clip it away — a 1x200 strip at 1000x200000 for a 1000x1000 box — so the visible
+   * region is cut first and `drawn` is the inner area. A downscaling `cover` resamples first: its
+   * `drawn` is never larger than the source, and no crop then means no full-size decode.
+   */
+  readonly crop: ImageRegion | undefined;
+  /** What the source (or `crop`) is resampled to before it is placed: within `max(source, box)`. */
   readonly drawn: ImageSize;
   /** Parsed once, here, so an unspellable colour is refused before any pixel is produced. */
   readonly background: readonly [number, number, number, number];
@@ -97,7 +111,13 @@ export function layOut(source: ImageSize, spec: ResizeSpec): Layout {
       { padding, pad, width: box.width, height: box.height },
     );
   }
-  const drawn = scaledToFit(source, inner, spec.fit ?? 'contain');
+  const fit = spec.fit ?? 'contain';
+  const scaled = scaledToFit(source, inner, fit);
+  const crop = fit === 'cover' ? visibleRegion(source, inner, scaled) : undefined;
+  // The crop is whole source pixels covering the exact window, so its resample can overflow the
+  // inner area by under one scaled pixel a side; `composeOnto` centre-clips that, as it clips an
+  // uncropped cover, so both orders centre the same fractional window.
+  const drawn = crop === undefined ? scaled : drawnOf(crop, source, inner);
   // Parsed even when the fast path will not use it: 'chartreuse' must be refused whether or not
   // the geometry happens to hide the colour, or the rejection depends on the source's dimensions.
   const background = parseColor(spec.background ?? 'transparent');
@@ -106,7 +126,58 @@ export function layOut(source: ImageSize, spec: ResizeSpec): Layout {
   // the RGBA round trip entirely.
   const needsCanvas =
     drawn.width !== box.width || drawn.height !== box.height || background[3] !== 0;
-  return { box, pad, inner, drawn, background, needsCanvas };
+  return { box, pad, inner, crop, drawn, background, needsCanvas };
+}
+
+/**
+ * The source region a `cover` shows, or `undefined` when resampling the whole source first costs
+ * no more than the source itself (`scaled` within it) or nothing overflows the inner area.
+ * Centred as `composeOnto` centres an overflowing draw, so both orders crop the same window.
+ */
+function visibleRegion(
+  source: ImageSize,
+  inner: ImageSize,
+  scaled: ImageSize,
+): ImageRegion | undefined {
+  const overflows = scaled.width > inner.width || scaled.height > inner.height;
+  if (!overflows || scaled.width * scaled.height <= source.width * source.height) return undefined;
+  const scale = coverScale(source, inner);
+  // The exact window is fractional. The whole pixels that COVER it (floor to ceil) centre exactly
+  // once `composeOnto` clips the overflow; a ROUNDED window shifts a .5 offset half a source pixel
+  // off centre, which shows on a small source upscaled a lot. Covering costs up to one scaled pixel
+  // a side, so it is taken only while that stays under twice the inner area — a degenerate strip
+  // (1x200 into a square), where half a source pixel is invisible, keeps the rounded window.
+  const span = (total: number, wanted: number, cover: boolean): { start: number; size: number } => {
+    const exact = Math.min(total, wanted / scale);
+    const from = (total - exact) / 2;
+    if (!cover) {
+      const size = Math.min(total, Math.max(1, Math.round(exact)));
+      return { start: Math.round((total - size) / 2), size };
+    }
+    const start = Math.max(0, Math.floor(from));
+    return { start, size: Math.min(total, Math.ceil(from + exact)) - start };
+  };
+  const across = span(source.width, inner.width, true);
+  const down = span(source.height, inner.height, true);
+  const covered = { x: across.start, y: down.start, width: across.size, height: down.size };
+  const cost = drawnOf(covered, source, inner);
+  if (cost.width * cost.height < 2 * inner.width * inner.height) return covered;
+  const a = span(source.width, inner.width, false);
+  const d = span(source.height, inner.height, false);
+  return { x: a.start, y: d.start, width: a.size, height: d.size };
+}
+
+function coverScale(source: ImageSize, inner: ImageSize): number {
+  return Math.max(inner.width / source.width, inner.height / source.height);
+}
+
+/** The cropped region at the cover scale: the inner area plus under one scaled pixel a side. */
+function drawnOf(crop: ImageRegion, source: ImageSize, inner: ImageSize): ImageSize {
+  const scale = coverScale(source, inner);
+  return {
+    width: Math.max(inner.width, Math.round(crop.width * scale)),
+    height: Math.max(inner.height, Math.round(crop.height * scale)),
+  };
 }
 
 function fill(canvas: Raster, color: readonly [number, number, number, number]): void {

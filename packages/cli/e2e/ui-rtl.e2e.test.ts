@@ -24,7 +24,7 @@ const sass = (await import(
 /** A ui sheet as Sass emits it — class names unscoped, which is all the fixture markup needs. */
 const compiled = async (relative: string): Promise<string> => {
   const path = join(UI, relative);
-  return sass.compileString(await Bun.file(path).text(), { url: new URL(`file://${path}`) }).css;
+  return sass.compileString(await Bun.file(path).text(), { url: Bun.pathToFileURL(path) }).css;
 };
 
 const SHEETS = [

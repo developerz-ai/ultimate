@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ee56839bb5fba8a36823ebe53b7b32c30699d611f98def0aa58b22e1ec37272a",
+  "buildId": "ec9c5a5483664fda5f154d5280da6ecd558fe28205908886e0a605a8b4bfad9d",
   "tiers": {
     "0": [
       "core",
@@ -1185,6 +1185,16 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DOC_BOUNDARY_RULES_STALE",
+      "owner": "scripts",
+      "at": "scripts/boundary-rule-docs.ts"
+    },
+    {
+      "code": "X_DOC_BOUNDARY_RULES_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/boundary-rule-docs.ts"
+    },
+    {
       "code": "X_DOC_CAUSE_ECHOES_TITLE",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
@@ -1323,6 +1333,16 @@
       "code": "X_DOC_SETUP_COMMANDS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/setup-commands.ts"
+    },
+    {
+      "code": "X_DOC_UID_STALE",
+      "owner": "scripts",
+      "at": "scripts/ops-uid-docs.ts"
+    },
+    {
+      "code": "X_DOC_UID_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/ops-uid-docs.ts"
     },
     {
       "code": "X_DOC_UNRELEASED_PIN_STALE",
@@ -2040,6 +2060,16 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_KNOWN_GAP_LINK_MALFORMED",
+      "owner": "scripts",
+      "at": "scripts/known-gaps-links.ts"
+    },
+    {
+      "code": "X_KNOWN_GAP_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/known-gaps-links.ts"
+    },
+    {
       "code": "X_LD_INVALID",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
@@ -2421,6 +2451,11 @@
     },
     {
       "code": "X_MIGRATE_CONCURRENT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_APPEND_ONLY_BACKFILL",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -4538,6 +4573,31 @@
       "code": "X_WEBHOOK_SIGNATURE_STALE",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_WIKI_ANCHOR_DEAD",
+      "owner": "scripts",
+      "at": "scripts/wiki-anchors.ts"
+    },
+    {
+      "code": "X_WIKI_ANCHOR_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/wiki-anchors.ts"
+    },
+    {
+      "code": "X_WIKI_EXAMPLE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/wiki-fences.ts"
+    },
+    {
+      "code": "X_WIKI_EXAMPLE_UNCOMPILED",
+      "owner": "scripts",
+      "at": "scripts/wiki-fences.ts"
+    },
+    {
+      "code": "X_WIKI_EXAMPLE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/wiki-fences.ts"
     },
     {
       "code": "X_WIKI_TABLE_MALFORMED",

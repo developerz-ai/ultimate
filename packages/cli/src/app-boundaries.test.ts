@@ -63,7 +63,18 @@ describe('unit · app boundaries', () => {
   // post. Same rule, same code: the database by another name.
   test('a route may not import a repo either, resolved or not', () => {
     const repo = file('apps/web/app/post/repo.ts', "import { db } from '@acme/db';");
-    for (const specifier of ['../post/repo', './repo', '../post/repo.ts', '@acme/web/post/repo']) {
+    // `.js`/`.mjs`/`.cjs` too: TypeScript's NodeNext spelling of an import of `repo.ts` is
+    // `./repo.js`, and the rule saw straight past it.
+    for (const specifier of [
+      '../post/repo',
+      './repo',
+      '../post/repo.ts',
+      '@acme/web/post/repo',
+      '../post/repo.js',
+      '../post/repo.mjs',
+      '../post/repo.cjs',
+      '../post/repo/index.js',
+    ]) {
       const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
       const codes = checkImportRules([repo, page])
         .filter((finding) => finding.at === page.path)
@@ -73,7 +84,12 @@ describe('unit · app boundaries', () => {
   });
 
   test('a repo-like name is not a repo, and a service or query may still read one', () => {
-    for (const specifier of ['../post/report', '../post/repository', '../repos/list']) {
+    for (const specifier of [
+      '../post/report',
+      '../post/repository',
+      '../repos/list',
+      '../post/repo.json',
+    ]) {
       const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
       expect({ specifier, findings: checkImportRules([page]) }).toEqual({
         specifier,

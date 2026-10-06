@@ -8,7 +8,7 @@
 // conversion: `toPosix(relative(…))` or `posixRelative(…)`.
 //
 // WHAT COUNTS: in `packages/*/src` (tests aside), every call of a `relative` imported from
-// `node:path` — named, aliased, or `<namespace>.relative` off `import * as` — that is not the
+// `node:path` — named, aliased, or `<name>.relative` off `import * as` or a default import — that is not the
 // direct argument of `toPosix(`. `node:path/posix` is not counted: its answer is POSIX already.
 // NARROWER THAN THE RULE, and said so: a data-flow guard would follow the answer to the specifier
 // or the fix it reaches; this one asks of every call. A call whose answer only ever reaches the
@@ -35,8 +35,6 @@ const EXEMPT: ReadonlySet<string> = new Set(['packages/cli/src/posix-path.ts']);
 /** Unwrapped calls per file, as of the sweep that landed this rule. Only ever shrinks. */
 export const BACKLOG: Readonly<Record<string, number>> = {
   'packages/cli/src/affected.ts': 1,
-  'packages/cli/src/app-permissions-borrowed.ts': 1,
-  'packages/cli/src/app-permissions-site.ts': 1,
   'packages/cli/src/cmd-new.ts': 1,
   'packages/cli/src/cmd-shot-matrix.ts': 1,
   'packages/cli/src/db-seed.ts': 1,
@@ -54,6 +52,9 @@ export const BACKLOG: Readonly<Record<string, number>> = {
 
 const NAMED = /import\s*\{([^}]*)\}\s*from\s*['"]node:path['"]/g;
 const NAMESPACE = /import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s+from\s*['"]node:path['"]/g;
+/** `import path from 'node:path'`, alone or ahead of `{ … }` — the module object, as `* as` is. */
+const DEFAULT =
+  /import\s+(?!type\b)([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\}\s*)?from\s*['"]node:path['"]/g;
 const WAIVER = /\/\/\s*native-path:\s*\S/;
 
 export interface RelativeSite {
@@ -72,6 +73,7 @@ function callees(source: string): readonly string[] {
     }
   }
   for (const match of source.matchAll(NAMESPACE)) names.push(`${match[1]}.relative`);
+  for (const match of source.matchAll(DEFAULT)) names.push(`${match[1]}.relative`);
   return names;
 }
 

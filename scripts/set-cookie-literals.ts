@@ -11,8 +11,16 @@
 // one after a `;` (`'sid=1; Path=/'`, any case, as a browser reads it). Prose naming an attribute,
 // a `cache-control`/HSTS `max-age=`, and the serializer's options object are never reported.
 //
+// And, since plan 101 sweep 11, the header NAME — a `'set-cookie'` literal (any case) used as a
+// headers key, an `.append(`/`.set(` argument or a `[name, value]` tuple head — outside the two
+// seams that write it (`COOKIE_SEAM`, `HEADER_SEAM`). A line with no attribute carries nothing the
+// attribute scan reads (`headers: { 'set-cookie': `sid=${t}` }` slipped), and the name is the one
+// thing it cannot avoid writing. Reading, comparing or redacting the name is not writing one.
+//
 // A file not yet migrated is PINNED at its count with the sentence saying why (`SET_COOKIE_PINS`):
-// it may fall, never rise, and a pin above the tree is stale.
+// it may fall, never rise, and a pin above the tree is stale. A file that relays a value the
+// serializer built onto a header bag it owns is pinned apart (`SET_COOKIE_RELAY_PINS`), so a relay
+// cannot be traded for a hand-spelled attribute in the same file.
 //
 //   bun run set-cookie-literals  ·  bun run scripts/set-cookie-literals.ts [--json]
 
@@ -35,6 +43,9 @@ const THIS_FILE = 'scripts/set-cookie-literals.ts';
 /** The one module that may spell a `Set-Cookie` line. */
 export const COOKIE_SEAM = 'packages/core/src/cookie.ts';
 
+/** `@ultimat3/http`'s `setCookie`/`deleteCookie`: the one module that appends the header by name. */
+export const HEADER_SEAM = 'packages/http/src/set-cookie.ts';
+
 export interface SetCookiePin {
   /** How many hand-spelled attribute literals the file may still hold. */
   readonly sites: number;
@@ -48,6 +59,22 @@ export interface SetCookiePin {
  * entry is a waiver, and the guard's own test reads every one.
  */
 export const SET_COOKIE_PINS: Readonly<Record<string, SetCookiePin>> = {};
+
+/**
+ * Files that write the header NAME to relay a line `serializeSetCookie` built, each with its count.
+ * `@ultimat3/auth` is tier 2 beside `@ultimat3/http`, so it cannot call `setCookie` and must put
+ * its own serializer-built lines on the `Headers` it returns. May fall, never rise.
+ */
+export const SET_COOKIE_RELAY_PINS: Readonly<Record<string, SetCookiePin>> = {
+  'packages/auth/src/oauth-route.ts': {
+    sites: 4,
+    why: 'appends handshakeCookie(), clearHandshakeCookie() and sessionCookie() output — each a serializeSetCookie line in oauth-cookie.ts / session.ts — onto the redirect and problem Responses this route builds itself',
+  },
+  'packages/auth/src/sign-out.ts': {
+    sites: 1,
+    why: "signOutHeaders() returns a ['set-cookie', clearSessionCookie()] tuple for the caller to append; clearSessionCookie is serializeSetCookie with maxAge: 0",
+  },
+};
 
 export interface SetCookieLiteral {
   readonly file: string;
@@ -102,6 +129,44 @@ export function setCookieLiterals(file: string, source: string): readonly SetCoo
   return found;
 }
 
+/** The header's name, in any case, as a literal's whole content. */
+const HEADER_NAME = /^set-cookie$/i;
+/** `.append(` / `.set(` with the name as the first argument. */
+const WRITE_CALL = /\.(?:append|set)\s*\(\s*$/;
+
+/** Whether the literal spanning `at`..`end` of `text` is the header name in a WRITING position. */
+const writesHeader = (text: string, at: number, end: number): boolean => {
+  const before = text.slice(Math.max(0, at - 60), at);
+  const after = text.slice(end, end + 20);
+  if (WRITE_CALL.test(before)) return true;
+  // A key — `{ 'set-cookie': … }` — and never a ternary's arm or a `case` label.
+  if (/^\s*:/.test(after)) return !/(?:\?|\bcase)\s*$/.test(before);
+  // A `[name, value]` tuple head, as `new Headers([[…]])` and `signOutHeaders()` take one.
+  return /\[\s*$/.test(before) && /^\s*,/.test(after);
+};
+
+/** Every `'set-cookie'` literal that writes the header, outside the two seams that may. */
+export function setCookieHeaderNames(file: string, source: string): readonly SetCookieLiteral[] {
+  if (file === COOKIE_SEAM || file === HEADER_SEAM || isTestPath(file)) return [];
+  const masked = maskLiterals(source);
+  const text = stripComments(source);
+  const found: SetCookieLiteral[] = [];
+  let at = 0;
+  while (at < masked.length) {
+    if (!QUOTES.has(masked[at] as string)) {
+      at += 1;
+      continue;
+    }
+    const end = endOfLiteral(text, at);
+    const literal = text.slice(at, end);
+    if (end > at + 1 && HEADER_NAME.test(literal.slice(1, -1)) && writesHeader(text, at, end)) {
+      found.push({ file, line: lineOf(text, at), literal });
+    }
+    at = end;
+  }
+  return found;
+}
+
 export interface SourceText {
   readonly path: string;
   readonly source: string;
@@ -119,39 +184,69 @@ const handBuilt = (file: string, sites: readonly SetCookieLiteral[], pinned: num
   };
 };
 
-const stalePin = (file: string, found: number, pinned: number): Finding => ({
+const headerWritten = (
+  file: string,
+  sites: readonly SetCookieLiteral[],
+  pinned: number,
+): Finding => {
+  const first = sites[pinned] ?? sites[0];
+  const where = `${file}:${String(first?.line ?? 1)}`;
+  const listed = sites.map((site) => `${String(site.line)} ${site.literal}`).join(', ');
+  return {
+    code: 'X_SET_COOKIE_HAND_BUILT',
+    at: where,
+    cause: `${file} writes the Set-Cookie header by name in ${String(sites.length)} place(s) and is pinned at ${String(pinned)} (lines ${listed}); a line that does not come from the serializer carries no Secure, HttpOnly or Path unless somebody remembered them`,
+    fix: `setCookie(name, value, opts)   # at ${where}: from '@ultimat3/http' in a handler, loader or action; below http, append serializeSetCookie(name, value, opts) from '@ultimat3/core' and pin the file in SET_COOKIE_RELAY_PINS (${THIS_FILE}) naming that serializer; then bun run set-cookie-literals --json`,
+  };
+};
+
+const stalePin = (file: string, found: number, pinned: number, table: string): Finding => ({
   code: 'X_SET_COOKIE_PIN_STALE',
   at: THIS_FILE,
-  cause: `${file} is pinned at ${String(pinned)} hand-spelled cookie attribute(s) and holds ${String(found)}, so the pin would let ${String(pinned - found)} back in`,
-  fix: `bun run set-cookie-literals --json   # after setting ${file} to sites: ${String(found)} in SET_COOKIE_PINS (${THIS_FILE})${found === 0 ? ', or deleting its entry' : ''}`,
+  cause: `${file} is pinned at ${String(pinned)} in ${table} and holds ${String(found)}, so the pin would let ${String(pinned - found)} back in`,
+  fix: `bun run set-cookie-literals --json   # after setting ${file} to sites: ${String(found)} in ${table} (${THIS_FILE})${found === 0 ? ', or deleting its entry' : ''}`,
 });
 
-/** The findings over a file set: every unpinned literal, every pin exceeded, every pin stale. */
-export function setCookieFindings(
-  files: readonly SourceText[],
-  pins: Readonly<Record<string, SetCookiePin>> = SET_COOKIE_PINS,
-): readonly Finding[] {
+type Pins = Readonly<Record<string, SetCookiePin>>;
+type Scan = (file: string, source: string) => readonly SetCookieLiteral[];
+type Over = (file: string, sites: readonly SetCookieLiteral[], pinned: number) => Finding;
+
+/** One table's ratchet: every file over its pin, every pin above its file. */
+function ratchet(files: readonly SourceText[], pins: Pins, table: string, scan: Scan, over: Over) {
   const findings: Finding[] = [];
   const counted = new Map<string, number>();
   for (const file of files) {
-    const sites = setCookieLiterals(file.path, file.source);
+    const sites = scan(file.path, file.source);
     counted.set(file.path, sites.length);
     const pinned = Object.hasOwn(pins, file.path) ? (pins[file.path]?.sites ?? 0) : 0;
-    if (sites.length > pinned) findings.push(handBuilt(file.path, sites, pinned));
+    if (sites.length > pinned) findings.push(over(file.path, sites, pinned));
   }
   for (const [file, pin] of Object.entries(pins)) {
     const found = counted.get(file) ?? 0;
-    if (found < pin.sites) findings.push(stalePin(file, found, pin.sites));
+    if (found < pin.sites) findings.push(stalePin(file, found, pin.sites, table));
   }
   return findings;
 }
 
+/** The findings over a file set: every unpinned literal or header write, every pin stale. */
+export function setCookieFindings(
+  files: readonly SourceText[],
+  pins: Pins = SET_COOKIE_PINS,
+  relays: Pins = SET_COOKIE_RELAY_PINS,
+): readonly Finding[] {
+  return [
+    ...ratchet(files, pins, 'SET_COOKIE_PINS', setCookieLiterals, handBuilt),
+    ...ratchet(files, relays, 'SET_COOKIE_RELAY_PINS', setCookieHeaderNames, headerWritten),
+  ];
+}
+
 export function setCookieResult(
   files: readonly SourceText[],
-  pins: Readonly<Record<string, SetCookiePin>> = SET_COOKIE_PINS,
+  pins: Pins = SET_COOKIE_PINS,
+  relays: Pins = SET_COOKIE_RELAY_PINS,
 ): ScriptResult {
   const findings = files.some((file) => file.path === COOKIE_SEAM)
-    ? [...setCookieFindings(files, pins)]
+    ? [...setCookieFindings(files, pins, relays)]
     : [
         {
           code: 'X_SET_COOKIE_UNSCANNED',

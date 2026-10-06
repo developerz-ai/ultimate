@@ -80,6 +80,14 @@ x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--jso
 | `--permission` | string | `<name>:read` | `admin:page` only: the permission the page's own work needs, on top of the frame's `admin:read`. A `<resource>:<verb>`, or `X_CLI_BAD_FLAG` before a file is written — the value reaches the emitted source three times and `Permission` is `${string}:${string}` |
 | `--force` | boolean | `false` | write into a directory that already exists |
 
+**The name must be one `app.config.ts` accepts.** `x new` asks core's own `defineConfig` about the slug before anything is planned (`appNameIssue`, `packages/cli/src/app-name.ts`) — it is written verbatim as `name:`. Refused with `X_CLI_BAD_FLAG` and a corrected name in the `fix:`, the rest of your flags kept:
+
+| You type | Why it is refused | `fix:` |
+|---|---|---|
+| `x new 9lives` | starts with a digit — core's pattern is `^[a-z][a-z0-9-]{1,63}$` | `x new app-9lives` |
+| `x new a` | one character | `x new a-app` |
+| a slug over 64 characters | past the pattern's bound | the slug cut at 64, trailing `-` dropped |
+
 ```bash
 $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
@@ -290,7 +298,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--surface` | string | `app` | `site` or `app` |
 | `--live` | boolean | `false` | `query` only: make it subscribable. On any other generator it is `X_CLI_BAD_FLAG` naming the `x g query … --live` to run instead |
 | `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override **and list it** under `resources:` in `apps/admin/app/admin/admin.ts`. The screen itself needs no flag — an entity in the handle is an admin screen |
-| `--locales` | string | every locale with a catalog in `packages/i18n/catalogs/`, else `en` | comma-separated locales; lands each generator's catalog entry in every one, and for `resource` extends `packages/i18n/catalogs/` on disk |
+| `--locales` | string | every locale with a catalog in `packages/i18n/catalogs/`, else `en` | comma-separated locales; lands each generator's catalog entry in every one. **Never starts a catalog** in an app that has any: a non-default locale with no `packages/i18n/catalogs/<locale>.json` is `X_CLI_BAD_FLAG`, `fix: x i18n add <locale>`, before a file is planned — a catalog a generator started would hold only its own keys. A non-default locale's new keys land marked `⟦…⟧`, as `x i18n add` seeds them, so `x i18n check` reports them until translated. In an app with no catalogs yet, a first `--locales en,es` writes `en` bare and `es` marked. `As of 2026-10-06` (`localiseCatalogs`, `packages/cli/src/generate-catalog-locales.ts`) |
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | the write plan, nothing written: the files the run would write (a slice module already on disk is skipped, not listed), and `ok: false` with every conflict the real run would stop on — an existing file, an API-index binding already held |
 

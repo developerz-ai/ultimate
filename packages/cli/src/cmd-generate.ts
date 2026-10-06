@@ -12,13 +12,15 @@ import { requireAppRoot } from './app-root';
 import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
+import { localiseCatalogs } from './generate-catalog-locales';
 import { assertFeatureExists } from './generate-feature';
 import { generate, sliceDir } from './generate-files';
 import { ungrantedByGenerator } from './generate-grant-findings';
 import { grantGeneratedPermissions } from './generate-grants';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
-import { refuseShadowedTypes } from './generate-shadow';
+import { refusePluralTable } from './generate-plural';
+import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
 import { containedPath, planWrites, writeFiles } from './generate-write';
 import { declareGeneratedImports } from './generated-imports';
 import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
@@ -110,10 +112,18 @@ export const generateCommand: CliCommand = {
         ...(dbModule === undefined ? {} : { dbModule }),
         shell,
       });
-    const files = planFor(name);
+    // A non-default locale's strings arrive marked, and a locale with no catalog yet is refused
+    // with `x i18n add <locale>` — before a dry run answers, so it answers the same files.
+    const files = await localiseCatalogs(root, planFor(name));
     // On the planned files, before a dry run answers or anything lands: a name whose type spelling
     // the emitted code also uses as a global is a slice that does not compile.
     refuseShadowedTypes(files, kind, name);
+    // And one whose binding a planned file both imports and declares (`x g job job`).
+    refuseShadowedValues(files, kind, name);
+    // And a plural slice name that an `entity.ts` this run writes would pluralise again.
+    refusePluralTable(files, kind, name, featureFlag, (path) =>
+      existsSync(containedPath(root, path)),
+    );
     // The caller's own invocation, EVERY flag it set included: without `--feature` the fix wrote
     // a second slice beside the one that conflicted.
     const flags = reproducedFlags(generateCommand.spec, ctx.args);

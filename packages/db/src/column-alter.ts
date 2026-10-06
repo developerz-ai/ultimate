@@ -6,8 +6,9 @@
 
 import { defaultExpression, hasUnrenderedDefault } from './column-default';
 import { columnDefaultUnsafe } from './ddl-errors';
-import type { ColumnDescriptionLike } from './entity-shape';
+import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
+import { appendOnlyBackfillRefused } from './generate-append-only';
 import type { ColumnDescription } from './introspect';
 import { identifier } from './sql';
 import { statementsOf } from './statement-split';
@@ -29,18 +30,20 @@ function screened(column: string, expression: string): string {
  * `set default` / `drop default` and `drop not null`, each with its reverse in `down` — the shape
  * `redefineIndex` (`index-ddl.ts`) gives a moved index. Becoming NOT NULL is deliberately NOT a
  * bare `set not null`: rows already holding `NULL` make it fail inside `ROLE=migrate`, so it gets
- * the expand/contract note `diffTable` writes for a NOT NULL column added to a populated table.
+ * the expand/contract note `diffTable` writes for a NOT NULL column added to a populated table —
+ * refused on an append-only table, whose backfill the trigger would refuse.
  *
  * A default this generator cannot render (`hasUnrenderedDefault`) moves nothing: dropping the one
  * the database holds would lose a rule the entity still states, and `unrenderedOf` already reports
  * it at the top of `up`.
  */
 export function alterColumnInPlace(
-  table: string,
+  entity: EntityDescriptionLike,
   column: ColumnDescriptionLike,
   recorded: ColumnDescription,
   plan: Plan,
 ): void {
+  const { table } = entity;
   const alter = `alter table ${identifier(table).text} alter column ${identifier(column.column).text}`;
   const wanted = hasUnrenderedDefault(column) ? recorded.default : defaultExpression(column);
   const held = recorded.default;
@@ -59,6 +62,9 @@ export function alterColumnInPlace(
     plan.down.push(`${alter} set not null;`);
     return;
   }
+  // That backfill is an UPDATE, and an append-only table's trigger refuses every one. Refused even
+  // with a default now declared: `set default` fills no row that already holds NULL.
+  if (entity.appendOnly === true) throw appendOnlyBackfillRefused(entity, column, 'made-not-null');
   // `drop not null` in `down` is a no-op on a column that never became NOT NULL, so the reverse is
   // right whether or not the backfill and its `set not null` were ever run.
   plan.up.push(`-- backfill ${identifier(column.column).text}, then: ${alter} set not null;`);

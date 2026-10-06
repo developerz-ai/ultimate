@@ -7,9 +7,12 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   COOKIE_SEAM,
+  HEADER_SEAM,
   readSetCookieSources,
   SET_COOKIE_PINS,
+  SET_COOKIE_RELAY_PINS,
   setCookieFindings,
+  setCookieHeaderNames,
   setCookieLiterals,
   setCookieResult,
 } from './set-cookie-literals';
@@ -63,7 +66,11 @@ describe('a Set-Cookie spelled by hand', () => {
 
   test('the finding is an edit naming the file and both seams, and the re-run', () => {
     const [site] = setCookieLiterals(AT, "const c = 'a=b; HttpOnly';");
-    const result = setCookieResult([seam, { path: AT, source: "const c = 'a=b; HttpOnly';" }], {});
+    const result = setCookieResult(
+      [seam, { path: AT, source: "const c = 'a=b; HttpOnly';" }],
+      {},
+      {},
+    );
     expect(site?.line).toBe(1);
     const finding = result.findings?.[0];
     expect(finding?.code).toBe('X_SET_COOKIE_HAND_BUILT');
@@ -114,20 +121,81 @@ describe('what is never reported', () => {
   });
 });
 
+// Sweep 11 R4: a hand-built line with NO attribute carried nothing the attribute scan reads, so
+// `headers: { 'set-cookie': `sid=${t}` }` — a cookie with no Secure, no HttpOnly, no Path — slipped.
+// The header NAME is what such a line cannot avoid writing.
+describe('a Set-Cookie header written by name', () => {
+  const names = (source: string, file = AT): readonly number[] =>
+    setCookieHeaderNames(file, source).map((site) => site.line);
+
+  test('the attribute-free line the attribute scan could not see', () => {
+    const source = "return new Response(null, {\n  headers: { 'set-cookie': `sid=${t}` },\n});";
+    expect(quoted(source)).toEqual([]);
+    expect(names(source)).toEqual([2]);
+    const result = setCookieResult([seam, { path: AT, source }], {}, {});
+    expect(result.findings?.map((f) => f.code)).toEqual(['X_SET_COOKIE_HAND_BUILT']);
+    expect(result.findings?.[0]?.at).toBe(`${AT}:2`);
+    expect(result.findings?.[0]?.fix).toContain('serializeSetCookie');
+  });
+
+  test('as a headers key, an append or set argument, or a tuple head — in any case', () => {
+    expect(names("new Headers({ 'Set-Cookie': line });")).toEqual([1]);
+    expect(names('headers.append("set-cookie", line);')).toEqual([1]);
+    expect(names('headers.set(`SET-COOKIE`, line);')).toEqual([1]);
+    expect(names("return [['set-cookie', line]];")).toEqual([1]);
+  });
+
+  test('reading, comparing or redacting the name is not writing one', () => {
+    expect(names("const all = request.headers.get('set-cookie');")).toEqual([]);
+    expect(names("if (name === 'set-cookie') headers.append(name, value);")).toEqual([]);
+    expect(names("const redacted = new Set(['cookie', 'set-cookie']);")).toEqual([]);
+    expect(names("// headers.append('set-cookie', x)")).toEqual([]);
+  });
+
+  test('the two seams that write the header, and a test, are not reported', () => {
+    const source = "ctx.headers.append('set-cookie', serializeSetCookie(name, value, options));";
+    expect(names(source, HEADER_SEAM)).toEqual([]);
+    expect(names(source, COOKIE_SEAM)).toEqual([]);
+    expect(names(source, 'packages/auth/src/session.test.ts')).toEqual([]);
+  });
+
+  test('a relay pin holds its file at its count — a third line is a finding, a lost one stale', () => {
+    const relay = { [AT]: { sites: 1, why: 'appends sessionCookie(), serializeSetCookie output' } };
+    const one = { path: AT, source: "headers.append('set-cookie', sessionCookie(t, p));" };
+    expect(setCookieResult([seam, one], {}, relay).findings).toEqual([]);
+    const two = { path: AT, source: `${one.source}\nheaders.append('set-cookie', \`sid=\${t}\`);` };
+    expect(setCookieResult([seam, two], {}, relay).findings?.map((f) => f.code)).toEqual([
+      'X_SET_COOKIE_HAND_BUILT',
+    ]);
+    const none = { path: AT, source: 'const x = 1;' };
+    expect(setCookieResult([seam, none], {}, relay).findings?.map((f) => f.code)).toEqual([
+      'X_SET_COOKIE_PIN_STALE',
+    ]);
+  });
+
+  test('every relay pin says which serializer-built value it appends', () => {
+    for (const [file, pin] of Object.entries(SET_COOKIE_RELAY_PINS)) {
+      expect(file.startsWith('packages/auth/src/')).toBe(true);
+      expect(pin.why).toContain('serializeSetCookie');
+      expect(pin.sites).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('the rule over a file set', () => {
   const pinned = { [AT]: { sites: 1, why: 'migrates in a later sweep' } };
 
   test('a pinned file may hold its count, never more', () => {
     const one = { path: AT, source: "const c = 'a=b; HttpOnly';" };
-    expect(setCookieResult([seam, one], pinned).findings).toEqual([]);
+    expect(setCookieResult([seam, one], pinned, {}).findings).toEqual([]);
     const two = { path: AT, source: "const c = 'a=b; HttpOnly';\nconst d = 'Path=/';" };
-    expect(setCookieResult([seam, two], pinned).findings?.map((f) => f.code)).toEqual([
+    expect(setCookieResult([seam, two], pinned, {}).findings?.map((f) => f.code)).toEqual([
       'X_SET_COOKIE_HAND_BUILT',
     ]);
   });
 
   test('a pin above what the file holds is stale, so it cannot let one back in', () => {
-    const result = setCookieResult([seam, { path: AT, source: 'const c = 1;' }], pinned);
+    const result = setCookieResult([seam, { path: AT, source: 'const c = 1;' }], pinned, {});
     expect(result.findings?.map((f) => f.code)).toEqual(['X_SET_COOKIE_PIN_STALE']);
     expect(result.findings?.[0]?.fix).toContain(AT);
   });

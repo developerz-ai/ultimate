@@ -46,6 +46,7 @@ import {
   NAVIGATED_EVENT,
   NAVIGATING_ATTRIBUTE,
   NAVIGATION_ERROR_EVENT,
+  NAVIGATION_MAX_HOPS,
   NAVIGATION_META,
   NAVIGATION_NO_PREFETCH_ATTRIBUTE,
   NAVIGATION_PREFETCH_DELAY_MS,
@@ -172,6 +173,12 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   };
 
   const navigate = async (url: string, options: NavigateOptions = {}): Promise<void> => {
+    // The redirect chain's only exit is `hops >= NAVIGATION_MAX_HOPS`, which `NaN` never meets.
+    // `hops` is this router's own recursion counter (nothing outside it can reach `navigate`), so a
+    // non-count is a broken caller, not input: it fails CLOSED as an exhausted chain — one request,
+    // then the browser loads the page — instead of shipping the error renderer (~2 KB) to every page.
+    const asked = options.hops ?? 0;
+    const hops = Number.isSafeInteger(asked) && asked >= 0 ? asked : NAVIGATION_MAX_HOPS;
     const method = options.method ?? 'GET';
     // After an answer for another principal or build was shown in place, this tab is no longer
     // trusted to swap: every navigation is a real load (`answerMovesTab`).
@@ -212,7 +219,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         opaqueRedirect: answer.opaqueRedirect,
         location: answer.location,
         contentType: answer.contentType,
-        hops: options.hops ?? 0,
+        hops,
         surface: metaOf(doc, NAVIGATION_META),
         nextSurface: next === null ? null : metaOf(next, NAVIGATION_META),
         build: metaOf(doc, CLIENT_BUILD_META),
@@ -236,7 +243,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         case 'follow':
           await navigate(verdict.url, {
             history: options.history === 'none' ? 'replace' : 'push',
-            hops: (options.hops ?? 0) + 1,
+            hops: hops + 1,
           });
           return;
         case 'hand-over':

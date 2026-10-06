@@ -31,6 +31,14 @@ describe('a relative() answer that is not written POSIX', () => {
     expect(lines("import * as path from 'node:path';\n\npath.relative(a, b);")).toEqual([3]);
   });
 
+  // Sweep 11 R4: the default import was the one spelling the rule did not read.
+  test('a default import is the same module, and so is one beside named imports', () => {
+    expect(lines("import path from 'node:path';\nconst at = path.relative(a, b);")).toEqual([2]);
+    expect(lines("import p, { join } from 'node:path';\np.relative(a, b);")).toEqual([2]);
+    expect(lines("import path from 'node:path';\npath.join(a, b);")).toEqual([]);
+    expect(lines("import path from 'node:path/posix';\npath.relative(a, b);")).toEqual([]);
+  });
+
   test('node:path/posix is POSIX already, and a comment or a string is not a call', () => {
     expect(lines("import { relative } from 'node:path/posix';\nrelative(a, b);")).toEqual([]);
     expect(

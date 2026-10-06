@@ -3,13 +3,11 @@
 // delete` for every mounted entity, so an app rule naming one passed in the web process and threw
 // X_PERMISSION_UNKNOWN in any process that never mounted the admin — with nothing saying so.
 
-// why: Bun ships no path API, and `relative` renders a frame's absolute path against the app root.
-import { relative } from 'node:path';
 import { listActions } from '@ultimat3/action';
 import { type Policy, permissionDeclarationSites, policyPermissions } from '@ultimat3/policy';
 import { listQueries } from '@ultimat3/query';
 import { routeEntries } from '@ultimat3/render';
-import { frameFile, siteFile } from './app-permissions-site';
+import { frameFile, rootRelative, siteFile } from './app-permissions-site';
 import type { Finding } from './output';
 
 /** One permission one app declaration requires. */
@@ -72,11 +70,7 @@ export function borrowedPermissions(
     if (files.length === 0 || files.some((file) => file === undefined)) continue;
     if ((sites ?? []).some((site) => appFile(root, site) !== undefined)) continue;
     const from = [
-      ...new Set(
-        files.flatMap((file) =>
-          file === undefined ? [] : [relative(root, file).replaceAll('\\', '/')],
-        ),
-      ),
+      ...new Set(files.flatMap((file) => (file === undefined ? [] : [rootRelative(root, file)]))),
     ].sort();
     found.set(`${rule.permission}\u0000${rule.by}`, { ...rule, from });
   }

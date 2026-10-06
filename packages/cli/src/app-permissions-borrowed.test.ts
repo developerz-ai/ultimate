@@ -63,6 +63,20 @@ describe('unit · which app rules lean on a permission only a package declared',
     ]);
   });
 
+  // On Windows every frame is `C:\\…` and none begins with `/`: `frameFile` read none of them,
+  // so every name had an "unreadable" site and X_PERMISSION_BORROWED could never fire.
+  test('Windows-shaped frames are read: borrowed from a package, located in the app', () => {
+    const root = 'C:\\srv\\app';
+    const adminSite =
+      'at declareAdminPermissions (C:\\srv\\app\\node_modules\\@ultimat3\\admin\\src\\policy-bridge.ts:73:3)';
+    const appSite = 'at C:\\srv\\app\\apps\\web\\shared\\permissions.ts:4:1';
+    declaredAs({ 'posts:read': [adminSite], 'posts:write': [adminSite, appSite] });
+    expect(borrowedPermissions(root, [rule('posts:read'), rule('posts:write')])).toEqual([
+      { ...rule('posts:read'), from: ['node_modules/@ultimat3/admin/src/policy-bridge.ts'] },
+    ]);
+    expect(permissionsFile(root)).toBe('apps/web/shared/permissions.ts');
+  });
+
   // Every external declarer is named: reporting the first alone said one package declared it.
   test('declared by two packages, both are named, once each', () => {
     declaredAs({

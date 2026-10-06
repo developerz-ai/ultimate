@@ -42,6 +42,15 @@ describe('a synchronous spawn', () => {
     expect(calls(SHIPPED, 'Bun.spawnSync(["a"], { cwd: opts.timeout });')).toHaveLength(1);
   });
 
+  // Sweep 11 R4: a `timeout` key in a NESTED object read as the call's own deadline.
+  test('a timeout inside env or another nested object is not the call deadline', () => {
+    expect(calls(SHIPPED, 'Bun.spawnSync(["a"], { env: { timeout: "5" } });')).toHaveLength(1);
+    expect(
+      calls(SHIPPED, 'Bun.spawnSync(["a"], { env: { ...process.env, signal } });'),
+    ).toHaveLength(1);
+    expect(calls(SHIPPED, 'Bun.spawnSync(["a"], { env: { A: "1" }, timeout: 5 });')).toEqual([]);
+  });
+
   test('a spawn named in a comment or a string is no call', () => {
     expect(calls(SHIPPED, '// Bun.spawnSync(["a"])\nconst s = "spawnSync(x)";')).toEqual([]);
   });
@@ -53,6 +62,17 @@ describe('an asynchronous Bun.spawn', () => {
       '1:Bun.spawn',
     ]);
     expect(calls(SHIPPED, 'const p = Bun.spawn(["ps"], { timeout: 10_000 });')).toEqual([]);
+  });
+
+  // Sweep 11 R4: Bun's shell spawns a child too, and takes no timeout at all.
+  test('Bun.$ and an imported $ are children with no deadline to give', () => {
+    expect(calls(SHIPPED, 'await Bun.$`git status`;')).toEqual(['1:Bun.$']);
+    expect(calls(SHIPPED, "import { $ } from 'bun';\nawait $`ls`.quiet();")).toEqual(['2:$']);
+    expect(calls(SHIPPED, "import { $ as sh, file } from 'bun';\nawait sh`ls`;")).toEqual(['2:sh']);
+    // Without the import a `$` is somebody else's, and in a test the test timeout bounds it.
+    expect(calls(SHIPPED, 'const s = $`x`;')).toEqual([]);
+    expect(calls(TEST, 'await Bun.$`git status`;')).toEqual([]);
+    expect(calls(SHIPPED, 'const s = "Bun.$`ls`";')).toEqual([]);
   });
 
   test('is NOT read in a test, where the test timeout bounds an awaited exit', () => {

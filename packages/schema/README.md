@@ -78,9 +78,11 @@ JSON Schema is `{}` with the depth bound in `description`; the bound is fixed �
 `.refine()`. Node `kind: 'json'`, distinct from `unknown` ("the IR cannot say").
 
 Every string-backed schema (`string` `uuid` `email` `url` `timezone` `locale` `slug` `cursor`, with
-any `.min/.max/.pattern`) and every `t.record` key **refuses U+0000** — the one character Postgres
-`text` and `jsonb` cannot store, so a NUL that passed reached the row write as a 500. Tabs, newlines
-and the other C0 controls stay legal text. The issue names the fact, never the value:
+any `.min/.max/.pattern`) and every `t.record` key **refuses U+0000 and a lone UTF-16 surrogate** —
+the rule `t.json()` applies, one predicate (`unstorable-text.ts`). Postgres `text` and `jsonb` cannot
+store a NUL, `jsonb` refuses a lone surrogate, and into `text` Bun's sql writes U+FFFD in its place,
+so either reached the row write as a 500 or a silent rewrite. A well-formed pair (an emoji), tabs,
+newlines and the other C0 controls stay legal text. The issue names the fact, never the value:
 `title: expected a non-empty string, received a string of 3 characters that contains a NUL
 character (U+0000)`. Not published in the JSON Schema — it is a storage fact, not a format.
 

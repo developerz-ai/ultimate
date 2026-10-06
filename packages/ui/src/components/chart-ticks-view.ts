@@ -51,7 +51,8 @@ function bounds(lo: number, hi: number): readonly [number, number] {
   if (high > low) return [low, high];
   if (low === 0) return [0, 1];
   const open = Math.abs(low) * 0.1;
-  return [low - open, high + open];
+  // Clamped, because a flat range at ±MAX_VALUE opens past float64 into ±Infinity.
+  return [Math.max(-Number.MAX_VALUE, low - open), Math.min(Number.MAX_VALUE, high + open)];
 }
 
 export interface NiceTicksOptions {
@@ -77,16 +78,40 @@ export function niceTicks(
   const fitted = niceStep((high - low) / (cap - 1));
   // Every rung of the ladder from 1 up is a whole number, so flooring the START at 1 is enough.
   let step = options.integer === true ? Math.max(1, fitted) : fitted;
-  for (;;) {
+  for (let rung = 0; rung < MAX_RUNGS; rung += 1) {
     const min = exact(Math.floor(low / step + 1e-9) * step);
     const max = exact(Math.ceil(high / step - 1e-9) * step);
     const count = Math.round((max - min) / step) + 1;
+    // Past float64's edge the ladder stops being one: `ceil(hi / step) * step` overflows, the
+    // next rung IS `Infinity`, and `NaN <= cap` is false forever — a LineChart SSR that never
+    // returned. An underflowing step collapses the range to one tick instead. Either way the
+    // data's own two ends are the only honest axis left.
+    if (!(step > 0 && Number.isFinite(step) && Number.isFinite(min) && Number.isFinite(max))) break;
+    if (count < 2) break;
     if (count <= cap) {
       const ticks = Array.from({ length: count }, (_, i) => exact(min + i * step));
       return { min, max, step, ticks };
     }
     step = nextStep(step);
   }
+  return edgeScale(low, high);
+}
+
+/**
+ * Rungs from the smallest subnormal step to the largest finite one: ~632 decades × 3. The loop
+ * already exits at the first non-finite rung; the bound makes termination a fact, not an argument.
+ */
+const MAX_RUNGS = 2_048;
+
+/** The fallback axis: just the data's two ends, which `bounds` has already made finite. */
+function edgeScale(low: number, high: number): NiceScale {
+  const span = high - low;
+  return {
+    min: low,
+    max: high,
+    step: Number.isFinite(span) && span > 0 ? span : Number.MAX_VALUE,
+    ticks: [low, high],
+  };
 }
 
 /**

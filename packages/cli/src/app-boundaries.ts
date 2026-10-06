@@ -66,10 +66,11 @@ const isService = (path: string): boolean => /\/service\.[cm]?ts$/.test(path);
  * A slice's `repo.ts` counts: it is the typed handle one hop away, and a page reading it skips the
  * query that carries the read's policy, bound and cache tag — the scaffold's own dashboard showed
  * every post to a viewer holding `dashboard:read` alone. Matched as a whole module name, resolved
- * (`…/repo.ts`) or not (`../post/repo`), so `report` and `repository` are names, not repos.
+ * (`…/repo.ts`), NodeNext-spelled (`./repo.js`, `.mjs`, `.cjs`) or bare (`../post/repo`), so
+ * `report` and `repository` are names, not repos.
  */
 const isRepoSpecifier = (specifier: string): boolean =>
-  /(^|\/)repo(\/index)?(\.[cm]?tsx?)?$/.test(specifier);
+  /(^|\/)repo(\/index)?(\.[cm]?[jt]sx?)?$/.test(specifier);
 const isDbSpecifier = (specifier: string): boolean =>
   /(^|\/)packages\/db($|\/)/.test(specifier) ||
   specifier.endsWith('/db') ||

@@ -229,8 +229,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
   is `id`, a filtered write is `onBulk`. Not a second change-feed path.
 - **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
-  drivers (a seed is refused too); `update`/`delete`/`*Where` and an `upsertAll` not
-  `onMatch: 'nothing'` reject before any statement (`X_ENTITY_APPEND_ONLY`); a soft-delete,
+  drivers (seed `upsert` appends, never rewrites); `update`/`delete`/`*Where` and an
+  `upsertAll` not `onMatch: 'nothing'` reject before any statement (`X_ENTITY_APPEND_ONLY`); a soft-delete,
   `onUpdateNow()` or machine column is refused at declaration; `$describe().appendOnly` is `true` or
   absent. No bypass, backfills included. `append-only{,-parity}.test.ts`.
 - **A state machine is the MECHANISM only** (`.transitions()` on `enumerated()`, a mapped

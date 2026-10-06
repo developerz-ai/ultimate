@@ -183,6 +183,13 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const replayed: string[] = [];
   const clock = options.clock;
   const pollMs = finiteOption('step.waitForEvent', 'eventPollMs', options.eventPollMs ?? 30_000);
+  // `job()` refuses a non-finite `stepTimeout` at declaration (`job.ts`); screened again here, where
+  // it is read, because this runner is also built directly and `withStepTimeout` reads a `NaN`
+  // ceiling as none at all — the backstop `pollMs` above already is.
+  const stepTimeoutMs =
+    options.stepTimeoutMs === undefined
+      ? undefined
+      : finiteOption('step.run', 'stepTimeoutMs', options.stepTimeoutMs);
   const runSignal = options.signal ?? NEVER_ABORTED;
 
   /**
@@ -305,15 +312,14 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     // to compose, and DISPOSED in the `finally` below, which is the whole reason `run-signal.ts`
     // exists — `worker-run.ts` disposes the run's own the same way.
     const composed =
-      options.stepTimeoutMs === undefined ? null : createRunSignal([runSignal, deadline.signal]);
+      stepTimeoutMs === undefined ? null : createRunSignal([runSignal, deadline.signal]);
     const signal = composed?.signal ?? runSignal;
     try {
       const output = await withStepTimeout(
         fn(signal),
-        options.stepTimeoutMs,
+        stepTimeoutMs,
         deadline,
-        () =>
-          new JobTimeoutError({ job: jobName, step: name, timeoutMs: options.stepTimeoutMs ?? 0 }),
+        () => new JobTimeoutError({ job: jobName, step: name, timeoutMs: stepTimeoutMs ?? 0 }),
       );
       // Persist BEFORE returning: a crash one line later must not re-run this step.
       await put({

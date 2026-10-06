@@ -5,8 +5,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { generate } from './generate-files';
+import type { Generator } from './generate-kinds';
 import { readName } from './generate-kinds';
-import { refuseShadowedTypes } from './generate-shadow';
+import { refusePluralTable } from './generate-plural';
+import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
 import type { GeneratedFile } from './templates';
 
 const refusal = (run: () => unknown): { code: string; cause: string; fix: string } => {
@@ -18,25 +20,63 @@ const refusal = (run: () => unknown): { code: string; cause: string; fix: string
   return expect.unreachable('expected X_CLI_BAD_FLAG');
 };
 
-describe('unit · a plural name is refused where the generator pluralises it', () => {
+describe('unit · a plural name is refused where the plan pluralises it into a table', () => {
+  const planned = (kind: Generator, name: string, feature?: string): readonly GeneratedFile[] =>
+    generate({ kind, name, ...(feature === undefined ? {} : { feature }) });
+  const nothingOnDisk = (): boolean => false;
+
   test.each([
     ['posts', 'resource', 'x g resource post'],
     ['blog-posts', 'entity', 'x g entity blog-post'],
     ['categories', 'resource', 'x g resource category'],
     ['boxes', 'entity', 'x g entity box'],
     ['BlogPosts', 'resource', 'x g resource blog-post'],
-  ])('%s on %s is refused, with the singular in the fix', (name, kind, fix) => {
-    const refused = refusal(() => readName(name, kind as 'resource' | 'entity'));
+    // Not only the two kinds named "entity-ish": a query or a backfill into a slice that has no
+    // `entity.ts` yet writes one, and `x g query top-posts` printed `create top_postses`.
+    ['top-posts', 'query', 'x g query top-post'],
+    ['old-posts', 'backfill', 'x g backfill old-post'],
+  ] as const)('%s on %s is refused, with the singular in the fix', (name, kind, fix) => {
+    const refused = refusal(() =>
+      refusePluralTable(planned(kind, name), kind, name, undefined, nothingOnDisk),
+    );
     expect(refused.code).toBe('X_CLI_BAD_FLAG');
+    expect(refused.cause).toContain(`"${name}"`);
     expect(refused.fix).toBe(fix);
   });
 
-  test('a singular that ends in s, and a plural on a generator that pluralises nothing, pass', () => {
+  test('a singular that ends in s, and a plan that writes no entity, pass', () => {
     for (const name of ['status', 'address', 'canvas', 'analysis', 'alias', 'bus']) {
-      expect(readName(name, 'resource')).toBe(name);
+      expect(() =>
+        refusePluralTable(planned('resource', name), 'resource', name, undefined, nothingOnDisk),
+      ).not.toThrow();
     }
-    expect(readName('sync-posts', 'job')).toBe('sync-posts');
-    expect(readName('posts', 'route')).toBe('posts');
+    for (const kind of ['job', 'route', 'action'] as const) {
+      expect(() =>
+        refusePluralTable(
+          planned(kind, 'sync-posts'),
+          kind,
+          'sync-posts',
+          undefined,
+          nothingOnDisk,
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  test('a slice that already has its entity.ts writes none, so the name is not judged', () => {
+    const files = planned('query', 'top-posts');
+    expect(() =>
+      refusePluralTable(files, 'query', 'top-posts', undefined, (path) =>
+        path.endsWith('/entity.ts'),
+      ),
+    ).not.toThrow();
+  });
+
+  test('a plural that came from --feature is fixed on --feature', () => {
+    const refused = refusal(() =>
+      refusePluralTable(planned('query', 'top', 'posts'), 'query', 'top', 'posts', nothingOnDisk),
+    );
+    expect(refused.fix).toBe('x g query top --feature post');
   });
 });
 
@@ -77,4 +117,36 @@ describe('unit · a type name the emitted code uses as a global is refused', () 
       expect(() => refuseShadowedTypes(files(name), 'resource', name)).not.toThrow();
     },
   );
+});
+
+// TS2440: `import { job } from '@ultimat3/jobs'` beside `export const job = job({ … })` is a module
+// that declares the name it imports. Decided on the planned files, like the types above.
+describe('unit · a name equal to a value the emitted code imports is refused', () => {
+  test.each([
+    ['job', 'job'],
+    ['action', 'action'],
+    ['query', 'query'],
+    ['query', 'from'],
+    ['task', 'task'],
+    ['mutator', 'mutator'],
+    ['entity', 'entity'],
+    ['entity', 'money'],
+  ] as const)('x g %s %s is refused, with a name that compiles in the fix', (kind, name) => {
+    const refused = refusal(() => refuseShadowedValues(generate({ kind, name }), kind, name));
+    expect(refused.code).toBe('X_CLI_BAD_FLAG');
+    expect(refused.cause).toContain(`"${name}"`);
+    expect(refused.fix).toBe(`x g ${kind} ${name}-${kind}`);
+    const fixed = `${name}-${kind}`;
+    expect(() => refuseShadowedValues(generate({ kind, name: fixed }), kind, fixed)).not.toThrow();
+  });
+
+  test.each([
+    ['job', 'sync-posts'],
+    ['action', 'publish-post'],
+    ['query', 'post-list'],
+    ['entity', 'post'],
+    ['resource', 'invoice'],
+  ] as const)('x g %s %s is allowed', (kind, name) => {
+    expect(() => refuseShadowedValues(generate({ kind, name }), kind, name)).not.toThrow();
+  });
 });

@@ -103,9 +103,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
-- **A bulk write stales only the windows reading its entity** (`invalidate(entity)`, from
-  `onBulk`). **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn guard and
-  on a non-matching change too (`live-replicator-bulk.test.ts`, `live-fanout.test.ts`).
+- **A bulk write stales only its entity's readers**: windows + channel topics, `invalidate(entity)`
+  on both from `onBulk`. **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn
+  guard, even on a non-match (`live-replicator-bulk`, `live-fanout` tests).
 - **A WINDOW is per TENANT**: its id is `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`;
   tenant = the subscriber's `actor.orgId`). This package owns no hash. The read runs `readFor`
   (`live-definition.ts`): the node's ctx, a service actor carrying ONLY that org — never the

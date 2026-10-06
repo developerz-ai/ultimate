@@ -10,16 +10,15 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
-// `Bun.*` equivalent. `writeFile` is here for the one thing `Bun.write` cannot do: FAIL when the
-// parent directory is missing, which is what line ~156 uses to make the OS refuse an unlink with
-// something other than ENOENT. Every other write in this file is `Bun.write`.
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+// `Bun.*` equivalent.
+import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
 // temporary directory is.
 import { tmpdir } from 'node:os';
 import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
+import { RUNS_AS_ROOT, withUndeletable } from './driver-local-fixture';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, codeOf, FAKE_ENV, FakeS3Client, s3Error } from './driver-s3-fixture';
 import { SIGNED_URL_PARAMS } from './signed-url';
@@ -157,12 +156,13 @@ describe('delete is idempotent for an ABSENT key and for nothing else', () => {
     fake.absentDeleteFor = KEY;
     await expect(s3.delete(KEY)).resolves.toBeUndefined();
 
-    // A directory in the object's place is the cheapest unlink the OS refuses with something
-    // other than ENOENT, and it needs no root and no chmod.
-    await writeFile(`${root}/blocked/child.txt`, 'x', { flag: 'w' }).catch(async () => {
-      await Bun.write(`${root}/blocked/child.txt`, 'x');
-    });
-    expect(codeOf(await catchError(() => local.delete('blocked')))).toBe('X_STORAGE_DELETE_FAILED');
+    // A directory in the object's place is an ABSENT key, not a refusal: a read-only parent is.
+    if (!RUNS_AS_ROOT) {
+      const refused = await withUndeletable(root, 'blocked/x', () =>
+        catchError(() => local.delete('blocked/x')),
+      );
+      expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
+    }
     fake.absentDeleteFor = undefined;
     fake.failDeleteFor = KEY;
     await s3.put(KEY, bytesOf('x'));

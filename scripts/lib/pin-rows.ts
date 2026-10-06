@@ -38,14 +38,17 @@ export function pinRows(module: Readonly<Record<string, unknown>>): ReadonlyMap<
   return rows;
 }
 
-const RELATIVE_SPECIFIER = /(\bfrom\s*['"])(\.{1,2}\/[^'"]+)(['"])/g;
+const RELATIVE_SPECIFIER = /(\bfrom\s*)(['"])(\.{1,2}\/[^'"]+)\2/g;
 
 /**
  * A module's exports, read from source text by importing a temporary copy of it. `from` is the
  * absolute path the text belongs to: the copy lives in a scratch directory, so a RELATIVE import in
  * it (`coverage-pins.ts` reads its bar from `packages/cli/src/coverage-floor`) is rewritten to the
  * absolute path it meant — left alone it resolved against the scratch directory and the load
- * crashed with "Cannot find module", taking every table's comparison down with it.
+ * crashed with "Cannot find module", taking every table's comparison down with it. The anchor is a
+ * filesystem path through `Bun.fileURLToPath`, never a URL's `.pathname` (`%20` for a space, `/C:/`
+ * on Windows), with forward slashes and re-quoted so a `\` or a quote in the checkout path cannot
+ * end or escape the specifier string.
  */
 export async function importPinSource(
   source: string,
@@ -54,8 +57,10 @@ export async function importPinSource(
 ): Promise<Readonly<Record<string, unknown>>> {
   const anchored = source.replace(
     RELATIVE_SPECIFIER,
-    (_, open: string, specifier: string, close: string) =>
-      `${open}${new URL(specifier, `file://${from}`).pathname}${close}`,
+    (_, keyword: string, _quote: string, specifier: string) => {
+      const absolute = Bun.fileURLToPath(new URL(specifier, Bun.pathToFileURL(from)));
+      return `${keyword}${JSON.stringify(absolute.split('\\').join('/'))}`;
+    },
   );
   const path = `${scratch}/pins-${Bun.hash(anchored).toString(16)}.ts`;
   await Bun.write(path, anchored);

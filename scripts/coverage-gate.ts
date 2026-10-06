@@ -227,14 +227,14 @@ export function suiteFailure(
 ): { code: string; cause: string; fix: string } | undefined {
   if (exitCode === 0) return undefined;
   const unit = unitOf(name);
-  const failed = stderr
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line))
-    .slice(0, 12);
+  const lines = stderr.split('\n').map((line) => line.trim());
+  const failed = lines.filter((line) => /^\(fail\)|^error:|\btimed out\b/.test(line)).slice(0, 12);
+  // The assertion's own diff — what the test RECEIVED — is the half that names the cause; a CI
+  // flake reported as `error: expect(received).toEqual(expected)` alone cannot be root-caused.
+  const diff = lines.filter((line) => /^(?:[-+]\s|Expected:|Received:)/.test(line)).slice(0, 24);
   return {
     code: 'X_TEST_FAILED',
-    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}`,
+    cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}`,
     fix: `run bun test ${unit.test} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
   };
 }

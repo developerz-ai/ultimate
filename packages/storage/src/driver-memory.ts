@@ -1,6 +1,7 @@
 // Single responsibility: the disk a TEST holds — a `StorageDriver` over one `Map`, answering every
-// question `localDriver` answers and refusing what it refuses, with nothing on a filesystem to
-// create or clean up. Not a deployment's disk: a restart is every object gone.
+// question `localDriver` answers and refusing what it refuses (a key that is another key's path
+// included), with nothing on a filesystem to create or clean up. Not a deployment's disk: a
+// restart is every object gone.
 //
 // It exists because the alternative was written by hand in every suite that needed a bucket: a
 // fake with three methods and five `unsupported()` stubs, each a slightly different contract.
@@ -24,7 +25,8 @@ import {
   toBytes,
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
-import { checksumMismatch, getTooLarge, objectNotFound } from './errors';
+import { keyInTheWay } from './driver-memory-conflict';
+import { checksumMismatch, getTooLarge, keyConflict, objectNotFound } from './errors';
 import {
   assertObjectLockOptions,
   isLocked,
@@ -101,6 +103,16 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
     if (lock !== undefined) throw new ObjectLockedError({ disk: registered, key, action, lock });
   };
 
+  /**
+   * The local disk's path rule: a key cannot be another key's directory (`X_STORAGE_KEY_CONFLICT`).
+   * Emulated, not inherited — a `Map` holds both — because a suite on this disk stands in for the
+   * dev disk, and a key layout that passes here and fails in `x dev` is a gap found late.
+   */
+  const refuseConflict = (key: string): void => {
+    const blocking = keyInTheWay(stored, key);
+    if (blocking !== undefined) throw keyConflict(registered, key, blocking);
+  };
+
   const found = (key: string): Stored => {
     const hit = stored.get(key);
     if (hit === undefined) throw objectNotFound(registered, key);
@@ -155,6 +167,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       };
       // Checked AFTER the body is read, with no await between check and write: the map is the
       // queue the local disk needs a `keyedQueue` for.
+      refuseConflict(safe);
       refuseOverwrite(safe, 'overwrite');
       // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
       stored.set(safe, {
@@ -190,6 +203,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       // refusal whether or not the source exists.
       const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
       const source = found(from_);
+      refuseConflict(destination);
       refuseOverwrite(destination, 'copy onto');
       const object: StorageObject = {
         ...source.object,

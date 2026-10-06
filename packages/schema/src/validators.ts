@@ -28,14 +28,11 @@ import type { SchemaNode } from './node';
 import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
 import { isIanaZoneName } from './time-zone-name';
+import { unstorable } from './unstorable-text';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CURSOR_RE = /^[A-Za-z0-9_-]+$/;
-/** The one code point no Postgres `text` or `jsonb` value can hold — see `stringLike`. */
-const NUL = '\u0000';
-/** Names the fact, never the content: the issue-message rule in `describe-value.ts`. */
-const NUL_REFUSAL = 'that contains a NUL character (U+0000)';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface StringSchema extends Schema<string, string> {
@@ -90,11 +87,11 @@ function stringLike(node: SchemaNode, what: string, test?: (value: string) => bo
   const matchesPattern = patternTester(node);
   const check: Check<string> = (value, path) => {
     if (typeof value !== 'string') return fail(path, expected(what, value));
-    // U+0000 is the one character Postgres cannot store: `text` and `jsonb` both refuse it
-    // (SQLSTATE 22021 / 22P05), so a NUL that passed here reached the row write — or a `where`
-    // bind — as `X_DB_STATEMENT_FAILED`, a 500 blaming the server for a byte the caller sent.
-    // Only NUL: a tab, a newline or any other C0 control is legal text Postgres stores unchanged.
-    if (value.includes(NUL)) return fail(path, `${expected(what, value)} ${NUL_REFUSAL}`);
+    // A NUL or a lone surrogate passed here reached the row write — or a `where` bind — as
+    // `X_DB_STATEMENT_FAILED`, a 500 blaming the server for what the caller sent (`unstorable`).
+    // Only those: a tab, a newline or any other C0 control is legal text Postgres stores unchanged.
+    const unfit = unstorable(value);
+    if (unfit !== undefined) return fail(path, `${expected(what, value)} ${unfit}`);
     if (node.minLength !== undefined && charCount(value) < node.minLength) {
       return fail(path, expected(`${what} of at least ${node.minLength} chars`, value));
     }
@@ -314,10 +311,11 @@ export function recordSchema<S extends AnySchema>(
         // new spelling to learn. It is `Object.entries` order — integer-like keys sort ahead of
         // string ones — so it names an entry that exists rather than a byte offset in the body.
         const at = [...path, index];
-        // A record is stored as `jsonb` far more often than not, and jsonb refuses a NUL in a KEY
-        // exactly as it does in a value — so the key is refused here, by position, not quoted.
-        if (key.includes(NUL)) {
-          issues.push({ message: `expected a record key, received one ${NUL_REFUSAL}`, path: at });
+        // A record is stored as `jsonb` far more often than not, and jsonb refuses an unstorable
+        // KEY exactly as it does a value — so the key is refused here, by position, not quoted.
+        const unfitKey = unstorable(key);
+        if (unfitKey !== undefined) {
+          issues.push({ message: `expected a record key, received one ${unfitKey}`, path: at });
           continue;
         }
         if (isPrototypeKey(key)) {

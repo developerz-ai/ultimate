@@ -20,7 +20,7 @@ import type { Ctx } from '@ultimat3/core';
 import { finiteCount, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { AnySchema, InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { BudgetLimits } from './budget';
-import { BudgetLedger, budgetKeysFor, currentBudget, withBudget } from './budget';
+import { BudgetLedger, budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import { HiveEmptyError } from './hive-errors';
 import { runPool } from './hive-pool';
 import type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
@@ -191,7 +191,9 @@ function limitsOf<
     ...(budget?.tokensIn === undefined
       ? {}
       : { tokensIn: finiteCount(SUBJECT, 'budget.tokensIn', budget.tokensIn) }),
-    ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
+    ...(budget?.costPerCall === undefined
+      ? {}
+      : { costPerCall: screenedMoney(SUBJECT, 'budget.costPerCall', budget.costPerCall) }),
     // The ledger's `request` scope accumulates across every call made under it, which for a hive
     // under `withBudget` is every member's every turn.
     ...(budget?.tokensPerRun === undefined

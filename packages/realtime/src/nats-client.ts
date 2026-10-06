@@ -86,6 +86,23 @@ const NATS_URL_FIX = 'export NATS_URL=nats://user:password@host:4222';
 export const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 
 /**
+ * One URL credential, percent-decoded. `decodeURIComponent` throws a bare `URIError` on a stray
+ * `%` (`50%off`), so a secret pasted unencoded failed boot with no code and no fix. Refused under
+ * the part's NAME and the host — never the value: it is the credential, and a cause reaches a log.
+ */
+function decodeCredential(raw: string, part: 'user' | 'password', host: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new TransportUnavailableError({
+      transport: 'nats',
+      reason: `the connection URL for ${host} has a malformed percent-escape in its ${part}`,
+      fix: `bun -e 'console.log(encodeURIComponent(process.argv[1]))' '<the raw value>'   # then put the result in the ${part} of NATS_URL`,
+    });
+  }
+}
+
+/**
  * `nats://user:pass@host:4222`. The one place a bus URL is read — the library takes a bare
  * `host:port` plus credentials as options, and never looks at a URL's userinfo.
  */
@@ -127,8 +144,8 @@ export function parseNatsUrl(url: string): NatsTarget {
       fix: 'set the URL to nats://<user>:<pass>@host:4222, or the bare-token form nats://<token>@host:4222',
     });
   }
-  const user = hasUser ? decodeURIComponent(parsed.username) : undefined;
-  const pass = hasPass ? decodeURIComponent(parsed.password) : undefined;
+  const user = hasUser ? decodeCredential(parsed.username, 'user', parsed.hostname) : undefined;
+  const pass = hasPass ? decodeCredential(parsed.password, 'password', parsed.hostname) : undefined;
   return {
     host: parsed.hostname,
     port: parsed.port === '' ? DEFAULT_NATS_PORT : Number.parseInt(parsed.port, 10),

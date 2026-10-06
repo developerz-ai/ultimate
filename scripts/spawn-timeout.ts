@@ -2,6 +2,8 @@
 // Enforce, as a ratchet, that a child process this tree waits on carries a deadline: a `timeout`
 // (or an abort `signal`) in its options. An untimed child that hangs hangs its parent with it, and
 // a synchronous wait cannot even be interrupted by a test's own timeout — the gate sat on one.
+// Bun's shell (`Bun.$`, or `$` imported from `'bun'`) spawns a child too and takes no deadline, so
+// every shell call in shipped source is a site — a pin with its sentence, or a `Bun.spawn` instead.
 //   bun run spawn-timeout [--json] [--explain]  ·  bun run scripts/spawn-timeout.ts --unpin <pkg>
 
 import { renderFixShellArg } from '@ultimat3/core';
@@ -23,8 +25,42 @@ const EXPLAIN = 'bun run scripts/spawn-timeout.ts --explain --json lists every o
 const SYNC_CALL = /(?<![\w$])(?:Bun\.spawnSync|spawnSync|execSync|execFileSync)\s*\(/g;
 const ASYNC_CALL = /(?<![\w$])Bun\.spawn\s*\(/g;
 
-/** A deadline among the call's own options: `timeout: n`, `signal: s`, or either as shorthand. */
-const DEADLINE = /(?<![\w$.])(?:timeout|signal)\s*[:,}]/;
+/** A deadline key: `timeout: n`, `signal: s`, or either as shorthand. */
+const DEADLINE = /(?<![\w$.])(?:timeout|signal)\s*[:,}]/g;
+
+/** `Bun.$` followed by its template, and the names an import from `'bun'` binds `$` to. */
+const BUN_SHELL = /(?<![\w$])Bun\s*\.\s*\$\s*`/g;
+const BUN_IMPORT = /\bimport\s*\{([^}]*)\}\s*from\s*['"]bun['"]/g;
+
+/**
+ * Whether one of the call's OWN options is a deadline: the key must sit directly inside an object
+ * at the arguments' top level. `{ env: { timeout: '5' } }` names a variable the child reads, and
+ * read as the call's deadline it waved an untimed child through (sweep 11).
+ */
+const hasDeadline = (args: string): boolean => {
+  for (const match of args.matchAll(DEADLINE)) {
+    const opened: string[] = [];
+    for (const char of args.slice(0, match.index)) {
+      if (char === '{' || char === '[' || char === '(') opened.push(char);
+      else if (char === '}' || char === ']' || char === ')') opened.pop();
+    }
+    if (opened.length === 1 && opened[0] === '{') return true;
+  }
+  return false;
+};
+
+/** Every local name the file's imports from `'bun'` give the shell: `$`, or its alias. */
+const shellNames = (masked: string, source: string): readonly string[] => {
+  const names: string[] = [];
+  for (const match of source.matchAll(BUN_IMPORT)) {
+    if (masked[match.index] !== 'i') continue;
+    for (const part of (match[1] ?? '').split(',')) {
+      const spec = /^\$(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec(part.trim());
+      if (spec !== null) names.push(spec[1] ?? '$');
+    }
+  }
+  return names;
+};
 
 export interface SpawnSite {
   readonly path: string;
@@ -53,12 +89,23 @@ export function scanSpawns(path: string, source: string): readonly SpawnSite[] {
       const open = match.index + match[0].length - 1;
       const close = balancedClose(masked, open);
       const args = masked.slice(open + 1, close < 0 ? masked.length : close);
-      if (DEADLINE.test(args)) continue;
+      if (hasDeadline(args)) continue;
       sites.push({ path, line: lineOf(masked, match.index), call: match[0].replace(/\s*\($/, '') });
     }
   };
   read(SYNC_CALL);
-  if (shipped) read(ASYNC_CALL);
+  if (shipped) {
+    read(ASYNC_CALL);
+    const shell = (pattern: RegExp, call: string): void => {
+      for (const match of masked.matchAll(pattern)) {
+        sites.push({ path, line: lineOf(masked, match.index), call });
+      }
+    };
+    shell(BUN_SHELL, 'Bun.$');
+    for (const name of shellNames(masked, source)) {
+      shell(new RegExp(`(?<![\\w$.])${RegExp.escape(name)}\\s*\``, 'g'), name);
+    }
+  }
   return sites.sort((a, b) => a.line - b.line);
 }
 

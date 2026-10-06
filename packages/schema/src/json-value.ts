@@ -14,6 +14,7 @@ import {
 import { expected } from './describe-value';
 import type { SchemaNode } from './node';
 import type { StandardIssue } from './standard';
+import { unstorable } from './unstorable-text';
 
 /**
  * Any value JSON can carry. Readonly, because a parsed payload is data the handler reads; the copy
@@ -34,22 +35,6 @@ export type JsonValue =
  * list level is an array and an object) with room to spare. Narrower is `.refine()`'s job.
  */
 export const JSON_MAX_DEPTH = 256;
-
-const NUL = '\u0000';
-/** A lone UTF-16 surrogate. `String#isWellFormed` is ES2024 and the lib is ES2023. */
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/**
- * Why a string cannot be stored, or `undefined`. Both MEASURED against Postgres 17 through
- * `$1::text::jsonb`, the cast `@ultimat3/entity`'s `json()` column writes with: a NUL answers
- * `unsupported Unicode escape sequence`, a lone surrogate `invalid input syntax for type json`.
- * Passing either here moved the refusal to the row write, as a 500 with no field path.
- */
-function unstorable(text: string): string | undefined {
-  if (text.includes(NUL)) return 'that contains a NUL character (U+0000)';
-  if (LONE_SURROGATE.test(text)) return 'that contains a lone UTF-16 surrogate';
-  return undefined;
-}
 
 /** A path segment chain, materialised only for an issue: a copy per node is O(n × depth). */
 interface At {

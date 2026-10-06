@@ -108,12 +108,16 @@ non-string `list()` prefix or cursor are `X_INVARIANT` (`driver-read-failed.test
 method on every disk). The one thing no code can cover is a `stream()` that fails after it was
 handed back: that is the stream's own error.
 
-**A key cannot be another key's path on the local disk.** A POSIX path is a file or a directory:
-`put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b`, which collide in the
-sidecar tree — is `X_STORAGE_KEY_CONFLICT`, refused before a byte moves, where it used to be a
-bare `ENOTDIR` / `EISDIR`. Its `fix` names the disk as `defineStorage` registered it, not the
-driver kind. `s3Driver` and `memoryDriver` hold both keys; `driver-contract.test.ts`
-pins the divergence.
+**A key cannot be another key's path on the local disk — or on the memory disk standing in for
+it.** A POSIX path is a file or a directory: `put('a')` then `put('a/b')` — or the reverse, a
+`copy()` onto either, or `a` beside `a.json/b`, which collide in the sidecar tree — is
+`X_STORAGE_KEY_CONFLICT`, refused before a byte moves, where it used to be a bare `ENOTDIR` /
+`EISDIR`. Its `fix` names the disk as `defineStorage` registered it, not the driver kind.
+`memoryDriver` refuses the same keys with the same `blocking` (a suite on it stands in for
+`x dev`'s disk); `s3Driver` holds both. `driver-local-memory-parity.test.ts` holds local and memory
+to one answer, `driver-contract.test.ts` pins the s3 divergence. `delete()` of a key that is only
+another key's directory (`delete('c')` beside `c/d`) is deleting an absent key: not an error, and
+nothing beneath it is touched.
 
 `stat(key)` answers what a read would — size, type, etag, age — **without the bytes**, and
 `undefined` for nothing there. It is a required `StorageDriver` method: `promoteAttachment` measures
@@ -121,7 +125,10 @@ with it, and a driver that cannot measure does not compile.
 
 `lastModified` is **optional** on a listing entry and on a `StorageObject`: absent when the
 provider reported none, never epoch 0 — which `sweepOrphans` read as "older than any window" and
-deleted. A reader that needs an age handles `undefined`; the sweep spares it.
+deleted. A reader that needs an age handles `undefined`; the sweep spares it. On the local and
+memory disks it is the write's instant on the disk's injected `clock`: what `put()`/`copy()`
+returned is what every later `stat`/`get`/`list` reports (the local disk records it in the
+sidecar; an object written before that, or with no trusted sidecar, reports the file's mtime).
 
 **`StorageListEntry.contentType` is optional; `StorageObject.contentType` is not.** S3's
 `ListObjectsV2` returns no Content-Type, so a listed s3 object simply has none — reading the real
@@ -390,7 +397,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
 | `X_STORAGE_OBJECT_LOCKED` | local, memory: a delete, overwrite or copy onto a key under retention or a legal hold; the cause names the key, the mode and `retainUntil` or the hold, and the bytes are unchanged. Never raised by s3, where the provider keeps the locked version |
 | `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |
-| `X_STORAGE_KEY_CONFLICT` | local disk only: the key's path is another key's directory, or the reverse (`a` and `a/b`) |
+| `X_STORAGE_KEY_CONFLICT` | local and memory disks (never s3): the key's path is another key's directory, or the reverse (`a` and `a/b`) |
 | `X_NOT_IMPLEMENTED` | `serverSideEncryption` on any driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, a source no built-in decoder reads, or a `variantKey` format no variant can carry |

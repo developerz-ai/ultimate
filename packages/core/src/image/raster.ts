@@ -63,6 +63,29 @@ export function rasterFrom(width: number, height: number, pixels: Uint8ClampedAr
   return { width, height, pixels };
 }
 
+/** A rectangle of a raster, in its pixels. */
+export interface ImageRegion extends ImageSize {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** The pixels of `region`, copied row by row. The region must lie inside the raster. */
+export function cropRaster(raster: Raster, region: ImageRegion): Raster {
+  const { x, y, width, height } = region;
+  if (x < 0 || y < 0 || x + width > raster.width || y + height > raster.height) {
+    throw imageDecodeFailed(
+      `crop ${width}x${height}+${x}+${y} lies outside the ${raster.width}x${raster.height} raster`,
+      { x, y, width, height, rasterWidth: raster.width, rasterHeight: raster.height },
+    );
+  }
+  const out = createRaster(width, height, 'crop');
+  for (let row = 0; row < height; row += 1) {
+    const from = ((y + row) * raster.width + x) * 4;
+    out.pixels.set(raster.pixels.subarray(from, from + width * 4), row * width * 4);
+  }
+  return out;
+}
+
 /** Whether any pixel is not fully opaque — decides PNG vs JPEG when nobody asked. */
 export function hasAlpha(raster: Raster): boolean {
   const { pixels } = raster;

@@ -61,6 +61,23 @@ describe('parseNatsUrl', () => {
     expect(target.pass).toBe('p@ss');
   });
 
+  // `decodeURIComponent` throws a bare `URIError` on a stray `%`: a secret with one in it,
+  // pasted unencoded, failed boot with no code, no cause naming the URL part and no fix.
+  test('an unencoded % in a credential is the coded refusal, never a URIError', () => {
+    for (const [url, part] of [
+      ['nats://ali%ce:pass@bus.example.test', 'user'],
+      ['nats://alice:50%off@bus.example.test', 'password'],
+      ['nats://tok%en@bus.example.test', 'user'],
+    ] as const) {
+      const error = thrown(() => parseNatsUrl(url));
+      expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+      expect(causeOf(error)).toContain(part);
+      // The secret itself never reaches a cause: it is folded into a log line.
+      expect(causeOf(error)).not.toContain('%');
+      expect(isUltimateError(error) ? error.fix : '').toContain('encodeURIComponent');
+    }
+  });
+
   test('tls: scheme sets tls: true', () => {
     expect(parseNatsUrl('tls://bus.example.test').tls).toBe(true);
     expect(parseNatsUrl('nats://bus.example.test').tls).toBe(false);

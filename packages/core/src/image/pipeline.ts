@@ -9,7 +9,7 @@ import { imageFromBunError, imageUnsupported } from './errors';
 import { unshared } from './png-bytes';
 import { decodeImage, encodeImage } from './png-pixels';
 import { IMAGE_MIME_TYPES, type ImageFormat } from './probe';
-import { MAX_IMAGE_PIXELS } from './raster';
+import { cropRaster, type ImageRegion, MAX_IMAGE_PIXELS } from './raster';
 
 /**
  * What the pipeline can produce, on every platform, byte for byte. `Bun.Image` also reaches
@@ -97,6 +97,15 @@ async function run<T>(doing: string, work: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * `region` of the source as PNG. `Bun.Image` has no crop, so the source is decoded to a raster
+ * (within the same `MAX_IMAGE_PIXELS` its header was held to) and the region copied out of it.
+ */
+async function croppedPng(bytes: Uint8Array, region: ImageRegion): Promise<Uint8Array> {
+  const whole = await run('decoding the image', () => bunImage(bytes).png().bytes());
+  return encodeImage(cropRaster(decodeImage(whole), region));
+}
+
 /** The whole pipeline in one call: decode, resize, compose, encode. */
 export async function transformImageBytes(
   bytes: Uint8Array,
@@ -112,12 +121,15 @@ export async function transformImageBytes(
   const source = await run('reading the image header', () => bunImage(bytes).metadata());
   const output: EncodableFormat = format ?? (canEncode(source.format) ? source.format : 'png');
   const layout = layOut(source, spec);
-  const { box, drawn } = layout;
+  const { box, drawn, crop } = layout;
+  // The cropped region stands in for the source from here on: what is resampled is what shows.
+  const input = crop === undefined ? bytes : await croppedPng(bytes, crop);
+  const inputSize = crop ?? source;
 
   if (!layout.needsCanvas) {
     return run('transforming the image', () => {
-      const image = bunImage(bytes);
-      if (box.width !== source.width || box.height !== source.height) {
+      const image = bunImage(input);
+      if (box.width !== inputSize.width || box.height !== inputSize.height) {
         image.resize(box.width, box.height, { fit: 'fill' });
       }
       return withFormat(image, output, quality).bytes();
@@ -130,7 +142,7 @@ export async function transformImageBytes(
   // is 1.2-1.8x libspng's bytes on a real icon (measured), and one writer for everything this
   // function returns is also what makes "same input, same bytes" rest on the static codecs alone.
   const art = await run('resampling the image', () =>
-    bunImage(bytes).resize(drawn.width, drawn.height, { fit: 'fill' }).png().bytes(),
+    bunImage(input).resize(drawn.width, drawn.height, { fit: 'fill' }).png().bytes(),
   );
   const composed = encodeImage(composeOnto(decodeImage(art), layout));
   return run('encoding the image', () => withFormat(bunImage(composed), output, quality).bytes());

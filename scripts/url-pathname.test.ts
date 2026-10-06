@@ -65,9 +65,49 @@ describe('a module URL read as a path', () => {
   });
 });
 
+describe('a file URL built from a string', () => {
+  test('a file:// template base is refused outright: the path in it is never encoded', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — the literal ${…} is the case under test
+    expect(lines('const a = 1;\nconst u = new URL(spec, `file://${from}`).pathname;')).toEqual([2]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — the literal ${…} is the case under test
+    expect(lines('const u = new URL(spec, `file://${from}`);')).toEqual([1]);
+  });
+
+  test('a file:// template or concatenation as the input is the same bug', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — the literal ${…} is the case under test
+    expect(lines('const u = new URL(`file://${path}`);')).toEqual([1]);
+    expect(lines("const u = new URL(spec, 'file://' + from);")).toEqual([1]);
+  });
+
+  test('the finding names the file-URL fix, not the .pathname one', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — the literal ${…} is the case under test
+    const [site] = scanUrlPathname('packages/x/src/a.ts', 'new URL(`file://${p}`);');
+    if (site === undefined) expect.unreachable('the scan found the site');
+    expect(urlPathnameFindingFor(site).fix).toContain('Bun.pathToFileURL(');
+  });
+});
+
+describe('a destructured pathname', () => {
+  test('const { pathname } = new URL(…, import.meta.url) is refused', () => {
+    expect(lines("const a = 1;\nconst { pathname } = new URL('..', import.meta.url);")).toEqual([
+      2,
+    ]);
+    expect(lines("const { pathname: dir } = new URL('.', import.meta.url);")).toEqual([1]);
+  });
+
+  test('destructuring an HTTP URL is a route, and stays silent', () => {
+    expect(lines("const { pathname } = new URL(href, 'https://app.test');")).toEqual([]);
+    expect(lines("const { href } = new URL('..', import.meta.url);")).toEqual([]);
+  });
+});
+
 describe('what the rule stays silent about', () => {
   test('the two fixes', () => {
     expect(lines("const a = Bun.fileURLToPath(new URL('..', import.meta.url));")).toEqual([]);
+    expect(lines('const c = Bun.fileURLToPath(new URL(spec, Bun.pathToFileURL(from)));')).toEqual(
+      [],
+    );
+    expect(lines("const d = new URL('file:///etc/passwd');")).toEqual([]);
     expect(lines("const b = join(import.meta.dir, '..');")).toEqual([]);
   });
 

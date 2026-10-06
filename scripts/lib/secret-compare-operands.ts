@@ -6,6 +6,7 @@
 // needs and no test has to learn where the split fell.
 
 import { balancedClose } from './balanced-paren';
+import { interpolates } from './template-interpolations';
 
 /**
  * The camelCase SUFFIXES that make a comparison a credential check: `tokenHash`, `keyHash`,
@@ -24,12 +25,15 @@ export const SECRET_SUFFIXES: readonly string[] = [
   'Candidate',
   'Password',
   'Otp',
+  'Sig',
+  'Hmac',
 ];
 
 /**
  * The bare words, whole and case-insensitive. `state` is here because `oauth.ts:131` compares the
  * OAuth handshake `state` under that exact name; `candidate` and `digest` because `mfa.ts` calls a
- * recovery code and its hash that.
+ * recovery code and its hash that. `sig` and `hmac` (and their suffixes) since sweep 11: a webhook
+ * signature is spelt that way at least as often as in full — measured, zero sites in this tree.
  */
 export const SECRET_WORDS: readonly string[] = [
   'hash',
@@ -44,6 +48,8 @@ export const SECRET_WORDS: readonly string[] = [
   'state',
   'password',
   'otp',
+  'sig',
+  'hmac',
 ];
 
 /**
@@ -130,11 +136,16 @@ export function predicateElementAt(code: string): (at: number) => string | undef
  * A string literal is read off `maskLiterals`' output, where the contents are blanked and the
  * QUOTES survive — which is exactly the property that makes `state === '     '` recognisable as a
  * comparison against a constant without this rule ever seeing what the constant said.
+ *
+ * A TEMPLATE is inert only when it interpolates nothing. The rule reads `withInterpolations`'
+ * output, where a `${…}` body is code again, so `` `sha256=${hmac(body)}` `` is a value computed at
+ * run time — until sweep 11 its opening backtick alone made it inert and the comparison vanished.
  */
-const INERT = /^(?:undefined|null|true|false|-?\d|['"`])|\.length$/;
+const INERT = /^(?:undefined|null|true|false|-?\d|['"])|\.length$/;
 
 export const isInert = (operand: string): boolean => {
   const text = operand.trim();
+  if (text.startsWith('`')) return !interpolates(text) || /\.length$/.test(text);
   // EMPTY is inert, and it is the commonest case by far: the walk stops at the first character it
   // does not recognise, and a masked string literal opens with a quote — so `secret === ''` and
   // `typeof state !== 'string'` both hand back nothing on one side. Reading "unreadable" as
@@ -153,6 +164,13 @@ export function operandBefore(code: string, at: number): string {
   const end = index + 1;
   while (index >= 0) {
     const char = code[index] as string;
+    if (char === '`') {
+      // A template, as `withInterpolations` writes it: no backtick survives inside one.
+      const open = code.lastIndexOf('`', index - 1);
+      if (open === -1) break;
+      index = open - 1;
+      continue;
+    }
     if (Object.hasOwn(CLOSERS, char)) {
       const open = CLOSERS[char] as string;
       let depth = 0;
@@ -183,6 +201,11 @@ export function operandAfter(code: string, from: number): string {
   const start = index;
   while (index < code.length) {
     const char = code[index] as string;
+    if (char === '`') {
+      const close = code.indexOf('`', index + 1);
+      index = close === -1 ? code.length : close + 1;
+      continue;
+    }
     if (Object.hasOwn(OPENERS, char)) {
       const close = OPENERS[char] as string;
       let depth = 0;

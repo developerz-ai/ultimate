@@ -35,8 +35,13 @@ export interface LiveReplicatorOptions {
    * The node's declared channels, fed the same `ChangeEvent` — what a real node's change
    * subscription does beside `registry.deliver` (`sync-node.ts`). Without it a channel's `records`
    * frames never carried a write made under `x dev`, and every other tab stayed on the old row.
+   * `invalidate` is the other half, called beside `registry.invalidate` as the node pairs them: a
+   * bulk write reaches no `records` frame, so the topics carrying its table must re-read instead.
    */
-  readonly channels?: { deliverChange(change: ChangeEvent): unknown };
+  readonly channels?: {
+    deliverChange(change: ChangeEvent): unknown;
+    invalidate(entity?: string): unknown;
+  };
   /** Tenant column, hoisted out of the row so fanout filters without parsing it. */
   readonly tenantColumn?: string;
   readonly onError?: (error: unknown) => void;
@@ -133,6 +138,8 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
     onBulk(change: RowBulkChange): void {
       if (stopped) return;
       registry.invalidate(change.entity);
+      // Channels too, or a tab seated on one held the pre-update rows with nothing to re-read.
+      options.channels?.invalidate(change.entity);
     },
   };
 

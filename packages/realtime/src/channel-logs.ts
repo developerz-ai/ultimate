@@ -59,7 +59,7 @@ export class ChannelLogs {
    * the change is somebody else's too, and one malformed image must not stop the rest.
    */
   deliverChange(channels: Iterable<Channel>, change: ChangeEvent): number {
-    if (change.op === 'truncate') return this.#truncated(change.entity);
+    if (change.op === 'truncate') return this.invalidate(change.entity);
     let frames = 0;
     let updates: ReturnType<typeof updatesFor>;
     try {
@@ -87,30 +87,21 @@ export class ChannelLogs {
   }
 
   /**
-   * Every row of `table` is gone, and no frame can say which ones a member holds. Each open topic
-   * of a channel carrying it starts a NEW epoch — nothing in the old ring may be replayed onto a
-   * table that no longer has those rows — and every member is told `replay-gap` at it, which the
-   * client answers by re-running the channel's catch-up read.
+   * This node may have missed a change, and seq is minted HERE from the changes it sees, so the
+   * hole is invisible to the ring: the next change would be appended as the next seq and a
+   * `since` replayed across it as complete history. Every open topic that carries records — or,
+   * given a `table`, every one carrying THAT table — starts a new epoch and tells its members
+   * `replay-gap`, which the client answers by re-running the channel's catch-up read.
+   *
+   * With a table, three callers: a gap on the bus (none), a truncate (every row of it is gone, and
+   * no frame can say which ones a member holds), and a bulk write the in-process replicator saw
+   * as a fact rather than as rows (`live-replicator.ts`).
    */
-  #truncated(table: string): number {
-    let announced = 0;
-    for (const [topic, open] of [...this.#byTopic]) {
-      if (!carriesTable(open.target.channel, table)) continue;
-      announced += this.#reopen(topic, open.target);
-    }
-    return announced;
-  }
-
-  /**
-   * This node may have missed a change (the bus dropped, or skipped a sequence). Seq is minted
-   * HERE from the changes this node sees, so the hole is invisible to the ring: the next change
-   * would be appended as the next seq and a `since` replayed across it as complete history. Every
-   * open topic that carries records therefore starts a new epoch and tells its members.
-   */
-  invalidate(): number {
+  invalidate(table?: string): number {
     let announced = 0;
     for (const [topic, open] of [...this.#byTopic]) {
       if (open.target.channel.records.length === 0) continue;
+      if (table !== undefined && !carriesTable(open.target.channel, table)) continue;
       announced += this.#reopen(topic, open.target);
     }
     return announced;
