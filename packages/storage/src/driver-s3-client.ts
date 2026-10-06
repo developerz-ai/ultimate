@@ -4,7 +4,7 @@
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { S3DriverOptions } from './driver-s3';
-import { requireEnv } from './driver-s3-signed';
+import { requireEnv, resolveS3Target } from './driver-s3-signed';
 
 /** Structural view of `Bun.S3Client` — typing it here keeps `bun-types` out of the contract. */
 export interface S3FileLike {
@@ -51,6 +51,23 @@ interface S3ClientConstructor {
   new (options: Record<string, unknown>): S3ClientLike;
 }
 
+/**
+ * Everything but the key pair `Bun.S3Client` is built with — the SAME `resolveS3Target` the signed
+ * path reads, handed over explicitly so Bun never consults a second table.
+ */
+export function clientTarget(options: S3DriverOptions): Record<string, unknown> {
+  const target = resolveS3Target(options);
+  // Bun's flag is the inverse: path style means "not virtual hosted".
+  const pathStyle = options.forcePathStyle;
+  return {
+    bucket: options.bucket,
+    ...(target.region === undefined ? {} : { region: target.region }),
+    ...(target.endpoint === undefined ? {} : { endpoint: target.endpoint }),
+    ...(pathStyle === undefined ? {} : { virtualHostedStyle: !pathStyle }),
+    ...(target.sessionToken === undefined ? {} : { sessionToken: target.sessionToken }),
+  };
+}
+
 export function buildClient(options: S3DriverOptions): S3ClientLike {
   if (options.client !== undefined) return options.client;
   if (options.bucket === '') {
@@ -69,17 +86,9 @@ export function buildClient(options: S3DriverOptions): S3ClientLike {
       fix: 'upgrade the runtime: bun upgrade   # the s3 disk needs bun >= 1.3',
     });
   }
-  const tokenVar = options.sessionTokenEnv;
-  const sessionToken = tokenVar === undefined ? undefined : env[tokenVar];
-  // Bun's flag is the inverse: path style means "not virtual hosted".
-  const pathStyle = options.forcePathStyle;
   return new Client({
-    bucket: options.bucket,
     accessKeyId: requireEnv(env, idVar, secretVar),
     secretAccessKey: requireEnv(env, secretVar, idVar),
-    ...(options.region === undefined ? {} : { region: options.region }),
-    ...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
-    ...(pathStyle === undefined ? {} : { virtualHostedStyle: !pathStyle }),
-    ...(sessionToken === undefined ? {} : { sessionToken }),
+    ...clientTarget(options),
   });
 }

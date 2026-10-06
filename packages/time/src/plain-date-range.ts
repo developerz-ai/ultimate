@@ -3,7 +3,8 @@
  * how a closure becomes holidays: `holidays: [...fixed, ...plainDateRange(from, to)]`, one list.
  */
 
-import { scheduleInvalid } from './errors';
+import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
+import { TimeError } from './errors';
 import { addPlainDays, type PlainDate, plainDate, plainDaysBetween } from './plain-date';
 
 /**
@@ -38,17 +39,22 @@ export function plainDateRange(
   const to = plainDate(end);
   const step = options.stepDays ?? 1;
   if (!Number.isSafeInteger(step) || step < 1) {
-    throw scheduleInvalid('stepDays', step, 'a whole number of days, at least 1');
+    throw rangeInvalid(
+      `stepDays must be a whole number of days, at least 1, got ${renderCauseValue(step)}`,
+      `plainDateRange(${literal(from)}, ${literal(to)}, { stepDays: 1 })   # stepDays is a whole number of days, at least 1`,
+    );
   }
   const span = plainDaysBetween(from, to);
   if (span < 0) {
-    throw scheduleInvalid('end', `${from} … ${to}`, `a date on or after start (${from})`);
+    throw rangeInvalid(
+      `end (${to}) precedes start (${from}) by ${-span} days`,
+      `plainDateRange(${literal(to)}, ${literal(from)})   # start first: end must not precede start`,
+    );
   }
   if (span > MAX_PLAIN_DATE_RANGE_DAYS) {
-    throw scheduleInvalid(
-      'end',
-      `${from} … ${to} (${span} days)`,
-      `at most ${MAX_PLAIN_DATE_RANGE_DAYS} days after start — split the range`,
+    throw rangeInvalid(
+      `${from} … ${to} spans ${span} days, more than MAX_PLAIN_DATE_RANGE_DAYS (${MAX_PLAIN_DATE_RANGE_DAYS})`,
+      `plainDateRange(${literal(from)}, addPlainDays(${literal(from)}, ${MAX_PLAIN_DATE_RANGE_DAYS}))   # at most ${MAX_PLAIN_DATE_RANGE_DAYS} days per range — split a longer span into several`,
     );
   }
   const last = options.exclusive === true ? span - 1 : span;
@@ -56,3 +62,14 @@ export function plainDateRange(
   for (let offset = 0; offset <= last; offset += step) dates.push(addPlainDays(from, offset));
   return Object.freeze(dates);
 }
+
+/** A checked `PlainDate`'s literal — digits and dashes only, so it pastes into source as written. */
+const literal = (date: PlainDate): string => `plainDate(${renderFixLiteral(date, '<YYYY-MM-DD>')})`;
+
+/**
+ * `X_SCHEDULE_INVALID`, with a fix that is the corrected CALL. `scheduleInvalid`'s generic fix
+ * names an integer field to repair, which reads as prose here and names nothing this function
+ * takes; `TimeError` takes its fix per throw, so the code stays the package's one range refusal.
+ */
+const rangeInvalid = (cause: string, fix: string): TimeError =>
+  new TimeError({ code: 'X_SCHEDULE_INVALID', cause, fix });

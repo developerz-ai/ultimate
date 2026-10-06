@@ -194,7 +194,8 @@ with a weekend day.
 
 **Closures are dates.** A multi-week closure is a range spread into the one holiday list — there is
 no second `closures` field. `isHoliday` builds a `Set` once per list and reuses it, so a long list
-costs one lookup per day walked; replace the list (rather than editing it in place) to change it.
+costs one lookup per day walked. The list is **frozen** on first use, so the set can never go
+stale: an in-place edit afterwards throws `TypeError` — build a new list to change it.
 
 ```ts
 import { type BusinessCalendar, plainDate, plainDateRange } from '@ultimat3/time';

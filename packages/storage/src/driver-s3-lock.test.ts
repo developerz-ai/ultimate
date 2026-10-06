@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError, signAwsRequest } from '@ultimat3/core';
 import type { S3DriverOptions } from './driver-s3';
 import { s3Driver } from './driver-s3';
+import { clientTarget } from './driver-s3-client';
 import { bytesOf, catchError, FAKE_ENV, FakeS3Client, s3Error } from './driver-s3-fixture';
 
 const KEY = 'org/o1/ledger.csv';
@@ -191,5 +192,84 @@ describe('retentionOf()', () => {
     const denied = await catchError(() => driver.retentionOf?.(KEY) ?? Promise.resolve());
     expect(codeOf(denied)).toBe('X_STORAGE_READ_FAILED');
     expect((denied as { fix: string }).fix).toContain('aws s3api get-object-retention --bucket b');
+  });
+});
+
+describe('both transports read ONE table for endpoint, region and session token', () => {
+  // Bun.S3Client falls back to S3_* then AWS_* when an option is unset (measured on 1.4.2). The
+  // signed path used to read the options only, so a deployment configured through the environment
+  // sent signed PUTs to AWS while Bun's went to its gateway.
+  const signedTo = async (
+    env: Record<string, string>,
+    overrides: Partial<S3DriverOptions> = {},
+  ) => {
+    const { fake, driver } = disk({ env: { ...FAKE_ENV, ...env }, ...overrides });
+    await driver.put(KEY, bytesOf('x'), { legalHold: true });
+    const call = fake.signedCalls[0];
+    return {
+      url: call?.url.href,
+      region: /Credential=[^/]+\/\d+\/([^/]+)\//.exec(call?.headers['authorization'] ?? '')?.[1],
+      token: call?.headers['x-amz-security-token'],
+    };
+  };
+
+  test('S3_ENDPOINT, S3_REGION and S3_SESSION_TOKEN reach the signed request', async () => {
+    expect(
+      await signedTo({
+        S3_ENDPOINT: 'http://gw.internal:9000',
+        S3_REGION: 'eu-west-3',
+        S3_SESSION_TOKEN: 'sts-1',
+      }),
+    ).toEqual({
+      url: 'http://gw.internal:9000/b/org/o1/ledger.csv',
+      region: 'eu-west-3',
+      token: 'sts-1',
+    });
+  });
+
+  test('AWS_* is the fallback, S3_* wins over it, and an option wins over both', async () => {
+    const aws = { AWS_ENDPOINT: 'http://aws.gw:1', AWS_REGION: 'ap-x-1', AWS_SESSION_TOKEN: 'a' };
+    expect(await signedTo(aws)).toEqual({
+      url: 'http://aws.gw:1/b/org/o1/ledger.csv',
+      region: 'ap-x-1',
+      token: 'a',
+    });
+    expect(
+      await signedTo({
+        ...aws,
+        S3_ENDPOINT: 'http://s3.gw:2',
+        S3_REGION: 's3-r',
+        S3_SESSION_TOKEN: 's',
+      }),
+    ).toEqual({ url: 'http://s3.gw:2/b/org/o1/ledger.csv', region: 's3-r', token: 's' });
+    expect(
+      await signedTo({ ...aws, S3_REGION: 's3-r' }, { endpoint: 'http://opt:3', region: 'opt-r' }),
+    ).toMatchObject({ url: 'http://opt:3/b/org/o1/ledger.csv', region: 'opt-r' });
+  });
+
+  test('an empty variable is unset, and a sessionTokenEnv names the only token variable', async () => {
+    expect(await signedTo({ S3_REGION: '', AWS_REGION: 'ap-x-1' })).toMatchObject({
+      region: 'ap-x-1',
+    });
+    expect(
+      await signedTo({ S3_SESSION_TOKEN: 'ambient' }, { sessionTokenEnv: 'MY_TOKEN' }),
+    ).toMatchObject({ token: undefined });
+  });
+
+  test('the Bun client is handed the same resolved values', () => {
+    expect(
+      clientTarget({
+        bucket: 'b',
+        forcePathStyle: true,
+        env: { AWS_ENDPOINT: 'http://aws.gw:1', S3_REGION: 'eu-west-3', AWS_SESSION_TOKEN: 'a' },
+      }),
+    ).toEqual({
+      bucket: 'b',
+      endpoint: 'http://aws.gw:1',
+      region: 'eu-west-3',
+      sessionToken: 'a',
+      virtualHostedStyle: false,
+    });
+    expect(clientTarget({ bucket: 'b', env: {} })).toEqual({ bucket: 'b' });
   });
 });

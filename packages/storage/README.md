@@ -64,7 +64,10 @@ network, but never this process's heap. Both arguments go through `assertSafeKey
 One S3 driver covers all three backends — the difference is `endpoint` + `forcePathStyle`.
 Credentials are **env var NAMES** (`accessKeyIdEnv`, default `S3_ACCESS_KEY_ID`), never
 literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MISSING`.
-`s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
+Endpoint, region and session token resolve ONCE for both transports, as Bun reads them: the
+option, then `S3_ENDPOINT`/`AWS_ENDPOINT`, `S3_REGION`/`AWS_REGION`,
+`S3_SESSION_TOKEN`/`AWS_SESSION_TOKEN` (or the one `sessionTokenEnv` names), from
+`s3Driver({ env })` or `process.env`. `s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
 global `fetch` and `systemClock`); `S3FetchLike` is the shape.
 `localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
 sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in

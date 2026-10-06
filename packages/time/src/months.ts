@@ -3,13 +3,15 @@
  * target month's last day, and the zoned one does it on the LOCAL date — never UTC month math.
  */
 
-import { scheduleInvalid } from './errors';
+import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
+import { TimeError } from './errors';
 import { type Instant, instant } from './instant';
 import { daysInMonth, type PlainDate, plainDateOf, plainDateParts } from './plain-date';
 import { fromZoned, toZoned } from './zoned';
 import { assertTimeZone, type TimeZone } from './zones';
 
-const MONTHS = 'a whole number of months';
+/** The last month a `PlainDate` can name, counted from year 0's January: 9999-12. */
+const LAST_MONTH = 9999 * 12 + 11;
 
 /**
  * `date` moved by `months` calendar months, the day clamped to the target month's last day:
@@ -24,19 +26,27 @@ const MONTHS = 'a whole number of months';
  * 0000-9999 is refused rather than branded.
  */
 export function addPlainMonths(date: PlainDate, months: number): PlainDate {
-  if (!Number.isSafeInteger(months)) throw scheduleInvalid('months', months, MONTHS);
+  // Parsed first, so every refusal below can paste the caller's date back as a checked literal.
   const { year, month, day } = plainDateParts(date);
-  // Months counted from year 0 so one floor-division carries the year in both directions.
-  const total = year * 12 + (month - 1) + months;
-  const targetYear = Math.floor(total / 12);
-  const targetMonth = total - targetYear * 12 + 1;
-  if (targetYear < 0 || targetYear > 9999) {
-    throw scheduleInvalid(
-      'date',
-      `${date} ${months < 0 ? '-' : '+'} ${Math.abs(months)} months`,
-      'a calendar date in years 0000-9999',
+  if (!Number.isSafeInteger(months)) {
+    throw monthsInvalid(
+      `months must be a whole number of months, got ${renderCauseValue(months)}`,
+      `addPlainMonths(${dateLiteral(date)}, ${wholeMonths(months)})   # months is a whole number — round it before the call`,
     );
   }
+  // Months counted from year 0 so one floor-division carries the year in both directions.
+  const from = year * 12 + (month - 1);
+  const total = from + months;
+  if (total < 0 || total > LAST_MONTH) {
+    // The furthest count that still lands in 0000-9999, in the direction the caller asked.
+    const furthest = total < 0 ? -from : LAST_MONTH - from;
+    throw monthsInvalid(
+      `${date} ${months < 0 ? '-' : '+'} ${Math.abs(months)} months leaves years 0000-9999`,
+      `addPlainMonths(${dateLiteral(date)}, ${furthest})   # the furthest a PlainDate reaches from ${date}`,
+    );
+  }
+  const targetYear = Math.floor(total / 12);
+  const targetMonth = total - targetYear * 12 + 1;
   return plainDateOf({
     year: targetYear,
     month: targetMonth,
@@ -66,7 +76,12 @@ export function addPlainMonths(date: PlainDate, months: number): PlainDate {
 export function addMonthsInZone(at: Instant, months: number, timeZone: TimeZone): Instant {
   // The zone first: an omitted one is the mistake this signature exists to make loud.
   const zone = assertTimeZone(timeZone);
-  if (!Number.isSafeInteger(months)) throw scheduleInvalid('months', months, MONTHS);
+  if (!Number.isSafeInteger(months)) {
+    throw monthsInvalid(
+      `months must be a whole number of months, got ${renderCauseValue(months)}`,
+      `addMonthsInZone(at, ${wholeMonths(months)}, ${renderFixLiteral(zone, '<Area/Location>')})   # months is a whole number — round it before the call`,
+    );
+  }
   if (months === 0) return instant(at);
   const local = toZoned(at, zone);
   const target = plainDateParts(
@@ -84,3 +99,20 @@ export function addMonthsInZone(at: Instant, months: number, timeZone: TimeZone)
     { gap: 'next', overlap: 'first' },
   );
 }
+
+/** A parsed `PlainDate` — digits and dashes only — as source that pastes as written. */
+const dateLiteral = (date: PlainDate): string =>
+  `plainDate(${renderFixLiteral(date, '<YYYY-MM-DD>')})`;
+
+/** The whole count nearest what the caller meant, or `1` when there is nothing to round (NaN). */
+const wholeMonths = (months: number): number => {
+  const rounded = Math.trunc(months);
+  return Number.isSafeInteger(rounded) ? rounded : 1;
+};
+
+/**
+ * `X_SCHEDULE_INVALID` with the corrected CALL as its fix — `scheduleInvalid`'s generic line names a
+ * field to repair, which is prose here. `TimeError` takes its fix per throw, so the code is shared.
+ */
+const monthsInvalid = (cause: string, fix: string): TimeError =>
+  new TimeError({ code: 'X_SCHEDULE_INVALID', cause, fix });

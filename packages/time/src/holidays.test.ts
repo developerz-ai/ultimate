@@ -37,13 +37,17 @@ describe('holidaySet', () => {
     expect(isHoliday(newYear, calendar)).toBe(false);
   });
 
-  test('a list grown in place (despite its readonly type) is rebuilt', () => {
-    const dates = ['2026-01-01'];
-    const first = holidaySet(dates);
-    dates.push('2026-01-02');
-    const second = holidaySet(dates);
-    expect(second).not.toBe(first);
-    expect(second.has('2026-01-02')).toBe(true);
+  test('an in-place edit after first use throws, so the list and its set never disagree', () => {
+    const dates = ['2026-01-01', '2026-12-25'];
+    const calendar: BusinessCalendar = { zone: 'UTC', holidays: dates };
+    expect(isHoliday(fromIso('2026-01-01T12:00:00Z'), calendar)).toBe(true);
+    expect(() => {
+      dates[0] = '2026-01-02';
+    }).toThrow(TypeError);
+    expect(() => dates.push('2026-01-02')).toThrow(TypeError);
+    expect(dates).toEqual(['2026-01-01', '2026-12-25']);
+    expect(isHoliday(fromIso('2026-01-01T12:00:00Z'), calendar)).toBe(true);
+    expect(isHoliday(fromIso('2026-01-02T12:00:00Z'), calendar)).toBe(false);
   });
 
   test('no list is the one shared empty set', () => {

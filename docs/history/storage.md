@@ -125,7 +125,11 @@ a current fact: the rules that still hold are in that file, and where the two di
   rewrites every fake-client test for no new capability. The signed path restates Bun's
   addressing (path style unless `forcePathStyle === false`, `auto` region, AWS regional endpoint)
   from the same options, and a refusal is read into `S3Error`'s `code`/`message`/`statusCode`, so
-  `regionMismatch` and `isAbsentObject` classify it unchanged. The PUT always carries
+  `regionMismatch` and `isAbsentObject` classify it unchanged. Restating the addressing was not enough: Bun
+  also falls back to `S3_ENDPOINT`/`AWS_ENDPOINT`, `S3_REGION`/`AWS_REGION` and
+  `S3_SESSION_TOKEN`/`AWS_SESSION_TOKEN` (measured on 1.4.2; CodeRabbit on PR #665), so a disk
+  configured through the environment signed its PUTs for AWS. `resolveS3Target` now reads that
+  table once and `buildClient` hands the result to Bun explicitly. The PUT always carries
   `Content-MD5`: S3 requires one with a retention, and it turns a body changed in flight into
   `BadDigest`.
 - **Why local and memory refuse while s3 does not.** S3 locks a VERSION. A DELETE with no version

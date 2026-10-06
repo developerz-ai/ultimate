@@ -158,6 +158,7 @@ function checkAttribute(
   shape: RegExp,
   fix: string,
 ) {
+  // The shape admits ASCII only, so once it matches `.length` is the octet count.
   if (value.length <= MAX_ATTRIBUTE_OCTETS && shape.test(value)) return;
   throw new CookieInvalidError(
     field,
@@ -223,8 +224,10 @@ export function serializeSetCookie(
     throw new CookieInvalidError('value', name, 'has a lone UTF-16 surrogate', fix);
   }
   const encoded = encodeCookieValue(value);
-  if (name.length + encoded.length > MAX_PAIR_OCTETS) {
-    const reason = `is ${encoded.length} octets encoded; a browser drops a cookie over ${MAX_PAIR_OCTETS}`;
+  // `.length` IS the octet count: a token name and a percent-encoded value are ASCII only.
+  const pairOctets = name.length + encoded.length;
+  if (pairOctets > MAX_PAIR_OCTETS) {
+    const reason = `is ${pairOctets} octets as name=value encoded; a browser drops one over ${MAX_PAIR_OCTETS}`;
     throw new CookieInvalidError(
       'value',
       name,

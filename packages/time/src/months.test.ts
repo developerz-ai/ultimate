@@ -56,6 +56,24 @@ describe('addPlainMonths', () => {
     expect(refusal(() => addPlainMonths(d('0000-01-31'), -1)).code).toBe('X_SCHEDULE_INVALID');
   });
 
+  test('each refusal’s fix is the corrected call, with the caller’s own date', () => {
+    expect(refusal(() => addPlainMonths(d('2026-01-31'), 1.5)).fix).toStartWith(
+      'addPlainMonths(plainDate("2026-01-31"), 1)   # ',
+    );
+    expect(refusal(() => addPlainMonths(d('2026-01-31'), Number.NaN)).fix).toStartWith(
+      'addPlainMonths(plainDate("2026-01-31"), 1)   # ',
+    );
+    expect(refusal(() => addPlainMonths(d('9999-10-15'), 5)).fix).toStartWith(
+      'addPlainMonths(plainDate("9999-10-15"), 2)   # ',
+    );
+    expect(refusal(() => addPlainMonths(d('0001-03-15'), -20)).fix).toStartWith(
+      'addPlainMonths(plainDate("0001-03-15"), -14)   # ',
+    );
+    // The furthest count it names is one the function accepts.
+    expect(addPlainMonths(d('9999-10-15'), 2)).toBe(d('9999-12-15'));
+    expect(addPlainMonths(d('0001-03-15'), -14)).toBe(d('0000-01-15'));
+  });
+
   test('from an anchor, a month-end renewal never drifts to the 28th after February', () => {
     const anchor = d('2026-01-31');
     const renewals = Array.from({ length: 4 }, (_, index) => addPlainMonths(anchor, index + 1));
@@ -165,5 +183,8 @@ describe('addMonthsInZone', () => {
     const untyped = addMonthsInZone as (at: Instant, months: number, zone?: string) => Instant;
     expect(refusal(() => untyped(at, 1)).code).toBe('X_TIMEZONE_INVALID');
     expect(refusal(() => addMonthsInZone(at, 1.5, 'UTC')).code).toBe('X_SCHEDULE_INVALID');
+    expect(refusal(() => addMonthsInZone(at, -2.7, 'europe/berlin')).fix).toStartWith(
+      'addMonthsInZone(at, -2, "Europe/Berlin")   # ',
+    );
   });
 });

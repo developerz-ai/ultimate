@@ -194,6 +194,16 @@ describe('serializeSetCookie', () => {
     expect(error.meta?.['field']).toBe('value');
   });
 
+  test('the size limit is wire octets, and the cause reports the same sum the check tests', () => {
+    // 700 UTF-16 units, but each `é` goes out as `%C3%A9`: 4200 octets on the wire.
+    const error = refusal(() => serializeSetCookie('v', 'é'.repeat(700)));
+    expect(error.meta?.['field']).toBe('value');
+    expect(error.cause).toContain('is 4201 octets');
+    expect(refusal(() => serializeSetCookie('long_name', 'x'.repeat(4088))).cause).toContain(
+      'is 4097 octets',
+    );
+  });
+
   test('refuses SameSite=None without Secure', () => {
     const error = refusal(() => serializeSetCookie('v', '1', { sameSite: 'None', secure: false }));
     expect(error.code).toBe('X_COOKIE_INVALID');

@@ -66,9 +66,11 @@ describe('plainDateRange', () => {
     expect(Object.isFrozen(plainDateRange(d('2026-01-01'), d('2026-01-03')))).toBe(true);
   });
 
-  test('a reversed range is refused, not answered empty', () => {
-    expect(refusal(() => plainDateRange(d('2026-01-02'), d('2026-01-01'))).code).toBe(
-      'X_SCHEDULE_INVALID',
+  test('a reversed range is refused, not answered empty, with the swapped call as its fix', () => {
+    const error = refusal(() => plainDateRange(d('2026-01-02'), d('2026-01-01')));
+    expect(error.code).toBe('X_SCHEDULE_INVALID');
+    expect(error.fix).toStartWith(
+      'plainDateRange(plainDate("2026-01-01"), plainDate("2026-01-02"))   # ',
     );
   });
 
@@ -78,6 +80,11 @@ describe('plainDateRange', () => {
         refusal(() => plainDateRange(d('2026-01-01'), d('2026-01-10'), { stepDays })).code,
       ).toBe('X_SCHEDULE_INVALID');
     }
+    expect(
+      refusal(() => plainDateRange(d('2026-01-01'), d('2026-01-10'), { stepDays: 0 })).fix,
+    ).toStartWith(
+      'plainDateRange(plainDate("2026-01-01"), plainDate("2026-01-10"), { stepDays: 1 })',
+    );
   });
 
   test('the span is bounded at ten years, whatever the step', () => {
@@ -87,6 +94,9 @@ describe('plainDateRange', () => {
     const error = refusal(() => plainDateRange(start, d('2036-01-10')));
     expect(error.code).toBe('X_SCHEDULE_INVALID');
     expect(error.message).toContain('3660');
+    expect(error.fix).toStartWith(
+      'plainDateRange(plainDate("2026-01-01"), addPlainDays(plainDate("2026-01-01"), 3660))   # ',
+    );
     expect(refusal(() => plainDateRange(start, d('9999-12-31'), { stepDays: 365 })).code).toBe(
       'X_SCHEDULE_INVALID',
     );

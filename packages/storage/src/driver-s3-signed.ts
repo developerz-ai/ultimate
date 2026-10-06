@@ -80,13 +80,54 @@ export function requireEnv(
   return value;
 }
 
+/** Where a disk's requests go, and as whom beyond the key pair — resolved ONCE for both transports. */
+export interface S3Target {
+  readonly endpoint?: string | undefined;
+  readonly region?: string | undefined;
+  readonly sessionToken?: string | undefined;
+}
+
+/** The first of `names` set to something other than `''` — Bun's reading of an unset variable. */
+const firstSet = (
+  env: Readonly<Record<string, string | undefined>>,
+  names: readonly string[],
+): string | undefined => {
+  for (const name of names) {
+    const value = env[name];
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
+};
+
+/**
+ * Bun's own defaults, restated so the signed path cannot target another place: an option wins,
+ * then `S3_*`, then `AWS_*` — `S3_ENDPOINT`/`AWS_ENDPOINT`, `S3_REGION`/`AWS_REGION`,
+ * `S3_SESSION_TOKEN`/`AWS_SESSION_TOKEN` (measured on Bun 1.4.2, and its `S3Options` docs). Read
+ * from `options.env ?? process.env`, and `buildClient` hands the result to Bun explicitly, so an
+ * injected table governs both transports. A `sessionTokenEnv` names the one variable to read.
+ */
+export function resolveS3Target(options: S3WireOptions): S3Target {
+  const env = options.env ?? process.env;
+  const tokenVar = options.sessionTokenEnv;
+  const endpoint = options.endpoint ?? firstSet(env, ['S3_ENDPOINT', 'AWS_ENDPOINT']);
+  const region = options.region ?? firstSet(env, ['S3_REGION', 'AWS_REGION']);
+  const sessionToken =
+    tokenVar === undefined
+      ? firstSet(env, ['S3_SESSION_TOKEN', 'AWS_SESSION_TOKEN'])
+      : firstSet(env, [tokenVar]);
+  return {
+    ...(endpoint === undefined ? {} : { endpoint }),
+    ...(region === undefined ? {} : { region }),
+    ...(sessionToken === undefined ? {} : { sessionToken }),
+  };
+}
+
 /** Read lazily, at the first signed request — importing or constructing the disk reads nothing. */
 export function s3Credentials(options: S3WireOptions): AwsCredentials {
   const env = options.env ?? process.env;
   const idVar = options.accessKeyIdEnv ?? 'S3_ACCESS_KEY_ID';
   const secretVar = options.secretAccessKeyEnv ?? 'S3_SECRET_ACCESS_KEY';
-  const tokenVar = options.sessionTokenEnv;
-  const sessionToken = tokenVar === undefined ? undefined : env[tokenVar];
+  const { sessionToken } = resolveS3Target(options);
   return {
     accessKeyId: requireEnv(env, idVar, secretVar),
     secretAccessKey: requireEnv(env, secretVar, idVar),
@@ -99,7 +140,8 @@ export function s3Credentials(options: S3WireOptions): AwsCredentials {
  * `virtualHostedStyle` defaults to false), and AWS's regional endpoint when none is configured.
  */
 export function s3ObjectUrl(options: S3WireOptions, key: string): URL {
-  const endpoint = options.endpoint ?? `https://s3.${options.region ?? 'us-east-1'}.amazonaws.com`;
+  const target = resolveS3Target(options);
+  const endpoint = target.endpoint ?? `https://s3.${target.region ?? 'us-east-1'}.amazonaws.com`;
   const base = new URL(endpoint);
   const path = key.split('/').map(encodeURIComponent).join('/');
   if (options.forcePathStyle === false) {
@@ -155,7 +197,7 @@ export async function sendSigned(
     // refuse a body that changed in flight; a read has none.
     payload: { body: request.body ?? new Uint8Array() },
     credentials: s3Credentials(options),
-    region: options.region ?? 'auto',
+    region: resolveS3Target(options).region ?? 'auto',
     service: 's3',
     clock: options.clock ?? systemClock,
   });

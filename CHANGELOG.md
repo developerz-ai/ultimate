@@ -20,7 +20,7 @@ sweep 8b fixes what that job found. Sweep 8c makes a deploy zero-downtime: a wor
 then restarts. Sweep 8d root-causes the flaky tests. Sweep 9 makes realtime cheaper and
 honest: one runtime per page, writes named on every frame, no stale first paint offline. Sweep
 9b ships dashboards: charts, phone-ready tables, a sci-fi theme preset and the seam to use it.
-Sweeps 10a–10e land the backlog the superseded plans owed, tier by tier.
+Sweep 10a lands the tier 0–1 seams the superseded plans owed.
 
 ### Added
 
@@ -38,7 +38,8 @@ Sweeps 10a–10e land the backlog the superseded plans owed, tier by tier.
     search string.
 - time: `addPlainMonths` (end-of-month clamp), `addMonthsInZone(at, n, timeZone)` (keeps local wall
   time; Temporal's 'compatible' rule in a gap or overlap), and `plainDateRange(start, end, opts)`
-  (bounded at 3660 days). `isHoliday` builds its set once per list.
+  (bounded at 3660 days). `isHoliday` builds its set once per list and freezes `calendar.holidays`
+  on first use, so an in-place edit afterwards throws a `TypeError` instead of answering stale.
 - storage: S3 Object Lock. `put({ retention, legalHold })` and `retentionOf(key)`. An S3 `put()`
   sends metadata and `cacheControl` over a SigV4-signed PUT instead of refusing. Local and memory
   disks refuse delete, overwrite or copy onto a locked key with `X_STORAGE_OBJECT_LOCKED` (409).
