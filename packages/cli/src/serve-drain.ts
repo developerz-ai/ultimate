@@ -7,7 +7,9 @@ import { loadAppConfig } from './app-config-load';
 /** The declared section, or `undefined` for a root with no config file — core keeps its default. */
 export async function loadDrainConfig(root: string): Promise<Partial<DrainConfig> | undefined> {
   const drain = (await loadAppConfig(root))?.drain;
-  return drain === undefined ? undefined : { readinessGraceMs: drain.readinessGraceMs };
+  return drain === undefined
+    ? undefined
+    : { readinessGraceMs: drain.readinessGraceMs, deadlineMs: drain.deadlineMs };
 }
 
 /** `health.readiness`, or `undefined` for a root with no config file (core keeps its default). */

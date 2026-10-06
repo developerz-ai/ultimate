@@ -6,7 +6,12 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
-import { configureLifecycle, readinessGraceMs, resetLifecycle } from '@ultimat3/core';
+import {
+  configureLifecycle,
+  drainDeadlineMs,
+  readinessGraceMs,
+  resetLifecycle,
+} from '@ultimat3/core';
 import { serveApp } from './serve';
 import { lifecycleForRole } from './serve-boot';
 
@@ -22,6 +27,25 @@ describe('unit · the drain each role runs', () => {
     for (const role of ['worker', 'scheduler', 'replicator'] as const) {
       expect(lifecycleForRole(role, { readinessGraceMs: 4_000 })).toEqual({ readinessGraceMs: 0 });
       expect(lifecycleForRole(role, undefined)).toEqual({ readinessGraceMs: 0 });
+    }
+  });
+
+  test('the declared drain budget reaches every role, listening or not', () => {
+    // The worker is the role a long job lives on: `drain.deadlineMs` is the only knob that gives a
+    // running job longer than 25 s to finish on a deploy, so dropping it for a non-listening role
+    // would make the key a no-op exactly where it matters.
+    for (const role of ['worker', 'scheduler', 'replicator'] as const) {
+      expect(lifecycleForRole(role, { readinessGraceMs: 4_000, deadlineMs: 90_000 })).toEqual({
+        readinessGraceMs: 0,
+        deadlineMs: 90_000,
+      });
+    }
+    for (const role of ['web', 'sync'] as const) {
+      expect(lifecycleForRole(role, { readinessGraceMs: 4_000, deadlineMs: 90_000 })).toEqual({
+        readinessGraceMs: 4_000,
+        deadlineMs: 90_000,
+      });
+      expect(lifecycleForRole(role, { deadlineMs: 90_000 })).toEqual({ deadlineMs: 90_000 });
     }
   });
 
@@ -43,7 +67,7 @@ describe('unit · the drain each role runs', () => {
     await Bun.write(
       join(ROOT, 'app.config.ts'),
       "import { defineConfig } from '@ultimat3/core';\n" +
-        "export const config = defineConfig({ name: 'serve-drain-fixture', drain: { readinessGraceMs: 4000 } });\n",
+        "export const config = defineConfig({ name: 'serve-drain-fixture', drain: { readinessGraceMs: 4000, deadlineMs: 90000 } });\n",
     );
     // The production default (5 s outside a local environment), set the way a boot inherits it.
     configureLifecycle({ readinessGraceMs: 7_000 });
@@ -51,6 +75,8 @@ describe('unit · the drain each role runs', () => {
     const worker = await serveApp({ root: ROOT, env, role: 'worker', port: 0, metricsPort: 0 });
     try {
       expect(readinessGraceMs()).toBe(0);
+      // …and with the budget `app.config.ts` declared, not the lifecycle's built-in 25 s.
+      expect(drainDeadlineMs()).toBe(90_000);
     } finally {
       await worker.stop();
     }

@@ -1,7 +1,8 @@
 {{/*
 One Deployment per enabled role, from one image. terminationGracePeriodSeconds covers the preStop
-sleep, the framework's readiness grace and its SIGTERM drain: in-flight requests, open websockets
-and running job steps finish.
+sleep, the framework's readiness grace and its SIGTERM drain — in-flight requests, open websockets
+and running job steps finish — derived per role from `drain` in values.yaml
+(`ultimate.terminationGracePeriodSeconds`, _helpers.tpl).
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if $cfg.enabled }}
@@ -32,6 +33,13 @@ spec:
   slot's advisory lock, so a surged pod can only stand by, unready, and maxUnavailable: 0 never
   terminates the holder it is waiting on — every rollout stalled. Recreate lets the holder go first.
   */}}
+  {{/*
+  A new pod must stay Ready this long before the rollout counts it available and terminates an old
+  one. Readiness alone flips green the moment `/readyz` first answers; a role that crashes a few
+  seconds later (a job handler failing at import, a pool that cannot hold its connection) would
+  otherwise have already replaced the pod that was working.
+  */}}
+  minReadySeconds: {{ $.Values.minReadySeconds | int }}
   strategy:
     {{- if eq $role "replicator" }}
     type: Recreate
@@ -52,19 +60,10 @@ spec:
       # the blast radius of one path traversal.
       automountServiceAccountToken: false
       securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
-      # The kubelet's whole budget from the moment it decides to stop the pod, and three things
-      # spend it in order: the `preStop` sleep (`drain.preStopSleepSeconds`, 1.30+ only), then the
-      # framework's readiness grace — `/readyz` answering 503 with the listener still open,
-      # `drain.readinessGraceMs` in packages/core, 5s by default outside local environments — then
-      # the drain itself, bounded by `drainDeadlineMs()` (packages/core/src/lifecycle.ts, 25s by
-      # default). 5 + 5 + 25 = 35s on 1.30+, and 0 + 5 + 25 = 30s below it where no preStop renders, so
-      # 45 leaves at least 10s of headroom before SIGKILL on every version this chart supports.
-      #
-      # Raise this WITH `configureLifecycle({ deadlineMs })` or a larger readiness grace, never
-      # instead of them: the drain abandons its hooks at its own deadline, so a larger grace period
-      # alone buys nothing. The container job in .github/workflows/ci.yml renders this and refuses
-      # a value below the sum.
-      terminationGracePeriodSeconds: 45
+      # The kubelet's whole budget from the moment it decides to stop the pod, per role — see
+      # `ultimate.terminationGracePeriodSeconds` in _helpers.tpl for the sum. The container job in
+      # .github/workflows/ci.yml renders this and refuses a value below the default sum.
+      terminationGracePeriodSeconds: {{ include "ultimate.terminationGracePeriodSeconds" (dict "role" $role "cfg" $cfg "root" $) }}
       containers:
         {{- include "ultimate.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}
       volumes:

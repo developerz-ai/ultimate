@@ -11,7 +11,7 @@
 // small ones, on Bun's native `WebSocket`, with no dependency to add to a repo whose first
 // non-negotiable is that Bun's natives replace most of them.
 
-import { assert } from '@ultimat3/core';
+import { assert, stringField } from '@ultimat3/core';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import { wireWatch } from './cdp-wire-watch';
 
@@ -100,6 +100,16 @@ export interface CdpConnectionOptions {
 }
 
 /**
+ * What went wrong, in the socket's own words when it has any. Bun hands `onerror` an `ErrorEvent`
+ * whose `message` is the only place the reason lives — "Failed to connect", "Expected 101 status
+ * code" — and a refusal that drops it names the step and not the cause.
+ */
+const failure = (event: unknown, what: string): string => {
+  const message = stringField(event, 'message');
+  return message === undefined || message === '' ? what : `${what}: ${message}`;
+};
+
+/**
  * A remote browser over its WebSocket url. NOT the e2e driver's wire: measured in the dummy's
  * `offline-feed` suite on Bun 1.4.0, Bun's WebSocket client handed `onmessage` text spliced out of
  * several frames — 64 unparseable frames in one run, one of them the reply to a `Runtime.evaluate`
@@ -125,11 +135,14 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
     };
     // `onerror` is the handshake's only until `listen` below reassigns it: a failure BEFORE open
     // has no pending call to abandon, and rejecting is the only way the caller hears about it.
-    socket.onerror = (): void => {
+    socket.onerror = (event: Event): void => {
       clearTimeout(timer);
       socket.close();
       reject(
-        new CdpCallFailedError({ method: 'connect', detail: 'the browser refused the connection' }),
+        new CdpCallFailedError({
+          method: 'connect',
+          detail: failure(event, 'the browser refused the connection'),
+        }),
       );
     };
   });
@@ -142,7 +155,8 @@ export async function cdpConnect(options: CdpConnectionOptions): Promise<CdpConn
         handlers.message(typeof event.data === 'string' ? event.data : '');
       };
       socket.onclose = (): void => handlers.closed('the browser closed the CDP connection');
-      socket.onerror = (): void => handlers.closed('the CDP connection failed');
+      socket.onerror = (event: Event): void =>
+        handlers.closed(failure(event, 'the CDP connection failed'));
     },
   };
   return cdpConnectOver(transport, options.timeoutMs);

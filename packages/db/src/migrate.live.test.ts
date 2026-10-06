@@ -441,3 +441,42 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key
     );
   }, 15_000);
 });
+
+// A rollback to an older image on a real server: the pre-upgrade migrate Job of the older build
+// meets the newer build's ledger rows, applies nothing, and the newer build redeployed afterwards
+// finds its own migrations already there.
+describe.skipIf(!hasPostgres)('live · postgres · migrate under an image rollback', () => {
+  const older: Migration = {
+    id: '20260101000200_live_rollback_base',
+    name: 'live rollback base',
+    up: 'create table "live_rollback_base" ("id" uuid primary key)',
+    down: 'drop table "live_rollback_base"',
+  };
+  const newer: Migration = {
+    id: '20260101000300_live_rollback_added',
+    name: 'live rollback added',
+    up: 'alter table "live_rollback_base" add column "note" text',
+    down: 'alter table "live_rollback_base" drop column "note"',
+  };
+
+  test('the older build accepts the newer rows, applies nothing, and names them', async () => {
+    const client = createPostgresClient({ url: url ?? '' });
+    try {
+      await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
+      await client.execute(raw('drop table if exists "live_rollback_base"'));
+      await migrate({ migrations: [older, newer], appVersion: '1.6.0', client });
+
+      const rolledBack = await migrate({ migrations: [older], appVersion: '1.5.0', client });
+      expect(rolledBack.applied).toEqual([]);
+      expect(rolledBack.ahead).toEqual([newer.id]);
+
+      const forward = await migrate({ migrations: [older, newer], appVersion: '1.6.0', client });
+      expect(forward.applied).toEqual([]);
+      expect(forward.ahead).toEqual([]);
+      expect(forward.skipped).toEqual([older.id, newer.id]);
+    } finally {
+      await client.execute(raw('drop table if exists "live_rollback_base"'));
+      await client.close();
+    }
+  }, 15_000);
+});

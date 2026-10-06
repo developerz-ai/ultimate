@@ -11,6 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import {
   everyCount,
   like,
@@ -22,9 +23,12 @@ import {
 } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
   acceptanceBrowser,
   noBrowser,
   POSTS,
+  SIGN_IN_MS,
   serverLikeCount,
   signInAs,
   startPostly,
@@ -56,19 +60,22 @@ describe.skipIf(noBrowser)('one record, many places', () => {
   let browser: AcceptanceBrowser;
   let tab: E2eTab;
 
-  beforeAll(async () => {
-    app = await startPostly();
-    browser = await acceptanceBrowser();
-    await signInAs(browser.session, app, 'ada');
-    tab = await browser.session.newTab();
-    await tab.goto(`${app.base}/posts/${POSTS.tenancy.id}`);
-  }, 240_000);
+  beforeAll(
+    async () => {
+      app = await startPostly();
+      browser = await acceptanceBrowser();
+      await signInAs(browser.session, app, 'ada');
+      tab = await browser.session.newTab();
+      await tab.goto(`${app.base}/posts/${POSTS.tenancy.id}`);
+    },
+    ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS + E2E_GOTO_MS,
+  );
 
   afterAll(async () => {
     await tab?.close();
     await browser?.close();
     await app?.stop();
-  });
+  }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
   test('a like in one island moves the count in the other, from one write, with no refetch', async () => {
     const { session } = browser;

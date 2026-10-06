@@ -132,15 +132,41 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
 /** A gap finding, with a fix spelled for the entry that raised it. */
 type Gap = (cause: string, at?: string) => Finding;
 
-const gapFor =
-  (command: string): Gap =>
-  (cause, at) => ({
-    code: 'X_VERIFY_MERGE_INCOMPLETE',
-    cause,
-    fix: `${command} merge parts/*.json --json   # after every CI job uploaded its part`,
-    docs: ERROR_DOCS_URL,
-    ...(at === undefined ? {} : { at }),
-  });
+/**
+ * The gap kinds a merge can find. `present` is a document that arrived and disagrees with the
+ * others; `absent` is one that never arrived at all — GitHub failing to acquire a hosted runner
+ * leaves the job `cancelled` with no steps and no upload, and "missing shard 2/3" alone read as a
+ * shard that ran and died. The two are fixed differently: the first is debugged, the second re-run.
+ */
+interface Gaps {
+  readonly present: Gap;
+  readonly absent: Gap;
+}
+
+/** Said of every absent gap, so it can never be mistaken for a failure the part reported. */
+const NEVER_ARRIVED =
+  'its result never arrived — its CI job never ran or never uploaded (cancelled before a step, or no runner acquired); this is not a failure it reported';
+
+const gapsFor = (command: string): Gaps => {
+  const finding =
+    (fix: string): Gap =>
+    (cause, at) => ({
+      code: 'X_VERIFY_MERGE_INCOMPLETE',
+      cause,
+      fix,
+      docs: ERROR_DOCS_URL,
+      ...(at === undefined ? {} : { at }),
+    });
+  return {
+    present: finding(
+      `${command} merge parts/*.json --json   # after every CI job uploaded its part`,
+    ),
+    // The merge is still what proves the gate whole; what it waits on is a re-run, not a fix.
+    absent: finding(
+      `${command} merge parts/*.json --json   # after re-running the job that never reported: gh run rerun <run-id> --failed`,
+    ),
+  };
+};
 
 /** The step every part's coverage facts belong to. */
 const COVERED_STEP = 'unit';
@@ -220,15 +246,16 @@ function mergeStep(
   name: string,
   entries: readonly { readonly part: string; readonly step: PartStep }[],
   floor: VerifyFloor | undefined,
-  gap: Gap,
+  kinds: Gaps,
   rider: MergeRiders[string] | undefined,
 ): StepResult {
+  const gap = kinds.present;
   if (entries.length === 0) {
     return {
       name,
       ok: false,
       durationMs: 0,
-      findings: [gap(`step "${name}" is in no part — no CI job ran it`, name)],
+      findings: [kinds.absent(`step "${name}" is in no part: ${NEVER_ARRIVED}`, name)],
     };
   }
   const sharded = entries.filter((entry) => entry.step.shard !== undefined);
@@ -268,8 +295,8 @@ function mergeStep(
     const doubled = [...seen].filter(([, count]) => count > 1).map(([index]) => index);
     if (missing.length > 0) {
       gaps.push(
-        gap(
-          `step "${name}" is missing shard(s) ${missing.map((i) => `${String(i)}/${String(total)}`).join(', ')}`,
+        kinds.absent(
+          `step "${name}" is missing shard(s) ${missing.map((i) => `${String(i)}/${String(total)}`).join(', ')}: ${NEVER_ARRIVED}`,
           name,
         ),
       );
@@ -323,11 +350,13 @@ export function mergeParts(
   declared: readonly string[] = VERIFY_STEP_NAMES,
   options: MergeOptions = {},
 ): CommandResult {
-  const gap = gapFor(options.command ?? GATE_COMMAND);
+  const kinds = gapsFor(options.command ?? GATE_COMMAND);
   const unknown = parts.flatMap((part) =>
     part.steps
       .filter((step) => !declared.includes(step.name))
-      .map((step) => gap(`${part.file} reports "${step.name}", which x verify does not run`)),
+      .map((step) =>
+        kinds.present(`${part.file} reports "${step.name}", which x verify does not run`),
+      ),
   );
   const steps = declared.map((name) =>
     mergeStep(
@@ -336,7 +365,7 @@ export function mergeParts(
         part.steps.filter((step) => step.name === name).map((step) => ({ part: part.file, step })),
       ),
       floor,
-      gap,
+      kinds,
       options.riders !== undefined && Object.hasOwn(options.riders, name)
         ? options.riders[name]
         : undefined,

@@ -1299,3 +1299,18 @@ Moved out of `CLAUDE.md` for its size ceiling, unchanged in the code:
 | a redelivered completed backfill replays | it answered `{ skipped: true, previousRunId: <itself> }`; it now leaves its completed row alone unless a body runs |
 | `x_job_events` is swept | the stored bus's `purgeExpired()` was fire-and-forget with no caller: the table only grew |
 
+## Drain, 2026-10 — a deploy lets a running job finish
+
+Plan 101 sweep 8c (`docs/plans/2026/10/04/101-squeaky-clean-sweep/13-deploy-drain.md`). Until then
+`stopAccepting()` — the drain's `accept` phase — aborted every held run's `ctx.signal` with
+`JobDrainedError` the moment SIGTERM arrived, and `steps.ts` refused to record a step result once
+the signal was aborted. A step whose side effect completed during the drain was therefore lost and
+run again by the next worker: an in-process probe measured `effects 2` for one charge.
+
+Now SIGTERM only stops claiming. Held runs keep the lifecycle's budget (`drain.deadlineMs`); at
+`deadlineAt − margin` (`margin = min(2 s, remaining / 2)`) the drain controller aborts what is still
+running, and at half a margin every claim still held is handed back with `countsAsAttempt: false`,
+so a replacement worker claims it at once instead of after the visibility timeout. `put` writes
+through for the `X_DRAINING` reason when a fence is present and the attempt has not ended — the
+store's write is fenced on the claim, so the in-memory refusal added nothing there. A signal during
+boot drains too: `holdWhileBooting` installs the handlers before the roles start.

@@ -7,7 +7,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eSession } from '@ultimat3/testing';
-import { openE2eBrowser } from '@ultimat3/testing';
+import { E2E_BROWSER_OPEN_MS, openE2eBrowser } from '@ultimat3/testing';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import { noBrowser } from './fixtures/postly';
 
@@ -64,15 +64,16 @@ describe.skipIf(noBrowser)('the multi-tab harness', () => {
   let shared: AcceptanceBrowser;
   let fallback: AcceptanceBrowser;
 
+  // Two opens, one after the other, each with its whole designed budget.
   beforeAll(async () => {
     shared = await privateBrowser();
     fallback = await privateBrowser('delete window.SharedWorker;');
-  }, 60_000);
+  }, 2 * E2E_BROWSER_OPEN_MS);
 
   afterAll(async () => {
     await shared.close();
     await fallback.close();
-  });
+  }, E2E_BROWSER_OPEN_MS);
 
   test('two tabs through a SharedWorker are ONE socket, counted in the worker realm', async () => {
     const one = await shared.session.newTab();

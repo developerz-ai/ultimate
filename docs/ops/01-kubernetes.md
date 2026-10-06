@@ -44,8 +44,8 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, `:9090` — **no readiness** |
-| `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, `:9090` |
+| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
+| `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
 | `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |
 
@@ -54,7 +54,10 @@ construct a server and get `/readyz` + `/healthz` on it. `worker`, `scheduler` a
 construct none — their only socket is the metrics listener
 ([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
 `METRICS_PATH`, `/healthz` and `/readyz` (the verdict only, never the check names) — so they get a
-liveness probe on `/metrics`, and the replicator alone a readiness probe on `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
+liveness probe on `/metrics` and a readiness probe on `/readyz` of the same port (`As of
+2026-10-05`): 503 until the role has started, and again from the first instant of a drain. Without
+it a worker pod was Ready the moment its scrape port bound, so a rollout could replace every old
+worker with new ones that crashed later in boot. The replicator reads `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
 
 **The replicator restarts its own stream, and says when it is not replicating** (`As of 2026-10-02`).
@@ -67,7 +70,7 @@ so the pod is still scraped then. Alert on the `replicator.stream_ended` and
 `replicator.restart_failed` log events as well — readiness says it is down, the log says why.
 
 A non-leader `scheduler` stands by: it holds no lease, dispatches nothing, and reports the same
-liveness as the leader — there is no readiness signal to distinguish them. A second replica is
+liveness and readiness as the leader — neither signal distinguishes them. A second replica is
 harmless and idle, and also wasted money, so leave both at 1.
 
 **`PORT` is the web port, and `sync` binds `PORT + 1`.** A sync pod given `PORT=3001` opens 3002,
@@ -237,7 +240,8 @@ The shipped chart already sets all of this. Keep it.
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |
 | `seccompProfile` | `RuntimeDefault` | — |
-| `terminationGracePeriodSeconds` | `45` | must exceed preStop (5s) + the readiness grace (`drain.readinessGraceMs`, 5s outside local) + the drain deadline (25s) = 35s, or SIGKILL truncates in-flight work. The `container` CI job refuses a lower value |
+| `terminationGracePeriodSeconds` | derived per role: `45` web/sync, `35` worker/scheduler/replicator | preStop (5s, web/sync on 1.30+) + the readiness grace (`drain.readinessGraceSeconds`, web/sync only) + the drain budget (`drain.deadlineSeconds`, every role) + `drain.teardownMarginSeconds` (10s). Never set it by hand: `x deploy --method helm` passes those two chart values from the app's own `drain` config (`deadlineMs` — or `configureHttp`'s `drainTimeoutMs` when that is larger, since it replaces the budget on web — and `readinessGraceMs`, in seconds), so a raised budget raises every role's grace with it. The `container` CI job refuses a value below 35 |
+| `minReadySeconds` | `10` | a new pod must stay Ready this long before the rollout counts it and terminates an old one, so a role that passes its first probe and crashes seconds later never replaces a working pod. `maxUnavailable: 0`, `maxSurge: 1` on every rolling role |
 | `lifecycle.preStop.sleep` | `5`s, on Kubernetes 1.30+ only | holds SIGTERM while endpoints converge. The chart's floor is 1.27 and the field does not exist below 1.30, so it renders only where the API server knows it; below that the framework's readiness grace covers the same race |
 | `startupProbe` | 30 × 5s | sized for an image with **no prebuilt store**, where a `web` pod runs Babel over every island and Sass over every stylesheet before its HTTP listener opens (4.2–4.8 s and 8–9 CPU-seconds on the demo app, `As of 2026-10-01`) — a liveness probe counting from container start restarts a pod that is merely booting. An image built from the scaffolded Dockerfile carries the store (`RUN … build --target prebuilt`) and is ready in 1.6–1.7 s; one that does not logs `X_IMAGE_NOT_PREBUILT` on every boot. The metrics listener opens first on every role, and the background roles build nothing either way |
 | `ULTIMATE_CURSOR_SECRET` | in the release's Secret | a boot outside `development`/`test` on the development cursor key the framework ships is refused (`X_CURSOR_SECRET_DEV`) |

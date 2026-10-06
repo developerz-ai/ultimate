@@ -13,10 +13,51 @@ import type { E2eSession } from './cdp-e2e-session';
 import { cdpE2eSession } from './cdp-e2e-session';
 import { CdpBrowserMissingError } from './cdp-errors';
 import type { LaunchedBrowser } from './cdp-launch';
-import { CHROME_CANDIDATES, findChrome, launchChrome } from './cdp-launch';
+import { CHROME_CANDIDATES, findChrome, LAUNCH_BUDGET_MS, launchChrome } from './cdp-launch';
+import { LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
 
 /** How long a launch, a connect or a single CDP call may take. One number, three deadlines. */
 export const DEFAULT_CDP_TIMEOUT_MS = 30_000;
+
+/**
+ * Sequential deadlines `cdpE2eSession` spends before it answers — `Target.setDiscoverTargets`,
+ * then `Target.setAutoAttach` — and `newTab()` spends per tab: `Target.createTarget`, then the
+ * attach that publishes it. Counts of calls in `cdp-e2e-session.ts`, held to it by
+ * `cdp-browser.test.ts` over a fake connection.
+ */
+export const SESSION_SETUP_DEADLINES = 2;
+export const TAB_OPEN_DEADLINES = 2;
+
+/** The longest one more `session.newTab()` is designed to take, at the default per-call deadline. */
+export const E2E_TAB_OPEN_MS = TAB_OPEN_DEADLINES * DEFAULT_CDP_TIMEOUT_MS;
+
+/**
+ * The longest `openE2eBrowser()` is DESIGNED to take, at the default deadline: the whole launch
+ * budget — both starts and their reaps — then the session's setup and the first tab. THE deadline
+ * for a `beforeAll` or `afterAll` that opens or closes a browser: one below it is killed by Bun
+ * before the relaunch, and the failure that names the slow step never surfaces. Derived, never
+ * restated: `e2e-browser-hooks.test.ts` refuses a browser hook whose deadline does not start here.
+ */
+export const E2E_BROWSER_OPEN_MS =
+  LAUNCH_BUDGET_MS + SESSION_SETUP_DEADLINES * DEFAULT_CDP_TIMEOUT_MS + E2E_TAB_OPEN_MS;
+
+/**
+ * The longest `E2eBrowser.close()` is DESIGNED to take — the launched browser's close, every step
+ * bounded (`LAUNCHED_CLOSE_MS`). THE deadline for a hook that closes a browser it already holds: a
+ * hook left at Bun's 5 s default is killed mid-close, and when it is the run's last the process
+ * exits with the profile half-removed — the `x-e2e-chrome-*` directories found leaked in `/tmp`.
+ */
+export const E2E_BROWSER_CLOSE_MS = LAUNCHED_CLOSE_MS;
+
+/**
+ * Sequential deadlines one `tab.goto()` spends: the load event raced against `Page.navigate`'s
+ * reply (one deadline, two waiters), then the two reads of the document (`cdp-e2e-page.ts`). Held
+ * to the method by `cdp-browser.test.ts` over a fake connection, as the tab's count is.
+ */
+export const GOTO_DEADLINES = 3;
+
+/** The longest one `tab.goto()` is designed to take, at the default per-call deadline. */
+export const E2E_GOTO_MS = GOTO_DEADLINES * DEFAULT_CDP_TIMEOUT_MS;
 
 export interface E2eBrowser {
   /** The first tab — what `installE2eDriver({ page })` drives. */

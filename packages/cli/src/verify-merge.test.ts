@@ -59,8 +59,45 @@ describe('unit · x verify merge refuses an incomplete gate', () => {
     );
     expect(result.ok).toBe(false);
     const unit = result.steps?.find((step) => step.name === 'unit');
-    expect(unit?.findings.map((f) => f.cause)).toContain('step "unit" is missing shard(s) 2/3');
+    const [missing] = unit?.findings ?? [];
+    expect(missing?.cause).toStartWith('step "unit" is missing shard(s) 2/3');
     expect(result.exitCode).toBe(1);
+  });
+
+  // GitHub can fail to acquire a hosted runner: the job is `cancelled` with no steps, uploads
+  // nothing, and the merge must not read like a shard that ran and died.
+  test('a shard or a step whose document never arrived says so, and is re-run rather than debugged', () => {
+    const result = mergeParts(
+      [part('u1.json', [unitShard(1, 3, 4)]), part('u3.json', [unitShard(3, 3, 2)])],
+      undefined,
+      DECLARED,
+      { command: 'bun run verify' },
+    );
+    const absent = (result.steps ?? []).flatMap((step) => step.findings);
+    expect(absent.map((finding) => finding.at)).toEqual(['lint', 'unit', 'live']);
+    for (const finding of absent) {
+      expect(finding.code).toBe('X_VERIFY_MERGE_INCOMPLETE');
+      expect(finding.cause).toContain('never ran or never uploaded');
+      expect(finding.cause).toContain('not a failure it reported');
+      expect(finding.fix).toStartWith('bun run verify merge parts/*.json --json');
+      expect(finding.fix).toContain('gh run rerun <run-id> --failed');
+    }
+  });
+
+  test('a part that reported red is not said to have never arrived', () => {
+    const red = { ...unitShard(2, 2, 1), ok: false, findings: whole('lint', false).findings };
+    const result = mergeParts(
+      [
+        part('s.json', [whole('lint'), whole('live')]),
+        part('u1.json', [unitShard(1, 2, 2)]),
+        part('u2.json', [red]),
+      ],
+      undefined,
+      DECLARED,
+    );
+    expect(result.ok).toBe(false);
+    const causes = (result.steps ?? []).flatMap((step) => step.findings.map((f) => f.cause));
+    expect(causes).toEqual(['bad']);
   });
 
   test('a step no part ran is named', () => {
@@ -70,8 +107,8 @@ describe('unit · x verify merge refuses an incomplete gate', () => {
       DECLARED,
     );
     expect(result.ok).toBe(false);
-    expect(result.steps?.find((s) => s.name === 'live')?.findings[0]?.cause).toBe(
-      'step "live" is in no part — no CI job ran it',
+    expect(result.steps?.find((s) => s.name === 'live')?.findings[0]?.cause).toStartWith(
+      'step "live" is in no part',
     );
   });
 

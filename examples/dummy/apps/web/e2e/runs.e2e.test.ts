@@ -12,9 +12,19 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ISLAND_FAILED_ATTRIBUTE, ISLAND_MOUNTED_ATTRIBUTE } from '@ultimat3/render';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import { readFlag, readText } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
-import { acceptanceBrowser, fail, noBrowser, signInAs, startPostly } from './fixtures/postly';
+import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
+  acceptanceBrowser,
+  fail,
+  noBrowser,
+  SIGN_IN_MS,
+  signInAs,
+  startPostly,
+} from './fixtures/postly';
 
 /** A marker a full page load would lose: the proof that what follows happened without a reload. */
 const MARK = 'window.__runConsoleTab = "kept"';
@@ -64,23 +74,27 @@ describe.skipIf(noBrowser)('the run console', () => {
   let browser: AcceptanceBrowser;
   let tab: E2eTab;
 
-  beforeAll(async () => {
-    app = await startPostly('dev');
-    browser = await acceptanceBrowser();
-    await signInAs(browser.session, app, 'ada');
-    tab = await browser.session.newTab();
-    await tab.goto(`${app.base}/runs`);
-    await tab.waitFor(consoleMounted, 'the run console to mount');
-    const mounted = await tab.evaluate(consoleMounted);
-    if (typeof mounted === 'string') fail(mounted);
-    await tab.evaluate(MARK);
-  }, 240_000);
+  beforeAll(
+    async () => {
+      app = await startPostly('dev');
+      browser = await acceptanceBrowser();
+      await signInAs(browser.session, app, 'ada');
+      tab = await browser.session.newTab();
+      await tab.goto(`${app.base}/runs`);
+      await tab.waitFor(consoleMounted, 'the run console to mount');
+      const mounted = await tab.evaluate(consoleMounted);
+      if (typeof mounted === 'string') fail(mounted);
+      await tab.evaluate(MARK);
+    },
+    // The mount's `waitFor` at its default deadline, then the two reads after it.
+    ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS + E2E_GOTO_MS + 3 * DEFAULT_CDP_TIMEOUT_MS,
+  );
 
   afterAll(async () => {
     await tab?.close();
     await browser?.close();
     await app?.stop();
-  });
+  }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
   test('a member with no connection connects a site, and the picker takes its place', async () => {
     await tab.waitFor(

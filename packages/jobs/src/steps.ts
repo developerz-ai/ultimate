@@ -7,7 +7,7 @@
 // catches it and re-queues the job for `resumeAt` instead of holding a process for three days.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteOption, logger, renderThrowable } from '@ultimat3/core';
+import { finiteOption, isUltimateError, logger, renderThrowable } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
@@ -138,6 +138,13 @@ export interface StepRunnerOptions {
    * store belongs to whichever attempt has it now.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Aborted the moment the ATTEMPT is over — settled, or past its job deadline. `signal` alone
+   * cannot say so once the drain has aborted it first (a controller keeps its first reason), and
+   * the drain's reason writes through `put` (`writesThrough`): this is what still refuses a step
+   * left in flight by a body that returned without awaiting it. `executeJob` passes it.
+   */
+  readonly ended?: AbortSignal;
 }
 
 export interface StepRunner {
@@ -234,6 +241,19 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const cancelled = (): boolean => runSignal.aborted;
 
   /**
+   * A cancelled run whose step result is still this attempt's to record: the worker's drain cut
+   * it short (`X_DRAINING`, `worker-drain-cutoff.ts`), the write is fenced on the claim, and the
+   * attempt has not ended. The side effect behind the record HAPPENED — refused, the next worker
+   * runs it again. The fence is what makes this safe and not the in-process signal: a row the
+   * drain has already handed back answers the write `X_JOB_LEASE_LOST` in the store.
+   */
+  const writesThrough = (): boolean =>
+    options.fence !== undefined &&
+    options.ended?.aborted !== true &&
+    isUltimateError(runSignal.reason) &&
+    runSignal.reason.code === 'X_DRAINING';
+
+  /**
    * The statement itself, declared deliberate to the N+1 detector. One write per step IS the
    * design this file's header states — each step completes at its own instant and its output has
    * to be durable before the next one starts, so five steps are five `SQL_STEP_PUT`s that no
@@ -255,7 +275,9 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
    * never ran — or overwrite one it did. The write is refused, and refusing it unwinds the body.
    */
   const put = async (record: StepRecord): Promise<void> => {
-    if (cancelled()) throw new JobAbortedError({ job: jobName, step: record.name });
+    if (cancelled() && !writesThrough()) {
+      throw new JobAbortedError({ job: jobName, step: record.name });
+    }
     await persist(record);
     remember(record);
   };

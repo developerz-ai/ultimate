@@ -22,27 +22,43 @@ export class CdpBrowserMissingError extends UltimateError {
 
 /** One start of the browser that ended without an answer — what `cdp-launch-attempt.ts` reports. */
 export interface CdpLaunchAttempt {
-  /** `deadline`: alive and silent for `waitedMs`. `closed`: its pipe ended before any answer. */
-  readonly why: 'deadline' | 'closed';
+  /**
+   * `deadline`: alive and silent for `waitedMs`. `closed`: its wire ended, or its dial was
+   * refused, before any answer. `spawn`: the binary could not be started at all — it never ran.
+   */
+  readonly why: 'deadline' | 'closed' | 'spawn';
   readonly waitedMs: number;
   /** The code it exited with on its own, or `null` when the launcher had to kill it. */
   readonly exitCode: number | null;
   /** The last lines it wrote to stderr; empty when it wrote none. */
   readonly stderr: string;
+  /**
+   * What the LAUNCHER saw end the attempt, rendered: the refused dial and its endpoint, the call
+   * that timed out, the spawn's own error. Absent on a record that predates it.
+   */
+  readonly detail?: string | undefined;
 }
 
 const HAND_FLAGS =
   '--headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --remote-debugging-port=0 about:blank';
 
+const endedText = (attempt: CdpLaunchAttempt): string => {
+  const after = `after ${String(attempt.waitedMs)}ms`;
+  if (attempt.why === 'spawn') return 'could not be started';
+  if (attempt.why === 'deadline')
+    return `no answer inside ${String(attempt.waitedMs)}ms, so it was killed`;
+  return attempt.exitCode === null
+    ? `its DevTools connection ended ${after} without an answer, and it was killed`
+    : `exited with code ${String(attempt.exitCode)} ${after} without answering`;
+};
+
 const attemptText = (attempt: CdpLaunchAttempt, index: number): string => {
-  const ended =
-    attempt.why === 'deadline'
-      ? `no answer inside ${String(attempt.waitedMs)}ms, so it was killed`
-      : attempt.exitCode === null
-        ? `closed its DevTools pipe after ${String(attempt.waitedMs)}ms without answering, and was killed`
-        : `exited with code ${String(attempt.exitCode)} after ${String(attempt.waitedMs)}ms without answering`;
+  const saw =
+    attempt.detail === undefined || attempt.detail === ''
+      ? ''
+      : `: ${renderCauseValue(attempt.detail)}`;
   const said = attempt.stderr === '' ? 'it printed nothing' : renderCauseValue(attempt.stderr);
-  return `launch ${String(index + 1)}: ${ended}; stderr: ${said}`;
+  return `launch ${String(index + 1)}: ${endedText(attempt)}${saw}; stderr: ${said}`;
 };
 
 /**

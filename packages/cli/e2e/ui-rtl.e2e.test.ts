@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no path API — nothing native joins paths.
 import { join } from 'node:path';
-import { findChrome } from '@ultimat3/testing';
+import { E2E_BROWSER_OPEN_MS, findChrome } from '@ultimat3/testing';
 import type { ShotClock, ShotSession } from '../src/browser-launcher-port';
 import { cdpShotDriver } from '../src/cdp-shot-driver';
 
@@ -70,6 +70,14 @@ interface Box {
 }
 
 const chrome = await findChrome(process.env);
+
+/** Every call of the shot session after the launch. */
+const SHOT_TIMEOUT_MS = 20_000;
+/**
+ * The open's designed budget, then the shot session's own: `open()`'s eight calls (attach a page,
+ * enable four domains, two emulations — `cdp-shot-driver.ts`), the `goto`, the wait and the read.
+ */
+const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS + 11 * SHOT_TIMEOUT_MS;
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
 
 describe.skipIf(chrome === undefined && !required)('ui overlays under dir="rtl" at 390px', () => {
@@ -91,7 +99,7 @@ describe.skipIf(chrome === undefined && !required)('ui overlays under dir="rtl" 
       name: 'ui rtl',
       rules: { allowHosts: ['localhost'] },
       clock,
-      timeoutMs: 20_000,
+      timeoutMs: SHOT_TIMEOUT_MS,
     });
     await session.page.goto(`http://localhost:${String(server.port)}/`);
     await session.page.waitFor('#palette', { state: 'attached' });
@@ -101,13 +109,13 @@ describe.skipIf(chrome === undefined && !required)('ui overlays under dir="rtl" 
         return [id, { left: box.left, right: box.right }];
       })))`);
     boxes = JSON.parse(String(measured)) as Record<string, Box>;
-  }, 60_000);
+  }, HOOK_TIMEOUT_MS);
 
   // THE close: the connection, the Chrome process and its profile directory.
   afterAll(async () => {
     await session?.close();
     server?.stop(true);
-  });
+  }, E2E_BROWSER_OPEN_MS);
 
   const box = (id: string): Box => boxes[id] ?? expect.unreachable(`no box measured for #${id}`);
   const centre = (of: Box): number => (of.left + of.right) / 2;

@@ -187,6 +187,7 @@ export type { Deprecation, DeprecationField, DeprecationRender } from './depreca
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { DevSecretsOptions } from './dev-secrets';
 export { assertNoDevSecretsOutsideLocal, CursorSecretDevError } from './dev-secrets';
+export { DRAIN_DEADLINE_DEFAULT_MS, DRAIN_DEADLINE_MAX_MS } from './drain-deadline';
 export type {
   Env,
   EnvBooleanVar,

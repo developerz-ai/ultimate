@@ -5,7 +5,7 @@
 // framework's own chart, and its `deploy-proof` job installs this one.
 
 import { describe, expect, test } from 'bun:test';
-import { drainDeadlineMs } from '@ultimat3/core';
+import { DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
 import { names } from './naming';
 import { helmFiles } from './scaffold-helm';
 
@@ -21,13 +21,6 @@ const fileAt = (path: string): string => {
 
 const values = (): Record<string, unknown> =>
   Bun.YAML.parse(fileAt('docker/helm/values.yaml')) as Record<string, unknown>;
-
-/**
- * `READINESS_GRACE_DEFAULT_MS` in `packages/core/src/lifecycle-grace.ts`, the grace a non-local
- * process holds `/readyz` at 503 before closing its listener. Restated rather than imported
- * because core's barrel does not export it; the day it does, import it and delete this line.
- */
-const READINESS_GRACE_DEFAULT_MS = 5000;
 
 describe('unit · the scaffolded chart boots, drains and scales honestly', () => {
   test('every role that probes also has a startupProbe, 30 × 5s', () => {
@@ -53,16 +46,23 @@ describe('unit · the scaffolded chart boots, drains and scales honestly', () =>
     expect(drain?.preStopSleepSeconds).toBe(5);
   });
 
-  test('terminationGracePeriodSeconds covers preStop + readiness grace + drain deadline', () => {
+  test('terminationGracePeriodSeconds is derived per role from the drain values, never a literal', () => {
     const deployments = fileAt('docker/helm/templates/deployments.yaml');
-    const grace = Number(/terminationGracePeriodSeconds: (\d+)/.exec(deployments)?.[1] ?? 0);
-    const drain = values()['drain'] as { preStopSleepSeconds?: number } | undefined;
-    const needed =
-      (drain?.preStopSleepSeconds ?? 0) +
-      READINESS_GRACE_DEFAULT_MS / 1000 +
-      drainDeadlineMs() / 1000;
-    expect(needed).toBe(35);
-    expect(grace).toBeGreaterThanOrEqual(needed);
+    expect(deployments).not.toMatch(/terminationGracePeriodSeconds: \d/);
+    expect(deployments).toContain('include "my-app.terminationGracePeriodSeconds"');
+    expect(deployments).toContain('minReadySeconds: {{ $.Values.minReadySeconds | int }}');
+    // The helper's terms: budget + margin for every role, grace and preStop only where routed.
+    const helpers = fileAt('docker/helm/templates/_helpers.tpl');
+    for (const term of ['deadlineSeconds', 'teardownMarginSeconds', 'readinessGraceSeconds']) {
+      expect(helpers).toContain(`(int $drain.${term})`);
+    }
+    expect(helpers).toContain('{{- if .cfg.port -}}');
+    // The values are core's own defaults, in seconds, so the derived default is 45 / 35.
+    const drain = values()['drain'] as Record<string, number> | undefined;
+    expect(drain?.['deadlineSeconds']).toBe(DRAIN_DEADLINE_DEFAULT_MS / 1000);
+    expect(drain?.['readinessGraceSeconds']).toBe(READINESS_GRACE_DEFAULT_MS / 1000);
+    expect(drain?.['teardownMarginSeconds']).toBe(10);
+    expect(values()['minReadySeconds']).toBe(10);
   });
 
   test('the worker scales on an External queue_depth, and a stray type fails the render', () => {

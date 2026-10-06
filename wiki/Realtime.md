@@ -469,14 +469,16 @@ What it is **not**: a multi-node result — neither run crossed NATS, so this is
 So the drain is **server-directed**:
 
 ```json
-{ "type": "reconnect", "afterMs": 1830, "resumeFrom": "0/1A2B3C4", "reason": "drain" }
+{ "type": "reconnect", "v": 3, "afterMs": 1830, "reason": "drain" }
 ```
+
+`ReconnectFrame` (`packages/realtime/src/sync-protocol.ts`) has those four fields and no cursor: `v` is `PROTOCOL_VERSION`, `reason` one of `drain`, `overload`, `rebalance`.
 
 | Property | Effect |
 |---|---|
 | Per-client `afterMs`, jittered over a window | reconnects arrive spread out, not as a spike |
-| Server chooses the window from live connection count | 500 clients drain in a second; 500k spread over minutes |
-| `resumeFrom` LSN | reconnect is a delta from the change buffer, not a resubscribe-and-refetch |
+| The window is `createSyncNode({ drainSpreadMs })`, default 30s | each socket draws its own delay inside it (`drainPlan`) |
+| The resume point is the client's own cursor | on reopen the client sends `hello`, then one `subscribe` per live query carrying that query's cursor, and re-announces each channel from its own; the node replays from its change buffer when the cursor is inside it, one snapshot when not (`live-resume.ts`) |
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
 | Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |
 | Ordering in the drain sequence | `/readyz` → 503, stop new subscribes, send `reconnect` frames, close cleanly, flush spans, exit 0 |

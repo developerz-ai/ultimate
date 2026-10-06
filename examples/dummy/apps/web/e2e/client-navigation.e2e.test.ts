@@ -11,12 +11,16 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import { everyCount, like, likeCount, readFlag, readNumber } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
   acceptanceBrowser,
   noBrowser,
   POSTS,
+  SIGN_IN_MS,
   serverLikeCount,
   signInAs,
   startPostly,
@@ -58,18 +62,21 @@ describe.skipIf(noBrowser)('client navigation on the app surface', () => {
     );
   };
 
-  beforeAll(async () => {
-    app = await startPostly();
-    browser = await acceptanceBrowser();
-    await signInAs(browser.session, app, 'ada');
-    tab = await browser.session.newTab();
-  }, 240_000);
+  beforeAll(
+    async () => {
+      app = await startPostly();
+      browser = await acceptanceBrowser();
+      await signInAs(browser.session, app, 'ada');
+      tab = await browser.session.newTab();
+    },
+    ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS,
+  );
 
   afterAll(async () => {
     await tab?.close();
     await browser?.close();
     await app?.stop();
-  });
+  }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
   // The fallbacks first — each is a navigation the router must hand back to the browser.
   test('a link onto another surface (site/) is a full navigation', async () => {

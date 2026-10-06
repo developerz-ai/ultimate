@@ -158,6 +158,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     store: driver.steps,
     fence: { job: handle.name, jobId: claimed.id, ...claimOf(claimed) },
     signal,
+    // This attempt's OWN end — the deadline, the `finally` below — apart from the run's signal,
+    // whose first reason may be the drain's: a drained step still records, an ended attempt never.
+    ended: cancel.signal,
     // The DECLARED per-step ceiling and event poll. Passed here or nowhere: this is the only
     // production construction of a runner, so a `StepRunnerOptions` field it omits is a feature
     // no `job()` can reach — which both of these were until 2026-08.

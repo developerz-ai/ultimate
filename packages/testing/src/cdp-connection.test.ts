@@ -26,7 +26,7 @@ class FakeSocket {
   onopen: (() => void) | undefined;
   onmessage: ((event: { data: string }) => void) | undefined;
   onclose: (() => void) | undefined;
-  onerror: (() => void) | undefined;
+  onerror: ((event: unknown) => void) | undefined;
   readonly sent: string[] = [];
   closeCalls = 0;
 
@@ -34,7 +34,12 @@ class FakeSocket {
     live = this;
     // A microtask, not a timer: the handshake awaits `onopen`, and a synchronous call from the
     // constructor would fire before the caller has assigned it.
-    queueMicrotask(() => this.onopen?.());
+    queueMicrotask(() => this.handshake());
+  }
+
+  /** How the handshake ends: open, unless a subclass says otherwise. */
+  handshake(): void {
+    this.onopen?.();
   }
 
   send(text: string): void {
@@ -57,6 +62,16 @@ class FakeSocket {
 const install = (): void => {
   (globalThis as { WebSocket: unknown }).WebSocket = FakeSocket;
 };
+
+/** What Bun's own `WebSocket` hands `onerror` on a refused handshake (measured on 1.4.2). */
+const HANDSHAKE_REFUSED = "WebSocket connection to 'ws://x/1' failed: Expected 101 status code";
+
+/** A socket whose handshake fails the way Bun reports it: an `ErrorEvent` carrying a message. */
+class RefusingSocket extends FakeSocket {
+  override handshake(): void {
+    this.onerror?.({ type: 'error', message: HANDSHAKE_REFUSED });
+  }
+}
 
 afterEach(() => {
   (globalThis as { WebSocket: unknown }).WebSocket = real;
@@ -234,5 +249,38 @@ describe('cdpConnect', () => {
     connection.close();
 
     expect(await connection.once('Page.loadEventFired', undefined, 600_000)).toBe(false);
+  });
+
+  test('a refused handshake carries the socket’s own reason, not only that it was refused', async () => {
+    (globalThis as { WebSocket: unknown }).WebSocket = RefusingSocket;
+
+    const thrown = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 1000 }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+    expect((thrown as { cause?: string }).cause).toContain('Expected 101 status code');
+  });
+
+  test('a socket that fails mid-run hands its own reason to every call waiting on it', async () => {
+    install();
+    const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 600_000 });
+    const call = connection.send('Page.enable');
+
+    socket().onerror?.({ type: 'error', message: 'Connection reset by peer' });
+
+    const thrown = await call.catch((error: unknown) => error);
+    expect((thrown as { cause?: string }).cause).toContain('Connection reset by peer');
+  });
+
+  test('an error event with no message still refuses by name', async () => {
+    install();
+    const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 600_000 });
+    const call = connection.send('Page.enable');
+
+    socket().onerror?.({ type: 'error' });
+
+    const thrown = await call.catch((error: unknown) => error);
+    expect((thrown as { cause?: string }).cause).toContain('the CDP connection failed');
   });
 });

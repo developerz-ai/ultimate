@@ -7,12 +7,16 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
+import { DEFAULT_CDP_TIMEOUT_MS, E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
 import { everyCount, like, until } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
+  ACCEPTANCE_CLOSE_MS,
+  ACCEPTANCE_OPEN_MS,
   acceptanceBrowser,
   noBrowser,
   POSTS,
+  SIGN_IN_MS,
   serverLikeCount,
   signInAs,
   startPostly,
@@ -30,19 +34,22 @@ describe.skipIf(noBrowser)('a like written through useMutation', () => {
       let browser: AcceptanceBrowser;
       let tab: E2eTab;
 
-      beforeAll(async () => {
-        app = await startPostly(host.mode);
-        browser = await acceptanceBrowser();
-        await signInAs(browser.session, app, 'ada');
-        tab = await browser.session.newTab();
-        await tab.goto(`${app.base}/posts/${POSTS.tenancy.id}`);
-      }, 240_000);
+      beforeAll(
+        async () => {
+          app = await startPostly(host.mode);
+          browser = await acceptanceBrowser();
+          await signInAs(browser.session, app, 'ada');
+          tab = await browser.session.newTab();
+          await tab.goto(`${app.base}/posts/${POSTS.tenancy.id}`);
+        },
+        ACCEPTANCE_OPEN_MS + SIGN_IN_MS + E2E_TAB_OPEN_MS + E2E_GOTO_MS,
+      );
 
       afterAll(async () => {
         await tab?.close();
         await browser?.close();
         await app?.stop();
-      });
+      }, ACCEPTANCE_CLOSE_MS + DEFAULT_CDP_TIMEOUT_MS);
 
       test('is still there after a reload, because the server stored it', async () => {
         // Read from the ISLANDS: the page's byline count is server-rendered once and never moves.

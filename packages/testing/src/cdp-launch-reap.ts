@@ -31,12 +31,15 @@ const within = (ms: number, work: Promise<unknown>): Promise<unknown> =>
 /**
  * Kill whatever is left of the browser's process group and wait until the group is EMPTY — the
  * condition, asked of the kernel, not a pause: signal 0 to a group with no member throws. Bounded
- * by `CLOSE_GRACE_MS` for a container whose init never reaps a zombie.
+ * by `CLOSE_GRACE_MS` for a container whose init never reaps a zombie — on the monotonic clock,
+ * not a count of sleeps: a loaded runner oversleeps every 10 ms, and the close's designed bound
+ * (`LAUNCHED_CLOSE_MS`) is what a hook deadline is derived from.
  */
 async function reapGroup(pgid: number): Promise<void> {
+  const until = performance.now() + CLOSE_GRACE_MS;
   try {
     process.kill(-pgid, 'SIGKILL');
-    for (let looks = CLOSE_GRACE_MS / GROUP_POLL_MS; looks > 0; looks -= 1) {
+    while (performance.now() < until) {
       await Bun.sleep(GROUP_POLL_MS);
       process.kill(-pgid, 0);
     }

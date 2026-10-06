@@ -98,16 +98,13 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`); `task.enqueue()` uses the
   job's plain key.
 - **TWO shutdown hooks per worker, one per PHASE**: `accept` is `stopAccepting()` (flip state, clear
-  the poll timer, abort held runs); `close` is the teardown. `stop()` hands both back in a `finally`;
+  the poll timer, arm the drain cut-off — it aborts nothing); `close` is the teardown. `stop()` hands both back in a `finally`;
   `start()` refuses while draining.
-- **A claimed job is counted with core's `beginWork()`**, so the drain's in-flight phase does the
-  waiting. **The teardown's wait is bounded on SIGTERM** (`settleAllBy` in `drain-wait.ts`,
-  `jobs.worker.drain-abandoned`) and unbounded on a manual `stop()`. A worker always reaches `'stopped'`;
-  `state` is set in the `finally`: one teardown, joined.
-- **SIGTERM reaches the job**: the worker's one `AbortController` (`drainSignal`) is composed into every
-  run (`worker-run.ts`); `stopAccepting(reason)` aborts it with `JobDrainedError` (`X_DRAINING`). A
-  drained attempt settles as **`interrupted`** (`nack`, `countsAsAttempt: false`, no park, no dead
-  letter), read off the SIGNAL. `WorkerStats.interrupted`; `worker-drain-signal.test.ts`.
+- **A claimed job is counted with core's `beginWork()`**: the drain's in-flight phase waits. The
+  teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
+- **A deploy lets a running job FINISH**: SIGTERM only stops claiming. `drainSignal` aborts
+  (`X_DRAINING`) at `deadlineAt − margin` (`worker-drain-cutoff.ts`), then held claims go back
+  uncounted (`worker-held.ts`). Settles **`interrupted`**; `docs/history/jobs.md`, "Drain, 2026-10".
 - **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.
@@ -124,7 +121,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **The claim loop re-arms on the PASS, never the jobs**; `tick()` resolves with that pass's executions.
 - **A deadline CANCELS, then fails the attempt**, never the reverse (`raceTimeout`, `withStepTimeout`);
   the attempt is cancelled in `executeJob`'s `finally`.
-- **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`), and the STORE fences
+- **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
+  `X_DRAINING` on a live attempt: a step done in the drain is recorded once. The STORE fences
   the claim (`StepFence`, `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`). `executeJob` passes it.
 - **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`**, and an empty `spanId` sends none.
 - **The scheduler runs one dispatch round at a time**; every other `tick()` joins it; `stop()` waits it
@@ -278,6 +276,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `renewal-timer.ts` | the renewal interval and its `stopped()` latch |
 | `worker.ts` | `worker` role, claim round, drain |
+| `worker-drain-cutoff.ts` / `worker-held.ts` / `worker-tally.ts` | drain cut-off · held claims · counters |
 | `worker-admit.ts` | may this claimed job start: the limiter, the fleet slot, and the shed / refusal |
 | `worker-registry.ts` | one worker's registry row: announce, heartbeat, forget |
 | `worker-types.ts` | the worker's public contract: `WorkerOptions`, `WorkerStats`, `Worker` |

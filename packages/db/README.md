@@ -438,7 +438,13 @@ migration inside its own transaction. It refuses **before applying anything** wh
   the running one — another version owns the database; or
 - an applied migration's `up` SQL no longer matches its recorded checksum.
 
-Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion }`.
+**Except a rollback** (`As of 2026-10-05`, `migrate-rollback.ts`): when every unknown ledger row
+sorts after the newest migration this build ships, and this build has nothing left to apply, the
+ledger is an older image rolled back onto a newer build's schema. Nothing is applied, the rows are
+reported in `ahead` and logged as `ultimate migrate ledger ahead of build`; any other unknown row is
+still `X_MIGRATION_CONFLICT`.
+
+Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion, ahead: [id] }`.
 
 ## A loop of queries that is deliberate says so
 
@@ -533,7 +539,7 @@ job the moment Postgres fails over.
 | `X_DB_LOCK_TIMEOUT` | `55P03` — it waited past `lock_timeout` for a lock it never got |
 | `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or `reserve()` past `acquireTimeoutMs` |
 | `X_DB_DRIFT` | live schema differs from migrations |
-| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch |
+| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch — never for rows that are all newer than the build (a rollback) |
 | `X_MIGRATE_CONCURRENT` | another migrator still held the lock when the wait ran out |
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |

@@ -11,10 +11,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { finiteCount } from '@ultimat3/core';
 import type { E2eAppMode } from './e2e-spawn';
-import { inherited, refuse, spawnE2eApp, xBin } from './e2e-spawn';
+import { E2E_APP_STOP_MS, inherited, READY_PROBE_MS, refuse, spawnE2eApp, xBin } from './e2e-spawn';
 import { testSealKeyEnv } from './test-seal-key';
 
 export type { E2eAppMode } from './e2e-spawn';
+export { E2E_APP_STOP_MS } from './e2e-spawn';
 
 export interface StartE2eAppOptions {
   /** The app root — the directory holding `app.config.ts`. */
@@ -51,6 +52,18 @@ export interface E2eApp {
 }
 
 const DEFAULT_READY_TIMEOUT_MS = 90_000;
+
+/** Sequential steps `startE2eApp` bounds at `DEFAULT_READY_TIMEOUT_MS`: `x db reset`, `x db seed`, `/readyz`. */
+const START_PHASES = 3;
+
+/**
+ * The longest `startE2eApp()` is DESIGNED to take, at its default deadline: the reset, the seed and
+ * the readiness wait each given the whole of it, the one probe that may straddle the end, and the
+ * bounded stop of an app that never got ready. THE deadline a hook that boots an e2e app derives
+ * from — with `E2E_BROWSER_OPEN_MS` beside it when the same hook opens a browser.
+ */
+export const E2E_APP_START_MS =
+  START_PHASES * DEFAULT_READY_TIMEOUT_MS + READY_PROBE_MS + E2E_APP_STOP_MS;
 
 function x(bin: string, args: readonly string[], root: string, env: Record<string, string>): void {
   const run = Bun.spawnSync(['bun', bin, ...args], {

@@ -37,9 +37,15 @@ export { budgetStoreConformance } from './budget-store-conformance';
 export type { E2eBrowser, OpenE2eBrowserOptions } from './cdp-browser';
 export {
   DEFAULT_CDP_TIMEOUT_MS,
+  E2E_BROWSER_CLOSE_MS,
+  E2E_BROWSER_OPEN_MS,
+  E2E_GOTO_MS,
+  E2E_TAB_OPEN_MS,
   openE2eBrowser,
   openE2eBrowserIfAvailable,
 } from './cdp-browser';
+export type { E2eBrowserLease, RunEndHook } from './cdp-browser-lease';
+export { closeE2eBrowsersAtRunEnd, leaseE2eBrowser } from './cdp-browser-lease';
 export type {
   CdpConnection,
   CdpConnectionOptions,
@@ -71,6 +77,7 @@ export {
   CONTAINER_CHROME_ARGS,
   findChrome,
   LAUNCH_ATTEMPTS,
+  LAUNCH_BUDGET_MS,
   LAUNCH_TIMEOUT_MS,
   launchChrome,
   launchFoundChrome,
@@ -100,7 +107,7 @@ export {
   setFrozenClock,
 } from './determinism';
 export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
-export { startE2eApp } from './e2e-app';
+export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
 export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
 export type { E2eDriverOptions } from './e2e-driver';
 export { e2eFixtures, installE2eDriver } from './e2e-driver';

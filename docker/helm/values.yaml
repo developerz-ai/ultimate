@@ -115,11 +115,27 @@ securityContext:
 # The stop sequence. The kubelet removes the pod from its Service, then runs the `preStop` sleep,
 # then sends SIGTERM; the framework then answers 503 on /readyz for its own readiness grace before
 # closing the listener and draining. The sleep renders only on Kubernetes 1.30+, where
-# `lifecycle.preStop.sleep` exists (_helpers.tpl). terminationGracePeriodSeconds in
-# deployments.yaml is sized to this number plus the framework's grace and drain deadline, so move
-# them together.
+# `lifecycle.preStop.sleep` exists (_helpers.tpl).
+#
+# Each Deployment's terminationGracePeriodSeconds is DERIVED from this block, per role
+# (`ultimate.terminationGracePeriodSeconds`): preStop + readiness grace for the roles something
+# routes to (web, sync), then deadline + teardown margin for every role. Never set it by hand.
+#
+#   readinessGraceSeconds  app.config.ts `drain.readinessGraceMs` / 1000 (core's default: 5)
+#   deadlineSeconds        app.config.ts `drain.deadlineMs` / 1000 (core's default: 25) — the time
+#                          a running job has to finish on a deploy. `x deploy --method helm` sets
+#                          both from app.config.ts, so the chart cannot fall behind a raised budget
+#   teardownMarginSeconds  what runs after the deadline: the release floor (5s, cli's
+#                          MIN_RELEASE_MS), the OTel flush and the pool close, plus headroom
 drain:
   preStopSleepSeconds: 5
+  readinessGraceSeconds: 5
+  deadlineSeconds: 25
+  teardownMarginSeconds: 10
+
+# How long a new pod must stay Ready before a rollout counts it and stops an old one, on every
+# Deployment. Catches a role that passes its first probe and crashes seconds later.
+minReadySeconds: 10
 
 # Pre-deploy hook. Runs to completion before any serving role starts.
 migrate:

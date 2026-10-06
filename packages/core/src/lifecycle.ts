@@ -5,6 +5,7 @@
 import { type Clock, systemClock } from './clock';
 import type { ReadinessMode } from './config-health';
 import { assertReadinessMode } from './config-health';
+import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
 import { UltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
@@ -50,7 +51,8 @@ interface Registration {
   readonly hook: ShutdownHook;
 }
 
-const DEFAULT_DEADLINE_MS = 25_000;
+/** `drain.deadlineMs`'s default, owned by `drain-deadline.ts` so the config and this agree. */
+const DEFAULT_DEADLINE_MS = DRAIN_DEADLINE_DEFAULT_MS;
 
 let deadlineMs = DEFAULT_DEADLINE_MS;
 /** `undefined` means "the environment's default", read when a drain starts, not at import. */
@@ -279,7 +281,7 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `the "${registration.name}" shutdown hook (phase: ${phase}) was still running at the ${deadlineMs}ms drain deadline and has been ABANDONED — the process exits without it, so anything it had in flight may be incomplete`,
-        fix: `raise the budget past the work this hook does — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute job — and set terminationGracePeriodSeconds to at least as many seconds, or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
+        fix: `raise the budget past the work this hook does — set drain: { deadlineMs: 600_000 } in app.config.ts for a 10-minute job (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform's kill timer at least as many seconds (x deploy --method helm sizes the chart's from it), or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
         hook: registration.name,
         phase,
       });
@@ -311,7 +313,7 @@ async function runDrain(signal: string): Promise<void> {
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
-        fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
+        fix: 'raise the budget past the slowest handler — set drain: { deadlineMs: 600_000 } in app.config.ts for a 10-minute one (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform kill timer at least as many seconds, or shorten the handler',
       });
     }
 

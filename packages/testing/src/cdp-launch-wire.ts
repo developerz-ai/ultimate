@@ -4,6 +4,7 @@
 
 // why: Bun exposes no path-join primitive; the announcement file lives in the profile directory.
 import { join } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import { cdpConnect, cdpConnectOver } from './cdp-connection';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
@@ -88,7 +89,13 @@ async function dialWithin(
     return await Promise.race([dialing, late]);
   } catch (error) {
     void dialing.then((connection) => connection.close()).catch(() => undefined);
-    throw error;
+    // A timeout stays one — the launcher reads it as the deadline. Any other refusal names the
+    // endpoint it was for: the browser announced it, so the dial is the step that failed.
+    if (error instanceof CdpTimeoutError) throw error;
+    throw new CdpCallFailedError({
+      method: `connect ${endpoint}`,
+      detail: renderThrowable(error),
+    });
   } finally {
     clearTimeout(timer);
   }

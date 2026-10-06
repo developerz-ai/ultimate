@@ -524,6 +524,32 @@ Two fields, and `ai.mcp` is where the app's own MCP surface is configured — th
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.
 
+## `drain`
+
+How a SIGTERM'd process leaves: `DrainConfig` in [`packages/core/src/config-health.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-health.ts). The production boot applies it to **every role** (`lifecycleForRole`, `packages/cli/src/serve-boot.ts`), not only to the web server.
+
+| field | type | default | notes |
+|---|---|---|---|
+| `drain.readinessGraceMs` | whole ms, `0`–`60000` | `0` in `development`/`test`, `5000` everywhere else (a process naming no environment included) | `/readyz` answers 503 for this long with the listener still open, so endpoints stop routing here before it closes. `web` and `sync` only: every other role drains with no grace |
+| `drain.deadlineMs` | whole ms, `1`–`3600000` | `25000` | the drain budget, after the grace: the time in-flight requests and a **running job** have to finish on a deploy before the lifecycle abandons the rest (`X_SHUTDOWN_TIMEOUT`). Raise it for long jobs. `NaN`, `Infinity`, a fraction, `0` or more than an hour is `X_CONFIG_INVALID` naming the key — past an hour, the job belongs in more steps. `As of 2026-10-05` |
+
+```ts
+export const config = defineConfig({
+  name: 'postly',
+  // A report job runs up to 8 minutes; a deploy lets it finish.
+  drain: { deadlineMs: 600_000 },
+});
+```
+
+The platform's own kill timer must outlast the sum, or SIGKILL truncates the drain:
+
+| Rung | Who sizes it | Rule |
+|---|---|---|
+| Helm | `x deploy --method helm` passes `drain.deadlineSeconds` and `drain.readinessGraceSeconds` from this section; the chart derives each role's `terminationGracePeriodSeconds` | preStop (web/sync, 1.30+) + grace (web/sync) + deadline + 10 s margin |
+| Compose | you: `stop_grace_period` in `docker-compose.prod.yml` | ≥ grace + deadline + 10 s (`40s` ships, for the defaults) |
+
+`http.drainTimeoutMs`, when an app declares it in `configureHttp`, still sets the budget on the `web` role — it is applied after this section, when the server is created. `x deploy --method helm` imports the app to read it and sizes the chart from the **larger** of the two, so a web pod is never killed inside its own HTTP drain. Its removal is queued for 25.0.0.
+
 ## Runtime overrides — `apps/<app>/runtime.ts`
 
 The one place a deployment hands the framework a driver, a middleware or a plain route. Not a
@@ -597,7 +623,6 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `REPLICATION_PUBLICATION` | `replicator` | no — default `x_changes` | the `pgoutput` publication the slot decodes |
 | `REDIS_URL` | any tier-3 cache user | if `redis` in `cache.tiers` | |
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
-| `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
 | `LOG_LEVEL` | all | no — unset or empty is `info` | `trace \| debug \| info \| warn \| error \| fatal \| silent`, lowercase. Any other value — `DEBUG`, `verbose` — is REFUSED at import (`X_INVARIANT`), never read as `info` |
 | `TRUSTED_PROXY_HOPS` | `web`, `sync` | no — unset trusts no proxy header | how many proxies **append** to `x-forwarded-for` between the client and this process: 1 for a single ingress or ALB, 2 for a CDN in front of one. Decimal digits, 1–64 (`@ultimat3/http`'s `MAX_PROXY_HOPS`); anything else is `X_TRUSTED_PROXY_HOPS_INVALID`, refused rather than defaulted, because reading the header at the wrong index is trusting a value the client typed. Unset means `ctx.ip` is the socket address, `ctx.peer` is `null` and no inbound `x-request-id` is echoed |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |

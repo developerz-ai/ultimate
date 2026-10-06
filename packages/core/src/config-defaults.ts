@@ -2,6 +2,7 @@
 // Split from `config.ts`, which sits at its 500-line ceiling; literals only, so it reads no key.
 
 import type { AppConfig } from './config';
+import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
 
@@ -49,7 +50,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true, path: '/mcp' } },
     // Read from the process env when the config is DEFINED — the same env the drain will run in.
-    drain: { readinessGraceMs: defaultReadinessGraceMs() },
+    drain: { readinessGraceMs: defaultReadinessGraceMs(), deadlineMs: DRAIN_DEADLINE_DEFAULT_MS },
     health: { readiness: 'dependencies' },
   };
 }

@@ -35,9 +35,9 @@ export interface RunClaimedOptions {
   readonly schedule?: IntervalScheduler;
   readonly events?: EventLookup;
   /**
-   * The worker's drain, composed into every run it starts: aborted with a `JobDrainedError` when
-   * the process is going away, so the body hears it on `ctx.signal` — the one seam it already
-   * reads — before core's in-flight wait starts spending the budget on it.
+   * The worker's drain, composed into every run it starts: aborted with a `JobDrainedError` at
+   * the drain's cut-off — near the deadline, never at SIGTERM (`worker-drain-cutoff.ts`) — so a
+   * body still running then hears it on `ctx.signal`, the one seam it already reads.
    */
   readonly drain?: AbortSignal;
   /** Why this run may not start — handed to `executeJob`, which fails the attempt with it. */
@@ -131,7 +131,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     // when the run settles (an app whose `context()` carries a process-lifetime signal was
     // accumulating one composite per job), and the worker can abort it itself — which is the only
     // way a fleet slot taken by somebody else reaches the body running under it. The worker's
-    // drain is the third source: SIGTERM reaches the body through the same signal, carrying the
+    // drain is the third source: its cut-off reaches the body through the same signal, with the
     // `X_DRAINING` reason `executeJob` reads to hand the attempt back uncounted.
     runSignal = createRunSignal([base.signal, heartbeat.signal, options.drain]);
     const signal = runSignal;

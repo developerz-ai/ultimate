@@ -19,7 +19,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PageLike } from '@ultimat3/testing';
 import type { E2eBrowser } from '../src/cdp-browser';
-import { openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
+import { E2E_BROWSER_OPEN_MS, openE2eBrowser, openE2eBrowserIfAvailable } from '../src/cdp-browser';
 import { findChrome } from '../src/cdp-launch';
 import { e2ePage } from '../src/e2e-page';
 
@@ -63,10 +63,10 @@ console.log(
     : `e2e browser: ${chrome}`,
 );
 
-// Bun's default is 5000ms for a test AND for a hook, and a cold Chrome launch alone can spend
-// most of that. A budget that expires mid-launch reports "timed out" over whatever the browser was
-// actually doing, which is the one failure mode a driver test must not have.
-const HOOK_TIMEOUT_MS = 60_000;
+// Bun's default is 5000ms for a test AND for a hook. A budget that expires mid-launch reports
+// "timed out" over whatever the browser was actually doing — the one failure mode a driver test
+// must not have — so a hook gets the open's whole designed budget, both starts included.
+const HOOK_TIMEOUT_MS = E2E_BROWSER_OPEN_MS;
 const TEST_TIMEOUT_MS = 30_000;
 
 /** The fixture's one piece of mutable state, read back out of the live document. */
@@ -87,7 +87,7 @@ describe.skipIf(chrome === undefined && !required)('the raw-CDP browser drives a
 
   afterAll(async () => {
     await browser?.close();
-  }, TEST_TIMEOUT_MS);
+  }, HOOK_TIMEOUT_MS);
 
   test(
     'goto navigates and url() answers where the page actually is',

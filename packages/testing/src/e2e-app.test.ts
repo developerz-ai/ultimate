@@ -9,7 +9,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } 
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join, resolve } from 'node:path';
-import { startE2eApp } from './e2e-app';
+import { E2E_APP_START_MS, startE2eApp } from './e2e-app';
+import { E2E_APP_STOP_MS, READY_PROBE_MS } from './e2e-spawn';
 
 const throwaways = (): readonly string[] =>
   readdirSync(tmpdir()).filter((name) => name.startsWith('ultimate-e2e-'));
@@ -42,4 +43,9 @@ test('a readiness budget that is not a finite count is refused before anything s
   expect((error as { code?: string }).code).toMatch(/^X_/);
   expect((error as { code?: string }).code).not.toBe('X_E2E_APP_FAILED');
   expect(throwaways().filter((name) => !before.has(name))).toEqual([]);
+});
+
+test('the start budget covers the reset, the seed and the readiness wait at their deadlines, and a refused boot’s stop', () => {
+  // Three phases, each bounded by the same default deadline: two synchronous `x` runs, then `/readyz`.
+  expect(E2E_APP_START_MS).toBeGreaterThanOrEqual(3 * 90_000 + READY_PROBE_MS + E2E_APP_STOP_MS);
 });

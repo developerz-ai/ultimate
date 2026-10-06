@@ -118,10 +118,12 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
   {{/*
   Probes follow the role, because the roles do not agree on what they open. web and sync serve
   HTTP and get both. worker, scheduler and replicator open no HTTP socket at all — the scrape
-  listener is their only port — so they take liveness on it. Readiness for replicator alone, on
-  /readyz of that listener: 503 while the replication stream is down, so the pod shows 0/1 instead
-  of a healthy pod feeding nothing. Their headless Service publishes not-ready addresses, so a
-  not-ready pod is still scraped.
+  listener is their only port — so they take liveness on it, and readiness on /readyz of that same
+  listener: 503 until the role has started and from the first instant of a drain, so a rollout
+  never counts a worker that has not started its role yet. The replicator reads /readyz?deep=1:
+  503 while the replication stream is down, so the pod shows 0/1 instead of a healthy pod feeding
+  nothing. Their headless Service publishes not-ready addresses, so a not-ready pod is still
+  scraped.
 
   Every one of them takes a startupProbe too, because no listener opens early: the server builds
   the app's islands before any role binds a port, and a liveness probe counting from container
@@ -154,11 +156,14 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 5
     failureThreshold: 30
-  {{- if eq $role "replicator" }}
   readinessProbe:
+    {{- if eq $role "replicator" }}
     httpGet: { path: '/readyz?deep=1', port: metrics }
     periodSeconds: 10
-  {{- end }}
+    {{- else }}
+    httpGet: { path: /readyz, port: metrics }
+    periodSeconds: 5
+    {{- end }}
   livenessProbe:
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15
@@ -169,12 +174,31 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     - name: tmp
       mountPath: /tmp
 {{- end -}}
+
+{{/*
+A role's terminationGracePeriodSeconds, in the order the kubelet's budget is spent: the preStop
+sleep (web and sync, 1.30+), the readiness grace (web and sync — every other role drains with
+none), the drain budget (app.config.ts drain.deadlineMs, every role) and the teardown margin.
+Defaults: 45s web/sync (40s below 1.30), 35s the rest. x deploy --method helm sets
+drain.deadlineSeconds and drain.readinessGraceSeconds from app.config.ts.
+*/}}
+{{- define "${app.kebab}.terminationGracePeriodSeconds" -}}
+{{- $drain := .root.Values.drain -}}
+{{- $total := add (int $drain.deadlineSeconds) (int $drain.teardownMarginSeconds) -}}
+{{- if .cfg.port -}}
+{{- $total = add $total (int $drain.readinessGraceSeconds) -}}
+{{- if semverCompare ">=1.30-0" .root.Capabilities.KubeVersion.Version -}}
+{{- $total = add $total (int $drain.preStopSleepSeconds) -}}
+{{- end -}}
+{{- end -}}
+{{- $total -}}
+{{- end -}}
 `;
 
 const deployments = (app: NameSet): string => `{{/*
 One Deployment per enabled role, from one image. terminationGracePeriodSeconds covers the preStop
-sleep, the framework's readiness grace and its SIGTERM drain: in-flight requests, open websockets
-and running job steps finish.
+sleep, the framework's readiness grace and its SIGTERM drain — in-flight requests, open websockets
+and running job steps finish — derived per role from drain in values.yaml.
 */}}
 {{- range $role, $cfg := .Values.roles }}
 {{- if $cfg.enabled }}
@@ -201,6 +225,9 @@ spec:
   slot's advisory lock, so a surged pod can only stand by, unready, and maxUnavailable: 0 never
   terminates the holder it is waiting on — every rollout stalled. Recreate lets the holder go first.
   */}}
+  {{/* A new pod must stay Ready this long before the rollout counts it and stops an old one, so a
+  role that crashes seconds after its first probe never replaces a working pod. */}}
+  minReadySeconds: {{ $.Values.minReadySeconds | int }}
   strategy:
     {{- if eq $role "replicator" }}
     type: Recreate
@@ -219,12 +246,10 @@ spec:
       code that reaches the filesystem, which for a web role is one path traversal. */}}
       automountServiceAccountToken: false
       securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
-      {{/* Spent in order: the preStop sleep (drain.preStopSleepSeconds, 1.30+), the framework's
-      readiness grace (5s outside local environments) and its drain deadline (25s, which is what
-      X_SHUTDOWN_TIMEOUT's fix line names) — 35s, so 45 leaves 10s before SIGKILL. Raise this WITH
-      configureLifecycle({ deadlineMs, readinessGraceMs }), never instead of it: the drain
-      abandons its hooks at its own deadline. */}}
-      terminationGracePeriodSeconds: 45
+      {{/* Derived per role from the drain values — see the helper in _helpers.tpl. Raise
+      drain.deadlineMs in app.config.ts, never this: the drain abandons its hooks at its own
+      deadline, so a longer grace period alone buys nothing. */}}
+      terminationGracePeriodSeconds: {{ include "${app.kebab}.terminationGracePeriodSeconds" (dict "role" $role "cfg" $cfg "root" $) }}
       containers:
         {{- include "${app.kebab}.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}
       volumes:

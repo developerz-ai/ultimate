@@ -1,12 +1,12 @@
-// SIGTERM reaches the job. Until 2026-09-07 the drain told nobody: `stopAccepting` flipped the
-// state and the teardown waited on `inFlight` under the lifecycle's deadline, so a body reading
-// `ctx.signal` — the documented way to stop early — was never told the process was going away. It
-// ran to the deadline and was abandoned there, indistinguishable from a body that ignores the
-// signal, and every deploy paid the whole budget for a job that would have stopped in a second.
+// The drain's cut-off reaches the job. Until 2026-09-07 the drain told nobody, so a body reading
+// `ctx.signal` — the documented way to stop early — ran to the deadline and was abandoned there.
+// Until 2026-10-05 it told everybody AT SIGTERM, cancelling work the budget could have finished.
+// Now the job is told at `deadlineAt − margin` (`worker-drain-cutoff.ts`): late enough to finish
+// what fits, early enough to unwind and hand the row back before the deadline.
 //
-// The abort belongs to the ACCEPT hook and not the close one: core's drain runs `accept`, then
+// The cut-off is armed by the ACCEPT hook and not the close one: core's drain runs `accept`, then
 // waits out in-flight work (a claimed job is `beginWork()`ed) under the same budget, then `close`.
-// Told in `close`, the job would hear it after the in-flight wait had already spent everything.
+// Armed in `close`, the job would hear it after the in-flight wait had already spent everything.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -109,8 +109,12 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
   return { worker, driver, nacks, reason: () => reason, queueAtClose: () => queueAtClose };
 }
 
+/** Small, so the cut-off — half of it, for a budget this size — lands inside a test's patience. */
+const DEADLINE_MS = 300;
+
 beforeEach(() => {
   resetLifecycle();
+  configureLifecycle({ deadlineMs: DEADLINE_MS });
   resetJobs();
 });
 
@@ -119,18 +123,18 @@ afterEach(() => {
   resetJobs();
 });
 
-describe('SIGTERM aborts the signal of every job the worker holds', () => {
-  test('a body that stops when told finishes inside the drain, not at its deadline', async () => {
-    configureLifecycle({ deadlineMs: 2_000 });
+describe('the cut-off aborts the signal of every job the worker still holds', () => {
+  test('a body that stops when told is told at the cut-off and finishes before the deadline', async () => {
     const app = await rig(() => undefined);
 
     const startedAt = systemClock.monotonic();
     await drain('SIGTERM');
     const tookMs = systemClock.monotonic() - startedAt;
 
-    // Before the fix the body was never told: the drain sat on it for the whole 2s budget, then
-    // abandoned it — `processed` read 0 and the process left with a job it could have finished.
-    expect(tookMs).toBeLessThan(1_000);
+    // Never told, the drain sat on it for the whole budget and abandoned it; told at SIGTERM, it
+    // was cut short with budget to spare. Told at the cut-off: after half, before all of it.
+    expect(tookMs).toBeGreaterThanOrEqual(DEADLINE_MS / 2 - 5);
+    expect(tookMs).toBeLessThan(DEADLINE_MS);
     const stats = await app.worker.stats();
     expect(stats.state).toBe('stopped');
     expect(stats.processed).toBe(1);

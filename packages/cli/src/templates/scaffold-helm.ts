@@ -82,10 +82,20 @@ securityContext:
   capabilities: { drop: [ALL] }
 
 # The stop sequence: out of the Service, then this preStop sleep (Kubernetes 1.30+ only), then
-# SIGTERM, then the framework's readiness grace and drain. terminationGracePeriodSeconds in
-# templates/deployments.yaml is sized to all three, so move them together.
+# SIGTERM, then the framework's readiness grace and drain. Each Deployment's
+# terminationGracePeriodSeconds is DERIVED from this block per role — never set it by hand.
+#   readinessGraceSeconds  app.config.ts drain.readinessGraceMs / 1000 (web and sync only)
+#   deadlineSeconds        app.config.ts drain.deadlineMs / 1000 — x deploy --method helm sets
+#                          both from app.config.ts, so a raised budget raises the grace with it
+#   teardownMarginSeconds  the release after the drain, the telemetry flush, the pool close
 drain:
   preStopSleepSeconds: 5
+  readinessGraceSeconds: 5
+  deadlineSeconds: 25
+  teardownMarginSeconds: 10
+
+# How long a new pod must stay Ready before a rollout counts it and stops an old one.
+minReadySeconds: 10
 
 # The release phase. Runs to completion before any serving role starts.
 migrate:

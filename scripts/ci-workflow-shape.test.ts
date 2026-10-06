@@ -128,8 +128,11 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
     );
     expect(download?.with?.['pattern']).toBe('verify-part-*');
     expect(download?.with?.['merge-multiple']).toBe(true);
+    // The human render for the log, then the same merge's document for the bounded summary
+    // (`scripts/ci-workflow-shape-runs.test.ts`).
     expect(scriptCalls(runsOf(verify), 'scripts/verify.ts')).toEqual([
       { subcommand: 'merge', flags: [] },
+      { subcommand: 'merge', flags: ['json'] },
     ]);
     expect(runsOf(verify)).toContain(`merge ${text(download?.with?.['path'])}/*.json`);
   });
@@ -300,15 +303,6 @@ describe('unit · ci.yml · what the split may not change', () => {
     ]);
     expect(runners.filter(([name, runner]) => runner !== allowed(name ?? ''))).toEqual([]);
     expect(job('windows')['runs-on']).toBe('windows-latest');
-  });
-
-  test('a push to main is keyed by SHA and never cancelled; a pull request supersedes itself', () => {
-    expect(ci.concurrency?.group).toBe(
-      `ci-${expr('github.workflow')}-${expr("github.event_name == 'pull_request' && github.ref || github.sha")}`,
-    );
-    expect(ci.concurrency?.['cancel-in-progress']).toBe(
-      expr("github.event_name == 'pull_request'"),
-    );
   });
 
   test('a missing browser is a refusal in CI, never a skip', () => {

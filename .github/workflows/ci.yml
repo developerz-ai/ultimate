@@ -47,9 +47,14 @@ on:
 # Keying pushes by SHA rather than setting `cancel-in-progress: false` for them: a shared group with
 # no cancellation SERIALISES, so the second merge would wait out the first's full run before
 # starting. Per-SHA groups let both run, and neither can cancel the other.
+#
+# Only a FIRST attempt cancels. A pull request's group is its ref, so `gh run rerun` of an older run
+# (a job GitHub never acquired a runner for, say) joined the group as the newest member and
+# cancelled the run of the commit actually at the head of the branch. A new push is always attempt
+# 1 and still supersedes the stale run; a rerun waits its turn and never cancels anything.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == 1 }}
 
 permissions:
   contents: read
@@ -187,9 +192,11 @@ jobs:
       # The part's `--json` document is the artifact `verify` merges, so it is written to a file
       # and uploaded below — never `cat` into the log. A red part's document carries the suite's
       # output and runs past a megabyte on ONE line, and the Actions log dropped that line and every
-      # line after it: run 37103688822's red `unit-1` showed no step table at all. What the log and
-      # the job summary get is the step table rendered from it, which names a red part's step, its
-      # findings and `fix:` lines, and the suite output's last lines.
+      # line after it: run 37103688822's red `unit-1` showed no step table at all. What the log gets
+      # is the step table rendered from it, which names a red part's step, its findings and `fix:`
+      # lines, and the suite output's last lines. The job summary gets the BOUNDED render of the same
+      # document (`scripts/verify-summary.ts`, the one `verify` uses): the whole table with every
+      # finding past GitHub's 1024 KiB summary limit was an "upload aborted", and no summary at all.
       #
       # Written under $RUNNER_TEMP, never in the checkout: the file is open and EMPTY while the
       # part's own steps run, and `lint` (biome walks the tree) failed the `live` part on it once.
@@ -213,9 +220,10 @@ jobs:
               (select(.ok | not) | .output // empty | "    output (last lines):\n\(split("\n")[-40:] | map("      " + .) | join("\n"))")
           ' "$parts/${PART}.json" || true)"
           echo "$table"
-          # The backticks are a Markdown fence, not a command substitution.
-          # shellcheck disable=SC2016
-          printf '### gate (%s)\n\n```text\n%s\n```\n' "$PART" "$table" >> "$GITHUB_STEP_SUMMARY"
+          echo "### gate ($PART)" >> "$GITHUB_STEP_SUMMARY"
+          bun run scripts/verify-summary.ts "$parts/${PART}.json" \
+            "{shown} of {total} finding(s) shown. Every finding and each red step's output: this job's log, and the verify-part-${PART} artifact." \
+            >> "$GITHUB_STEP_SUMMARY" || echo "the step summary could not be rendered; the part's verdict is the log above"
           exit "$status"
       # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed
       # without a document would read there as a step nobody ran rather than a step that failed.
@@ -258,17 +266,26 @@ jobs:
           path: ${{ runner.temp }}/parts
           merge-multiple: true
       # The human render, not `--json`: this is the one table a person reads to learn what the
-      # gate said, with every finding from every part under the step that raised it — in the log,
-      # and on the run's summary page.
+      # gate said, with every finding from every part under the step that raised it — in the log.
+      #
+      # The run's summary page gets a BOUNDED render of the same verdict (`scripts/verify-summary.ts`,
+      # read from the merge's `--json` document): the step table, every failed test's name, then
+      # findings in order up to 512 KiB, and a line saying how many are shown. It was the whole
+      # verdict, and a red one runs past GitHub's 1024 KiB summary limit ("upload aborted"), so the
+      # one run that needed a summary had none. A summary that cannot render does not change the
+      # verdict: the merge's exit status is the step's.
       - name: x verify merge — every step, from exactly one part, green
         run: |
           status=0
           bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json > "$RUNNER_TEMP/verdict.txt" 2>&1 \
             || status=$?
           cat "$RUNNER_TEMP/verdict.txt"
-          # The backticks are a Markdown fence, not a command substitution.
-          # shellcheck disable=SC2016
-          printf '### verify — the verdict\n\n```text\n%s\n```\n' "$(cat "$RUNNER_TEMP/verdict.txt")" >> "$GITHUB_STEP_SUMMARY"
+          bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json --json > "$RUNNER_TEMP/verdict.json" \
+            || true
+          echo "### verify — the verdict" >> "$GITHUB_STEP_SUMMARY"
+          bun run scripts/verify-summary.ts "$RUNNER_TEMP/verdict.json" \
+            "{shown} of {total} finding(s) shown. Every finding and each red step's output: this job's log, and this run's verify-part-* artifacts." \
+            >> "$GITHUB_STEP_SUMMARY" || echo "the step summary could not be rendered; the verdict is the log above"
           exit "$status"
 
   # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
@@ -673,10 +690,19 @@ jobs:
             *) fail "preStop missing on 1.30" "the web Deployment renders no preStop sleep on Kubernetes 1.30. fix: see the semverCompare block in docker/helm/templates/_helpers.tpl." ;;
           esac
           [ "$prestop_129" = 0 ] || fail "preStop below 1.30" "a preStop sleep rendered on Kubernetes 1.29, which has no lifecycle.preStop.sleep and rejects the object. fix: gate it on semverCompare \">=1.30-0\" .Capabilities.KubeVersion.Version."
-          while read -r grace; do
-            [ "$grace" -ge 35 ] || fail "grace period too short" "terminationGracePeriodSeconds is ${grace}, below preStop (5) + readiness grace (5) + drain deadline (25) = 35, so the kubelet SIGKILLs a pod that is still draining. fix: raise it in docker/helm/templates/deployments.yaml."
-          done < <(awk '/terminationGracePeriodSeconds:/ {print $2}' /tmp/deploy-130.yaml)
-          echo "ok: hook account, External worker metric, startup probes, gated preStop, grace >= 35s"
+          # The grace is DERIVED per role (`ultimate.terminationGracePeriodSeconds`, _helpers.tpl), so
+          # the floor is derived from the same values: web and sync spend preStop + readiness grace
+          # before the drain, every other role drains with neither.
+          drain_value() { awk -v key="$1:" '/^drain:/{d=1;next} d && /^[^ #]/{d=0} d && $1==key {print $2; exit}' docker/helm/values.yaml; }
+          prestop="$(drain_value preStopSleepSeconds)"; ready="$(drain_value readinessGraceSeconds)"
+          budget="$(drain_value deadlineSeconds)"; margin="$(drain_value teardownMarginSeconds)"
+          base=$((budget + margin)); routed=$((prestop + ready + base))
+          while read -r role grace; do
+            case "$role" in web|sync) want=$routed; why="preStop (${prestop}) + readiness grace (${ready}) + drain budget (${budget}) + teardown (${margin})" ;;
+              *) want=$base; why="drain budget (${budget}) + teardown (${margin})" ;; esac
+            [ "$grace" -ge "$want" ] || fail "grace period too short" "the ${role} Deployment's terminationGracePeriodSeconds is ${grace}, below ${why} = ${want}, so the kubelet SIGKILLs a pod that is still draining. fix: derive it with ultimate.terminationGracePeriodSeconds in docker/helm/templates/_helpers.tpl, from drain.* in docker/helm/values.yaml."
+          done < <(awk '/^  name: app-ultimate-/ {sub("app-ultimate-", "", $2); role=$2} /terminationGracePeriodSeconds:/ {print role, $2}' /tmp/deploy-130.yaml)
+          echo "ok: hook account, External worker metric, startup probes, gated preStop, grace >= ${routed}s routed / ${base}s other roles"
 
       # What a compromised pod can reach, rendered (plan 101, s2-sec L9). Each assertion names the
       # hole it holds shut:

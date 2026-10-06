@@ -29,9 +29,9 @@ import {
 } from './config-shape';
 import type { SeoConfig, SiteConfig, SiteSectionsInput } from './config-site';
 import { mergeSite, siteIssues } from './config-site';
+import { drainIssues } from './drain-deadline';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
-import { readinessGraceIssue } from './lifecycle-grace';
 import { ROLES, type Role } from './roles';
 import { isIanaZoneName } from './time-zone-name';
 
@@ -330,7 +330,7 @@ function validate(config: AppConfig): void {
         ? undefined
         : countIssue(`realtime.${key}`, config.realtime[key], 1),
     ),
-    readinessGraceIssue(config.drain.readinessGraceMs),
+    ...drainIssues(config.drain),
     readinessModeIssue(config.health.readiness),
   ];
   for (const issue of perKey) if (issue !== undefined) issues.push(issue);
