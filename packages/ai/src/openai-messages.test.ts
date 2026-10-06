@@ -22,6 +22,11 @@ const STRICT_SCHEMA: JsonSchema = {
   additionalProperties: false,
 };
 
+/** Every case maps for one endpoint; only the media refusals read who that is. */
+const TARGET = { provider: 'openai', model: 'gpt-5.6-sol' } as const;
+const toMessages = (system: string | undefined, messages: readonly AiMessage[]) =>
+  toOpenAiMessages(system, messages, TARGET);
+
 const respond: LlmTool = {
   name: 'respond',
   description: 'Return the result.',
@@ -46,7 +51,7 @@ describe('messages', () => {
       },
     ];
 
-    expect(toOpenAiMessages(undefined, messages)).toEqual([
+    expect(toMessages(undefined, messages)).toEqual([
       { role: 'tool', tool_call_id: 'call_1', content: '{"ok":true}' },
       // There is no `is_error` on this wire. Dropping the flag hands the model a failure that
       // reads as data, so the marker is the format's only way to say so.
@@ -55,13 +60,13 @@ describe('messages', () => {
   });
 
   test('the system prompt is a leading message, not a top-level field', () => {
-    const out = toOpenAiMessages('be terse', [{ role: 'user', content: 'hi' }]);
+    const out = toMessages('be terse', [{ role: 'user', content: 'hi' }]);
     expect(out[0]).toEqual({ role: 'system', content: 'be terse' });
     expect(out[1]).toEqual({ role: 'user', content: 'hi' });
   });
 
   test('an assistant tool_use block becomes tool_calls with STRINGIFIED arguments', () => {
-    const out = toOpenAiMessages(undefined, [
+    const out = toMessages(undefined, [
       {
         role: 'assistant',
         content: [
@@ -87,7 +92,7 @@ describe('messages', () => {
   });
 
   test('a tool-calls-only turn omits content rather than sending an empty string', () => {
-    const [message] = toOpenAiMessages(undefined, [
+    const [message] = toMessages(undefined, [
       {
         role: 'assistant',
         content: [{ type: 'tool_use', id: 'call_1', name: 'lookupOrder', input: {} }],
@@ -97,7 +102,7 @@ describe('messages', () => {
   });
 
   test('tool results lead, and prose in the same turn follows them', () => {
-    const out = toOpenAiMessages(undefined, [
+    const out = toMessages(undefined, [
       {
         role: 'user',
         content: [
@@ -110,7 +115,7 @@ describe('messages', () => {
   });
 
   test('a plain string message survives untouched', () => {
-    expect(toOpenAiMessages(undefined, [{ role: 'user', content: 'hi' }])).toEqual([
+    expect(toMessages(undefined, [{ role: 'user', content: 'hi' }])).toEqual([
       { role: 'user', content: 'hi' },
     ]);
   });

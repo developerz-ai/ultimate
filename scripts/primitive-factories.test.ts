@@ -208,6 +208,7 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/jobs.exportRows:job',
       '@ultimat3/jobs.purge:job',
       '@ultimat3/jobs.webhook:job',
+      '@ultimat3/mcp.mcpConfirmations:action',
       '@ultimat3/notify.notifier:job',
       '@ultimat3/scraping.scrape:job',
     ]);

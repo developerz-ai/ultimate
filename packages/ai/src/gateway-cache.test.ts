@@ -5,9 +5,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { MemoryBudgetStore } from './budget';
+import { EchoProvider } from './echo-provider';
 import { cacheKeyFor, createGateway } from './gateway';
 import type { GenerateRequest } from './provider';
-import { EchoProvider } from './provider';
 import type { LlmTool } from './tools';
 
 const respond = (properties: NonNullable<LlmTool['input_schema']['properties']>): LlmTool => ({

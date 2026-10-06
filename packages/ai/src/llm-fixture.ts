@@ -9,12 +9,13 @@ import { t } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { llm } from './llm';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { costOf } from './provider';
 import { configureAi } from './runtime';
 
 export const Input = t.object({ postId: t.uuid });

@@ -9,11 +9,11 @@ import {
   MCP_ERROR_CODES,
   MCP_ERROR_TITLES,
   McpArgsInvalidError,
-  McpBodyTooLargeError,
   McpProtocolError,
   McpToolUnknownError,
   TOOL_UNKNOWN_FIX,
 } from './errors';
+import { McpBodyTooLargeError } from './errors-transport';
 
 describe('the code table', () => {
   test('every code has a title and no title names a code the table does not declare', () => {

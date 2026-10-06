@@ -121,6 +121,7 @@ describe('PRIMITIVE_FACTORIES', () => {
       '@ultimat3/jobs#exportRows',
       '@ultimat3/jobs#purge',
       '@ultimat3/jobs#webhook',
+      '@ultimat3/mcp#mcpConfirmations',
       '@ultimat3/notify#notifier',
       '@ultimat3/scraping#scrape',
     ]);

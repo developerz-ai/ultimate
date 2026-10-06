@@ -24,10 +24,11 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { agentJob } from './agent-job';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 

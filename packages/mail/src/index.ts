@@ -8,6 +8,14 @@ export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
 export { MAIL_CATALOG, MAIL_CATALOG_LOCALE } from './catalog';
+// Type-only, so a sender can name an event without loading a receiver; the receivers are
+// `@ultimat3/mail/events`, kept off the barrel every serving role evaluates.
+export type {
+  DeliveryEvent,
+  DeliveryEventKind,
+  DeliveryOutcome,
+  DeliveryReceiver,
+} from './delivery-event';
 export type {
   MailDriver,
   MailMessage,
@@ -28,10 +36,12 @@ export {
   setMailDriver,
   tryMailDriver,
 } from './driver';
-export type { MailEnvironment, MailSelection } from './driver-env';
+export type { MailEnvironment, MailSelection, MailSelectOptions } from './driver-env';
 export { selectMailDriver } from './driver-env';
 export type { MailFetch, ResendDriverOptions } from './driver-resend';
 export { createResendDriver } from './driver-resend';
+export type { SesDriverOptions } from './driver-ses';
+export { createSesDriver, sesEndpoint } from './driver-ses';
 export type { SmtpDriverOptions } from './driver-smtp';
 export { createSmtpDriver } from './driver-smtp';
 export { assertEnvelopeAddress } from './envelope-address';
@@ -95,6 +105,8 @@ export {
 } from './mail';
 export type { RenderableMail, RenderedMail, RenderOptions } from './render';
 export { renderMail, textOf } from './render';
+export type { RetainedMime, RetainedMimeEntry, RetainMimeOptions } from './retain-mime';
+export { DEFAULT_RETAIN_MIME_MAX_BYTES, RETAIN_MIME_CEILING_BYTES } from './retain-mime';
 export type { SmtpConnector, SmtpStream } from './smtp-client';
 export {
   FRAMEWORK_MAILS,

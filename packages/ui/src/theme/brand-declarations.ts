@@ -18,8 +18,13 @@ import { isShadowValue, SHADOW_EXPECTED } from './shadow-value';
 /** `0` or a number with a CSS length unit. No `calc()`, no `var()` — a scale rung is a value. */
 const LENGTH_PATTERN = /^(0|\d+(\.\d+)?(px|rem|em|ch|%))$/;
 
-/** Family names, quotes and separators only: everything a `font-family` list legitimately needs. */
-const FONT_STACK_PATTERN = /^[\w\s,'"-]{1,200}$/;
+/**
+ * Family names, quotes and separators only: everything a `font-family` list legitimately needs.
+ * The separator is a literal SPACE, never `\s`: the HTML parser rewrites a CR or CRLF inside a
+ * `<style>` to LF before the browser hashes it, so a stack carrying one served bytes whose sha256
+ * no longer matched the CSP hash computed here, and the brand's whole stylesheet was blocked.
+ */
+const FONT_STACK_PATTERN = /^[\w ,'"-]{1,200}$/;
 
 const LENGTH_EXPECTED = 'a bare CSS length such as "0.5rem", "4px" or "0"';
 const STACK_EXPECTED = 'a font-family list such as "Inter, system-ui, sans-serif"';

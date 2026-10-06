@@ -9,7 +9,7 @@
 // stderr and this file never calls `console.log`.
 
 import { finiteCount } from '@ultimat3/core';
-import { McpBodyTooLargeError } from './errors';
+import { McpBodyTooLargeError } from './errors-transport';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 import { errorResponse, INVALID_REQUEST, PARSE_ERROR, refusalMessage } from './wire';

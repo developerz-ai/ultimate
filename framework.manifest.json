@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a7d6319f48b3b5096d8371cf4fde5e0f0e2c63eacb435dfdefcf719bf9497eb4",
+  "buildId": "ee56839bb5fba8a36823ebe53b7b32c30699d611f98def0aa58b22e1ec37272a",
   "tiers": {
     "0": [
       "core",
@@ -406,6 +406,11 @@
     },
     {
       "code": "X_AI_BUDGET_EXCEEDED",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AI_CONTENT_UNSUPPORTED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
@@ -2145,6 +2150,21 @@
       "at": "packages/mail/src/errors.ts"
     },
     {
+      "code": "X_MAIL_EVENT_INVALID",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_EVENT_PROVIDER_UNREACHABLE",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_EVENT_UNVERIFIED",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
       "code": "X_MAIL_HEADER_INVALID",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
@@ -2216,6 +2236,46 @@
     },
     {
       "code": "X_MCP_BODY_TOO_LARGE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_CONTESTED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_DECIDED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_EXPIRED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_PENDING",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_REJECTED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_TOOL_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_UNKNOWN",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

@@ -33,6 +33,10 @@ reads only the catalog still knows what it is holding.
 | 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock — clause **or** `pg_advisory_*` call — and no call into a banned function family, matched by prefix of the called name — quoted and schema-qualified spellings included — so a new spelling is refused by default and a column sharing a prefix is not; on a form with literals and comments blanked | `readonly-sql.ts` |
 | 4. Limits | `SET LOCAL statement_timeout`, a hard 1000-row ceiling (`limit` clamps into it, never past it) and a 256 KiB byte cap | `query-limits.ts` |
 
+**Banned function families** — each is a ban already made elsewhere in another spelling: `pg_notify` (= `NOTIFY`, a write keyword); server control (`pg_cancel_backend`, `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`, `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*` — advancing a slot is a write no `ROLLBACK` undoes); `pg_file_*`; `txid_current` / `pg_current_xact_id`; `pg_import_*`; SQL run from a string (`*_to_xml*`, `ts_stat`, `ts_rewrite`). `U&"…"` is refused, never decoded; a keyword is a whole identifier (`set2` is a column). Catalog VIEWS (`pg_replication_slots`) are read `from`, never called.
+
+Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never a name (`pg_sleep_for` passed an exact `pg_sleep` ban). The unit is the call (`name(`), so a column `pg_sleep_for_seconds` is fine; the call scan keeps quoted-identifier content (`"pg_advisory_lock"(1)` is a call), the keyword scan blanks it. `pg_advisory_*` (a session lock survives layer 2's `ROLLBACK`; `packages/testing/src/db-integration.test.ts`), `pg_sleep*` (the one ban that holds on PGlite), `nextval`/`setval` (a consumed id is not rolled back).
+
 The answer carries `guards` — the layers that actually engaged — plus `truncatedBy` and `bytes`.
 A layer that could not engage (a managed Postgres that refuses `CREATE ROLE`) is **absent from
 the list**, never assumed. Truncation is never silent.
@@ -79,7 +83,7 @@ strand a well-behaved client.
 | A predicate audience sees the caller and nothing else | it is handed `McpCaller` — never the call arguments, so two calls with different inputs cannot answer differently. Must return the literal `true`; if it throws, the tool is hidden |
 | `tools/list` is answered per caller | filtered on every call against the caller the transport resolved — one per HTTP request, one per stdio connection — never a static catalog |
 | Gate order | visibility → scope → arguments → policy; the scope gate never waits on a policy run against attacker-supplied input |
-| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok and invalid-args at `info` — see `audit.ts`. A tool that renders its OWN `isError` result may name the code it refused with (`McpToolResult.code`, audit-only, never on the wire) and is then classified by the same `outcomeForCode` a thrown error is — otherwise every self-rendered refusal lands in the `policy-denied` bucket a prober's name walk is alerted from |
+| Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok, invalid-args and unconfirmed at `info` — see `audit.ts`; the same decision reaches `onAudit` after the line. A tool that renders its OWN `isError` result may name the code it refused with (`McpToolResult.code`, audit-only, never on the wire) and is then classified by the same `outcomeForCode` a thrown error is — otherwise every self-rendered refusal lands in the `policy-denied` bucket a prober's name walk is alerted from |
 | Audit lines carry no payload | tool, outcome, actor, code. Never arguments, never rows |
 | No trusted-tool mode | there is no flag that skips policy evaluation |
 
@@ -275,7 +279,7 @@ keeps `fix`. An error whose `docs` is not the framework's one Error-Codes page �
 
 | Transport | Entry | Auth |
 |---|---|---|
-| HTTP | `mcpHttpRoute({ server, resolveToken })` → `POST /mcp` | `Authorization: Bearer <token>` → `Actor { kind: 'agent' }` |
+| HTTP | `mcpHttpRoute({ server, resolveToken })` → `POST /mcp` — `resolveToken(token, facts)` | `Authorization: Bearer <token>` → `Actor { kind: 'agent' }` |
 | stdio | `serveStdio({ server, caller })` | none — the peer already owns the shell |
 
 The HTTP transport exports a route *descriptor*, not a mounted handler: a host owns the lifecycle,
@@ -306,6 +310,54 @@ did not.
 | where they are counted | `mcpHttpRoute({ rateLimitStore })` · `defineAppMcp({ rateLimitStore })` | a per-**process** memory store — N replicas behind one URL each enforce the full allowance, so a fleet passes `postgresRateLimitStore({ executor })` |
 | OAuth discovery | `mcpHttpRoute({ oauth })` · `defineAppMcp({ oauth })` | absent: the 401 is `Bearer realm="ultimate-mcp"` |
 
+### What `resolveToken` is told: `McpRequestFacts`
+
+`resolveToken(token, facts)` (`As of 2026-10`) — a second argument a one-argument resolver ignores.
+Frozen, typed, never the raw `Headers`, so a token can be bound to a network or refused from a
+browser origin without the resolver parsing a header it cannot trust.
+
+| Fact | Source | Absent |
+|---|---|---|
+| `address` | `handle(request, { address })` — what the HOST resolved (`ctx.ip`: a declared proxy's `x-forwarded-for` per `trustedProxyHops`, else the socket). Never read from a header here | `null` |
+| `userAgent` | `User-Agent`, verbatim — a hint, never an identity | `null` |
+| `origin` | the `Origin` request header; `'null'` (the string) is an opaque origin, not an absent one | `null` |
+| `path` | the URL path, no query string | — |
+
+```ts
+import type { McpRequestFacts, ResolvedToken } from '@ultimat3/mcp';
+import { defineAppMcp } from '@ultimat3/mcp';
+
+declare const tokens: {
+  resolve(token: string, where: { network: string | null }): Promise<ResolvedToken | null>;
+};
+
+export const mcp = defineAppMcp({
+  include: 'exposed',
+  resolveToken: async (token: string, facts: McpRequestFacts) => {
+    if (facts.origin !== null) return null; // agents are not browsers — the same 401 as a bad token
+    return tokens.resolve(token, { network: facts.address });
+  },
+});
+```
+
+### `onAudit`: the gate's decisions, as data
+
+`createMcpServer({ onAudit })` · `defineAppMcp({ onAudit })` — the route reads its server's. One
+audit PATH with a second destination: the `mcp.*` log line is written, then the same decision is
+handed on. What an action or query DID still reaches core's `setAuditSink` (`surface: 'mcp'`);
+`onAudit` carries what no `AuditRecord` can — the refusals before anything ran.
+
+| `event.kind` | When | Carries |
+|---|---|---|
+| `tool-call` | every `tools/call` outcome (`ok`, `hidden`, `scope-denied`, `policy-denied`, `invalid-args`, `unconfirmed`, `failed`) | `tool`, `outcome`, `caller`, `scope?`, `code?` |
+| `resource-read` | every `resources/read` outcome | `uri`, `outcome`, `caller`, `scope?`, `code?` |
+| `auth-refused` | a missing or rejected token, a non-agent actor, an address past its failure allowance — also logged `mcp.auth.<reason>` at `warn` | `reason`, `status` (401/403/429), `facts` |
+
+Every event has `at` from the server's `clock`. Never the token, never the arguments. The hook is
+not awaited and cannot change an answer: one that throws or rejects is logged once as
+`mcp.audit-hook.failed` at `error` (its `code` when it has one, never its message). `tools/list` and
+`resources/list` stay silent, as in the log.
+
 ### OAuth discovery (RFC 9728)
 
 `defineAppMcp({ oauth: { authorizationServers: ['https://www.example.com'] } })` (`As of 22.6.0`;
@@ -317,6 +369,50 @@ and the two paths it is served at — path-inserted per RFC 9728 §3.1 and the r
 PUBLIC origin (`handle(request, { origin })`, which the boot fills from `ctx.https`) + the mount
 path; `scopes_supported` to the `scopes` map's keys. Issuers must be https (http on loopback):
 `X_MCP_OAUTH_INVALID`. The authorization server is the app's own routes.
+
+## Human confirmation: `mcpConfirmations`
+
+A factory over `action`, never a ninth primitive: what it returns IS the decision action
+(`{ id, decision: 'approve' | 'reject' }`), registered like any other — route, OpenAPI, typed client,
+`audit: true` if asked — and `defineAppMcp({ confirmations })` gates the named tools with it.
+
+```ts
+import type { PgExecutor } from '@ultimat3/core';
+import { defineAppMcp, mcpConfirmations, postgresConfirmationStore } from '@ultimat3/mcp';
+
+declare const executor: PgExecutor;
+
+// apps/web/app/orders/actions/confirm-refunds.ts — register it like any action
+export const confirmRefunds = mcpConfirmations({
+  tools: ['refundOrder'],
+  store: postgresConfirmationStore({ executor }), // memoryConfirmationStore() in a test
+  permission: 'order:refund',
+  ttlMs: 600_000, // DEFAULT_MCP_CONFIRMATION_TTL_MS
+});
+
+// apps/web/app/mcp.ts
+export const mcp = defineAppMcp({ include: 'exposed', confirmations: confirmRefunds });
+```
+
+| Step | What happens |
+|---|---|
+| agent calls `refundOrder` | after visibility → scope → args → the tool's caller-only `admit`, a pending row opens — actor, org, tool, `keyedFingerprint` (HMAC-SHA-256 under the signing secret) of the validated arguments, expiry — and the call answers `X_MCP_CONFIRMATION_PENDING` naming the id. Nothing ran. Repeating it answers the same id |
+| a person views it | `confirmRefunds({ id, decision: 'view' })` answers the request exactly as the agent sent it — `{ tool, status, expiresAt, arguments }`, the arguments opened from their seal. Changes nothing |
+| a person decides | `confirmRefunds({ id, decision: 'approve', arguments })` with the `arguments` the view returned, or `decision: 'reject'`, over any surface the action projects to. An approval whose arguments' keyed digest is not the row's — none, different, or a row keyed before a secret rotation — is `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH`, so a swap between the view and the approval decides nothing. Decided once (`X_MCP_CONFIRMATION_DECIDED`), never after expiry (`X_MCP_CONFIRMATION_EXPIRED`) |
+| who may view and decide | policy `can(permission, check)`. An agent never may, whatever it holds (`X_FORBIDDEN`). The default `check` is the asking org: `row !== null && row.orgId === (actor.orgId ?? null)` — another tenant's row and an unknown id are one `X_FORBIDDEN`. Crossing tenants is an explicit `check`; with one that admits a missing row, an unknown id is `X_MCP_CONFIRMATION_UNKNOWN` |
+| agent repeats the SAME call | approved: it runs once, through the tool's own `handle` — the action's full policy still decides it. Rejected: `X_MCP_CONFIRMATION_REJECTED`, audited as a denial. Past expiry: `X_MCP_CONFIRMATION_EXPIRED`. Each outcome is delivered once; the next identical call asks again |
+
+Bound to the asking actor, the tool and the input digest: other arguments, or another agent, ride
+no one's approval. The digest is keyed because the row stores it — an unkeyed hash of `{ accountNumber }` is
+brute-forced from a database read. The open row is found by equality on it, key id included, so
+after a signing-secret rotation the same call opens a FRESH confirmation: never a mismatch error,
+never the old approval. The arguments are stored SEALED (`seal()`, AES-256-GCM under the app's one
+master key, purpose `MCP_CONFIRMATION_ARGUMENTS_PURPOSE`), never plaintext at rest — the person
+deciding must see what they approve, or a prompt-injected agent describes "$5 to order 17" and sends
+another. `sealKeys` points at the key in a test. `SQL_MCP_CONFIRMATIONS_TABLE` is the store's DDL; `store.purge(before)` from a
+`task` bounds the table. A gated name the server does not project — or `tools: []` — is
+`X_MCP_CONFIRMATION_TOOL_UNKNOWN` at boot. The gated tool carries `confirms: true`, which the meta
+catalog shows as `(confirms)`.
 
 ## Resources
 
@@ -382,6 +478,14 @@ is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 | `X_MCP_GROUP_UNKNOWN` · `X_MCP_GROUP_CONFLICT` | `groups:` names a tool not projected · lists one tool twice |
 | `X_MCP_SURFACE_INVALID` | `surface` and `groups` disagree |
 | `X_MCP_LIST_PARAMS_INVALID` | `listParams` whitelists a key the tool's input does not declare |
+| `X_MCP_CONFIRMATION_PENDING` | a gated call waits for a person: the cause names the confirmation id |
+| `X_MCP_CONFIRMATION_EXPIRED` | the confirmation lapsed before the call came back, or before a person decided it |
+| `X_MCP_CONFIRMATION_REJECTED` | a person rejected this exact call |
+| `X_MCP_CONFIRMATION_DECIDED` | approve/reject on a confirmation already decided |
+| `X_MCP_CONFIRMATION_UNKNOWN` | no confirmation has that id |
+| `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `mcpConfirmations({ tools })` names a tool this server does not project, or none |
+| `X_MCP_CONFIRMATION_CONTESTED` | identical concurrent calls kept racing one confirmation; retry |
+| `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | an approval did not carry the arguments the agent sent (missing, different, or keyed before a rotation) |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
 
 ### Error classes
@@ -395,6 +499,14 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpArgsInvalidError` | `X_MCP_ARGS_INVALID` | `src/errors.ts` |
 | `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
 | `McpIdempotencyKeyShadowedError` | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | `src/errors.ts` |
+| `McpConfirmationArgumentsMismatchError` | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | `src/confirmation-errors.ts` |
+| `McpConfirmationContestedError` | `X_MCP_CONFIRMATION_CONTESTED` | `src/confirmation-errors.ts` |
+| `McpConfirmationDecidedError` | `X_MCP_CONFIRMATION_DECIDED` | `src/confirmation-errors.ts` |
+| `McpConfirmationExpiredError` | `X_MCP_CONFIRMATION_EXPIRED` | `src/confirmation-errors.ts` |
+| `McpConfirmationPendingError` | `X_MCP_CONFIRMATION_PENDING` | `src/confirmation-errors.ts` |
+| `McpConfirmationRejectedError` | `X_MCP_CONFIRMATION_REJECTED` | `src/confirmation-errors.ts` |
+| `McpConfirmationToolUnknownError` | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `src/confirmation-errors.ts` |
+| `McpConfirmationUnknownError` | `X_MCP_CONFIRMATION_UNKNOWN` | `src/confirmation-errors.ts` |
 | `McpGroupConflictError` | `X_MCP_GROUP_CONFLICT` | `src/meta-errors.ts` |
 | `McpGroupUnknownError` | `X_MCP_GROUP_UNKNOWN` | `src/meta-errors.ts` |
 | `McpListParamsInvalidError` | `X_MCP_LIST_PARAMS_INVALID` | `src/meta-errors.ts` |

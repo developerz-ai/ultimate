@@ -16,6 +16,19 @@
 | `header-safety.ts` | `assertHeaderSafe`: the CR/LF gate on a `MailMessage`, so every driver refuses the same one |
 | `driver-smtp.ts` | `createSmtpDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
 | `driver-resend.ts` | `createResendDriver`: one `POST /emails`, status → retryable |
+| `driver-ses.ts` | `createSesDriver`: one SES v2 `SendEmail`, raw MIME, signed by core's `signAwsRequest` |
+| `ses-failure.ts` | SES error TYPE → retry verdict + `fix:`; the status is the fallback |
+| `retain-mime.ts` | `retainMime`: the exact MIME a transport handed its provider, capped, + the `onRetained` sink |
+| `delivery-event.ts` | `DeliveryEvent` / `DeliveryOutcome`, the capped body read, the ISO instant |
+| `delivery-event-errors.ts` | the three receiver refusals (`X_MAIL_EVENT_*`) |
+| `sns-signature.ts` | SNS message verification: topic allow-list, pinned cert URL, canonical string, RSA v1/v2 |
+| `sns-certificate-cache.ts` | the downloaded SNS certificates, bounded against forgery floods |
+| `x509-spki.ts` | the public key out of a PEM certificate (Web Crypto imports no certificate) |
+| `ses-event-receiver.ts` | `createSesEventReceiver`: body → verify → normalise; SubscriptionConfirmation |
+| `delivery-event-ses.ts` | SES notification JSON (`notificationType` or `eventType`) → events |
+| `resend-signature.ts` | Svix verification: HMAC over `id.timestamp.body`, constant-time, then the window |
+| `resend-event-receiver.ts` | `createResendEventReceiver` + the Resend payload → events |
+| `events.ts` | the `@ultimat3/mail/events` subpath: the receivers, kept off the barrel |
 | `smtp-client.ts` | the conversation: greeting → EHLO → STARTTLS → AUTH → envelope → DATA |
 | `smtp-protocol.ts` | pure protocol: reply framing, capabilities, AUTH payloads, dot-stuffing |
 | `smtp-socket.ts` | the one production `SmtpStream`, over `Bun.connect` |
@@ -183,6 +196,43 @@
   The refused set is control characters plus `<` and `>`; a space is deliberately allowed (quoted
   local-parts). Non-ASCII in the MAILBOX is refused too, and by this package: SMTPUTF8 (RFC 6531)
   is what makes a UTF-8 addr-spec legal and `smtp-client.ts` negotiates none.
+
+- **SES maps the error TYPE, not the status** (`As of 2026-10-06`, `ses-failure.ts`). `MessageRejected`,
+  `SendingPausedException` and a bad request are all 400: only throttling (`TooManyRequestsException`,
+  `ThrottlingException`, `Throttling`, `LimitExceededException`) is retryable; rejected, paused /
+  suspended, unverified MAIL FROM, every auth failure and a missing configuration set are terminal.
+  An unknown type falls back to core's `isRetryableStatus`. All of it is `X_MAIL_SEND_FAILED`
+  (`driver: 'ses'`) — no SES-specific code. SES has NO idempotency header and rewrites
+  `Message-ID`, so a retry after a timeout SES had accepted is a second email: SMTP's gap, pinned
+  as such. `Destination` is always sent, because `Bcc` is never a header.
+- **`retainMime` is the bytes this process handed the provider, never a truncation** (`As of
+  2026-10-06`). SMTP and SES only — Resend builds MIME on its side, so `selectMailDriver(env,
+  { retainMime })` REFUSES it for Resend rather than keeping nothing. Default cap 256 KiB, ceiling
+  10 MiB; over the cap `kind: 'digest-only'` keeps sha256 + length and drops the bytes. It rides on
+  `SendResult.mime` (the inline caller) AND goes to `onRetained` (the durable half: a queued send's
+  result is the job's return value, which the queue does not persist). A throwing sink is logged,
+  never a send failure — the mail already left, and failing would have the job send it again.
+- **The receivers live behind `@ultimat3/mail/events` (`src/events.ts`), never `src/index.ts`**
+  (`As of 2026-10-06`). Every serving role evaluates the barrel through serve-graph, and only a
+  webhook route needs SNS/Svix verification; the barrel keeps the `DeliveryEvent` types, type-only.
+- **A delivery notification is verified BEFORE it is parsed, and every refusal is coded.**
+  `X_MAIL_EVENT_UNVERIFIED` (401, `meta.reason`), `X_MAIL_EVENT_INVALID` (400, `meta.problem`),
+  `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503, so SNS redelivers). SNS order: envelope shape → topic
+  in `topicArns` (any AWS account can make SNS sign for ITS topic, so the allow-list is the
+  authentication, and it runs before any fetch) → cert URL exactly `https://sns.<topic region>.amazonaws.com/…pem`
+  → `SignatureVersion` 1 (SHA-1) or 2 (SHA-256) → signature → the clock. Svix: headers → mac
+  (`timingSafeEqual`, every `v1,` entry, no early exit) → window. "stale" therefore always means
+  authentic. A SubscriptionConfirmation's URL is returned and fetched only with
+  `confirmSubscriptions: true`, pinned the same way, never following a redirect.
+- **A pinned certificate URL is reached BEFORE any signature, so its download is bounded**
+  (`As of 2026-10-06`, `sns-certificate-cache.ts`). An allowed topic ARN is no secret, so a forger
+  can name a fresh `SimpleNotificationService-<32 hex>.pem` per request (the only path accepted,
+  as AWS publishes it). LRU of 8 verified certificates (a hit refreshes, so the one in use is never
+  evicted by a flood); a failed URL is answered from memory for 5 min; at most 2 downloads in
+  flight, beyond that `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503); identical lookups share one promise.
+- The SNS test key and its X.509 certificate are generated per run (`delivery-event-fixture.ts`);
+  no private key is committed. The DER was checked once against openssl (`openssl verify`, and
+  `openssl x509 -pubkey` gave the SPKI `x509-spki.ts` extracts).
 
 ## Commands
 

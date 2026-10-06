@@ -4,11 +4,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
+import { EchoProvider } from './echo-provider';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import { createGateway } from './gateway';
 import { ANTHROPIC_MODEL_IDS } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
-import { EchoProvider } from './provider';
 
 const echo = new EchoProvider();
 

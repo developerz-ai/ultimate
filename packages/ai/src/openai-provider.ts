@@ -121,7 +121,7 @@ class OpenAiProvider implements Provider {
     const model = this.modelOf(request);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const response = await this.send(
-      chatCompletionBody({ request, model, stream: false }),
+      chatCompletionBody({ request, model, stream: false, provider: this.name }),
       false,
       request.signal,
     );
@@ -132,7 +132,7 @@ class OpenAiProvider implements Provider {
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = this.modelOf(request);
     const response = await this.send(
-      chatCompletionBody({ request, model, stream: true }),
+      chatCompletionBody({ request, model, stream: true, provider: this.name }),
       true,
       request.signal,
     );

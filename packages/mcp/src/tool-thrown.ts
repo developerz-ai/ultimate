@@ -3,7 +3,8 @@
 // raised it. Split from `server.ts` for the file ceiling; the server is its only caller.
 
 import type { ErrorAudience } from '@ultimat3/core';
-import { auditToolCall, outcomeForCode } from './audit';
+import { outcomeForCode } from './audit';
+import type { McpAuditor } from './audit-hook';
 import { asFrameworkError, renderFrameworkError } from './framework-error';
 import type { AnyMcpTool, McpCaller } from './registry';
 import type { JsonRpcId, JsonRpcResponse } from './wire';
@@ -21,10 +22,11 @@ export function thrownResponse(
   error: unknown,
   caller: McpCaller,
   audience: ErrorAudience,
+  audit: McpAuditor,
 ): JsonRpcResponse {
   const framework = asFrameworkError(error);
   if (framework !== undefined) {
-    auditToolCall({
+    audit.toolCall({
       tool: name,
       outcome: outcomeForCode(framework.code),
       caller,
@@ -35,7 +37,7 @@ export function thrownResponse(
       isError: true,
     });
   }
-  auditToolCall({ tool: name, outcome: 'failed', caller });
+  audit.toolCall({ tool: name, outcome: 'failed', caller });
   return errorResponse(id, INTERNAL_ERROR, `tool "${name}" failed unexpectedly`);
 }
 

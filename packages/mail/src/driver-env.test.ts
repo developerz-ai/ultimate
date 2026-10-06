@@ -119,6 +119,12 @@ describe('selectMailDriver', () => {
       'RESEND_API_KEY',
       'MAIL_FROM',
       'MAIL_POOL_SIZE',
+      'SES_REGION',
+      'SES_ACCESS_KEY_ID',
+      'SES_SECRET_ACCESS_KEY',
+      'SES_SESSION_TOKEN',
+      'SES_ENDPOINT',
+      'SES_CONFIGURATION_SET',
     ]);
   });
 
@@ -308,4 +314,57 @@ test('the env-selected transport dials for real and refuses to send in the clear
   } finally {
     server.stop();
   }
+});
+
+describe('selectMailDriver — SES', () => {
+  const SES = {
+    SES_REGION: 'eu-west-1',
+    SES_ACCESS_KEY_ID: 'AKIDEXAMPLE',
+    SES_SECRET_ACCESS_KEY: 'ses-test-secret',
+    MAIL_FROM: FROM,
+  };
+
+  test('SES_REGION selects the ses transport', () => {
+    const selection = selectMailDriver(SES);
+    expect(selection.driver.name).toBe('ses');
+    expect(selection.detail).toBe('SES_REGION');
+  });
+
+  test('a missing key half is refused at selection, naming the variable', () => {
+    const error = thrown(() => selectMailDriver({ ...SES, SES_SECRET_ACCESS_KEY: ' ' }));
+    expect(error.code).toBe('X_ENV_MISSING');
+    expect(error.cause).toContain('SES_SECRET_ACCESS_KEY');
+    expect(error.cause).not.toContain('AKIDEXAMPLE');
+  });
+
+  test('without MAIL_FROM it is refused the way the others are', () => {
+    const { MAIL_FROM: _from, ...rest } = SES;
+    expect(thrown(() => selectMailDriver(rest)).cause).toContain('SES_REGION');
+  });
+
+  test('SES beside another transport is refused, naming every selecting key', () => {
+    const error = thrown(() => selectMailDriver({ ...SES, SMTP_URL, RESEND_API_KEY: 're_x' }));
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain('SMTP_URL and RESEND_API_KEY and SES_REGION are all set');
+    expect(error.meta).toMatchObject({ selected: ['SMTP_URL', 'RESEND_API_KEY', 'SES_REGION'] });
+  });
+
+  test('retainMime reaches SES and SMTP, and is refused for resend rather than ignored', () => {
+    const retainMime = { maxBytes: 1024 };
+    expect(selectMailDriver(SES, { retainMime }).driver.name).toBe('ses');
+    expect(selectMailDriver({ SMTP_URL, MAIL_FROM: FROM }, { retainMime }).driver.name).toBe(
+      'smtp',
+    );
+    const error = thrown(() =>
+      selectMailDriver({ RESEND_API_KEY: 're_x', MAIL_FROM: FROM }, { retainMime }),
+    );
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain('retainMime');
+  });
+
+  test('a bad retainMime cap is refused at selection, not at the first send', () => {
+    expect(thrown(() => selectMailDriver(SES, { retainMime: { maxBytes: 0 } })).code).toBe(
+      'X_INVARIANT',
+    );
+  });
 });

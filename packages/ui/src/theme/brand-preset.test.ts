@@ -162,4 +162,19 @@ describe('defineTheme({ font: { data } })', () => {
       ":root {\n  --font-data: 'IBM Plex Mono', monospace;\n}",
     );
   });
+
+  // The brand's CSP hash is a sha256 over the server's bytes, and the HTML parser normalises a
+  // CR or CRLF inside a <style> to LF before the browser hashes it: a font stack that carried one
+  // rendered a stylesheet whose hash never matched, so the whole brand was blocked.
+  test('a CR, LF, tab or other non-space whitespace in a font stack is refused', () => {
+    for (const ws of ['\r', '\n', '\r\n', '\t', '\f', '\v', ' ', ' ']) {
+      expect(codeOf(() => defineTheme({ font: { sans: `Inter,${ws}sans-serif` } }))).toBe(
+        UI_ERROR_CODES.invalidValue,
+      );
+    }
+    // A plain space is how a font list is written, and stays legal.
+    expect(defineTheme({ font: { sans: 'Inter, system-ui, sans-serif' } }).css).toContain(
+      '--font-sans: Inter, system-ui, sans-serif;',
+    );
+  });
 });

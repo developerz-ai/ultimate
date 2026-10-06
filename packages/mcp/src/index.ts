@@ -1,6 +1,8 @@
 // Public API of @ultimat3/mcp. Explicit — nothing is re-exported by wildcard, so the
 // surface an app or an agent can reach is exactly this list.
 
+/** `@ultimat3/http`'s `RequestFacts`, under the name this package's resolver docs use. One shape. */
+export type { RequestFacts as McpRequestFacts } from '@ultimat3/http';
 /** Re-exported so a `defineAppMcp` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { formatIssues, t } from '@ultimat3/schema';
@@ -14,6 +16,46 @@ export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
 export type { McpAuditEntry, McpOutcome, McpResourceAuditEntry } from './audit';
 export { auditResourceRead, auditToolCall, outcomeForCode } from './audit';
+export type {
+  McpAuditEvent,
+  McpAuditHook,
+  McpAuditor,
+  McpAuditorInput,
+  McpAuthRefusal,
+} from './audit-hook';
+export { mcpAuditor } from './audit-hook';
+export {
+  McpConfirmationArgumentsMismatchError,
+  McpConfirmationContestedError,
+  McpConfirmationDecidedError,
+  McpConfirmationExpiredError,
+  McpConfirmationPendingError,
+  McpConfirmationRejectedError,
+  McpConfirmationToolUnknownError,
+  McpConfirmationUnknownError,
+} from './confirmation-errors';
+export {
+  inputDigest,
+  MCP_CONFIRMATION_ARGUMENTS_PURPOSE,
+  MCP_CONFIRMATION_DIGEST_PURPOSE,
+  withConfirmations,
+} from './confirmation-gate';
+export type { PostgresConfirmationStoreOptions } from './confirmation-postgres';
+export { postgresConfirmationStore } from './confirmation-postgres';
+export { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from './confirmation-schema';
+export type {
+  McpConfirmation,
+  McpConfirmationDraft,
+  McpConfirmationStatus,
+  McpConfirmationStore,
+} from './confirmation-store';
+export { memoryConfirmationStore } from './confirmation-store';
+export type {
+  McpConfirmationDecision,
+  McpConfirmations,
+  McpConfirmationsInput,
+} from './confirmations';
+export { DEFAULT_MCP_CONFIRMATION_TTL_MS, mcpConfirmations } from './confirmations';
 export type { CreateDevServerInput } from './dev-host';
 export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
 export type {
@@ -62,13 +104,10 @@ export {
   MCP_ERROR_TITLES,
   McpAppUnmountedError,
   McpArgsInvalidError,
-  McpBodyTooLargeError,
   McpIdempotencyKeyShadowedError,
   McpNotBranchDbError,
-  McpOAuthInvalidError,
   McpProtocolError,
   McpQueryRejectedError,
-  McpRateLimitedError,
   McpResourceDuplicateError,
   McpScopeConflictError,
   McpScopeDeniedError,
@@ -80,6 +119,11 @@ export {
   McpToolUnknownError,
   McpToolUnsafeError,
 } from './errors';
+export {
+  McpBodyTooLargeError,
+  McpOAuthInvalidError,
+  McpRateLimitedError,
+} from './errors-transport';
 export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
 export {

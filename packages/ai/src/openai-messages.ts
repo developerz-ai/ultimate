@@ -5,6 +5,9 @@
 // system prompt lives, how an assistant asks for a tool, and how a tool answers. Pure functions, so
 // every disagreement is a unit test with no socket.
 
+import type { AiMediaBlock } from './content-blocks';
+import { isMediaBlock } from './content-blocks';
+import { AiContentUnsupportedError } from './content-errors';
 import type { AiContentBlock, AiMessage } from './provider';
 import type { JsonSchema, LlmTool } from './tools';
 
@@ -15,8 +18,18 @@ export interface OpenAiToolCall {
   readonly function: { readonly name: string; readonly arguments: string };
 }
 
+/** A user message's parts, when it carries more than prose. Field names are the format's own. */
+export type OpenAiContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image_url'; readonly image_url: { readonly url: string } }
+  | {
+      readonly type: 'file';
+      readonly file: { readonly filename: string; readonly file_data: string };
+    };
+
 export type OpenAiMessage =
-  | { readonly role: 'system' | 'user'; readonly content: string }
+  | { readonly role: 'system'; readonly content: string }
+  | { readonly role: 'user'; readonly content: string | readonly OpenAiContentPart[] }
   | {
       readonly role: 'assistant';
       readonly content?: string | undefined;
@@ -57,21 +70,33 @@ export interface OpenAiToolChoice {
 export function toOpenAiMessages(
   system: string | undefined,
   messages: readonly AiMessage[],
+  target: MediaTarget,
 ): readonly OpenAiMessage[] {
   const out: OpenAiMessage[] = [];
   if (system !== undefined && system !== '') out.push({ role: 'system', content: system });
-  for (const message of messages) {
+  messages.forEach((message, m) => {
     if (typeof message.content === 'string') {
       out.push({ role: message.role, content: message.content });
-      continue;
+    } else if (message.role === 'assistant') {
+      out.push(assistantMessage(message.content));
+    } else {
+      // `m` is the index in the CALLER's list, so a refusal's path matches `assertMediaContent`'s.
+      out.push(...userTurn(message.content, m, target));
     }
-    if (message.role === 'assistant') out.push(assistantMessage(message.content));
-    else out.push(...toolTurn(message.content));
-  }
+  });
   return out;
 }
 
-/** Text blocks concatenate; `tool_use` blocks move onto `tool_calls` with stringified arguments. */
+/** Who a media refusal names: this provider, and the model the request is for. */
+export interface MediaTarget {
+  readonly provider: string;
+  readonly model: string;
+}
+
+/**
+ * Text blocks concatenate; `tool_use` blocks move onto `tool_calls` with stringified arguments.
+ * A media block never reaches here: `assertMediaContent` refuses one outside a user turn first.
+ */
 function assistantMessage(blocks: readonly AiContentBlock[]): OpenAiMessage {
   let content = '';
   const toolCalls: OpenAiToolCall[] = [];
@@ -95,15 +120,23 @@ function assistantMessage(blocks: readonly AiContentBlock[]): OpenAiMessage {
 }
 
 /**
- * A user turn that carries tool results. Every result becomes its own `role: 'tool'` message, in
- * order and before any prose, because OpenAI requires one tool message per `tool_call_id` the
- * previous assistant message asked for, and requires them to come first.
+ * A user turn. Every tool result becomes its own `role: 'tool'` message, in order and before any
+ * prose, because OpenAI requires one tool message per `tool_call_id` the previous assistant
+ * message asked for, and requires them to come first. What remains is ONE user message: a plain
+ * string when it is only prose — the shape every server in the family takes — and parts, in
+ * block order, the moment it carries an image or a document.
  */
-function toolTurn(blocks: readonly AiContentBlock[]): readonly OpenAiMessage[] {
+function userTurn(
+  blocks: readonly AiContentBlock[],
+  index: number,
+  target: MediaTarget,
+): readonly OpenAiMessage[] {
   const out: OpenAiMessage[] = [];
-  let text = '';
-  for (const block of blocks) {
-    if (block.type === 'text') text += block.text;
+  const parts: OpenAiContentPart[] = [];
+  blocks.forEach((block, b) => {
+    if (block.type === 'text') parts.push({ type: 'text', text: block.text });
+    if (isMediaBlock(block))
+      parts.push(mediaPart(block, `messages[${index}].content[${b}]`, target));
     if (block.type === 'tool_result') {
       out.push({
         role: 'tool',
@@ -113,9 +146,47 @@ function toolTurn(blocks: readonly AiContentBlock[]): readonly OpenAiMessage[] {
         content: block.is_error === true ? `error: ${block.content}` : block.content,
       });
     }
+  });
+  if (parts.some((part) => part.type !== 'text')) out.push({ role: 'user', content: parts });
+  else {
+    const text = parts.map((part) => (part.type === 'text' ? part.text : '')).join('');
+    if (text !== '') out.push({ role: 'user', content: text });
   }
-  if (text !== '') out.push({ role: 'user', content: text });
   return out;
+}
+
+/**
+ * One media block as a content part. An image goes as `image_url` either way — a data URL for
+ * base64, the URL itself otherwise. A PDF goes as a `file` part with a base64 data URL. Chat
+ * completions has no shape for a document by URL ("not supported" — URL files are the Responses
+ * API's) and takes only PDFs as files, so those two are refused here rather than approximated.
+ */
+function mediaPart(block: AiMediaBlock, at: string, target: MediaTarget): OpenAiContentPart {
+  const { source } = block;
+  if (block.type === 'image') {
+    const url =
+      source.type === 'url' ? source.url : `data:${source.media_type};base64,${source.data}`;
+    return { type: 'image_url', image_url: { url } };
+  }
+  if (source.type === 'base64') {
+    const file_data = `data:${source.media_type};base64,${source.data}`;
+    return { type: 'file', file: { filename: block.title ?? 'document.pdf', file_data } };
+  }
+  const refusal =
+    source.type === 'url'
+      ? {
+          why: 'the chat-completions format has no document-by-URL part',
+          fix: "source: { type: 'base64', media_type: 'application/pdf', data }   # fetch the PDF and send its bytes",
+        }
+      : {
+          why: 'the chat-completions format takes only PDF files, never a text/plain document',
+          fix: "{ type: 'text', text }   # the document's text, as a block in the same user turn",
+        };
+  throw new AiContentUnsupportedError({
+    kind: 'document',
+    at,
+    refusal: { by: 'provider', ...target, ...refusal },
+  });
 }
 
 /**

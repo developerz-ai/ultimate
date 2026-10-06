@@ -39,6 +39,7 @@ describe('audit levels', () => {
     'scope-denied': 'warn',
     'policy-denied': 'warn',
     'invalid-args': 'info',
+    unconfirmed: 'info',
     failed: 'error',
   };
 
@@ -95,6 +96,12 @@ describe('outcomeForCode', () => {
     // `X_FORBIDDEN`, and a set that still recognised it would let the old code back in
     // classifying correctly — which is exactly how a twin survives a rename.
     expect(outcomeForCode('X_POLICY_DENIED')).toBe('failed');
+  });
+
+  test('a call awaiting a human is expected, and a human saying no is a denial', () => {
+    expect(outcomeForCode('X_MCP_CONFIRMATION_PENDING')).toBe('unconfirmed');
+    expect(outcomeForCode('X_MCP_CONFIRMATION_EXPIRED')).toBe('unconfirmed');
+    expect(outcomeForCode('X_MCP_CONFIRMATION_REJECTED')).toBe('policy-denied');
   });
 
   test('anything else wants a human — including input the JSON Schema already passed', () => {

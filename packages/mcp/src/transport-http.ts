@@ -21,9 +21,9 @@
 
 import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, readWithinLimit, systemClock } from '@ultimat3/core';
-import type { Bucket, RateLimitStore } from '@ultimat3/http';
-import { memoryRateLimitStore, toBucket } from '@ultimat3/http';
-import { McpBodyTooLargeError, McpRateLimitedError } from './errors';
+import type { Bucket, RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
+import { memoryRateLimitStore, requestFacts, toBucket } from '@ultimat3/http';
+import { McpBodyTooLargeError, McpRateLimitedError } from './errors-transport';
 import type { McpOAuth } from './oauth-metadata';
 import {
   assertMcpOAuth,
@@ -79,10 +79,16 @@ export interface ResolvedToken {
 export interface McpHttpTransportInput {
   readonly server: McpServer;
   /**
-   * Resolve an OAuth bearer / personal token to a caller. The framework supplies the token
-   * string only — credential storage belongs to `@ultimat3/policy` and the app, never here.
+   * Resolve an OAuth bearer / personal token to a caller. The framework supplies the token and
+   * how the request arrived (`McpRequestFacts`: the host-resolved address, user agent, `Origin`,
+   * path) — so a token can be bound to a network or refused from a browser origin. Credential
+   * storage belongs to `@ultimat3/policy` and the app, never here. A one-argument resolver is
+   * still one: the facts are an extra argument it may ignore.
    */
-  resolveToken(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
+  resolveToken(
+    token: string,
+    facts: McpRequestFacts,
+  ): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Route path. Overridable so an app can mount a second, app-scoped surface. */
   readonly path?: string;
   /** Bytes this transport will hold for one request. Defaults to `DEFAULT_MCP_BODY_LIMIT_BYTES`. */
@@ -231,24 +237,42 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       // An address that has spent its failures is refused BEFORE the credential store is asked:
       // counting only after the fact turned a 401 into a 429 and still answered a valid guess.
       const address = seen?.address;
+      // Built once per request: the resolver's second argument and every refusal's audit facts.
+      // The address inside is the host's answer (`seen.address`), never a header read here.
+      const facts = requestFacts({ headers: request.headers, url: request.url, address });
+      const audit = server.audit;
       const exhausted = await failures.refusing(address);
-      if (exhausted !== undefined) return exhausted;
+      if (exhausted !== undefined) {
+        audit.authRefused('throttled', exhausted.status, facts);
+        return exhausted;
+      }
+      // A failure spends the address's allowance; the 429 wins when that one did not fit.
+      const refuse = async (
+        reason: 'missing-token' | 'rejected-token',
+        challenge: string,
+      ): Promise<Response> => {
+        const throttledNow = await failures.spend(address);
+        const response = throttledNow ?? unauthorized(challenge);
+        audit.authRefused(
+          throttledNow === undefined ? reason : 'throttled',
+          response.status,
+          facts,
+        );
+        return response;
+      };
       const token = bearerToken(request);
       if (token === null) {
-        return (
-          (await failures.spend(address)) ??
-          unauthorized(bearerChallenge(metadataUrl, false, challengeScopes))
-        );
+        return refuse('missing-token', bearerChallenge(metadataUrl, false, challengeScopes));
       }
 
-      const resolved = await input.resolveToken(token);
+      const resolved = await input.resolveToken(token, facts);
       if (resolved === null) {
-        return (
-          (await failures.spend(address)) ??
-          unauthorized(bearerChallenge(metadataUrl, true, challengeScopes))
-        );
+        return refuse('rejected-token', bearerChallenge(metadataUrl, true, challengeScopes));
       }
-      if (!isAgentActor(resolved.actor)) return notAnAgent();
+      if (!isAgentActor(resolved.actor)) {
+        audit.authRefused('not-an-agent', 403, facts);
+        return notAnAgent();
+      }
 
       // Read through the counting reader, never `request.json()`: the cap has to be enforced
       // WHILE the bytes arrive, or a `transfer-encoding: chunked` payload is materialised in full

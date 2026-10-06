@@ -25,7 +25,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   flags: 7,
   http: 26,
   jobs: 37,
-  mail: 41,
+  mail: 40,
   manifest: 6,
   mcp: 34,
   money: 10,

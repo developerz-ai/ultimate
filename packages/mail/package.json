@@ -14,7 +14,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./events": "./src/events.ts"
   },
   "files": [
     "src",

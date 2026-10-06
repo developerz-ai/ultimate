@@ -8,11 +8,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, t } from '@ultimat3/action';
 import { secret } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { llm } from './llm';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { costOf } from './provider';
 import { assertNoSecrets } from './redaction';
 import { aiRedactor, configureAi, resetAiRuntime } from './runtime';
 

@@ -21,10 +21,37 @@ then restarts. Sweep 8d root-causes the flaky tests. Sweep 9 makes realtime chea
 honest: one runtime per page, writes named on every frame, no stale first paint offline. Sweep
 9b ships dashboards: charts, phone-ready tables, a sci-fi theme preset and the seam to use it.
 Sweep 10a lands the tier 0–1 seams the superseded plans owed; sweep 10b the tier 2–3 ones:
-append-only entities, one way to set a cookie, and audited reads.
+append-only entities, one way to set a cookie, and audited reads; sweep 10c the tier 4 ones: human
+confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 models and media blocks.
 
 ### Added
 
+- mcp: `mcpConfirmations({ tools, permission, store })` — a person approves a named tool's call
+  before it runs. A factory over `action`. The agent's call opens a pending row holding its
+  arguments **sealed** and a keyed fingerprint of them; a person reads the exact arguments with
+  `decision: 'view'` and approves only by sending those same arguments back
+  (`X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` otherwise). An approval runs exactly one call; deciders
+  are held to the asking org unless an explicit `check` says otherwise; an agent never decides.
+  Memory and Postgres stores (`x_mcp_confirmations`, applied at boot from `@ultimat3/mcp/schema`).
+  Codes `X_MCP_CONFIRMATION_PENDING` (409), `_EXPIRED` (410), `_REJECTED` (403), `_DECIDED` (409),
+  `_UNKNOWN` (404), `_CONTESTED` (503), `_ARGUMENTS_MISMATCH` (409), `_TOOL_UNKNOWN`.
+- mcp: `createMcpServer` / `defineAppMcp({ onAudit })` receive every gate decision and refused token
+  as an `McpAuditEvent`, after its log line; a hook that throws changes no answer. A refused token
+  now logs `mcp.auth.<reason>` at `warn`.
+- http, mcp: `resolveToken(token, facts)` and the bearer mount's resolver receive frozen
+  `RequestFacts` (the trusted-hop address, user agent, `Origin`, path), so one resolver can bind a
+  token to a network or refuse by origin on both mounts.
+- mail: `createSesDriver` — SES v2 `SendEmail` with the raw MIME, SigV4-signed by core, SES error
+  types mapped onto `X_MAIL_SEND_FAILED` retry classes, selected by `SES_REGION`. `retainMime` on
+  SMTP and SES keeps the exact sent bytes (256 KiB default cap, digest-only above it).
+- mail: `createSesEventReceiver` and `createResendEventReceiver` (`@ultimat3/mail/events`) normalise
+  SNS (signature v1/v2, a required topic allow-list, a pinned certificate host) and Svix-signed Resend
+  webhooks into one `DeliveryEvent`. Codes `X_MAIL_EVENT_UNVERIFIED` (401), `X_MAIL_EVENT_INVALID`
+  (400), `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503).
+- ai: `claude-fable-5-1`, `claude-opus-5-5` and `claude-sonnet-5-5` rows with their thinking rules
+  (`disableThinkingUpTo: 'never'`, `disabledThinking: 'between_tools'`); image and document
+  `AiContentBlock`s on both providers, base64 capped at 10 MiB / 32 MiB (`X_AI_CONTENT_UNSUPPORTED`,
+  422).
 - entity, db: `entity({ appendOnly: true })`. The repository refuses `update`, `delete`,
   `updateWhere`, `deleteWhere` and an updating `upsertAll` (`X_ENTITY_APPEND_ONLY`, 409); `x db gen`
   emits a `BEFORE UPDATE OR DELETE` trigger, so raw SQL is refused too (SQLSTATE `23001`); a missing
@@ -205,6 +232,11 @@ append-only entities, one way to set a cookie, and audited reads.
 
 ### Changed
 
+- ai: `costOf` charges each model's published cache-read and 5-minute cache-write rates
+  (`ModelSpec.cacheReadPerMillion` / `cacheWritePerMillion`; a custom row keeps the 0.1x / 1.25x
+  defaults). Opus 5.5 cache reads were overcharged 2x and Fable 5.1's 4x. `claude-sonnet-5` is
+  repriced to its standard $2/$10 per MTok (was $3/$15), so recorded costs and budget reservations
+  on it drop by a third.
 - auth: the session and OAuth handshake cookies are built by `serializeSetCookie`. Attributes are
   now written `Max-Age=…; Path=/` (the same cookie to a browser, RFC 6265 §5.2), and a cookie name
   that is not an RFC 6265 token is `X_COOKIE_INVALID` instead of a cookie the browser drops.
@@ -342,6 +374,8 @@ append-only entities, one way to set a cookie, and audited reads.
 
 ### Fixed
 
+- ui: a brand font stack carrying a CR, LF or tab was accepted, and the browser's normalised bytes
+  then missed the server's CSP hash, so the whole brand stylesheet was blocked. It is now refused.
 - The social demo's session cookie overwrote any other cookie set on the same response
   (`headers.set('set-cookie', …)`); it now appends through `setCookie`.
 - An app error page's `<style>` was blocked under the container's enforced CSP: its hash was
