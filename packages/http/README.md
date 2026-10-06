@@ -404,6 +404,39 @@ export const ingestSesEvent = action({
 | one reader | `bodyRaw()` and `bodyBytes()` share one capped read, so an action that reads both reads the stream once |
 | off HTTP | `X_NO_REQUEST`: a job or an MCP call has no body bytes |
 
+## Setting a cookie
+
+`As of 2026-10-06`. A route handler, a page `load()` or an action cannot hand the pipeline a
+`Response` of its own, so it calls `setCookie` on the request in scope. The line is
+`@ultimat3/core`'s `serializeSetCookie` — the one serializer — appended to the context's response
+headers, which the `response` stage appends to whatever is sent.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { deleteCookie, setCookie } from '@ultimat3/http';
+import { allow } from '@ultimat3/policy';
+
+export const choosePreferences = action({
+  input: t.object({ theme: t.string.max(16), reset: t.boolean }),
+  output: t.object({ ok: t.boolean }),
+  policy: allow('public'),
+  handle({ input }) {
+    if (input.reset) deleteCookie('theme', { path: '/' });
+    else setCookie('theme', input.theme, { httpOnly: false, maxAge: 60 * 60 * 24 * 365 });
+    return { ok: true };
+  },
+});
+```
+
+| | |
+|---|---|
+| defaults | `Path=/; HttpOnly; Secure; SameSite=Lax` — core's; every option is `SetCookieOptions` |
+| two calls | two `Set-Cookie` lines, in call order. The same name on two paths is two cookies; nothing overwrites |
+| clearing | **`deleteCookie(name, { path, domain })` is the one way**: empty value, `Max-Age=0`, the `Path`/`Domain` (and `Partitioned`) the cookie was set with. `setCookie` with `maxAge: 0`, or an `expires` at or before `ctx.now()`, is `X_COOKIE_INVALID` naming `deleteCookie` |
+| an invalid cookie | `X_COOKIE_INVALID` (core) before anything is appended: a non-token name, `__Host-` without `Secure`, a pair over 4096 octets |
+| off HTTP | `X_NO_REQUEST` in a job, a task or an impersonated child context; `X_NO_CONTEXT` outside any |
+| by hand | refused: `bun run set-cookie-literals` fails the build on a `Set-Cookie` attribute spelled in a literal anywhere but `packages/core/src/cookie.ts` (`X_SET_COOKIE_HAND_BUILT`) |
+
 ## Errors
 
 `X_ROUTE_NOT_FOUND` · `X_METHOD_NOT_ALLOWED` · `X_BODY_INVALID` · `X_UNAUTHENTICATED`

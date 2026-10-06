@@ -5,13 +5,15 @@
 
 import type { IndexMethod } from '@ultimat3/db';
 import { describeValue, type Schema } from '@ultimat3/schema';
+import { assertAppendOnlyColumns } from './append-only';
 import { entityNow } from './clock';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
 import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
-import type { Expr, InvariantColumns, Resolve } from './expr';
+import type { InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
+import type { IndexInit } from './index-init';
 import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant } from './invariants';
@@ -31,29 +33,6 @@ import { viewFor } from './view';
 
 /** Presence of this column is what makes an entity soft-deletable — not a flag. */
 export const SOFT_DELETE_COLUMN = 'deletedAt';
-
-export interface IndexInit<C extends ColumnMap> {
-  readonly on: readonly (keyof C & string)[];
-  readonly order?: 'asc' | 'desc';
-  readonly unique?: boolean;
-  /** Partial index predicate, written in the same language as an invariant. */
-  readonly where?: (columns: InvariantColumns<C>) => Expr;
-  /**
-   * The access method. Omitted is `btree`, which is Postgres' own default and what every index
-   * declared before this existed is — so an entity that names none emits the statement it always
-   * emitted and nothing regenerates.
-   *
-   * `'gin'` is the one with a caller, and it is the whole point of the containment operators:
-   * measured on Postgres 16 over 20,000 rows, `tags @> …`, `tags <@ …`, `tags && …` and
-   * `data @> …` are each a Bitmap Index Scan with one and a Seq Scan without. The set is
-   * `@ultimat3/db`'s `INDEX_METHODS`, imported rather than restated — one declaration of one fact.
-   *
-   * Two Postgres rules ride with it and both are refused HERE, where the author is, rather than at
-   * `x db gen` or inside `ROLE=migrate` as the server's own syntax error: a GIN index cannot be
-   * unique and cannot order its keys.
-   */
-  readonly using?: IndexMethod;
-}
 
 export interface EntityInit<C extends ColumnMap> {
   readonly columns: C;
@@ -94,6 +73,12 @@ export interface EntityInit<C extends ColumnMap> {
    * and disk is a decision. Read off `recordProjection(entity).persist` by realtime's persister.
    */
   readonly persist?: boolean;
+  /**
+   * Rows are written once and never changed or removed — a ledger, an audit trail, an event log.
+   * The repository refuses every rewrite (`append-only.ts`) and `x db gen` emits the trigger that
+   * refuses the same in raw SQL. A soft-delete, `onUpdateNow()` or state-machine column is refused.
+   */
+  readonly appendOnly?: boolean;
 }
 
 /**
@@ -112,6 +97,8 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   /** `entity:<name>`. `@ultimat3/cache` invalidates by this string. */
   readonly $cacheTag: string;
   readonly $softDelete: boolean;
+  /** `entity({ appendOnly: true })`: update and delete are refused, here and by the table. */
+  readonly $appendOnly: boolean;
   /** Property key of the tenant column, or `null`. Presence is what turns tenancy on. */
   readonly $tenantColumn: string | null;
   /**
@@ -190,6 +177,8 @@ export const entity = <const C extends ColumnMap>(
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
+  const appendOnly = init.appendOnly === true;
+  if (appendOnly) assertAppendOnlyColumns(name, entries, SOFT_DELETE_COLUMN);
 
   const searchSources: readonly SearchSource[] = entries.flatMap(([property, column]) => {
     const weight = column.$meta.searchable;
@@ -380,6 +369,7 @@ export const entity = <const C extends ColumnMap>(
       softDelete,
       tenantColumn,
       search,
+      appendOnly,
     });
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
 
@@ -460,6 +450,7 @@ export const entity = <const C extends ColumnMap>(
     $tags: tags,
     $cacheTag: cacheTag,
     $softDelete: softDelete,
+    $appendOnly: appendOnly,
     $tenantColumn: tenantColumn,
     $search: search,
     $schema: schema,

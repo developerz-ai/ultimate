@@ -20,10 +20,29 @@ sweep 8b fixes what that job found. Sweep 8c makes a deploy zero-downtime: a wor
 then restarts. Sweep 8d root-causes the flaky tests. Sweep 9 makes realtime cheaper and
 honest: one runtime per page, writes named on every frame, no stale first paint offline. Sweep
 9b ships dashboards: charts, phone-ready tables, a sci-fi theme preset and the seam to use it.
-Sweep 10a lands the tier 0–1 seams the superseded plans owed.
+Sweep 10a lands the tier 0–1 seams the superseded plans owed; sweep 10b the tier 2–3 ones:
+append-only entities, one way to set a cookie, and audited reads.
 
 ### Added
 
+- entity, db: `entity({ appendOnly: true })`. The repository refuses `update`, `delete`,
+  `updateWhere`, `deleteWhere` and an updating `upsertAll` (`X_ENTITY_APPEND_ONLY`, 409); `x db gen`
+  emits a `BEFORE UPDATE OR DELETE` trigger, so raw SQL is refused too (SQLSTATE `23001`); a missing
+  or disabled trigger is drift (`X_APPEND_ONLY_TRIGGER_MISSING`).
+- http: `setCookie(name, value, opts)` and `deleteCookie(name, { path, domain })` set and clear a
+  cookie from a handler, a page `load()` or an action, through core's `serializeSetCookie`. Each
+  call appends; `maxAge: 0` or a past `expires` is `X_COOKIE_INVALID` naming `deleteCookie`. A new
+  guard, `bun run set-cookie-literals` (`X_SET_COOKIE_HAND_BUILT`), refuses a hand-built
+  `Set-Cookie` anywhere outside core's serializer, with no exception pinned.
+- query: `query({ audit: true })` records every call (allowed, denied, failed, and memo or cache
+  hits as `replayed: true`) into the same `AuditSink` an action writes to, on every surface
+  including `surface: 'mcp'`. The rows are never recorded. New codes `X_QUERY_AUDIT_SINK_MISSING` and
+  `X_QUERY_AUDIT_SINK_FAILED` (an allowed read whose record is refused withholds its rows).
+- core: `AuditRecord`, `AuditSink`, `setAuditSink`, `getAuditSink`, `resetAuditSink` and
+  `AUDIT_RECORD_FIELDS` live in `@ultimat3/core`; `@ultimat3/action` re-exports the same objects.
+  `AuditRecord` gains `name` and `primitive`; `x_audit` gains a `primitive` column (added with
+  `add column if not exists`, default `'action'`). **Deprecated:** `AuditRecord.action` (same value
+  as `name`), removed in 25.0.0.
 - core: `serializeSetCookie(name, value, options?)` is the one place a `Set-Cookie` value is built.
   - It defaults to `Path=/; HttpOnly; Secure; SameSite=Lax`, round-trips with `readCookie`, and
     writes `Expires` in UTC.
@@ -184,6 +203,9 @@ Sweep 10a lands the tier 0–1 seams the superseded plans owed.
 
 ### Changed
 
+- auth: the session and OAuth handshake cookies are built by `serializeSetCookie`. Attributes are
+  now written `Max-Age=…; Path=/` (the same cookie to a browser, RFC 6265 §5.2), and a cookie name
+  that is not an RFC 6265 token is `X_COOKIE_INVALID` instead of a cookie the browser drops.
 - **Breaking for a custom change feed:** `ChangeEvent.write` is required (`string | null`); a producer
   that left it out must pass `write: null` (#507).
 - realtime: the page runtime (store, socket host, channel book, query client, transport) ships once per
@@ -318,6 +340,8 @@ Sweep 10a lands the tier 0–1 seams the superseded plans owed.
 
 ### Fixed
 
+- The social demo's session cookie overwrote any other cookie set on the same response
+  (`headers.set('set-cookie', …)`); it now appends through `setCookie`.
 - An app error page's `<style>` was blocked under the container's enforced CSP: its hash was
   hashed twice on its way to `style-src`.
 - The admin skip link now becomes visible when focused. The admin sidebar search box no longer

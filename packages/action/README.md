@@ -668,13 +668,19 @@ What the framework supplies is what it genuinely knows:
 | Field | |
 |---|---|
 | `at` | when the attempt began, from `ctx.now()` — an instant, never a rendering |
-| `action` / `mutator` | the registered name, and which primitive it was |
-| `surface` | `server` \| `http` \| `mcp` \| `job` — the same price change over MCP is not the same event |
+| `name` / `primitive` / `mutator` | the registered name; `'action'` (or `'query'` for an audited read); and whether `mutator()` built it |
+| `action` | **deprecated** — the same value as `name`, written beside it until 25.0.0 removes it. Read `name` |
+| `surface` | `server` \| `http` \| `mcp` \| `job` (and `live` on a read) — the same price change over MCP is not the same event |
 | `ctx` | the whole context: actor, `requestId`, `traceId`, locale, and the services a sink needs to write a row |
 | `input` | the **parsed** input, or `undefined` when the parse is what failed — never the raw payload |
 | `idempotencyKey` / `replayed` | the namespaced key, and whether this was a call rather than a write |
 | `outcome` | `allowed` \| `denied` \| `failed` |
 | `failure` | the `X_*` code and the thrown value, on every outcome but `allowed` |
+
+**One contract, one sink, shared with reads.** `AuditRecord`, `AuditSink` and the installed slot
+are `@ultimat3/core`'s; this package re-exports the same objects, so `setAuditSink` from either
+installs the sink `query({ audit: true })` writes to as well (`@ultimat3/query`'s README). A sink
+tells the two apart by `record.primitive`.
 
 What it does **not** supply: an audit entity, a retention policy, a hash chain, a subject index,
 or an opinion on what "who" means under impersonation. Four apps model those four ways; shipping

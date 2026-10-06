@@ -28,6 +28,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | which principal the page acts for, and the epoch that moves when it changes | `client-scope.ts` |
 | which row survives a conflict — `server-wins`, `last-write-wins`, `custom` | `conflict-policy.ts` |
 | the four shapes an async region can be in | `async-state.ts` |
+| the audit seam `action` and `query` share — `AuditRecord` (`name`, `primitive`, `surface`, `outcome`, the parsed `input`; `action` is a deprecated alias of `name` until 25.0.0), `AuditSink`, the ONE installed sink (`setAuditSink` / `getAuditSink` / `resetAuditSink`, re-exported by `@ultimat3/action`), and `AUDIT_RECORD_FIELDS`, the field list both primitives' tests pin their records to | `audit.ts` |
 | is this `unknown` a keyed record? | `json-object.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |

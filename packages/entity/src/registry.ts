@@ -125,6 +125,8 @@ export interface EntityDescription {
   readonly cacheTag: string;
   readonly softDelete: boolean;
   readonly orgScoped: boolean;
+  /** `entity({ appendOnly: true })`; absent on every entity that did not say it. `x db gen` reads it. */
+  readonly appendOnly?: true;
 }
 
 export interface RegistryEntry {

@@ -5,6 +5,10 @@ export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { AggregateFn } from './aggregate';
 export { AVG_SCALE } from './aggregate';
+// Append-only entities: the same kind of seam, wrapped OUTSIDE `sealedRepo` by both drivers — a
+// driver written outside this package returns through `appendOnlyRepo(entity, sealedRepo(…))`.
+export type { AppendOnlySource } from './append-only';
+export { appendOnlyRepo } from './append-only';
 export type { BatchIterator } from './batch';
 export type { MoneyColumns } from './column';
 export { columnName, moneyColumns, snake } from './column';
@@ -30,7 +34,7 @@ export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { DescribeInput } from './describe';
-export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
+export type { Entity, EntityCore, EntityInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
 // The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
 // are decisions this framework made for a table it was going to create, and these are the shapes
@@ -73,6 +77,7 @@ export {
   stateTransitionIllegal,
   stateUndeclared,
 } from './feature-errors';
+export type { IndexInit } from './index-init';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';
 export { assertInvariants, invariant, MAX_ASSERTED_ROWS } from './invariants';
 // How Postgres compares two values of one column, decided by the column's declared KIND. Exported

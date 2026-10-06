@@ -11,7 +11,7 @@
 
 import { action, t } from '@ultimat3/action';
 import { signOutHeaders } from '@ultimat3/auth';
-import { setRedirect, useRequestHeader } from '@ultimat3/http';
+import { setCookie, setRedirect, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from './demo-actor';
 
@@ -30,13 +30,11 @@ export const endSession = action({
   handle({ ctx }) {
     const landed = carriesHeaders(ctx);
     if (landed) {
-      // Not `HttpOnly`: the demo cookie is a development-only viewing switch that `demo-actor.ts`'s
-      // boot line tells a developer to flip with `document.cookie`, and a script cannot overwrite
-      // an HttpOnly cookie — one sign-out would turn that instruction into a silent no-op.
-      ctx.headers.append(
-        'set-cookie',
-        `${DEMO_MEMBER_COOKIE}=${DEMO_SIGNED_OUT}; Path=/; SameSite=Lax`,
-      );
+      // Neither `HttpOnly` nor `Secure`: the demo cookie is a development-only viewing switch that
+      // `demo-actor.ts`'s boot line tells a developer to flip with `document.cookie`, and a script
+      // can overwrite neither an HttpOnly cookie nor (from `http://localhost`) a Secure one — one
+      // sign-out would turn that instruction into a silent no-op.
+      setCookie(DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT, { httpOnly: false, secure: false });
       // The browser drops the previous member's IndexedDB, storage and cached pages — `/` is a
       // static page with no scope tag, so nothing on it would wipe them (the boot wipe is the
       // second line, for a sign-out with no navigation).

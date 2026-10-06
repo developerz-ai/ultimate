@@ -23,5 +23,6 @@ create table "x_audit" (
   "role" text not null,
   "input" jsonb,
   "recorded_at" timestamp with time zone default now() not null,
+  "primitive" text default 'action'::text not null,
   constraint "x_audit_pkey" PRIMARY KEY (id)
 );

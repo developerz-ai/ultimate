@@ -230,7 +230,7 @@ describe('findTable', () => {
 });
 
 describe('introspect', () => {
-  test('sends five catalog queries and folds their rows through buildSchema', async () => {
+  test('sends six catalog queries and folds their rows through buildSchema', async () => {
     const client = createRecordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
@@ -275,10 +275,14 @@ describe('introspect', () => {
     client.on(/contype = 'c'/, {
       rows: [{ table_name: 'posts', constraint_name: 'posts_status_check' }],
     });
+    // The sixth: enabled trigger NAMES, the catalog's half of an append-only table.
+    client.on(/pg_trigger/, {
+      rows: [{ table_name: 'posts', trigger_name: 'ultimate_append_only' }],
+    });
 
     const schema = await introspect({ client });
 
-    expect(client.statements).toHaveLength(5);
+    expect(client.statements).toHaveLength(6);
     const posts = findTable(schema, 'posts');
     expect(posts?.columns).toHaveLength(1);
     expect(posts?.primaryKey).toEqual(['id']);
@@ -287,6 +291,8 @@ describe('introspect', () => {
     // rewritten predicate landing on it is what `checkPlan` would then diff a generated one against.
     expect(posts?.checkNames).toEqual(['posts_status_check']);
     expect(posts?.checks).toBeUndefined();
+    expect(posts?.triggerNames).toEqual(['ultimate_append_only']);
+    expect(posts?.appendOnly).toBeUndefined();
   });
 
   test('defaults `exclude` to `[x_migrations]`, so the ledger never appears as a table', async () => {
@@ -420,7 +426,7 @@ describe('introspect', () => {
 
     const schema = await introspect();
 
-    expect(client.statements).toHaveLength(5);
+    expect(client.statements).toHaveLength(6);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
 });

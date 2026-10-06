@@ -34,6 +34,10 @@ import { auditableInput } from './audit-input';
  * a different answer per app — seven years for one, thirty days for the next — so shipping a
  * `delete` would be shipping one of those answers. The table grows until the app prunes or
  * partitions it, and that is stated rather than solved.
+ *
+ * **`primitive` arrived by `alter`, with a default of `'action'`.** The sink is shared with
+ * `query({ audit: true })` since plan 101 sweep 10b, so a row has to say whether a read or a write
+ * acted; every row written before that was an action's, which is exactly what the default says.
  */
 export const SQL_AUDIT_TABLE = `
 create table if not exists x_audit (
@@ -61,6 +65,8 @@ create table if not exists x_audit (
   recorded_at       timestamptz not null default now()
 );
 
+alter table x_audit add column if not exists primitive text not null default 'action';
+
 create index if not exists x_audit_at_idx on x_audit (at desc);
 
 create index if not exists x_audit_actor_at_idx on x_audit (actor_id, at desc);
@@ -79,11 +85,11 @@ export const SQL_AUDIT_INSERT = `
 insert into x_audit (
   id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
   actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
-  request_id, trace_id, locale, tz, build_id, role, input
+  request_id, trace_id, locale, tz, build_id, role, input, primitive
 ) values (
   $1::uuid, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9,
   $10, $11, $12, $13, $14,
-  $15, $16, $17, $18, $19, $20, $21::jsonb
+  $15, $16, $17, $18, $19, $20, $21::jsonb, $22
 )
 `;
 
@@ -128,7 +134,8 @@ export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAu
       await exec.query(SQL_AUDIT_INSERT, [
         uuid(),
         at === null ? null : at.toISOString(),
-        record.action,
+        // `name`, into the column the seam named before reads were audited; M9 renames neither.
+        record.name,
         record.mutator,
         record.surface,
         record.outcome,
@@ -149,6 +156,7 @@ export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAu
         // `undefined` in means a parse that never produced an input, which is a NULL column and
         // not the four characters `JSON.stringify(undefined)` does not produce either.
         input === undefined ? null : JSON.stringify(input),
+        record.primitive,
       ]);
     },
   };

@@ -56,6 +56,7 @@
     "schema-dumps": "bun run scripts/schema-dumps.ts",
     "seal-calls": "bun run scripts/seal-calls.ts",
     "secret-compare": "bun run scripts/secret-compare.ts",
+    "set-cookie-literals": "bun run scripts/set-cookie-literals.ts",
     "setup": "bun run scripts/setup.ts",
     "side-effects": "bun run scripts/side-effects.ts",
     "skip-if-cleanup": "bun run scripts/skip-if-cleanup.ts",

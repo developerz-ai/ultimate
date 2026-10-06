@@ -43,7 +43,9 @@ const ctxFor = (over: Parameters<typeof createContext>[0] = {}) =>
 
 const recordFor = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   at: AT,
+  name: 'publishPost',
   action: 'publishPost',
+  primitive: 'action',
   mutator: true,
   surface: 'http',
   ctx: ctxFor(),
@@ -87,6 +89,22 @@ describe('the postgres audit sink writes one append-only row', () => {
     expect(params).toContain('publishPost:k1');
     expect(params[0]).toMatch(/^[0-9a-f-]{36}$/);
     expect(params).toContain(AT.toISOString());
+  });
+
+  test('which primitive acted reaches the row, so a read and a write are told apart', async () => {
+    const { exec, calls } = executor();
+    await postgresAuditSink({ executor: exec }).write(
+      recordFor({ name: 'postList', action: 'postList', primitive: 'query', mutator: false }),
+    );
+
+    expect(paramsOf(calls).at(-1)).toBe('query');
+    expect(paramsOf(calls)[2]).toBe('postList');
+  });
+
+  test('an existing x_audit gains the column by ALTER, defaulting every old row to action', () => {
+    expect(SQL_AUDIT_TABLE).toContain(
+      "alter table x_audit add column if not exists primitive text not null default 'action';",
+    );
   });
 
   test('a failure contributes its CODE and never the thrown value', async () => {
@@ -177,12 +195,16 @@ describe('the table is append-only, and the DDL follows the house rule', () => {
     }
   });
 
-  test('the DDL creates if not exists and edits nothing that already exists', () => {
+  // The house rule `SQL_AUDIT_TABLE` states: a new column is `add column if not exists`, never an
+  // edit of the `create` — so every statement is idempotent against a table that already exists.
+  test('the DDL creates if not exists, adds columns if not exists, and edits nothing else', () => {
     expect(SQL_AUDIT_TABLE).toContain('create table if not exists x_audit');
-    expect(SQL_AUDIT_TABLE.toLowerCase()).not.toMatch(/\b(drop|truncate)\b/);
+    expect(SQL_AUDIT_TABLE.toLowerCase()).not.toMatch(/\b(drop|truncate|rename)\b/);
     for (const statement of SQL_AUDIT_TABLE.split(';')) {
       if (statement.trim().length === 0) continue;
-      expect(statement.trim().toLowerCase()).toMatch(/^create (table|index) if not exists/);
+      expect(statement.trim().toLowerCase()).toMatch(
+        /^(create (table|index) if not exists|alter table x_audit add column if not exists)/,
+      );
     }
   });
 });

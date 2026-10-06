@@ -49,11 +49,13 @@ const COLUMNS = [
   'buildId',
   'role',
   'input',
+  'primitive',
 ] as const;
 
 /** What both sinks are asked to agree on: the facts, none of the storage. */
 interface Kept {
   readonly action: string;
+  readonly primitive: string;
   readonly outcome: string;
   readonly surface: string;
   readonly mutator: boolean;
@@ -78,7 +80,8 @@ function keptByMemory(record: AuditRecord): Kept {
   const kept = sink.records()[0];
   if (kept === undefined) expect.unreachable();
   return {
-    action: kept.action,
+    action: kept.name,
+    primitive: kept.primitive,
     outcome: kept.outcome,
     surface: kept.surface,
     mutator: kept.mutator,
@@ -111,6 +114,7 @@ async function keptByPostgres(record: AuditRecord): Promise<{ kept: Kept; input:
   return {
     kept: {
       action: at('action') as string,
+      primitive: at('primitive') as string,
       outcome: at('outcome') as string,
       surface: at('surface') as string,
       mutator: at('mutator') as boolean,
@@ -136,7 +140,9 @@ const AT = new Date(1_700_000_000_000);
 
 const recordFor = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   at: AT,
+  name: 'publishPost',
   action: 'publishPost',
+  primitive: 'action',
   mutator: true,
   surface: 'http',
   // Every string field a DIFFERENT value, on purpose: two columns holding the same word cannot
@@ -172,6 +178,18 @@ const CASES: readonly (readonly [string, AuditRecord])[] = [
     recordFor({ idempotencyKey: 'publishPost:k1', replayed: true }),
   ],
   [
+    // `query({ audit: true })` writes into the same sink: a read is one more record, never a
+    // second shape — and its input is redacted by the same walk on the durable side.
+    'an audited READ, from the query primitive',
+    recordFor({
+      name: 'postList',
+      action: 'postList',
+      primitive: 'query',
+      mutator: false,
+      input: { limit: 5, apiKey: 'sk_live_read' },
+    }),
+  ],
+  [
     'an input that never parsed',
     recordFor({
       input: undefined,
@@ -189,6 +207,24 @@ describe('both sinks record the same facts about the same attempt', () => {
       expect(durable).toEqual(memory);
     });
   }
+});
+
+describe('an audited read is redacted on the durable side exactly as a write is', () => {
+  test('a credential-named input key never reaches the table, whichever primitive wrote it', async () => {
+    const read = recordFor({
+      name: 'postList',
+      action: 'postList',
+      primitive: 'query',
+      mutator: false,
+      input: { limit: 5, apiKey: 'sk_live_read' },
+    });
+
+    const { kept, input } = await keptByPostgres(read);
+
+    expect(kept.action).toBe('postList');
+    expect(input as string).toContain('"limit":5');
+    expect(input as string).not.toContain('sk_live_read');
+  });
 });
 
 describe('neither sink may raise on a record — a throw fails a committed handler', () => {

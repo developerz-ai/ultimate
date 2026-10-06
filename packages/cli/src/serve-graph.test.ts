@@ -57,8 +57,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * 869 until the services and the role boot went behind `serveApp`'s `await import()`.
  * why: every ceiling here is the measurement plus 10%, so a real feature on the boot path fits and
  * a whole subsystem arriving does not. Raise one with the new measured number in the same diff.
+ * raised 615 → 620, measured 620 (2026-10-06, plan 101 sweep 10b): the modules named on
+ * `SERVING_ROLE_CEILING` for sweep 10b that `ROLE=migrate` reaches through the db and entity
+ * barrels — the append-only trigger it must create and the drift check that refuses a missing one.
  */
-const MIGRATE_CEILING = 615;
+const MIGRATE_CEILING = 620;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -93,8 +96,13 @@ const MIGRATE_CEILING = 615;
  * `object-lock.ts`, `driver-s3-signed.ts` (the signed PUT a locked or metadata-carrying put takes),
  * `driver-s3-lock.ts` (its headers and the retention reads) and `driver-s3-client.ts` (moved out so
  * `driver-s3.ts` stays under the ceiling).
+ * raised 900 → 907, measured 907 (2026-10-06, plan 101 sweep 10b): `entity({ appendOnly: true })` —
+ * `entity/src/append-only.ts`, `append-only-errors.ts`, `db/src/generate-append-only.ts` (the
+ * trigger) and `drift-append-only.ts` (a missing trigger is drift); audited reads —
+ * `core/src/audit.ts` (the one audit contract action and query share), `query/src/audit-gate.ts`
+ * and `audit-errors.ts`.
  */
-const SERVING_ROLE_CEILING = 900;
+const SERVING_ROLE_CEILING = 907;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -123,8 +131,10 @@ const SERVING_ROLE_CEILING = 900;
  * refusals moved out so `island-bundle.ts` stays under the 500-line ceiling).
  * raised 998 → 1004, measured 1004 (2026-10-06, plan 101 sweep 10a): the six modules named on
  * `SERVING_ROLE_CEILING` for sweep 10a.
+ * raised 1004 → 1011, measured 1011 (2026-10-06, plan 101 sweep 10b): the seven modules named on
+ * `SERVING_ROLE_CEILING` for sweep 10b.
  */
-const WEB_ROLE_CEILING = 1004;
+const WEB_ROLE_CEILING = 1011;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

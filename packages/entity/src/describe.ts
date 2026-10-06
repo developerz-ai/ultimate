@@ -26,6 +26,8 @@ export interface DescribeInput<Row> {
   readonly tenantColumn: string | null;
   /** The generated `tsvector`, when any column is `.searchable()`. */
   readonly search?: SearchVector | null;
+  /** `entity({ appendOnly: true })` — projected only when true. */
+  readonly appendOnly?: boolean;
 }
 
 /**
@@ -234,5 +236,8 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     cacheTag: input.cacheTag,
     softDelete: input.softDelete,
     orgScoped: input.tenantColumn !== null,
+    // `true` or absent, never `false`: `x verify`'s source drift hashes this projection as JSON,
+    // and an entity that never said `appendOnly` must hash exactly what it hashed before.
+    ...(input.appendOnly === true ? { appendOnly: true as const } : {}),
   };
 };

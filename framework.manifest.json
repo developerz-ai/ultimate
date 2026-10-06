@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "856a253cad9121b44cf3f010215f96e69bcbe09dfa4141880e9fc67d3a1294b6",
+  "buildId": "a7d6319f48b3b5096d8371cf4fde5e0f0e2c63eacb435dfdefcf719bf9497eb4",
   "tiers": {
     "0": [
       "core",
@@ -478,6 +478,11 @@
       "code": "X_APP_URL_PORT_MISMATCH",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_APPEND_ONLY_TRIGGER_MISSING",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
     },
     {
       "code": "X_APPROXIMATE_COUNT_FILTERED",
@@ -1383,6 +1388,11 @@
       "code": "X_E2E_SERVICE_WORKER_ABSENT",
       "owner": "testing",
       "at": "packages/testing/src/e2e-error-codes.ts"
+    },
+    {
+      "code": "X_ENTITY_APPEND_ONLY",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_ENTITY_DUPLICATE",
@@ -2770,6 +2780,16 @@
       "at": "packages/pwa/src/errors.ts"
     },
     {
+      "code": "X_QUERY_AUDIT_SINK_FAILED",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_AUDIT_SINK_MISSING",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_CACHE_TTL_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -3548,6 +3568,21 @@
       "code": "X_SESSION_EXPIRED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_SET_COOKIE_HAND_BUILT",
+      "owner": "scripts",
+      "at": "scripts/set-cookie-literals.ts"
+    },
+    {
+      "code": "X_SET_COOKIE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/set-cookie-literals.ts"
+    },
+    {
+      "code": "X_SET_COOKIE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/set-cookie-literals.ts"
     },
     {
       "code": "X_SETUP_INSTALL_FAILED",

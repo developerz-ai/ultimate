@@ -4,15 +4,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Boundary
 
-- May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db` and `@ultimat3/time` (tier 1 — `columns.ts` and `columns-data.ts` read its `isValidTimeZone`, so a zone this package accepts is one `@ultimat3/time` can do arithmetic in). Nothing else — `http`,
-  `policy` and `auth` are the same tier.
-- `db` is tier 1 (it imports only `core`), which is what lets the Postgres driver live **here**
-  rather than in a tier-3 package: `Driver` and its production implementation stay in one place.
-  See [`docs/architecture/01-package-map.md`](../../docs/architecture/01-package-map.md).
-- No `drizzle-orm` dependency, and none is the production backing — `postgresDriver()`
-  (`pg-driver.ts`/`pg-sql.ts`) is a hand-written SQL driver. `types.ts` declares the narrow
-  structural column vocabulary this package consumes so the generated SQL stays readable and
-  an agent can self-correct against it.
+- May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db` and `@ultimat3/time` (its
+  `isValidTimeZone`). Nothing else.
+- `db` is tier 1, which lets the Postgres driver live **here**: `Driver` and its production
+  implementation in one place ([`01-package-map.md`](../../docs/architecture/01-package-map.md)).
+- No `drizzle-orm`: `postgresDriver()` (`pg-driver.ts`/`pg-sql.ts`) is hand-written SQL;
+  `types.ts` declares the narrow column vocabulary it consumes.
 
 ## Do not regress — two drivers, one meaning
 
@@ -231,6 +228,11 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **`setRowObserver` reports committed row changes above the driver** — one per process (returns the
   replaced one), applied by `database()`, one comparison per write when unset, `before` only when the PK
   is `id`, a filtered write is `onBulk`. Not a second change-feed path.
+- **`appendOnly: true`** (`append-only.ts`): `appendOnlyRepo` wraps OUTSIDE `sealedRepo` in both
+  drivers (a seed is refused too); `update`/`delete`/`*Where` and an `upsertAll` not
+  `onMatch: 'nothing'` reject before any statement (`X_ENTITY_APPEND_ONLY`); a soft-delete,
+  `onUpdateNow()` or machine column is refused at declaration; `$describe().appendOnly` is `true` or
+  absent. No bypass, backfills included. `append-only{,-parity}.test.ts`.
 - **A state machine is the MECHANISM only** (`.transitions()` on `enumerated()`, a mapped
   `TransitionTable<S>`): a terminal state is one with no outgoing moves; the move is ONE statement with
   `from` in the predicate (`pg-transition.live.test.ts`: 1 winner of 20); `X_STATE_CONFLICT` is read

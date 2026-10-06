@@ -20,6 +20,8 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, validateAsync } from '@ultimat3/schema';
+import type { ReadAudit, ReadTrace } from './audit-gate';
+import { audited, auditedBuild, readAuditFor } from './audit-gate';
 import {
   cacheKeyFor,
   DEFAULT_READ_CACHE_TTL_MS,
@@ -85,7 +87,12 @@ export function runQuery(
   raw: unknown,
   options: QueryOptions = {},
 ): Promise<readonly object[]> {
-  return asActor(options, (ctx) => readRows(target, raw, ctx, options));
+  return asActor(options, (ctx) => {
+    const audit = auditFor(target, ctx, options);
+    return audit === null
+      ? readRows(target, raw, ctx, options, null)
+      : audited(audit, () => readRows(target, raw, ctx, options, audit.trace));
+  });
 }
 
 /**
@@ -98,7 +105,45 @@ export function sourceFor(
   raw: unknown,
   options: SourceOptions = {},
 ): Promise<SqlSource<object>> {
-  return asActor(options, (ctx) => buildSource(target, raw, ctx, options));
+  return asActor(options, (ctx) => {
+    const audit = auditFor(target, ctx, options);
+    // A source handed out is executed by its caller — `@ultimat3/mcp`'s served tool among them —
+    // so an audited read records per `execute()`, and a build that refuses records here.
+    return audit === null
+      ? buildSource(target, raw, ctx, options, null)
+      : auditedBuild(audit, () => buildSource(target, raw, ctx, options, audit.trace));
+  });
+}
+
+/**
+ * One whole call over a built source, for a projection inside this package whose call is more
+ * than one `execute()` — `paginate`, which may answer a spent limit without executing at all. The
+ * record covers the build and `use` together, so the call is recorded exactly once either way.
+ */
+export function readCall<T>(
+  target: AnyQuery,
+  raw: unknown,
+  options: SourceOptions,
+  use: (source: SqlSource<object>) => Promise<T>,
+): Promise<T> {
+  return asActor(options, async (ctx) => {
+    const audit = auditFor(target, ctx, options);
+    if (audit === null) return use(await buildSource(target, raw, ctx, options, null));
+    return audited(audit, async () =>
+      use(await buildSource(target, raw, ctx, options, audit.trace)),
+    );
+  });
+}
+
+/** Resolved before the parse, so an audited read with no sink refuses while it has read nothing. */
+function auditFor(target: AnyQuery, ctx: Ctx, options: SourceOptions): ReadAudit | null {
+  return readAuditFor(
+    defOf(target).audit,
+    options.unenforced,
+    queryName(target),
+    ctx,
+    options.surface ?? 'server',
+  );
 }
 
 /**
@@ -137,6 +182,7 @@ function readRows(
   raw: unknown,
   ctx: Ctx,
   options: QueryOptions,
+  trace: ReadTrace | null,
 ): Promise<readonly object[]> {
   const name = queryName(target);
   return withSpan(`query.${name}`, async (span) => {
@@ -151,7 +197,7 @@ function readRows(
       // read is filled — and which of the two a slow read took is the first thing to ask.
       'ultimate.cached': defOf(target).cache !== undefined,
     });
-    const rows = await readRowsIn(target, raw, ctx, options);
+    const rows = await readRowsIn(target, raw, ctx, options, trace);
     span.setAttribute('ultimate.rows', rows.length);
     return rows;
   });
@@ -162,11 +208,18 @@ async function readRowsIn(
   raw: unknown,
   ctx: Ctx,
   options: QueryOptions,
+  trace: ReadTrace | null,
 ): Promise<readonly object[]> {
   const def = defOf(target);
   const name = queryName(target);
-  const source = await buildSource(target, raw, ctx, options);
-  const read = (): Promise<readonly object[]> => source.execute();
+  const source = await buildSource(target, raw, ctx, options, trace);
+  // Whether THIS call executed, for the audit record: a memo or tier hit never calls `read`, and
+  // its record says so (`replayed: true`) rather than being skipped.
+  if (trace !== null) trace.replayed = true;
+  const read = (): Promise<readonly object[]> => {
+    if (trace !== null) trace.replayed = false;
+    return source.execute();
+  };
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
   const tags = def.cache?.tags ?? [];
@@ -202,6 +255,7 @@ async function buildSource(
   raw: unknown,
   ctx: Ctx,
   options: SourceOptions,
+  trace: ReadTrace | null,
 ): Promise<SqlSource<object>> {
   const def = defOf(target);
   const name = queryName(target);
@@ -209,11 +263,18 @@ async function buildSource(
   // The actor half of the policy first, exactly as `invoke` does it: a reader refused whatever
   // they send learns nothing about this read's input schema from an `X_INPUT_INVALID`.
   if (unenforced === undefined) {
-    guardBeforeInput(
-      def.policy,
-      { actor: actorOf(ctx), ctx, query: name },
-      options.surface ?? 'server',
-    );
+    try {
+      guardBeforeInput(
+        def.policy,
+        { actor: actorOf(ctx), ctx, query: name },
+        options.surface ?? 'server',
+      );
+    } catch (denial) {
+      // The record still names what was attempted, as an action's does: the denial is already
+      // decided, so parsing now tells the CALLER nothing, and an unparseable payload is no input.
+      if (trace !== null) trace.input = await parsedOrNothing(def.input, raw);
+      throw denial;
+    }
   }
   // The ONE place a read's declared `rateLimit:` is spent for every surface it runs on — the
   // route, a paged read, the MCP tool. After the actor half (a refused reader learns that, not a
@@ -229,6 +290,7 @@ async function buildSource(
     });
   }
   const input = await validate(def.input, raw, name);
+  if (trace !== null) trace.input = input;
   if (unenforced === undefined) {
     guard(
       def.policy,
@@ -256,6 +318,12 @@ async function buildSource(
   // them would: the client renders one order and the next read answers another. A source that
   // cannot say (`total` absent) already serves one order it can be resumed in.
   return options.surface === 'live' && source.total !== undefined ? source.total() : source;
+}
+
+/** The parse without the refusal — only for the record of a read already refused on other grounds. */
+async function parsedOrNothing(schema: StandardSchemaV1, raw: unknown): Promise<unknown> {
+  const result = await validateAsync(schema, raw);
+  return result.issues === undefined ? result.value : undefined;
 }
 
 async function validate(schema: StandardSchemaV1, raw: unknown, name: string): Promise<unknown> {

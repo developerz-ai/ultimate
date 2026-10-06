@@ -50,6 +50,16 @@ export { assert, assertNever, type InvariantOptions, invariant } from './assert'
 export { type AsyncContext, asyncContext } from './async-context';
 /** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
 export type { AsyncState } from './async-state';
+/** The audit seam `action` and `query` share: one record shape, one installed sink. */
+export type {
+  AuditFailure,
+  AuditOutcome,
+  AuditPrimitive,
+  AuditRecord,
+  AuditSink,
+  AuditSurface,
+} from './audit';
+export { AUDIT_RECORD_FIELDS, getAuditSink, resetAuditSink, setAuditSink } from './audit';
 export type {
   AwsCredentials,
   AwsPayload,

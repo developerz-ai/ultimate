@@ -568,6 +568,13 @@ original ceiling, so its cookie takes the time left, not the full TTL:
 | `__Host-` + `Path=/` + no `Domain` | a sibling subdomain overwriting it (session fixation) |
 | `Max-Age` | a client keeping it past the server's absolute ceiling |
 
+Every cookie this package writes — the session, its clearing line, the OAuth handshake and its
+clearing line — is built by `@ultimat3/core`'s `serializeSetCookie`, never spelled by hand
+(`bun run set-cookie-literals`). `As of 2026-10-06` the attributes are written `Max-Age=…; Path=/`
+rather than `Path=/; Max-Age=…` — the same cookie to a browser, which gives attribute order no
+meaning — and a cookie `name` that is not an RFC 6265 token is `X_COOKIE_INVALID` instead of a
+line a browser would mangle.
+
 ## Signing out
 
 `logout(auth, token)` ends the session row. The **response** does the rest: append

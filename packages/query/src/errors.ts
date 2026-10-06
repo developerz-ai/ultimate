@@ -28,6 +28,9 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_SUBSCRIBES_INVALID: 'a query declares subscribed relations no live read can use',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
   X_QUERY_SINGLE_INVALID: 'a query declares single: as something other than a boolean',
+  X_QUERY_AUDIT_SINK_MISSING: 'a query declares audit: true and no audit sink is installed',
+  X_QUERY_AUDIT_SINK_FAILED:
+    'an audited read was refused because the audit sink rejected its record',
 };
 
 /**

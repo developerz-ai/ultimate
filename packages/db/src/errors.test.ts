@@ -23,6 +23,7 @@ describe('DB_OWNED_ERROR_CODES', () => {
     // with zero callers whose keyword list was materially weaker than the guard the one real
     // consumer uses (`@ultimat3/mcp`'s parse guard, over `readOnlyQuery`'s `BEGIN READ ONLY`).
     expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([
+      'X_APPEND_ONLY_TRIGGER_MISSING',
       'X_BRANCH_EXISTS',
       'X_DB_COMMIT_UNKNOWN',
       'X_DB_DRAIN_TIMEOUT',

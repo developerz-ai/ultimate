@@ -170,29 +170,30 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   in `preAlters` at the top of `up`, re-adding is `foreignKeyPlan`'s, both `breaksOn` ends are needed
   (`generate-retype-key.live.test.ts`). `sql-type.ts` reads `SQL_TYPES` with `Object.hasOwn`.
 - **A generated column** (`generated-column.ts`): the clause right after the type; generated-and-
-  defaulted refused; an expression change is `set expression as (…)`; a retype carries no `using`; a NOT
-  NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds the
-  column (`regenerate` answers `rebuilt`) and moves its dependents aside; a generated column's own type
-  change deliberately does not. `introspect` never reads `generation_expression` back.
+  defaulted refused; an expression change is `set expression as (…)`; a retype has no `using`; a NOT
+  NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds
+  (`rebuilt`) and moves dependents aside, its own type change does not. `introspect` never reads
+  `generation_expression`.
   `generate-generated-{column,rebuild}.live.test.ts`.
-- **`REPLICA IDENTITY FULL` is emitted by a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from
-  `@ultimat3/cli`'s `db-generate.ts`), in `replica-identity.ts`: recorded `true` or absent; the
-  snapshot records the union; dead last in `up`; never destructive; an undeclared name is skipped;
-  `down` is `replica identity default` except on a table this migration creates.
+- **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
+  `db-generate.ts`; `replica-identity.ts`): recorded `true` or absent, as a union; last in `up`; an
+  undeclared name skipped; `down` reverts it unless this migration created the table.
+- **`appendOnly: true` is a trigger** (`generate-append-only.ts`): one `create or replace` function
+  (SQLSTATE `23001`, message leads `X_ENTITY_APPEND_ONLY`) and a fixed-name `ultimate_append_only`
+  `before update or delete … for each row`; recorded `true` or absent; no `truncate`. Drift:
+  enabled `triggerNames` (`drift-append-only.ts`, `X_APPEND_ONLY_TRIGGER_MISSING`).
 - **A foreign key is `alter table … add constraint`**, collected into a bucket merged after every table
   statement (`foreign-key-plan.ts`); **dropping a table has its own bucket emitted BEFORE the table
   statements** (`preDrops`), ordered children-first by `drop-order.ts`, which breaks a two-table cycle
   by dropping one key first. `foreignKeyPlan` walks both directions, drops the name the previous
   snapshot recorded, and rebuilds a key whose `onDelete` moved. **`on delete` reaches the SQL**
   (`onDeleteRule`, `foreign-key.ts`; an unknown rule is `X_INVARIANT`).
-- **`entity-shape.ts` holds the three `*Like` interfaces** (optional `onDelete` / `generated`).
-- **`snapshot-json.ts` writes bytes that are a fixed point of Biome** (arrays collapse when they fit at
-  `<= 100` counting the trailing comma); `snapshot-json.test.ts` runs the repo's own `biome format`.
-- **`declaredSchema()` answers the NEWEST migration's snapshot or `undefined`**; `checkDrift` turns
-  that into `unknown-schema`, and `x db gen` refuses with `X_MIGRATION_SNAPSHOT_MISSING`. Both lead
-  with the same two remedies in order: restore the sidecar (`git checkout --`), or delete the
-  migration's files FIRST and then run `x db gen`. Both commands are screened (`shellInertIdentifier`
-  / `renderFixShellArg`), degrading the whole line to prose.
+- **`entity-shape.ts` holds the `*Like` interfaces** (every later field optional).
+- **`snapshot-json.ts` writes a fixed point of Biome** (an array collapses when it fits at `<= 100`
+  with its trailing comma); `snapshot-json.test.ts` runs `biome format`.
+- **`declaredSchema()` answers the NEWEST migration's snapshot or `undefined`** (`checkDrift`:
+  `unknown-schema`; `x db gen`: `X_MIGRATION_SNAPSHOT_MISSING`). Both fixes: restore the sidecar
+  (`git checkout --`), else delete the migration's files FIRST, then `x db gen`; both screened.
 
 ## Drift and introspection
 

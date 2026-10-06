@@ -9,6 +9,7 @@
  * The codec is `@ultimat3/core`'s. This file only decides what a cursor is bound
  * to — `queryHash(name, input)` — so one read's cursor cannot page another.
  */
+import type { CursorPayload } from '@ultimat3/core';
 import { assert, decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { kindsOf } from './column-kinds';
@@ -16,7 +17,8 @@ import { reviveSortKey, serializeSortValue } from './cursor-value';
 import { CursorInvalidError } from './errors';
 import { MAX_PAGE_SIZE } from './page-controls';
 import type { Query, SourceOptions } from './query';
-import { queryHash, queryName, sourceFor } from './query';
+import { queryHash, queryName } from './query';
+import { readCall } from './read';
 import type { QueryShape, SeekKey } from './shape';
 import { compareRows, seekKeyOf, totalOrder } from './shape';
 import type { SqlSource } from './source';
@@ -72,7 +74,18 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   // The scope is this read plus these arguments: a cursor from anywhere else is
   // already `X_CURSOR_INVALID` by the time it gets here.
   const decoded = args.after === undefined ? null : decodeCursor(args.after, hash);
-  const base = await sourceFor(target, input, args);
+  // One call: an audited read's record covers the build AND the page it serves — the early return
+  // below included, since a caller refused nothing and was answered (`audit-gate.ts`).
+  return readCall(target, input, args, (base) => pageFrom<TRow>(base, decoded, args.first, hash));
+}
+
+/** The page itself, over a source `readCall` already validated, authorized and built. */
+async function pageFrom<TRow extends object>(
+  base: SqlSource<object>,
+  decoded: CursorPayload | null,
+  first: number,
+  hash: string,
+): Promise<Page<TRow>> {
   const shape = base.shape();
   // Revived to the types the columns hold, never left as the strings JSON handed back: a `Date`
   // key decoded as an ISO string was compared as text against the row's own instant, so page two
@@ -88,13 +101,13 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   // Fetch one extra row: its presence *is* `hasNextPage`, with no count query. Never past what a
   // declared `.limit()` has left — `first` used to REPLACE that limit, so `?_first=10000` walked a
   // "top 3" to the end of the table.
-  const window = Math.min(left, args.first + 1);
+  const window = Math.min(left, first + 1);
   const source: SqlSource<object> = base.seek === undefined ? base : base.seek(after, window);
   const executed = await source.execute();
   const scoped =
     base.seek === undefined ? inTotalOrder(executed, after, shape).slice(0, window) : executed;
   // The source came from this query's own `sql()`, so its rows are TRow.
-  const rows = scoped.slice(0, args.first) as unknown as readonly TRow[];
+  const rows = scoped.slice(0, first) as unknown as readonly TRow[];
   const last = rows[rows.length - 1];
   const seek = last === undefined ? null : seekKeyOf(last, shape);
 
@@ -113,7 +126,7 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
           ],
           id: String(seek.id),
         });
-  return pageOf(rows, nextCursor, scoped.length > args.first);
+  return pageOf(rows, nextCursor, scoped.length > first);
 }
 
 /** A decoded cursor: where the page resumes, and how many rows of a declared limit are spent. */

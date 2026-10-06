@@ -118,14 +118,20 @@ function tableOf(value: unknown): TableDescription | undefined {
   // wrong. Any other value is garbage and takes the file with it, like every field above.
   const identity = value['replicaIdentityFull'];
   if (!(identity === undefined || bool(identity))) return undefined;
-  const replica = identity === true ? { replicaIdentityFull: true as const } : {};
+  // `appendOnly` by the same rule: `true` or nothing, `false` normalised away.
+  const appendOnly = value['appendOnly'];
+  if (!(appendOnly === undefined || bool(appendOnly))) return undefined;
+  const flags = {
+    ...(identity === true ? { replicaIdentityFull: true as const } : {}),
+    ...(appendOnly === true ? { appendOnly: true as const } : {}),
+  };
   const raw = value['checks'];
   if (raw === undefined) {
-    return { schema, name, columns, primaryKey, indexes, foreignKeys, ...replica };
+    return { schema, name, columns, primaryKey, indexes, foreignKeys, ...flags };
   }
   const checks = all(raw, check);
   if (checks === undefined) return undefined;
-  return { schema, name, columns, primaryKey, indexes, foreignKeys, checks, ...replica };
+  return { schema, name, columns, primaryKey, indexes, foreignKeys, checks, ...flags };
 }
 
 /**

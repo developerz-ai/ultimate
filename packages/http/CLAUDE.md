@@ -142,7 +142,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   set (`addVary`). An offer is `public`, `s-maxage`, or any `max-age` / `must-revalidate` /
   `proxy-revalidate` without `private`/`no-store` (RFC 9111 §3).
 - **`Set-Cookie` is appended by the `response` stage, every other context header is `set`** —
-  it is the one header that is a list of lines (`pipeline-cookies.test.ts`).
+  it is the one header that is a list of lines (`pipeline-cookies.test.ts`). App code writes one
+  only via `setCookie`/`deleteCookie` (core's serializer; `bun run set-cookie-literals`).
 - **A redirect the framework writes stays on this origin**: the default-locale redirect goes
   through `normalizePath`; `locationFor` hands over `http:`/`https:` only, else the requested path.
 - **A `cache-control` age is delta-seconds or DROPPED** (`finiteDeltaSeconds`, total, always the
@@ -247,6 +248,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
 | `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `createContext`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
+| `set-cookie.ts` | `setCookie`/`deleteCookie`: one line each onto `ctx.headers` |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
 | `error-log-level.ts` | the level of the `error-map` stage's one line: `error` for 5xx, `warn` for 401/403/429, `info` for the rest |

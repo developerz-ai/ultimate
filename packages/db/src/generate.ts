@@ -11,6 +11,7 @@ import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
+import { appendOnlyPlan } from './generate-append-only';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { createIndex, impliedByColumnClause } from './index-ddl';
@@ -112,6 +113,8 @@ export function snapshotOf(
         // The same rule once more: `true` or absent, never `false`. This is what makes the ALTER
         // beside it a one-time statement rather than a line every `x db gen` writes again.
         ...(replicaIdentityFull.has(entity.table) ? { replicaIdentityFull: true as const } : {}),
+        // `true` or absent once more — the record that makes the trigger a one-time statement.
+        ...(entity.appendOnly === true ? { appendOnly: true as const } : {}),
       };
     });
   return { tables };
@@ -372,6 +375,9 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
 
   plan.up.push(...constraints.up);
   plan.down.push(...constraints.down);
+
+  // After every table exists, so a `create table` in this same migration is already above it.
+  appendOnlyPlan(plan, options.entities, current, created);
 
   // Dead last in `up`, and it is the only placement that is right for every arm: the table has to
   // exist, and a `create table` in this same migration is the reason it might not. It is ordered

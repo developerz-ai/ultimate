@@ -209,6 +209,8 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |
 | `sql.ts` | `explain()` — the generated SQL, verbatim |
+| `audit-gate.ts` | `audit: true` — the only file that calls an `AuditSink`; one record per call, an audited source per `execute()` |
+| `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` |
 | `cache.ts` | request memo + tag-keyed tier, one invalidation graph |
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
 | `column-kinds.ts` | `kindsOf(relation)` — the declared kind of each column, which every comparison is decided by |
@@ -610,10 +612,63 @@ router feature here.
 from this package's index for existing callers (the re-exports leave in 25.0.0); this package
 imports them from core directly, as `@ultimat3/action` does.
 
+## `audit: true` — who saw what
+
+```ts
+import { can } from '@ultimat3/policy';
+import { from, query, t } from '@ultimat3/query';
+
+type Chart = { readonly id: string; readonly patientId: string };
+declare const charts: readonly Chart[];
+
+export const patientChart = query({
+  input: t.object({ patientId: t.uuid }),
+  policy: can('chart:read'),
+  audit: true,
+  sql: ({ patientId }) => from<Chart>('charts', charts).where({ patientId }),
+});
+```
+
+Every **call** is one record in the installed `AuditSink` — allowed, denied (before or after the
+input parse) and failed. The sink, the record and the installed slot are `@ultimat3/core`'s, the
+same ones an action's `audit: true` writes to: `setAuditSink(sink)` from `@ultimat3/core` (or
+`@ultimat3/action` — the same function) installs one sink for both, and `record.primitive` tells a
+read from a write.
+
+**A memo or cache hit is recorded too**, with `replayed: true`. An audit of a read is about who saw
+what, not what was computed: a reader handed rows by the request memo saw them exactly as much as
+the reader whose call executed the SQL.
+
+| Field | On a read |
+|---|---|
+| `name` | the export name. `action` carries the same value — **deprecated**, removed in 25.0.0 |
+| `primitive` / `mutator` | `'query'` / `false` |
+| `surface` | `server` (a direct call, `.as()`, `.page()`), `http` (the route), `mcp` (`.tool().read()`, and `@ultimat3/mcp`'s served tool) |
+| `input` | the **parsed** input, as an action's record carries it; `undefined` when the parse failed. Unredacted in the record — a persisting sink redacts through `auditableInput` (core's credential-key table and `Secret`), as `postgresAuditSink` does |
+| `replayed` | `true` when the request memo or a cache tier answered |
+| `idempotencyKey` | always `null` |
+| `outcome` / `failure` | `allowed` \| `denied` \| `failed`, and the `X_*` code with the thrown value |
+
+**The rows are never on the record** — an action's record carries no result for the same reason:
+a copy of every row seen is a second table to protect as carefully as the first.
+
+| Path | Records |
+|---|---|
+| `read(input)`, `.as()`, the route, `.page()` | once per call — `.page()` once even when a spent `.limit()` answers without executing |
+| `sourceFor(target, input, …)` then `execute()` | once per `execute()`; a build that is refused (denied, unparsed, rate-limited) once, at the build |
+| `explain()`, `describeSql()`, the shared live window | never — they are built `unenforced`, with no caller to attribute a sighting to |
+
+Failure policies are the action seam's: no sink installed is `X_QUERY_AUDIT_SINK_MISSING`, refused
+before the parse; a sink refusing a **denied/failed** record is logged (`audit.sink.failed`) and the
+original error still reaches the caller; a sink refusing an **allowed** record withholds the rows,
+`X_QUERY_AUDIT_SINK_FAILED` — a read commits nothing, so a retry is safe.
+
 ## Errors
 
 | Code | When | Fix |
 |---|---|---|
+| `X_QUERY_AUDIT_SINK_MISSING` | `audit: true` and no audit sink installed — refused before the parse | `setAuditSink(sink)` from `@ultimat3/core` at boot |
+| `X_QUERY_AUDIT_SINK_FAILED` | the sink refused the record of an allowed read; the rows were withheld | fix the sink, then retry the read |
 | `X_QUERY_DUPLICATE` | two queries under one name | rename one export |
 | `X_QUERY_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_QUERY_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
@@ -639,6 +694,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 |---|---|---|
 | `CursorValueUnsupportedError` | `X_CURSOR_VALUE_UNSUPPORTED` | `src/errors.ts` |
 | `MatcherUnsupportedError` | `X_MATCHER_UNSUPPORTED` | `src/errors.ts` |
+| `QueryAuditSinkFailedError` | `X_QUERY_AUDIT_SINK_FAILED` | `src/audit-errors.ts` |
+| `QueryAuditSinkMissingError` | `X_QUERY_AUDIT_SINK_MISSING` | `src/audit-errors.ts` |
 | `QueryDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
 | `QueryDeprecationInvalidError` | `X_QUERY_DEPRECATION_INVALID` | `src/errors.ts` |
 | `QueryDuplicateError` | `X_QUERY_DUPLICATE` | `src/errors.ts` |
