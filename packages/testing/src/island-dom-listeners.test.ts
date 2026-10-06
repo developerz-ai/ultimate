@@ -59,4 +59,35 @@ describe(testName('unit', 'every listener of a type runs, and removal is by iden
     expect(mounted.scroll(mounted.el, { top: 10 })).toBe(true);
     expect(mounted.el.textContent).toBe('1');
   });
+
+  // The DOM's dispatch rule: a listener removed before its turn does not run, and one removed and
+  // added again is a NEW registration the running dispatch never saw — it runs from the next one.
+  test('a listener removed by an earlier one in the same dispatch does not run; re-added, it waits', async () => {
+    const code = `export function mount(el) {
+  const log = [];
+  el.dataset.log = '';
+  const second = () => { log.push('second'); el.dataset.log = log.join(','); };
+  const first = (event) => {
+    log.push('first');
+    if (event.key !== 'z') el.removeEventListener('keydown', second);
+    if (event.key === 'r') el.addEventListener('keydown', second);
+    el.dataset.log = log.join(',');
+  };
+  el.addEventListener('keydown', first);
+  el.addEventListener('keydown', second);
+}
+`;
+    using mounted = await mountIsland({
+      build: builderOf([{ file: FILE, code }]),
+      root: ROOT,
+      file: FILE,
+    });
+    expect(mounted.fire(mounted.el, 'keydown', { key: 'x' })).toBe(true);
+    expect(mounted.el.dataset['log']).toBe('first');
+    // Re-adding `second` in place: skipped in THIS dispatch, then heard by the next.
+    expect(mounted.fire(mounted.el, 'keydown', { key: 'r' })).toBe(true);
+    expect(mounted.el.dataset['log']).toBe('first,first');
+    expect(mounted.fire(mounted.el, 'keydown', { key: 'z' })).toBe(true);
+    expect(mounted.el.dataset['log']).toBe('first,first,first,second');
+  });
 });

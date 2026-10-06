@@ -149,10 +149,12 @@ export function launderedFields(errorsSource: string): ReadonlySet<string> {
  * `.catch((error) => …)`, `.catch((error: unknown) => …)`, `.catch(error => …)` — a promise's
  * catch, which this rule did not read until 2026-10: every fire-and-forget promise in the tree
  * spells its handler this way, and a `String(error)` in one is the same crash in the same place.
- * Group 1 is the parenthesised binding, group 2 the bare one.
+ * Group 1 is the parenthesised binding, group 2 the bare one. ANY annotation is read — unlike a
+ * `catch` clause, a promise callback may write `(error: Error)`, and that slipped until CodeRabbit
+ * 4200667462 found it.
  */
 const PROMISE_CATCH =
-  /\.catch\s*\(\s*(?:async\s*)?(?:\(\s*([A-Za-z_$][\w$]*)\s*(?::\s*(?:unknown|any)\s*)?\)|([A-Za-z_$][\w$]*))\s*=>/g;
+  /\.catch\s*\(\s*(?:async\s*)?(?:\(\s*([A-Za-z_$][\w$]*)\s*(?::[^()=]*)?\)|([A-Za-z_$][\w$]*))\s*=>/g;
 
 interface CaughtScope {
   readonly binding: string;

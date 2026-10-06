@@ -199,14 +199,24 @@ export class FakeClassList {
   }
 }
 
+/** One `addEventListener` call, alive until its own `removeEventListener`. */
+interface Registration {
+  readonly fn: (event: unknown) => void;
+  removed: boolean;
+}
+
 export class FakeElement extends FakeNode {
   readonly attributes = new Map<string, string>();
   /**
    * EVERY listener per type, in the order added, deduplicated by identity — the DOM's own rule. One
    * per type was a double that lost listeners: `@ultimat3/ui`'s Menu closes on an Escape it
    * registers on `document`, and its focus trap's keydown, registered next, replaced it.
+   *
+   * A REGISTRATION per add, not the bare function, so a dispatch can tell "removed before its
+   * turn" (skipped, as a browser skips it) from "removed and added again" (a new registration the
+   * running dispatch never saw, so also skipped) — a `Set` of functions answers both as present.
    */
-  readonly listeners = new Map<string, Set<(event: unknown) => void>>();
+  readonly #listeners = new Map<string, Map<(event: unknown) => void, Registration>>();
   /** Plain object, so `delete el.dataset.theme` behaves as the DOM's `DOMStringMap` does. */
   readonly dataset: Record<string, string> = {};
   readonly classList: FakeClassList = new FakeClassList(this);
@@ -251,24 +261,33 @@ export class FakeElement extends FakeNode {
     else this.attributes.delete(name);
   }
   addEventListener(name: string, fn: (event: unknown) => void): void {
-    const held = this.listeners.get(name);
-    if (held === undefined) this.listeners.set(name, new Set([fn]));
-    else held.add(fn);
+    let held = this.#listeners.get(name);
+    if (held === undefined) {
+      held = new Map();
+      this.#listeners.set(name, held);
+    }
+    if (!held.has(fn)) held.set(fn, { fn, removed: false });
   }
   /** By IDENTITY: a different function — even one that does the same thing — removes nothing. */
   removeEventListener(name: string, fn: (event: unknown) => void): void {
-    const held = this.listeners.get(name);
-    if (held === undefined) return;
+    const held = this.#listeners.get(name);
+    const registration = held?.get(fn);
+    if (held === undefined || registration === undefined) return;
+    registration.removed = true;
     held.delete(fn);
-    if (held.size === 0) this.listeners.delete(name);
+    if (held.size === 0) this.#listeners.delete(name);
   }
   /** Every listener of `name`, as one call — `undefined` when there is none to run. */
   listenerFor(name: string): ((event: unknown) => void) | undefined {
-    const held = this.listeners.get(name);
+    const held = this.#listeners.get(name);
     if (held === undefined || held.size === 0) return undefined;
+    // The registrations as of NOW, for the DOM's rule: one added during the dispatch waits for the
+    // next, and one removed before its turn does not run.
+    const snapshot = [...held.values()];
     return (event: unknown): void => {
-      // A snapshot: a listener that removes itself, or adds another, changes the NEXT dispatch.
-      for (const fn of [...held]) fn(event);
+      for (const registration of snapshot) {
+        if (!registration.removed) registration.fn(event);
+      }
     };
   }
   override cloneNode(deep?: boolean): FakeElement {

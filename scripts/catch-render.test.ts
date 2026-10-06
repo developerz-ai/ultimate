@@ -286,6 +286,17 @@ describe('unit · a promise `.catch` callback is a catch too', () => {
     ]);
   });
 
+  test('ANY annotation on the parameter, not only unknown/any', () => {
+    // CodeRabbit 4200667462: `.catch((error: Error) => …)` is legal on a promise and slipped.
+    expect(kinds('run().catch((error: Error) => fail({ cause: String(error) }));')).toEqual([
+      'cause:error:conversion',
+    ]);
+    expect(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
+      kinds('run().catch((error: Error | undefined) => fail({ cause: `${error}` }));'),
+    ).toEqual(['cause:error:interpolation']);
+  });
+
   test('the total renderer stays silent, and a field after the callback is not its', () => {
     expect(
       kinds('run().catch((error: unknown) => fail({ cause: renderThrowable(error) }));'),

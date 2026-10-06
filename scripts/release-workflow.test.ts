@@ -232,6 +232,41 @@ describe('unit · a preview or a mention is not a derivation', () => {
     expect(publishListMode(workflow)).toBe('listed');
   });
 
+  test('a `-w` named only by a dry run is not published', () => {
+    // CodeRabbit 4200667479: the preview named flags, the real publish did not, and the block's
+    // flags were read whole — so flags read as published.
+    const workflow = [
+      '        run: |',
+      '          npm publish -w @ultimat3/flags --dry-run',
+      '          npm publish -w @ultimat3/core -w @ultimat3/schema',
+    ].join('\n');
+    expect(findings(tree({ workflow })).map((one) => one.cause)).toEqual([
+      expect.stringContaining('@ultimat3/flags'),
+    ]);
+  });
+
+  test('a single-quoted enumerator call is text, not a call', () => {
+    // CodeRabbit 4200667482: `'$(…)'` never runs, and it read as the derivation.
+    const workflow = [
+      '        run: |',
+      "          echo '$(bun run scripts/list-workspaces.ts)'",
+      '          npm publish -w @ultimat3/core -w @ultimat3/schema',
+    ].join('\n');
+    expect(publishListMode(workflow)).toBe('listed');
+    expect(findings(tree({ workflow })).map((one) => one.code)).toEqual([
+      'X_PUBLISH_LIST_INCOMPLETE',
+    ]);
+  });
+
+  test('nor is one echoed inside double quotes, which runs but feeds no publish', () => {
+    const workflow = [
+      '        run: |',
+      '          echo "$(bun run scripts/list-workspaces.ts --json)"',
+      '          npm publish -w @ultimat3/core -w @ultimat3/schema',
+    ].join('\n');
+    expect(publishListMode(workflow)).toBe('listed');
+  });
+
   test('`--dry-run=false` is a real publish', () => {
     const workflow = '        run: npm publish --workspaces --dry-run=false\n';
     expect(findings(tree({ workflow }))).toEqual([]);

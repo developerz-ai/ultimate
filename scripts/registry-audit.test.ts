@@ -216,3 +216,51 @@ describe('the floor', () => {
     expect(result.summary).toBe('1/1 publishable packages are on npm at 9.0.0, every one attested');
   });
 });
+
+describe('behind, and whether its release tag exists yet', () => {
+  // CodeRabbit 4200667442: the daily audit can run after a bump lands and BEFORE its tag is pushed,
+  // and the fix dispatched the workflow at a `v<version>` ref that did not exist.
+  const core = {
+    dir: 'core',
+    name: '@ultimat3/core',
+    version: '3.0.0',
+    private: false,
+    path: '/nowhere/packages/core',
+    tier: 0,
+    dependsOn: [],
+  };
+  const behind = fetcherFor({
+    [packumentUrl('@ultimat3/core')]: {
+      body: packument('@ultimat3/core', { '2.0.0': attested }, '2.0.0'),
+    },
+  });
+  const fixWith = async (tagged: boolean | undefined) => {
+    const asked: string[] = [];
+    const result = await registryAuditResult([core], behind, async (tag) => {
+      asked.push(tag);
+      return tagged;
+    });
+    return { fix: result.findings?.[0]?.fix ?? '', cause: result.findings?.[0]?.cause, asked };
+  };
+
+  test('no tag yet: the fix is the release steps, never a dispatch at a missing ref', async () => {
+    const { fix, cause, asked } = await fixWith(false);
+    expect(asked).toEqual(['v3.0.0']);
+    expect(fix).toContain('git tag -a v3.0.0 -m v3.0.0 && git push origin v3.0.0');
+    expect(fix).toContain('gh release create v3.0.0 --verify-tag');
+    expect(fix).not.toContain('gh workflow run');
+    expect(cause).toContain('not tagged');
+  });
+
+  test('tagged: the fix dispatches the workflow at that tag', async () => {
+    const { fix } = await fixWith(true);
+    expect(fix.startsWith('gh workflow run release.yml --ref v3.0.0 -f version=3.0.0')).toBe(true);
+  });
+
+  test('unknown: the dispatch runs only once the tag is confirmed', async () => {
+    const { fix } = await fixWith(undefined);
+    expect(fix).toContain(
+      'git ls-remote --exit-code --tags origin refs/tags/v3.0.0 && gh workflow',
+    );
+  });
+});

@@ -152,8 +152,10 @@ export function createFormBinding<TValues, TResult>(
   const run = async (values: TValues): Promise<FormState<TResult>> => {
     // Cleared, never carried: a stale message would mark a control invalid for a value the user
     // has already changed, on the one screen where the user is watching for exactly that.
-    publish({ status: 'submitting', ...NO_FORM_ERRORS, result: undefined, issues: [] });
+    // Opened BEFORE the publish: `onState` is synchronous, so a subscriber can edit in reaction
+    // to `submitting` itself, and that edit already postdates what this submit read.
     editedInFlight = new Set();
+    publish({ status: 'submitting', ...NO_FORM_ERRORS, result: undefined, issues: [] });
 
     try {
       // Inside the `try`: a validate that throws or rejects is a failed submit, never a `submit()`

@@ -12,6 +12,8 @@ import { createScratchDir, removeScratchDir, sweepDeadScratchDirs } from './isla
 import { testName } from './test-types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A fixed instant: the sweep's age rule is asked about mtimes set relative to it, never the clock. */
+const NOW = Date.UTC(2026, 9, 6, 12, 0, 0);
 
 describe(testName('unit', 'a dead process’s island directories are swept'), () => {
   test('a mount’s directory is named by the pid that owns it', () => {
@@ -26,22 +28,25 @@ describe(testName('unit', 'a dead process’s island directories are swept'), ()
   test('only a dead pid’s directory and a day-old unowned one go; everything else stays', () => {
     const root = mkdtempSync(join(tmpdir(), 'island-sweep-root-'));
     try {
-      const make = (name: string): string => {
+      const make = (name: string, mtimeMs: number = NOW): string => {
         const path = join(root, name);
         mkdirSync(path);
+        utimesSync(path, mtimeMs / 1000, mtimeMs / 1000);
         return path;
       };
-      const dead = make('ultimate-island-4242-abc123');
+      // Liveness is the INJECTED predicate's, so the dead pid is dead by construction: whatever
+      // pid this process drew, the other one differs from it.
+      const deadPid = process.pid + 1;
+      const isAlive = (pid: number): boolean => pid === process.pid;
+      const dead = make(`ultimate-island-${String(deadPid)}-abc123`);
       const alive = make(`ultimate-island-${String(process.pid)}-def456`);
-      const oldUnowned = make('ultimate-island-Gh7kL2');
-      const freshUnowned = make('ultimate-island-Zx9qW1');
-      const states = make('ultimate-island-states-Qw3eR4');
-      const stranger = make('somebody-else-4242');
-      const old = new Date(Date.now() - 2 * DAY_MS);
-      utimesSync(oldUnowned, old, old);
-      utimesSync(states, old, old);
+      const oldUnowned = make('ultimate-island-Gh7kL2', NOW - 2 * DAY_MS);
+      // Just inside the day: the boundary is strict, so this one stays.
+      const freshUnowned = make('ultimate-island-Zx9qW1', NOW - DAY_MS + 1_000);
+      const states = make('ultimate-island-states-Qw3eR4', NOW - 2 * DAY_MS);
+      const stranger = make(`somebody-else-${String(deadPid)}`);
 
-      const swept = sweepDeadScratchDirs(root, (pid) => pid !== 4242, Date.now());
+      const swept = sweepDeadScratchDirs(root, isAlive, NOW);
 
       expect([...swept].sort()).toEqual([dead, oldUnowned].sort());
       expect(existsSync(dead)).toBe(false);

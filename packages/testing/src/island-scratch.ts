@@ -38,9 +38,9 @@ const pidAlive = (pid: number): boolean => {
  * cannot read, is simply not this process's to report.
  */
 export function sweepDeadScratchDirs(
-  root: string = tmpdir(),
-  alive: (pid: number) => boolean = pidAlive,
-  now: number = Date.now(),
+  root: string,
+  alive: (pid: number) => boolean,
+  now: number,
 ): readonly string[] {
   const removed: string[] = [];
   let names: readonly string[];
@@ -75,12 +75,14 @@ export function sweepDeadScratchDirs(
  * under `bun test` the file boundary and the run's `afterAll` dispose every mount instead.
  */
 export function createScratchDir(): string {
-  // Once per process, at its first mount: the cost is one read of the temp dir.
+  const dir = mkdtempSync(join(tmpdir(), `${PREFIX}${String(process.pid)}-`));
+  // Once per process, at its first mount: the cost is one read of the temp dir. "Now" is the new
+  // directory's own mtime — the FILESYSTEM's clock, the one the swept mtimes were written by —
+  // never `Date.now()`, which a test process has frozen at whatever instant the suite chose.
   if (!swept) {
     swept = true;
-    sweepDeadScratchDirs();
+    sweepDeadScratchDirs(tmpdir(), pidAlive, statSync(dir).mtimeMs);
   }
-  const dir = mkdtempSync(join(tmpdir(), `${PREFIX}${String(process.pid)}-`));
   live.add(dir);
   if (!exitHooked) {
     exitHooked = true;

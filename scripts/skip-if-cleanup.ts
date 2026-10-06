@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Refuse a test file that resets a PROCESS-GLOBAL registry from inside a skippable block — a
-// `.skipIf(` or a `cond ? describe.skip : describe` alias — where the reset never runs in the
-// configuration the block is skipped in.
+// `.skipIf(` or a `describe.skip` alias — where the reset never runs in the configuration the
+// block is skipped in.
 //
 // THE DEFECT THIS EXISTS FOR. Bun evaluates a skipped file's module body — so a module-scope
 // `entity()` REGISTERS — and then does not run a hook inside `describe.skipIf(true)`. A
@@ -141,16 +141,29 @@ const localBindings = (src: string): ReadonlySet<string> =>
   );
 
 /**
- * Module-scope `let x;` / `let x: T;` — declared with NO initialiser and never assigned at column 0,
- * so only a hook gives it a value. In a skipped file it stays `undefined`: `store.reset()` on it
- * clears what the live suite created, never a registry the import left behind. Surfaced by the two
- * rate-limit suites once the alias spelling was read; without it both were false findings.
+ * Module-scope `let x;` / `let x: T;` — declared with NO initialiser and assigned ONLY inside a
+ * file-scope hook, so only a hook gives it a value. In a skipped file it stays `undefined`:
+ * `store.reset()` on it clears what the live suite created, never a registry the import left
+ * behind. Surfaced by the two rate-limit suites once the alias spelling was read; without it both
+ * were false findings. Every assignment is located by the same hook walk `cleanupFiles` uses, never
+ * by its column: `if (url) {\n  registry = make();\n}` at top level is indented and still runs at
+ * import, which a column-0 test read as hook-owned.
  */
 const hookOwnedBindings = (src: string): ReadonlySet<string> => {
   const declared = [...src.matchAll(/^(?:let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?;/gm)].map(
     (match) => match[1] as string,
   );
-  return new Set(declared.filter((name) => !new RegExp(`^${name}\\s*=[^=]`, 'm').test(src)));
+  const outside = new Set<string>();
+  let inHook = false;
+  for (const text of src.split('\n')) {
+    if (FILE_SCOPE_HOOK.test(text)) inHook = true;
+    else if (TOP_LEVEL.test(text)) inHook = false;
+    if (inHook) continue;
+    for (const name of declared) {
+      if (new RegExp(`(?<![\\w$.])${RegExp.escape(name)}\\s*=(?!=)`).test(text)) outside.add(name);
+    }
+  }
+  return new Set(declared.filter((name) => !outside.has(name)));
 };
 
 /** Every reset this line performs, by the name a repair would move. */

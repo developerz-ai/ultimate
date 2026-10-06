@@ -134,15 +134,30 @@ export const WORKSPACE_ENUMERATOR = 'scripts/list-workspaces.ts';
  * half is read narrowly on purpose: a `--dry-run --workspaces` preview publishes nothing, and an
  * `echo` naming the script derives nothing — either, read loosely, would silence `missing` beside a
  * hand-kept list, which is how `@ultimat3/flags` went unpublished. The call is the command
- * substitution the real workflow uses, `$(bun run scripts/list-workspaces.ts …)`.
+ * substitution the real workflow uses, and only where a shell RUNS it into something a loop reads:
+ * assigned (`plan="$(bun run scripts/list-workspaces.ts …)"`) or iterated (`for x in $(…)`), at the
+ * start of a command. `echo '$(…)'` is a string that never runs, and `echo "$(…)"` runs and feeds
+ * nothing — both read as the derivation while the text alone was matched.
  */
-const ENUMERATOR_CALL = `$(bun run ${WORKSPACE_ENUMERATOR}`;
+const ENUMERATOR_CALL = new RegExp(
+  `(?:^|[\\n;&|]|\\bdo\\b|\\bthen\\b)\\s*(?:[A-Za-z_]\\w*="?|for\\s+\\w+\\s+in\\s+"?)\\$\\(bun run ${RegExp.escape(WORKSPACE_ENUMERATOR)}\\b`,
+);
+
+/**
+ * The block with every dry-run invocation cut out — what a `-w` is read from. The rest of the block
+ * stays, because a script builds its arguments in the lines ABOVE `npm publish $args`; a preview's
+ * own `-w` publishes nothing and, read, would credit a package the real command never names.
+ */
+export const withoutPreviews = (block: string): string =>
+  publishInvocations(block)
+    .filter((invocation) => !isRealPublish(invocation))
+    .reduce((rest, preview) => rest.replace(preview, ''), block);
 
 export const publishesEveryWorkspace = (command: string): boolean =>
   publishInvocations(command).some(
     (invocation) =>
       isRealPublish(invocation) && /(?:^|\s)(?:-ws|--workspaces)(?:\s|=|$)/.test(invocation),
-  ) || command.includes(ENUMERATOR_CALL);
+  ) || ENUMERATOR_CALL.test(command);
 
 /**
  * How the workflow decides what to publish. Reported, not just used: "every one named" and "the
@@ -172,7 +187,7 @@ export function checkPublishList(input: PublishListInput): readonly PublishGap[]
     // file is there and says nothing, which is a different edit from the file being gone.
     return [{ kind: 'unreadable', name: RELEASE_WORKFLOW }];
   }
-  const named = new Set(commands.flatMap(workspaceFlags));
+  const named = new Set(commands.map(withoutPreviews).flatMap(workspaceFlags));
   const delegated = commands.some(publishesEveryWorkspace);
   const gaps: PublishGap[] = [];
 

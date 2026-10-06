@@ -49,6 +49,10 @@ describe('the ambiguous phrasings', () => {
     expect(gaps('Across all 28 published packages the only deps')).toEqual([
       'all 28 published packages',
     ]);
+    // The TOTAL, never the scoped 29: "published" says which set it means.
+    expect(gaps('Across all 29 published packages the only deps')).toEqual([
+      'all 29 published packages',
+    ]);
     expect(gaps('Across all 30 published packages the only deps')).toEqual([]);
   });
 

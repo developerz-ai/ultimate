@@ -132,6 +132,17 @@ describe('the same curve under another spelling', () => {
     const based = 'export const wait = (a: number, m: number) => Math.min(250 << a, m);\n';
     expect(codes(file('packages/x/src/wait.ts', one))).toEqual(['X_FLIGHT_SECOND_CURVE']);
     expect(codes(file('packages/x/src/wait.ts', based))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+    // CodeRabbit 4200667467: a parenthesised amount that STARTS with a number still grows.
+    for (const amount of ['(1 + a)', '(a - 1)', '( 2 * a )']) {
+      const shifted = `export const wait = (a: number, m: number) => Math.min(250 << ${amount}, m);\n`;
+      expect(codes(file('packages/x/src/wait.ts', shifted))).toEqual(['X_FLIGHT_SECOND_CURVE']);
+    }
+  });
+
+  test('a parenthesised CONSTANT amount is still byte packing', () => {
+    const source =
+      'export const sum = (a: number, b: number, n: number) => Math.min(n, 5552) + ((b << (16)) | a);\n';
+    expect(codes(file('packages/x/src/word.ts', source))).toEqual([]);
   });
 
   test('but a shift by a CONSTANT is byte packing, clamp or no clamp', () => {

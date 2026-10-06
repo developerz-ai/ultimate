@@ -375,3 +375,20 @@ describeLive('live', () => {
     expect(cleanupFiles(one(imported))[0]?.unreached).toEqual(['registry.reset']);
   });
 });
+
+describe('a binding assigned in the module body is never hook-owned, whatever its indent', () => {
+  test('an assignment inside a top-level `if` runs at import, so its reset is a registry', () => {
+    const conditional = `const describeLive = url === undefined ? describe.skip : describe;
+let registry: Registry;
+if (process.env['SEED'] !== undefined) {
+  registry = createRegistry();
+}
+describeLive('live', () => {
+  afterAll(() => {
+    registry.reset();
+  });
+});
+`;
+    expect(cleanupFiles(one(conditional))[0]?.unreached).toEqual(['registry.reset']);
+  });
+});

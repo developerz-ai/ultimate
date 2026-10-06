@@ -251,6 +251,8 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
 
 ### Changed
 
+- `registry-audit`: the fix for a package behind on npm depends on whether its release tag is on the
+  remote (tag, push, `gh release create --verify-tag`), and dispatches the workflow only when it is.
 - Repo guards tightened by sweep 11's audit, each with a fixture that slipped before:
   - `secret-compare` pins are per site (`<path>: <comparison>`), so a pinned false positive can't be
     swapped for a real one; it also reads template interpolations, `.equals()` and `Buffer.compare()`.
@@ -445,7 +447,8 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
 - testing: island mounts restore the real globals in any dispose order (a non-LIFO dispose left a
   fake `document` for every later file in the worker); a mount that never settles is cleaned up;
   scratch directories carry their pid and a run sweeps those of killed runs. The micro-DOM keeps
-  every listener per event type (`FakeElement.listeners` is a `Map<string, Set<fn>>`).
+  every listener per event type and skips one removed mid-dispatch, as browsers do
+  (`FakeElement.listeners` is no longer public; read through `listenerFor(name)` or `fire`).
 - cli: `x dev` re-reads an edited `*.island.states.ts`.
 - docs: `realtime.enabled` defaults to `true` (since 22.0.0); the wiki said `false`. The defaults
   `wiki/Configuration.md` states are now checked against `configDefaults()`.

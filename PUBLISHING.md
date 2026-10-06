@@ -23,7 +23,7 @@ npm at <version>, every one attested` or names each gap with a runnable `fix:`.
 | what npm serves | `npm view @ultimat3/core version` |
 | attested, and by whom | `npm view @ultimat3/core@<version> dist.attestations _npmUser` |
 | the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
-| the repository is stamped at one version | `bun run scripts/release.ts --check <version>` |
+| the repository is stamped at one version | `bun run scripts/release.ts --check <version> --json` |
 | every package is on npm at that version | `bun run scripts/registry-audit.ts --json` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
@@ -452,8 +452,9 @@ pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUB
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
 the comparison to the version read off the tag.
 
-`git describe` names the tag and `bun run scripts/release.ts --check <version>` passes against it
-— run both rather than reading a version here — and the check itself is a step of the workflow
+`git describe` names the tag and `bun run scripts/release.ts --check <version> --json` passes
+against it — run both rather than reading a version here — and the check itself is a step of the
+workflow
 ([`.github/workflows/release.yml`](.github/workflows/release.yml), the `bun run scripts/release.ts
 --check` run). Earlier in 2026-08 this repo was in exactly the broken state: `git describe` answered
 `v1.10.1-37-g837adfa` with every `package.json` at `1.2.0`, and the workflow ran no such check

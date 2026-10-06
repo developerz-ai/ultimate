@@ -300,6 +300,25 @@ describe('createFormBinding', () => {
 
   // The server took what the form held WHEN IT SUBMITTED. A field changed while that request was in
   // flight is a change the server never saw, and clearing it let a navigation guard drop it.
+  // `onState` is synchronous, so a subscriber can edit in reaction to the `submitting` publish
+  // itself — before `run` reaches its first await. That edit is after the read, too.
+  test('an edit made from the submitting publish is still dirty after the save', async () => {
+    let edited = false;
+    const form = createFormBinding<{ title: string }, Saved>({
+      fields: ['title'],
+      messageFor: raw,
+      submit: () => Promise.resolve({ id: 'post-1' }),
+      onState: (state) => {
+        if (state.status !== 'submitting' || edited) return;
+        edited = true;
+        form.edit('title', 'typed as the save began');
+      },
+    });
+    const state = await form.submit({ title: '' });
+    expect(state.status).toBe('succeeded');
+    expect([...state.dirty]).toEqual(['title']);
+  });
+
   test('a successful submit keeps dirty the fields edited while it was in flight', async () => {
     let accept = (_saved: Saved): void => {};
     const form = createFormBinding<{ title: string; body: string }, Saved>({

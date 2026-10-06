@@ -13,7 +13,7 @@ import { testName } from './test-types';
 
 const PLAIN = 'export function mount(el) { el.textContent = "on"; }\n';
 const host = globalThis as unknown as Record<string, unknown>;
-const KEYS = ['document', 'Element', 'window', 'probeOrder'] as const;
+const KEYS = ['document', 'Element', 'window', 'probeOrder', 'probeEntered'] as const;
 const descriptors = () =>
   KEYS.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
 
@@ -50,19 +50,21 @@ describe(testName('unit', 'the real globals come back in any dispose order'), ()
   test('a mount that never settles is disposed by the boundary: directory gone, globals back', async () => {
     const real = descriptors();
     const before = new Set(islandScratchDirs());
-    void mount('export function mount() { return new Promise(() => {}); }\n', {}).catch(
-      () => undefined,
-    );
-    // Long enough for the chunk to be written and imported and `mount` to be awaiting.
-    for (let i = 0; i < 50 && islandScratchDirs().length === before.size; i += 1) {
-      await Bun.sleep(1);
-    }
-    await Bun.sleep(20);
+    // The island SAYS when it is inside `mount` — no sleep, no poll: by then its chunk was written
+    // and imported, and the fixture is awaiting a `mount` that will never answer.
+    const { promise: entered, resolve: probeEntered } = Promise.withResolvers<void>();
+    void mount(
+      'export function mount() { probeEntered(); return new Promise(() => {}); }\n',
+      {},
+      { globals: { probeEntered } },
+    ).catch(() => undefined);
+    await entered;
     const [dir] = islandScratchDirs().filter((each) => !before.has(each));
-    expect(existsSync(dir ?? '')).toBe(true);
+    if (dir === undefined) expect.unreachable('the pending mount created no scratch directory');
+    expect(existsSync(dir)).toBe(true);
 
     expect(disposeLiveIslands()).toBe(1);
-    expect(existsSync(dir ?? '')).toBe(false);
+    expect(existsSync(dir)).toBe(false);
     expect(descriptors()).toEqual(real);
   });
 });
