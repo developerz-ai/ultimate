@@ -40,6 +40,7 @@ is non-empty. Each wave-3 agent gets one band and the "already known" list of ev
 | R4 — harness, scripts, ops | testing `cdp-launch*`, `cdp-e2e-*`, `e2e-locator/page/evaluate/selection`, `island-*`, `fixture-*`; scraping `driver-cdp`, `cdp-*`, `session-state`; **~75 top-level guards + 61 `scripts/lib/*`** (each: can it fail? which real form slips?); `docker/docker-compose.dev.yml`, `docker/deploy-proof/load.ts`; admin notify/PWA SW internals; NATS/KV transport auth |
 
 ## Doc facts with no guard (found by 10e)
+
 | Fact | Where it is stated | Executable copy | Guard to add |
 |---|---|---|---|
 | the scaffold runs uid/gid 1000; this repo's chart runs 65532 | `docs/ops/01-kubernetes.md:238`, `docs/ops/README.md:111` | `RUNTIME_UID` (`cli/src/templates/scaffold-helm.ts:18`), `docker/helm/values.yaml:107` | a doc-drift test reading both constants |

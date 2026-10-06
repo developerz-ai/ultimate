@@ -444,7 +444,7 @@ mail: { retainMime: { maxBytes: 262_144 } },
 | `SES_SESSION_TOKEN` | — | SES only, optional: temporary credentials |
 | `SES_ENDPOINT` | — | SES only, optional: a VPC endpoint or a local stand-in. Default `https://email.<region>.amazonaws.com` |
 | `SES_CONFIGURATION_SET` | — | SES only, optional: the configuration set that publishes delivery events |
-| `MAIL_FROM` | — | required by every transport. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
+| `MAIL_FROM` | — | required by SMTP, Resend and SES; the memory and unconfigured drivers do not read it. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
 | `MAIL_POOL_SIZE` | — | SMTP connections open at once. Default `4`, whole number ≥ 1 |
 
 The list is `MAIL_ENV_KEYS` in `packages/mail/src/driver-env.ts`, `As of 2026-10`. More than one of

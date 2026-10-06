@@ -231,7 +231,7 @@ until somebody restarts it, up to 90 days later.
 
 ## Pod hardening baseline
 
-Both charts — this repo's `docker/helm/` and the one `x new` writes — set all of this; only the uid differs, below. Keep it.
+This repo's `docker/helm/` sets all of this. The chart `x new` writes sets the same keys, but its pod identity differs: `runAsUser`, `runAsGroup` and `fsGroup` all `1000`, where this repo's sets `runAsUser: 65532` and no group (`As of 2026-10`). What a test holds equal between the two is narrower — probes, the Service spec, the Secret a role reads, the bounded `/tmp` and the NetworkPolicy (`scaffold-helm-parity.test.ts`); the security context is held by neither. Keep it.
 
 | Setting | Value | Why |
 |---|---|---|

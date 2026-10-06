@@ -9,6 +9,7 @@
 Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `framework.manifest.json`, `bun.lock`, package `index.ts` re-export merges, `status.yml`.
 
 ## Sweep 10a — tiers 0–1 seams
+
 | Agent | Rows | Exclusive paths |
 |---|---|---|
 | A | B1 | `packages/core/src/cookie.ts` + test |
@@ -25,6 +26,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B5 | core (0) | `signAwsRequest` (SigV4) — shared by storage s3 + mail SES | not in tree | known-answer vectors from the AWS SigV4 test suite |
 
 ## Sweep 10b — tiers 1–3
+
 | Agent | Rows | Exclusive paths |
 |---|---|---|
 | A | B6 | `packages/entity/src/` (repo, define), `packages/db/src/{generate,drift}.ts` + tests |
@@ -40,6 +42,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B9 ★ | query (3) | `query({ audit: true })`: `AuditSink`/`AuditRecord` move to core, `action` → `name` (**BREAKING → 12-major-25**); one record per call incl. memo hits; denied/failed; `surface: 'mcp'` | `query` unit + parity with action audit |
 
 ## Sweep 10c — tier 4
+
 | Agent | Rows | Exclusive paths |
 |---|---|---|
 | A | B10 | `packages/mcp/src/{transport-http,audit}.ts`, new `confirmations.ts` + tests |
@@ -55,6 +58,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B13 | pwa/cache/render | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` (`wiki/Error-Codes.md:1083-1091`): build each check or keep reserved — owner O-13 | per check |
 
 ## Sweep 10d — tier 5
+
 | Agent | Rows | Exclusive paths |
 |---|---|---|
 | A | B14, B20 | `packages/admin/src/{mcp,mcp-tools}.ts`, `screen-home*.ts` (B20) + tests |
@@ -80,9 +84,10 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B26 | schema, entity (from 10d B16) | No array item-count bounds (`t.array(...)` has no `min`/`max`; Postly uses `t.refine`), and `transition()` has no row loader, so its policy can't see the row (authorship). **Fix:** `t.array(x, { min, max })` and a `row` loader on `transition()`, the same seam actions have | schema and entity unit |
 | B27 | cli (from 10d B16) | An app needing a Postgres executor writes its own (`examples/dummy/packages/db/src/executor.ts`) because `pgExecutorFor` isn't exported. **Fix:** export it from the one place apps import runtime seams, or say why not | cli export test; Postly uses it |
 | B28 | examples/dummy (from #684 review) | `summarize` interpolates the post's title and body unfenced, so a body with `## Rules` can pose as instructions; `reviewDraft` already fences its draft as `<post_title>`/`<post_body>` data with closing tags escaped. **Fix:** `summarize@5`, fenced the same way, with a re-recorded baseline | `prompt-artifacts.test.ts` and the summarize eval |
-| B29 | manifest (found by 10e) | the manifest does not record an admin action's `readonly`, so a change from `admin:write` to `admin:read` is invisible to `x manifest diff`. **Fix:** `actionOf` in `packages/manifest/src/sources-admin.ts` records `readonly` (and `matching`, which forces write) | manifest unit: flipping `readonly` changes the manifest |
+| B29 | manifest (found by 10e) | the manifest does not record an admin action's `readonly`, so a change from `admin:write` to `admin:read` is invisible to `x manifest diff`. **Fix:** the whole contract, since the consumer can't keep fields the producer never sends: `packages/admin/src/describe.ts` emits `readonly` and `matching` (which forces write), `AdminActionFact` (`packages/manifest/src/schema.ts`) declares them, and `actionOf` (`sources-admin.ts`) parses them | manifest unit: flipping `readonly` or `matching` changes the manifest |
 
 ## Sweep 10e — docs
+
 | Agent | Rows | Exclusive paths |
 |---|---|---|
 | A | docs, B22 | `wiki/Known-Gaps.md`, `wiki/PWA-And-Offline.md`, the wiki page listing mail's env keys (B22) |

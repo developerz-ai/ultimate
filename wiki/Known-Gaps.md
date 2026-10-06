@@ -20,8 +20,8 @@ npm view @ultimat3/core version
 A row that says **fixed on `main`** is fixed in the repository and in **no published release**; if you
 are on an earlier version, treat those rows as open and take the workaround. `[Unreleased]` in
 [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source of
-truth for what the next release carries — `As of 2026-10-06` the registry serves 24.0.0, and
-`[Unreleased]` holds plan 101's sweeps 10a–10d; most of what it fixes was never a row here. Read that section rather than this sentence: `grep -n '^## '
+truth for what the next release carries — `As of 2026-10-06` it holds plan 101's sweeps 10a–10d,
+and most of what it fixes was never a row here. Read that section rather than this sentence: `grep -n '^## '
 CHANGELOG.md` finds its bounds, and it changes on any commit.
 
 **Publication is not a gap.** All 31 workspaces are on the registry `As of 2026-08-20`, checked by `scripts/registry-audit.ts` daily;
@@ -57,7 +57,7 @@ CHANGELOG.md` finds its bounds, and it changes on any commit.
 | An org-scoped operator's runs list reads `x_jobs` with no index on `tenant_id` | `As of 2026-10`. The jobs dashboard keeps an actor with an `orgId` to its own org's runs through `JobFilter.tenantId`, and `x_jobs.tenant_id` is a plain column: the only index naming it is the idempotency one, led by `name` (`packages/jobs/src/driver-pg-ddl.ts`). A platform operator's list is unaffected | on a large queue, add `create index on x_jobs (tenant_id, created_at desc, id desc)` in an app migration, or operate the dashboard as a platform operator (an actor with no `orgId`) |
 | Retry-from-step on the jobs dashboard is a free-text field | `As of 2026-10`. `job.retry-from-step` takes `{ step: t.string.min(1) }` (`packages/admin/src/jobs/job-actions.ts`); the run's detail page shows its steps, but the form does not offer them as a choice. | copy the step name from the run's `steps` section on the same page |
 | The admin MCP batch tool takes `ids` only | `As of 2026-10`. A `batch` action is one MCP tool, `admin.action.<name>`, and it takes the rows by id; "all matching" — the list's own filter — is a screen control only | list the rows with `admin.<entity>.list` and its `where`, then pass their ids |
-| The manifest does not record a resource's permission noun, its home `count`, or an action's `matching` or `readonly` | `As of 2026-10-06`. `x.manifest.json`'s `admin` section records each action's `permission`, `destructive`, `input`, `when` and `batch`, and each route's permissions — so `job:read` is visible on the jobs routes — but not `AdminResourceOptions.permission`, `count`, or whether an action declares `matching` or `readonly` (`actionOf` / `resourceOf`, `packages/manifest/src/sources-admin.ts`). `readonly` moves an action's gate from `admin:write` to `admin:read`, so `x manifest diff` cannot see a change that widens who may run it | read them from the declaration in `apps/admin/app/admin/admin.ts` |
+| The manifest does not record a resource's permission noun, its home `count`, or an action's `matching` or `readonly` | `As of 2026-10-06`; [B29](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md), #691. `x manifest diff` cannot see a change to any of them. The one that widens access: `readonly` moves an action without `matching` from `admin:write` to `admin:read` — with `matching` the gate stays `admin:write` | read them from the declaration in `apps/admin/app/admin/admin.ts` |
 | No counts on the jobs dashboard's state tabs | `As of 2026-10`. `stats()` counts per queue across every tenant, so a count on a tab would show an org-scoped operator other orgs' numbers; the tabs carry none and the overview's tiles carry the counts, for a platform operator only. A per-tenant count is a second query nothing issues yet | a platform operator reads the overview tiles; an org-scoped operator reads a tab's own page |
 
 ## Open by decision
@@ -95,16 +95,17 @@ Each of these is a defect somebody has already argued about, and the reasoning i
 
 ## Carried backlog
 
-`As of 2026-10-06`. Rows plan 101 carried from superseded plans and sweeps 10a–10d left open, each
-with its tracking issue. Source: `docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md`.
+`As of 2026-10-06`. Rows plan 101 carried from superseded plans and sweeps 10a–10e left open. **The
+backlog row is the record** — cause, evidence and fix live there and in the issue; a row here says
+only what you meet and how to get past it. Backlog: [`10-carried-backlog.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md).
 
 | Row | Gap | Work around it by | Issue |
 |---|---|---|---|
-| B24 | `agentJob` keeps no output: a queued run's answer is gone once it settles (`x_jobs` has no result column), so a background agent is only useful through a write tool — which must be idempotent, because a retried attempt calls it again. The reference app has no idiomatic use for that reason (`PENDING_IN_REFERENCE_APP`, `scripts/primitive-factories-used.test.ts`) | give the agent one idempotent write tool that stores its answer; read the result from there, never from the job | [#685](https://github.com/developerz-ai/ultimate/issues/685) |
-| B25 | `webhook` has no reference-app use: it needs an endpoints table with a sealed secret and a `WebhookLedger` the app persists, and the framework ships no ledger table — `memoryWebhookLedger()` is dev-only | declare the endpoints entity (secret `.sealed()`) and a Postgres-backed `WebhookLedger` in the app | [#686](https://github.com/developerz-ai/ultimate/issues/686) |
-| B26 | `t.array(items)` takes no `min`/`max` item count, and `transition()` has no row loader, so its `policy` cannot see the row (authorship) | `t.refine` over the array for the bounds; for an authorship rule, a plain `action` that loads the row, checks it, then writes | [#687](https://github.com/developerz-ai/ultimate/issues/687) |
-| B27 | `pgExecutorFor` (`packages/cli/src/runtime-queue.ts`) is not exported, so an app needing the `{ query(text, values) }` executor a framework store takes writes its own | copy the reference app's — `examples/dummy/packages/db/src/executor.ts`, a three-line `PgExecutor` over `db()` | [#688](https://github.com/developerz-ai/ultimate/issues/688) |
-| B28 | the reference app's `summarize@4` prompt interpolates the post's title and body unfenced, so a body containing `## Rules` can pose as instructions | in your own prompts, fence untrusted text as tagged data with its closing tags escaped — the reference app's `reviewDraft` does both (`prompts/review-draft-template.ts`, the escape in `posts/actions.ts`) | [#689](https://github.com/developerz-ai/ultimate/issues/689) |
+| [B24](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `agentJob` keeps no output once a queued run settles | give the agent one idempotent write tool that stores its answer, and read the result from there | [#685](https://github.com/developerz-ai/ultimate/issues/685) |
+| [B25](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `webhook` needs an endpoints table and a persisted `WebhookLedger` the framework does not ship (`memoryWebhookLedger()` is dev-only) | declare the endpoints entity (secret `.sealed()`) and a Postgres-backed `WebhookLedger` in the app | [#686](https://github.com/developerz-ai/ultimate/issues/686) |
+| [B26](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `t.array(items)` has no `min`/`max`; `transition()` has no row loader for its `policy` | `t.refine` for the bounds; a plain `action` that loads the row, checks it, then writes, for an authorship rule | [#687](https://github.com/developerz-ai/ultimate/issues/687) |
+| [B27](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `pgExecutorFor` is not exported | copy `examples/dummy/packages/db/src/executor.ts` | [#688](https://github.com/developerz-ai/ultimate/issues/688) |
+| [B28](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | the reference app's `summarize@4` interpolates post text unfenced | fence untrusted text as tagged data with closing tags escaped, as `reviewDraft` does | [#689](https://github.com/developerz-ai/ultimate/issues/689) |
 
 ## Deferred by plan 101
 
