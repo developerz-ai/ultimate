@@ -322,10 +322,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     },
 
     async stop(): Promise<void> {
-      await halt();
-      // A start() that began while this stop waited owns what it subscribes — the older start is
-      // fenced by its generation — so releasing here would tear down the NEWER node's bus.
-      if (started === null) release();
+      // `halt()` ends the generation synchronously, before its first await; what the current
+      // start installed is released right then. An older start still in flight is fenced by its
+      // generation and drops what it subscribes late itself, and a start() issued after this line
+      // owns a fresh bus that the wait below must not touch.
+      const waiting = halt();
+      release();
+      await waiting;
     },
 
     async fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined> {

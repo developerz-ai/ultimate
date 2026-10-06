@@ -240,6 +240,22 @@ describe('a suite that fails alone', () => {
     expect(failure?.fix).toContain('bun test ./packages/money');
   });
 
+  // A CI-only flake reported as `expect(received).toEqual(expected)` alone named no cause: the
+  // received value is what tells a race from a bug, and only the diff carries it.
+  test("the cause carries the assertion's diff, so a CI-only failure can be root-caused", () => {
+    const stderr = [
+      'error: expect(received).toEqual(expected)',
+      '  [',
+      '-   "GET /eager soft",',
+      '+   "GET /eager prefetch",',
+      '  ]',
+      '(fail) nav > clears [3ms]',
+    ].join('\n');
+    const cause = suiteFailure('cli', 1, stderr)?.cause ?? '';
+    expect(cause).toMatch(/-\s+"GET \/eager soft"/);
+    expect(cause).toMatch(/\+\s+"GET \/eager prefetch"/);
+  });
+
   test('a zero exit is no failure, whatever stderr says', () => {
     expect(suiteFailure('money', 0, '(fail) not really')).toBeUndefined();
   });
