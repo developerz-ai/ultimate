@@ -16,14 +16,14 @@ export const admin = defineAdmin({ entities: adminEntitiesOf(db), db });
 | `db` | the app's `database()` handle; each resource reads through its own table — tenancy, soft delete and sealing are the handle's | `resources: { <entity>: { repo } }` for one resource. Neither is `X_ADMIN_REPO_UNBOUND` at declaration |
 | `auth.actor` | the actor the HTTP pipeline resolved for the request | `auth: { actor: (request) => … }` |
 | `auth.authz` | `roleAuthz()` — the role map decides each permission by name, so the admin is closed until a role grants `admin:read` and `<entity>:read` | `policyAuthz({ policies })` for row- or tenant-reading rules; `singlePolicyAuthz(policy)` when one grant runs the whole admin |
-| `resources.<entity>` | derived: list columns, filters, sorts, label | `listFields`, `labelField`, `columns`, `scopes`, `rows`, `fields.<name>.sensitive`, `permission` (the noun `<noun>:read\|write\|delete` is named after; default the entity's name) |
+| `resources.<entity>` | derived: list columns, filters, sorts, label | `listFields`, `labelField`, `columns`, `scopes`, `count` (a tile on `/admin` — [below](#the-home)), `rows`, `fields.<name>.sensitive`, `permission` (the noun `<noun>:read\|write\|delete` is named after; default the entity's name) |
 | `basePath` | `/admin` | `basePath: '/back-office'` |
 
 `x dev` and the container mount every admin the app declared: one catch-all under its base path, `GET` and `POST`. `x new` scaffolds the declaration; `x g entity` adds an entity to the handle and it is a screen on the next boot.
 
 | URL | Screen | Write it accepts |
 |---|---|---|
-| `/admin` | dashboard: each resource the actor may open, with the permission pair behind every operation | `POST` an app-wide action |
+| `/admin` | the home: a count tile per resource that opted in ([below](#the-home)), then each resource the actor may open, with the permission pair behind every operation | `POST` an app-wide action |
 | `/admin/<entity>` | list — scope tabs, a filter bar, the batch bar, sort headers and a keyset pager, all links and native forms (`?scope=`, `?f.<field>=`, `?sort=<field>:<dir>`, `?cursor=`) | `POST _operation=batch` (`name`, `selection=checked\|all`, `ids`) |
 | `/admin/<entity>/lookup?term=` | the picker every filter and input referencing the entity searches: `contains` on its label, keyset-paged | — |
 | `/admin/<entity>/new` | create form | `POST` → 303 to the row, or 422 with the issues |
@@ -35,6 +35,23 @@ export const admin = defineAdmin({ entities: adminEntitiesOf(db), db });
 | `/admin/<page path>` | a `pages:` entry | — |
 
 A refusal is a 403 document naming the permission, and an audit entry. Anonymous is the pipeline's own 401 (or the app's sign-in redirect). Every admin document is `noindex, nofollow` and carries no `og:*` / `twitter:*` tag. A row action lands on its row (303); a batch answers a page of counts (200).
+
+## The home
+
+**A resource is counted on `/admin` only when it declares `count: true`.** `As of 2026-10`. A tile is one full `AdminRepo.count()` over the actor's `rows` scope on **every** visit, so an operator reloading the front page over a big table was a load generator — the same reason a scope tab's `count` is opt-in.
+
+```ts
+resources: { posts: { count: true } },
+```
+
+| Resource | On the home |
+|---|---|
+| `count: true`, the actor may list it | a `StatTile` linked to the list, and a segment of the `DonutChart` |
+| no `count` | no tile and no segment; still in the permission matrix |
+| the actor may not list it | nothing — no tile, no segment, no matrix |
+| its repo has no `count()`, or the store refuses it (`X_TENANCY_UNSCOPED` for an actor with no org) | no tile; the page never fails |
+
+A count reads no row, so it is not audited. Upgrading from a release that counted every listable resource: add `count: true` to each resource whose tile you want back.
 
 ## The list
 
@@ -78,6 +95,17 @@ Statements per list page: 1 for the rows (2 when the sort column is nullable, on
 | `batch: true` | in the list's batch bar: checked rows, or every row the list's URL matches (200 per request, continued from where it stopped). Each row through the button's gate and on the audit log; answered `done` / `refused` / `failed` / `remaining` |
 | `batch: { threshold, chunk? }` | past `threshold` rows, one `admin.batch` job per chunk, run by a worker as the operator; `queued` in the answer. The batch id is derived from actor, action, rows and input, so retrying a request whose enqueue failed part-way dedupes the chunks already queued |
 | `matching: ({ where, input, ctx }) => { affected, remaining }` | "all matching" as ONE set-based call over the list's `where` (row scope, scope, filters) — a store's bounded bulk verb — decided and audited once; a destructive one types `<entity>:all matching`. Checked rows still run row by row |
+| `readonly: true` | the action changes nothing (an export, a verification), so its admin-level gate is `admin:read`, not `admin:write`: a read-only staff role and an `admin:read` MCP token may run it. The action's own `permission` is still required beside it |
+| `destructive: true` | gated on `admin:destroy`; one row types `<entity>:<id>`, a batch `<entity>:<n> rows` |
+
+**The admin-level gate an action needs** — `adminPermissionForAction` (`packages/admin/src/action-gate.ts`), first match wins, so a contradiction fails closed:
+
+| Declares | Gate |
+|---|---|
+| `destructive: true` | `admin:destroy`, whatever else it declares |
+| `matching` | `admin:write`, **even with `readonly: true`** — it changes every row the list matches |
+| `readonly: true` | `admin:read` |
+| neither | `admin:write` |
 
 Still one MCP tool per action — a batch action's takes `ids`. No script on any of it: the row checkboxes join the bar's form by their `form` attribute, and a confirmation is a server round trip. An action's input fields are labelled `admin.input.<action>.<field>` — beside its own `admin.action.<action>`, never under it, so both fit one JSON catalog. An action on a row the actor cannot see (gone, or outside its `rows`) is refused, `when` or none.
 
@@ -161,7 +189,7 @@ One authz seam for the whole admin: the rendered button, the HTTP call behind it
 | Decision | `roleAuthz()` by default — the role map decides each permission by name, and `admin:destroy` implies `admin:write` implies `admin:read`, as `staticAuthz` answers. `policyAuthz({ policies })` adapts the app's `policy` layer when a rule reads the row or the tenant |
 | Admin permissions | `admin:read`, `admin:write`, `admin:destroy`, `admin:impersonate` — ordinary permission strings evaluated by the same policy engine |
 | Per-entity gate | an actor needs the admin-level permission **and** the table's: `<table>:read` to list, open and search, `<table>:write` to create and edit, `<table>:delete` to delete. `defineAdmin()` declares them; `x g entity` / `x g resource` declare and grant a new table's three to the scaffold's `admin` role |
-| View-only | a role holding `admin:read` and each `<table>:read` and nothing else — every write is refused by the decision that hid its button. Not a mode |
+| View-only | a role holding `admin:read` and each `<table>:read` and nothing else — every write is refused by the decision that hid its button. It may still run a `readonly` action whose own `permission` it holds. Not a mode |
 | Jobs and audit screens | `job:read` and `audit:read`, beside `admin:read`; every jobs action is `job:manage` |
 | Denial | `{ allowed, permission, reason, trace }`; `reason` is an i18n key or a rule name, never a sentence |
 | UI invariant | the UI cannot show what the call would refuse — one decision per request, consulted by every surface |
@@ -193,11 +221,42 @@ mcp: { expose: true, description: 'Publish a draft post' },
 | Actor = the signed-in user's session | an agent can never exceed the human it acts for |
 | Policies unchanged | no separate "API permissions" screen to get wrong |
 | Tool list is generated | adding a feature adds a capability; deleting one removes it |
-| Projected tools declare no MCP scope | adding one would be a second gate in front of the only gate that matters |
+| Every tool carries a scope | the admin-level permission it needs — [table below](#tool-scopes). A token can be narrower than its actor, never wider |
 | Ships on | day-one agent access to operations, not a v3 roadmap item |
 | Exposure | two surfaces, two defaults — and this catalog is the **only** exception in the framework. Inside the admin's own catalog a registered action becomes a tool unless it sets `mcp: { expose: false }`, because every tool here is already gated on an admin permission and the CRUD tools carry no `mcp` block at all. Everywhere else — the app MCP surface (`defineAppMcp`), the LLM tool list, `openapi.json`'s `x-ultimate.mcpTool` and `x.manifest.json` — one predicate decides, and it is opt-in: only `mcp: { expose: true }` makes a tool, and naming an un-exposed primitive in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot ([Actions](Actions)) |
 
 The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy evaluation lives inside `run`, so there is nothing to keep in sync. Details: [MCP and AI](MCP-And-AI).
+
+### Tool scopes
+
+`As of 2026-10`. `adminMcp()` hands the MCP registry one scope per tool (`adminToolScopes`, `packages/admin/src/mcp-scopes.ts`). Tool names are unchanged.
+
+| Scope | Tools |
+|---|---|
+| `admin:read` | `admin.<entity>.list`, `admin.<entity>.read`, `admin.search`, a `readonly` action's `admin.action.<name>` |
+| `admin:write` | `admin.<entity>.create`, `admin.<entity>.update`, any other action — `matching` ones included |
+| `admin:destroy` | `admin.<entity>.delete`, a `destructive` action |
+
+A call is decided in this order:
+
+| # | Check | Refusal |
+|---|---|---|
+| 1 | the actor's own admin authz (`adminMcpTools`) — a tool it denies is **absent** | `X_MCP_TOOL_UNKNOWN` — no such tool for this caller, whatever the token holds |
+| 2 | the token's scope, before any argument is validated or a handler runs | `X_MCP_SCOPE_DENIED`, naming the scope |
+| 3 | the call's row-level decision inside the tool | the tool's own refusal, audited |
+
+The token's scopes are `tokenScopes` on what `adminMcp({ actor })` returns for a session (`AdminMcpActor`), expanded by `adminTokenScopes`: **`admin:destroy` ⇒ `admin:write` ⇒ `admin:read`**.
+
+| `tokenScopes` | The token may call |
+|---|---|
+| absent | everything its actor may — what every admin token was before tools carried a scope |
+| `['admin:read']` | list, read, search and `readonly` actions — a read-only agent token |
+| `['admin:write']` | the above, plus create, update and every non-destructive action |
+| `['admin:destroy']` | every tool its actor may call |
+| `[]` | nothing — an empty list is a token granted nothing, never "unstated" |
+| a non-admin scope (`posts:write`) | dropped; the admin's tools read its own vocabulary only |
+
+Named `tokenScopes`, not `scopes`: core's `Actor.scopes` is a different thing, and an actor handed straight through must not have its `[]` read as "this token may do nothing". A stdio host builds its caller's scopes with `adminTokenScopes(granted)` too.
 
 ## Theming
 
@@ -244,7 +303,7 @@ Own routes in your own app. Never fork the framework.
 |---|---|
 | A custom screen | `pages: [{ path, titleKey, permissions, component }]` on `defineAdmin` — same route table, same guard, framed in the shell. `x g admin:page <name>` writes it beside the declaration, under `apps/admin/app/admin/`. A path the admin already serves (`/jobs/*` included) is `X_ADMIN_PAGE_PATH_INVALID`. A screen that needs an island is a normal Ultimate route under `apps/admin/app/<feature>/` |
 | A different control for one field | `resources: { <entity>: { fields: { <name>: { widget } } } }` — one of the `AdminWidget` kinds in `fields.ts`; a new column kind is a row in that table, not an app hook |
-| A custom operation, on one row or many | `actions: [{ name, permission, entity, input?, when?, batch?, matching?, handle }]` on `defineAdmin` — a button on the detail and each list row, a row in the batch bar with `batch`, and an MCP tool `admin.action.<name>`. Grant its `permission` in the role map, or the `policy` step is `X_PERMISSION_UNGRANTED` |
+| A custom operation, on one row or many | `actions: [{ name, permission, entity, input?, when?, batch?, matching?, readonly?, destructive?, handle }]` on `defineAdmin` — a button on the detail and each list row, a row in the batch bar with `batch`, and an MCP tool `admin.action.<name>`. Grant its `permission` in the role map, or the `policy` step is `X_PERMISSION_UNGRANTED` |
 | Different columns in a list | `resources: { <entity>: { listFields, labelField, columns } }` — `x g resource <name> --admin` writes the override, with `listFields` read off the entity, and lists it in `defineAdmin()` |
 | Tabs, or a second audience | `scopes:` and `rows:` on the resource — never a second resource |
 | A secret column | `.sealed()` on the entity: never listed, shown, searched or prefilled; the form writes it through a password input, and an empty box on an edit leaves it unchanged |

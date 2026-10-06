@@ -231,11 +231,11 @@ until somebody restarts it, up to 90 days later.
 
 ## Pod hardening baseline
 
-The shipped chart already sets all of this. Keep it.
+This repo's `docker/helm/` sets all of this. The chart `x new` writes sets the same keys, but its pod identity differs: `runAsUser`, `runAsGroup` and `fsGroup` all `1000`, where this repo's sets `runAsUser: 65532` and no group (`As of 2026-10`). What a test holds equal between the two is narrower — probes, the Service spec, the Secret a role reads, the bounded `/tmp` and the NetworkPolicy (`scaffold-helm-parity.test.ts`); the security context is held by neither. Keep it.
 
 | Setting | Value | Why |
 |---|---|---|
-| `runAsNonRoot` / `runAsUser` | `true` / `65532` | correct for **this repo's** distroless image. An app scaffolded by `x new` runs on `oven/bun:1.4-alpine` as user `bun` — read the uid out of your own image (`docker run --rm <image> id -u`) rather than copying 65532, or every pod fails to start |
+| `runAsNonRoot` / `runAsUser` | `true` / `65532` in **this repo's** chart; `true` / `1000` (plus `runAsGroup` and `fsGroup: 1000`) in the chart `x new` writes | each matches its own image (`As of 2026-10`): this repo's is distroless `nonroot`, 65532; a scaffolded app's is `oven/bun:1.4-alpine` with `USER 1000:1000`, the base image's `bun` user — one constant, `RUNTIME_UID` in [`scaffold-helm.ts`](../../packages/cli/src/templates/scaffold-helm.ts), read by both its Dockerfile and its chart. A hand-written manifest set reads the uid out of its own image (`docker run --rm <image> id -u`) rather than copying either number |
 | `readOnlyRootFilesystem` | `true` | with an `emptyDir` at `/tmp`, **and** `ULTIMATE_STATE_DIR=/tmp/x` in the release's Secret: as of 2026-09-23 a boot still creates `.x/` (the embedded-state directory) whenever any binding is embedded — `NATS_URL` unset is one — and `/app/.x` is on the read-only root (plan 101 slice 12 k narrows it to an embedded database or disk) |
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |

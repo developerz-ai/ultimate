@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 88
-current_focus: "sweep 10d (B14–B18, B20, B21, B23; plus the windows Chrome-launch flake)"
+percent: 91
+current_focus: "sweep 10e (docs; Known-Gaps rows for B7 #648, B24-B28 #685-#689)"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -124,14 +124,14 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 10-carried-backlog.md
     tier: 5
     sweep: "10d"
-    status: in_progress
-    percent: 90
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#684"]
   - file: 10-carried-backlog.md
     tier: 5
     sweep: "10e"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
     evidence: []
   - file: 11-audit-coverage.md
     tier: 0

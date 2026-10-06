@@ -438,10 +438,17 @@ mail: { retainMime: { maxBytes: 262_144 } },
 | *(none set)* | memory | caught, never sent; the `/_x` mail panel reads this outbox |
 | `SMTP_URL` | SMTP | `smtps://user:pass@host:465`, or `smtp://host:587` for STARTTLS |
 | `RESEND_API_KEY` | Resend | one `POST /emails` per message, with an `Idempotency-Key` |
-| `MAIL_FROM` | — | required by both transports. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
+| `SES_REGION` | Amazon SES | one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK |
+| `SES_ACCESS_KEY_ID` | — | SES only, required with `SES_REGION` |
+| `SES_SECRET_ACCESS_KEY` | — | SES only, required with `SES_REGION` |
+| `SES_SESSION_TOKEN` | — | SES only, optional: temporary credentials |
+| `SES_ENDPOINT` | — | SES only, optional: a VPC endpoint or a local stand-in. Default `https://email.<region>.amazonaws.com` |
+| `SES_CONFIGURATION_SET` | — | SES only, optional: the configuration set that publishes delivery events |
+| `MAIL_FROM` | — | required by SMTP, Resend and SES; the memory and unconfigured drivers do not read it. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
 | `MAIL_POOL_SIZE` | — | SMTP connections open at once. Default `4`, whole number ≥ 1 |
 
-Setting `SMTP_URL` **and** `RESEND_API_KEY` is `X_CONFIG_INVALID`: a process delivers through
+The list is `MAIL_ENV_KEYS` in `packages/mail/src/driver-env.ts`, `As of 2026-10`. More than one of
+`SMTP_URL`, `RESEND_API_KEY` and `SES_REGION` is `X_CONFIG_INVALID`: a process delivers through
 exactly one transport, and picking a winner would send half of an operator's mail the wrong way.
 A transport without `MAIL_FROM` is refused at boot rather than on the first send.
 
@@ -586,7 +593,7 @@ picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cl
 |---|---|
 | `jobs` | the queue driver every enqueue and every claim uses; installed as the ambient driver too, so the boot refuses a process where the two disagree |
 | `storage` | the `S3_ENDPOINT` / embedded-disk decision, whole: disks, default disk and all |
-| `mail` | the `SMTP_URL` / `RESEND_API_KEY` selection |
+| `mail` | the `SMTP_URL` / `RESEND_API_KEY` / `SES_REGION` selection |
 | `transport` | the `NATS_URL` selection. Arrives connected and is **not** closed on stop — whoever built it owns its socket |
 | `purge` | the `CLOUDFLARE_*` / `FASTLY_*` selection behind the `cdn` cache tier |
 | `rateLimitStore` | the Postgres store the boot installs over its own pool. The store's scope decides `rateLimit.scope`; a `'process'` store is legal and warned about — every limit then applies once per replica |
@@ -601,7 +608,7 @@ picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cl
 | Rule | Why |
 |---|---|
 | middleware wraps a **matched** route only | the router runs first (`packages/http/src/stages.ts`). An unmatched path is answered `404` (or `405` with `allow`) before any middleware runs, so middleware cannot rewrite, redirect or serve a URL that no route declares |
-| a redirect from a path nothing serves needs a route | declare a page or `route.ts` at the old path that answers the redirect, or add one to `runtime.routes` |
+| a redirect from a path nothing serves needs a route | declare a page at the old path that answers the redirect, or add one to `runtime.routes` — an `api/**/route.ts` cannot register today ([Known gaps](Known-Gaps#awaiting-an-owner-decision)) |
 | `/healthz` and `/readyz` never reach it | they are answered by the listener before the pipeline, so a draining or rate-limited process can still say what it is doing |
 | a `/<locale>/` prefix is stripped before the match | middleware sees the route the stripped path matched, never the prefix as a route of its own |
 
@@ -641,7 +648,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale or two spellings of one, an unknown time zone, a section or list of the wrong shape (`jobs: null`), a value outside its closed set (`roles`, `jobs.backoff`, `theme.defaultMode`), a switch that is not a boolean (`database.ssl: 'false'`), `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale or two spellings of one, an unknown time zone, a section or list of the wrong shape (`jobs: null`), a value outside its closed set (`roles`, `jobs.backoff`, `theme.defaultMode`), a switch that is not a boolean (`database.ssl: 'false'`), `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, a `cache.tiers` entry the environment cannot supply — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), more than one of `SMTP_URL` / `RESEND_API_KEY` / `SES_REGION`, or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

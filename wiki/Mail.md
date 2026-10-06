@@ -50,9 +50,57 @@ between environments — the credential does.
 | nothing set, `staging` / `production` | `createUnconfiguredDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING`; the boot still succeeds, so an app that sends no mail deploys |
 | `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)` — ESMTP over `Bun.connect`, STARTTLS required unless `allowInsecure` |
 | `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` — one `POST /emails` with an `Idempotency-Key` |
+| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `createSesDriver(...)` — one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK. `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
 
-Both credentials at once is `X_CONFIG_INVALID` rather than a silent winner. `setMailDriver(driver)`
-is the one seam for a host that builds its own.
+Every key, with what it means: [Configuration → `mail`](Configuration#mail). More than one of
+`SMTP_URL`, `RESEND_API_KEY` and `SES_REGION` is `X_CONFIG_INVALID` rather than a silent winner.
+`setMailDriver(driver)` is the one seam for a host that builds its own.
+
+## Keeping the sent bytes: `mail.retainMime`
+
+**Off by default; SMTP and SES only.** `As of 2026-10`. The transports that build the MIME can keep
+the exact bytes they handed the provider, on `SendResult.mime`.
+
+```ts
+// app.config.ts
+mail: { retainMime: { maxBytes: 262_144 } },
+```
+
+| Rule | Detail |
+|---|---|
+| `true` | mail's default cap, `DEFAULT_RETAIN_MIME_MAX_BYTES` (256 KiB) |
+| over the cap | `{ kind: 'digest-only', sha256, byteLength }` — never a truncated message |
+| `maxBytes` | a whole number above 0 (`X_CONFIG_INVALID` at `defineConfig`), at most `RETAIN_MIME_CEILING_BYTES` (10 MiB; `X_CONFIG_INVALID` at boot, judged before a transport is chosen) |
+| `RESEND_API_KEY` selected | any retention refuses the boot: Resend builds the MIME on its own side |
+| durable copy | `onRetained` is code, not config — a queued send's result is not persisted. Build the driver with `selectMailDriver(env, { retainMime: { onRetained } })` and hand its `.driver` to the `mail` runtime override ([Configuration](Configuration)) |
+
+A throwing `onRetained` is logged (`mail.retain_mime.failed`) and does not fail the send.
+
+## Delivery events: `@ultimat3/mail/events`
+
+**A subpath, never the barrel**: only a webhook route needs it, and every serving role loads
+`@ultimat3/mail` to send. One receiver per provider; each verifies the request, then normalises it to
+`DeliveryEvent` — `delivered` · `bounced` (`bounce: 'hard' | 'soft'`) · `complained` · `delayed`,
+with `messageId` (the sending driver's `SendResult.id`), `recipient`, `at`, `eventId` and `raw`. One
+event per recipient; `(eventId, recipient)` is the dedupe key.
+
+```ts
+import { createResendEventReceiver, createSesEventReceiver } from '@ultimat3/mail/events';
+
+export const ses = createSesEventReceiver({ topicArns: [Bun.env['SES_EVENTS_TOPIC_ARN'] ?? ''] });
+export const resend = createResendEventReceiver({ secret: Bun.env['RESEND_WEBHOOK_SECRET'] ?? '' });
+// const outcome = await ses.receive(request);  // { type: 'events' | 'ignored' | 'subscription', … }
+```
+
+| Receiver | Verifies |
+|---|---|
+| `createSesEventReceiver` | SNS: the topic is in `topicArns`, the certificate URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 or 2, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
+| `createResendEventReceiver` | Svix: HMAC-SHA256 under the `whsec_` secret, constant-time, within `toleranceMs` (5 min) |
+
+Mount `receive(request)` as a plain HTTP route in the `routes` runtime override
+([Configuration](Configuration)) — **not** in an `api/**/route.ts`, which cannot register today:
+whether that file kind is wired or deleted is an open owner decision ([Known gaps](Known-Gaps#awaiting-an-owner-decision)).
+`SES_CONFIGURATION_SET` names the SES configuration set sent on every message (`ConfigurationSetName`) — the set whose event destination publishes to that SNS topic.
 
 ## Framework mails
 
@@ -63,8 +111,8 @@ own; `renderMessage()` renders one without sending.
 ## Errors
 
 Every `X_MAIL_*` code is in [Error codes](Error-Codes). The two an app meets first:
-`X_MAIL_LOCALE_MISSING` (pass `locale: ctx.locale`) and `X_MAIL_CREDENTIAL_MISSING` (set `SMTP_URL`
-or `RESEND_API_KEY`, and `MAIL_FROM`, in the deployment).
+`X_MAIL_LOCALE_MISSING` (pass `locale: ctx.locale`) and `X_MAIL_CREDENTIAL_MISSING` (set `SMTP_URL`,
+`RESEND_API_KEY`, or `SES_REGION` with its key pair — and `MAIL_FROM` — in the deployment).
 
 Related: [Notify](Notify) fans one event out to mail, the in-app inbox and your own channels;
 [Configuration](Configuration) lists the env vars.

@@ -49,7 +49,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | `X_BOUNDARY_VIOLATION` on a file that imports nothing suspicious | a **transitive** chain — the error prints it, e.g. `site/pricing → shared/ui/button → app/billing/service` | break the chain at the lowest hop; move the shared piece into `shared/` |
 | `X_BOUNDARY_SITE_TO_APP` | a `site/` route reached into `app/` | duplicate the small thing, or move it to `shared/`. `site/` must stay 0kb JS |
 | `X_BOUNDARY_SHARED_LEAF` | `shared/` imported `site/` or `app/` | `shared/` is a leaf, always |
-| `X_BOUNDARY_ROUTE_TO_DB` | a route file queried the DB | route → `service.ts` → `repo.ts`. Only `repo.ts` touches SQL |
+| `X_BOUNDARY_ROUTE_TO_DB` | a `page`/`layout`/`route` file imports the database: `packages/db`, `@<scope>/db`, `drizzle-orm`, **or a slice's `repo.ts`** (`../posts/repo` counts; `report` and `repository` do not). A page reading the repo skips the query that carries the read's policy, bound and cache tag. `As of 2026-10` (`isDbSpecifier`, `packages/cli/src/app-boundaries.ts`) | run the printed `x g query <slice>`, then call that query from the route — route → `query`/`action` → `repo.ts` |
 | `X_BOUNDARY_SERVICE_TO_HTTP` | a service imported request/headers | a service that knows about requests cannot be reused by a job |
 | Tier violation in a framework package | imported sideways or upward | `bun run boundaries`; consult the tier table in [Contributing](Contributing) |
 

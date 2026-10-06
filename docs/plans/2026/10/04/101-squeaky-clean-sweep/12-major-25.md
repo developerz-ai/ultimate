@@ -33,6 +33,7 @@ Follow `PUBLISHING.md` and `.claude/commands/feature.md` § release; never quote
 2. `bun run scripts/release.ts --check 25.0.0`; PR; merge.
 3. `git tag -a v25.0.0` (annotated); push; `gh release create v25.0.0` (the Release triggers `release.yml`). Watch for a bot-made lightweight tag/Release first — delete if unpublished.
 4. `bun run scripts/registry-audit.ts --json` → every publishable package on npm at 25.0.0, every one attested. Report the line verbatim.
+5. **Scaffold against what npm serves** (found by 10e: CI's scaffold smoke builds against workspace links, so a scaffold that imports an export the registry lacks passes CI and fails `docker build` for a user). In the scratchpad, with no workspace on the path: `bunx create-ultimate@25.0.0 npmapp`, then `bun install`, `bun run check`, and `docker build -f docker/Dockerfile .`. All green, or the release is not done. Then make this permanent: a post-publish job in `release.yml` (or `registry-audit.yml`) that runs the same steps against the just-published version.
 
 ## Readiness gate — "ready for a large customer" (all must hold)
 | Check | Command / evidence |

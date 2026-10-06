@@ -108,7 +108,7 @@ apps/web/app/<feature>/ui/                                           # component
 | `policy.ts` | `policy` rules for this feature | data shaping |
 | `ui/` | Solid components | fetching, business logic, its own authz |
 
-A feature imports another feature through that feature's `service.ts` or its published types, never its `repo.ts` — a convention, **not a build error** (`As of 2026-10`: no boundary rule reads it, and `x new`'s own dashboard reads `../post/repo`).
+A feature imports another feature through that feature's `service.ts` or its published types, never its `repo.ts` — a convention, **not a build error** (`As of 2026-10-06`: no boundary rule reads it from a `service.ts`). A **route** importing any `repo.ts` is a build error, `X_BOUNDARY_ROUTE_TO_DB`; `x new`'s own dashboard reads through the `postList` query (`../post/live/post-list`).
 
 ## App packages
 

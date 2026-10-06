@@ -39,6 +39,16 @@ is non-empty. Each wave-3 agent gets one band and the "already known" list of ev
 | R3 — cli | `island-shot*`, `island-capture`, `island-verdict`, `island-harness*`, `island-states-load`, `island-link`, `island-realtime`, `island-solid-dedupe`; `app-boundaries`, `app-transport`, `app-permissions*`, `app-evals`, `app-agents-md`, `app-artifacts`, `app-entities`, `app-env`, `app-openapi`, `app-root`, `server-barrels`; `dev-policy`, `image-prepare`, `static-report`, `measure-scope`; `cmd-new`, `cmd-i18n`, `cmd-shot-island`, `verify-stalled`, `verify-coverage-run`, `verify-role-load*`; **~70 generator templates** (`action`, `job`, `query`, `entity`, `resource-*`, `route`) |
 | R4 — harness, scripts, ops | testing `cdp-launch*`, `cdp-e2e-*`, `e2e-locator/page/evaluate/selection`, `island-*`, `fixture-*`; scraping `driver-cdp`, `cdp-*`, `session-state`; **~75 top-level guards + 61 `scripts/lib/*`** (each: can it fail? which real form slips?); `docker/docker-compose.dev.yml`, `docker/deploy-proof/load.ts`; admin notify/PWA SW internals; NATS/KV transport auth |
 
+## Doc facts with no guard (found by 10e)
+
+| Fact | Where it is stated | Executable copy | Guard to add |
+|---|---|---|---|
+| the scaffold runs uid/gid 1000; this repo's chart runs 65532 | `docs/ops/01-kubernetes.md:238`, `docs/ops/README.md:111` | `RUNTIME_UID` (`cli/src/templates/scaffold-helm.ts:18`), `docker/helm/values.yaml:107` | a doc-drift test reading both constants |
+| wiki code fences compile | every `wiki/*.md` ```ts fence | — (`readme-fences` covers package READMEs only) | a `wiki-fences` ratchet on `scripts/lib/readme-fences.ts` |
+| a wiki `Page#anchor` link resolves | wiki cross-links | the target page's heading slugs | a wiki-anchor check beside `doc-paths` |
+| a Known-Gaps row's issue is open, and its B-row is not marked complete | `wiki/Known-Gaps.md` | GitHub issue state, `status.yml` | a check on the issue links (offline: against `status.yml` only) |
+| the number of boundary rules and their codes | `docs/architecture/02-boundaries.md:37` | `BOUNDARY_CODES` (`cli/src/app-boundaries.ts:31-38`) | a test that compares the table's rows with the list |
+
 ## Steps
 1. One read-only wave, four agents (bands above), each told: no edits, no spawning, no git, probes in the scratchpad.
 2. Coordinator folds findings into the owning slice's table (new rows, next free number) in a docs-only PR, and updates `status.yml`.
