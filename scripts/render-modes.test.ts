@@ -310,10 +310,12 @@ describe('this repository', () => {
     expect(set?.members).toEqual(['half-up', 'half-even', 'down', 'up']);
   });
 
-  test('and it reads no declaration out of a real scaffold TEMPLATE, which only quotes one', async () => {
-    const at = 'packages/cli/src/templates/scaffold-domain-package.ts';
-    const text = await Bun.file(`${ROOT}/${at}`).text();
-    expect(text).toContain("export const ROLES = ['owner', 'member', 'viewer'] as const;");
+  // Inline, the shape a scaffold template had until `x new` stopped emitting `ROLES` (plan 101
+  // sweep 10d): a declaration QUOTED inside a template literal, at column 0 of its own line.
+  test('and it reads no declaration out of a scaffold TEMPLATE, which only quotes one', () => {
+    const text =
+      "export const domainIndex = (): string => `\nexport const ROLES = ['owner', 'member', 'viewer'] as const;\n`;\n";
+    expect(text).toContain("\nexport const ROLES = ['owner', 'member', 'viewer'] as const;");
     expect(scanLiteralSets(text).map((one) => one.name)).not.toContain('ROLES');
   });
 });

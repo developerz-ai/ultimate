@@ -166,3 +166,102 @@ describe('unit · the CI workflow pays for each commit once', () => {
     expect(String(steps()[cache]?.with?.['key'])).toContain("hashFiles('bun.lock')");
   });
 });
+
+/** `${{ body }}`, spelled so the source holds no `${` — a workflow expression is not a template. */
+const expr = (body: string): string => ['$', '{{ ', body, ' }}'].join('');
+
+interface Runs {
+  readonly name?: string;
+  readonly jobs?: Readonly<Record<string, { readonly 'runs-on'?: unknown }>>;
+}
+
+describe('unit · the runner every emitted workflow asks for', () => {
+  // A free GitHub-hosted runner is the default — the owner's rule — and a repository variable is
+  // the override, so moving to a bigger or self-hosted runner is a setting, never an edit to a
+  // file `x new` wrote and a later scaffold would diff against.
+  test('every job runs on vars.CI_RUNNER, falling back to the free ubuntu-latest', () => {
+    for (const file of githubFiles(app)) {
+      const doc = YAML.parse(String(file.contents)) as Runs;
+      for (const job of Object.values(doc.jobs ?? {})) {
+        expect(job['runs-on']).toBe(expr("vars.CI_RUNNER || 'ubuntu-latest'"));
+      }
+    }
+  });
+});
+
+interface Published {
+  readonly on?: {
+    readonly workflow_run?: { readonly workflows?: readonly string[]; readonly types?: unknown };
+  };
+  readonly permissions?: Readonly<Record<string, string>>;
+  readonly jobs?: Readonly<
+    Record<
+      string,
+      {
+        readonly if?: string;
+        readonly 'timeout-minutes'?: number;
+        readonly steps?: readonly Step[];
+      }
+    >
+  >;
+}
+
+describe('unit · the image workflow x new writes', () => {
+  const image = (): string => emitted(githubFiles(app), '.github/workflows/image.yml');
+  const doc = (): Published => YAML.parse(image()) as Published;
+  const runs = (): string =>
+    (doc().jobs?.['publish']?.steps ?? []).flatMap((step) => step.run ?? []).join('\n');
+
+  // Read off the OTHER file: renaming the gate workflow and not this trigger is an image that
+  // never publishes again, silently.
+  test('it waits for the gate workflow, by the name ci.yml declares, to complete', () => {
+    const gate = (YAML.parse(workflow()) as Runs).name;
+    expect(doc().on?.workflow_run?.workflows).toEqual([String(gate)]);
+    expect(doc().on?.workflow_run?.types).toEqual(['completed']);
+    expect(Object.keys(doc().on ?? {})).toEqual(['workflow_run']);
+  });
+
+  // Each clause is a way to publish an image no green gate judged: a red run, a fork's pull
+  // request with the registry token in scope, a branch other than the default.
+  test('it publishes only a green push to this repository’s default branch', () => {
+    const gate = doc().jobs?.['publish']?.if ?? '';
+    expect(gate).toContain("github.event.workflow_run.conclusion == 'success'");
+    expect(gate).toContain("github.event.workflow_run.event == 'push'");
+    expect(gate).toContain(
+      'github.event.workflow_run.head_branch == github.event.repository.default_branch',
+    );
+    expect(gate).toContain(
+      'github.event.workflow_run.head_repository.full_name == github.repository',
+    );
+  });
+
+  test('it builds the commit the gate judged, from the Dockerfile x new writes', () => {
+    const checkout = doc().jobs?.['publish']?.steps?.find((step) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    expect(checkout?.with?.['ref']).toBe(expr('github.event.workflow_run.head_sha'));
+    const dockerfiles = docsFiles(app)
+      .map((file) => file.path)
+      .filter((path) => path.endsWith('/Dockerfile'));
+    expect(dockerfiles).toEqual(['docker/Dockerfile']);
+    expect(runs()).toContain('docker build -f docker/Dockerfile ');
+  });
+
+  // GITHUB_TOKEN with `packages: write` is the whole credential: nothing for the owner to create,
+  // and no other scope is granted.
+  test('its one credential is the job token, scoped to packages', () => {
+    expect(doc().permissions).toEqual({ contents: 'read', packages: 'write' });
+    expect(image()).not.toContain('secrets.');
+  });
+
+  // `latest` is a pointer a late run for an older commit moves backwards; the SHA tags never move.
+  test('it tags by commit and never latest', () => {
+    // bash's own substring expansion of the commit, spelled so this source holds no `${`.
+    expect(runs()).toContain(['sha-$', '{SHA::7}'].join(''));
+    expect(image()).not.toMatch(/:latest\b/);
+  });
+
+  test('the job is bounded in time', () => {
+    expect(doc().jobs?.['publish']?.['timeout-minutes']).toBeGreaterThan(0);
+  });
+});

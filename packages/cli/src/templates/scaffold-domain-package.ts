@@ -23,10 +23,6 @@ import type { MoneyValue as Money } from '@ultimat3/schema';
 
 export type { MoneyValue as Money } from '@ultimat3/schema';
 
-export const ROLES = ['owner', 'member', 'viewer'] as const;
-
-export type Role = (typeof ROLES)[number];
-
 /**
  * Never a bare Error: an agent reading the failure needs the code, the cause and the exact command
  * that resolves it. Adding across currencies is a bug in the caller's data, not a runtime hiccup,

@@ -21,8 +21,8 @@
     "seo"
   ],
   "coverage": {
-    "lines": 72,
-    "funcs": 67,
+    "lines": 74,
+    "funcs": 68,
     "why": "Measured 2026-10-05 (plan 101 sweep 9): 72.7% of lines and 67.6% of functions, with the e2e suites' own fixtures excluded (see exclude) \u2014 they run in the e2e step against a real browser, and a browser-side helper added for #507's proof had pushed functions to 64.9%. Before that, 2026-10-02: 71.5% / 65.0% over 138 source files. What is not run: page renders (app/posts/[id]/page.tsx, site/pricing/page.tsx, site/blog/[slug]/page.tsx), the event handlers and mount() of every island (a unit test drives them through the built chunk, never this source), posts/service.ts past its first branch, and digest/jobs.ts, which the job suite runs and the unit suite does not. Each slice that adds a unit test raises this floor in the same commit.",
     "exclude": [
       {

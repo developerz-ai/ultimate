@@ -1,40 +1,33 @@
-// The scaffold's answer to "who is this?", which it did not have.
+// The scaffold's answer to "who is this?": a session cookie, resolved by `@ultimat3/auth` over the
+// framework's own `x_users` / `x_sessions` tables, installed in EVERY environment.
 //
-// `hooks.authenticate` is the ONLY place an actor can come from, and nothing in a generated app
-// called `configureAuthenticator()` — so a fresh `x new` booted with
-// `X_CONFIG_INVALID: 7 route(s) declare auth: 'required' and no authenticator is configured` on
-// every start, and its own `/dashboard` answered 401 on the first click. The scaffold declares the
-// routes and the roles; this is the missing third piece, and it is deliberately the smallest one
-// that can be honest: a viewer named by a cookie, installed in `development` and nowhere else.
+// `hooks.authenticate` is the ONLY place an actor can come from, and a fresh `x new` once installed
+// nothing there — `X_CONFIG_INVALID: 7 route(s) declare auth: 'required' and no authenticator is
+// configured` on every start, and a 401 on its own `/dashboard`. The first answer was a viewer
+// named by a cookie, installed in `development` alone, which left every other environment with no
+// authenticator at all and the real path for the app's author to invent. Now the real path is the
+// one installed, and the development viewer is only what a request with NO session is answered as
+// under `x dev` — so `x dev` stays zero-config and nothing has to be swapped out before a deploy.
 //
-// The alternative — dropping `policy:` from the scaffolded routes — was refused: a dashboard that
-// declares no policy is registered `auth: 'public'`, which also skips `render-ssr`'s gated branch,
-// so the document ships with no `vary: cookie` and a shared cache may hand one visitor's page to
-// the next. The scaffold would teach the wrong shape to every app that starts from it.
+// Dropping `policy:` from the scaffolded routes was refused: a dashboard that declares no policy is
+// registered `auth: 'public'`, which also skips `render-ssr`'s gated branch, so the document ships
+// with no `vary: cookie` and a shared cache may hand one visitor's page to the next.
 
 import type { GeneratedFile, NameSet } from './naming';
 
 const devActor = (
   app: NameSet,
-): string => `// Who a browser is until this app issues sessions of its own.
+): string => `// Who a browser with NO session is under \`x dev\`: a viewer named by a cookie.
 //
-// \`hooks.authenticate\` is the one place an actor can come from. Without it every request is
-// anonymous, so each route declaring a \`policy:\` answers 401 and the boot warns
-// \`X_CONFIG_INVALID\` — which is what a scaffolded app did on its very first \`x dev\`.
+// \`authenticator.ts\` is the real path — a session cookie, resolved by \`@ultimat3/auth\` — and it
+// is installed in every environment. A fresh app issues no session until it has a sign-in page, so
+// without this every route declaring a \`policy:\` answered 401 on the first \`x dev\`. This module
+// only answers; \`authenticator.ts\` decides when it is asked, and it asks in \`development\` alone —
+// a viewer that followed this to staging would sign every visitor in as an admin.
 //
-// DEVELOPMENT ONLY, and the guard is the point: a viewer that followed this to staging would sign
-// every visitor in as an admin. FAILS CLOSED (\`fallback: 'production'\`) rather than trusting
-// \`tryResolveEnvironment\`'s own default: that default is \`development\`, so a process that named
-// NEITHER \`ULTIMATE_ENV\` nor \`NODE_ENV\` would otherwise read as development too — indistinguishable
-// from the one this file exists to allow. \`x dev\` declares \`ULTIMATE_ENV=development\` for exactly
-// this reason (whenever neither key is already set), so a bare \`x dev\` still installs this viewer;
-// \`bun test\` sets \`NODE_ENV=test\`, so it does not install there either — a fixture mints its own
-// actor, and a second one arriving from a cookie would decide which actor a test is about.
-//
-// REPLACE IT with the real thing: resolve a session cookie to a row, and return that actor.
-// Everything downstream — pages, policies, live subscribers, MCP tools — reads what this returns.
-import { type Actor, logger, tryResolveEnvironment } from '@ultimat3/core';
-import { configureAuthenticator, readCookie } from '@ultimat3/http';
+// Delete it the day sign-in exists, and the fallback line in \`authenticator.ts\` with it.
+import { type Actor, logger } from '@ultimat3/core';
+import { readCookie } from '@ultimat3/http';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
 import { roles } from '../../shared/roles';
 
@@ -82,13 +75,13 @@ export const devActorFor = (role: string): Actor => ({
 });
 
 /** The one method this reads off a request. */
-interface HeaderRequest {
+export interface HeaderRequest {
   header(name: string): string | null;
 }
 
 /**
- * What \`hooks.authenticate\` is handed: the request's cookie header decides the role. Named, and
- * typed by the one method it reads, so a test calls it with a header and no server.
+ * The development viewer for a request: its cookie header decides the role. Typed by the one
+ * method it reads, so a test calls it with a header and no server.
  *
  * A cookie naming an undeclared role answers \`null\` — ANONYMOUS, the least a request can be —
  * and says so, with the value it read and the roles it could have named.
@@ -104,35 +97,109 @@ export const devAuthenticate = (request: HeaderRequest): Actor | null => {
   });
   return null;
 };
+`;
+
+const authModule =
+  (): string => `// This app's one \`@ultimat3/auth\` instance: sessions, passwords and the lockout, over the
+// framework's own \`x_users\` and \`x_sessions\` tables — \`x dev\` and \`ROLE=migrate\` apply them.
+//
+// Sign-in is one call once the app has a page for it: \`login(appAuth(), { email, password, ip })\`
+// answers \`{ token, cookie }\` — set \`cookie\` on the response and every request after it is that
+// user, through \`authenticator.ts\`. \`register(appAuth(), { email, password, orgId, roles })\`
+// creates one.
+import { type Auth, BuiltinAdapter, defineAuth } from '@ultimat3/auth';
+
+let built: Auth | undefined;
 
 /**
- * Installs it, and says so — loudly, because a silent stand-in for authentication is the one thing
- * worse than none. Returns whether it installed, so the test can assert both halves.
+ * Built on first use, never at import: the boot scan imports this module before the database and
+ * the host's shared lockout limiter are installed, and \`defineAuth\` reads both.
  */
-export function installDevAuthenticator(
+export const appAuth = (): Auth => {
+  built ??= defineAuth({ adapter: new BuiltinAdapter() });
+  return built;
+};
+`;
+
+const authenticatorModule =
+  (): string => `// Who a request is: the session its cookie names, resolved by \`@ultimat3/auth\` — the one
+// authenticator this app installs, in every environment. Everything downstream (pages, policies,
+// live subscribers, MCP tools) reads the actor this returns.
+//
+// With NO session cookie the request is anonymous — except under \`x dev\`, where it is the
+// development viewer (\`dev-actor.ts\`), so a fresh app opens its own dashboard with nothing
+// configured. That fallback FAILS CLOSED (\`fallback: 'production'\`): \`tryResolveEnvironment\`'s own
+// default is \`development\`, so a process naming NEITHER \`ULTIMATE_ENV\` nor \`NODE_ENV\` would
+// otherwise read as development too. \`x dev\` declares \`ULTIMATE_ENV=development\` for exactly this
+// reason, and \`bun test\` sets \`NODE_ENV=test\`, where a fixture mints its own actor.
+import { type Auth, authenticate } from '@ultimat3/auth';
+import { type Actor, logger, tryResolveEnvironment } from '@ultimat3/core';
+import { configureAuthenticator } from '@ultimat3/http';
+import { appAuth } from './auth';
+import {
+  DEFAULT_DEV_ROLE,
+  DEV_ROLE_COOKIE,
+  devAuthenticate,
+  type HeaderRequest,
+} from './dev-actor';
+
+/** The two methods this reads off a request. */
+export interface SessionRequest extends HeaderRequest {
+  cookie(name: string): string | null;
+}
+
+export interface SessionAuthenticatorOptions {
+  /** The app's \`Auth\`, asked for per request so it is built after the boot, not at import. */
+  readonly auth: () => Auth;
+  /** Whether a request with no session is the development viewer rather than anonymous. */
+  readonly development: boolean;
+}
+
+/**
+ * A session cookie is that session's user, or \`X_SESSION_UNKNOWN\` for one that is expired, revoked
+ * or forged — never a fallback to anyone else. No cookie is the development viewer or nobody.
+ */
+export const sessionAuthenticator =
+  (options: SessionAuthenticatorOptions) =>
+  async (request: SessionRequest): Promise<Actor | null> => {
+    const auth = options.auth();
+    const token = request.cookie(auth.sessions.policy.cookieName);
+    if (token !== null && token.length > 0) return await authenticate(auth, token);
+    return options.development ? devAuthenticate(request) : null;
+  };
+
+/**
+ * Installs the session authenticator, and returns whether the development fallback is on — so the
+ * test can assert both halves. Loud when it is, because a stand-in for a session is the one thing
+ * an operator must never find in a log they did not expect it in.
+ */
+export function installAuthenticator(
   env: Readonly<Record<string, string | undefined>> = process.env,
+  auth: () => Auth = appAuth,
 ): boolean {
-  if (tryResolveEnvironment({ env, fallback: 'production' }) !== 'development') return false;
-  configureAuthenticator(devAuthenticate);
-  logger.warn('every request is answered as a development viewer', {
-    role: DEFAULT_DEV_ROLE,
-    cause:
-      'apps/web/app/auth/dev-actor.ts installs a viewer in development only, because this app issues no session yet',
-    fix: \`browse as someone else: document.cookie = '\${DEV_ROLE_COOKIE}=member'\`,
-  });
-  return true;
+  const development = tryResolveEnvironment({ env, fallback: 'production' }) === 'development';
+  configureAuthenticator(sessionAuthenticator({ auth, development }));
+  if (development) {
+    logger.warn('a request with no session is answered as a development viewer', {
+      role: DEFAULT_DEV_ROLE,
+      cause:
+        'apps/web/app/auth/authenticator.ts falls back to dev-actor.ts in development, because this app has no sign-in page yet',
+      fix: \`browse as someone else: document.cookie = '\${DEV_ROLE_COOKIE}=member'\`,
+    });
+  }
+  return development;
 }
 
 // Module scope, which IS the wiring: the boot scan imports every module under \`apps/*\` before a
 // listener binds, and \`x dev\` and the container both read the configured value back at start.
-installDevAuthenticator();
+installAuthenticator();
 `;
 
 const devActorTest =
-  (): string => `// The two halves that make a development-only stand-in safe: it resolves the cookie, and it does
-// not install itself anywhere but development.
+  (): string => `// The development viewer is safe because of what it refuses: a role nobody declared is never the
+// default viewer, and the actor it mints holds what its role holds and nothing else. WHEN it is
+// asked is \`authenticator.ts\`'s, and \`authenticator.test.ts\` holds that half.
 import { setLogSink } from '@ultimat3/core';
-import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { actorHas } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { roles } from '../../shared/roles';
@@ -143,7 +210,6 @@ import {
   devActorFor,
   devAuthenticate,
   devRoleFrom,
-  installDevAuthenticator,
 } from './dev-actor';
 
 unitTest('the cookie names a DECLARED role; with no cookie it is the default viewer', () => {
@@ -173,27 +239,7 @@ unitTest('the actor it mints holds what the role map grants it, and nothing else
   expect(actorHas(devActorFor('member'), 'admin:read', roles)).toBe(false);
 });
 
-unitTest('it installs in development and in no other environment', () => {
-  // This process is \`test\`, so the module-scope call at the bottom of dev-actor.ts installed
-  // nothing — which is what keeps a fixture's own actor the only one a test can be about.
-  expect(configuredAuthenticator()).toBeUndefined();
-
-  expect(installDevAuthenticator({ ULTIMATE_ENV: 'production' })).toBe(false);
-  expect(installDevAuthenticator({ ULTIMATE_ENV: 'staging' })).toBe(false);
-  // FAILS CLOSED: a process naming NEITHER key is production here, never the default-development
-  // a bare \`tryResolveEnvironment({ env })\` would answer. \`x dev\` is what makes a real \`x dev\`
-  // still install this viewer — it declares \`ULTIMATE_ENV=development\` before this module loads,
-  // for exactly the process this call simulates having none of.
-  expect(installDevAuthenticator({})).toBe(false);
-  expect(configuredAuthenticator()).toBeUndefined();
-
-  expect(installDevAuthenticator({ ULTIMATE_ENV: 'development' })).toBe(true);
-  expect(configuredAuthenticator()).toBe(devAuthenticate);
-  // Process-global, so the case that installed one takes it back out.
-  resetAuthenticator();
-});
-
-unitTest('what it installs answers a request from its cookie header, and no other', () => {
+unitTest('it answers a request from its cookie header, and no other', () => {
   const cookie = \`\${DEV_ROLE_COOKIE}=member\`;
   const request = { header: (name: string) => (name === 'cookie' ? cookie : null) };
   expect(devAuthenticate(request)?.roles).toEqual(['member']);
@@ -217,9 +263,97 @@ unitTest('an undeclared role is answered as ANONYMOUS, and the log names what it
 });
 `;
 
-/** The app's development viewer, beside the roles it names. */
+const authenticatorTest =
+  (): string => `// The real path and its one fallback: a session cookie is its user in every environment, a bad
+// one is refused rather than replaced, and only development answers a request with no session.
+import { defineAuth, login, MemoryAdapter, register } from '@ultimat3/auth';
+import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
+import { expect, unitTest } from '@ultimat3/testing';
+import { DEMO_ORG_ID } from '../../shared/demo-org';
+import { installAuthenticator, sessionAuthenticator } from './authenticator';
+import { DEFAULT_DEV_ROLE, DEV_ROLE_COOKIE } from './dev-actor';
+
+/** In memory: the session half is the package's, and this test is about the wiring around it. */
+const memoryAuth = () => {
+  const auth = defineAuth({ adapter: new MemoryAdapter() });
+  return () => auth;
+};
+
+/** A request carrying exactly these cookies, through both methods the authenticator reads. */
+const requestWith = (cookies: Readonly<Record<string, string>>) => ({
+  header: (name: string) =>
+    name === 'cookie' && Object.keys(cookies).length > 0
+      ? Object.entries(cookies)
+          .map(([key, value]) => \`\${key}=\${value}\`)
+          .join('; ')
+      : null,
+  cookie: (name: string) => cookies[name] ?? null,
+});
+
+const PASSWORD = 'a long scaffold test passphrase';
+
+unitTest('a session cookie is the user it was issued to, in every environment', async () => {
+  const auth = memoryAuth();
+  const user = await register(auth(), {
+    email: 'ada@example.com',
+    password: PASSWORD,
+    orgId: DEMO_ORG_ID,
+    roles: ['member'],
+  });
+  const { token } = await login(auth(), { email: 'ada@example.com', password: PASSWORD });
+  const request = requestWith({ [auth().sessions.policy.cookieName]: token });
+  for (const development of [true, false]) {
+    const actor = await sessionAuthenticator({ auth, development })(request);
+    expect(actor?.id).toBe(user.id);
+    expect(actor?.roles).toEqual(['member']);
+  }
+});
+
+unitTest('a cookie naming no live session is refused, never answered as the viewer', async () => {
+  const auth = memoryAuth();
+  const request = requestWith({ [auth().sessions.policy.cookieName]: 'forged.token' });
+  await expect(sessionAuthenticator({ auth, development: true })(request)).rejects.toMatchObject({
+    code: 'X_UNAUTHENTICATED',
+  });
+});
+
+unitTest('no session: the development viewer under x dev, anonymous anywhere else', async () => {
+  const auth = memoryAuth();
+  const member = requestWith({ [DEV_ROLE_COOKIE]: 'member' });
+  expect((await sessionAuthenticator({ auth, development: true })(member))?.roles).toEqual([
+    'member',
+  ]);
+  const none = requestWith({});
+  expect((await sessionAuthenticator({ auth, development: true })(none))?.roles).toEqual([
+    DEFAULT_DEV_ROLE,
+  ]);
+  expect(await sessionAuthenticator({ auth, development: false })(member)).toBeNull();
+});
+
+unitTest('it installs in every environment; only development turns the fallback on', () => {
+  const auth = memoryAuth();
+  try {
+    expect(installAuthenticator({ ULTIMATE_ENV: 'production' }, auth)).toBe(false);
+    expect(configuredAuthenticator()).toBeDefined();
+    expect(installAuthenticator({ ULTIMATE_ENV: 'staging' }, auth)).toBe(false);
+    // FAILS CLOSED: a process naming NEITHER key is production here, never the default-development
+    // a bare \`tryResolveEnvironment({ env })\` would answer. \`x dev\` declares
+    // \`ULTIMATE_ENV=development\` before this module loads, for exactly the process this simulates.
+    expect(installAuthenticator({}, auth)).toBe(false);
+    expect(installAuthenticator({ ULTIMATE_ENV: 'development' }, auth)).toBe(true);
+  } finally {
+    // Process-global, so the case that installed one takes it back out.
+    resetAuthenticator();
+  }
+});
+`;
+
+/** The app's authenticator, its \`Auth\`, and the development viewer it falls back to. */
 export function authFiles(app: NameSet): readonly GeneratedFile[] {
   return [
+    { path: 'apps/web/app/auth/auth.ts', contents: authModule() },
+    { path: 'apps/web/app/auth/authenticator.ts', contents: authenticatorModule() },
+    { path: 'apps/web/app/auth/authenticator.test.ts', contents: authenticatorTest() },
     { path: 'apps/web/app/auth/dev-actor.ts', contents: devActor(app) },
     { path: 'apps/web/app/auth/dev-actor.test.ts', contents: devActorTest() },
   ];

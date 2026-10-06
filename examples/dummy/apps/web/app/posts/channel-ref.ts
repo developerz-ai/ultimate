@@ -24,8 +24,10 @@ export const ORG_POSTS = channelRef('org-posts', {
 
 /**
  * A `posts` record as the store holds it — JSON off the wire, so instants are strings. Only the
- * fields an island renders are named; `likedByMe` is the optimistic twin's own flag
- * (`like-mutation.ts`), present only while a like of this device's is pending.
+ * fields an island renders are named. `likedByMe` is the READER's: `postRecord` seeds it per actor
+ * (`repo.recordById`), a channel frame never carries it (its rows go to every member), and the
+ * optimistic twin (`like-mutation.ts`) sets it while a like of this device's is pending. Optional
+ * because a record that arrived by the channel or the feed alone has none.
  */
 export interface PostRecord {
   readonly id: string;

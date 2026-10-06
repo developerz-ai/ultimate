@@ -1,8 +1,8 @@
 /**
  * contract — an agent driving Postly's posts feature through the wire MCP protocol only:
- * JSON-RPC requests dispatched through `mcp.server.handle()`, the transport-independent entry
+ * JSON-RPC requests dispatched through `postlyMcp().server.handle()`, the transport-independent entry
  * point both the HTTP route (`mcpHttpRoute`) and stdio (`serveStdio`) call. No action is
- * invoked directly here — `mcp.server.handle(body, caller)` reaches `action.run`, the SAME
+ * invoked directly here — `postlyMcp().server.handle(body, caller)` reaches `action.run`, the SAME
  * entry point an HTTP request reaches (`packages/mcp/src/exposed.ts`), so a denial observed
  * here over the wire IS "the same authz as the UI" (docs/idea/14-roadmap.md, M9's done-when),
  * not merely the policy-object identity `actions.contract.test.ts` already pins for the direct
@@ -18,7 +18,7 @@
  * input names — see `policy.ts`) and is exercised there, not here.
  */
 
-import { mcp } from '@postly/mcp';
+import { postlyMcp } from '@postly/mcp';
 import { agentActor } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
 import { createComment, createPost } from './actions';
@@ -76,7 +76,9 @@ const textOf = (response: unknown): string =>
 
 test('tools/list exposes createPost and createComment to an agent caller', () => {
   const caller = agentFor({ id: 'probe', orgId: 'org', role: 'author' });
-  const names = mcp.server.list(caller).map((tool) => tool.name);
+  const names = postlyMcp()
+    .server.list(caller)
+    .map((tool) => tool.name);
 
   expect(names).toContain('createPost');
   expect(names).toContain('createComment');
@@ -97,7 +99,7 @@ test('an agent outside the org is denied createPost over MCP, identically to the
   await expect(createPost.as(actorFor(author), args)).rejects.toBeUltimateError('X_FORBIDDEN');
 
   // The same decision, reached entirely over the wire protocol.
-  const response = await mcp.server.handle(toolCall('createPost', args), agentFor(author));
+  const response = await postlyMcp().server.handle(toolCall('createPost', args), agentFor(author));
 
   expect(isError(response)).toBe(true);
   expect(textOf(response)).toContain('X_FORBIDDEN');
@@ -116,7 +118,10 @@ test('an agent outside the org is denied createComment over MCP, identically to 
 
   await expect(createComment.as(actorFor(author), args)).rejects.toBeUltimateError('X_FORBIDDEN');
 
-  const response = await mcp.server.handle(toolCall('createComment', args), agentFor(author));
+  const response = await postlyMcp().server.handle(
+    toolCall('createComment', args),
+    agentFor(author),
+  );
 
   expect(isError(response)).toBe(true);
   expect(textOf(response)).toContain('X_FORBIDDEN');
@@ -125,7 +130,7 @@ test('an agent outside the org is denied createComment over MCP, identically to 
 test('an unknown tool name is ToolNotFound over MCP, never a stack trace', async () => {
   const caller = agentFor({ id: 'probe', orgId: 'org', role: 'author' });
 
-  const response = (await mcp.server.handle(toolCall('deletePost', {}), caller)) as {
+  const response = (await postlyMcp().server.handle(toolCall('deletePost', {}), caller)) as {
     readonly error?: { readonly code?: number };
   };
 

@@ -9,6 +9,15 @@ import type { GeneratedFile, NameSet } from './naming';
 import { helmTemplateFiles } from './scaffold-helm-templates';
 
 /**
+ * The uid AND gid the app's process runs as, in the image and in every pod: the `bun` user of the
+ * `oven/bun:1.4-alpine` base the scaffolded Dockerfile pins (`id bun` → `uid=1000 gid=1000`). One
+ * number, read by both templates, because two of them drifted — the chart ran distroless'
+ * `nonroot` (65532), a uid that image does not have. Pinned to the measurement by
+ * `scaffold-container.test.ts`.
+ */
+export const RUNTIME_UID = 1000;
+
+/**
  * `appVersion` is the default image tag (`image.tag: ""` below), so it must name a tag that can
  * exist. `x deploy --image <ref>` overrides both keys, which is the path that actually ships.
  */
@@ -71,9 +80,12 @@ networkPolicy:
 # METRICS_PORT in the container; move one and the other follows.
 metricsPort: 9090
 
+# The image's \`bun\` user, the same uid as the Dockerfile's USER: move one and the other follows.
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 65532
+  runAsUser: ${RUNTIME_UID}
+  runAsGroup: ${RUNTIME_UID}
+  fsGroup: ${RUNTIME_UID}
   seccompProfile: { type: RuntimeDefault }
 
 securityContext:

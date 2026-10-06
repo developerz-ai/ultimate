@@ -13,6 +13,7 @@
  */
 
 import { definePrompt } from '@ultimat3/ai';
+import { CLAUDE_SONNET_5 } from '../../models';
 import { summarizeTemplate } from './summarize-template';
 
 /** Editing the markdown requires bumping this version — it keys the cache and the traces. */
@@ -20,7 +21,8 @@ export const summarizePrompt = definePrompt({
   id: 'posts.summarize',
   version: '4',
   template: summarizeTemplate,
-  model: 'claude-sonnet-5',
+  // Imported, never spelled: the app registers every model it names (`app/models.ts`).
+  model: CLAUDE_SONNET_5,
   input: {
     type: 'object',
     properties: { title: { type: 'string' }, body: { type: 'string' }, locale: { type: 'string' } },

@@ -1,4 +1,5 @@
-// The CI half of what `x new` writes: one workflow that runs the app's OWN two commands.
+// The CI half of what `x new` writes: the gate workflow that runs the app's OWN two commands, and
+// the image workflow (`image.yml.ts`) that publishes only what that gate passed.
 //
 // Nothing under `templates/` emitted `.github` until this file, so every scaffolded app started
 // life with a gate that ran on exactly one machine — the author's. The two commands are
@@ -10,9 +11,14 @@
 
 import { REQUIRED_BUN } from '../../app-root';
 import type { GeneratedFile, NameSet } from '../naming';
+import { IMAGE_WORKFLOW_PATH, imageWorkflow } from './image.yml';
+import { RUNS_ON } from './runner';
 
 /** Where the workflow lands. GitHub reads this path and no other. */
 export const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
+
+/** The workflow's `name:` — what `image.yml`'s `workflow_run` trigger waits on, spelled once. */
+const CI_WORKFLOW_NAME = 'ci';
 
 /**
  * Pinned by commit SHA with the version in the trailing comment, because this step runs before any
@@ -22,7 +28,7 @@ export const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
  */
 const SETUP_BUN = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0';
 
-const ci = (app: NameSet): string => `name: ci
+const ci = (app: NameSet): string => `name: ${CI_WORKFLOW_NAME}
 
 # The gate for ${app.kebab}: the same two commands \`README.md\` tells a human to run, in the same
 # order, on a machine that has never seen this repository. A check that exists only in CI is one
@@ -61,7 +67,8 @@ jobs:
     # the push run already gates that exact tree — so the pull_request run is skipped, not paid for
     # twice. A pull request from a FORK fires no push here, and it still runs.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
+    # A free GitHub-hosted runner unless the repository variable \`CI_RUNNER\` names another label.
+    runs-on: ${RUNS_ON}
     # A bound on a HANG, not on cost: a step that never returns holds a runner until GitHub's
     # six-hour default expires, and the failure is invisible for all six of them.
     timeout-minutes: 20
@@ -86,7 +93,10 @@ jobs:
       - run: bun run check
 `;
 
-/** The CI a new app is born with, in the order a reader meets it. */
+/** The CI a new app is born with, in the order a reader meets it: the gate, then the image. */
 export function githubFiles(app: NameSet): readonly GeneratedFile[] {
-  return [{ path: CI_WORKFLOW_PATH, contents: ci(app) }];
+  return [
+    { path: CI_WORKFLOW_PATH, contents: ci(app) },
+    { path: IMAGE_WORKFLOW_PATH, contents: imageWorkflow(CI_WORKFLOW_NAME) },
+  ];
 }

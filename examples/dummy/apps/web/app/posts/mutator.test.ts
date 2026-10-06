@@ -1,5 +1,6 @@
 /**
- * unit — no DB, no I/O. The optimistic twin is replayed on every rebase, so the property under
+ * unit — the optimistic twin first, with no DB and no I/O; `movePostStatus` last, on the seeded
+ * in-memory driver. The twin is replayed on every rebase, so the property under
  * test is convergence: applying `local` N times has to leave the same row as applying it once.
  *
  * The store is `@ultimat3/testing`'s `memoryLocalTx`: keyed like the page's record store, with
@@ -8,8 +9,8 @@
  */
 
 import type { LocalTables } from '@ultimat3/action';
-import { expect, memoryLocalTx, unitTest } from '@ultimat3/testing';
-import { likePost } from './mutator';
+import { expect, memoryLocalTx, test, unitTest } from '@ultimat3/testing';
+import { likePost, movePostStatus } from './mutator';
 
 type LocalPost = LocalTables['posts'];
 
@@ -47,4 +48,60 @@ unitTest('a row the local store has never seen is not invented', () => {
   likePost.local(store.tx, input);
 
   expect(store.rows('posts')).toEqual({});
+});
+
+// `movePostStatus` — `transition()` over `posts.status`, against the in-memory driver, which answers
+// a compare-and-set exactly as Postgres does (`@ultimat3/entity`'s README).
+
+test('movePostStatus schedules a draft and takes it back, one move at a time', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, bruno } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    bruno: 'member:bruno',
+  });
+  const as = actorFor(bruno);
+
+  const scheduled = await movePostStatus.as(as, { id: draft.id, from: 'draft', to: 'scheduled' });
+  expect(scheduled).toMatchObject({ id: draft.id, status: 'scheduled' });
+
+  // A stale `from` — the post already moved — is refused naming the state it is really in.
+  await expect(
+    movePostStatus.as(as, { id: draft.id, from: 'draft', to: 'scheduled' }),
+  ).rejects.toBeUltimateError('X_STATE_CONFLICT');
+
+  const back = await movePostStatus.as(as, { id: draft.id, from: 'scheduled', to: 'draft' });
+  expect(back.status).toBe('draft');
+});
+
+test('movePostStatus never publishes: the terminal state is not a state it may name', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, bruno } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    bruno: 'member:bruno',
+  });
+
+  await expect(
+    // Refused by the input schema the factory built from `states`, before any statement runs.
+    movePostStatus.as(actorFor(bruno), { id: draft.id, from: 'draft', to: 'published' }),
+  ).rejects.toBeUltimateError('X_INPUT_INVALID');
+});
+
+test('movePostStatus cannot reach another org’s post, nor be called without the grant', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, mara, reader } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    mara: 'member:mara',
+    reader: 'member:kenji',
+  });
+  const move = { id: draft.id, from: 'draft', to: 'scheduled' } as const;
+
+  // Mara holds `post:publish` in Tinta: the table, scoped to her org, holds no such row.
+  await expect(movePostStatus.as(actorFor(mara), move)).rejects.toBeUltimateError('X_NOT_FOUND');
+  await expect(movePostStatus.as(actorFor(reader), move)).rejects.toBeUltimateError('X_FORBIDDEN');
 });

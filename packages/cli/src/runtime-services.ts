@@ -23,7 +23,6 @@ import {
   isMemoryDriver,
   isUnconfiguredDriver,
   resetMailDriver,
-  selectMailDriver,
   setMailDriver,
 } from '@ultimat3/mail';
 import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
@@ -36,6 +35,7 @@ import { msg } from './messages';
 import type { DevServices, Env } from './runtime-bindings';
 import { cacheTiersOf, startCacheTiers } from './runtime-cache';
 import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
+import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
@@ -322,10 +322,14 @@ export async function startServices(
   /** `'verify'` for a serving role on an external database — `runtime-queue.ts`'s `SchemaMode`. */
   schema: SchemaMode = 'apply',
 ): Promise<RunningServices> {
+  // The app's config is loaded ONCE, here, first, and every section below is read out of that one
+  // validated object — mail's `retainMime` is the first reader, so it is loaded before mail.
+  const config = await loadAppConfig(services.root);
   // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
   // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
   // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
-  const selection = selectMailDriver(env);
+  // `mail.retainMime` rides along (`runtime-mail.ts`), refused here the same way.
+  const selection = selectAppMailDriver(env, config);
   // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
   // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
   const cdn = selectPurgeDriver(env);
@@ -334,9 +338,7 @@ export async function startServices(
   // service starts, rather than quietly keeping the in-process bus. Which transport, which KV
   // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
-  // container it stands in for. The app's config is loaded ONCE, here, and every section below is
-  // read out of that one validated object.
-  const config = await loadAppConfig(services.root);
+  // container it stands in for.
   const realtime = realtimeConfigOf(config);
   const workerConfig = workerConfigOf(config);
   const bus: TransportSelection = selectTransport(env, realtime);

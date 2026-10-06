@@ -133,7 +133,8 @@ export class AiGatewayMissingError extends UltimateError {
     super({
       code: 'X_AI_GATEWAY_MISSING',
       cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured`,
-      fix: 'configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) }) at boot',
+      // The provider is the app's choice: no vendor is the default one (M12).
+      fix: 'configureAi({ gateway: createGateway({ providers: [yourProvider] }) }) at boot   # any provider: the Anthropic format, the OpenAI format (any compatible server), or your own',
     });
   }
 }

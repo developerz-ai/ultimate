@@ -247,6 +247,12 @@ export interface AdminAction<Input = Readonly<Record<string, unknown>>, Output =
   /** The entity the button belongs to. Absent = a global action in the toolbar. */
   readonly entity?: string;
   readonly destructive?: boolean;
+  /**
+   * The action changes nothing — an export, a verification, a recount — so its admin-level gate is
+   * `admin:read` rather than `admin:write`, and a read-only staff role (or an `admin:read` MCP
+   * token) may run it. `destructive` wins over it: the stricter gate is the one that applies.
+   */
+  readonly readonly?: boolean;
   /** Absent: `admin.action.<name>` — `actionLabelKey`, the one spelling every screen reads. */
   readonly labelKey?: string;
   /** Mirrors the action's own `mcp` block; the admin MCP surface honours `expose`. */

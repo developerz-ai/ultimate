@@ -132,7 +132,54 @@ describe.skipIf(noBrowser)('one record, many places', () => {
       "the server's render to show 3 likes",
     );
   }, 60_000);
+
+  /**
+   * Sweep 10d B17. A like is insert-or-ignore on the server, so liking a post the member ALREADY
+   * likes changes nothing — and the screen must say so. The twin skips a row whose `likedByMe` is
+   * set; until `postRecord` carried that flag per actor, a fresh page seeded it `false` and the
+   * click painted +1, then dropped back when the server's unchanged count landed.
+   */
+  test('a like on a post the member already likes paints no +1 at all', async () => {
+    // Timezones: Ada liked it in the seed, so its one like is hers.
+    const post = POSTS.timezones;
+    const own = await browser.session.newTab();
+    try {
+      await own.goto(`${app.base}/posts/${post.id}`);
+      await own.waitFor(`${likeCounts(post.id)}.length >= 2`, 'both places showing the count');
+      await own.waitFor(
+        `document.querySelector('[data-channel="live"]') !== null`,
+        "the like control's channel to go live",
+      );
+      // The seed read has landed: the record the twin reads is in the store, flag included.
+      await own.waitFor(`${syncedLikeCount(post.id)} === 1`, 'the seeded record in the store');
+      expect(await serverLikeCount(app, 'ada', 'timezones')).toBe(1);
+
+      await own.evaluate(paintRecorder(LIKED_PAINTS, post.id));
+      const mark = browser.session.requests().length;
+      await like(own, post.id);
+      await until(
+        () =>
+          requestsSince(browser.session, app.base, mark, /^POST .*\/api\/posts\/like/).length === 1,
+        'the like to go out',
+      );
+      await own.waitFor(
+        `globalThis[Symbol.for('ultimate.realtime')].store.pending().length === 0`,
+        'the like to settle',
+      );
+
+      // One paint, the count it opened with: no frame ever showed 2.
+      expect(await paintsOf(own, LIKED_PAINTS)).toEqual([
+        (await readNumbers(own, likeCounts(post.id))).map(() => '1').join(','),
+      ]);
+      expect(await serverLikeCount(app, 'ada', 'timezones')).toBe(1);
+    } finally {
+      await own.close();
+    }
+  }, 60_000);
 });
+
+/** Where the already-liked case keeps its paint history. */
+const LIKED_PAINTS = 'e2eAlreadyLikedPaints';
 
 /** Where this describe's two recorders keep their histories. */
 const FEED_PAINTS = 'e2eFeedEchoPaints';

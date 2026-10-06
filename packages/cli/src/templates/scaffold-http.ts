@@ -13,7 +13,7 @@ const httpConfig = (
   app: NameSet,
 ): string => `// What this app declares about HTTP. Module scope IS the wiring: the boot scan imports every
 // module under \`apps/*\` before a listener binds, and \`x dev\` and the container both read the
-// configured value back at start — the same seam \`app/auth/dev-actor.ts\` installs through.
+// configured value back at start — the same seam \`app/auth/authenticator.ts\` installs through.
 //
 // The BOOT lays its own facts over whatever this says: \`port\`, \`hostname\`, \`dev\`, \`buildId\`,
 // \`signInPath\`, \`trustProxy\`, \`trustedProxyHops\` and \`rateLimit.scope\` are all facts about the

@@ -96,6 +96,18 @@ test('the binary target defines the version the executable has no manifest to re
   expect(args[at + 1]).toMatch(/^ULTIMATE_FRAMEWORK_VERSION="\d+\.\d+\.\d+/);
 });
 
+test('the binary target reads its app tree’s package.json and tsconfig.json at run time', () => {
+  // The binary imports the tree it is started in; a standalone executable that does not autoload
+  // both resolves no package `exports` and no `paths` alias there (`Cannot find module
+  // '@ultimat3/core' from '<app>/app.config.ts'`). `e2e/binary-launch.e2e.test.ts` runs one.
+  const args = binaryArgs('/app', '/out');
+  expect(args).toContain('--compile-autoload-package-json');
+  expect(args).toContain('--compile-autoload-tsconfig');
+  expect(args.indexOf('--compile-autoload-package-json')).toBeLessThan(
+    args.indexOf(join('/app', BUILD_ENTRY.binary)),
+  );
+});
+
 const exec = (ok: boolean): ExecResult => ({
   command: ['docker', 'build'],
   code: ok ? 0 : 1,

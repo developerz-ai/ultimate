@@ -144,16 +144,37 @@ export function binaryOutfile(
 }
 
 /**
- * The define is not optional. A single-file executable carries no `package.json`, so
- * `frameworkVersion()` has nothing to read and throws — which is exactly how this target came to
- * compile an artifact that could never boot. The value is this CLI's own `@ultimat3/core`, which is
- * the app's too: the packages release in lockstep and `x new` pins them together.
+ * The define answers `frameworkVersion()` for framework code BUNDLED into an executable, where no
+ * `package.json` exists — the reason this target once compiled an artifact that could never boot,
+ * and why `docker/Dockerfile`'s self-contained `x` still needs it. Here nothing framework is
+ * bundled any more (`LAUNCHER_EXTERNALS`): `@ultimat3/core` loads from the app's `node_modules` and
+ * reads its own manifest, so the define reaches no module of this graph. It stays as a pin on that
+ * one version, this CLI's own — the packages release in lockstep and `x new` pins them together.
  *
  * `externalArgs()` is not optional either, and for the opposite reason: it names the one specifier
  * this graph must NOT resolve. `apps/web/server.ts` reaches `serve.ts`, which reaches the island
  * builder, which reaches `@babel/core` — whose `.cts`-config loader requires a package we
  * deliberately do not install. Bun 1.3 fails the compile on it. See `compile-externals.ts`.
+ *
+ * The two autoload flags are what make the binary a LAUNCHER at all. It imports the app tree it is
+ * started in at run time — `app.config.ts`, then every module under `apps/*` — and a standalone
+ * executable reads neither `package.json` nor `tsconfig.json` at run time by default (Bun:
+ * `--compile-autoload-{package-json,tsconfig}`, both off). With no `package.json` the resolver
+ * ignores `exports`, so every `@ultimat3/*` (`exports` → `./src/index.ts`) was
+ * `Cannot find module '@ultimat3/core' from '<app>/app.config.ts'` and the binary never answered
+ * `/healthz` — on Windows, where CI first ran it, and on Linux alike. With no `tsconfig.json` the
+ * app's own `paths` aliases fail the same way. `e2e/binary-launch.e2e.test.ts` compiles and runs it.
  */
+/**
+ * The framework is resolved from the app tree at run time, never bundled into the binary. The app's
+ * own modules import `@ultimat3/*` from its `node_modules` — they are loaded off disk, after the
+ * build — so a bundled copy was a SECOND instance of every package: the app's `configureAuthenticator`
+ * filled the disk copy's slot while the bundled server read its own, empty one (measured:
+ * `X_CONFIG_INVALID … no authenticator is configured` on a scaffold that installs one), and every
+ * registry split the same way. One instance is the one the app's imports reach.
+ */
+const LAUNCHER_EXTERNALS: readonly string[] = ['@ultimat3/*'];
+
 export function binaryArgs(
   root: string,
   out: string,
@@ -167,6 +188,9 @@ export function binaryArgs(
     ...(platform === undefined ? [] : ['--target', platform]),
     '--define',
     `${VERSION_DEFINE}=${JSON.stringify(frameworkVersion())}`,
+    '--compile-autoload-package-json',
+    '--compile-autoload-tsconfig',
+    ...LAUNCHER_EXTERNALS.flatMap((specifier) => ['--external', specifier]),
     ...externalArgs(),
     join(root, BUILD_ENTRY.binary),
     '--outfile',

@@ -6,6 +6,7 @@
 import { assert, finiteCount, renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
+import { asBuiltIn, clearOrigins, markRegistered } from './model-origin';
 
 /**
  * A model id. A plain `string`, deliberately: the routing seam (`Provider`, `createGateway`) has
@@ -32,6 +33,11 @@ export const ANTHROPIC_MODEL_IDS = [
   'claude-haiku-4-5',
 ] as const;
 
+/**
+ * @deprecated A vendor choice made for the app; removed in 25.0.0. Resolving through it records an
+ * `ai.deprecation` (`model-resolve.ts`) — set `createGateway({ defaultModel })` or a declaration's
+ * `model`.
+ */
 export const DEFAULT_MODEL: ModelId = 'claude-opus-5';
 
 /** The built-in Anthropic rows' ladder. One `family` string, spelled once. */
@@ -179,6 +185,7 @@ export function registerModel(spec: ModelSpec): ModelSpec {
     finiteCount(SUBJECT, `${spec.id} cacheWritePerMillion.minor`, spec.cacheWritePerMillion.minor);
   }
   registry.set(spec.id, spec);
+  markRegistered(spec.id);
   return spec;
 }
 
@@ -247,7 +254,8 @@ export function assertModel(id: ModelId): void {
 /** Test-only reset back to the built-in catalogue. Module state otherwise leaks between files. */
 export function resetModels(): void {
   registry.clear();
-  registerBuiltInModels();
+  clearOrigins();
+  asBuiltIn(registerBuiltInModels);
 }
 
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
@@ -319,7 +327,7 @@ export function reasoningBody(
   if (effort !== undefined && !rules.effort) {
     throw new AiRequestInvalidError({
       detail: `model "${model}" has no effort control; output_config.effort is a 400 on it`,
-      fix: `drop effort from definePrompt, or set model: '${DEFAULT_MODEL}' on the llm() declaration`,
+      fix: `drop effort from definePrompt, or set model: '<id>' on the llm() declaration — a model whose registerModel row has reasoning.effort: true`,
     });
   }
   // Only what the caller asked for. `output_config`, not a top-level `effort` — a top-level one
@@ -331,7 +339,7 @@ export function reasoningBody(
     if (thinking === 'adaptive') {
       throw new AiRequestInvalidError({
         detail: `model "${model}" predates adaptive thinking; a thinking block is a 400 on it`,
-        fix: `set model: '${DEFAULT_MODEL}' on the llm() declaration, or drop thinking from definePrompt`,
+        fix: `set model: '<id>' on the llm() declaration — one whose registerModel row has reasoning.adaptive: true — or drop thinking from definePrompt`,
       });
     }
     // No `thinking` field at all is exactly "no thinking" on a pre-4.6 model, so `disabled`
@@ -358,7 +366,7 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
   if (cap === 'never') {
     throw new AiRequestInvalidError({
       detail: `model "${model}" has thinking always on; thinking: 'disabled' is a 400 on it at every effort`,
-      fix: `effort: 'low'   # in definePrompt, in place of thinking: 'disabled' — or set model: '${DEFAULT_MODEL}' on the llm() declaration`,
+      fix: `effort: 'low'   # in definePrompt, in place of thinking: 'disabled' — or set model: '<id>' on the llm() declaration, one whose registerModel row lets thinking be disabled`,
     });
   }
   if (cap === undefined || rankOf(effort) <= rankOf(cap)) return;
@@ -369,7 +377,8 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
 }
 
 /**
- * The blessed models. Opus 5 is the default; the others are explicit choices. IDs are exact
+ * The built-in Anthropic rows — DEPRECATED reference data, removed in 25.0.0: pricing a call through
+ * one the app never `registerModel`-ed records an `ai.deprecation` (`deprecations.ts`). IDs are exact
  * alias strings — never append a date suffix. Registered through the public `registerModel`, in
  * ladder order, so nothing about the built-in path is a private door an app cannot use.
  *
@@ -483,4 +492,4 @@ function registerBuiltInModels(): void {
   });
 }
 
-registerBuiltInModels();
+asBuiltIn(registerBuiltInModels);

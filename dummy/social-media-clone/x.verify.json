@@ -8,6 +8,7 @@
     "errors",
     "unit",
     "contract",
+    "e2e",
     "eval",
     "drift",
     "contract-diff",

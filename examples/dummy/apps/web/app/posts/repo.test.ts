@@ -123,6 +123,22 @@ test('a replayed like writes nothing, and the recount stays at one', async () =>
   expect((await repo.recountLikes(at.orgId, id)).likeCount).toBe(1);
 });
 
+test('recordById carries whether THIS member likes the post, and only this one', async () => {
+  // B17: the record the page's store seeds is what the like twin reads, so a member who liked in an
+  // earlier session must arrive with the flag set — or a repeat like paints +1 and drops back.
+  const at = await anOrg();
+  const id = await aPost(at, { slug: 'already-liked' });
+  const other = memberId(nextId());
+  await repo.insertLike(at.orgId, id, at.authorId);
+
+  const [mine] = await repo.recordById(at.orgId, id, at.authorId);
+  const [theirs] = await repo.recordById(at.orgId, id, other);
+
+  expect(mine).toMatchObject({ id, likeCount: 0, likedByMe: true });
+  expect(theirs).toMatchObject({ id, likedByMe: false });
+  expect(await repo.recordById(orgId(nextId()), id, at.authorId)).toEqual([]);
+});
+
 test('deleteLike removes the composite-key row and reports whether it was there', async () => {
   const at = await anOrg();
   const id = await aPost(at, { slug: 'unlikeable' });

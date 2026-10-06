@@ -10,7 +10,7 @@ import { SECRETS_KEY_FILE } from '@ultimat3/core';
 import { PREBUILT_COMMAND } from '../serve-prebuilt-paths';
 import type { GeneratedFile, NameSet } from './naming';
 import { composeProdFile, PROD_ENV_FILE } from './scaffold-container-compose';
-import { helmFiles } from './scaffold-helm';
+import { helmFiles, RUNTIME_UID } from './scaffold-helm';
 
 const dockerfile = (
   app: NameSet,
@@ -94,9 +94,11 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 CMD \\
 # \`.x/\` is where any binding that is still embedded keeps its state — the local storage disk, and
 # PGlite if DATABASE_URL is unset. Owned by the runtime user, because /app is not: the alternative
 # is a non-root process failing at boot on a directory it is the only one that ever writes.
-RUN mkdir -p /app/.x && chown -R bun:bun /app/.x
+# Numeric, and the same number docker/helm/values.yaml runs every pod as: ${RUNTIME_UID} is the base
+# image's \`bun\` user, and a numeric USER is one a kubelet can check against runAsNonRoot.
+RUN mkdir -p /app/.x && chown -R ${RUNTIME_UID}:${RUNTIME_UID} /app/.x
 
-USER bun
+USER ${RUNTIME_UID}:${RUNTIME_UID}
 # apps/web/server.ts reads ROLE and PORT and nothing else. \`migrate\` applies the migrations and
 # exits; every other role serves until SIGTERM.
 ENTRYPOINT ["bun", "apps/web/server.ts"]
@@ -192,9 +194,11 @@ x build --target static --out dist/static   # one HTML file per \`render: 'stati
 x build --target binary --out dist/app      # a single executable, no Bun install needed
 \`\`\`
 
-The binary bundles the framework, not the app: the registries are filled by scanning
-\`apps/*/{site,app,api,shared}\` at boot, so it is a launcher that must be **started from the app
-root**, with the source tree beside it. The image is the self-contained artifact.
+The binary bundles neither the framework nor the app: it is a launcher. \`@ultimat3/*\` stays
+external and loads from the app's own \`node_modules\`, the app's \`package.json\` and
+\`tsconfig.json\` are read at run time, and the registries are filled by scanning
+\`apps/*/{site,app,api,shared}\` at boot. So it must be **started from the app root**, with the
+source tree and an installed \`node_modules\` beside it. The image is the self-contained artifact.
 
 ## A PaaS (Heroku, Render, Fly, Railway, Cloud Run, App Runner…)
 

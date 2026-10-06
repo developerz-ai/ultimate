@@ -41,8 +41,9 @@ import {
 } from './errors';
 import type { LlmBudget } from './llm';
 import { answerAttributes } from './llm';
+import { describedModel, resolveModel } from './model-resolve';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL, moreCapableThan } from './models';
+import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type {
   AiMessage,
@@ -55,7 +56,7 @@ import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
-import { aiGateway, aiRedactor } from './runtime';
+import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
 
@@ -213,7 +214,7 @@ function factsOf<
     prompt: def.prompt.ref,
     promptId: def.prompt.id,
     promptHash: def.prompt.hash,
-    model: def.model ?? def.prompt.model ?? DEFAULT_MODEL,
+    model: describedModel(def.model, def.prompt.model),
     maxTurns: def.maxTurns ?? DEFAULT_MAX_TURNS,
     maxToolResultChars: def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
     tools: [...def.tools.map(toolLabel)].sort(),
@@ -249,7 +250,7 @@ async function run<
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
   const name = prompt.ref;
-  const model = def.model ?? prompt.model ?? DEFAULT_MODEL;
+  const model = resolveModel('agent', def.model, prompt.model, installedGateway()?.defaultModel);
   const vars = await def.vars({ input: args.input, ctx: args.ctx });
   assertNoSecrets(name, vars);
   const redact = aiRedactor();

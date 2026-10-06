@@ -22,6 +22,9 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | File | Job |
 |---|---|
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts |
+| `model-resolve.ts` | `resolveModel` — the ONE fallback to `DEFAULT_MODEL`, every site's; `describedModel` for a published fact |
+| `model-origin.ts` | which catalogue rows are the package's own (`asBuiltIn` around its registrations) and which the app's |
+| `deprecations.ts` | the once-per-process `ai.deprecation` warn + `ai_deprecated_fallbacks_total` for the built-in default and built-in prices |
 | `provider.ts` | `Provider` interface, the request half, the money arithmetic, `AnthropicProvider` |
 | `echo-provider.ts` | `EchoProvider`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
@@ -171,6 +174,10 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   the ladder within a `family`**, read only by `moreCapableThan`; `X_LLM_REFUSED`'s fix names a rung
   ABOVE or nothing.
 - `AnthropicProvider.models` is its own list; `EchoProvider.models` reads the registry.
+- **No vendor is a default** (M12, removed in 25.0.0). A model resolves declaration → prompt →
+  `Gateway.defaultModel`, through `resolveModel(site, …)` only — a `?? DEFAULT_MODEL` anywhere else
+  bypasses the deprecation. `costOf` (the one price lookup) records a built-in row the app never
+  `registerModel`-ed. Each warns once per site / row (`deprecations.test.ts`); no fix line names a vendor.
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
   control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row in `MODELS`.
   `disableThinkingUpTo: 'never'` (Opus 5.5, Fable 5.1) refuses `thinking: 'disabled'` at every effort;

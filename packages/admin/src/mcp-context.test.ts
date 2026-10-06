@@ -19,6 +19,7 @@ import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
 import { adminMcp } from './mcp';
+import { adminTokenScopes } from './mcp-scopes';
 import type { AdminAction, AdminRow } from './registry';
 
 const doc = entity('admin_ctx_doc', {
@@ -81,7 +82,10 @@ beforeAll(() => {
   });
 });
 
-const caller: McpCaller = { actor: agentActor({ id: 'agent' }), scopes: new Set() };
+const caller: McpCaller = {
+  actor: agentActor({ id: 'agent' }),
+  scopes: adminTokenScopes(undefined),
+};
 
 const callWhoami = async (): Promise<void> => {
   seenActorId = undefined;

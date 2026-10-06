@@ -6,7 +6,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./confirmations": "./src/confirmations.ts"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -18,6 +19,7 @@
   },
   "dependencies": {
     "@postly/core": "0.0.1",
+    "@postly/db": "0.0.1",
     "@postly/domain": "0.0.1",
     "@ultimat3/action": "24.0.0",
     "@ultimat3/core": "24.0.0",

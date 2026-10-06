@@ -421,9 +421,17 @@ The precache warning is its own number and not a budget: `DEFAULT_PRECACHE_WARN_
 
 ## `mail`
 
-Not an `app.config.ts` block. The transport is selected by **environment**, like every other
-external service — an unset variable means the embedded default, so the same image deploys
-everywhere and no credential is ever committed.
+The transport is selected by **environment**, like every other external service — an unset
+variable means the embedded default, so the same image deploys everywhere and no credential is ever
+committed. The `app.config.ts` block says only what the chosen transport keeps:
+
+```ts
+mail: { retainMime: { maxBytes: 262_144 } },
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `mail.retainMime` | `boolean \| { maxBytes?: number }` | `false` | **read** by `x dev` and the container at boot, handed to `selectMailDriver`: the SMTP and SES transports keep the exact MIME bytes they sent, on `SendResult.mime`. `true` is mail's default cap (`DEFAULT_RETAIN_MIME_MAX_BYTES`, 256 KiB); a message over the cap keeps its digest and length only. `maxBytes` must be a whole number above 0 (`X_CONFIG_INVALID` at `defineConfig`) and at most `RETAIN_MIME_CEILING_BYTES` (`X_CONFIG_INVALID` at boot). With `RESEND_API_KEY` selected, any retention refuses the boot: Resend builds the MIME on its own side. The durable `onRetained` callback is code, not config: build the driver with `selectMailDriver(env, { retainMime: { onRetained } })` and hand it over as the `mail` override in `apps/<app>/runtime.ts` (Runtime overrides, below) |
 
 | env key | selects | notes |
 |---|---|---|

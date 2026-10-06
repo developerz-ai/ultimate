@@ -19,6 +19,7 @@ import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, type AdminAuthz, type AdminDecision, staticAuthz } from './authz';
 import { adminMcp, callAdminTool } from './mcp';
+import { adminTokenScopes } from './mcp-scopes';
 import type { AdminAction } from './registry';
 
 const post = entity('admin_mcp_post', {
@@ -80,7 +81,11 @@ beforeAll(() => {
  * One `McpCaller` object = one HTTP request, exactly as `transport-http.ts` builds it. Over
  * stdio the same object is reused for the whole connection — see the grain test below.
  */
-const caller = (id: string): McpCaller => ({ actor: agentActor({ id }), scopes: new Set() });
+// Every admin scope, as a stdio host grants its developer: the scope gate is `mcp-scopes.test.ts`'s.
+const caller = (id: string): McpCaller => ({
+  actor: agentActor({ id }),
+  scopes: adminTokenScopes(undefined),
+});
 
 async function listTools(who: McpCaller): Promise<readonly string[]> {
   const response = await mcp.server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, who);

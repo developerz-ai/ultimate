@@ -201,8 +201,10 @@ describe('unit · who the budget pass renders app/ as', () => {
     );
     expect(page).toContain("error.code === 'X_DB_UNAVAILABLE'");
     expect(page).not.toContain('X_TENANCY_ACTOR_ORG_REQUIRED');
-    // And it reads its ACTOR's org: the repo takes no org argument to get wrong.
-    expect(page).toContain('repo.list(ROW_LIMIT)');
+    // And it reads its ACTOR's org through the slice's query, never the repo: the query takes no
+    // org argument to get wrong, and carries the `post:read` policy a repo read would skip.
+    expect(page).toContain('postList({ limit: ROW_LIMIT })');
+    expect(page).not.toContain('/repo');
     expect(page).not.toContain('DEMO_ORG');
   });
 });

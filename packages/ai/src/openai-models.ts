@@ -3,6 +3,7 @@
 // rows belong to a PROVIDER — models.ts owns the registry mechanism, never one vendor's price list.
 
 import type { Money } from '@ultimat3/money';
+import { asBuiltIn } from './model-origin';
 import type { ModelId } from './models';
 import { registerModel } from './models';
 
@@ -62,6 +63,11 @@ const FAMILY = {
  * the rate its own contract names.
  */
 export function registerOpenAiModels(): void {
+  // Marked built-in: deprecated reference data (removed in 25.0.0), as models.ts's own rows are.
+  asBuiltIn(registerOpenAiRows);
+}
+
+function registerOpenAiRows(): void {
   registerModel({
     id: 'gpt-5.6-sol',
     ...FAMILY,

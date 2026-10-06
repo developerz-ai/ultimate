@@ -22,6 +22,7 @@
     "@postly/domain": "0.0.1",
     "@ultimat3/cache": "24.0.0",
     "@ultimat3/core": "24.0.0",
+    "@ultimat3/db": "24.0.0",
     "@ultimat3/entity": "24.0.0"
   }
 }

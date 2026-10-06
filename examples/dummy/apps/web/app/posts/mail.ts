@@ -34,3 +34,27 @@ export const postPublished = defineMail<PostPublishedData>({
     blocks.paragraph('mail.signoff'),
   ],
 });
+
+/**
+ * "Someone commented on your post" — what `commentPosted` (`./notifiers.ts`) mails the author.
+ * Names, not ids, in the slots: the payload is rendered on the worker with no request to look a
+ * name up through, so the comment's action puts the two names in at enqueue.
+ */
+export const CommentPostedData = t.object({
+  postId: t.uuid,
+  title: t.string,
+  commenter: t.string,
+});
+
+export type CommentPostedData = Infer<typeof CommentPostedData>;
+
+export const commentPostedMail = defineMail<CommentPostedData>({
+  id: 'post.commented',
+  subject: 'mail.commentPosted.subject',
+  input: CommentPostedData,
+  template: ({ data }) => [
+    blocks.paragraph('mail.commentPosted.body', { commenter: data.commenter }),
+    blocks.button('mail.commentPosted.cta', `/posts/${data.postId}`),
+    blocks.paragraph('mail.signoff'),
+  ],
+});

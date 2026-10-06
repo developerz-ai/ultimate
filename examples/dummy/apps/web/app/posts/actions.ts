@@ -3,18 +3,20 @@
  * same logic runs whether the caller is HTTP, the typed client, a job, an MCP tool or admin.
  *
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
- * `llm` is the one other framework import here, and it is not a second primitive: it is a factory
- * that RETURNS an `action`, so `summarize` below belongs in this file for the same reason the rest
- * do — see `docs/idea/09-ai-first.md`.
+ * `llm`, `agent` and `hive` are the other framework imports here, and none is a second primitive:
+ * each is a factory that RETURNS an `action`, so `summarize`, `reviewDraft` and `summarizePosts`
+ * belong in this file for the same reason the rest do — see `docs/idea/09-ai-first.md`.
  */
 
 import { COMMENT_MAX, tag } from '@postly/db';
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
-import { llm } from '@ultimat3/ai';
+import { agent, hive, llm } from '@ultimat3/ai';
 import { CommentView, CreatePostInput, PostView } from './entity';
-import { notifySubscribers } from './jobs';
-import { postCreate, postPublish, postRead } from './policy';
+import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
+import { commentPosted } from './notifiers';
+import { postCreate, postExport, postPublish, postRead } from './policy';
+import { reviewDraftPrompt } from './prompts/review-draft';
 import { summarizePrompt } from './prompts/summarize';
 
 export const createPost = action({
@@ -68,7 +70,41 @@ export const createComment = action({
   cache: { invalidates: [tag.comment, tag.post] },
   mcp: { expose: true, description: 'Comment on a post the actor can read' },
   async handle({ input, ctx }) {
-    return ctx.posts.comment(postId(input.postId), input.body);
+    const comment = await ctx.posts.comment(postId(input.postId), input.body);
+    // The author hears about it (`commentPosted`, a notifier — a job), enqueued in this request's
+    // transaction: a rolled-back comment mails nobody. The two names ride in the payload because
+    // the mail renders on a worker with no request to read them through.
+    const [post, me] = await Promise.all([ctx.posts.byId(postId(input.postId)), ctx.orgs.me()]);
+    await commentPosted.enqueue({
+      params: {
+        postId: post.id,
+        orgId: input.orgId,
+        commentId: comment.id,
+        commenterId: me.id,
+        title: post.title,
+        commenter: me.name,
+      },
+    });
+    return comment;
+  },
+});
+
+/**
+ * Start an export of every post in the org. The work is `exportPosts`, a job, enqueued in this
+ * request's transaction; the answer is where the artifact will land — `manifest.json` under
+ * `prefix` once the job has written it. The id is minted here, so one request is one artifact and
+ * a retried request (same idempotency key) is the same one.
+ */
+export const requestPostsExport = action({
+  input: t.object({ orgId: t.uuid }),
+  output: t.object({ exportId: t.uuid, prefix: t.string }),
+  policy: postExport,
+  idempotent: true,
+  mcp: { expose: true, description: 'Export every post of the actor’s org as CSV to storage' },
+  async handle({ input }) {
+    const target = { orgId: input.orgId, exportId: crypto.randomUUID() };
+    await exportPosts.enqueue(target);
+    return { exportId: target.exportId, prefix: postsExportPrefix(target) };
   },
 });
 
@@ -100,5 +136,69 @@ export const summarize = llm({
   // Refused before a token is spent, never truncated after — a runaway loop costs one refusal
   // instead of a bill.
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
+  // The answer is two sentences and four tags. Left at the 4,096-token default, the pre-flight
+  // estimate — the WHOLE ceiling at the output rate — priced every call at 6 cents against the
+  // 5-cent `costPerCall` above, so `summarize` was refused for every post before a token was sent.
+  maxTokens: 512,
   mcp: { expose: true, description: 'Summarise a post into two sentences and up to four tags' },
+});
+
+/** How many posts one `summarizePosts` call may fan out over: a page of the feed, never a backlog. */
+export const SUMMARIZE_POSTS_MAX = 20;
+
+/**
+ * The feed's "catch me up": many posts summarised in one call. `hive()` is the fan-out as an
+ * action — each member is a `summarize` call with that action's own policy, input parse, cache and
+ * budget, so a post another org owns fails as ITS member (`X_FORBIDDEN`) and never as the batch.
+ *
+ * `split` derives every member from the input alone, and the org it carries is the one `postRead`
+ * already decided on. `'collect'`: one unreadable post should not cost the reader the other
+ * nineteen summaries. A backlog of thousands is a `backfill()`, not a longer list here.
+ */
+export const summarizePosts = hive({
+  input: t.object({
+    orgId: t.uuid,
+    // A refinement, so the bound is ON the schema and every projection states it: the array schema
+    // carries no item-count bound of its own.
+    postIds: t.refine(t.array(t.uuid), {
+      name: 'a-page-of-posts',
+      message: `postIds names between 1 and ${SUMMARIZE_POSTS_MAX} posts`,
+      check: (ids) => ids.length >= 1 && ids.length <= SUMMARIZE_POSTS_MAX,
+    }),
+  }),
+  member: summarize,
+  split: ({ input }) => input.postIds.map((id) => ({ postId: id, orgId: input.orgId })),
+  concurrency: 4,
+  onMemberError: 'collect',
+  // The whole fan-out's ceiling: every member's `tokensIn` bound, times the page.
+  budget: { tokensPerRun: 8000 * SUMMARIZE_POSTS_MAX },
+  policy: postRead,
+  mcp: { expose: true, description: 'Summarise up to twenty posts of the actor’s org at once' },
+});
+
+/**
+ * "Is my draft ready?" — a tool-using model run, still an action: `agent()` returns one, so it has
+ * a route, an MCP tool and a contract like the rest. Its one tool is `summarize`, the action above,
+ * run under the SAME actor through its own policy — the model can ask how the feed will present the
+ * post, and can never name who is asking. `agentJob()` runs it in the background (`./jobs.ts`).
+ *
+ * Read-only by construction: the only tool reads. A review that wrote would need every tool to be
+ * idempotent first, because a job attempt that loses its lease runs the agent again from the top.
+ */
+export const reviewDraft = agent({
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  output: t.object({ verdict: t.enumerated('ready', 'revise'), notes: t.string }),
+  prompt: reviewDraftPrompt,
+  vars: async ({ input, ctx }) => {
+    const post = await ctx.posts.byId(postId(input.postId));
+    return { title: post.title, body: post.body, locale: ctx.locale };
+  },
+  tools: [summarize],
+  maxTurns: 3,
+  maxToolResultChars: 2000,
+  // A verdict and three sentences per turn; the ceiling is what every turn's estimate is priced at.
+  maxTokens: 1024,
+  budget: { tokensPerRun: 24_000, costPerCall: { minor: 10, currency: 'USD' } },
+  policy: postRead,
+  mcp: { expose: true, description: 'Review a draft post and say whether it is ready to publish' },
 });

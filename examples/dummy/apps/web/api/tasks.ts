@@ -5,8 +5,9 @@
  */
 
 import { localDateIn } from '@postly/core';
-import { task } from '@ultimat3/jobs';
+import { DEFAULT_PURGE_CRON, task } from '@ultimat3/jobs';
 import { sendDigest } from '../app/digest/jobs';
+import { purgeMcpConfirmations } from '../app/mcp/jobs';
 
 /**
  * Fires once, in UTC, before any member's 09:00 — the fan-out then schedules each member for
@@ -23,4 +24,14 @@ export const nightlyDigest = task({
   enqueue: (occurrenceMs) => [
     [sendDigest, { runDate: localDateIn(new Date(occurrenceMs), 'UTC') }],
   ],
+});
+
+/**
+ * The retention sweep, hourly at the framework's own minute (`DEFAULT_PURGE_CRON`). The job's key
+ * is fixed, so a tick that fires while the last pass is still running is that same pass.
+ */
+export const hourlyPurge = task({
+  cron: DEFAULT_PURGE_CRON,
+  tz: 'UTC',
+  enqueue: () => [[purgeMcpConfirmations, {}]],
 });

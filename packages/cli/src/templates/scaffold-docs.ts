@@ -22,7 +22,7 @@ not exist — five of these had an empty column and were each measured green on 
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bun run check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request |
+| One gate | \`bun run check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
@@ -153,6 +153,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`app.config.ts\` | the one config file |
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
 | \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run check\`, on push and pull request |
+| \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`. Both run on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 
 const composeDev = (

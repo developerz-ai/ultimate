@@ -4,7 +4,7 @@
  * one `expose` and this file is what notices.
  */
 
-import { mcp } from '@postly/mcp';
+import { postlyMcp } from '@postly/mcp';
 import { agentActor } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
 
@@ -31,7 +31,9 @@ interface ToolCallResponse {
 }
 
 test('the tool list names the three run actions and the live query, verbatim', () => {
-  const names = mcp.server.list(agent(ORG)).map((tool) => tool.name);
+  const names = postlyMcp()
+    .server.list(agent(ORG))
+    .map((tool) => tool.name);
   expect(names).toContain('startRun');
   expect(names).toContain('answerPrompt');
   expect(names).toContain('cancelRun');
@@ -39,7 +41,9 @@ test('the tool list names the three run actions and the live query, verbatim', (
 });
 
 test('the two commands that carry a secret are not tools', () => {
-  const names = mcp.server.list(agent(ORG)).map((tool) => tool.name);
+  const names = postlyMcp()
+    .server.list(agent(ORG))
+    .map((tool) => tool.name);
   expect(names).not.toContain('connectSite');
   expect(names).not.toContain('issueRunKey');
 });
@@ -47,7 +51,7 @@ test('the two commands that carry a secret are not tools', () => {
 test('an agent outside the org is denied startRun over MCP, by the action’s own policy', async () => {
   const args = { orgId: ORG, connectionId: '00000000-0000-4000-8000-0000000000d1' };
   const elsewhere = agent('00000000-0000-4000-8000-0000000000a9');
-  const response = (await mcp.server.handle(
+  const response = (await postlyMcp().server.handle(
     toolCall('startRun', args),
     elsewhere,
   )) as ToolCallResponse;

@@ -7,9 +7,11 @@
  */
 
 import { orgId as toOrgId, postId as toPostId } from '@postly/domain';
-import { job, t } from '@ultimat3/jobs';
+import { exportRows, job, t } from '@ultimat3/jobs';
 import { send } from '@ultimat3/mail';
+import { disk } from '@ultimat3/storage';
 import { postPublished } from './mail';
+import { exportSource } from './repo';
 
 export const notifySubscribers = job({
   /**
@@ -60,4 +62,38 @@ export const notifySubscribers = job({
       );
     }
   },
+});
+
+/** Where one export's parts and manifest land: under its org, so a key names its tenant. */
+export const postsExportPrefix = ({ orgId, exportId }: { orgId: string; exportId: string }) =>
+  `org/${orgId}/exports/posts/${exportId}`;
+
+/**
+ * Every post an org has written, as CSV parts plus a manifest on the app's disk — `exportRows()`,
+ * a job factory, because "all rows to a file" is the job that OOM-kills a pod at two million rows
+ * when written as one read and one put. `requestPostsExport` (`./actions.ts`) enqueues it.
+ *
+ * `tenant` is the security boundary of the whole feature: an export concentrates one org's posts
+ * into one downloadable object, and the source read runs scoped to that org. Instants leave as ISO
+ * 8601 UTC — machine data for a spreadsheet or an import, never a date formatted for a reader.
+ */
+export const exportPosts = exportRows({
+  name: 'posts.export',
+  input: t.object({ orgId: t.uuid, exportId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
+  prefix: postsExportPrefix,
+  source: ({ input }) => exportSource(toOrgId(input.orgId)),
+  format: 'csv',
+  columns: ['id', 'slug', 'title', 'status', 'likeCount', 'publishedAt', 'createdAt'],
+  row: (post) => ({
+    id: post.id,
+    slug: post.slug,
+    title: post.title,
+    status: post.status,
+    likeCount: post.likeCount,
+    publishedAt: post.publishedAt === null ? null : post.publishedAt.toISOString(),
+    createdAt: post.createdAt.toISOString(),
+  }),
+  // A thunk, read per write: this line runs at import, before boot has built the disk.
+  sink: () => disk(),
 });

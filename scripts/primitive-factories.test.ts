@@ -344,3 +344,128 @@ describe('unit · the scan itself can fail', () => {
     expect([...kinds.keys()].sort()).toEqual([...ROOTS.keys()].sort());
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// The other direction: every factory the table lists is USED by the reference app. The table says
+// what exists; `examples/dummy` is where idiom is decided (its CLAUDE.md), so a factory the app has
+// never called is one whose idiomatic use nobody has had to get right (plan 101, sweep 10d, B16).
+
+/** The reference app, as the scan reads it. */
+const REFERENCE_APP = 'examples/dummy';
+
+/**
+ * Factories the reference app does not use YET, each with what using it idiomatically needs. A
+ * ratchet, never an allow-list: a name here that the app now uses is a failure ("delete the row"),
+ * so the list only shrinks. Adding a row is a reviewable diff with its reason beside it.
+ */
+export const PENDING_IN_REFERENCE_APP: Readonly<Record<string, string>> = {
+  agentJob:
+    'a queued run keeps no output (x_jobs has no result column), so a background agent is only real with an idempotent write tool, and Postly has no write an editor agent should make — a comment is not idempotent',
+  webhook:
+    'needs an org-owned endpoints entity with a sealed secret and a WebhookLedger the app persists — the framework ships no ledger table and memoryWebhookLedger() is dev-only',
+};
+
+/** `import { a, b as c } from '<pkg>'` — value imports only; `import type` names nothing callable. */
+const NAMED_IMPORT = /import\s+(type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g;
+
+/** The local name each named VALUE import of `pkg` binds in `source`, keyed by exported name. */
+export function valueImportsOf(source: string, pkg: string): ReadonlyMap<string, string> {
+  const bound = new Map<string, string>();
+  for (const match of source.matchAll(NAMED_IMPORT)) {
+    if (match[1] !== undefined || match[3] !== pkg) continue;
+    for (const raw of (match[2] as string).split(',')) {
+      const spec = raw.trim();
+      if (spec === '' || spec.startsWith('type ')) continue;
+      const [exported = '', local = exported] = spec.split(/\s+as\s+/).map((part) => part.trim());
+      bound.set(exported, local);
+    }
+  }
+  return bound;
+}
+
+/**
+ * Comments out, so prose naming a factory is not a call of it — the reference app's comments say
+ * `hive()` beside the very declaration, and a scan that read them passed with the call deleted.
+ * `//` only after whitespace or line start, so a URL's `https://` survives.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+
+/** A file USES a factory when it imports it statically from its package AND calls it. */
+export function usesFactory(source: string, factory: string, pkg: string): boolean {
+  const local = valueImportsOf(source, pkg).get(factory);
+  if (local === undefined) return false;
+  return new RegExp(`(?<![\\w$.])${local}\\s*\\(`).test(withoutComments(source));
+}
+
+/** Shipped app source: no tests (a test calling a factory proves nothing about the app), no deps. */
+const appSources = async (): Promise<readonly { path: string; source: string }[]> => {
+  const paths = [...new Bun.Glob(`${REFERENCE_APP}/**/*.{ts,tsx}`).scanSync({ cwd: repoRoot() })]
+    .map((path) => path.split('\\').join('/'))
+    .filter((path) => !path.includes('/node_modules/') && !path.includes('.test.'))
+    .sort();
+  return Promise.all(paths.map(async (path) => ({ path, source: await read(path) })));
+};
+
+const app = await appSources();
+const usedBy = (row: { readonly factory: string; readonly pkg: string }): readonly string[] =>
+  app.filter((file) => usesFactory(file.source, row.factory, row.pkg)).map((file) => file.path);
+
+describe('unit · the reference app uses every primitive factory', () => {
+  test('every factory in the table is called by examples/dummy, or pending with a reason', () => {
+    for (const row of PRIMITIVE_FACTORIES) {
+      if (row.factory in PENDING_IN_REFERENCE_APP || usedBy(row).length > 0) continue;
+      expect.unreachable(
+        `${row.pkg}'s ${row.factory}() is in PRIMITIVE_FACTORIES and nothing in ${REFERENCE_APP} imports and calls it — add one idiomatic use to the reference app (import { ${row.factory} } from '${row.pkg}'), with its test`,
+      );
+    }
+  });
+
+  test('a pending factory the app now uses is a stale row', () => {
+    for (const [factory] of Object.entries(PENDING_IN_REFERENCE_APP)) {
+      const row = rowFor(factory);
+      if (row === undefined) {
+        expect.unreachable(
+          `PENDING_IN_REFERENCE_APP names ${factory}, which is not in PRIMITIVE_FACTORIES — delete the row in scripts/primitive-factories.test.ts`,
+        );
+      }
+      const users = usedBy(row);
+      if (users.length > 0) {
+        expect.unreachable(
+          `${factory}() is used by ${users.join(', ')} — delete its row from PENDING_IN_REFERENCE_APP in scripts/primitive-factories.test.ts`,
+        );
+      }
+    }
+  });
+
+  test('the scan reads the app: a known use is found, and the test files are not read', () => {
+    // Without this, a glob that matched nothing would leave every row "pending or used" by the
+    // first test's logic only when the pending list happened to cover it — and fail it otherwise
+    // with the wrong instruction.
+    expect(usedBy({ factory: 'llm', pkg: '@ultimat3/ai' })).toContain(
+      `${REFERENCE_APP}/apps/web/app/posts/actions.ts`,
+    );
+    expect(app.some((file) => file.path.includes('.test.'))).toBe(false);
+  });
+});
+
+describe('unit · the use scan itself can fail', () => {
+  test('a value import that is called is a use; a type import, an alias miss or no call is not', () => {
+    const called =
+      "import { agent, hive as fanOut } from '@ultimat3/ai';\nexport const h = fanOut({});";
+    expect(usesFactory(called, 'hive', '@ultimat3/ai')).toBe(true);
+    // Imported, never called.
+    expect(usesFactory(called, 'agent', '@ultimat3/ai')).toBe(false);
+    // The same name from another package is another function.
+    expect(usesFactory(called, 'hive', '@ultimat3/jobs')).toBe(false);
+    // A type import binds nothing callable, and a method of that name is not the factory.
+    const typed = "import type { hive } from '@ultimat3/ai';\nconst x = thing.hive({});";
+    expect(usesFactory(typed, 'hive', '@ultimat3/ai')).toBe(false);
+    const inline = "import { type hive } from '@ultimat3/ai';\nhive({});";
+    expect(usesFactory(inline, 'hive', '@ultimat3/ai')).toBe(false);
+    // Named in a comment only — the call itself deleted.
+    const prose =
+      "import { hive } from '@ultimat3/ai';\n/** `hive()` fans out. */\n// hive() again\n";
+    expect(usesFactory(prose, 'hive', '@ultimat3/ai')).toBe(false);
+  });
+});

@@ -26,6 +26,7 @@ declare module '@ultimat3/policy' {
     'post:read': true;
     'post:like': true;
     'feed:read': true;
+    'post:export': true;
   }
 }
 
@@ -35,6 +36,7 @@ export const postPermissions = definePermissions([
   'post:read',
   'post:like',
   'feed:read',
+  'post:export',
 ]);
 
 /** What every post rule decides on. Actions and queries both put it in their `input`. */
@@ -78,6 +80,23 @@ export const postPublish = can<PostScope, PostRow>('post:publish', ({ actor, inp
   if (member === null || member.orgId !== input.orgId) return false;
   return row !== null && ownsPost(member, row);
 });
+
+/**
+ * Moving a post between `draft` and `scheduled` — the editorial calendar, so the publishing right.
+ * Grant-only: a `transition()` input names the row and the two states, nothing a predicate could
+ * decide tenancy on, so the tenancy half is the table's — the move's statement is scoped to the
+ * actor's org, and another org's post is `X_NOT_FOUND`, never moved.
+ */
+export const postSchedule = can('post:publish');
+
+/**
+ * Exporting every post of an org — the whole org's writing in one object, so an admin's right, and
+ * only inside the admin's own org.
+ */
+export const postExport = can<PostScope>(
+  'post:export',
+  ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
+);
 
 /** Reading one post: membership in the post's org, nothing finer. Drafts stay inside the org. */
 export const postRead = can<PostScope>(

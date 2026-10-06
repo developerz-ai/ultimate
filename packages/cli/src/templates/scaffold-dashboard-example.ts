@@ -1,6 +1,7 @@
 // The `--example` dashboard: the seeded `post` slice from above. Real rows through the slice's own
-// repo, aggregated by a pure view module this file also emits, so the numbers are testable without
-// a database. The page's route declaration and its island come from `scaffold-dashboard-shared.ts`.
+// query — never its repo, which the `boundaries` step refuses a route (X_BOUNDARY_ROUTE_TO_DB) —
+// aggregated by a pure view module this file also emits, so the numbers are testable without a
+// database. The page's route declaration and its island come from `scaffold-dashboard-shared.ts`.
 
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
@@ -13,8 +14,8 @@ import { DASHBOARD_DIR, routeConfig, themeActions, themeIsland } from './scaffol
 const examplePage = (
   app: NameSet,
 ): string => `// The authed dashboard: what the seeded \`post\` slice looks like from above. Real rows, read
-// through the slice's own repo and aggregated by \`dashboard-view.ts\`, which is pure so the numbers
-// are testable without a database. Every chart is server markup — an svg and a hidden data table —
+// through the slice's own query and aggregated by \`dashboard-view.ts\`, which is pure so the
+// numbers are testable without a database. Every chart is server markup — an svg and a hidden data table —
 // so the page's only script is still the theme toggle.
 //
 // \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
@@ -41,7 +42,7 @@ ${sortedImports([
   ].join('\n'),
 ])}
 import { Shell } from '../../shared/shell';
-import * as repo from '../post/repo';
+import { postList } from '../post/live/post-list';
 import {
   bucketByDay,
   CHART_DAYS,
@@ -61,7 +62,7 @@ const ROW_LIMIT = 500;
 const TABLE_ROWS = 10;
 
 export interface DashboardData {
-  /** Newest first, as the repo orders them. */
+  /** Newest first, as the query orders them. */
   readonly rows: readonly PostRow[];
   /** The instant the windows were cut at, so server and test agree on "the last 7 days". */
   readonly now: string;
@@ -86,11 +87,13 @@ export async function dashboardData(
 }
 
 /**
- * Whose posts: the ACTOR's org. The repo names none — the typed handle scopes every read to the
- * request's actor — so the viewer \`auth/dev-actor.ts\` resolves sees the rows
+ * Whose posts: the ACTOR's org, and only for an actor \`post:read\` admits. Through the query, never
+ * the repo: \`dashboard:read\` lets a viewer onto this page and says nothing about posts, and the
+ * query is where the read's policy, order and bound live. The typed handle under it scopes every
+ * read to the request's actor, so the viewer \`auth/dev-actor.ts\` resolves sees the rows
  * \`packages/db/src/seed.ts\` wrote, and a real session sees its own org's the day one exists.
  */
-const load = (): Promise<DashboardData> => dashboardData(() => repo.list(ROW_LIMIT));
+const load = (): Promise<DashboardData> => dashboardData(() => postList({ limit: ROW_LIMIT }));
 
 ${themeIsland}
 
@@ -245,7 +248,7 @@ export interface PostRow {
 
 /**
  * Duck-typed rather than the entity's own row: the page only ever reads these four columns. The
- * repo reads through the typed handle, so \`createdAt\` arrives as the \`Date\` the entity declares.
+ * query reads through the typed handle, so \`createdAt\` arrives as the \`Date\` the entity declares.
  */
 export function toPostRow(row: {
   readonly id: string;

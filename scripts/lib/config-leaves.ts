@@ -22,6 +22,8 @@ export const CONFIG_FILES = [
   'packages/core/src/config-health.ts',
   'packages/core/src/config-navigation.ts',
   'packages/core/src/config-islands.ts',
+  'packages/core/src/config-ai.ts',
+  'packages/core/src/config-mail.ts',
 ] as const;
 export const CONFIG_FILE = CONFIG_FILES[0];
 export const ROOT_INTERFACE = 'AppConfig';

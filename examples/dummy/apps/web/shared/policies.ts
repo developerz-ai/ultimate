@@ -53,7 +53,7 @@ export const roles = defineRoles({
   },
   admin: {
     description: 'Runs the blog: the roster, and anyone’s post.',
-    grants: ['org:invite', 'run:key'],
+    grants: ['org:invite', 'run:key', 'post:export'],
     inherits: ['author'],
   },
   owner: {

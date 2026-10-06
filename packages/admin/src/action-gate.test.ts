@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { actionButtons, invokeAdminAction } from './action-gate';
+import { actionButtons, invokeAdminAction, permissionsForAction } from './action-gate';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import { confirmationToken } from './permissions';
@@ -292,5 +292,57 @@ describe('a handler that throws is audited as failed, and the throw is not swall
 
     expect((await audit.entries())[0]?.entity).toBe('admin');
     expect((await audit.entries())[0]?.entityId).toBeNull();
+  });
+});
+
+/**
+ * A read-shaped action — export a CSV, verify a chain — changes nothing, so it must be grantable to
+ * a read-only staff role. Every action used to need `admin:write`, so none could be.
+ */
+describe('a readonly action is gated on admin:read', () => {
+  const verify: AdminAction = {
+    name: 'post.verify',
+    permission: 'post:verify',
+    entity: 'post',
+    readonly: true,
+    async handle(): Promise<{ verified: true }> {
+      return { verified: true };
+    },
+  };
+  const readOnlyStaff = staticAuthz(['admin:read', 'post:verify', 'post:publish']);
+
+  test('an admin:read actor sees its button and runs it', async () => {
+    expect(permissionsForAction(verify)).toEqual(['admin:read', 'post:verify']);
+    const buttons = actionButtons({ actions: [verify], actor: reader, authz: readOnlyStaff });
+    expect(buttons.map((button) => button.name)).toEqual(['post.verify']);
+    const result = await invokeAdminAction({
+      action: verify,
+      input: {},
+      actor: reader,
+      authz: readOnlyStaff,
+      audit: memoryAuditLog(),
+      requestId: 'req_ro_1',
+    });
+    expect(result.ok && result.value).toEqual({ verified: true });
+  });
+
+  test('the same actor is refused a write action, button and call', async () => {
+    expect(actionButtons({ actions: [publish], actor: reader, authz: readOnlyStaff })).toEqual([]);
+    const result = await invokeAdminAction({
+      action: publish,
+      input: {},
+      actor: reader,
+      authz: readOnlyStaff,
+      audit: memoryAuditLog(),
+      requestId: 'req_ro_2',
+    });
+    expect(result.ok === false && result.kind).toBe('denied');
+    expect(!result.ok && result.kind === 'denied' && result.decision.permission).toBe(
+      'admin:write',
+    );
+  });
+
+  test('destructive wins over readonly: the stricter gate, never the looser', () => {
+    expect(permissionsForAction({ ...verify, destructive: true })[0]).toBe('admin:destroy');
   });
 });

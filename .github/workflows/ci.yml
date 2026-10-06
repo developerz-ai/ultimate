@@ -924,9 +924,11 @@ jobs:
   #     from here. Every path is `./`-prefixed: bare, `bun test` reads it as a substring filter and
   #     `packages/core` also selects `examples/dummy/packages/core`.
   #
-  # `continue-on-error: true` and outside `verify`'s needs FOR NOW: the job lands first, red, so
-  # the sweep's other rows can watch it turn green (plan step 1). Once it is green it becomes
-  # required, and this paragraph and that line go in the same diff.
+  #   * REQUIRED, as every job here is: no `continue-on-error` on the job or on any step. The run's
+  #     conclusion is the verdict `release.yml` publishes on, and a red that conclusion never hears
+  #     is not a check. It landed red and allowed to fail (plan step 1) until the binary answered
+  #     `/healthz` (B18: the launcher now reads the app tree's `package.json` and `tsconfig.json` at
+  #     run time and resolves the framework from it — `cmd-build.ts`'s `binaryArgs`).
   #
   # The scaffold smoke is `scaffold-smoke`'s shape (overrides and the hoisted linker are its two
   # CI-only lines, and its comment explains both), run once and through the scaffold's OWN
@@ -934,7 +936,6 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 25
-    continue-on-error: true
     defaults:
       run:
         shell: pwsh
@@ -1021,14 +1022,13 @@ jobs:
         working-directory: ${{ runner.temp }}/winapp
         # `--no-preflight`: the gate just ran, whole, one step above.
         run: bun run x build --target binary --no-preflight
-      # The binary's own boot, and sweep 8b's to make green (W7: a Windows `--compile` binary's
-      # `import.meta.dir` is not `/$bunfs`; W8: the artifact is `.x/app.exe`). Reported here,
-      # never blocking, until then. Started from the app root, which a binary reads as its tree;
+      # The binary's own boot (W7: a Windows `--compile` binary's `import.meta.dir` is not
+      # `/$bunfs`; W8: the artifact is `.x/app.exe`; B18: it resolves the app tree's packages at run
+      # time). Started from the app root, which a binary reads as its tree;
       # `ULTIMATE_ENV=development` because the scaffold's signing keys are the shipped dev ones,
       # which a production boot refuses.
       - name: start the binary, GET /healthz, stop it
         if: ${{ !cancelled() && steps.binary.outcome == 'success' }}
-        continue-on-error: true
         working-directory: ${{ runner.temp }}/winapp
         env:
           ULTIMATE_ENV: development

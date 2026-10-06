@@ -20,14 +20,26 @@
  * Ascending, to match the direction the repo appends.
  */
 
+import { memberOf, NotAMember } from '@postly/core';
 import { type Post, posts, tag } from '@postly/db';
-import { orgId as toOrgId, postId as toPostId } from '@postly/domain';
+import { type MemberId, orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { publicPostRead } from '@postly/web/shared/policies';
 import { from, query, t } from '@ultimat3/query';
 import type { PostSummary, PostView } from './entity';
 import { feedRead, postRead } from './policy';
 import type { ActivitySummary, PostWithComments, PublishedSlug } from './repo';
 import * as repo from './repo';
+
+/**
+ * The member reading, for a read whose answer is theirs alone. `postRead` has already required a
+ * membership, so `null` is broken wiring — refused the way `ctx.posts` refuses it, never read as
+ * "likes nothing".
+ */
+const readerOf = (actor: Parameters<typeof memberOf>[0]): MemberId => {
+  const member = memberOf(actor);
+  if (member === null) throw new NotAMember(actor?.id ?? '');
+  return member.memberId;
+};
 
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid, limit: t.number.int().min(1).max(50).default(50) }),
@@ -68,14 +80,19 @@ export const orgPosts = query({
 
 /**
  * One post as its whole ROW, the record `useRecord('posts', id)` reads — how the like islands on
- * `/posts/{id}` seed the store before a channel frame has anything to say about it.
+ * `/posts/{id}` seed the store before a channel frame has anything to say about it. The row carries
+ * the reader's own `likedByMe` beside its columns (`repo.recordById`): the like twin reads it, and
+ * without it a member's repeat like painted +1 and dropped back. `from<Post>` and not the wider
+ * row: `rows:` is the entity's schema, and the flag is not one of its columns.
  */
 export const postRecord = query({
   input: t.object({ orgId: t.uuid, postId: t.uuid }),
   policy: postRead,
   rows: posts.$schema,
-  sql: ({ orgId, postId }) =>
-    from<Post>('posts', () => repo.rowById(toOrgId(orgId), toPostId(postId)))
+  sql: ({ orgId, postId }, ctx) =>
+    from<Post>('posts', () =>
+      repo.recordById(toOrgId(orgId), toPostId(postId), readerOf(ctx.actor)),
+    )
       .where({ orgId, id: postId })
       .orderBy('id')
       .limit(1),

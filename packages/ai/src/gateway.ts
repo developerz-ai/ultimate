@@ -19,8 +19,8 @@ import type { Money } from '@ultimat3/money';
 import type { BudgetKeys, BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
 import { AiProviderUnavailableError } from './errors';
+import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 
 /**
@@ -72,6 +72,12 @@ export interface CreateGatewayInput {
 }
 
 export interface Gateway {
+  /**
+   * The model a call with none declared runs on — `createGateway({ defaultModel })`. Read by
+   * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
+   * fallback; absent, the built-in default answers and records a deprecation (removed in 25.0.0).
+   */
+  readonly defaultModel?: ModelId | undefined;
   generate(request: GenerateRequest): Promise<GenerateResult>;
   stream(request: GenerateRequest): AsyncIterable<StreamChunk>;
   /** Open a budget scope. Nested gateway calls inside `fn` share one ledger. */
@@ -97,6 +103,10 @@ class GatewayImpl implements Gateway {
   private readonly sleep: (ms: number) => Promise<void>;
   /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
   private readonly random: Random | undefined;
+
+  get defaultModel(): ModelId | undefined {
+    return this.config.defaultModel;
+  }
 
   constructor(config: CreateGatewayInput) {
     this.config = config;
@@ -139,7 +149,7 @@ class GatewayImpl implements Gateway {
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
+    const model = resolveModel('gateway', request.model, this.config.defaultModel);
     const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
 
     const cacheKey = cacheKeyFor(resolved);
@@ -186,7 +196,7 @@ class GatewayImpl implements Gateway {
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
+    const model = resolveModel('gateway', request.model, this.config.defaultModel);
     const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
 
     // Routed BEFORE the reservation, not after it. `providerFor` throws for a registered model no
