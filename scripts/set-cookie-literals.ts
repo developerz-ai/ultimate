@@ -6,10 +6,10 @@
 // header early — auth spelled its four by hand until plan 101 sweep 10b.
 //
 // WHAT IT REPORTS, in shipped source and both tracked apps (tests are fixtures, never reported): a
-// string or template literal that IS a cookie attribute (`'HttpOnly'`, `'Path=/'`, `` `Max-Age=${s}` ``
-// — the canonical spelling, as an array of parts is joined), or that carries one after a `;`
-// (`'sid=1; Path=/'`, any case, as a browser reads it). Prose naming an attribute, a
-// `cache-control` `max-age=`, and the serializer's options object are never reported.
+// string or template literal that IS a cookie attribute (`'HttpOnly'`, `'path=/'`, `` `Max-Age=${s}` ``
+// — as an array of parts is joined; flags and `Max-Age` in canonical case only), or that carries
+// one after a `;` (`'sid=1; Path=/'`, any case, as a browser reads it). Prose naming an attribute,
+// a `cache-control`/HSTS `max-age=`, and the serializer's options object are never reported.
 //
 // A file not yet migrated is PINNED at its count with the sentence saying why (`SET_COOKIE_PINS`):
 // it may fall, never rise, and a pin above the tree is stale.
@@ -56,15 +56,25 @@ export interface SetCookieLiteral {
   readonly literal: string;
 }
 
-/** A literal that IS one attribute, in the spelling a joined array of parts uses. */
-const WHOLE_ATTRIBUTE =
-  /^(?:HttpOnly|Secure|Partitioned)$|^(?:Path|Domain|Max-Age|Expires|SameSite|Priority)=/;
+/**
+ * A literal that IS one attribute, as an array of parts is joined. Three spellings, three rules:
+ * - a bare flag is matched in its canonical case only — `'secure'` is a word and an option key;
+ * - `Max-Age=` is matched in its canonical case only — lowercase `max-age=` is RFC 9111's and
+ *   RFC 6797's own directive, and every standalone one in the tree is cache-control or HSTS;
+ * - every other `name=value` attribute in any case, shaped by its value where it has a fixed one
+ *   (`path=/…`, `samesite=lax`), so `'domain'` alone or `'priority={true}'` JSX never matches.
+ */
+const WHOLE_FLAG = /^(?:HttpOnly|Secure|Partitioned)$/;
+const WHOLE_MAX_AGE = /^Max-Age=/;
+const WHOLE_VALUED =
+  /^(?:Path=\/|Domain=[^\s;]|Expires=[^\s;]|SameSite=(?:Strict|Lax|None)\b|Priority=(?:Low|Medium|High)\b)/i;
 /** An attribute after a `;` — the `Set-Cookie` grammar, read case-insensitively like a browser. */
 const AFTER_SEMICOLON =
   /;\s*(?:(?:HttpOnly|Secure|Partitioned)\s*(?:;|$)|(?:Path|Domain|Max-Age|Expires|SameSite|Priority)=)/i;
 
 const isCookieText = (content: string): boolean =>
-  WHOLE_ATTRIBUTE.test(content.trim()) || AFTER_SEMICOLON.test(content);
+  [WHOLE_FLAG, WHOLE_MAX_AGE, WHOLE_VALUED].some((shape) => shape.test(content.trim())) ||
+  AFTER_SEMICOLON.test(content);
 
 /**
  * Every literal that spells a cookie attribute, in source order. Literals are found on the MASKED

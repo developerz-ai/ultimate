@@ -38,6 +38,8 @@ const entity = (table: string, appendOnly?: boolean): EntityDescriptionLike => (
   ...(appendOnly === undefined ? {} : { appendOnly }),
 });
 
+const DROP_LEDGER = 'drop trigger if exists "ultimate_append_only" on "ledger";';
+
 const at = new Date('2026-10-06T00:00:00.000Z');
 const EMPTY: SchemaDescription = { tables: [] };
 
@@ -103,16 +105,21 @@ describe('appendOnly · x db gen', () => {
   test('turning it on for an existing table adds the trigger, and down drops exactly it', () => {
     const before = roundTrip(generate([entity('ledger')], EMPTY).snapshot);
     const migration = generate([entity('ledger', true)], before);
-    expect(migration.up).toBe(`${APPEND_ONLY_FUNCTION_SQL}\n${appendOnlyTriggerSql('ledger')}`);
-    expect(migration.down).toBe('drop trigger if exists "ultimate_append_only" on "ledger";');
+    // Drop-if-exists first: a disabled trigger of the same name would make a bare create fail.
+    expect(migration.up).toBe(
+      `${APPEND_ONLY_FUNCTION_SQL}\n${DROP_LEDGER}\n${appendOnlyTriggerSql('ledger')}`,
+    );
+    expect(migration.down).toBe(DROP_LEDGER);
     expect(destructiveStatements(migration.up)).toEqual([]);
   });
 
   test('turning it off drops the trigger, and down puts it back', () => {
     const before = roundTrip(generate([entity('ledger', true)], EMPTY).snapshot);
     const migration = generate([entity('ledger')], before);
-    expect(migration.up).toBe('drop trigger if exists "ultimate_append_only" on "ledger";');
-    expect(migration.down).toBe(`${APPEND_ONLY_FUNCTION_SQL}\n${appendOnlyTriggerSql('ledger')}`);
+    expect(migration.up).toBe(DROP_LEDGER);
+    expect(migration.down).toBe(
+      `${APPEND_ONLY_FUNCTION_SQL}\n${DROP_LEDGER}\n${appendOnlyTriggerSql('ledger')}`,
+    );
     expect(findTable(migration.snapshot, 'ledger')?.appendOnly).toBeUndefined();
   });
 

@@ -4,6 +4,7 @@
  * declaring what a record IS is not also the file deciding how many are kept.
  */
 
+import { normalizeAuditRecord } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 
 /**
@@ -62,7 +63,9 @@ export function memoryAuditSink(options: MemoryAuditSinkOptions = {}): MemoryAud
 
   return {
     write(record: AuditRecord): void {
-      log.push(record);
+      // Normalized on the way in, so a reader of `records()` sees `name` and `primitive` on a
+      // record a 24.x caller built with `action` alone — the same reading the durable sink makes.
+      log.push(normalizeAuditRecord(record));
       // `shift` in a loop, not a slice: the cap is only ever exceeded by one per write, so this
       // runs at most once — and it releases the evicted record's `Ctx` rather than copying the
       // array, which would hold both windows alive for the length of the copy.

@@ -6,7 +6,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { AuditSink } from './audit';
-import { AUDIT_RECORD_FIELDS, getAuditSink, resetAuditSink, setAuditSink } from './audit';
+import {
+  AUDIT_RECORD_FIELDS,
+  getAuditSink,
+  normalizeAuditRecord,
+  resetAuditSink,
+  setAuditSink,
+} from './audit';
+import { createContext } from './context';
 import * as barrel from './index';
 
 afterEach(() => {
@@ -63,5 +70,39 @@ describe('unit · AUDIT_RECORD_FIELDS', () => {
 
   test('is frozen: a test that pushed to it would widen every other package’s pin', () => {
     expect(Object.isFrozen(AUDIT_RECORD_FIELDS)).toBe(true);
+  });
+});
+
+describe('unit · normalizeAuditRecord, the one reading at a sink boundary', () => {
+  const legacy = {
+    at: new Date(0),
+    action: 'publishPost',
+    mutator: false,
+    surface: 'http',
+    ctx: createContext({}),
+    input: undefined,
+    idempotencyKey: null,
+    replayed: false,
+    outcome: 'allowed',
+    failure: null,
+  } as const;
+
+  test('a record with `action` alone reads as that name, and as an action', () => {
+    expect(normalizeAuditRecord(legacy)).toMatchObject({
+      name: 'publishPost',
+      action: 'publishPost',
+      primitive: 'action',
+    });
+  });
+
+  test('a record that states both keeps them — a read stays a read', () => {
+    const read = { ...legacy, name: 'postList', action: 'postList', primitive: 'query' } as const;
+    expect(normalizeAuditRecord(read)).toMatchObject({ name: 'postList', primitive: 'query' });
+  });
+
+  test('the caller’s object is never mutated', () => {
+    const copy = { ...legacy };
+    normalizeAuditRecord(copy);
+    expect(Object.hasOwn(copy, 'name')).toBe(false);
   });
 });

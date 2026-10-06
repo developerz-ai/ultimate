@@ -6,7 +6,7 @@ import { byHand, type DriftDifference, pathTo, repair } from './drift-findings';
 import {
   APPEND_ONLY_FUNCTION_SQL,
   APPEND_ONLY_TRIGGER,
-  appendOnlyTriggerSql,
+  installAppendOnlyTriggerSql,
 } from './generate-append-only';
 import type { TableDescription } from './introspect';
 import { shellInertIdentifier } from './sql';
@@ -17,7 +17,8 @@ export const APPEND_ONLY_DRIFT_CODE = 'X_APPEND_ONLY_TRIGGER_MISSING';
 /**
  * The constructor. The fix is the two statements `x db gen` wrote, run against THIS database:
  * the migration that added the trigger is already in the ledger, so `x db migrate` applies nothing
- * (`repair`'s argument). The function is redefined too — `create or replace` — because a hand that
+ * (`repair`'s argument). Drop-if-exists before create, because a DISABLED trigger counts as missing
+ * here yet still exists, and a bare `create trigger` would fail on it. The function is redefined too — `create or replace` — because a hand that
  * dropped the trigger may have dropped the function with it.
  */
 export function missingAppendOnlyTrigger(schema: string, table: string): DriftDifference {
@@ -33,7 +34,7 @@ export function missingAppendOnlyTrigger(schema: string, table: string): DriftDi
     fix:
       path === null || !spellable
         ? byHand('re-create the append-only function and trigger this difference names')
-        : repair(path, `${APPEND_ONLY_FUNCTION_SQL} ${appendOnlyTriggerSql(table)}`),
+        : repair(path, [APPEND_ONLY_FUNCTION_SQL, ...installAppendOnlyTriggerSql(table)].join(' ')),
   };
 }
 

@@ -8,11 +8,7 @@ import type { DbClient } from './client';
 import { diffSchema } from './drift';
 import type { EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
-import {
-  APPEND_ONLY_FUNCTION_SQL,
-  APPEND_ONLY_TRIGGER,
-  appendOnlyTriggerSql,
-} from './generate-append-only';
+import { APPEND_ONLY_TRIGGER } from './generate-append-only';
 import { introspect, type SchemaDescription } from './introspect';
 import { raw } from './sql';
 import { sqlState } from './sqlstate';
@@ -66,6 +62,16 @@ async function refusal(
   return expect.unreachable('the append-only table accepted a write that rewrites a row');
 }
 
+/**
+ * The SQL inside a finding's `psql "$DATABASE_URL" -c '…'   # …` fix, exactly as a shell would hand
+ * it to psql: the single-quoted word, with its `'\\''` escapes undone.
+ */
+function printedRepair(fix: string): string {
+  const match = /^psql "\$DATABASE_URL" -c '((?:[^']|'\\'')*)'/.exec(fix);
+  if (match?.[1] === undefined) return expect.unreachable(`the fix is no psql -c command: ${fix}`);
+  return match[1].replaceAll(`'\\''`, "'");
+}
+
 export async function proveAppendOnlyTrigger(client: DbClient, table: string): Promise<void> {
   const apply = async (script: string): Promise<void> => {
     for (const statement of statementsOf(script)) await client.execute(raw(statement));
@@ -105,16 +111,21 @@ export async function proveAppendOnlyTrigger(client: DbClient, table: string): P
   expect(one(await introspect({ client })).tables[0]?.triggerNames).toContain(APPEND_ONLY_TRIGGER);
   expect(await drift(migration.snapshot)).toEqual([]);
 
-  // Disabled is as good as gone: an ordinary session fires nothing.
-  await client.execute(raw(`alter table "${table}" disable trigger "${APPEND_ONLY_TRIGGER}"`));
-  expect(await drift(migration.snapshot)).toEqual(['missing-append-only-trigger']);
-  await client.execute(raw(`drop trigger "${APPEND_ONLY_TRIGGER}" on "${table}"`));
-  expect(await drift(migration.snapshot)).toEqual(['missing-append-only-trigger']);
-
-  // The repair the finding carries, statement for statement, restores agreement and the refusal.
-  await apply(`${APPEND_ONLY_FUNCTION_SQL}\n${appendOnlyTriggerSql(table)}`);
-  expect(await drift(migration.snapshot)).toEqual([]);
-  await refusal(client.execute(raw(`delete from "${table}" where id = 2`)));
+  // Disabled is as good as gone: an ordinary session fires nothing. The finding's PRINTED repair,
+  // run as written, must restore the refusal from both states — a disabled trigger still exists,
+  // so a repair that only `create`d would fail on it and leave the table unprotected.
+  for (const breakIt of [
+    `alter table "${table}" disable trigger "${APPEND_ONLY_TRIGGER}"`,
+    `drop trigger "${APPEND_ONLY_TRIGGER}" on "${table}"`,
+  ]) {
+    await client.execute(raw(breakIt));
+    await client.execute(raw(`update "${table}" set body = 'unguarded' where id = 2`));
+    const found = diffSchema(one(await introspect({ client })), migration.snapshot).differences;
+    expect(found.map((difference) => difference.kind)).toEqual(['missing-append-only-trigger']);
+    await apply(printedRepair(found[0]?.fix ?? ''));
+    expect(await drift(migration.snapshot)).toEqual([]);
+    await refusal(client.execute(raw(`delete from "${table}" where id = 2`)));
+  }
 
   // Turning appendOnly off is a migration that drops the trigger; the rows move again.
   const off = generateMigration({

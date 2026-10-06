@@ -2,7 +2,7 @@
 // the bug this pins lived in the write, not the string: the app's own `ctx.headers.set` replaced
 // any cookie already on the response, so a sign-in beside a second cookie reached the browser alone.
 
-import { runWithContext } from '@ultimat3/core';
+import { createContext, isUltimateError, runWithContext } from '@ultimat3/core';
 import { asCtx, createRequestContext, defineHttpConfig, setCookie } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
 import { SESSION_COOKIE_PLAIN, SESSION_COOKIE_SECURE } from '../../shared/session';
@@ -66,6 +66,18 @@ unitTest('a session that is about to expire still gets a cookie with a positive 
   expect(cookie).toContain('Max-Age=1');
 });
 
+/** The refusal's stable code — a bare `.toThrow()` would pass on an uncoded `TypeError` too. */
+const codeOf = (fn: () => void): string => {
+  try {
+    fn();
+  } catch (error) {
+    return isUltimateError(error) ? error.code : 'not an UltimateError';
+  }
+  return 'did not throw';
+};
+
 unitTest('off-request it refuses rather than issuing a token nobody can present', () => {
-  expect(() => writeSessionCookie('abc', true, 600)).toThrow();
+  expect(codeOf(() => writeSessionCookie('abc', true, 600))).toBe('X_NO_CONTEXT');
+  const job = createContext({ role: 'worker' });
+  expect(codeOf(() => runWithContext(job, () => clearSessionCookie(true)))).toBe('X_NO_REQUEST');
 });

@@ -58,8 +58,15 @@ export type {
   AuditRecord,
   AuditSink,
   AuditSurface,
+  NormalizedAuditRecord,
 } from './audit';
-export { AUDIT_RECORD_FIELDS, getAuditSink, resetAuditSink, setAuditSink } from './audit';
+export {
+  AUDIT_RECORD_FIELDS,
+  getAuditSink,
+  normalizeAuditRecord,
+  resetAuditSink,
+  setAuditSink,
+} from './audit';
 export type {
   AwsCredentials,
   AwsPayload,

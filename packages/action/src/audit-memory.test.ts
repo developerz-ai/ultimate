@@ -59,6 +59,14 @@ describe('the memory audit sink is bounded, and says which records it dropped', 
     expect(sink.records().some((record) => record === first)).toBe(false);
   });
 
+  test('a 24.x record built with `action` alone is read back with name and primitive', () => {
+    const sink = memoryAuditSink({ maxRecords: 2 });
+    const { name: _name, primitive: _primitive, ...legacy } = recordAt(1);
+    sink.write(legacy);
+
+    expect(sink.records()[0]).toMatchObject({ name: 'act1', action: 'act1', primitive: 'action' });
+  });
+
   test('it COUNTS what it discarded, so "it drops" is a number and not a comment', () => {
     const sink = memoryAuditSink({ maxRecords: 5 });
     for (let n = 0; n < 12; n += 1) sink.write(recordAt(n));

@@ -42,8 +42,10 @@ describe('appendOnly · drift', () => {
     expect(difference.cause).toContain(APPEND_ONLY_TRIGGER);
     // The repair is the statement itself, against this database: the migration is in the ledger.
     expect(difference.fix).toStartWith(`psql "$DATABASE_URL" -c '`);
+    // Drop-if-exists BEFORE create: a disabled trigger is reported here yet still exists.
     expect(difference.fix).toContain(
-      'create trigger "ultimate_append_only" before update or delete',
+      'drop trigger if exists "ultimate_append_only" on "ledger"; ' +
+        'create trigger "ultimate_append_only" before update or delete',
     );
     expect(difference.fix).toContain(`${APPEND_ONLY_FUNCTION_SQL.replaceAll("'", `'\\''`)}`);
     const error = driftError(difference);

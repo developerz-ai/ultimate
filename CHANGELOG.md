@@ -40,9 +40,11 @@ append-only entities, one way to set a cookie, and audited reads.
   `X_QUERY_AUDIT_SINK_FAILED` (an allowed read whose record is refused withholds its rows).
 - core: `AuditRecord`, `AuditSink`, `setAuditSink`, `getAuditSink`, `resetAuditSink` and
   `AUDIT_RECORD_FIELDS` live in `@ultimat3/core`; `@ultimat3/action` re-exports the same objects.
-  `AuditRecord` gains `name` and `primitive`; `x_audit` gains a `primitive` column (added with
-  `add column if not exists`, default `'action'`). **Deprecated:** `AuditRecord.action` (same value
-  as `name`), removed in 25.0.0.
+  `AuditRecord` gains optional `name` and `primitive`, and every sink reads a record through
+  `normalizeAuditRecord` (`name ?? action`, `primitive ?? 'action'`), so a record built with only
+  `action` still compiles and is stored as an action's. `x_audit` gains a `primitive` column (added
+  with `add column if not exists`, default `'action'`). **Deprecated:** `AuditRecord.action` (same
+  value as `name`), removed in 25.0.0, when `name` and `primitive` become required.
 - core: `serializeSetCookie(name, value, options?)` is the one place a `Set-Cookie` value is built.
   - It defaults to `Path=/; HttpOnly; Secure; SameSite=Lax`, round-trips with `readCookie`, and
     writes `Expires` in UTC.

@@ -57,6 +57,17 @@ export const appendOnlyTriggerSql = (table: string): string =>
 export const dropAppendOnlyTriggerSql = (table: string): string =>
   `drop trigger if exists ${identifier(APPEND_ONLY_TRIGGER).text} on ${identifier(table).text};`;
 
+/**
+ * Installing it on a table that may already hold one: drop-if-exists, then create. A DISABLED
+ * trigger of this name is drift (`drift-append-only.ts`) yet still exists, so a bare `create
+ * trigger` would fail on it (`42710`) and leave the table unprotected. Idempotent for both a
+ * missing and a disabled trigger — the drift repair and an existing table's migration both use it.
+ */
+export const installAppendOnlyTriggerSql = (table: string): readonly string[] => [
+  dropAppendOnlyTriggerSql(table),
+  appendOnlyTriggerSql(table),
+];
+
 /** Whether the recorded schema says this table carries the trigger. Absent is "not recorded". */
 const recorded = (current: SchemaDescription, table: string): boolean =>
   findTable(current, table)?.appendOnly === true;
@@ -83,12 +94,18 @@ export function appendOnlyPlan(
   const removed = changed.filter((entity) => entity.appendOnly !== true).map((e) => e.table);
   if (added.length > 0) plan.up.push(APPEND_ONLY_FUNCTION_SQL);
   for (const table of added) {
-    plan.up.push(appendOnlyTriggerSql(table));
-    if (!created.has(table)) plan.down.push(dropAppendOnlyTriggerSql(table));
+    // A table this migration creates holds no trigger yet, and its `down` is `drop table`.
+    if (created.has(table)) {
+      plan.up.push(appendOnlyTriggerSql(table));
+      continue;
+    }
+    plan.up.push(...installAppendOnlyTriggerSql(table));
+    plan.down.push(dropAppendOnlyTriggerSql(table));
   }
   for (const table of removed) {
     plan.up.push(dropAppendOnlyTriggerSql(table));
-    plan.down.push(appendOnlyTriggerSql(table));
+    // Reversed whole: pushed create-then-drop so `down` runs drop-if-exists, then create.
+    plan.down.push(...[...installAppendOnlyTriggerSql(table)].reverse());
   }
   // `down` is reversed whole, so the function pushed LAST here runs FIRST there — before the
   // triggers that call it are re-created.
