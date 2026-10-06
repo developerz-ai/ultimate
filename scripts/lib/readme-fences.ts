@@ -3,6 +3,8 @@
 // and the README line it came from. No new dependency — Bun writes the files and the repo's own
 // `typescript` devDependency compiles them.
 
+// why: Bun has no recursive delete — a shell `rm -rf` was an untimed child (spawn-timeout).
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { localBin } from './local-bin';
 import { run } from './run';
@@ -167,7 +169,7 @@ export async function compileFixtures(
   exclude: readonly string[] = [],
 ): Promise<TscRun> {
   const dir = join(root, FIXTURE_DIR);
-  await Bun.$`rm -rf ${dir}`.quiet();
+  await rm(dir, { recursive: true, force: true });
   for (const fixture of fixtures) await Bun.write(join(dir, fixture.file), fixture.text);
   await Bun.write(join(dir, 'tsconfig.json'), TSCONFIG(exclude));
   const result = await run([localBin(root, 'tsc'), '--noEmit', '-p', join(dir, 'tsconfig.json')], {

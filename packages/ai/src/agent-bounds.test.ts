@@ -135,6 +135,23 @@ describe('agent() screens its loop bounds at declaration', () => {
     expect(error.cause).toContain('tokensPerRun');
   });
 
+  test('a declared money ceiling is screened under budget.costPerCall.minor', async () => {
+    for (const minor of [...NOT_A_BOUND, -1]) {
+      const costly = agent({
+        input: Input,
+        output: Output,
+        prompt: promptFor(),
+        vars: ({ input }) => ({ orderId: input.orderId }),
+        tools: [],
+        policy: allow(),
+        budget: { costPerCall: { minor, currency: 'USD' } },
+      }).named(`costBoundAgent${String(minor).replace(/\W/g, '')}`);
+      const error = await asyncRefusal(() => costly({ orderId: 'o-1' }, { ctx: ctxAs('user-1') }));
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('budget.costPerCall.minor');
+    }
+  });
+
   test('an honest declaration still loops — the non-vacuity half', async () => {
     const { provider, seen } = answering();
     configureAi({ gateway: createGateway({ providers: [provider] }) });

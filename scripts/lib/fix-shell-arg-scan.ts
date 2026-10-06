@@ -42,6 +42,14 @@ export const COMMAND_WORDS: readonly string[] = [
   'aws',
   'ls',
   'df',
+  // Plan 101 sweep 11 (R4): a fix that says `cd <dir>`, `mkdir -p <dir>`, `cat <file>` or
+  // `pg_dump <url>` builds a command as surely as `rm` does. `export` too — and an
+  // `export NAME=${…}` is read as the assignment it is, below.
+  'export',
+  'cd',
+  'mkdir',
+  'cat',
+  'pg_dump',
 ];
 
 /**
@@ -66,8 +74,11 @@ const PROSE_HANDOVER = ': ';
 /** `NAME=value` and `sudo` in front of the command word are part of the command, not prose. */
 const TRANSPARENT = /^\s*(?:(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S)*|sudo)\s+)*/;
 
-/** A substitution that IS an assignment's value at the segment start: `DATABASE_URL=${url} x …`. */
-const ASSIGNMENT_VALUE = /^\s*(?:[A-Za-z_]\w*=\S*\s+)*[A-Za-z_]\w*=\S*$/;
+/**
+ * A substitution that IS an assignment's value at the segment start: `DATABASE_URL=${url} x …`, or
+ * the same behind `export` — `export DATABASE_URL=${url}` puts the value in the shell exactly so.
+ */
+const ASSIGNMENT_VALUE = /^\s*(?:export\s+)?(?:[A-Za-z_]\w*=\S*\s+)*[A-Za-z_]\w*=\S*$/;
 
 /** The command a segment opens — past any `NAME=value` / `sudo` — unless prose follows the word. */
 function commandOpening(segment: string): string | undefined {

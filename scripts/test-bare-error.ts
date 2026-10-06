@@ -43,10 +43,12 @@ const EXPLAIN = 'bun run scripts/test-bare-error.ts --explain --json lists every
  * `new` is optional: `throw Error('x')` constructs the same bare `Error`, and a rule that needed
  * the keyword was a rule one deleted word could step around. Every builtin `Error` class is the
  * same bare verdict — no code, no cause, nothing to run — so `throw new TypeError(…)` and its five
- * siblings are one rule, the list the shipped `bare-error` guard reads too (K19).
+ * siblings are one rule, the list the shipped `bare-error` guard reads too (K19). Since plan 101
+ * sweep 11 the class may be reached through `globalThis.`, and a thrown STRING or template is the
+ * same verdict with even less on it — no stack, no code, nothing to run.
  */
 const THROWN =
-  /\bthrow\s+(?:new\s+)?(Error|TypeError|RangeError|SyntaxError|ReferenceError|EvalError|URIError|AggregateError)\s*\(/g;
+  /\bthrow\s+(?:(?:new\s+)?(?:globalThis\s*\.\s*)?(?:Error|TypeError|RangeError|SyntaxError|ReferenceError|EvalError|URIError|AggregateError)\s*\(|['"`])/g;
 
 /** The honest limit, stated rather than guessed at — see `bareErrorFindingFor`'s cause. */
 export interface BareErrorSite {

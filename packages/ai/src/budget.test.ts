@@ -323,6 +323,30 @@ describe('the ledger refuses a ceiling that cannot hold', () => {
     // And the honest derivation still tightens, which is the rule this file exists for.
     expect((await parent.derive({ request: 100 }).report()).limits.request).toBe(100);
   });
+
+  // `tighterMoney` asks `a.minor <= b.minor`, false against a `NaN`, so an unscreened money
+  // ceiling did not merely fail to hold: `derive` handed it the win and WIDENED a stricter parent.
+  test('a costPerCall that is not a whole count of minor units is refused, under its own key', () => {
+    for (const minor of [...NOT_A_BOUND, -1, 0.5]) {
+      const error = refusal(() => new BudgetLedger({ limits: { costPerCall: usd(minor) } }));
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('costPerCall.minor');
+    }
+    expect(() => new BudgetLedger({ limits: { costPerCall: usd(0) } })).not.toThrow();
+  });
+
+  test('derive refuses a non-finite money ceiling rather than letting it widen a stricter one', async () => {
+    const parent = new BudgetLedger({ limits: { costPerCall: usd(5) } });
+    for (const minor of NOT_A_BOUND) {
+      expect(refusal(() => parent.derive({ costPerCall: usd(minor) })).cause).toContain(
+        'costPerCall.minor',
+      );
+    }
+    // And the honest looser one still loses to the parent's.
+    expect((await parent.derive({ costPerCall: usd(9_999) }).report()).limits.costPerCall).toEqual(
+      usd(5),
+    );
+  });
 });
 
 // `take` is the app's code, and the reservation reads its answer: a store that answers nothing

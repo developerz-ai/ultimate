@@ -141,7 +141,7 @@ export function createLimiter(
   // `config.x !== undefined && count >= config.x`, so a `NaN` leaves the option PRESENT and the
   // comparison false forever. Measured: `global: Number(process.env.WORKER_GLOBAL_CONCURRENCY)`
   // with the variable unset granted 1000 of 1000 acquires while `snapshot().config` still reported
-  // a configured ceiling. `ratePerTenant.windowMs` is on the list because it is half the same
+  // a configured ceiling. `ratePerTenant.windowMs` is screened too because it is half the same
   // ceiling: `stamp > at - NaN` is false for every stamp, so the window reads empty on every call.
   //
   // `min` is 0 on all five, deliberately: zero is a HARD STOP here and one this repo's own suite
@@ -153,10 +153,16 @@ export function createLimiter(
     ['perQueue', config.perQueue],
     ['global', config.global],
     ['ratePerTenant.limit', config.ratePerTenant?.limit],
-    ['ratePerTenant.windowMs', config.ratePerTenant?.windowMs],
   ] as const) {
     if (value !== undefined) finiteCount('createLimiter', option, value);
   }
+  // Out of the loop because it is also READ, by `sweep`: the screened value is the one it reads.
+  // An absent rate window is 0, which `sweep` treats as "every stamp is spent".
+  const rateWindowMs = finiteCount(
+    'createLimiter',
+    'ratePerTenant.windowMs',
+    config.ratePerTenant?.windowMs ?? 0,
+  );
   const byQueue = new Map<string, number>();
   const byTenant = new Map<string, number>();
   // `{queue, tenantId}` is ONE key — `blockedBy` has always read it that way. Without this counter
@@ -196,9 +202,8 @@ export function createLimiter(
    */
   const sweep = (at: number): void => {
     lastSweepMs = at;
-    const windowMs = config.ratePerTenant?.windowMs ?? 0;
     for (const [tenant, stamps] of starts) {
-      if (stamps.length === 0 || (stamps.at(-1) ?? 0) <= at - windowMs) starts.delete(tenant);
+      if (stamps.length === 0 || (stamps.at(-1) ?? 0) <= at - rateWindowMs) starts.delete(tenant);
     }
     for (const [key, refusal] of refusals) {
       if (refusal.atMs <= at - REFUSAL_TTL_MS) refusals.delete(key);

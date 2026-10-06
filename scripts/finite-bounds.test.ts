@@ -46,6 +46,23 @@ describe('what counts as an unchecked numeric bound', () => {
     expect(options('const n = state.held ?? 1;')).toEqual([]);
   });
 
+  // Sweep 11 R4: the exemption hid exactly the defect in the header — `hive({ concurrency: NaN })`
+  // is `Array.from({ length: options.concurrency ?? 1 })`, zero workers and a clean success.
+  test('but `?? 0` / `?? 1` on an OPTIONS read, or landing on a bound, is configuration', () => {
+    expect(options('const w = Array.from({ length: options.concurrency ?? 1 });')).toEqual([
+      'concurrency',
+    ]);
+    expect(options('const n = opts.retries ?? 0;')).toEqual(['retries']);
+    expect(options('const n = this.config.depth ?? 1;')).toEqual(['depth']);
+    expect(options('const n = input.options.slots ?? 1;')).toEqual(['slots']);
+    expect(options('setTimeout(tick, state.delay ?? 0);')).toEqual(['delay']);
+    expect(options('const head = rows.slice(0, state.limit ?? 1);')).toEqual(['limit']);
+    expect(options('const xs = new Array(state.size ?? 1);')).toEqual(['size']);
+    // An accumulator off something that is not options, landing nowhere, is still exempt.
+    expect(options('const n = (state.seq ?? 0) + 1;')).toEqual([]);
+    expect(options('total += entry.count ?? 0;')).toEqual([]);
+  });
+
   test('a call or an INDEX on the left is not an option read', () => {
     expect(options('const n = map.get(key) ?? 512;')).toEqual([]);
     expect(options('const n = rows[0].limit ?? 512;')).toEqual([]);
@@ -430,7 +447,8 @@ describe('the real tree', () => {
 
   test('every site the rule reports is a real `??` over a property read', async () => {
     // The false-positive story, asserted rather than promised: no reported expression may contain a
-    // call, an index or an optional chain on its left, and none may default to 0 or 1.
+    // call, an index or an optional chain on its left, and none may default to 0 or 1 unless it is
+    // read off an options bag (sweep 11) — the one case where an identity is configuration.
     const sites = finiteBoundSites(await collectSourceFiles(repoRoot()));
     for (const list of sites.values()) {
       for (const one of list) {
@@ -438,7 +456,11 @@ describe('the real tree', () => {
         expect(left, one.path).not.toInclude('(');
         expect(left, one.path).not.toInclude('[');
         expect(left, one.path).not.toInclude('?.');
-        expect(['0', '1'], one.path).not.toContain(right.trim());
+        if (['0', '1'].includes(right.trim())) {
+          expect(left.split('.').slice(0, -1), one.path).toSatisfy((segments: string[]) =>
+            segments.some((segment) => /^(?:options|opts|config|settings)$/.test(segment)),
+          );
+        }
       }
     }
   });

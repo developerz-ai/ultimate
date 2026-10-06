@@ -28,6 +28,32 @@ const flag = (
         },
       ];
 
+/**
+ * The admin-level gate, as `adminPermissionForAction` (`@ultimat3/admin`) decides it: `destructive`
+ * and `matching` hold the write gate, and only then does `readonly` lower it. Restated, not
+ * imported: the admin is a tier above this package. `destructive` reports its own change (and its
+ * own `admin:destroy` gate), so this only says read or write.
+ */
+const gateOf = (action: AdminActionFact): 'admin:read' | 'admin:write' =>
+  action.readonly && !action.destructive && !action.matching ? 'admin:read' : 'admin:write';
+
+/** `readonly` / `matching` flipping: a caller sees it only when the gate moves. */
+function diffGate(at: string, before: AdminActionFact, after: AdminActionFact): ManifestChange[] {
+  const changes: ManifestChange[] = [];
+  const [was, is] = [gateOf(before), gateOf(after)];
+  if (was !== is) {
+    // Write → read lets an `admin:read` caller in; read → write refuses one it served.
+    const kind = is === 'admin:write' ? 'breaking' : 'additive';
+    changes.push({ kind, path: `${at}.gate`, detail: `admin gate ${was} -> ${is}` });
+  }
+  for (const key of ['readonly', 'matching'] as const) {
+    if (before[key] === after[key]) continue;
+    const detail = `${key} ${String(before[key])} -> ${String(after[key])}`;
+    changes.push({ kind: 'internal', path: `${at}.${key}`, detail });
+  }
+  return changes;
+}
+
 function diffActions(
   path: string,
   before: readonly AdminActionFact[],
@@ -58,6 +84,7 @@ function diffActions(
       ...flag(`${at}.input`, action.input, now.input, true, 'input schema'),
       ...flag(`${at}.destructive`, action.destructive, now.destructive, true, 'destructive'),
     );
+    changes.push(...diffGate(at, action, now));
     if (action.threshold !== now.threshold) {
       changes.push({
         kind: 'internal',

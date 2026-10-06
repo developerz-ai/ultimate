@@ -75,6 +75,8 @@ const actionOf = (value: unknown): AdminActionFact | undefined => {
     when: bag['when'] === true,
     batch: bag['batch'] === true,
     threshold,
+    readonly: bag['readonly'] === true,
+    matching: bag['matching'] === true,
   };
 };
 

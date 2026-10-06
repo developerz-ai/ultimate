@@ -65,6 +65,23 @@ beforeAll(() => {
         batch: { threshold: 50 },
         handle: async () => {},
       },
+      // The gate's two inputs the manifest was blind to: `readonly` lowers it to `admin:read`,
+      // and `matching` (a set-based write) holds it at `admin:write` whatever `readonly` says.
+      {
+        name: 'zebra.count',
+        permission: 'admin_desc_zebras:read',
+        entity: 'admin_desc_zebras',
+        readonly: true,
+        handle: async () => {},
+      },
+      {
+        name: 'zebra.release',
+        permission: 'admin_desc_zebras:write',
+        entity: 'admin_desc_zebras',
+        batch: true,
+        matching: async () => ({ affected: 0, remaining: 0 }),
+        handle: async () => {},
+      },
     ],
   });
 });
@@ -118,15 +135,33 @@ describe('unit · AdminApp.describe()', () => {
     ]);
     expect(zebra?.formGroups).toEqual([{ title: null, fields: ['name', 'stripes', 'mood'] }]);
     expect(zebra?.related).toEqual(['admin_desc_ants']);
+    const flags = { destructive: false, input: false, when: false, threshold: null };
     expect(zebra?.actions).toEqual([
       {
+        ...flags,
         name: 'zebra.tame',
         permission: 'admin_desc_zebras:write',
-        destructive: false,
-        input: false,
         when: true,
         batch: true,
         threshold: 50,
+        readonly: false,
+        matching: false,
+      },
+      {
+        ...flags,
+        name: 'zebra.count',
+        permission: 'admin_desc_zebras:read',
+        batch: false,
+        readonly: true,
+        matching: false,
+      },
+      {
+        ...flags,
+        name: 'zebra.release',
+        permission: 'admin_desc_zebras:write',
+        batch: true,
+        readonly: false,
+        matching: true,
       },
     ]);
   });

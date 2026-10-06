@@ -199,11 +199,19 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     await Bun.write(join(root, 'packages/i18n/catalogs/glossary_v2.json'), '{}\n');
     const result = await generateCommand.run(contextFor('lever'));
     expect(result.ok).toBe(true);
-    for (const locale of ['en', 'es']) {
+    // `es` holds the same keys, each the default string inside the placeholder marker — what
+    // `x i18n add es` would have seeded, so `x i18n check` counts them as still owed.
+    for (const [locale, wrap] of [
+      ['en', (text: string) => text],
+      ['es', (text: string) => `\u27E6${text}\u27E7`],
+    ] as const) {
       const catalog = JSON.parse(await read(`packages/i18n/catalogs/${locale}.json`)) as {
         admin: Record<string, unknown>;
       };
-      expect(catalog.admin['levers']).toMatchObject({ title: 'Levers', field: { title: 'Title' } });
+      expect(catalog.admin['levers']).toMatchObject({
+        title: wrap('Levers'),
+        field: { title: wrap('Title') },
+      });
     }
     expect(await read('packages/i18n/catalogs/glossary_v2.json')).toBe('{}\n');
   });

@@ -66,8 +66,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `http/src/request-facts.ts` (the one request-facts builder mcp and the bearer mount share).
  * raised 622 → 623, measured 623 (2026-10-06, plan 101 sweep 10d): `core/src/config-mail.ts` — the
  * `mail.retainMime` app-config key, validated where every config section is.
+ * raised 623 → 624, measured 624 (2026-10-06, plan 101 sweep 11): `schema/src/unstorable-text.ts`
+ * — the one NUL/lone-surrogate predicate `t.json()` and now every string builtin share (a lone
+ * surrogate was a jsonb 500 and a silent U+FFFD on text), split out of `validators.ts` at 486 lines.
  */
-const MIGRATE_CEILING = 623;
+const MIGRATE_CEILING = 624;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -114,8 +117,12 @@ const MIGRATE_CEILING = 623;
  * raised 912 → 914, measured 914 (2026-10-06, plan 101 sweep 10d): `core/src/config-mail.ts` (named
  * on `MIGRATE_CEILING`) and `cli/src/runtime-mail.ts`, which hands that key to the mail driver a
  * worker sends through.
+ * raised 914 → 917, measured 917 (2026-10-06, plan 101 sweep 11): the module named on
+ * `MIGRATE_CEILING` for 11, `realtime/src/sync-bus-handlers.ts` (the bus handlers, moved out so
+ * `sync-node.ts` stays under the ceiling once `start()` is memoised and `stop()` waits it out), and
+ * `storage/src/driver-memory-conflict.ts` (the memory disk refusing the key conflicts local does).
  */
-const SERVING_ROLE_CEILING = 914;
+const SERVING_ROLE_CEILING = 917;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -155,8 +162,10 @@ const SERVING_ROLE_CEILING = 914;
  * the 500-line ceiling once the eight confirmation codes are registered.
  * raised 1024 → 1026, measured 1026 (2026-10-06, plan 101 sweep 10d): the two modules named on
  * `SERVING_ROLE_CEILING` for 10d (`admin/src/mcp-scopes.ts` is behind the admin mount's lazy import).
+ * raised 1026 → 1029, measured 1029 (2026-10-06, plan 101 sweep 11): the three modules named on
+ * `SERVING_ROLE_CEILING` for 11.
  */
-const WEB_ROLE_CEILING = 1026;
+const WEB_ROLE_CEILING = 1029;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -154,6 +154,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `BuiltinAdapter` answers the same code through `builtin-adapter-violation.ts`.
   **`MemoryAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
   `adapter-parity.test.ts` pins both.
+- **`listUsersByOrg` orders by byte**: `collate "C"` in Postgres, a code-point compare in memory —
+  never `localeCompare`, never UTF-16 `<` (`list-users-order.live.test.ts`, on an `en_US` db).
 - Every `AuthAdapter` member is REQUIRED — a missing one is a compile error at `defineAuth`, and
   no caller in this package refuses at runtime with `X_NOT_IMPLEMENTED`.
 - **An api key is its owner's credential.** `verifyApiKey` re-reads the owner (after the secret

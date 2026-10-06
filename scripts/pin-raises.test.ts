@@ -5,7 +5,15 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { BASE_REF, baseRef } from './lib/base-ref';
 import { importPinSource, pinRows } from './lib/pin-rows';
-import { expectedRedLine, expectedRedRows, PIN_FILES, tableDeclaration } from './lib/pin-tables';
+import {
+  expectedRedLine,
+  expectedRedRows,
+  PIN_FILES,
+  PIN_GLOB,
+  SCRIPT_PIN_TABLES,
+  sitesRows,
+  tableDeclaration,
+} from './lib/pin-tables';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { checkPinRaises, pinRaiseResult, readPinTables, rowLine, whyStatement } from './pin-raises';
 
@@ -184,7 +192,39 @@ describe('the tables that live inside a script', () => {
       'scripts/doc-commands.ts',
       'scripts/readme-fences-backlog.ts',
       'scripts/lib/gated-apps.ts',
+      'scripts/posix-relative.ts',
+      'scripts/set-cookie-literals.ts',
+      'scripts/wiki-fences-backlog.ts',
     ]);
+  });
+
+  // Sweep 11 R4: `posix-relative.ts`'s `BACKLOG` and `set-cookie-literals.ts`'s `SET_COOKIE_PINS`
+  // were outside the list, so a raise on either needed no `why:`. The list is held complete by
+  // reading every script for an exported literal ratchet, not by remembering to add one.
+  test('every exported *_PINS / *BACKLOG literal in a script is a table pin-raises compares', async () => {
+    const glob = new Bun.Glob(PIN_GLOB);
+    const listed = new Set(SCRIPT_PIN_TABLES.map((one) => `${one.path} ${one.table}`));
+    const missing: string[] = [];
+    for (const path of new Bun.Glob('scripts/**/*.ts').scanSync({ cwd: repoRoot() })) {
+      const posix = path.split('\\').join('/');
+      if (posix.endsWith('.test.ts') || glob.match(posix)) continue;
+      const source = await Bun.file(`${repoRoot()}/${posix}`).text();
+      // A LITERAL only: `ERROR_STATUS_BACKLOG = merged(…)` is computed, and its debt is
+      // size-pinned by `error-map-backlog.test.ts`; `STATUS_BACKLOG` is a path string.
+      for (const match of source.matchAll(
+        /^export const ([A-Z_]*(?:PINS|BACKLOG))\b[^=]*=\s*[{[]/gm,
+      )) {
+        const row = `${posix} ${match[1]}`;
+        if (!listed.has(row)) missing.push(row);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  test('a { sites, why } row is worth its sites, so raising one is a raise', () => {
+    expect([
+      ...sitesRows('SET_COOKIE_PINS')({ 'packages/a.ts': { sites: 3, why: 'x' }, bad: 1 }),
+    ]).toEqual([['SET_COOKIE_PINS.packages/a.ts', 3]]);
   });
 
   test('one table is lifted out of a script, a brace inside a string or comment included', () => {

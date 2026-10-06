@@ -44,6 +44,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |
 | `driver-local-sidecar.ts` | the sidecar shape and its one parser |
 | `signing-secret.ts` | `DEV_SIGNING_SECRET`, `usesDevStorageSecret`, `resolveSigningSecret` |
+| `driver-memory-conflict.ts` | `claim()`'s conflict rule over keys |
 | `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`signing-secret.ts`), the one rule both share |
 | `driver-s3.ts` | the s3 disk: Bun where it can, the signed wire where it cannot |
 | `driver-s3-client.ts` | `S3*Like` + `buildClient`, lazy (import never opens a socket) |
@@ -74,8 +75,8 @@ Gotchas:
   (`As of 2026-10`). `put('a')` then `put('a/b')` — or the reverse, or `a` beside `a.json/b` in the
   sidecar tree — is `X_STORAGE_KEY_CONFLICT`, decided by `claim()` for BOTH paths before either is
   touched. Suffixed on-disk names would lift it and orphan every existing root's objects without a
-  migration; do not change the layout without one. `driver-contract.test.ts` runs the claim on all
-  three disks.
+  migration; do not change the layout without one. Memory emulates it; s3 holds both. A key that
+  is only a directory is ABSENT to `delete()` (test a refusal with `driver-local-fixture.ts`).
 - **The local commit order is marker → sidecar → bytes → clear marker. Do not reorder**
   (`As of 2026-10`). Bytes-first serves new bytes under the old type; sidecar-first alone serves
   old bytes under the new one. The marker holds the new etag, so `headObject` knows the one state
@@ -262,9 +263,8 @@ Gotchas:
   signed URL is a capability; a leaked capability must still not cross a tenant.
 - `X_STORAGE_ORG_MISMATCH` maps to **404**, not 403 (`@ultimat3/http`'s `error-map.ts`). 403 would
   confirm a key exists to the one caller who must not learn it.
-- The local driver reports the **filesystem's** `lastModified`, not the injected `Clock`, so
-  `sweepOrphans` cannot be tested against it with a frozen clock — `attachment.test.ts` uses a
-  stub driver with authored timestamps, and `driver-local.test.ts` proves the disk half.
+- **Local `lastModified` is the `Clock`'s, kept in the sidecar** — one instant from `put`/`copy`
+  to every read; mtime only with no trusted sidecar.
 - `upload-client.ts` defaults to `XMLHttpRequest`, not `fetch`: `fetch` reports no upload
   progress in any shipping browser, and a bar that jumps 0 → 100 is a bar that is lying. It is
   **the declared XHR seam** of plan 101 (decision 13): the one `XMLHttpRequest` the framework

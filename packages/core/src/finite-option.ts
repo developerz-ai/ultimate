@@ -48,7 +48,7 @@ export function finiteCount(
   assert(
     Number.isSafeInteger(value) && value >= min,
     `${subject} ${option} is ${String(value)}, and it counts things: it must be a whole number of ${min === 1 ? 'at least 1' : '0 or more'}, or the bound it sets is not one`,
-    `pass a whole ${option} to ${subject} — and parse an environment value before you pass it, because Number(process.env.…) is NaN when the variable is unset and Math.floor does not repair that`,
+    `${option}: Number.parseInt(raw, 10)   # a whole number ${min === 1 ? '≥ 1' : '≥ 0'} for ${subject}; parse an env value and check it, since Number(process.env.…) is NaN when unset and Math.floor does not repair that`,
   );
   return value;
 }

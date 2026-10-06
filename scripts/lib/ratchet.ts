@@ -156,6 +156,12 @@ export interface RatchetSpec<S extends { readonly path: string }> {
   readonly groupOf?: (site: S) => string;
   /** The guard's single-file scan, when it has one: an `over` gap then lists its new sites first. */
   readonly probe?: SiteProbe<S>;
+  /**
+   * The pin rows one `--unpin` name stands for. Absent, a name is its own row — a package. A guard
+   * pinned per SITE maps a file path to every row of that file, because a site key carries spaces
+   * and commas no command line splits cleanly.
+   */
+  readonly unpinRows?: (name: string, pins: PinTable) => readonly string[];
 }
 
 /** The two things a guard's command does: report the ratchet, or `--unpin` it. */
@@ -176,8 +182,12 @@ export async function ratchetMain<S extends { readonly path: string }>(
     );
   }
   const counts = siteCounts(sites, spec.groupOf);
-  const unpin = flagList(args, 'unpin');
-  if (unpin.length > 0) {
+  const named = flagList(args, 'unpin');
+  const unpin =
+    spec.unpinRows === undefined
+      ? named
+      : named.flatMap((name) => spec.unpinRows?.(name, spec.pins) ?? []);
+  if (named.length > 0) {
     const lowered = await applyUnpin(root, spec.pinsFile, unpin, counts, spec.pins);
     return report(
       {

@@ -3,7 +3,9 @@
 // DATABASE, so raw SQL, a second app on the same schema and a hand-written driver are refused too.
 // Recorded on the snapshot (`appendOnly: true`), which is what stops it being re-emitted.
 
-import type { EntityDescriptionLike } from './entity-shape';
+import { renderFixLiteral } from '@ultimat3/core';
+import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
+import { DbError } from './errors';
 import type { Plan } from './foreign-key-plan';
 import { findTable, type SchemaDescription } from './introspect';
 import { identifier } from './sql';
@@ -111,3 +113,34 @@ export function appendOnlyPlan(
   // triggers that call it are re-created.
   if (removed.length > 0) plan.down.push(APPEND_ONLY_FUNCTION_SQL);
 }
+
+/** Which arm met the column: a new one, or an existing one turned NOT NULL. */
+export type AppendOnlyBackfillArm = 'added' | 'made-not-null';
+
+/**
+ * A column an append-only table must hold NOT NULL with no default to fill it. Both arms of the
+ * diff would emit `-- backfill …, then: set not null` — `diffTable` for a new column,
+ * `alterColumnInPlace` for an existing one — and on this table that backfill is an UPDATE the
+ * trigger refuses: an instruction nobody can carry out, leaving the column nullable forever.
+ * Refused at generation instead; a default is the one way every row gets a value with no UPDATE.
+ */
+export const appendOnlyBackfillRefused = (
+  entity: EntityDescriptionLike,
+  column: ColumnDescriptionLike,
+  arm: AppendOnlyBackfillArm,
+): DbError =>
+  new DbError({
+    code: 'X_MIGRATION_APPEND_ONLY_BACKFILL',
+    cause:
+      `${identifier(entity.table).text} is append-only and ` +
+      `${arm === 'added' ? 'gains NOT NULL column' : 'turns NOT NULL its column'} ` +
+      `${identifier(column.column).text} with no default: existing rows could only be given a ` +
+      'value by an UPDATE, which the append-only trigger refuses, so x db gen cannot write a ' +
+      'migration that ends with the column NOT NULL',
+    // A default fills a column as it is ADDED; it fills no NULL an existing column already holds.
+    fix:
+      arm === 'added'
+        ? `entity(${renderFixLiteral(entity.name, "'<name>'")}, { columns: { ${renderFixLiteral(column.property, "'<col>'")}: <builder>.default(<value>) } })   # then re-run x db gen`
+        : `entity(${renderFixLiteral(entity.name, "'<name>'")}, { columns: { ${renderFixLiteral(column.property, "'<col>'")}: <builder>.nullable() } })   # keep it nullable, or add a NEW column with .default(<value>); then re-run x db gen`,
+    meta: { table: entity.table, column: column.column, arm },
+  });

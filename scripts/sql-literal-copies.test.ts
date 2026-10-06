@@ -26,6 +26,43 @@ const file = (path: string, source: string): SourceFile => ({ path, source });
 const ESCAPE = `.replaceAll("'", ${JSON.stringify("''")})`;
 
 describe('what counts as building a SQL string literal', () => {
+  // Sweep 11 R4: the replacement arrived as a function's answer, or through a name.
+  test('a replacer function answering the doubled quote is the same escape', () => {
+    const doubled = JSON.stringify("''");
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const q = value.replaceAll("'", () => ${doubled});`),
+      file('packages/a/src/two.ts', `const q = value.replace(/'/g, (_m) => ${doubled});`),
+      file(
+        'packages/a/src/three.ts',
+        `const q = v.replaceAll("'", function () { return ${doubled}; });`,
+      ),
+    ]);
+    expect(found.map((one) => one.file)).toEqual([
+      'packages/a/src/one.ts',
+      'packages/a/src/two.ts',
+      'packages/a/src/three.ts',
+    ]);
+  });
+
+  test('a constant holding the doubled quote is the same escape, wherever it is spliced', () => {
+    const doubled = JSON.stringify("''");
+    const found = literalCopies([
+      file('packages/a/src/one.ts', `const QQ = ${doubled};\nconst q = value.replaceAll("'", QQ);`),
+      file('packages/a/src/two.ts', `const QQ = ${doubled};\nconst q = v.split("'").join(QQ);`),
+      file(
+        'packages/a/src/three.ts',
+        `const QQ = ${doubled};\nconst q = v.replaceAll("'", () => QQ);`,
+      ),
+      // A constant of the same name in ANOTHER file is not this file's.
+      file('packages/a/src/four.ts', 'const q = value.replaceAll("x", QQ);'),
+    ]);
+    expect(found.map((one) => `${one.file}:${String(one.line)}`)).toEqual([
+      'packages/a/src/one.ts:2',
+      'packages/a/src/two.ts:2',
+      'packages/a/src/three.ts:2',
+    ]);
+  });
+
   test('the replacement is the discriminator, in either quoting style', () => {
     const found = literalCopies([
       file('packages/a/src/one.ts', `const q = value${ESCAPE};`),

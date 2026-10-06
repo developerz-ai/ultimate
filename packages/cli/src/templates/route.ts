@@ -51,13 +51,13 @@ const DYNAMIC_SEGMENT = /^\[(?<spread>\.\.\.)?(?<name>[^\]]+)\]$/;
 /**
  * One URL segment. `kebab()` strips `[` and `]` along with every other non-alphanumeric, so
  * `x g route "posts/[slug]"` scaffolded `apps/web/app/posts/slug/page.tsx` — a different, STATIC
- * route — and reported `ok:true` with no warning. Only the parameter NAME is kebabed now.
+ * route — and reported `ok:true` with no warning. A dynamic segment is now kept exactly as the
+ * author wrote it: its name is the key the router puts in `params`, so kebabing it renamed
+ * `[orderId]` to `[order-id]` behind the author's back — the page read `params.orderId` and got
+ * `undefined`.
  */
-export const routeSegment = (part: string): string => {
-  const match = DYNAMIC_SEGMENT.exec(part);
-  if (match === null) return kebab(part);
-  return `[${match.groups?.['spread'] ?? ''}${kebab(match.groups?.['name'] ?? '')}]`;
-};
+export const routeSegment = (part: string): string =>
+  DYNAMIC_SEGMENT.test(part) ? part : kebab(part);
 
 const segmentsOf = (path: string): readonly string[] =>
   path
@@ -154,11 +154,26 @@ const sampleUrl = (path: string): string =>
     })
     .join('/');
 
-/** The params object that URL implies. `{}` was a lie for every dynamic route. */
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * A single-quoted TS string literal — the repo's (and the scaffold's Biome config's) quote style,
+ * so the generated file passes `lint` as written. `JSON.stringify` does the escaping.
+ */
+const singleQuoted = (value: string): string =>
+  `'${JSON.stringify(value).slice(1, -1).replaceAll('\\"', '"').replaceAll("'", "\\'")}'`;
+
+/** An object key as TS accepts it: bare when it is an identifier, quoted when it is not. */
+const objectKey = (name: string): string => (IDENTIFIER.test(name) ? name : singleQuoted(name));
+
+/**
+ * The params object that URL implies. `{}` was a lie for every dynamic route; a bare
+ * `order-id:` key was a syntax error in the test of every kebab-named param.
+ */
 const paramsLiteral = (path: string): string => {
   const params = routeParams(path);
   if (params.length === 0) return '{}';
-  return `{ ${params.map((name) => `${name}: '${sampleValue(name)}'`).join(', ')} }`;
+  return `{ ${params.map((name) => `${objectKey(name)}: ${singleQuoted(sampleValue(name))}`).join(', ')} }`;
 };
 
 const routeTest = (

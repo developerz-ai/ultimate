@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
+import { RUNS_AS_ROOT, withUndeletable } from './driver-local-fixture';
 import { isStorageError, type StorageError } from './errors';
 import { META_DIR, scopedKey } from './path';
 
@@ -140,21 +141,20 @@ describe('localDriver', () => {
     expect(await driver.exists('org/org-1/never-existed.png')).toBe(false);
   });
 
-  test('delete SURFACES a refused unlink as X_STORAGE_DELETE_FAILED', async () => {
-    // The failure that matters: `.catch(() => undefined)` reported a read-only mount, a denied
-    // unlink and an absent key identically, so a sweep certified bytes erased that were not.
-    // A directory in the object's place is the cheapest unlink the OS refuses with something
-    // other than ENOENT (EISDIR/EPERM), and it needs no root and no chmod dance.
-    const key = 'org/org-1/undeletable';
-    await Bun.write(`${root}/${key}/child.txt`, 'blocked');
-
-    const caught = await catchError(() => driver.delete(key));
-    expect(codeOf(caught)).toBe('X_STORAGE_DELETE_FAILED');
-    const error = caught as StorageError;
-    expect(error.cause).toContain('undeletable');
-    expect(error.fix).toContain(`ls -ld ${root}`);
-    expect(await Bun.file(`${root}/${key}/child.txt`).exists()).toBe(true);
-  });
+  test.skipIf(RUNS_AS_ROOT)(
+    'delete SURFACES a refused unlink as X_STORAGE_DELETE_FAILED',
+    async () => {
+      // The failure that matters: `.catch(() => undefined)` reported a read-only mount, a denied
+      // unlink and an absent key identically, so a sweep certified bytes erased that were not.
+      const key = 'org/org-1/undeletable';
+      const caught = await withUndeletable(root, key, () => catchError(() => driver.delete(key)));
+      expect(codeOf(caught)).toBe('X_STORAGE_DELETE_FAILED');
+      const error = caught as StorageError;
+      expect(error.cause).toContain('undeletable');
+      expect(error.fix).toContain(`ls -ld ${root}`);
+      expect(await Bun.file(`${root}/${key}`).exists()).toBe(true);
+    },
+  );
 
   test('put refuses a body over the ceiling before writing anything', async () => {
     const bounded = localDriver({ root, signingSecret: 'test-secret', maxPutBytes: 4 });
@@ -307,9 +307,9 @@ describe('localDriver', () => {
 describe('a refusal fix never splices a path into the shell', () => {
   const HOSTILE = 'blocked$(touch pwned)';
 
-  test('a refused delete screens the key and the path', async () => {
-    await Bun.write(`${root}/${HOSTILE}/child.txt`, 'x');
-    const refused = await catchError(() => driver.delete(HOSTILE));
+  test.skipIf(RUNS_AS_ROOT)('a refused delete screens the key and the path', async () => {
+    const key = `org/${HOSTILE}`;
+    const refused = await withUndeletable(root, key, () => catchError(() => driver.delete(key)));
     expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
     const fix = (refused as StorageError).fix;
     expect(fix).not.toContain('$(');

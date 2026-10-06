@@ -300,6 +300,9 @@ export class BudgetLedger {
    * an `llm()` action must not be able to widen the actor or org ceiling it runs inside.
    */
   derive(limits: BudgetLimits): BudgetLedger {
+    // Screened BEFORE tightening, not only by the child's constructor: a `NaN` that won
+    // `tighterMoney` would otherwise reach the child as the parent's ceiling, widened.
+    assertFiniteLimits(limits);
     const child = new BudgetLedger({
       limits: {
         ...pick('request', tighterNumber(this.limits.request, limits.request)),
@@ -398,16 +401,32 @@ export class BudgetLedger {
 }
 
 /**
- * Every declared token ceiling, proven to be a number. A limit is optional and an absent one is
+ * Every declared ceiling, proven to be a whole count. A limit is optional and an absent one is
  * "unlimited" by design — which is exactly why a `NaN` one is the dangerous value: it reads as a
- * declared ceiling everywhere (`report()`, a manifest row, a log line) and enforces nothing.
+ * declared ceiling everywhere (`report()`, a manifest row, a log line) and enforces nothing. The
+ * money one most of all: `tighterMoney` asks `a.minor <= b.minor`, false against a `NaN`, so an
+ * unscreened `costPerCall` won every `derive` and WIDENED the stricter ceiling it ran inside.
+ * `subject` and `prefix` let a caller name the key its own declaration wrote (`createGateway`'s
+ * `budget.org`), because a fix line naming a key the app never typed is not a fix.
  */
-function assertFiniteLimits(limits: BudgetLimits): BudgetLimits {
+export function assertFiniteLimits(
+  limits: BudgetLimits,
+  subject = 'the AI budget',
+  prefix = '',
+): BudgetLimits {
   for (const scope of ['request', 'tokensIn', 'actor', 'org'] as const) {
     const limit = limits[scope];
-    if (limit !== undefined) finiteCount('the AI budget', scope, limit);
+    if (limit !== undefined) finiteCount(subject, `${prefix}${scope}`, limit);
   }
+  const money = limits.costPerCall;
+  if (money !== undefined) finiteCount(subject, `${prefix}costPerCall.minor`, money.minor);
   return limits;
+}
+
+/** One money ceiling screened under `key`, for a declaration whose field names differ from ours. */
+export function screenedMoney(subject: string, key: string, money: Money): Money {
+  finiteCount(subject, `${key}.minor`, money.minor);
+  return money;
 }
 
 function isBudgetTake(value: unknown): value is BudgetTake {

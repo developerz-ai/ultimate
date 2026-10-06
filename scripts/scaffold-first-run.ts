@@ -19,6 +19,7 @@
 
 import { resolve } from 'node:path';
 import { GENERATORS } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import { localBin } from './lib/local-bin';
 import type { Finding } from './lib/log';
@@ -106,7 +107,7 @@ export const verdict = (output: string): string => {
 export const stepFinding = (dir: string, step: FirstRunStep, result: RunResult): Finding => ({
   code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
   cause: `${step.name} exited ${result.code} in the scaffolded app: ${verdict(result.output)}`,
-  fix: `cd ${dir} && ${appBin(dir)} ${step.args.join(' ')}`,
+  fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && ${appBin(dir)} ${step.args.join(' ')}`,
   at: dir,
 });
 
@@ -191,7 +192,7 @@ if (import.meta.main) {
           {
             code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
             cause: `${bin} does not exist, so no command can be run in the scaffolded app`,
-            fix: `cd ${dir} && bun install --linker=hoisted`,
+            fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && bun install --linker=hoisted`,
             at: dir,
           },
         ],

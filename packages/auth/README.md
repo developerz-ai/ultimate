@@ -484,7 +484,7 @@ unauthenticated POST with any token cannot kill the victim's live link.
 | `revokeOrgSessions(auth, orgId, reason)` | one tenant, at 03:00, without touching another |
 | `revokeSessionsCreatedBefore(auth, at, reason)` | everything minted under a rotated secret |
 | `disableUser(auth, userId, reason)` | stamps `disabledAt`, kills the sessions **and** revokes the user's live api keys — `{ user, sessionsRevoked, apiKeysRevoked }`. Re-enabling restores neither |
-| `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries |
+| `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries — in byte (code-point) order of `email` on both adapters, whatever the database collation |
 | `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires. A `passwordHash` change ends every OTHER session of that user (`sessionsRevoked`) — all of them when no session of theirs was passed, as in a reset |
 
 Rotation (`rotateSession`, and `updatePrivileges` through it) mints a new **id**, never a new

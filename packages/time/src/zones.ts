@@ -70,8 +70,13 @@ export function zonePartsAt(zone: TimeZone, at: Instant): ZoneParts {
     if (value === undefined) throw timezoneInvalid(zone);
     return Number.parseInt(value, 10);
   };
+  // `Intl` writes the proleptic Gregorian ERA year: year 0 is "1 BC", year -5 is "6 BC". The era is
+  // read with it and mapped back to the astronomical year every caller computes with (`utcEpoch`,
+  // `getUTCFullYear`); without it year 0 read as 1, and every offset before AD 1 was a year off.
+  const eraYear = read('year');
+  const beforeCommonEra = parts.find((part) => part.type === 'era')?.value === BEFORE_COMMON_ERA;
   return {
-    year: read('year'),
+    year: beforeCommonEra ? 1 - eraYear : eraYear,
     month: read('month'),
     day: read('day'),
     hour: read('hour') % 24,
@@ -157,6 +162,9 @@ export function observesDst(zone: TimeZone, at: Instant): boolean {
 const formatters = new Map<string, Intl.DateTimeFormat>();
 const labelFormatters = new Map<string, Intl.DateTimeFormat>();
 
+/** What the `en-US` formatter below names the era before year 1, at `era: 'short'`. */
+const BEFORE_COMMON_ERA = 'BC';
+
 function partsFormatterFor(zone: TimeZone): Intl.DateTimeFormat {
   // Keyed on the canonical name, so 4,096 casings of one zone are one entry rather than 4,096.
   const canonical = canonicalTimeZone(zone);
@@ -168,6 +176,7 @@ function partsFormatterFor(zone: TimeZone): Intl.DateTimeFormat {
       new Intl.DateTimeFormat('en-US', {
         timeZone: canonical,
         hourCycle: 'h23',
+        era: 'short',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',

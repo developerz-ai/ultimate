@@ -25,10 +25,24 @@ describe('unit · a dynamic segment stays dynamic', () => {
     expect(pathsFor('blog/[slug]', 'site')).toContain('apps/web/site/blog/[slug]/page.tsx');
   });
 
-  test('only the parameter NAME is kebabed, never the brackets', () => {
-    expect(routeSegment('[postId]')).toBe('[post-id]');
-    expect(routeParams('orgs/[orgId]/posts/[slug]')).toEqual(['org-id', 'slug']);
+  // The parameter name is the key `params` carries at runtime, so it is the author's to spell.
+  // Kebabing it renamed `[orderId]` to `[order-id]` and then emitted `params: { order-id: … }` —
+  // a test that failed typecheck, lint and unit in the app that had just been scaffolded.
+  test('the parameter NAME keeps the author spelling, and only static segments are kebabed', () => {
+    expect(routeSegment('[postId]')).toBe('[postId]');
+    expect(routeSegment('[...restPath]')).toBe('[...restPath]');
+    expect(routeParams('orgs/[orgId]/posts/[slug]')).toEqual(['orgId', 'slug']);
     expect(routeParams('pricing')).toEqual([]);
+    expect(pathsFor('orders/[orderId]')).toContain('apps/web/app/orders/[orderId]/page.tsx');
+  });
+
+  test('a params key that is not an identifier is emitted quoted, never bare', () => {
+    expect(contentsOf('orders/[orderId]', 'page.test.ts')).toContain(
+      "  params: { orderId: 'orderId-1' },\n",
+    );
+    const kebabed = contentsOf('orders/[order-id]', 'page.test.ts');
+    expect(kebabed).toContain("  params: { 'order-id': 'order-id-1' },\n");
+    expect(kebabed).not.toMatch(/params: \{ order-id:/);
   });
 
   test('the generated test is handed the params the URL actually declares', () => {

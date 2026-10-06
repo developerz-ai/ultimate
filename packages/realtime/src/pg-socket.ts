@@ -52,6 +52,23 @@ export interface PgTarget {
   readonly rootCert?: string | undefined;
 }
 
+/**
+ * One URL part, percent-decoded. `decodeURIComponent` throws a bare `URIError` on a stray `%`
+ * (`50%off`), so a password pasted unencoded failed the replicator with no code and no fix.
+ * Refused under the part's NAME, never its value: that is the database credential.
+ */
+function decodeUrlPart(raw: string, part: 'user' | 'password' | 'database'): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new ReplicationFailedError({
+      stage: 'connect',
+      detail: `DATABASE_URL has a malformed percent-escape in its ${part}`,
+      fix: `bun -e 'console.log(encodeURIComponent(process.argv[1]))' '<the raw value>'   # then put the result in the ${part} of DATABASE_URL`,
+    });
+  }
+}
+
 /** `postgres://user:pass@host:5432/db?sslmode=require`. The one place a connection URL is read. */
 export function parsePgUrl(url: string): PgTarget {
   let parsed: URL;
@@ -75,13 +92,13 @@ export function parsePgUrl(url: string): PgTarget {
     });
   }
   const { ssl, rootCert } = parseSsl(parsed.searchParams);
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+  const database = decodeUrlPart(parsed.pathname.replace(/^\//, ''), 'database');
   return {
     host: parsed.hostname,
     port: parsed.port === '' ? 5432 : Number.parseInt(parsed.port, 10),
     database: database === '' ? 'postgres' : database,
-    user: decodeURIComponent(parsed.username) || 'postgres',
-    password: parsed.password === '' ? undefined : decodeURIComponent(parsed.password),
+    user: decodeUrlPart(parsed.username, 'user') || 'postgres',
+    password: parsed.password === '' ? undefined : decodeUrlPart(parsed.password, 'password'),
     ssl,
     rootCert,
   };

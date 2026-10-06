@@ -12,7 +12,7 @@ import { dedupe, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
 import { processRoot } from './process-root-fixture';
 import type { GeneratedFile } from './templates';
-import { thrownBy } from './thrown-by-fixture';
+import { thrownBy, thrownByAsync } from './thrown-by-fixture';
 
 // `dedupe()` is where every `generate()` call and `x new`'s `planNewApp()` funnel their file list
 // through before a single byte reaches disk — so a generator's own template bug is caught here,
@@ -146,7 +146,11 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
     resetAppLoad();
   });
 
-  test('a new --locales catalog is imported and registered, not just written to disk', async () => {
+  // A catalog on disk the index does not import — written by hand, or arriving in a merge — is
+  // what `x g` registers. `x g --locales es` no longer STARTS one in an app that has catalogs: it
+  // would hold the generator's keys and none of the app's (`generate-catalog-locales.ts`).
+  test('a --locales catalog on disk is imported and registered, not just written to', async () => {
+    await Bun.write(join(ROOT, 'packages/i18n/catalogs/es.json'), '{}\n');
     const result = await generateCommand.run(contextFor('es'));
     expect((result.data as { files?: readonly string[] }).files).toContain(
       'packages/i18n/catalogs/es.json',
@@ -158,6 +162,15 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
     expect(indexSource).toContain('locales: { en, es }');
     // The pre-existing `en` registration survives the regeneration, not just gains a neighbour.
     expect(indexSource).toContain("import en from '../catalogs/en.json';");
+  });
+
+  test('a --locales catalog the app has not added yet is refused, with nothing written', async () => {
+    await seedApp();
+    const failure = await thrownByAsync(() => generateCommand.run(contextFor('es')));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.fix).toBe('x i18n add es');
+    expect(await Bun.file(join(ROOT, 'packages/i18n/catalogs/es.json')).exists()).toBe(false);
+    expect(await Bun.file(join(ROOT, 'apps/web/app/pricing/page.tsx')).exists()).toBe(false);
   });
 
   test('an app with no i18n package is left alone', async () => {

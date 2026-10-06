@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { AppNameInvalidError, appNameIssue } from './app-name';
 import { dedupe } from './cmd-generate';
 import { newSpec } from './cmd-new-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -213,6 +214,18 @@ export const newCommand: CliCommand = {
     if (app.kebab === '') {
       throw new AppNameEmptyError({
         name: raw,
+        invocation: invocationOf(ctx, 'new'),
+        flags: callerFlags(ctx),
+      });
+    }
+    // After the slug exists and before anything is planned: the slug is `app.config.ts`'s `name`,
+    // and a name core's `defineConfig` refuses is an app that throws at its own first import.
+    const issue = appNameIssue(app.kebab);
+    if (issue !== undefined) {
+      throw new AppNameInvalidError({
+        name: raw,
+        slug: app.kebab,
+        issue,
         invocation: invocationOf(ctx, 'new'),
         flags: callerFlags(ctx),
       });

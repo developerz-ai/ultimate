@@ -39,7 +39,7 @@ export const PINS_FILE = 'scripts/lib/test-bare-error-pins.ts';
 
 export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   action: 9, // why: 0 -> 9, the K19 class list; the new sites are stubs (input)
-  admin: 10, // why: 7 -> 10, the K19 class list; the new sites are stubs (input)
+  admin: 11, // why: 10 -> 11, sweep 11 reads a thrown string: action-gate.test.ts:267 is the stub under test (input)
   ai: 18,
   auth: 11, // why: 4 -> 11, the K19 class list; the new sites are stubs (input)
   cache: 6, // why: 3 -> 6, the K19 class list; the new sites are stubs (input)

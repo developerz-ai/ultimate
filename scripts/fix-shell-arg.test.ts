@@ -61,6 +61,29 @@ describe('a substitution in command position', () => {
   });
 });
 
+// Sweep 11 R4: five command words the vocabulary did not hold, and `export NAME=${…}`, which
+// splices exactly what `NAME=${…} x …` does.
+describe('the words a fix tells an operator to type', () => {
+  test('cd, mkdir, cat and pg_dump are command words', () => {
+    expect(at('cd ${dir} && x dev')).toEqual(['dir']);
+    expect(at('mkdir -p ${dir}')).toEqual(['dir']);
+    expect(at('cat ${file}')).toEqual(['file']);
+    expect(at('pg_dump ${url} > backup.sql')).toEqual(['url']);
+  });
+
+  test('export NAME=${…} is an environment assignment, as NAME=${…} is', () => {
+    expect(at('export DATABASE_URL=${url}')).toEqual(['url']);
+    expect(at('export A=1 DATABASE_URL=${url}')).toEqual(['url']);
+    expect(at('export DATABASE_URL=${url} && x db migrate')).toEqual(['url']);
+    expect(at('export ${name}=1')).toEqual(['name']);
+  });
+
+  test('prose that only names the words stays prose', () => {
+    expect(at('export — it names ${count} findings')).toEqual([]);
+    expect(at('cat, as in ${noun}')).toEqual([]);
+  });
+});
+
 // Row S12 of plan 101: the storage drivers spliced a key, a prefix and a bucket into `aws s3api`
 // and `ls -ld` commands behind a sentence ("…, then reproduce with: aws s3api …"), and the guard saw
 // none of them — `aws`/`ls` were not command words, a `: ` did not open a segment, and the fix was

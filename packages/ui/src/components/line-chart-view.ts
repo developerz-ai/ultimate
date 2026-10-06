@@ -103,9 +103,12 @@ export function lineLayout(input: LineLayoutInput): LineLayout {
   const [lo, hi] = extent(input);
   const scale = niceTicks(lo, hi, input.maxTicks, { integer: allIntegers(input) });
   const { width, height, pad } = LINE_CHART;
-  const span = scale.max - scale.min;
+  // Halved on both sides, which leaves the ratio exact (a power-of-two scale commutes with
+  // rounding): `max - min` over the full float64 range overflows to Infinity, and the bottom
+  // tick's `Infinity / Infinity` drew `y="NaN"`.
+  const half = scale.max / 2 - scale.min / 2;
   const yOf = (value: number): number =>
-    round(pad + ((scale.max - value) / span) * (height - pad * 2));
+    round(pad + ((scale.max / 2 - value / 2) / half) * (height - pad * 2));
   const count = input.keys.length;
   const xOf = (index: number): number =>
     count <= 1 ? width / 2 : round(pad + (index * (width - pad * 2)) / (count - 1));

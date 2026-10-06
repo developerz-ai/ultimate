@@ -104,7 +104,9 @@ export async function headObject(
     key,
     size: file.size,
     etag,
-    lastModified: new Date(file.lastModified),
+    // The recorded instant when the sidecar is trusted, the file's mtime otherwise: one source per
+    // object, and the one `put()`/`copy()` returned — on the disk's injected clock.
+    lastModified: new Date(sidecar?.lastModified ?? file.lastModified),
     ...(sidecar?.contentType === undefined ? {} : { contentType: sidecar.contentType }),
     ...(sidecar?.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
     ...(sidecar?.metadata === undefined ? {} : { metadata: sidecar.metadata }),

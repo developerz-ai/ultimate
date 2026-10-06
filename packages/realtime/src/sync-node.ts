@@ -20,12 +20,13 @@ import { isClientFault } from './errors';
 import type { TransportSubscription } from './fanout';
 import { PrincipalSockets } from './principal-sockets';
 import { CHANGE_SUBJECT_ALL } from './replicator';
-import { parseEnvelope, SeqGapDetector } from './replicator-envelope';
+import { SeqGapDetector } from './replicator-envelope';
 import { CLOSE, SocketRegistry, SyncSocket } from './socket';
 import { DEFAULT_MAX_BUFFERED_BYTES } from './socket-defaults';
 import { idleSweepPeriodMs } from './socket-idle';
 import { actorChangeHandler } from './sync-actor-change';
 import { GrantBook, sweepGrants } from './sync-auth';
+import { changeHandler, reconnectHandler } from './sync-bus-handlers';
 import { ackRefOf, createFrameRouter } from './sync-frames';
 import {
   clientHeartbeatMs,
@@ -75,6 +76,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   /** The re-auth pass in flight, shared by every tick that lands while it runs. */
   let reauthPass: Promise<void> | null = null;
   let ready = false;
+  /**
+   * The start in flight or done, and whether a stop/drain has run since. `start()` awaits the bus,
+   * and a stop inside that await found nothing to release: the subscription landed after it and
+   * the node came up `ready` and delivering after it was stopped. The `replicator.ts` pattern.
+   */
+  let started: Promise<void> | null = null;
+  let generation = 0;
   /** Resolved by `teardown` when the last socket leaves, for a drain that is waiting its grace. */
   let lastSocketLeft: (() => void) | null = null;
   let changes: TransportSubscription | null = null;
@@ -230,6 +238,63 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     heartbeatMs: clientHeartbeatMs(presence?.heartbeatMs, sockets.idleTimeoutMs),
   });
 
+  /** Everything `start()` does, fenced on the generation it began under — see `started`. */
+  const begin = async (): Promise<void> => {
+    const run = generation;
+    const bus = { registry: options.registry, hub: options.hub, gaps };
+    const subscription = await options.transport.subscribe(CHANGE_SUBJECT_ALL, changeHandler(bus));
+    // A stop or drain ran inside that await: what it released did not include this yet.
+    if (run !== generation) {
+      subscription.unsubscribe();
+      return;
+    }
+    changes = subscription;
+    reconnects = options.transport.onReconnect(reconnectHandler(bus));
+    // One pass per heartbeat window: a member is swept only once it has actually missed its
+    // window, and the interval never holds the process open — shutdown is the drain's job.
+    if (presence) {
+      sweeping = setInterval(
+        () => detach(presence.sweepAll(), 'presence.sweep'),
+        presence.heartbeatMs,
+      );
+      sweeping.unref();
+    }
+    // The half-open connection Bun's own `idleTimeout` renews through its ping/pong: a client
+    // whose frame loop is wedged answers pings and keeps its grant, its subscriptions and its
+    // topic membership. `sweepIdle` was written for this and never called, so `touch()` and the
+    // 120s budget under it decided nothing.
+    idling = setInterval(() => {
+      for (const socket of sockets.idle()) evict(socket, CLOSE.idle, 'idle timeout');
+    }, idleSweepPeriodMs(sockets.idleTimeoutMs));
+    idling.unref();
+    if (options.authenticate) {
+      reauthing = setInterval(
+        () => detach(reauthenticate(), 'sync.reauthenticate'),
+        bounds.reauthenticateIntervalMs,
+      );
+      reauthing.unref();
+    } else {
+      // Enforced where it can be: nothing here can invent a credential, so the one honest signal
+      // is that every policy on this node is about to be asked about `null`.
+      logger.warn('sync node has no authenticator: every socket is anonymous', {
+        buildId: options.buildId,
+        fix: 'pass authenticate to createSyncNode({ authenticate })',
+      });
+    }
+    ready = true;
+    markReady();
+    logger.info('sync node ready', { buildId: options.buildId, path });
+  };
+
+  /** Ends the current generation and waits out a start in flight, so nothing it took outlives us. */
+  const halt = async (): Promise<void> => {
+    generation += 1;
+    ready = false;
+    const inFlight = started;
+    started = null;
+    if (inFlight !== null) await inFlight.catch(() => undefined);
+  };
+
   return {
     sockets,
     path,
@@ -239,76 +304,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       return ready;
     },
 
-    async start(): Promise<void> {
-      changes = await options.transport.subscribe(CHANGE_SUBJECT_ALL, (payload) => {
-        const envelope = parseEnvelope(payload);
-        if (!envelope) return;
-        // Fanout is at-most-once over core NATS, so a reconnect is changes this node never saw.
-        // Nothing downstream could notice: no window's lsn moved, so no cursor moved, so nothing
-        // ever asked for a re-snapshot. A gap invalidates every window here instead, and the
-        // subscribers are re-served on the next change to each query.
-        if (gaps.observe(envelope)) {
-          const marked = options.registry.invalidate();
-          // Channels too: their seq is minted from what this node sees, so the hole is invisible
-          // to a ring that would otherwise replay across it as complete history.
-          const channelGaps = options.hub.invalidate();
-          logger.warn('live.change_gap', {
-            entity: envelope.change.entity,
-            desynced: marked,
-            channelGaps,
-          });
-        }
-        // Not awaited: the bus handler must return before the next change, and ordering is the
-        // registry's — one serial lane per query id. What this call site owes is the failure. An
-        // unhandled rejection here is a fanout that reached nobody, reported as a dead process.
-        detach(options.registry.deliver(envelope.change), 'live.deliver', envelope.change.entity);
-        // The same stream feeds the declared channels: a write names no channel (axiom 2), and the
-        // hub turns this change into `records` frames on every channel it touches.
-        options.hub.deliverChange(envelope.change);
+    start(): Promise<void> {
+      // Memoised: two overlapping starts were two subscriptions, every change fanned out twice.
+      started ??= begin().catch((error: unknown) => {
+        started = null;
+        throw error;
       });
-      // A bus that reconnected is changes this node never saw, and the gap detector only notices
-      // on the NEXT message: with no later write, every window and cursor here stayed behind and
-      // every new subscriber joined the stale window. Said by the transport, repaired now.
-      reconnects = options.transport.onReconnect(() => {
-        gaps.forget();
-        const marked = options.registry.invalidate();
-        const channelGaps = options.hub.invalidate();
-        logger.warn('live.bus_reconnected', { desynced: marked, channelGaps });
-      });
-      // One pass per heartbeat window: a member is swept only once it has actually missed its
-      // window, and the interval never holds the process open — shutdown is the drain's job.
-      if (presence) {
-        sweeping = setInterval(
-          () => detach(presence.sweepAll(), 'presence.sweep'),
-          presence.heartbeatMs,
-        );
-        sweeping.unref();
-      }
-      // The half-open connection Bun's own `idleTimeout` renews through its ping/pong: a client
-      // whose frame loop is wedged answers pings and keeps its grant, its subscriptions and its
-      // topic membership. `sweepIdle` was written for this and never called, so `touch()` and the
-      // 120s budget under it decided nothing.
-      idling = setInterval(() => {
-        for (const socket of sockets.idle()) evict(socket, CLOSE.idle, 'idle timeout');
-      }, idleSweepPeriodMs(sockets.idleTimeoutMs));
-      idling.unref();
-      if (options.authenticate) {
-        reauthing = setInterval(
-          () => detach(reauthenticate(), 'sync.reauthenticate'),
-          bounds.reauthenticateIntervalMs,
-        );
-        reauthing.unref();
-      } else {
-        // Enforced where it can be: nothing here can invent a credential, so the one honest signal
-        // is that every policy on this node is about to be asked about `null`.
-        logger.warn('sync node has no authenticator: every socket is anonymous', {
-          buildId: options.buildId,
-          fix: 'pass authenticate to createSyncNode({ authenticate })',
-        });
-      }
-      ready = true;
-      markReady();
-      logger.info('sync node ready', { buildId: options.buildId, path });
+      return started;
     },
 
     stopAccepting(): void {
@@ -316,7 +318,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     },
 
     async stop(): Promise<void> {
-      ready = false;
+      await halt();
       release();
     },
 
@@ -434,7 +436,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     },
 
     async drain(drainOptions = {}): Promise<readonly DrainedSocket[]> {
-      ready = false;
+      await halt();
       const ids = [...sockets.all()].map((socket) => socket.id);
       const spread = drainPlan(ids, {
         spreadMs: bounds.drainSpreadMs,

@@ -470,7 +470,9 @@ principal.
 - **A bulk write re-reads only the windows over its entity.** `updateWhere`/`deleteWhere` name a
   filter, not rows, so the in-process replicator calls `registry.invalidate(entity)`: windows whose
   shape reads that entity go stale and their subscribers desynced. The next change re-reads the
-  window and re-snapshots every subscriber, whether or not that change matches the query.
+  window and re-snapshots every subscriber, whether or not that change matches the query. The
+  channels are told too — `ChannelHub.invalidate(entity)` — so every topic carrying that table
+  sends its members `replay-gap` and they re-run the channel's catch-up read.
 - **`desynced` has a reader.** A subscriber recorded as diverged — a dropped patch, a gate that
   failed, a window that lost its tail — is served a fresh snapshot out of the shared window on the
   next delivery, and only then is the mark cleared. A snapshot the socket refuses leaves it

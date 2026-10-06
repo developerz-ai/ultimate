@@ -283,6 +283,7 @@ create trigger "ultimate_append_only" before update or delete on "ledger" for ea
 | Refuses | UPDATE, DELETE, and the update arm of `insert … on conflict do update`. Not `truncate` — no row write, and `destructive.ts` already gates it |
 | The error | message leads with `X_ENTITY_APPEND_ONLY`, SQLSTATE `23001` (`restrict_violation`, class 23: an integrity rule refused it, so never retried) |
 | On / off | adding `appendOnly` emits the function (once per migration) and the trigger (drop-if-exists first on an existing table), `down` drops the trigger; removing it drops the trigger, `down` restores both. A dropped table takes its trigger with it; the function is never dropped |
+| NOT NULL with no backfill | a NEW NOT NULL column needs a default (or `.nullable()`), and an EXISTING column cannot be turned NOT NULL: `x db gen` refuses both (`X_MIGRATION_APPEND_ONLY_BACKFILL`) rather than emit the usual `-- backfill …, then: set not null` note — that backfill is an UPDATE the trigger refuses, and a default fills no NULL already stored (`generate-append-only-column.test.ts`) |
 | Engines | Postgres and PGlite alike (`generate-append-only.live.test.ts`, `generate-append-only-embedded.test.ts`) |
 | Drift | `introspect()` writes `triggerNames` (enabled, non-internal) on every table — the catalog half; `appendOnly` is the snapshot half, never read from the catalog |
 

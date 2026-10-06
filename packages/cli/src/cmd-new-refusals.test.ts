@@ -60,6 +60,31 @@ describe('unit · x new refuses what it cannot scaffold, and its fix runs', () =
     });
   });
 
+  // core's `defineConfig` refuses a name outside `^[a-z][a-z0-9-]{1,63}$`, so a scaffold under one
+  // was an app whose own `app.config.ts` threw at import — and `9lives` also wrote
+  // `export const 9livesSeed`, a syntax error. Refused before a byte lands, and the fix RUNS.
+  for (const [name, suggested] of [
+    ['9lives', 'app-9lives'],
+    ['a', 'a-app'],
+    ['x'.repeat(70), 'x'.repeat(64)],
+  ] as const) {
+    test(`"${name.slice(0, 12)}" is not an app name core accepts: refused, and the fix scaffolds`, async () => {
+      await withParent(async (parent) => {
+        const refusal = await newCommand
+          .run(contextFor(['new', name, '--no-example', '--no-git'], parent))
+          .then(() => expect.unreachable(`x new ${name} scaffolded`))
+          .catch((error: unknown) => error as { code: string; cause: string; fix: string });
+        expect(refusal.code).toBe('X_CLI_BAD_FLAG');
+        expect(refusal.cause).toContain(`"${name}"`);
+        expect(refusal.fix).toBe(`x new ${suggested} --no-example --no-git`);
+        expect(readdirSync(parent)).toEqual([]);
+        const ran = await newCommand.run(contextFor(argvOf(refusal.fix), parent));
+        expect(ran.ok).toBe(true);
+        expect(existsSync(join(parent, suggested, 'app.config.ts'))).toBe(true);
+      });
+    });
+  }
+
   test('the conflict fix keeps every flag the caller set, and running it scaffolds that app', async () => {
     await withParent(async (parent) => {
       const argv = ['new', 'demo app', '--dir', 'nested', '--no-example', '--no-git'];

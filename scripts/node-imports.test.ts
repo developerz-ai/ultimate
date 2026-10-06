@@ -33,6 +33,21 @@ describe('a node: import with nothing saying why', () => {
     expect(found("import { join } from 'node:path/posix';")).toEqual(['node:path/posix']);
   });
 
+  // Sweep 11 R4: two spellings that reach a builtin with no `from`, `import(` quote or `require`.
+  test('a template-literal specifier and process.getBuiltinModule reach the same builtin', () => {
+    expect(found('const fs = await import(`node:fs`);')).toEqual(['node:fs']);
+    expect(found("const fs = process.getBuiltinModule('node:fs');")).toEqual(['node:fs']);
+    expect(found('const os = process.getBuiltinModule("os");')).toEqual(['os']);
+    // A computed specifier is not a static one, and names nothing this rule can check.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — the literal ${…} is the case under test
+    expect(found('const m = await import(`node:${name}`);')).toEqual([]);
+    expect(
+      found(
+        "// why: Bun has no fork()\nconst cp = process.getBuiltinModule('node:child_process');",
+      ),
+    ).toEqual([]);
+  });
+
   test('the BARE spelling reaches the same builtin and owes the same why: (K17)', () => {
     expect(found("import { readFileSync } from 'fs';")).toEqual(['fs']);
     expect(found("import { readFile } from 'fs/promises';")).toEqual(['fs/promises']);

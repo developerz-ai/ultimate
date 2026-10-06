@@ -36,6 +36,8 @@ const posts = (
       when: false,
       batch: true,
       threshold: null,
+      readonly: false,
+      matching: false,
     },
   ],
   ...over,
@@ -171,6 +173,32 @@ describe('the admin in the contract diff', () => {
     ]);
     expect(changes([admin()], [withAction({ threshold: 100 })])).toEqual([
       ['internal', 'admin./admin.resources.posts.actions.post.publish.threshold'],
+    ]);
+  });
+
+  // `readonly` and `matching` decide the admin-level gate (`adminPermissionForAction`), and the
+  // manifest recorded neither: `admin:read` becoming `admin:write` was invisible to the diff.
+  test('the admin gate an action needs: read becoming write refuses a read-only caller', () => {
+    const withAction = (over: Partial<typeof publish>) =>
+      admin({ resources: [posts({ actions: [{ ...publish, ...over }] })] });
+    const at = 'admin./admin.resources.posts.actions.post.publish';
+    const reading = withAction({ readonly: true });
+    expect(changes([reading], [admin()])).toEqual([
+      ['breaking', `${at}.gate`],
+      ['internal', `${at}.readonly`],
+    ]);
+    expect(changes([admin()], [reading])).toEqual([
+      ['additive', `${at}.gate`],
+      ['internal', `${at}.readonly`],
+    ]);
+    // `matching` holds the write gate whatever `readonly` says, so gaining it is the same break.
+    expect(changes([reading], [withAction({ readonly: true, matching: true })])).toEqual([
+      ['breaking', `${at}.gate`],
+      ['internal', `${at}.matching`],
+    ]);
+    // On an action already at the write gate it moves nothing a caller can see.
+    expect(changes([admin()], [withAction({ matching: true })])).toEqual([
+      ['internal', `${at}.matching`],
     ]);
   });
 

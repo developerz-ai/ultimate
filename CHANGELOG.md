@@ -24,7 +24,9 @@ Sweep 10a lands the tier 0–1 seams the superseded plans owed; sweep 10b the ti
 append-only entities, one way to set a cookie, and audited reads; sweep 10c the tier 4 ones: human
 confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 models and media blocks;
 sweep 10d the tier 5 ones: admin scopes, a scaffold that boots as a binary on every OS, and the AI
-package's first step to apps bringing their own models and providers.
+package's first step to apps bringing their own models and providers. Sweep 11 is an audit of
+every file earlier waves had not reached: 36 proven defects fixed, and the guards that let some
+of them through tightened.
 
 ### Added
 
@@ -249,6 +251,20 @@ package's first step to apps bringing their own models and providers.
 
 ### Changed
 
+- Repo guards tightened by sweep 11's audit, each with a fixture that slipped before:
+  - `secret-compare` pins are per site (`<path>: <comparison>`), so a pinned false positive can't be
+    swapped for a real one; it also reads template interpolations, `.equals()` and `Buffer.compare()`.
+  - `proto-index` no longer accepts `key in TABLE` as a check, and reads `?.[k]` and typed tables.
+  - `set-cookie-literals` reports a `Set-Cookie` header written by name.
+  - `url-pathname` refuses string-built `file://` URLs.
+  - `spawn-timeout` reads Bun Shell.
+  - `finite-bounds` reports `?? 0` / `?? 1` on options and bounds.
+  - Smaller gaps closed in `test-bare-error`, `async-context-guard`, `node-imports`,
+    `posix-relative`, `fix-shell-arg` and `sql-literal-copies`.
+  - `pin-raises` covers every pin table, held complete by a test.
+- Five new doc guards: wiki code fences compile (on a ratchet), wiki anchors resolve, Known-Gaps
+  links resolve to their backlog rows, the `docs/ops` uids match the images, and the boundary-rule
+  table matches `BOUNDARY_CODES`.
 - **Deprecated (ai):** resolving a model through the built-in `DEFAULT_MODEL`, or pricing one through
   a built-in catalogue row the app never registered, logs `ai.deprecation` once per site or row and
   counts `ai_deprecated_fallbacks_total`. Apps bring their own models and providers: set a
@@ -407,6 +423,34 @@ package's first step to apps bringing their own models and providers.
 
 ### Fixed
 
+- **ai (security):** a `costPerCall: { minor: NaN }` budget switched the per-call money ceiling off,
+  and `derive()` with `NaN` widened a stricter gateway ceiling. `NaN`, `Infinity` and negatives are
+  now refused (`X_INVARIANT`) at `createGateway`, `BudgetLedger`, `derive`, and under
+  `budget.costPerCall.minor` in `llm()`, `agent()` and `hive()`.
+- render: `navigate()` with `hops: NaN` followed redirects without end; `hops` is now screened.
+- schema: string builtins and `t.record` keys refuse a lone UTF-16 surrogate, as `t.json()` did. It
+  was a 500 on a `jsonb` column and a silent U+FFFD on `text`.
+- realtime: a sync node stopped during a slow `start()` no longer comes up ready afterwards; under
+  `x dev`, a bulk `updateWhere`/`deleteWhere` now sends `replay-gap` on channel topics carrying its
+  table; an unencoded `%` in `NATS_URL`/`DATABASE_URL` is a coded refusal, not a bare `URIError`.
+- ui: `niceTicks` no longer loops forever near float64's limits (it hung a chart's SSR).
+- storage: the memory disk refuses the key conflicts the local disk refuses; local `delete()` of a
+  key that is only a directory is a no-op; local `lastModified` is the injected clock's time.
+- jobs: a Postgres scheduler fire reports each job's own id when two share an idempotency key.
+- entity, db: a seed's `ctx.upsert()` works on an append-only entity; `x db gen` refuses a NOT NULL
+  column with no default, or a column turned NOT NULL, on an append-only table
+  (`X_MIGRATION_APPEND_ONLY_BACKFILL`), because its backfill would be an UPDATE the trigger refuses.
+- auth: `listUsersByOrg` returns byte order (`collate "C"`) on both adapters.
+- core: an upscaling `cover` with a mismatched aspect crops before resampling instead of building an
+  intermediate far over the pixel budget. time: dates before AD 1 read the astronomical year.
+- manifest, admin: admin action facts record `readonly` and `matching`; `x manifest diff` reports
+  an admin gate going from read to write as breaking. Guide topic ids stay unique.
+- cli: `x g route 'orders/[orderId]'` keeps the parameter's spelling (it wrote `params: { order-id }`,
+  which failed its own gate); `x g` marks a non-default locale's new keys `⟦…⟧`, and refuses a locale
+  with no catalog (`fix: x i18n add <locale>`); `x new` refuses a name core's config rejects
+  (`9lives`); `x g` refuses a plural slice name wherever it writes an `entity.ts`, and a name that
+  shadows a value its template imports (`x g job job`); `X_PERMISSION_BORROWED` works on Windows
+  stack frames; `boundaries` reads `./repo.js` and a side-effect barrel import.
 - `x build --target binary` boots, on Linux and Windows. The binary read no `package.json` or
   `tsconfig.json` at run time, so no `@ultimat3/*` import resolved from the app; once one did, the
   framework existed twice, and the app filled the registries the server never read. The binary

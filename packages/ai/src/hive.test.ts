@@ -469,3 +469,24 @@ describe('hive() refuses a width that is not a number', () => {
     expect(result.failed + result.skipped).toBe(0);
   });
 });
+
+// Unscreened, a `NaN` money ceiling won `derive`'s `tighterMoney` and capped no member's call.
+describe('hive() screens its money ceiling where the app writes it', () => {
+  test('a costPerCall.minor that is not a whole count is refused under the declared key', async () => {
+    let index = 0;
+    for (const minor of [...NOT_A_BOUND, -1]) {
+      index += 1;
+      const costly = hive({
+        input: t.object({}),
+        member: worker([]),
+        split: () => [{ id: 'a' }],
+        onMemberError: 'collect',
+        policy: allow(),
+        budget: { costPerCall: { minor, currency: 'USD' } },
+      }).named(`costHive${String(index)}`);
+      const error = await asyncRefusal(() => costly({}, { ctx: ctxAs('u-4') }));
+      expect(error.code).toBe('X_INVARIANT');
+      expect(error.cause).toContain('budget.costPerCall.minor');
+    }
+  });
+});

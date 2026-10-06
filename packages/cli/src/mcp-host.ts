@@ -11,6 +11,7 @@ import {
   agentActor,
   isUltimateError,
   NotImplementedError,
+  renderFixShellArg,
   renderThrowable,
   UltimateError,
 } from '@ultimat3/core';
@@ -293,7 +294,7 @@ function capabilities(
           fix:
             role === undefined
               ? `x dev > ${path} 2>&1`
-              : `mkdir -p ${join(dir, 'logs')} && x dev --role ${role} > ${path} 2>&1`,
+              : `mkdir -p ${renderFixShellArg(join(dir, 'logs'), '<the logs dir of the path the cause names>')} && x dev --role ${role} > ${path} 2>&1`,
         });
       }
       return (await file.text()).trimEnd().split('\n').slice(-lines);

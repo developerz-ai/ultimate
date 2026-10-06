@@ -156,6 +156,33 @@ describe('what the answer says', () => {
   });
 });
 
+// `hops >= NAVIGATION_MAX_HOPS` is the only exit from a redirect chain, and `NaN >= 5` is false:
+// `navigate(url, { hops: NaN })` followed a loop for ever. Now a non-count is an exhausted chain.
+describe('the redirect bound', () => {
+  const to = (location: string) => () =>
+    new Response(null, { status: 204, headers: { 'x-ultimate-location': location } });
+
+  test('a hops that is not a whole count is an exhausted chain: one request, then the browser', async () => {
+    const { win, calls } = tab({ '/b': to('/c'), '/c': to('/b') });
+    const router = currentRouter() ?? expect.unreachable('the fixture starts a router');
+    for (const hops of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0.5]) {
+      await router.navigate('https://app.test/b', { hops });
+    }
+    // Each call: its one request, then a hand-over — never a follow, so never a loop.
+    expect(calls).toHaveLength(4);
+    expect(win.assigned).toHaveLength(4);
+  });
+
+  test('a redirect loop stops at the max and is handed to the browser', async () => {
+    const { win, calls } = tab({ '/b': to('/c'), '/c': to('/b') });
+    click(win, 'to-b');
+    await settle();
+    // The first request, then NAVIGATION_MAX_HOPS (5) follows, then the browser takes it.
+    expect(calls).toHaveLength(6);
+    expect(win.assigned).toHaveLength(1);
+  });
+});
+
 describe('forms', () => {
   const form = (attrs: Record<string, string>, fields: [string, string][]) => {
     const f = h('form', { id: 'f', ...attrs }) as FakeForm;

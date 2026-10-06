@@ -74,7 +74,7 @@ describe('BuiltinAdapter — lookups and sweeps', () => {
 
     expect(lastText()).toContain('where org_id = $1');
     expect(lastText()).toContain('disabled_at is null');
-    expect(lastText()).toContain('order by email asc');
+    expect(lastText()).toContain('order by email collate "C" asc');
     // Both filters are BOUND predicates, so the statement text is the same whatever is asked for.
     expect(lastValues()).toEqual(['org-1', false, true, null]);
     expect(users.map((user) => user.id)).toEqual([ID, 'u2']);

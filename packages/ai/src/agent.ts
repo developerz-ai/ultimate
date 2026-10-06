@@ -31,7 +31,7 @@ import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import type { BudgetLimits } from './budget';
-import { budgetKeysFor, currentBudget, withBudget } from './budget';
+import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
@@ -433,7 +433,9 @@ function limitsOf<
     ...(budget?.tokensIn === undefined
       ? {}
       : { tokensIn: finiteCount(SUBJECT, 'budget.tokensIn', budget.tokensIn) }),
-    ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
+    ...(budget?.costPerCall === undefined
+      ? {}
+      : { costPerCall: screenedMoney(SUBJECT, 'budget.costPerCall', budget.costPerCall) }),
     // The ledger's `request` scope accumulates across every call made under one ledger, which for
     // a run under `withBudget` is exactly "the whole run".
     ...(budget?.tokensPerRun === undefined

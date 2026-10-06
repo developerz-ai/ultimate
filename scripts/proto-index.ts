@@ -16,14 +16,20 @@
 //   and `db/foreign-key.ts`, `cache/purge-fastly.ts`, `seo/images.ts`, `http/rate-limit.ts`,
 //   three in `auth` and three in `admin/dev/`.
 //
-// `Object.hasOwn(TABLE, key)` and a `Map` are the two repairs, both with in-repo precedent.
+// The repairs, each with in-repo precedent: `Object.hasOwn(TABLE, key)` before the read, a `Map`,
+// or a null-prototype table. `key in TABLE` is NOT one — `in` walks the same prototype chain the
+// read does (`'constructor' in {}` is true), so it guarded nothing and is no longer accepted.
+//
+// WHAT COUNTS AS A TABLE: a `Record<…>` object literal, typed by annotation, by
+// `Object.freeze<Record<…>>`, or by a trailing `satisfies Record<…>` / `as Record<…>`. A read is
+// `TABLE[key]` or `TABLE?.[key]`.
 //
 // WHAT IS NOT REPORTED, recognised rather than pinned: a STRING LITERAL key (`TABLE['web']` cannot
 // be `'constructor'` unless somebody typed it), a NULL-PROTOTYPE table — the TABLE, per declaration,
 // never the file (`packages/i18n/src/catalog.ts` is fully null-prototyped and says why), a read
-// already guarded by `Object.hasOwn` or `in` on the
-// same or the preceding line, and a WRITE — `out[key] = value` builds a table rather than reading
-// one, and the prototype answer never reaches a caller.
+// guarded by `Object.hasOwn(TABLE, <the same key text>)` on the same line or the two above — a
+// check on a different key guards nothing — and a WRITE — `out[key] = value` builds a table rather
+// than reading one, and the prototype answer never reaches a caller.
 //
 //   bun run proto-index  ·  bun run scripts/proto-index.ts [--json]
 //   bun run scripts/proto-index.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
@@ -48,6 +54,12 @@ const ANNOTATED = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*:\s*(?:Readonly<)?(?:Par
 /** `const X = Object.freeze<Record<K, V>>({…})` — the form `frozen-records.ts` requires. */
 const FROZEN =
   /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*Object\.freeze\s*<\s*(?:Readonly<)?(?:Partial<)?Record\s*</g;
+
+/** `const X = {` — a literal whose `Record` type may arrive AFTER it, by `satisfies` or `as`. */
+const LITERAL = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*\{/g;
+
+/** What follows a literal's closing brace when the literal is a `Record` by assertion. */
+const TRAILING_RECORD = /^\s*(?:as|satisfies)\s+(?:Readonly\s*<\s*)?(?:Partial\s*<\s*)?Record\s*</;
 
 /**
  * A table with no prototype to walk into. `packages/i18n/src/catalog.ts` is built this way on
@@ -126,6 +138,13 @@ export function recordTables(code: string): ReadonlySet<string> {
       names.add(match[1] as string);
     }
   }
+  for (const match of code.matchAll(LITERAL)) {
+    const brace = match.index + match[0].length - 1;
+    const close = closingOf(code, brace, '{', '}');
+    if (!TRAILING_RECORD.test(code.slice(close + 1))) continue;
+    if (PROTO_MEMBER.test(code.slice(brace))) continue;
+    names.add(match[1] as string);
+  }
   return names;
 }
 
@@ -137,13 +156,13 @@ export interface ProtoIndexSite {
   readonly key: string;
 }
 
-/** The `]` closing the `[` at `open`, or the end of the file. */
-const closingBracket = (code: string, open: number): number => {
+/** The `closer` matching the `opener` at `open`, or the end of the file. */
+const closingOf = (code: string, open: number, opener: string, closer: string): number => {
   let depth = 0;
   for (let index = open; index < code.length; index += 1) {
     const char = code[index] as string;
-    if (char === '[') depth += 1;
-    else if (char === ']') {
+    if (char === opener) depth += 1;
+    else if (char === closer) {
       depth -= 1;
       if (depth === 0) return index;
     }
@@ -159,10 +178,19 @@ const closingBracket = (code: string, open: number): number => {
 const isWrite = (tail: string): boolean =>
   /^(?:[+\-*/%|&^]|\*\*|<<|>>>?|\?\?|\|\||&&)?=[^=]/.test(tail);
 
-/** The two repairs, recognised on the same line or the two above it. */
-const guarded = (context: string, table: string): boolean =>
-  context.includes(`Object.hasOwn(${table}`) ||
-  new RegExp(`\\bin\\s+${table}(?![\\w$])`).test(context);
+const squeezed = (text: string): string => text.replace(/\s+/g, '');
+
+/** The key with a trailing `as T` / `!` dropped: `T[k as K]` after `hasOwn(T, k)` is the same k. */
+const keyExpression = (key: string): string =>
+  key.replace(/(?:\s+as\s+[\w$.]+(?:<[^<>]*>)?|!)+$/, '');
+
+/**
+ * `Object.hasOwn(TABLE, KEY)` naming THIS read's key, on the same line or the two above it —
+ * compared with whitespace squeezed out, so a Biome wrap is the same check. `KEY in TABLE` is not
+ * accepted: `in` consults the prototype chain, which is the very answer the guard must refuse.
+ */
+const guarded = (context: string, table: string, key: string): boolean =>
+  squeezed(context).includes(`Object.hasOwn(${table},${squeezed(keyExpression(key))})`);
 
 /**
  * Every prototype-reachable read in one file, in source order.
@@ -179,10 +207,10 @@ export function scanProtoIndex(
   const tables = recordTables(code);
   const sites: ProtoIndexSite[] = [];
   for (const table of tables) {
-    const use = new RegExp(`(?<![\\w$.])${RegExp.escape(table)}\\s*\\[`, 'g');
+    const use = new RegExp(`(?<![\\w$.])${RegExp.escape(table)}\\s*(?:\\?\\.\\s*)?\\[`, 'g');
     for (const match of code.matchAll(use)) {
       const open = match.index + match[0].length - 1;
-      const close = closingBracket(code, open);
+      const close = closingOf(code, open, '[', ']');
       const key = code.slice(open + 1, close).trim();
       // A literal key cannot be `'constructor'` unless somebody typed it, and then it is a
       // deliberate read of a member that exists.
@@ -190,7 +218,7 @@ export function scanProtoIndex(
       if (isWrite(code.slice(close + 1).trimStart())) continue;
       const lineStart = code.lastIndexOf('\n', match.index) + 1;
       const twoAbove = Math.max(0, code.lastIndexOf('\n', Math.max(0, lineStart - 2)) - 160);
-      if (guarded(code.slice(twoAbove, close), table)) continue;
+      if (guarded(code.slice(twoAbove, close), table, key)) continue;
       sites.push({ path, line: lineOf(code, match.index), table, key });
     }
   }

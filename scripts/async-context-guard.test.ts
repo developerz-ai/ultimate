@@ -54,6 +54,33 @@ const store = new hooks.AsyncLocalStorage<number>();
     ]);
   });
 
+  // Sweep 11 R4: the two clauses the import reading skipped.
+  test('follows a DEFAULT import, which is the module object as `* as` is', () => {
+    const sites = one(`import hooks from 'node:async_hooks';
+const store = new hooks.AsyncLocalStorage<number>();
+`);
+    expect(kinds(sites)).toEqual([
+      'binding:hooks.AsyncLocalStorage',
+      'construction:hooks.AsyncLocalStorage',
+    ]);
+    expect(
+      kinds(
+        one("import h, { executionAsyncId } from 'node:async_hooks';\nnew h.AsyncLocalStorage();"),
+      ),
+    ).toEqual(['binding:h.AsyncLocalStorage', 'construction:h.AsyncLocalStorage']);
+  });
+
+  test('a RE-EXPORT hands the class to every importer, under any name', () => {
+    expect(kinds(one("export { AsyncLocalStorage as Scope } from 'node:async_hooks';"))).toEqual([
+      'binding:Scope',
+    ]);
+    expect(kinds(one("export { AsyncLocalStorage } from 'async_hooks';"))).toEqual([
+      'binding:AsyncLocalStorage',
+    ]);
+    expect(kinds(one("export * from 'node:async_hooks';"))).toEqual(['binding:*']);
+    expect(kinds(one("export { executionAsyncId } from 'node:async_hooks';"))).toEqual([]);
+  });
+
   test('reports a binding nothing has constructed yet, because the next edit will', () => {
     const sites = one(`import { AsyncLocalStorage } from 'node:async_hooks';
 export type Store = AsyncLocalStorage<string>;

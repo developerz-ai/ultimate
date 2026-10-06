@@ -62,14 +62,18 @@ const BARE_BUILTINS = new Set(
 
 /**
  * Every spelling that reaches a builtin: a static `from 'node:x'`, a side-effect `import 'node:x'`,
- * a dynamic `await import('node:x')` and a `require('node:x')` — each with or without the prefix.
+ * a dynamic `await import('node:x')` — the specifier in any quote, a backtick included, so long as
+ * it interpolates nothing — a `require('node:x')` and `process.getBuiltinModule('node:x')`, which
+ * Bun implements and which takes no `import` keyword at all (sweep 11). Each with or without the
+ * prefix.
  * The dynamic form is here because `scripts/async-context-guard.ts`'s own header names it as the
  * hole a static-only scan leaves. A bare candidate counts only when its root is in BARE_BUILTINS.
  * The keyword must stand alone: after `.`/`?.` it names a method (`loader.require('fs')`,
  * `Buffer.from('fs')`), after an identifier character it is part of one (`myrequire`). Neither
  * reaches a builtin, so a finding there would ask a `why:` of an import that never happens.
  */
-const NODE_IMPORT = /(?<![\w$]|\.\s*)(?:from|import|require)\s*\(?\s*['"]((?:node:)?[\w./-]+)['"]/g;
+const NODE_IMPORT =
+  /(?:(?<![\w$]|\.\s*)(?:from|import|require)|\bgetBuiltinModule)\s*\(?\s*(['"`])((?:node:)?[\w./-]+)\1/g;
 
 /** `node:fs`, `fs`, `fs/promises` — and not `fsevents`, `./fs` or `bun`. */
 const isBuiltinSpecifier = (specifier: string): boolean =>
@@ -157,11 +161,12 @@ export function scanNodeImports(
   const lines = source.split('\n');
   const out: NodeImportSite[] = [];
   for (const match of source.matchAll(NODE_IMPORT)) {
-    if (!isBuiltinSpecifier(match[1] as string)) continue;
+    const specifier = match[2] as string;
+    if (!isBuiltinSpecifier(specifier)) continue;
     if (!isCode(masked, match.index, match[0] as string)) continue;
     const line = lineOf(source, match.index);
     if (hasWhy(lines, line - 1)) continue;
-    out.push({ path, line, specifier: match[1] as string });
+    out.push({ path, line, specifier });
   }
   return out;
 }

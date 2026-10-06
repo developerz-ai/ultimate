@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "f509c359c9b0637f",
+  "buildId": "3d0bb2c26945b08b",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -3745,7 +3745,9 @@
               "input": true,
               "when": false,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -3801,7 +3803,9 @@
               "input": true,
               "when": false,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -3868,7 +3872,9 @@
               "input": true,
               "when": false,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -3983,7 +3989,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -4049,7 +4057,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.queue.resume",
@@ -4058,7 +4068,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -4114,7 +4126,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.task.resume",
@@ -4123,7 +4137,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.task.run-now",
@@ -4132,7 +4148,9 @@
               "input": false,
               "when": false,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             }
           ]
         },
@@ -4321,7 +4339,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             },
             {
               "name": "job.retry-from-step",
@@ -4330,7 +4350,9 @@
               "input": true,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.run-now",
@@ -4339,7 +4361,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             },
             {
               "name": "job.cancel",
@@ -4348,7 +4372,9 @@
               "input": false,
               "when": true,
               "batch": false,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": false
             },
             {
               "name": "job.remove",
@@ -4357,7 +4383,9 @@
               "input": false,
               "when": true,
               "batch": true,
-              "threshold": null
+              "threshold": null,
+              "readonly": false,
+              "matching": true
             }
           ]
         }

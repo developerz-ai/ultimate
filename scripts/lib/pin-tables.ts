@@ -50,6 +50,23 @@ export function expectedRedLine(source: string, row: string): number {
 }
 
 /**
+ * `<table>.<file>` → `sites` for a `{ sites, why }` table. `pinRows` reads a row without a `count`
+ * as a licence worth 1, so a row raised from 1 site to 5 would never read as a raise.
+ */
+export const sitesRows =
+  (table: string) =>
+  (value: unknown): ReadonlyMap<string, number> => {
+    const rows = new Map<string, number>();
+    if (typeof value !== 'object' || value === null) return rows;
+    for (const [file, row] of Object.entries(value)) {
+      const sites: unknown =
+        typeof row === 'object' && row !== null ? Reflect.get(row, 'sites') : undefined;
+      if (typeof sites === 'number') rows.set(`${table}.${file}`, sites);
+    }
+    return rows;
+  };
+
+/**
  * The tables whose headers say they may only shrink but which live outside `PIN_GLOB` — each was a
  * row an author could raise beside the debt it excused with no guard reading the number.
  */
@@ -62,10 +79,24 @@ export const SCRIPT_PIN_TABLES: readonly ScriptPinTable[] = [
     rows: expectedRedRows,
     line: expectedRedLine,
   },
+  { path: 'scripts/posix-relative.ts', table: 'BACKLOG' },
+  {
+    path: 'scripts/set-cookie-literals.ts',
+    table: 'SET_COOKIE_PINS',
+    rows: sitesRows('SET_COOKIE_PINS'),
+  },
+  {
+    path: 'scripts/set-cookie-literals.ts',
+    table: 'SET_COOKIE_RELAY_PINS',
+    rows: sitesRows('SET_COOKIE_RELAY_PINS'),
+  },
+  { path: 'scripts/wiki-fences-backlog.ts', table: 'WIKI_FENCE_BACKLOG' },
 ];
 
 /** Every file `pin-raises` reads: the glob, then each script holding one table. */
-export const PIN_FILES: readonly string[] = [PIN_GLOB, ...SCRIPT_PIN_TABLES.map((one) => one.path)];
+export const PIN_FILES: readonly string[] = [
+  ...new Set([PIN_GLOB, ...SCRIPT_PIN_TABLES.map((one) => one.path)]),
+];
 
 /**
  * `export const <table> = <literal>;` lifted out of `source`, the type annotation dropped — or

@@ -237,7 +237,9 @@ export class BuiltinAdapter implements AuthAdapter {
    * One statement, and the two filters are conditional predicates rather than assembled SQL, for
    * the reason `updateUser`'s columns are: the statement text stays constant and nothing is
    * interpolated. Disabled members are excluded by default — an access review reads who can sign
-   * in today — and `includeDisabled` is what an offboarding audit passes.
+   * in today — and `includeDisabled` is what an offboarding audit passes. Ordered `collate "C"`
+   * (byte order, which `MemoryAdapter` restates): the database default collation is the
+   * cluster's locale, so the order changed with the deployment and disagreed with memory's.
    */
   async listUsersByOrg(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]> {
     const role = query?.role ?? null;
@@ -246,7 +248,7 @@ export class BuiltinAdapter implements AuthAdapter {
       where org_id = ${orgId}
         and (${query?.includeDisabled === true} or disabled_at is null)
         and (${role === null} or ${role} = any (roles))
-      order by email asc`);
+      order by email collate "C" asc`);
     return rows.map(toUser);
   }
 

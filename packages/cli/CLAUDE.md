@@ -70,7 +70,10 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 |---|---|
 | `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` | argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`) |
 | `generate-feature.ts` | a `--feature` naming no slice is `X_FEATURE_UNKNOWN`; nothing invents an entity |
-| `generate-shadow.ts` | a name whose type spelling a planned file also uses as a global or local type (`promise`, `row`) is `X_CLI_BAD_FLAG`, decided on the planned files |
+| `generate-shadow.ts` | a name whose type spelling a planned file also uses as a global or local type (`promise`, `row`), or whose camel VALUE a planned file both imports and declares (`x g job job`, TS2440), is `X_CLI_BAD_FLAG`, decided on the planned files |
+| `generate-plural.ts` | a planned `entity.ts` in an already-plural slice (`posts` → `postses`) is `X_CLI_BAD_FLAG`; the fix names the singular |
+| `generate-catalog-locales.ts` | `--locales` never starts a catalog in an app with any: a missing non-default locale is `X_CLI_BAD_FLAG`, `fix: x i18n add <locale>`; non-default values land `⟦…⟧`-marked (`seedCatalog`) |
+| `app-name.ts` | `x new`'s slug is asked of core's `defineConfig`, never a copied pattern; refused with a suggested name (`9lives` → `app-9lives`, `a` → `a-app`, cut at 64) |
 | `generate-grants.ts` | a written `policy.ts` grants `:read` to `member`, `:write` to `admin` in `apps/web/shared/roles.ts`; a written `entity.ts` declares its table's `<table>:read\|write\|delete` there and grants all three to `admin` — what the admin asks for the screen that entity just became |
 | `api-registration.ts` | a written job or task is listed in `apps/web/api/index.ts` |
 | `handle-registration.ts` / `workspace-dep-edit.ts` / `templates/scaffold-db-client.ts` | a written entity joins `const entities = { … }` in `packages/db/src/client.ts` (the typed handle every generated `repo.ts` reads), with the two manifest lines the new imports need; no anchor is `X_DB_HANDLE_UNREGISTERED` carrying the lines. `cmd-generate.ts`'s `nextSteps` prints what the new table owes |

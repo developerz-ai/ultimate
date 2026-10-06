@@ -5,7 +5,13 @@
 
 import { parseColor } from './color';
 import { imageUnsupported } from './errors';
-import { assertPixelBudget, createRaster, type ImageSize, type Raster } from './raster';
+import {
+  assertPixelBudget,
+  createRaster,
+  type ImageRegion,
+  type ImageSize,
+  type Raster,
+} from './raster';
 
 export type ImageFit = 'cover' | 'contain';
 
@@ -69,7 +75,15 @@ export interface Layout {
   readonly pad: number;
   /** The area inside the padding the artwork may occupy. */
   readonly inner: ImageSize;
-  /** What the source is resampled to before it is placed. */
+  /**
+   * The part of the source that is resampled, when it is not all of it: an UPSCALING `cover`
+   * whose aspect disagrees with the box. Resampling first would draw the whole source past the
+   * box only to clip it away — a 1x200 strip at 1000x200000 for a 1000x1000 box — so the visible
+   * region is cut first and `drawn` is the inner area. A downscaling `cover` resamples first: its
+   * `drawn` is never larger than the source, and no crop then means no full-size decode.
+   */
+  readonly crop: ImageRegion | undefined;
+  /** What the source (or `crop`) is resampled to before it is placed: within `max(source, box)`. */
   readonly drawn: ImageSize;
   /** Parsed once, here, so an unspellable colour is refused before any pixel is produced. */
   readonly background: readonly [number, number, number, number];
@@ -97,7 +111,10 @@ export function layOut(source: ImageSize, spec: ResizeSpec): Layout {
       { padding, pad, width: box.width, height: box.height },
     );
   }
-  const drawn = scaledToFit(source, inner, spec.fit ?? 'contain');
+  const fit = spec.fit ?? 'contain';
+  const scaled = scaledToFit(source, inner, fit);
+  const crop = fit === 'cover' ? visibleRegion(source, inner, scaled) : undefined;
+  const drawn = crop === undefined ? scaled : inner;
   // Parsed even when the fast path will not use it: 'chartreuse' must be refused whether or not
   // the geometry happens to hide the colour, or the rejection depends on the source's dimensions.
   const background = parseColor(spec.background ?? 'transparent');
@@ -106,7 +123,30 @@ export function layOut(source: ImageSize, spec: ResizeSpec): Layout {
   // the RGBA round trip entirely.
   const needsCanvas =
     drawn.width !== box.width || drawn.height !== box.height || background[3] !== 0;
-  return { box, pad, inner, drawn, background, needsCanvas };
+  return { box, pad, inner, crop, drawn, background, needsCanvas };
+}
+
+/**
+ * The source region a `cover` shows, or `undefined` when resampling the whole source first costs
+ * no more than the source itself (`scaled` within it) or nothing overflows the inner area.
+ * Centred as `composeOnto` centres an overflowing draw, so both orders crop the same window.
+ */
+function visibleRegion(
+  source: ImageSize,
+  inner: ImageSize,
+  scaled: ImageSize,
+): ImageRegion | undefined {
+  const overflows = scaled.width > inner.width || scaled.height > inner.height;
+  if (!overflows || scaled.width * scaled.height <= source.width * source.height) return undefined;
+  const scale = Math.max(inner.width / source.width, inner.height / source.height);
+  const width = Math.min(source.width, Math.max(1, Math.round(inner.width / scale)));
+  const height = Math.min(source.height, Math.max(1, Math.round(inner.height / scale)));
+  return {
+    x: Math.round((source.width - width) / 2),
+    y: Math.round((source.height - height) / 2),
+    width,
+    height,
+  };
 }
 
 function fill(canvas: Raster, color: readonly [number, number, number, number]): void {

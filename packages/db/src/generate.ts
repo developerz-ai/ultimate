@@ -11,7 +11,7 @@ import { isDestructive } from './destructive';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
-import { appendOnlyPlan } from './generate-append-only';
+import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-only';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { createIndex, impliedByColumnClause } from './index-ddl';
@@ -202,7 +202,7 @@ function diffTable(
       } else {
         // After any retype, so a new default is set against the column's new type. A rebuilt
         // column was re-added carrying its whole clause, so it has nothing left to move.
-        alterColumnInPlace(entity.table, column, recorded, plan);
+        alterColumnInPlace(entity, column, recorded, plan);
       }
       continue;
     }
@@ -215,6 +215,9 @@ function diffTable(
     // one statement — measured. Emitting it nullable would leave a `-- backfill` comment naming a
     // step nobody can perform, since a generated column cannot be written to.
     const nullable = column.notNull && !isGenerated(column) && defaultExpression(column) === null;
+    // That follow-up is an UPDATE, and an append-only table's trigger refuses every one.
+    if (nullable && entity.appendOnly === true)
+      throw appendOnlyBackfillRefused(entity, column, 'added');
     const clause = nullable ? columnClause({ ...column, notNull: false }) : columnClause(column);
     plan.up.push(`alter table ${identifier(entity.table).text} add column ${clause};`);
     if (nullable) {

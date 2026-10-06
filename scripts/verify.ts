@@ -55,6 +55,7 @@ import {
   floorFindings,
   sharedLeafFindingFor,
 } from './boundaries';
+import { boundaryRuleDocFindings } from './boundary-rule-docs';
 import { chartVersionFindings } from './chart-version';
 import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
@@ -66,6 +67,7 @@ import { gateStepFindings } from './gate-steps';
 import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
+import { knownGapLinkFindings } from './known-gaps-links';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { report, writeOut } from './lib/log';
@@ -73,6 +75,7 @@ import { repoRoot } from './lib/run';
 import { REPO_GATE, readVerifyArgs, VERIFY_SUBCOMMANDS } from './lib/verify-args';
 import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
+import { opsUidFindings } from './ops-uid-docs';
 import { readmeFenceFindings } from './readme-fences';
 import { releaseFactFindings } from './release-facts';
 import { publishListFindings } from './release-workflow';
@@ -84,6 +87,8 @@ import { testFixFindings } from './test-fix-citations';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { versionStampFindings } from './version-stamps';
+import { wikiAnchorFindings } from './wiki-anchors';
+import { wikiFenceFindings } from './wiki-fences';
 import { frameDocFindings } from './wiki-frames';
 import { wikiTableFindings } from './wiki-tables';
 
@@ -287,6 +292,11 @@ export const errorContract: HostCheck = async (root) => [
  * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
  * | `setupCommandFindings` | a page stating what a scaffolded app's `bun run setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-bin.ts` |
  * | `llmsTxtFindings` | `llms.txt`'s package and wiki lists are generated — they were not, and `@ultimat3/notify` was missing | `listWorkspaces()`, `wiki/_Sidebar.md`, `wiki/Home.md` |
+ * | `wikiFenceFindings` | a fenced `ts`/`tsx` example on a wiki page typechecks — `readmeFenceFindings` read package READMEs only (sweep 11). Runs AFTER it: both compile in one fixture directory | `tsc`, on a ratchet |
+ * | `wikiAnchorFindings` | every `Page#anchor` link lands on a heading of its page | the target page's heading slugs |
+ * | `knownGapLinkFindings` | each Known-Gaps `[B<n>]` link resolves to its backlog row and names its issue | the plan files |
+ * | `opsUidFindings` | a uid `docs/ops` states is the one its image runs | `RUNTIME_UID`, `docker/helm/values.yaml` |
+ * | `boundaryRuleDocFindings` | `02-boundaries.md`'s rule count and code table match the boundary rules | `BOUNDARY_CODES` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
  * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
@@ -316,6 +326,11 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await releaseFactFindings(root)),
   ...(await setupCommandFindings(root)),
   ...(await llmsTxtFindings(root)),
+  ...(await wikiFenceFindings(root)),
+  ...(await wikiAnchorFindings(root)),
+  ...(await knownGapLinkFindings(root)),
+  ...(await opsUidFindings(root)),
+  ...(await boundaryRuleDocFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

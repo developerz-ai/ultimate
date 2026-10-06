@@ -104,6 +104,20 @@ function refuseUnsupportedPut(putOptions?: PutOptions): void {
 /** `ENOENT` is the one delete failure that means "already in the desired state". */
 const isMissingFile = (error: unknown): boolean => stringField(error, 'code') === 'ENOENT';
 
+/**
+ * A directory at an object's path is OTHER keys' parent (`c` beside `c/d`), never an object: no
+ * bytes are stored at the key, so deleting it is deleting an absent key. Asked only after an
+ * unlink failed, because the errno for "that is a directory" is `EISDIR` on Linux and `EPERM` on
+ * macOS — the stat is the portable answer.
+ */
+const isDirectory = async (path: string): Promise<boolean> =>
+  Bun.file(path)
+    .stat()
+    .then(
+      (stats) => stats.isDirectory(),
+      () => false,
+    );
+
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
   // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
@@ -164,7 +178,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     try {
       await Bun.file(path).delete();
     } catch (error) {
-      if (isMissingFile(error)) return;
+      if (isMissingFile(error) || (await isDirectory(path))) return;
       throw deleteFailed(
         DRIVER_NAME,
         key,
@@ -199,11 +213,14 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         const actual = sha256Base64(bytes);
         if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
       }
+      const lastModified = clock.now();
       const sidecar: Sidecar = {
         contentType: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE,
         etag: etagOf(bytes),
         cacheControl: putOptions?.cacheControl,
         metadata: putOptions?.metadata,
+        // The write's instant, on the injected clock, recorded for every later read to report.
+        lastModified: lastModified.toISOString(),
         ...sidecarLock(requestedLock(putOptions)),
       };
       await oneAtATime(safe, async () => {
@@ -215,7 +232,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         size: bytes.byteLength,
         contentType: sidecar.contentType,
         etag: sidecar.etag,
-        lastModified: clock.now(),
+        lastModified,
         ...(sidecar.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
         ...(sidecar.metadata === undefined ? {} : { metadata: sidecar.metadata }),
       };
@@ -262,11 +279,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       // trust. The hash is streamed, and only for a sidecar-less source or a pair in doubt.
       const entry = await measured(source);
       if (entry === undefined) throw objectNotFound(registered, source);
+      const lastModified = clock.now();
       const sidecar: Sidecar = {
         contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
         etag: entry.etag,
         cacheControl: entry.cacheControl,
         metadata: entry.metadata,
+        lastModified: lastModified.toISOString(),
       };
       await oneAtATime(destination, async () => {
         await refuseOverwrite(destination, 'copy onto');
@@ -286,7 +305,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         ...entry,
         key: destination,
         contentType: sidecar.contentType,
-        lastModified: clock.now(),
+        lastModified,
       };
     },
 

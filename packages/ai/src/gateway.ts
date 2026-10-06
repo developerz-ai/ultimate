@@ -17,7 +17,13 @@ import {
 } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { BudgetKeys, BudgetLimits, BudgetStore } from './budget';
-import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
+import {
+  assertFiniteLimits,
+  BudgetLedger,
+  currentBudget,
+  estimateSpend,
+  withBudget,
+} from './budget';
 import { AiProviderUnavailableError } from './errors';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
@@ -120,6 +126,9 @@ class GatewayImpl implements Gateway {
     // non-finite one already, and a NEGATIVE base is clamped to a zero wait on purpose
     // (`gateway-backoff.test.ts` pins it), which a count check here would start refusing.
     finiteCount('createGateway', 'retry.attempts', this.retry.attempts, 1);
+    // Screened here, under the config's own key, rather than by the ledger `callLedger` builds:
+    // that refused on the first CALL and named `the AI budget`, not the `createGateway` to edit.
+    if (config.budget !== undefined) assertFiniteLimits(config.budget, 'createGateway', 'budget.');
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
   }

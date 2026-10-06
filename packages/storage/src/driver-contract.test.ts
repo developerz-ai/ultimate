@@ -1,6 +1,7 @@
 // One claim, three disks. `driver-parity.test.ts` pins local against s3; these are the claims the
 // memory disk has to hold too, because a test's disk that disagrees with production's is a suite
-// that passes over a bug: keys that are prefixes of one another, `stat()`, and the read ceiling.
+// that passes over a bug: keys that are prefixes of one another (refused by local and memory,
+// held by s3), `stat()`, and the read ceiling.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive remove — `mkdtemp` and `rm` have no
@@ -41,8 +42,10 @@ afterEach(async () => {
 });
 
 describe('a key that is a prefix of another key', () => {
-  test('s3 and memory hold both, in either order', async () => {
-    for (const disk of [memory, s3]) {
+  // The memory disk refuses with the local disk: it stands in for the dev disk, not for s3
+  // (`driver-local-memory-parity.test.ts` holds the two to one answer).
+  test('s3 holds both, in either order', async () => {
+    for (const disk of [s3]) {
       await disk.put('a', bytesOf('file'));
       await disk.put('a/b', bytesOf('nested'));
       await disk.put('d/e', bytesOf('nested'));

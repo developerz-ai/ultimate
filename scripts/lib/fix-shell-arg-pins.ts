@@ -42,9 +42,10 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       '`errors.ts:81` splices `input.entity` into `x admin resources`. The entity name is a registry key an `entity()` declaration wrote, and the admin registry refuses one that no entity declared.',
   },
   ai: {
-    count: 1,
+    // why: sweep 11 made `export` a command word; `errors.ts:418` exports a provider's API_KEY_ENV constant.
+    count: 2,
     reason:
-      '`eval-errors.ts:39` splices `input.eval` into `x ai eval <name>`. The eval name is the key its own `defineEval()` registered under, in this process.',
+      '`eval-errors.ts:39` splices `input.eval` into `x ai eval <name>`. The eval name is the key its own `defineEval()` registered under, in this process. `errors.ts:418` splices `input.envVar` into `export <NAME>=<key>`: every caller (`provider.ts`, `openai-provider.ts`, `remote-embedder.ts`) passes its module constant `API_KEY_ENV`, never configuration or input.',
   },
   // 73 → 75: schema-drift.ts' repairFix splices db's own SchemaDifference.name into `x db gen`.
   // why: that name is a declared identifier or the fixed label `replica identity full`, never input.
@@ -54,9 +55,10 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
       "the CLI's own commands, and the widest row by an order of magnitude: 63 of the 76 splice a value into `x <something>` — a command name, a generator kind, a test type, a workspace directory, a route path, a CI job name — each of which `@ultimat3/cli` itself parsed against a closed list before rendering the fix. The remainder are `bun run <script>`, `gh`, `docker` and `git` with a workspace or branch name. What makes the row big rather than dangerous is that a CLI's inputs are argv, already in the operator's own shell; what keeps it a debt is `island-shot.ts`, `mcp-host.ts` and `ci-runs.ts`, whose values come off a browser, an MCP client and the GitHub API. The 75th is `verify-floor.ts`'s `fixFor`, which splices `TYPECHECK_BIN_FIELD` and `VERIFY_FLOOR_FILE` — two module constants in that same file, never a runtime value — into `x verify --json   # then set …`, exactly as the `agentsMdMaxBytes` line beside it already does. The 76th and 77th are `schema-drift.ts`'s `repairFix`, which splices a `SchemaDifference.name` into `x db gen \"record|drop <name>\"`: that name is built by `@ultimat3/db`'s own diff from declared identifiers (a table, column, index or constraint name the entity already validated) or a fixed label such as `replica identity full`, never request or file text — and `renderFixShellArg` would replace the label's spaces with a placeholder, breaking the one command that works.",
   },
   core: {
-    count: 2,
+    // why: sweep 11 made `export` a command word: environment.ts:66 (two constants) and secrets-errors.ts:68 (a validated name).
+    count: 5,
     reason:
-      '`registrar.ts:108,130` splice a PRIMITIVE KIND into `bun add @ultimat3/<kind>`. `PRIMITIVE_KINDS` is the closed list of eight in that same file, and a kind that is not one of them never reaches the refusal. The package that OWNS `renderFixShellArg` still holding two of these is the same shape as `@ultimat3/auth` owning `timingSafeEqual`.',
+      "`registrar.ts:108,130` splice a PRIMITIVE KIND into `bun add @ultimat3/<kind>`. `PRIMITIVE_KINDS` is the closed list of eight in that same file, and a kind that is not one of them never reaches the refusal. The package that OWNS `renderFixShellArg` still holding two of these is the same shape as `@ultimat3/auth` owning `timingSafeEqual`. `environment.ts:66` splices `ENVIRONMENT_KEY` and `ENVIRONMENTS.join('|')` — two module constants — into `export <KEY>=<a|b|c>`; `secrets-errors.ts:68` splices `input.envVar` into `export <NAME>=…` only behind `ENV_VAR_NAME.test(input.envVar)`, a POSIX identifier, and prose otherwise.",
   },
   db: {
     count: 7,
@@ -103,13 +105,19 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
     reason:
       '`errors.ts:89,325,340` splice a QUERY NAME into `x policy explain <name>` and `x queries describe <name>`. The name is the key its own `query()` registered under. why: `single: true` added X_QUERY_SINGLE_INVALID, whose fix names the query it refused.',
   },
+  realtime: {
+    // why: sweep 11 read `export NAME=${…}` as an assignment; errors.ts:374's origin is screened before it is spliced.
+    count: 1,
+    reason:
+      '`errors.ts:374` splices the refused socket ORIGIN into `export APP_URL=<origin>`. It is a request header, so the constructor first reduces it to `URL.parse(…).origin` and keeps it only when `isFixShellSafe` carries it verbatim — the one predicate `renderFixShellArg` is built on — and the rule cannot see a screen applied to a local before the splice.',
+  },
   render: {
     count: 1,
     reason:
       '`surfaces.ts:224` splices an ENTRY PATH into `x routes`. The path is a route file this build already resolved on disk, under `apps/*/`.',
   },
   scripts: {
-    count: 28,
+    count: 27,
     reason:
       "this repo's own gate rules, which run on a developer's machine and CI and ship to nobody: 20 splice a workspace name, a package directory or a leaf key into `bun run scripts/<rule>.ts --unpin <x>`, six a path into `git checkout --`, and the rest a package name into `gh` / `npm view`. Every value is a workspace directory, a file this tree contains or a key derived from its own source. The one that is not — `scaffold-first-run.ts:106`, a `cd <dir> && <the app bin>` — points at a temp directory this script created.",
   },

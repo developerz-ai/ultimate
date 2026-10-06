@@ -56,3 +56,39 @@ describe('a t.record key carrying U+0000', () => {
     expect(rendered.join('')).not.toContain('hunter2');
   });
 });
+
+// A lone surrogate is the other string Postgres cannot keep: jsonb refuses it (22P02, a 500), and
+// `text` through Bun's sql stores U+FFFD in its place — a memory store would answer the original.
+describe('a string carrying a lone UTF-16 surrogate', () => {
+  const LONE = ['\uD800', '\uDFFF', 'a\uD83D', '\uDE00b'];
+
+  test('every string-backed builtin refuses it, naming the fact', () => {
+    for (const [name, schema, value] of [
+      ['string', builtinT.string, `x${LONE[0]}`],
+      ['email', builtinT.email, `a${LONE[1]}@b.co`],
+      ['url', builtinT.url, `https://a.b/${LONE[2]}`],
+      ['slug', builtinT.slug, `a${LONE[3]}`],
+      ['max', builtinT.string.max(5), LONE[0]],
+    ] as const) {
+      const message = validate(schema, value).issues?.[0]?.message;
+      expect([name, message?.endsWith('that contains a lone UTF-16 surrogate')]).toEqual([
+        name,
+        true,
+      ]);
+    }
+  });
+
+  test('a well-formed pair — an emoji — stays legal', () => {
+    expect(validate(builtinT.string, 'ok 😀')).toEqual({ value: 'ok 😀' });
+  });
+
+  test('a t.record key is refused by position, never quoted', () => {
+    const schema = objectSchema({ meta: recordSchema(builtinT.number) });
+    const rendered = formatIssues(
+      validate(schema, { meta: { ok: 1, [`hunter2\uD800`]: 2 } }).issues ?? [],
+    );
+    expect(rendered).toEqual([
+      'meta[1]: expected a record key, received one that contains a lone UTF-16 surrogate',
+    ]);
+  });
+});

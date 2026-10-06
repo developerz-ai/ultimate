@@ -34,7 +34,9 @@
 // pattern argument (`.replace(/(')/g, "''")`, `.replace(new RegExp("'", 'g'), "''")`) closed the
 // `[^)]` window before the replacement was ever read; and `"'".repeat(2)` is the same two
 // characters arrived at by arithmetic. The call is now walked with balanced parentheses and its
-// LAST argument tested, so the window has no length limit to slip past.
+// LAST argument tested, so the window has no length limit to slip past. Since plan 101 sweep 11
+// that argument may also be a REPLACER answering the doubled quote (`() => "''"`, a `function`
+// returning it) or a `const` this file binds to it (`.replaceAll("'", QQ)`), each the same escape.
 //
 // WHAT THIS CANNOT SEE. A producer that abandons escaping ALTOGETHER — `` `'${value}'` `` — doubles
 // no quote, matches no rule here, and passes. This rule answers "is there a second copy of the
@@ -84,6 +86,23 @@ const ESCAPING_CALL = /\.\s*(replace|replaceAll|join)\s*\(/g;
  */
 const DOUBLED_ARGUMENT = /^(?:"''"|'\\'\\''|`''`|(?:"'"|'\\''|`'`)\s*\.\s*repeat\s*\(\s*2\s*\))$/;
 
+/** `const QQ = "''";` — a name this file binds to the doubled quote. */
+const DOUBLED_CONST =
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?=\s*("''"|'\\'\\''|`''`|(?:"'"|'\\''|`'`)\s*\.\s*repeat\s*\(\s*2\s*\))\s*[;\n]/g;
+
+/** `() => X`, `(m) => X`, `m => X`, `function () { return X; }` — a replacer, and what it answers. */
+const REPLACER =
+  /^(?:(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*(?:\{\s*return\s+([^;}]+);?\s*\}|(.+))|function\s*[\w$]*\s*\([^)]*\)\s*\{\s*return\s+([^;}]+);?\s*\})$/s;
+
+/** Whether an argument IS the doubled quote: spelt out, through a name bound to it, or answered. */
+const isDoubled = (argument: string, names: ReadonlySet<string>): boolean => {
+  const text = argument.trim();
+  if (DOUBLED_ARGUMENT.test(text) || names.has(text)) return true;
+  const replacer = REPLACER.exec(text);
+  const answered = (replacer?.[1] ?? replacer?.[2] ?? replacer?.[3])?.trim();
+  return answered !== undefined && (DOUBLED_ARGUMENT.test(answered) || names.has(answered));
+};
+
 /** A single quote as an argument — `"'"`, `/'/g`, `/(')/g`. The pattern half of the escape. */
 const SINGLE_QUOTE_ARGUMENT = /^(?:"'"|'\\''|`'`|\/\(?'\)?\/[gimsuy]*)$/;
 
@@ -122,12 +141,13 @@ export function literalCopies(files: readonly SourceFile[]): readonly LiteralCop
     // `stripComments` blanks a comment and keeps every offset, so a position read from the masked
     // source is a position in the file.
     const masked = stripComments(file.source);
+    const names = new Set([...masked.matchAll(DOUBLED_CONST)].map((one) => one[1] as string));
     for (const match of masked.matchAll(ESCAPING_CALL)) {
       const open = match.index + match[0].length - 1;
       const close = balancedClose(masked, open);
       if (close === -1) continue;
       const args = topLevelArguments(masked.slice(open + 1, close));
-      if (!DOUBLED_ARGUMENT.test(args.at(-1) ?? '')) continue;
+      if (!isDoubled(args.at(-1) ?? '', names)) continue;
       if (match[1] === 'join' && !splitsOnQuote(masked, match.index)) continue;
       found.push({
         file: file.path,

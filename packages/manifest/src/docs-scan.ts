@@ -158,18 +158,21 @@ async function guideEntries(
   // id — silently, which is the failure mode the search's own coverage floor exists to prevent,
   // and a direct contradiction of `DocEntry.topic`'s promise to be unique within a package. No
   // shipped guide collides today; an app's own package is one heading away from it. The suffix
-  // follows document order, so the id is still derived and still reproducible.
-  const used = new Map<string, number>();
+  // follows document order, so the id is still derived and still reproducible. EVERY emitted id is
+  // recorded and a suffix climbs past a taken one: `## Retry`, `## Retry`, `## Retry 2` otherwise
+  // gave the second `Retry` and the real `Retry 2` the same `retry-2`.
+  const emitted = new Set<string>();
   for (const file of GUIDE_FILES) {
     const markdown = await read(join(dir, file));
     if (markdown === undefined) continue;
     const stem = basename(file, '.md');
     for (const section of parseGuideSections(markdown)) {
       const base = `${shortName(name)}.${stem}#${slug(section.heading)}`;
-      const seen = (used.get(base) ?? 0) + 1;
-      used.set(base, seen);
+      let topic = base;
+      for (let suffix = 2; emitted.has(topic); suffix += 1) topic = `${base}-${suffix}`;
+      emitted.add(topic);
       entries.push({
-        topic: seen === 1 ? base : `${base}-${seen}`,
+        topic,
         package: name,
         version,
         kind: 'guide',

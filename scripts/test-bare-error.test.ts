@@ -45,6 +45,22 @@ describe('scanBareErrorThrows separates the verdict from the input', () => {
     );
   });
 
+  // Sweep 11 R4: two spellings of the same verdict the pattern did not read.
+  test('a thrown string or template is a verdict with even less on it than a bare Error', () => {
+    const template = ['throw `got $', '{x}`;'].join('');
+    for (const source of ["throw 'expected a refusal';", 'throw "nope";', template]) {
+      expect(scanBareErrorThrows('packages/x/src/a.test.ts', source)).toHaveLength(1);
+    }
+    expect(scanBareErrorThrows('packages/x/src/a.test.ts', 'throw reason;')).toEqual([]);
+  });
+
+  test('globalThis.Error is the same class, with or without `new`', () => {
+    const at = (source: string) => scanBareErrorThrows('packages/x/src/a.test.ts', source);
+    expect(at("throw new globalThis.Error('x');")).toHaveLength(1);
+    expect(at("throw globalThis.TypeError('x');")).toHaveLength(1);
+    expect(at("throw new globalThis.UltimateError({ code: 'X_A' });")).toEqual([]);
+  });
+
   // The carve-out #132 said grep could not make. These are the code-under-test's INPUT, and
   // `packages/realtime/CLAUDE.md` blesses them: "the rule governs what this package throws, never
   // what a test hands it." A rule that reported these would ask for a rewrite that changes what the

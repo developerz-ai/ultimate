@@ -39,6 +39,34 @@ is non-empty. Each wave-3 agent gets one band and the "already known" list of ev
 | R3 — cli | `island-shot*`, `island-capture`, `island-verdict`, `island-harness*`, `island-states-load`, `island-link`, `island-realtime`, `island-solid-dedupe`; `app-boundaries`, `app-transport`, `app-permissions*`, `app-evals`, `app-agents-md`, `app-artifacts`, `app-entities`, `app-env`, `app-openapi`, `app-root`, `server-barrels`; `dev-policy`, `image-prepare`, `static-report`, `measure-scope`; `cmd-new`, `cmd-i18n`, `cmd-shot-island`, `verify-stalled`, `verify-coverage-run`, `verify-role-load*`; **~70 generator templates** (`action`, `job`, `query`, `entity`, `resource-*`, `route`) |
 | R4 — harness, scripts, ops | testing `cdp-launch*`, `cdp-e2e-*`, `e2e-locator/page/evaluate/selection`, `island-*`, `fixture-*`; scraping `driver-cdp`, `cdp-*`, `session-state`; **~75 top-level guards + 61 `scripts/lib/*`** (each: can it fail? which real form slips?); `docker/docker-compose.dev.yml`, `docker/deploy-proof/load.ts`; admin notify/PWA SW internals; NATS/KV transport auth |
 
+## Wave 3 — reported 2026-10-06 (at `c9ff0d85`)
+
+Every finding was reproduced with a probe; all are fixed in the sweep 11 PR (fix workers F1–F4).
+
+| Band | Found | Severity | Highest |
+|---|---|---|---|
+| R1 tiers 0–2 | 9 | 1 Medium, 8 Low | `t.string`/record keys accept a lone surrogate (jsonb 500; text silently stored as U+FFFD) |
+| R2 tiers 3–4 | 6 | 1 High, 3 Medium, 2 Low | ai `costPerCall: NaN` disables the per-call money ceiling, and `derive()` with NaN widens a stricter one |
+| R3 cli | 8 | 4 Medium, 4 Low | generators that report `ok:true` and write an app failing its own gate (`[orderId]` params, locale catalogs, `x new 9lives`) |
+| R4 harness, scripts, ops | 13 | 4 Medium, 9 Low | `secret-compare` per-package pins let a pinned false positive be swapped for a real unsafe compare |
+
+**Falsified in wave 3** (do not re-report): schema `t.json()` depth/cycles/holes, `coerce` `__proto__`, `iso-date` bounds, `t.url` schemes (screened at render/ui/seo); entity `sealed-repo` coverage, `appendOnlyRepo` wrapping, aggregate memory-vs-pg, `jit-preload` bounds; db append-only DDL order; auth adapter parity (verification, recovery, `linkAccount`, API keys); storage metadata, lock emulation, attachment idempotency; time ranges, months, holiday freeze, Apia skipped day, cron weekday; seo image caps, title template; core otlp single-flight, seal-keys memo, image probe bounds. mcp confirmations gate order, consume CAS, memory-vs-pg boundaries, view/approve digest; ai `costOf`, media screen, OpenAI messages, model resolution; jobs execute, held-claim hand-back, drain cut-off, scheduler leadership, outbox fencing; realtime record store, live-query slots, socket engine, page outbox, envelopes; render `defineRoute`; manifest sort and sources; ui form paths, links, charts other than ticks; notify fan-out and delivery. All 13 base generator kinds and 18 variants green in a fresh scaffold; app-boundaries import forms; island shot, harness, link, dedupe, runtime; verify coverage, role load. `boundaries`, `==` (Biome), empty corpus, `SET_COOKIE_PINS`, `seal-calls` AES backstop, `error-map`, `pin-raises` reuse; cdp launch, e2e injection, scraping session state, NATS subject tokens, dev compose binds, deploy-proof load, the PWA service worker.
+
+**Unreached after wave 3** (wave 4, below):
+
+| Band | Files |
+|---|---|
+| core | `config-pwa`, `config-navigation`, `config-islands`, `config-health`, `config-defaults`, `config-fixes`; `image/png-pixels`, `png-bytes`, `color`, the `canvas` composite half |
+| db, entity, schema | `introspect-catalog`, `transaction-options`, the rest of `drift`; `sealed-declaration`, `sealed-errors`; schema `errors` |
+| realtime | `client-channels`, `sync-node-bounds`, `sync-node-contract`, `replicator`, `page-runtime`, `page-runtime-wait`, `first-paint-hold`, `live-query-options`, `nats-transport` (beyond subjects), `nats-jetstream` |
+| jobs, ai, manifest | `backfill-pass` (the pass loop), `outbox-relay`, `scheduler-leader`, `driver-nats`; ai `agent` body, `openai-provider`, the Anthropic send/stream; manifest `schema` (rest) |
+| ui | the `.tsx` components (Combobox, CommandPalette, Dialog, Drawer, Menu, Popover, Toast, Tabs, Pagination, Dropzone, FileInput, Form, Chart, ChartFrame), `qr-encode`, `qr-matrix`, `chart-frame-view`, `file-input-view`, `form-binding`, `form-state`, `form-touch`, `use-form` |
+| testing, scraping | `e2e-locator`, `e2e-evaluate`, `cdp-e2e-page` (beyond interpolation), every `island-*` and `fixture-*`; scraping `cdp-arm`, `cdp-port`, `cdp-target`, `cdp-resolver`, `cdp-snapshot`, `cdp-a11y` |
+| scripts | about 60 guards (doc, wiki, release and test-quality rules: catch-render, to-throw-returns, index-of-order, skip-if-cleanup, frozen-records, render-modes, side-effects, browser-transport, gate-codes, doc-*, wiki-*, version-stamps, lockfile-pins, changelog-check, i18n-catalog, catalog-keys, config-readers, declaration-readers, flight-copies, not-implemented-copies, coverage-gate) and about 53 `scripts/lib/*` |
+| cli | whether `x dev` re-reads an edited `*.island.states.ts` (needs a live session); the `cdp-shot-*` driver lifecycle |
+
+R4's "admin notify / PWA SW internals" names code that does not exist: admin imports neither notify nor pwa.
+
 ## Doc facts with no guard (found by 10e)
 
 | Fact | Where it is stated | Executable copy | Guard to add |

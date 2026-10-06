@@ -46,7 +46,7 @@ describe('the in-process replicator', () => {
     const changes: unknown[] = [];
     const replicator = await startLiveReplicator({
       registry: fakeRegistry(() => Promise.reject(new Error('lane failed'))),
-      channels: { deliverChange: (change) => changes.push(change) },
+      channels: { deliverChange: (change) => changes.push(change), invalidate: () => 0 },
       onError: () => undefined,
     });
     const db = database({ memos }, { driver: memoryDriver() });

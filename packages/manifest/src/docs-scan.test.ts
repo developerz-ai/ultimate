@@ -156,6 +156,23 @@ describe('unit · scanPackageDocs', () => {
     expect(entries.map((entry) => entry.text)).toEqual(['First.', 'Second.', 'Third.']);
   });
 
+  test('a suffix never lands on a real heading whose slug already carries it', async () => {
+    // `## Retry 2` slugs to `retry-2`, the id the second `## Retry` is suffixed into — in either
+    // order. Every emitted id is recorded, and a suffix climbs past one that is taken.
+    for (const [readme, topics] of [
+      ['## Retry\n\nA.\n\n## Retry\n\nB.\n\n## Retry 2\n\nC.\n', ['retry', 'retry-2', 'retry-2-2']],
+      ['## Retry 2\n\nC.\n\n## Retry\n\nA.\n\n## Retry\n\nB.\n', ['retry-2', 'retry', 'retry-3']],
+    ] as const) {
+      const dir = fixture({
+        'package.json': '{"name":"@ultimat3/x"}',
+        'src/index.ts': '',
+        'README.md': `# x\n\n${readme}`,
+      });
+      const entries = await scanPackageDocs(dir);
+      expect(entries.map((entry) => entry.topic)).toEqual(topics.map((t) => `x.README#${t}`));
+    }
+  });
+
   test('a heading repeated across README and CLAUDE keeps its own file in the topic', async () => {
     const dir = fixture({
       'package.json': '{"name":"@ultimat3/x"}',

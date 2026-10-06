@@ -235,6 +235,6 @@ export const adminFindings = (
     .map((step) => ({
       code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
       cause: `the scaffolded app's /admin/${walk.resource} failed "${step.name}": ${step.got}`,
-      fix: `cd ${dir} && bun run dev --port ${renderFixShellArg(new URL(walk.base).port || '3000', '<port>')}   # then, in a second shell: ${step.curl}`,
+      fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && bun run dev --port ${renderFixShellArg(new URL(walk.base).port || '3000', '<port>')}   # then, in a second shell: ${step.curl}`,
       at: dir,
     }));

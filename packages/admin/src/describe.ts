@@ -36,6 +36,10 @@ export interface AdminActionDescription {
   readonly batch: boolean;
   /** Rows a batch runs inline before it is queued as `admin.batch` jobs. `null`: always inline. */
   readonly threshold: number | null;
+  /** Declared `readonly`: its admin gate is `admin:read` — unless `destructive` or `matching` holds it. */
+  readonly readonly: boolean;
+  /** It declares `matching`: "all matching" is ONE set-based write, which keeps the write gate. */
+  readonly matching: boolean;
 }
 
 export interface AdminResourceDescription {
@@ -88,6 +92,8 @@ const actionOf = (action: AdminAction): AdminActionDescription => ({
   when: action.when !== undefined,
   batch: action.batch !== undefined,
   threshold: batchPlan(action)?.threshold ?? null,
+  readonly: action.readonly === true,
+  matching: action.matching !== undefined,
 });
 
 /** Sorted by name and by URL, so two boots of one app describe it in the same bytes. */

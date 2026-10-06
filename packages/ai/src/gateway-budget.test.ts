@@ -3,6 +3,7 @@
 // provider. Routing, retries and error-code propagation are `gateway.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { BudgetStore } from './budget';
 import { MemoryBudgetStore } from './budget';
 import { EchoProvider } from './echo-provider';
@@ -226,5 +227,28 @@ describe('a stream that never reaches a provider releases its reservation', () =
 
     await expect(failure).rejects.toThrow(/budget store unavailable/);
     expect(counters.get('org:acme') ?? 0).toBe(0);
+  });
+});
+
+// The gateway's `budget` was first screened by the ledger `callLedger` builds — on the first CALL,
+// under the ledger's subject. Refused at construction instead, under the key the config wrote.
+describe('createGateway refuses a budget that cannot hold', () => {
+  test('a costPerCall or token ceiling that is not a whole count fails construction', () => {
+    for (const value of [...NOT_A_BOUND, -1]) {
+      const money = refusal(() =>
+        createGateway({
+          providers: [echo],
+          budget: { costPerCall: { minor: value, currency: 'USD' } },
+        }),
+      );
+      expect(money.code).toBe('X_INVARIANT');
+      expect(money.cause).toContain('budget.costPerCall.minor');
+      expect(money.fix).toContain('createGateway');
+      const tokens = refusal(() => createGateway({ providers: [echo], budget: { org: value } }));
+      expect(tokens.cause).toContain('budget.org');
+    }
+    expect(() =>
+      createGateway({ providers: [echo], budget: { costPerCall: { minor: 0, currency: 'USD' } } }),
+    ).not.toThrow();
   });
 });

@@ -69,6 +69,13 @@ export interface AdminActionFact {
   readonly when: boolean;
   readonly batch: boolean;
   readonly threshold: number | null;
+  /**
+   * The two inputs of the admin-level gate besides `destructive`: `readonly` lowers it to
+   * `admin:read`, `matching` (a set-based write) holds it at `admin:write`. Absent from a file
+   * written before they were recorded, and read there as `false`.
+   */
+  readonly readonly: boolean;
+  readonly matching: boolean;
 }
 
 /** One resource of a generated admin: what its list answers, and whether a row scope narrows it. */
