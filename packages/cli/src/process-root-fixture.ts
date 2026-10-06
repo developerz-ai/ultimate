@@ -3,11 +3,11 @@
 // one process's `rm` deleted the other's tree mid-build. Dead processes' roots are reaped here,
 // because a crashed run cannot clean up after itself and nothing else knows the directory is stale.
 
+// why: `node:` by necessity, and SYNC by necessity — a fixture root is a module-level `const`,
+// and Bun ships neither a directory listing nor a recursive remove of its own.
 import { readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path API — nothing native joins a directory to a file.
 import { join } from 'node:path';
-// why: `node:` by necessity, and SYNC by necessity — a fixture root is a module-level `const`,
-// and Bun ships neither a directory listing nor a recursive remove of its own.
 import { stringField } from '@ultimat3/core';
 
 const RUN = /^run-(\d+)$/;
