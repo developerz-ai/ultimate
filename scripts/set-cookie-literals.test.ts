@@ -40,6 +40,22 @@ describe('a Set-Cookie spelled by hand', () => {
     expect(quoted(source, 'examples/dummy/apps/web/app/auth/actions.ts')).toHaveLength(1);
   });
 
+  test('a standalone name=value attribute is read in any case — joined parts are a cookie too', () => {
+    const source =
+      "[`${n}=${v}`, 'path=/', 'samesite=lax', 'domain=example.com', `expires=${d}`, 'priority=high']";
+    expect(quoted(source)).toEqual([
+      "'path=/'",
+      "'samesite=lax'",
+      "'domain=example.com'",
+      '`expires=${d}`',
+      "'priority=high'",
+    ]);
+    expect(quoted("['SAMESITE=Strict', 'Path=/app']")).toEqual([
+      "'SAMESITE=Strict'",
+      "'Path=/app'",
+    ]);
+  });
+
   test('the attribute after a semicolon is read in any case — a browser reads it so', () => {
     expect(quoted("const c = 'sid=1; httponly';")).toEqual(["'sid=1; httponly'"]);
     expect(quoted("const c = 'sid=1; path=/x';")).toEqual(["'sid=1; path=/x'"]);
@@ -68,6 +84,21 @@ describe('what is never reported', () => {
     expect(quoted("headers.set('cache-control', 'public, max-age=60, immutable');")).toEqual([]);
     expect(quoted('// a literal `sid=1; Path=/; HttpOnly` in a comment')).toEqual([]);
     expect(quoted("const mode = 'secure';")).toEqual([]);
+  });
+
+  test('a lowercase standalone max-age= is a cache-control or HSTS directive, never a cookie', () => {
+    // RFC 9111 and RFC 6797 spell the directive `max-age`; the cookie attribute is `Max-Age`. The
+    // tree's five standalone `max-age=` literals are all cache-control or HSTS (measured).
+    expect(quoted('const hsts = `max-age=${config.hsts.maxAgeSeconds}`;')).toEqual([]);
+    expect(quoted("headers.set('cache-control', 'max-age=3600');")).toEqual([]);
+    expect(quoted('parts.push(`Max-Age=${s}`);')).toEqual(['`Max-Age=${s}`']);
+  });
+
+  test('a bare flag is case-sensitive: a lowercase word or option key is not an attribute', () => {
+    expect(quoted("const mode = 'secure'; const k = 'httponly'; const p = 'partitioned';")).toEqual(
+      [],
+    );
+    expect(quoted("const domain = 'domain'; const path = 'path';")).toEqual([]);
   });
 
   test('a cookie written through the serializer, with attributes as options', () => {

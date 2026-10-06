@@ -18,7 +18,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createContext, secret, userActor } from '@ultimat3/core';
+import { createContext, normalizeAuditRecord, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink } from './audit-memory';
 import { postgresAuditSink } from './audit-postgres';
@@ -80,8 +80,8 @@ function keptByMemory(record: AuditRecord): Kept {
   const kept = sink.records()[0];
   if (kept === undefined) expect.unreachable();
   return {
-    action: kept.name,
-    primitive: kept.primitive,
+    action: normalizeAuditRecord(kept).name,
+    primitive: normalizeAuditRecord(kept).primitive,
     outcome: kept.outcome,
     surface: kept.surface,
     mutator: kept.mutator,

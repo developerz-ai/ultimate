@@ -101,6 +101,16 @@ describe('the postgres audit sink writes one append-only row', () => {
     expect(paramsOf(calls)[2]).toBe('postList');
   });
 
+  test('a 24.x record built with `action` alone writes name and primitive, never undefined', async () => {
+    const { exec, calls } = executor();
+    const { name: _name, primitive: _primitive, ...legacy } = recordFor({ action: 'oldAction' });
+    await postgresAuditSink({ executor: exec }).write(legacy);
+
+    expect(paramsOf(calls)[2]).toBe('oldAction');
+    expect(paramsOf(calls).at(-1)).toBe('action');
+    expect(paramsOf(calls)).not.toContain(undefined);
+  });
+
   test('an existing x_audit gains the column by ALTER, defaulting every old row to action', () => {
     expect(SQL_AUDIT_TABLE).toContain(
       "alter table x_audit add column if not exists primitive text not null default 'action';",

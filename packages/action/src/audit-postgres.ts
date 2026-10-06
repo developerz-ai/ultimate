@@ -6,7 +6,7 @@
  */
 
 import type { Actor, PgExecutor } from '@ultimat3/core';
-import { uuid } from '@ultimat3/core';
+import { normalizeAuditRecord, uuid } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { auditableInput } from './audit-input';
 
@@ -126,7 +126,9 @@ export interface PostgresAuditSink extends AuditSink {
 export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAuditSink {
   const exec = options.executor;
   return {
-    async write(record: AuditRecord): Promise<void> {
+    async write(written: AuditRecord): Promise<void> {
+      // A 24.x record may carry `action` alone; `primitive` is a NOT NULL column.
+      const record = normalizeAuditRecord(written);
       const actor = record.ctx.actor;
       const at = record.at instanceof Date && !Number.isNaN(record.at.getTime()) ? record.at : null;
       const onBehalfOf = onBehalfOfOf(actor);

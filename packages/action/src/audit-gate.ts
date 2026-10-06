@@ -4,7 +4,7 @@
  * an attempt that already failed do not want the same answer.
  */
 
-import { isUltimateError, logger } from '@ultimat3/core';
+import { isUltimateError, logger, normalizeAuditRecord } from '@ultimat3/core';
 import type { AuditFailure, AuditOutcome, AuditRecord, AuditSink } from './audit';
 import { getAuditSink } from './audit';
 import { ActionDeniedError, AuditSinkFailedError, AuditSinkMissingError } from './errors';
@@ -63,7 +63,11 @@ export async function auditSettled(sink: AuditSink, record: AuditRecord): Promis
   try {
     await sink.write(record);
   } catch (error) {
-    throw new AuditSinkFailedError(record.name, error, record.idempotencyKey !== null);
+    throw new AuditSinkFailedError(
+      normalizeAuditRecord(record).name,
+      error,
+      record.idempotencyKey !== null,
+    );
   }
 }
 
@@ -84,7 +88,7 @@ export async function auditThrew(sink: AuditSink, record: AuditRecord): Promise<
     // the same reason `cache-gate.ts` gives. Never the record — rendering an input the sink just
     // choked on is the second throw this branch exists to prevent.
     logger.error('audit.sink.failed', {
-      action: record.name,
+      action: normalizeAuditRecord(record).name,
       outcome: record.outcome,
       error,
     });
