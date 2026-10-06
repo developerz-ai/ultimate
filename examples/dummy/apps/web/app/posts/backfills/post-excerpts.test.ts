@@ -4,7 +4,7 @@
 // somebody already wrote alone.
 import { db, driver, type Post } from '@postly/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { afterEach, describe, expect, test, testName } from '@ultimat3/testing';
+import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
 import { postExcerpts } from './post-excerpts';
 
 const orgA = '00000000-0000-4000-8000-000000000002';
@@ -30,7 +30,12 @@ const store = (orgId: string, slug: string, excerpt = ''): Promise<Post> =>
 const excerptsOf = (orgId: string): Promise<readonly string[]> =>
   inOrg(orgId, async () => (await db.posts.all()).map((row) => row.excerpt));
 
-// One store per process: without this, one test's rows are the next test's fixtures.
+// One store per process: without this, one test's rows are the next test's fixtures. Before as
+// well as after: these tests assert a WHOLE tenant's rows, so they start from an empty store even
+// when an earlier file in this process left rows behind (repo.test.ts once did, under org …0009).
+beforeEach(() => {
+  driver.reset?.();
+});
 afterEach(() => {
   driver.reset?.();
 });

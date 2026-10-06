@@ -6,17 +6,24 @@
  * body, a read that stops at the org boundary.
  */
 
-import { expect, test } from 'bun:test';
-import { db } from '@postly/db';
+import { afterAll, expect, test } from 'bun:test';
+import { db, driver } from '@postly/db';
 import { type MemberId, memberId, type OrgId, orgId, type PostId, postId } from '@postly/domain';
 import * as repo from './repo';
 
 /** Distinct per call, so one test's rows never answer another's read — the store is process-wide. */
 let issued = 0;
+// Ids from this file's own range (`…a0…`), never the low sequence other files hard-code: bun runs
+// several test files in one process, over one in-memory driver.
 const nextId = (): string => {
   issued += 1;
-  return `00000000-0000-4000-8000-${String(issued).padStart(12, '0')}`;
+  return `00000000-0000-4000-8000-a0${String(issued).padStart(10, '0')}`;
 };
+
+// What this file wrote is no other file's fixture.
+afterAll(() => {
+  driver.reset?.();
+});
 
 const AUTHOR = 'Ada Lovelace';
 
