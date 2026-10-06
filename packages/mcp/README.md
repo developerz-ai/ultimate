@@ -387,7 +387,6 @@ export const confirmRefunds = mcpConfirmations({
   tools: ['refundOrder'],
   store: postgresConfirmationStore({ executor }), // memoryConfirmationStore() in a test
   permission: 'order:refund',
-  check: ({ actor, row }) => row !== null && row.orgId === actor?.orgId, // who may decide which
   ttlMs: 600_000, // DEFAULT_MCP_CONFIRMATION_TTL_MS
 });
 
@@ -398,15 +397,19 @@ export const mcp = defineAppMcp({ include: 'exposed', confirmations: confirmRefu
 | Step | What happens |
 |---|---|
 | agent calls `refundOrder` | after visibility → scope → args → the tool's caller-only `admit`, a pending row opens — actor, org, tool, `keyedFingerprint` (HMAC-SHA-256 under the signing secret) of the validated arguments, expiry — and the call answers `X_MCP_CONFIRMATION_PENDING` naming the id. Nothing ran. Repeating it answers the same id |
-| a person decides | `confirmRefunds({ id, decision })` over any surface the action projects to. Its policy is `can(permission, check)`, plus: an agent never decides one, whatever it holds (`X_FORBIDDEN`). Decided once (`X_MCP_CONFIRMATION_DECIDED`), never after expiry (`X_MCP_CONFIRMATION_EXPIRED`), an unknown id is `X_MCP_CONFIRMATION_UNKNOWN` |
+| a person views it | `confirmRefunds({ id, decision: 'view' })` answers the request exactly as the agent sent it — `{ tool, status, expiresAt, arguments }`, the arguments opened from their seal. Changes nothing |
+| a person decides | `confirmRefunds({ id, decision: 'approve', arguments })` with the `arguments` the view returned, or `decision: 'reject'`, over any surface the action projects to. An approval whose arguments' keyed digest is not the row's — none, different, or a row keyed before a secret rotation — is `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH`, so a swap between the view and the approval decides nothing. Decided once (`X_MCP_CONFIRMATION_DECIDED`), never after expiry (`X_MCP_CONFIRMATION_EXPIRED`) |
+| who may view and decide | policy `can(permission, check)`. An agent never may, whatever it holds (`X_FORBIDDEN`). The default `check` is the asking org: `row !== null && row.orgId === (actor.orgId ?? null)` — another tenant's row and an unknown id are one `X_FORBIDDEN`. Crossing tenants is an explicit `check`; with one that admits a missing row, an unknown id is `X_MCP_CONFIRMATION_UNKNOWN` |
 | agent repeats the SAME call | approved: it runs once, through the tool's own `handle` — the action's full policy still decides it. Rejected: `X_MCP_CONFIRMATION_REJECTED`, audited as a denial. Past expiry: `X_MCP_CONFIRMATION_EXPIRED`. Each outcome is delivered once; the next identical call asks again |
 
 Bound to the asking actor, the tool and the input digest: other arguments, or another agent, ride
 no one's approval. The digest is keyed because the row stores it — an unkeyed hash of `{ accountNumber }` is
 brute-forced from a database read. The open row is found by equality on it, key id included, so
 after a signing-secret rotation the same call opens a FRESH confirmation: never a mismatch error,
-never the old approval. The row stores no arguments — an approval screen renders the request from the
-app's own records. `SQL_MCP_CONFIRMATIONS_TABLE` is the store's DDL; `store.purge(before)` from a
+never the old approval. The arguments are stored SEALED (`seal()`, AES-256-GCM under the app's one
+master key, purpose `MCP_CONFIRMATION_ARGUMENTS_PURPOSE`), never plaintext at rest — the person
+deciding must see what they approve, or a prompt-injected agent describes "$5 to order 17" and sends
+another. `sealKeys` points at the key in a test. `SQL_MCP_CONFIRMATIONS_TABLE` is the store's DDL; `store.purge(before)` from a
 `task` bounds the table. A gated name the server does not project — or `tools: []` — is
 `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at boot. The gated tool carries `confirms: true`, which the meta
 catalog shows as `(confirms)`.
@@ -482,6 +485,7 @@ is `X_MCP_IDEMPOTENCY_KEY_SHADOWED` at boot.
 | `X_MCP_CONFIRMATION_UNKNOWN` | no confirmation has that id |
 | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | `mcpConfirmations({ tools })` names a tool this server does not project, or none |
 | `X_MCP_CONFIRMATION_CONTESTED` | identical concurrent calls kept racing one confirmation; retry |
+| `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | an approval did not carry the arguments the agent sent (missing, different, or keyed before a rotation) |
 | `X_MCP_RATE_LIMITED` | the caller spent its per-minute allowance for this request's class. Its own code rather than `@ultimat3/http`'s `X_RATE_LIMITED` because the KNOB differs — `rateLimits` on the route, never `rateLimit.buckets` in `app.config.ts` |
 
 ### Error classes
@@ -495,6 +499,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `McpArgsInvalidError` | `X_MCP_ARGS_INVALID` | `src/errors.ts` |
 | `McpBodyTooLargeError` | `X_MCP_BODY_TOO_LARGE` | `src/errors.ts` |
 | `McpIdempotencyKeyShadowedError` | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | `src/errors.ts` |
+| `McpConfirmationArgumentsMismatchError` | `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | `src/confirmation-errors.ts` |
 | `McpConfirmationContestedError` | `X_MCP_CONFIRMATION_CONTESTED` | `src/confirmation-errors.ts` |
 | `McpConfirmationDecidedError` | `X_MCP_CONFIRMATION_DECIDED` | `src/confirmation-errors.ts` |
 | `McpConfirmationExpiredError` | `X_MCP_CONFIRMATION_EXPIRED` | `src/confirmation-errors.ts` |

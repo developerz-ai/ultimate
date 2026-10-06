@@ -109,4 +109,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MAIL_EVENT_INVALID: 400,
   // @ultimat3/mail — an SNS endpoint the receiver needed did not answer
   X_MAIL_EVENT_PROVIDER_UNREACHABLE: 503,
+  // @ultimat3/mcp — an MCP confirmation approval did not carry the arguments the agent sent
+  X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH: 409,
 } satisfies Readonly<Record<string, number>>;

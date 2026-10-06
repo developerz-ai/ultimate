@@ -115,3 +115,23 @@ export class McpConfirmationContestedError extends UltimateError {
     });
   }
 }
+
+/**
+ * An approval that does not carry the arguments the agent sent: none, different ones (a swap
+ * between the view and the decision), or a row keyed under a rotated signing secret.
+ */
+export class McpConfirmationArgumentsMismatchError extends UltimateError {
+  constructor(subject: Subject & { readonly reason: 'missing' | 'different' | 'rotated' }) {
+    const why = {
+      missing: 'the approval carried no arguments',
+      different: 'the approval carried arguments other than the ones the agent sent',
+      rotated: 'the confirmation was keyed under a signing secret this process no longer holds',
+    }[subject.reason];
+    super({
+      code: 'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
+      cause: `confirmation ${subject.id} for ${subject.tool} was not decided: ${why}`,
+      fix: `confirmations({ id, decision: 'view' })   # then approve with exactly the arguments it returns for ${subject.id}; a rotated one: ask the agent to call ${subject.tool} again`,
+      meta: { ...meta(subject), reason: subject.reason },
+    });
+  }
+}

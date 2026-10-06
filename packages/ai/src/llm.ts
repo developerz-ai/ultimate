@@ -280,7 +280,7 @@ async function generate<
             // The fix names a model the caller can paste, and only ever a MORE capable one:
             // "the first id that differs" answered a refusal on the default model with the next
             // entry down the ladder, which is a retry that cannot succeed.
-            alternative: moreCapableThan(result.model),
+            alternative: moreCapableThan(result.model, request),
             category: result.stopDetails?.category,
             explanation: result.stopDetails?.explanation,
           });
@@ -346,7 +346,7 @@ async function streamedAnswer<TOutput extends StandardSchemaV1>(
     throw new LlmRefusedError({
       prompt: name,
       model: result.model,
-      alternative: moreCapableThan(result.model),
+      alternative: moreCapableThan(result.model, request),
       category: result.stopDetails?.category,
       explanation: result.stopDetails?.explanation,
     });

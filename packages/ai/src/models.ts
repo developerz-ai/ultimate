@@ -3,7 +3,7 @@
 // has never heard of — a closed union made them untypeable, so the only way past `tsc` was to
 // claim a Claude id and be billed Anthropic list prices for a model nobody ran. As of 2026-08.
 
-import { finiteCount } from '@ultimat3/core';
+import { assert, finiteCount, renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 
@@ -171,6 +171,7 @@ export function registerModel(spec: ModelSpec): ModelSpec {
   finiteCount(SUBJECT, `${spec.id} cacheMinimumTokens`, spec.cacheMinimumTokens);
   finiteCount(SUBJECT, `${spec.id} inputPerMillion.minor`, spec.inputPerMillion.minor);
   finiteCount(SUBJECT, `${spec.id} outputPerMillion.minor`, spec.outputPerMillion.minor);
+  assertOneCurrency(spec);
   if (spec.cacheReadPerMillion !== undefined) {
     finiteCount(SUBJECT, `${spec.id} cacheReadPerMillion.minor`, spec.cacheReadPerMillion.minor);
   }
@@ -179,6 +180,27 @@ export function registerModel(spec: ModelSpec): ModelSpec {
   }
   registry.set(spec.id, spec);
   return spec;
+}
+
+/**
+ * Every price on a row in ONE currency. `costOf` sums them into a single `Money` stamped with the
+ * input price's currency, so a cache rate in another one would be added as if it were the same.
+ */
+function assertOneCurrency(spec: ModelSpec): void {
+  const currency = spec.inputPerMillion.currency;
+  const prices = {
+    outputPerMillion: spec.outputPerMillion,
+    cacheReadPerMillion: spec.cacheReadPerMillion,
+    cacheWritePerMillion: spec.cacheWritePerMillion,
+  };
+  for (const [field, price] of Object.entries(prices)) {
+    // X_INVARIANT, as `finiteCount`'s refusals of the same row are: a bad row, caught at boot.
+    assert(
+      price === undefined || price.currency === currency,
+      `${SUBJECT} row "${spec.id}" prices ${field} in ${renderCauseValue(price?.currency)} and inputPerMillion in ${renderCauseValue(currency)}; costOf sums every price into one Money`,
+      `registerModel({ ...spec, ${field}: { minor, currency: ${renderFixLiteral(currency, '<input currency>')} } })   # every price on a row in one currency`,
+    );
+  }
 }
 
 /** Every registered id, in ladder order. */
@@ -240,7 +262,10 @@ const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
  * refusal on the default model with the next entry DOWN, which is the one retry that cannot help:
  * the fix line told an operator to buy the same refusal from a weaker model.
  */
-export function moreCapableThan(model: ModelId): ModelId | undefined {
+export function moreCapableThan(
+  model: ModelId,
+  declared: DeclaredReasoning = {},
+): ModelId | undefined {
   const spec = registry.get(model);
   if (spec === undefined) return undefined;
   const ids = modelIds();
@@ -248,9 +273,30 @@ export function moreCapableThan(model: ModelId): ModelId | undefined {
   // `claude-haiku-4-5`, which is not a rung above anything — it is the previous vendor's list.
   for (let at = ids.indexOf(model) - 1; at >= 0; at -= 1) {
     const above = ids[at];
-    if (above !== undefined && registry.get(above)?.family === spec.family) return above;
+    if (above === undefined || registry.get(above)?.family !== spec.family) continue;
+    // A rung the SAME declaration cannot run on is not an answer: from Opus 5 with
+    // `thinking: 'disabled'`, pasting Opus 5.5 (thinking always on) turns a refusal into an
+    // `X_AI_REQUEST_INVALID` on every call. Skip it and keep climbing.
+    if (acceptsReasoning(above, declared)) return above;
   }
   return undefined;
+}
+
+/** The reasoning controls a declaration named — what a suggested rung must also accept. */
+export interface DeclaredReasoning {
+  readonly effort?: Effort | undefined;
+  readonly thinking?: ThinkingMode | undefined;
+}
+
+/** Whether `reasoningBody` would build this declaration's reasoning half for `model`. */
+function acceptsReasoning(model: ModelId, declared: DeclaredReasoning): boolean {
+  try {
+    reasoningBody(model, declared.effort, declared.thinking);
+    return true;
+  } catch (error) {
+    if (error instanceof AiRequestInvalidError) return false;
+    throw error;
+  }
 }
 
 /**

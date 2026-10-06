@@ -1,7 +1,7 @@
-// The `Provider` interface, its two implementations — `AnthropicProvider` (the real Messages API,
-// streaming and not) and `EchoProvider` (deterministic, for tests and `x dev` without a key) —
-// and the money arithmetic over a call's reported usage. The REQUEST half only: ./models owns the
-// catalogue and the per-model rules, ./wire owns the response half.
+// The `Provider` interface, `AnthropicProvider` (the real Messages API, streaming and not) and
+// the money arithmetic over a call's reported usage — `EchoProvider`, the double, is
+// ./echo-provider's. The REQUEST half only: ./models owns the catalogue and the per-model rules,
+// ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';

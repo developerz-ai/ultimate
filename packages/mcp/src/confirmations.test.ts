@@ -11,14 +11,18 @@ import {
   canonicalJson,
   configureCursorSigning,
   frozenClock,
+  generateMasterKey,
   isUltimateError,
   resetCursorSigning,
+  SECRETS_KEY_ENV,
   userActor,
 } from '@ultimat3/core';
+import type { JsonValue } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpAuditEvent } from './audit-hook';
 import type { McpConfirmationStore } from './confirmation-store';
 import { memoryConfirmationStore } from './confirmation-store';
+import type { McpConfirmationsInput } from './confirmations';
 import { mcpConfirmations } from './confirmations';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
@@ -27,6 +31,12 @@ afterEach(() => {
   resetRegistry();
   resetCursorSigning();
 });
+
+/** The seal key the gate stores arguments under — injected, so no `.secrets.key` is read. */
+const SEAL = {
+  root: '/nonexistent/mcp-confirmations',
+  env: { [SECRETS_KEY_ENV]: generateMasterKey() },
+};
 
 const T0 = Date.parse('2026-10-06T09:00:00.000Z');
 const human = userActor({ id: 'u-9', orgId: 'o1', permissions: ['mcp:confirm'] });
@@ -72,14 +82,22 @@ const echoTool: AnyMcpTool = {
 
 interface Harness {
   readonly call: (orderId: string, actor?: Actor) => Promise<{ text: string; isError: boolean }>;
+  /** A person's whole flow: VIEW the request, then decide on exactly the arguments shown. */
   readonly decide: (id: string, decision: 'approve' | 'reject', actor?: Actor) => Promise<unknown>;
+  readonly view: (id: string, actor?: Actor) => Promise<{ arguments: unknown; status: string }>;
+  readonly decideWith: (
+    id: string,
+    decision: 'approve' | 'reject',
+    args: Readonly<Record<string, JsonValue>> | undefined,
+    actor?: Actor,
+  ) => Promise<unknown>;
   readonly runs: { count: number };
   readonly store: McpConfirmationStore;
   readonly advance: (ms: number) => void;
   readonly events: McpAuditEvent[];
 }
 
-function harness(ttlMs = 60_000): Harness {
+function harness(ttlMs = 60_000, check?: McpConfirmationsInput['check']): Harness {
   const runs = { count: 0 };
   const store = memoryConfirmationStore();
   const { clock, advance } = movable();
@@ -87,9 +105,10 @@ function harness(ttlMs = 60_000): Harness {
     tools: ['refundOrder'],
     store,
     permission: 'mcp:confirm',
-    check: ({ actor, row }) => row !== null && row.orgId === actor?.orgId,
+    ...(check === undefined ? {} : { check }),
     ttlMs,
     clock,
+    sealKeys: SEAL,
   });
   registerAction('confirmRefunds', confirmRefunds);
   const events: McpAuditEvent[] = [];
@@ -119,8 +138,22 @@ function harness(ttlMs = 60_000): Harness {
       const result = response?.result as { content: { text: string }[]; isError?: boolean };
       return { text: result.content[0]?.text ?? '', isError: result.isError === true };
     },
-    decide: (confirmation, decision, actor = human) =>
-      confirmRefunds.as(actor, { id: confirmation, decision }),
+    view: (confirmation, actor = human) =>
+      confirmRefunds.as(actor, { id: confirmation, decision: 'view' }),
+    decideWith: (confirmation, decision, args, actor = human) =>
+      confirmRefunds.as(actor, {
+        id: confirmation,
+        decision,
+        ...(args === undefined ? {} : { arguments: args }),
+      }),
+    async decide(confirmation, decision, actor = human) {
+      const shown = await confirmRefunds.as(actor, { id: confirmation, decision: 'view' });
+      return confirmRefunds.as(actor, {
+        id: confirmation,
+        decision,
+        arguments: shown.arguments ?? {},
+      });
+    },
   };
 }
 
@@ -255,6 +288,54 @@ describe('the agent side: a gated call waits for a person', () => {
 });
 
 describe('the person side: approve and reject are an action', () => {
+  test('the view shows the person EXACTLY the arguments the agent sent, sealed at rest', async () => {
+    const h = harness();
+    const id = idIn((await h.call('o-17')).text);
+    expect(await h.view(id)).toMatchObject({ status: 'pending', arguments: { orderId: 'o-17' } });
+    const row = await h.store.get(id);
+    expect(row?.sealedArguments.startsWith('x1.')).toBe(true);
+    expect(row?.sealedArguments).not.toContain('o-17');
+    expect((await h.store.get(id))?.status).toBe('pending');
+  });
+
+  test('approving different arguments than the agent sent is refused, and nothing runs', async () => {
+    const h = harness();
+    const id = idIn((await h.call('o-17')).text);
+    expect(await codeOf(h.decideWith(id, 'approve', { orderId: 'o-5' }))).toBe(
+      'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
+    );
+    expect(await codeOf(h.decideWith(id, 'approve', undefined))).toBe(
+      'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
+    );
+    expect((await h.store.get(id))?.status).toBe('pending');
+    expect((await h.call('o-17')).text).toContain('X_MCP_CONFIRMATION_PENDING');
+    expect(h.runs.count).toBe(0);
+  });
+
+  test('the view never reaches an agent, nor a person in another org', async () => {
+    const h = harness();
+    const id = idIn((await h.call('o-17')).text);
+    const permittedAgent = agentActor({ id: 'agent-1', orgId: 'o1', permissions: ['mcp:confirm'] });
+    expect(await codeOf(h.view(id, permittedAgent))).toBe('X_FORBIDDEN');
+    const outsider = userActor({ id: 'u-2', orgId: 'o2', permissions: ['mcp:confirm'] });
+    expect(await codeOf(h.view(id, outsider))).toBe('X_FORBIDDEN');
+  });
+
+  const outsider = userActor({ id: 'u-2', orgId: 'o2', permissions: ['mcp:confirm'] });
+
+  test('by default a decider stays inside the asking org', async () => {
+    const fenced = harness();
+    const id = idIn((await fenced.call('o-1')).text);
+    expect(await codeOf(fenced.decide(id, 'approve', outsider))).toBe('X_FORBIDDEN');
+    expect((await fenced.store.get(id))?.status).toBe('pending');
+  });
+
+  test('crossing tenants takes an explicit check', async () => {
+    const crossing = harness(60_000, ({ row }) => row !== null);
+    const id = idIn((await crossing.call('o-1')).text);
+    expect(await crossing.decide(id, 'approve', outsider)).toMatchObject({ status: 'approved' });
+  });
+
   test('a decision is taken once: approve after reject (or twice) is X_MCP_CONFIRMATION_DECIDED', async () => {
     const h = harness();
     const id = idIn((await h.call('o-1')).text);
@@ -270,19 +351,21 @@ describe('the person side: approve and reject are an action', () => {
     expect(await codeOf(h.decide(id, 'approve'))).toBe('X_MCP_CONFIRMATION_EXPIRED');
   });
 
-  test('an id no confirmation has is X_MCP_CONFIRMATION_UNKNOWN', async () => {
+  test('an id no confirmation has: the default check refuses it before saying it is absent', async () => {
     const h = harness();
-    const check = mcpConfirmations({
+    const missing = '00000000-0000-4000-8000-000000000000';
+    // The default fails closed on `row === null`: no "unknown" vs "someone else's" oracle.
+    expect(await codeOf(h.view(missing))).toBe('X_FORBIDDEN');
+    const open = mcpConfirmations({
       tools: ['refundOrder'],
       store: h.store,
       permission: 'mcp:confirm',
+      check: () => true,
     });
-    registerAction('confirmAnything', check);
-    expect(
-      await codeOf(
-        check.as(human, { id: '00000000-0000-4000-8000-000000000000', decision: 'approve' }),
-      ),
-    ).toBe('X_MCP_CONFIRMATION_UNKNOWN');
+    registerAction('confirmAnything', open);
+    expect(await codeOf(open.as(human, { id: missing, decision: 'view' }))).toBe(
+      'X_MCP_CONFIRMATION_UNKNOWN',
+    );
   });
 
   test('an agent never decides one — not even holding the permission', async () => {
@@ -360,6 +443,7 @@ describe('boot refusals', () => {
       permission: 'mcp:confirm',
       ttlMs: 1_000,
       clock: frozenClock(T0),
+      sealKeys: SEAL,
     });
     const app = defineAppMcp({
       tools: [refundTool(runs)],

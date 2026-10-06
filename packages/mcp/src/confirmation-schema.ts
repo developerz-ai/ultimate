@@ -18,6 +18,7 @@ create table if not exists x_mcp_confirmations (
   org_id       text,
   tool         text        not null,
   input_digest text        not null,
+  sealed_arguments text    not null,
   status       text        not null default 'pending',
   created_at   timestamptz not null,
   expires_at   timestamptz not null,

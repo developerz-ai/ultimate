@@ -193,3 +193,57 @@ describe("costOf prices cache reads and writes at each row's published rate", ()
     );
   });
 });
+
+describe("a refusal's suggestion is a rung the same declaration can run on", () => {
+  test('with no declaration it is the next rung up, as before', () => {
+    expect(moreCapableThan('claude-opus-5', {})).toBe('claude-opus-5-5');
+  });
+
+  test("from Opus 5 with thinking: 'disabled', every rung above refuses it, so there is none", () => {
+    expect(
+      moreCapableThan('claude-opus-5', { thinking: 'disabled', effort: 'high' }),
+    ).toBeUndefined();
+  });
+
+  test('a rung that would refuse is skipped, and the climb lands on the next one that accepts', () => {
+    const row = (id: string, disableThinkingUpTo: 'never' | undefined) =>
+      registerModel({
+        ...modelSpec('claude-opus-5'),
+        id,
+        family: 'acme',
+        reasoning: { effort: true, adaptive: true, disableThinkingUpTo },
+      });
+    row('acme-top', undefined);
+    row('acme-mid', 'never');
+    row('acme-low', undefined);
+    expect(moreCapableThan('acme-low', {})).toBe('acme-mid');
+    expect(moreCapableThan('acme-low', { thinking: 'disabled' })).toBe('acme-top');
+  });
+});
+
+describe('every price on a row is in one currency', () => {
+  // `costOf` sums them into one Money stamped with the input currency, so a EUR cache rate on a
+  // USD row would be added as dollars.
+  test('a cache or output rate in another currency is refused at registration', () => {
+    for (const field of [
+      'cacheReadPerMillion',
+      'cacheWritePerMillion',
+      'outputPerMillion',
+    ] as const) {
+      try {
+        registerModel({
+          ...modelSpec('claude-opus-5'),
+          id: 'acme-eur',
+          [field]: { minor: 1, currency: 'EUR' },
+        });
+        expect.unreachable();
+      } catch (error) {
+        const { code, cause, fix } = error as { code: string; cause: string; fix: string };
+        expect(code).toBe('X_INVARIANT');
+        expect(cause).toContain(field);
+        expect(fix.startsWith('registerModel({')).toBe(true);
+        expect(fix).toContain('"USD"');
+      }
+    }
+  });
+});

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "853982a52b84eaa663cfcbdd160ec51d25e829a4e944287f6fb32516a2c9b351",
+  "buildId": "ee56839bb5fba8a36823ebe53b7b32c30699d611f98def0aa58b22e1ec37272a",
   "tiers": {
     "0": [
       "core",
@@ -2236,6 +2236,11 @@
     },
     {
       "code": "X_MCP_BODY_TOO_LARGE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

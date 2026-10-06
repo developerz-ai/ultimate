@@ -6,9 +6,9 @@
 export type McpConfirmationStatus = 'pending' | 'approved' | 'rejected';
 
 /**
- * One call an agent made that a human has to confirm. It records WHO asked, WHICH tool and a digest
- * of WHAT it was asked with — never the arguments: a pending row is read by whoever approves it,
- * and an approval screen that needs the input renders it from the app's own records.
+ * One call an agent made that a human has to confirm: WHO asked, WHICH tool, and WHAT with — the
+ * arguments SEALED (never plaintext at rest) so the person deciding sees exactly what they approve,
+ * and their keyed digest, which the approval must match.
  */
 export interface McpConfirmation {
   readonly id: string;
@@ -22,6 +22,8 @@ export interface McpConfirmation {
    * The approval binds to it; a rotated signing secret makes the same call a new confirmation.
    */
   readonly inputDigest: string;
+  /** The validated arguments as JSON, `seal()`ed for `MCP_CONFIRMATION_ARGUMENTS_PURPOSE`. */
+  readonly sealedArguments: string;
   readonly status: McpConfirmationStatus;
   readonly createdAt: Date;
   /** After this instant the row can be neither decided nor used. */
@@ -38,7 +40,14 @@ export interface McpConfirmation {
 
 export type McpConfirmationDraft = Pick<
   McpConfirmation,
-  'id' | 'actorId' | 'orgId' | 'tool' | 'inputDigest' | 'createdAt' | 'expiresAt'
+  | 'id'
+  | 'actorId'
+  | 'orgId'
+  | 'tool'
+  | 'inputDigest'
+  | 'sealedArguments'
+  | 'createdAt'
+  | 'expiresAt'
 >;
 
 export interface McpConfirmationStore {

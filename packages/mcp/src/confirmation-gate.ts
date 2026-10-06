@@ -3,7 +3,7 @@
 // `handle` — where a projected action's full policy runs. So the order is visibility → scope →
 // args → admit → confirmation → policy, and a caller the tool refuses outright never opens a row.
 
-import { keyedFingerprint, uuid } from '@ultimat3/core';
+import { keyedFingerprint, seal, uuid } from '@ultimat3/core';
 import {
   McpConfirmationContestedError,
   McpConfirmationExpiredError,
@@ -30,6 +30,9 @@ export function withConfirmations(
   return tools.map((tool) => (gated.has(tool.name) ? gate(tool, confirmations) : tool));
 }
 
+/** What the arguments are sealed FOR — bound into the AES-GCM tag, so they open as nothing else. */
+export const MCP_CONFIRMATION_ARGUMENTS_PURPOSE = 'mcp-confirmation.arguments';
+
 /** Separates this use of the signing secret from every other keyed fingerprint. */
 export const MCP_CONFIRMATION_DIGEST_PURPOSE = 'mcp-confirmation';
 
@@ -52,7 +55,7 @@ export function inputDigest(args: ToolArgs): string {
 }
 
 function gate(tool: AnyMcpTool, confirmations: McpConfirmations): AnyMcpTool {
-  const { store, clock, ttlMs } = confirmations;
+  const { store, clock, ttlMs, sealKeys } = confirmations;
   return {
     ...tool,
     confirms: true,
@@ -67,6 +70,12 @@ function gate(tool: AnyMcpTool, confirmations: McpConfirmations): AnyMcpTool {
         orgId: caller.actor.orgId ?? null,
         tool: tool.name,
         inputDigest: inputDigest(args),
+        // Sealed, never plaintext at rest: the person deciding reads them through the decision
+        // action's `view`, and approves only by sending them back (`confirmation-decide.ts`).
+        sealedArguments: await seal(JSON.stringify(args), {
+          purpose: MCP_CONFIRMATION_ARGUMENTS_PURPOSE,
+          ...sealKeys,
+        }),
         createdAt: now,
         expiresAt: new Date(now.getTime() + ttlMs),
       };

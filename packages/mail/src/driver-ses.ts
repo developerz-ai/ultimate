@@ -200,6 +200,6 @@ export function createSesDriver(options: SesDriverOptions): MailDriver {
       message,
       typeof id === 'string' && id !== '' ? id : `ses_${nanoid(12)}`,
     );
-    return await withRetainedMime(retain, result, message.mailId, raw);
+    return withRetainedMime(retain, result, message.mailId, raw);
   }
 }

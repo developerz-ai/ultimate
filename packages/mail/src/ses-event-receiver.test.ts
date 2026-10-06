@@ -395,3 +395,70 @@ describe('createSesEventReceiver — prototype keys from the body', () => {
     expect(error.code).toBe('X_MAIL_EVENT_INVALID');
   });
 });
+
+describe('createSesEventReceiver — one certificate fetch per pinned URL', () => {
+  test('50 aliases of the pinned URL are refused and force no fetch', async () => {
+    const signed = await sesNotification(signer, SES_BOUNCE);
+    const { instance, fetched } = receiver();
+    const path = new URL(CERT_URL).pathname;
+    const aliases = [
+      ...Array.from({ length: 40 }, (_, index) => `${CERT_URL}#${index}`),
+      `${CERT_URL}?`,
+      `${CERT_URL}?x=1`,
+      `https://sns.us-west-2.amazonaws.com:443${path}`,
+      `https://SNS.us-west-2.amazonaws.com${path}`,
+      `https://sns.US-WEST-2.amazonaws.com${path}`,
+      `https://sns.us-west-2.amazonaws.com${path.replace('/', '\\')}`,
+      `https://sns.us-west-2.amazonaws.com。${path}`,
+      `https://sns.us-west-2.amazonaws.com.${path}`,
+      `https://sns.us-west-2.amazonaws.com/./${path.slice(1)}`,
+      `https://sns.us-west-2.amazonaws.com/SimpleNotificationService-F3EC.pem`,
+    ];
+    expect(aliases).toHaveLength(50);
+    for (const url of aliases) {
+      const error = await refusal(
+        instance.receive(snsRequest(snsBody({ ...signed, SigningCertURL: url }))),
+      );
+      expect(error.meta).toEqual({ provider: 'ses', reason: 'certificate-url' });
+    }
+    expect(fetched).toEqual([]);
+  });
+
+  test('concurrent messages naming one URL share one download', async () => {
+    const message = await sesNotification(signer, SES_DELIVERY);
+    let calls = 0;
+    const instance = createSesEventReceiver({
+      topicArns: [TOPIC_ARN],
+      clock,
+      fetchCertificate: async () => {
+        calls += 1;
+        await Bun.sleep(5);
+        return signer.certificatePem;
+      },
+    });
+    const outcomes = await Promise.all(
+      Array.from({ length: 10 }, () => instance.receive(snsRequest(snsBody(message)))),
+    );
+    expect(outcomes.every((outcome) => outcome.type === 'events')).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  test('a failed download is not cached: the next message fetches again', async () => {
+    const message = await sesNotification(signer, SES_DELIVERY);
+    let calls = 0;
+    // The download failure is input to the code under test, not a verdict: built once, then thrown.
+    const reset = new TypeError('ECONNRESET');
+    const instance = createSesEventReceiver({
+      topicArns: [TOPIC_ARN],
+      clock,
+      fetchCertificate: async () => {
+        calls += 1;
+        if (calls === 1) throw reset;
+        return signer.certificatePem;
+      },
+    });
+    await refusal(instance.receive(snsRequest(snsBody(message))));
+    expect((await instance.receive(snsRequest(snsBody(message)))).type).toBe('events');
+    expect(calls).toBe(2);
+  });
+});

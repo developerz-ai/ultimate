@@ -141,14 +141,15 @@ const SERVING_ROLE_CEILING = 912;
  * `SERVING_ROLE_CEILING` for sweep 10a.
  * raised 1004 → 1011, measured 1011 (2026-10-06, plan 101 sweep 10b): the seven modules named on
  * `SERVING_ROLE_CEILING` for sweep 10b.
- * raised 1011 → 1023, measured 1023 (2026-10-06, plan 101 sweep 10c): the five named on
+ * raised 1011 → 1024, measured 1024 (2026-10-06, plan 101 sweep 10c): the five named on
  * `SERVING_ROLE_CEILING` for 10c, MCP human confirmation and its audit hook on the web role —
  * `mcp/src/confirmations.ts`, `confirmation-gate.ts`, `confirmation-store.ts`,
- * `confirmation-postgres.ts`, `confirmation-errors.ts`, `audit-hook.ts` — and
+ * `confirmation-postgres.ts`, `confirmation-errors.ts`, `audit-hook.ts`, `confirmation-decide.ts` (an approval
+ * must carry back the exact arguments `view` showed, compared by keyed digest) — and
  * `mcp/src/errors-transport.ts`, the transport error classes split out so `errors.ts` stays under
- * the 500-line ceiling once the seven confirmation codes are registered.
+ * the 500-line ceiling once the eight confirmation codes are registered.
  */
-const WEB_ROLE_CEILING = 1023;
+const WEB_ROLE_CEILING = 1024;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

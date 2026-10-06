@@ -25,6 +25,7 @@ export type {
 } from './audit-hook';
 export { mcpAuditor } from './audit-hook';
 export {
+  McpConfirmationArgumentsMismatchError,
   McpConfirmationContestedError,
   McpConfirmationDecidedError,
   McpConfirmationExpiredError,
@@ -35,6 +36,7 @@ export {
 } from './confirmation-errors';
 export {
   inputDigest,
+  MCP_CONFIRMATION_ARGUMENTS_PURPOSE,
   MCP_CONFIRMATION_DIGEST_PURPOSE,
   withConfirmations,
 } from './confirmation-gate';

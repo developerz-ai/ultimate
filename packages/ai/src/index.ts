@@ -125,6 +125,7 @@ export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
 export type {
   ContentKind,
+  DeclaredReasoning,
   Effort,
   ModelId,
   ModelReasoning,

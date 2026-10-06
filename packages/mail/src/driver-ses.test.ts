@@ -354,3 +354,35 @@ describe('createSesDriver — prototype keys in an SES error type', () => {
     expect(error.fix).toContain('API_SendEmail');
   });
 });
+
+describe('createSesDriver — a sink that never settles', () => {
+  test('the send still settles: onRetained is called, never awaited', async () => {
+    const { fetch } = stub(() => Response.json({ MessageId: 'ses-46' }));
+    let called = 0;
+    const result = await driverWith(fetch, {
+      retainMime: {
+        onRetained: () => {
+          called += 1;
+          return new Promise<void>(() => undefined);
+        },
+      },
+    }).send(message());
+    expect(result.id).toBe('ses-46');
+    expect(result.mime?.kind).toBe('kept');
+    expect(called).toBe(1);
+  });
+
+  test('a synchronous throw from the sink does not fail the send either', async () => {
+    const { fetch } = stub(() => Response.json({ MessageId: 'ses-47' }));
+    // The sink's failure is input to the code under test, not a verdict: built once, then thrown.
+    const exploded = new TypeError('sink exploded');
+    const result = await driverWith(fetch, {
+      retainMime: {
+        onRetained: () => {
+          throw exploded;
+        },
+      },
+    }).send(message());
+    expect(result.id).toBe('ses-47');
+  });
+});

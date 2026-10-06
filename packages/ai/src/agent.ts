@@ -323,7 +323,7 @@ async function run<
           usage: result.usage,
           cost: result.cost,
         });
-        assertAnswerable(result, name);
+        assertAnswerable(result, name, base);
 
         if (requested.length > 0) {
           // Concurrent, and deliberately unbounded WITHIN one turn: the batch is what a single
@@ -398,12 +398,12 @@ async function observeTurn<
 }
 
 /** Refuse before the answer is read, for the reason `llm()` does: a refusal is a 200 with no answer. */
-function assertAnswerable(result: GenerateResult, name: string): void {
+function assertAnswerable(result: GenerateResult, name: string, request: GenerateRequest): void {
   if (result.stopReason !== 'refusal') return;
   throw new LlmRefusedError({
     prompt: name,
     model: result.model,
-    alternative: moreCapableThan(result.model),
+    alternative: moreCapableThan(result.model, request),
     category: result.stopDetails?.category,
     explanation: result.stopDetails?.explanation,
   });

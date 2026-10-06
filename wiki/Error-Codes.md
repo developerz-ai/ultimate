@@ -689,6 +689,7 @@ Three of them are raised at `notifier(...)`, while the app's modules load, so th
 | `X_MCP_CONFIRMATION_UNKNOWN` | no MCP confirmation has that id | the id is mistyped, from another deployment, or purged after expiry | `confirmations({ id, decision })` — with the id from the X_MCP_CONFIRMATION_PENDING answer |
 | `X_MCP_CONFIRMATION_TOOL_UNKNOWN` | mcpConfirmations gates a tool this server does not project | a name in tools: matches no projected tool, or tools is empty | `mcpConfirmations({ tools: ['<a projected tool name>'] })` — x mcp tools --json lists them |
 | `X_MCP_CONFIRMATION_CONTESTED` | identical concurrent MCP calls kept racing one confirmation | one agent sent the same call concurrently and the open row kept being consumed | `tools/call` — retry once, after the concurrent identical calls finish: send one at a time |
+| `X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` | an MCP confirmation approval did not carry the arguments the agent sent | approve was sent without arguments, with different arguments than view returned, or on a row keyed before a signing-secret rotation | `confirmations({ id, decision: 'view' })` — then approve with exactly the arguments it returns |
 
 ## Scraping
 

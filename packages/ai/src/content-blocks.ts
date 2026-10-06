@@ -94,9 +94,7 @@ export function assertMediaContent(
 }
 
 function assertSource(block: AiMediaBlock, at: string): void {
-  const source: unknown = block.source;
-  const fields =
-    typeof source === 'object' && source !== null ? (source as Record<string, unknown>) : {};
+  const fields = fieldsOf(block.source);
   const type = fields['type'];
   // Read as untrusted: a replayed block's title is whatever the JSON held, on either kind.
   const title: unknown = (block as { readonly title?: unknown }).title;
@@ -189,8 +187,9 @@ export function blockText(block: AiContentBlock): string {
   if (block.type === 'text') return block.text;
   if (block.type === 'tool_result') return block.content;
   if (block.type === 'tool_use') return JSON.stringify(block.input);
-  if (block.type === 'document' && block.source.type === 'text') return stringOr(block.source.data);
-  return '';
+  if (block.type !== 'document') return '';
+  const source = fieldsOf(block.source);
+  return source['type'] === 'text' ? stringOr(source['data']) : '';
 }
 
 /**
@@ -209,12 +208,20 @@ export function mediaTokenEstimate(messages: readonly ScreenedMessage[]): number
     if (typeof message.content === 'string') continue;
     for (const block of message.content) {
       if (!isMediaBlock(block)) continue;
-      if (block.type === 'image') tokens += IMAGE_TOKEN_ESTIMATE;
-      else if (block.source.type === 'base64')
-        tokens += Math.ceil(stringOr(block.source.data).length / 4);
+      if (block.type === 'image') {
+        tokens += IMAGE_TOKEN_ESTIMATE;
+        continue;
+      }
+      const source = fieldsOf(block.source);
+      if (source['type'] === 'base64') tokens += Math.ceil(stringOr(source['data']).length / 4);
     }
   }
   return tokens;
 }
 
 const stringOr = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** A block's `source` as untrusted fields: a replayed block may carry none, or `null`. */
+function fieldsOf(source: unknown): Readonly<Record<string, unknown>> {
+  return typeof source === 'object' && source !== null ? (source as Record<string, unknown>) : {};
+}

@@ -35,6 +35,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_CONFIRMATION_UNKNOWN',
   'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
   'X_MCP_CONFIRMATION_CONTESTED',
+  'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -72,6 +73,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_CONFIRMATION_UNKNOWN: 'no MCP confirmation has that id',
   X_MCP_CONFIRMATION_TOOL_UNKNOWN: 'mcpConfirmations gates a tool this server does not project',
   X_MCP_CONFIRMATION_CONTESTED: 'identical concurrent MCP calls kept racing one confirmation',
+  X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH:
+    'an MCP confirmation approval did not carry the arguments the agent sent',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

@@ -24,6 +24,7 @@ import {
   USAGE,
 } from './llm-fixture';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
+import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { costOf } from './provider';
 import { resetAiRuntime } from './runtime';
@@ -235,6 +236,34 @@ describe('a response that is not an answer', () => {
     expect(String(failure)).toContain('cyber');
     // A second attempt buys the same refusal at full price.
     expect(seen.length).toBe(1);
+  });
+
+  // The suggestion must be a model the SAME declaration can run on: from Opus 5 with thinking
+  // switched off, Opus 5.5 and Fable 5.1 (thinking always on) would refuse every call.
+  test("a refusal's suggested model accepts the declaration's own thinking and effort", async () => {
+    const { provider } = stopping('refusal', {
+      type: 'refusal',
+      category: 'cyber',
+      explanation: '',
+    });
+    install(provider);
+    const fixOf = async (thinking?: 'disabled') => {
+      const prompt = definePrompt<{ postId: string }>({
+        id: `refusal-ladder-${thinking ?? 'default'}`,
+        version: '1.0.0',
+        template: 'Summarise post {{postId}}.',
+        ...(thinking === undefined ? {} : { thinking, effort: 'high' as const }),
+      });
+      const failure = await declare(prompt)({ postId: POST_ID }, { ctx: anonymousCtx() }).catch(
+        (error: unknown) => error as { code: string; fix: string },
+      );
+      expect(failure).toMatchObject({ code: 'X_LLM_REFUSED' });
+      return (failure as { fix: string }).fix;
+    };
+    expect(await fixOf()).toContain("'claude-opus-5-5'");
+    const disabled = await fixOf('disabled');
+    expect(disabled).not.toContain('claude-opus-5-5');
+    expect(disabled).not.toContain('claude-fable-5-1');
   });
 
   test('a truncated answer throws X_LLM_TRUNCATED, because the ceiling does not move', async () => {

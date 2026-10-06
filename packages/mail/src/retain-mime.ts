@@ -51,8 +51,8 @@ export interface RetainMimeOptions {
   /**
    * The durable half. `SendResult.mime` reaches an inline caller only — a QUEUED send's result is
    * the job run's return value, which the queue does not persist — so the row an auditor reads is
-   * written here. A throw is logged (`mail.retain_mime.failed`) and does NOT fail the send: the
-   * message already left, and failing it would have the job send it again.
+   * written here. Called and NOT awaited; a throw is logged (`mail.retain_mime.failed`) and does
+   * NOT fail the send: the message already left, and failing it would have the job send it again.
    */
   readonly onRetained?: ((entry: RetainedMimeEntry) => void | Promise<void>) | undefined;
 }
@@ -90,37 +90,43 @@ export function retainedMime(raw: string, maxBytes: number): RetainedMime {
     : { kind: 'digest-only', byteLength: bytes.byteLength, sha256, maxBytes };
 }
 
-/** Retain, hand the entry to the sink, and answer what goes on `SendResult.mime`. */
-export async function keepMime(
+/**
+ * Retain, hand the entry to the sink WITHOUT awaiting it, and answer what goes on `SendResult.mime`.
+ * Fire-and-forget, as `@ultimat3/mcp`'s audit hook is: the provider already accepted the message,
+ * and a sink that never settles would hold the job unsettled until its lease was reclaimed and the
+ * mail sent again. A throw, synchronous or rejected, is logged and never reaches the send.
+ */
+export function keepMime(
   options: RetainMimeOptions,
   raw: string,
   entry: Omit<RetainedMimeEntry, 'mime'>,
-): Promise<RetainedMime> {
+): RetainedMime {
   const mime = retainedMime(raw, options.maxBytes ?? DEFAULT_RETAIN_MIME_MAX_BYTES);
-  if (options.onRetained !== undefined) {
-    try {
-      await options.onRetained({ ...entry, mime });
-    } catch (error) {
-      logger.warn('mail.retain_mime.failed', {
-        mailId: entry.mailId,
-        driver: entry.driver,
-        id: entry.id,
-        reason: renderThrowable(error),
+  const sink = options.onRetained;
+  if (sink !== undefined) {
+    Promise.resolve()
+      .then(() => sink({ ...entry, mime }))
+      .catch((error: unknown) => {
+        logger.warn('mail.retain_mime.failed', {
+          mailId: entry.mailId,
+          driver: entry.driver,
+          id: entry.id,
+          reason: renderThrowable(error),
+        });
       });
-    }
   }
   return mime;
 }
 
 /** `result` with `mime` attached when retention is on; the same object when it is off. */
-export async function withRetainedMime(
+export function withRetainedMime(
   options: RetainMimeOptions | undefined,
   result: SendResult,
   mailId: string,
   raw: string,
-): Promise<SendResult> {
+): SendResult {
   if (options === undefined) return result;
-  const mime = await keepMime(options, raw, {
+  const mime = keepMime(options, raw, {
     mailId,
     id: result.id,
     driver: result.driver,

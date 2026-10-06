@@ -244,12 +244,7 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
     }
     // Past the try on purpose: the server took the message, so nothing from here on may be
     // reported as a send failure — a retry of an accepted send is a second email.
-    return await withRetainedMime(
-      retain,
-      resultFor('smtp', message, messageId),
-      message.mailId,
-      data,
-    );
+    return withRetainedMime(retain, resultFor('smtp', message, messageId), message.mailId, data);
   }
 }
 

@@ -6,6 +6,7 @@ create table "x_mcp_confirmations" (
   "org_id" text,
   "tool" text not null,
   "input_digest" text not null,
+  "sealed_arguments" text not null,
   "status" text default 'pending'::text not null,
   "created_at" timestamp with time zone not null,
   "expires_at" timestamp with time zone not null,

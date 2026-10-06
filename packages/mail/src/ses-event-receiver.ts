@@ -21,7 +21,7 @@ import { deliveryEventInvalid, deliveryProviderUnreachable } from './delivery-ev
 import { sesDeliveryEvents } from './delivery-event-ses';
 import type { MailFetch } from './driver-resend';
 import {
-  isPinnedSnsUrl,
+  isPinnedSubscribeUrl,
   type SnsCertificateFetch,
   type SnsMessage,
   snsTopicRegion,
@@ -90,7 +90,7 @@ export function createSesEventReceiver(options: SesEventReceiverOptions): Delive
     toleranceMs,
     clock: options.clock,
     fetchCertificate: options.fetchCertificate ?? defaultCertificateFetch(doFetch),
-    certificates: new Map<string, Uint8Array<ArrayBuffer>>(),
+    certificates: new Map<string, Promise<Uint8Array<ArrayBuffer>>>(),
   };
 
   return {
@@ -110,7 +110,7 @@ export function createSesEventReceiver(options: SesEventReceiverOptions): Delive
     const confirmUrl = message.SubscribeURL ?? '';
     const region = snsTopicRegion(message.TopicArn) ?? '';
     // Signed, and pinned anyway: the URL is fetched by THIS host when confirming is on.
-    if (!isPinnedSnsUrl(confirmUrl, region, '')) throw deliveryEventInvalid('ses', 'envelope');
+    if (!isPinnedSubscribeUrl(confirmUrl, region)) throw deliveryEventInvalid('ses', 'envelope');
     if (options.confirmSubscriptions !== true) {
       return { type: 'subscription', topicArn: message.TopicArn, confirmUrl, confirmed: false };
     }

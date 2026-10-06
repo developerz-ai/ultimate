@@ -23,7 +23,7 @@ import. The CLI wires it.
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself |
 | `audit-hook.ts` | `onAudit`; `resolveToken`'s 2nd arg is http's `RequestFacts` (`seen.address` only, never `x-forwarded-for`), re-exported as `McpRequestFacts` |
-| `confirmations.ts` · `confirmation-{gate,store,postgres,errors}.ts` | `mcpConfirmations`, a factory over `action` (the decision) · the gate on `handle` · row + memory store · `x_mcp_confirmations` · codes |
+| `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`); the authorization server is the app's |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
@@ -253,8 +253,9 @@ import. The CLI wires it.
   (`seen.address`), and an exhausted address is `429` BEFORE `resolveToken` — a valid guess too.
 - **Confirmation order: visibility → scope → args → `admit` → confirmation → policy.** An approval
   binds actor + tool + `keyedFingerprint(args)` (rotation ⇒ new row); `consume` (CAS) makes one approval run one
-  call; rejected/expired is told once, then the call asks again. An agent never decides (in the
-  policy). Its statuses must stay < 500, or `forAudience` hides the id the agent relays.
+  call; rejected/expired is told once, then the call asks again. Args sealed; `approve` carries
+  viewed args (digest must match); default `check`: same org. An agent never decides (in the
+  policy). Statuses < 500, or `forAudience` hides the id.
 - **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
   `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
   back-pressure; only a child-process test can see it.

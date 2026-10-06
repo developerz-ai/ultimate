@@ -20,6 +20,7 @@ const draft = (over: Partial<McpConfirmationDraft> = {}): McpConfirmationDraft =
   orgId: 'org-1',
   tool: 'refundOrder',
   inputDigest: 'a'.repeat(64),
+  sealedArguments: 'x1.sealed-elsewhere',
   createdAt: at(0),
   expiresAt: at(600),
   ...over,
@@ -35,7 +36,12 @@ function contract(name: string, fresh: () => Promise<McpConfirmationStore>): voi
     test('open creates one pending row, and a second open for the same call returns it', async () => {
       const first = await store.open(draft());
       expect(first.created).toBe(true);
-      expect(first.row).toMatchObject({ status: 'pending', decidedAt: null, consumedAt: null });
+      expect(first.row).toMatchObject({
+        status: 'pending',
+        decidedAt: null,
+        consumedAt: null,
+        sealedArguments: 'x1.sealed-elsewhere',
+      });
       expect(first.row.expiresAt.getTime()).toBe(at(600).getTime());
       const again = await store.open(draft());
       expect(again.created).toBe(false);

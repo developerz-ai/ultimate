@@ -27,11 +27,14 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 ### Added
 
 - mcp: `mcpConfirmations({ tools, permission, store })` — a person approves a named tool's call
-  before it runs. A factory over `action`: one `{ id, decision }` decision action, an agent actor is
-  always refused, an approval is bound to actor + tool + a keyed fingerprint of the arguments (HMAC,
-  safe at rest; a secret rotation opens a fresh confirmation) and runs exactly one call, memory and Postgres stores (`x_mcp_confirmations`, applied at boot from
-  `@ultimat3/mcp/schema`). Codes `X_MCP_CONFIRMATION_PENDING` (409), `_EXPIRED` (410), `_REJECTED`
-  (403), `_DECIDED` (409), `_UNKNOWN` (404), `_CONTESTED` (503), `_TOOL_UNKNOWN`.
+  before it runs. A factory over `action`. The agent's call opens a pending row holding its
+  arguments **sealed** and a keyed fingerprint of them; a person reads the exact arguments with
+  `decision: 'view'` and approves only by sending those same arguments back
+  (`X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH` otherwise). An approval runs exactly one call; deciders
+  are held to the asking org unless an explicit `check` says otherwise; an agent never decides.
+  Memory and Postgres stores (`x_mcp_confirmations`, applied at boot from `@ultimat3/mcp/schema`).
+  Codes `X_MCP_CONFIRMATION_PENDING` (409), `_EXPIRED` (410), `_REJECTED` (403), `_DECIDED` (409),
+  `_UNKNOWN` (404), `_CONTESTED` (503), `_ARGUMENTS_MISMATCH` (409), `_TOOL_UNKNOWN`.
 - mcp: `createMcpServer` / `defineAppMcp({ onAudit })` receive every gate decision and refused token
   as an `McpAuditEvent`, after its log line; a hook that throws changes no answer. A refused token
   now logs `mcp.auth.<reason>` at `warn`.

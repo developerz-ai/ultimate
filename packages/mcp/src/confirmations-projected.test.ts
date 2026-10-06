@@ -5,7 +5,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { action, registerAction, resetRegistry } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext, userActor } from '@ultimat3/core';
+import {
+  agentActor,
+  createContext,
+  generateMasterKey,
+  runWithContext,
+  SECRETS_KEY_ENV,
+  userActor,
+} from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
@@ -35,6 +42,10 @@ function app() {
     tools: ['refundOrder'],
     store: memoryConfirmationStore(),
     permission: 'order:confirm',
+    sealKeys: {
+      root: '/nonexistent/mcp-projected',
+      env: { [SECRETS_KEY_ENV]: generateMasterKey() },
+    },
   });
   registerAction('confirmRefunds', confirmRefunds);
   const mcp = defineAppMcp({
@@ -57,9 +68,10 @@ function app() {
     const result = response?.result as { content: { text: string }[] } | undefined;
     return result?.content[0]?.text ?? JSON.stringify(response);
   };
-  const approve = (text: string) => {
+  const approve = async (text: string) => {
     const id = /confirmation ([0-9a-f-]{36})/.exec(text)?.[1] ?? '';
-    return confirmRefunds.as(human, { id, decision: 'approve' });
+    const shown = await confirmRefunds.as(human, { id, decision: 'view' });
+    return confirmRefunds.as(human, { id, decision: 'approve', arguments: shown.arguments ?? {} });
   };
   return { call, approve, refunded };
 }

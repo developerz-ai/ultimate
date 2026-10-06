@@ -11,8 +11,9 @@ import type {
 } from './confirmation-store';
 
 export const SQL_MCP_CONFIRMATION_OPEN = `
-insert into x_mcp_confirmations (id, actor_id, org_id, tool, input_digest, created_at, expires_at)
-values ($1, $2, $3, $4, $5, $6, $7)
+insert into x_mcp_confirmations
+  (id, actor_id, org_id, tool, input_digest, sealed_arguments, created_at, expires_at)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
 on conflict (actor_id, tool, input_digest) where consumed_at is null do nothing
 returning *
 `;
@@ -45,6 +46,7 @@ interface Row {
   readonly org_id: string | null;
   readonly tool: string;
   readonly input_digest: string;
+  readonly sealed_arguments: string;
   readonly status: string;
   readonly created_at: Date | string;
   readonly expires_at: Date | string;
@@ -80,6 +82,7 @@ export function postgresConfirmationStore(
           draft.orgId,
           draft.tool,
           draft.inputDigest,
+          draft.sealedArguments,
           draft.createdAt,
           draft.expiresAt,
         ]);
@@ -129,6 +132,7 @@ function toConfirmation(row: Row): McpConfirmation {
     orgId: row.org_id,
     tool: row.tool,
     inputDigest: row.input_digest,
+    sealedArguments: row.sealed_arguments,
     status,
     createdAt: dateOf(row.created_at),
     expiresAt: dateOf(row.expires_at),

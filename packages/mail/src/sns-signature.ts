@@ -87,17 +87,27 @@ export function snsTopicRegion(topicArn: string): string | undefined {
   return TOPIC_ARN.exec(topicArn)?.[1];
 }
 
+/** The only path SNS serves a signing certificate from. */
+const CERT_PATH = /^\/SimpleNotificationService-[0-9a-f]{1,64}\.pem$/;
+
 /**
- * True for `https://sns.<region>.amazonaws.com/<…>.pem` and nothing else: no port, no userinfo,
- * no query. A look-alike host (`sns.us-east-1.amazonaws.com.evil.test`) is the attack this stops.
+ * A signing-certificate URL in its ONE spelling: `https://sns.<region>.amazonaws.com/SimpleNotificationService-<hex>.pem`,
+ * compared as a string against what the parse normalises it to. Every alias of one URL — a
+ * fragment, `:443`, a bare `?`, `\` for `/`, an upper-case or full-width host — is refused rather
+ * than normalised, because each alias would be a distinct cache key and so a certificate fetch an
+ * unauthenticated sender could force before any signature is checked.
  */
-export function isPinnedSnsUrl(raw: string, region: string, suffix: '.pem' | ''): boolean {
+export function isPinnedCertificateUrl(raw: string, region: string): boolean {
   const url = URL.parse(raw);
-  if (url === null || url.protocol !== 'https:' || url.port !== '' || url.username !== '') {
-    return false;
-  }
-  if (url.password !== '' || url.hostname !== `sns.${region}.amazonaws.com`) return false;
-  return suffix === '' || (url.search === '' && url.pathname.endsWith(suffix));
+  if (url === null || !CERT_PATH.test(url.pathname)) return false;
+  return raw === `https://sns.${region}.amazonaws.com${url.pathname}`;
+}
+
+/** A SubscribeURL: the pinned origin, path `/`, a query, no fragment, no userinfo, no port. */
+export function isPinnedSubscribeUrl(raw: string, region: string): boolean {
+  const url = URL.parse(raw);
+  if (url === null || url.hash !== '' || url.pathname !== '/' || url.search === '') return false;
+  return raw.startsWith(`https://sns.${region}.amazonaws.com/?`);
 }
 
 function base64Bytes(text: string): Uint8Array<ArrayBuffer> | undefined {
@@ -114,8 +124,11 @@ export interface SnsVerifyOptions {
   readonly fetchCertificate: SnsCertificateFetch;
   readonly toleranceMs: number;
   readonly clock?: Clock | undefined;
-  /** SPKI per certificate URL. The receiver owns it; SNS rotates by publishing a new URL. */
-  readonly certificates: Map<string, Uint8Array<ArrayBuffer>>;
+  /**
+   * SPKI per certificate URL, as the PROMISE of it: concurrent messages naming one URL share one
+   * download. The receiver owns it; SNS rotates by publishing a new URL.
+   */
+  readonly certificates: Map<string, Promise<Uint8Array<ArrayBuffer>>>;
 }
 
 /** Parse, pin, fetch, verify, then check the clock — and answer the message that was signed. */
@@ -132,7 +145,7 @@ export async function verifySnsMessage(
   }
   if (!options.topicArns.has(fields.TopicArn)) throw deliveryEventUnverified('ses', 'topic');
   const region = snsTopicRegion(fields.TopicArn);
-  if (region === undefined || !isPinnedSnsUrl(certUrl, region, '.pem')) {
+  if (region === undefined || !isPinnedCertificateUrl(certUrl, region)) {
     throw deliveryEventUnverified('ses', 'certificate-url');
   }
   const hash = HASH_OF.get(version);
@@ -183,12 +196,23 @@ async function rsaVerifies(
 /** Bounded: a flood of distinct pinned URLs cannot grow it past this many keys. */
 const MAX_CACHED_CERTIFICATES = 8;
 
-async function certificateFor(
+function certificateFor(url: string, options: SnsVerifyOptions): Promise<Uint8Array<ArrayBuffer>> {
+  const cached = options.certificates.get(url);
+  if (cached !== undefined) return cached;
+  if (options.certificates.size >= MAX_CACHED_CERTIFICATES) options.certificates.clear();
+  const pending = downloadCertificate(url, options);
+  options.certificates.set(url, pending);
+  // A failed download is forgotten, so the next message retries it instead of inheriting it.
+  pending.catch(() => {
+    if (options.certificates.get(url) === pending) options.certificates.delete(url);
+  });
+  return pending;
+}
+
+async function downloadCertificate(
   url: string,
   options: SnsVerifyOptions,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const cached = options.certificates.get(url);
-  if (cached !== undefined) return cached;
   let pem: string;
   try {
     pem = await options.fetchCertificate(url);
@@ -202,8 +226,5 @@ async function certificateFor(
   if (spki === undefined) {
     throw deliveryProviderUnreachable('certificate', 'the answer was not a PEM X.509 certificate');
   }
-  if (options.certificates.size >= MAX_CACHED_CERTIFICATES) options.certificates.clear();
-  const owned = new Uint8Array(spki);
-  options.certificates.set(url, owned);
-  return owned;
+  return new Uint8Array(spki);
 }

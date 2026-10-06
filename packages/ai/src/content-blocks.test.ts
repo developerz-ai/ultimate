@@ -15,6 +15,7 @@ import {
 } from './content-blocks';
 import { AiContentUnsupportedError } from './content-errors';
 import { AiRequestInvalidError } from './errors';
+import { createGateway } from './gateway';
 import { modelSpec, registerModel, resetModels } from './models';
 import { type AiMessage, AnthropicProvider, estimateInputTokens, messageText } from './provider';
 
@@ -190,6 +191,33 @@ describe('the pre-flight estimate counts what a media block costs', () => {
   test('a malformed block is estimated without throwing', () => {
     expect(() =>
       base(turn({ type: 'document', source: { type: 'base64', data: 9 } })),
+    ).not.toThrow();
+  });
+});
+
+describe('a replayed block with no source never crashes the pre-flight', () => {
+  // The gateway estimates BEFORE the provider screens. A `{ type: 'document' }` with no source, or
+  // a null one, read `source.type` there and surfaced as a bare TypeError, not the coded refusal.
+  test('a sourceless or null-source document through gateway.generate is X_AI_REQUEST_INVALID', async () => {
+    const gateway = createGateway({
+      providers: [new AnthropicProvider({ apiKey: 'k', fetch: async () => new Response('{}') })],
+    });
+    for (const block of [
+      { type: 'document' },
+      { type: 'document', source: null },
+      { type: 'image', source: null },
+    ]) {
+      const failure = await gateway
+        .generate({ model: TARGET.model, messages: turn(block), maxTokens: 16 })
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      expect(failure).not.toBeInstanceOf(TypeError);
+      expect((failure as { code?: string }).code).toBe('X_AI_REQUEST_INVALID');
+    }
+    expect(() =>
+      messageText(turn({ type: 'document', source: null })[0] as AiMessage),
     ).not.toThrow();
   });
 });
