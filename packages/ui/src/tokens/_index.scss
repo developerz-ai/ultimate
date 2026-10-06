@@ -4,11 +4,13 @@
 
 @forward 'breakpoints';
 @forward 'colors' hide emit, channels;
+@forward 'effects';
 @forward 'motion' hide emit;
 @forward 'radius' hide emit;
 @forward 'shadow' hide emit, levels;
 @forward 'space' hide emit;
 @forward 'stroke' hide emit;
+@forward 'touch' hide emit;
 @forward 'typography' hide emit;
 @forward 'units';
 @forward 'z' hide emit;

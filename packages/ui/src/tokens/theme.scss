@@ -8,6 +8,7 @@
 @use 'shadow';
 @use 'space';
 @use 'stroke';
+@use 'touch';
 @use 'typography';
 @use 'z';
 
@@ -16,6 +17,7 @@
 @include space.emit;
 @include radius.emit;
 @include stroke.emit;
+@include touch.emit;
 @include typography.emit;
 @include motion.emit;
 @include z.emit;

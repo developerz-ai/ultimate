@@ -1,0 +1,188 @@
+@use '../tokens' as t;
+
+// The figure is the container every chart's layout asks about: a 390px phone column and a
+// 1440px dashboard tile are the same component at two container widths, never two components.
+.frame {
+  @include t.container(chart-frame);
+  // The visually-hidden table is absolute; this keeps it inside the figure, not the page.
+  position: relative;
+  display: grid;
+  gap: t.space(2);
+  inline-size: 100%;
+  margin: 0;
+
+  // A series' colour is its slot's role, keyed on `data-series` so every chart (and its legend)
+  // reads one rule. `chart-1` … `chart-8` are the categorical roles, AA against both surfaces.
+  @for $slot from 1 through 8 {
+    [data-series='#{$slot}'] {
+      --series: #{t.role('chart-#{$slot}')};
+    }
+  }
+}
+
+.caption {
+  @include t.label-caps;
+  color: t.role('fg-muted');
+}
+
+.hidden {
+  @include t.visually-hidden;
+}
+
+.layout {
+  display: grid;
+  gap: t.space(3);
+  min-inline-size: 0;
+}
+
+.plot {
+  min-inline-size: 0;
+}
+
+// Narrow first: the legend is a wrapping row under the plot.
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(1) t.space(4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// Wide enough for a plot AND a column beside it: the legend stands at the plot's end edge.
+@include t.container-query(chart-frame, 40rem) {
+  .withLegend {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .withLegend .legend {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+  min-inline-size: 0;
+  font-size: t.text(sm);
+  color: t.role('fg');
+}
+
+.swatch {
+  display: inline-flex;
+  flex: none;
+}
+
+.name {
+  @include t.truncate;
+}
+
+.value {
+  @include t.data-text;
+  color: t.role('fg-strong');
+}
+
+.detail {
+  @include t.data-text;
+  color: t.role('fg-muted');
+}
+
+.key {
+  display: block;
+  inline-size: t.space(6);
+  block-size: t.space(3);
+  overflow: visible;
+}
+
+.keyLine {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.keyMarker {
+  fill: var(--series);
+}
+
+// --- The keyboard layer ------------------------------------------------------
+// Over the plot box, which every chart sheet makes `position: relative`. The layer lets the
+// pointer through to nothing in particular; only the points themselves are targets.
+.hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hit {
+  // A small visible dot, a finger-sized target: the pseudo-element grows the hit area.
+  @include t.touch-target($extend: true);
+  position: absolute;
+  inset-block-start: var(--y);
+  inset-inline-start: var(--x);
+  inline-size: t.space(3);
+  block-size: t.space(3);
+  // Centred on the point by half its own size — margins, not a percentage translate, so the rule
+  // reads the same in either direction (`rtl-sheets.test.ts`).
+  margin-block-start: calc(#{t.space(3)} / -2);
+  margin-inline-start: calc(#{t.space(3)} / -2);
+  border-radius: t.radius(full);
+  pointer-events: auto;
+  cursor: default;
+
+  &:hover,
+  &:focus-visible {
+    background: t.role('fg-strong', 0.18);
+  }
+
+  @include t.focus-ring;
+}
+
+// The readout: a zero-width anchor over the point whose bubble overflows it equally both ways
+// (flex `center`), so it is centred with no translate. Visible on hover and keyboard focus only.
+.readout {
+  position: absolute;
+  inset-block-end: calc(100% + #{t.space(2)});
+  inset-inline-start: 50%;
+  display: flex;
+  justify-content: center;
+  inline-size: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity t.duration(fast) t.easing(out);
+
+  .hit:hover > &,
+  .hit:focus-visible > & {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  // A point at the edge of the plot opens its readout inward, so it never leaves the box.
+  .hit[data-edge='start'] > & {
+    inset-inline-start: 0;
+    justify-content: flex-start;
+  }
+
+  .hit[data-edge='end'] > & {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    justify-content: flex-end;
+  }
+}
+
+.bubble {
+  @include t.data-text;
+  flex: none;
+  padding: t.space(1) t.space(2);
+  border: t.stroke(hairline) solid t.role('line');
+  border-radius: t.radius(sm);
+  background: t.role('surface-raised');
+  box-shadow: t.shadow(md);
+  color: t.role('fg-strong');
+  font-size: t.text(xs);
+  white-space: nowrap;
+}

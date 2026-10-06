@@ -18,8 +18,8 @@
     "seo"
   ],
   "coverage": {
-    "lines": 68,
-    "funcs": 76,
-    "why": "Measured 2026-10-01: 68.9% of lines and 76.6% of functions over 101 source files \u2014 14 fewer than the first measurement, because the admin's hand-written host (repo, screen glue, views, five page files, its action door) was deleted when @ultimat3/admin began serving its own screens; app/friends/screen.ts gained its unit test in the same change. The gap is the files no unit test loads at all \u2014 api/auth.ts, every page under site/ and app/ (signin, signup, u/[handle], friends, messages/[id], feed), friends/actions.ts, shared/ui/post-card.tsx. Each slice that adds a unit test for one raises this floor in the same commit."
+    "lines": 70,
+    "funcs": 78,
+    "why": "Measured 2026-10-05 (plan 101 sweep 9b): 70.8% of lines and 78.3% of functions \u2014 the dashboard's new repo.ts arrived with its tests (visibility through canSeePost, connection counts agreeing with the friends screen). Measured 2026-10-01: 68.9% of lines and 76.6% of functions over 101 source files \u2014 14 fewer than the first measurement, because the admin's hand-written host (repo, screen glue, views, five page files, its action door) was deleted when @ultimat3/admin began serving its own screens; app/friends/screen.ts gained its unit test in the same change. The gap is the files no unit test loads at all \u2014 api/auth.ts, every page under site/ and app/ (signin, signup, u/[handle], friends, messages/[id], feed), friends/actions.ts, shared/ui/post-card.tsx. Each slice that adds a unit test for one raises this floor in the same commit."
   }
 }

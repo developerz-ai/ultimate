@@ -182,6 +182,32 @@ An unknown role throws `X_TOKEN_UNKNOWN` naming every role that exists.
 
 The **one** seam for restyling. Not a forked stylesheet, not an SCSS `@use ... with ()` override — there is no second path.
 
+**Declare it once, in `apps/web/shared/theme.ts`, as a named export `brand`. The framework does the rest** (`As of 2026-10`):
+
+```ts
+// apps/web/shared/theme.ts
+import { defineTheme } from '@ultimat3/ui';
+
+export const brand = defineTheme({ preset: 'scifi' });
+```
+
+| Who | Does |
+|---|---|
+| the app | exports `brand` from `apps/web/shared/theme.ts`. Nothing else: no `<style>` in a layout, no CSP edit |
+| `x dev`, the container (`ROLE=web`), `x build`'s static export | inline `brandStyleTag(brand)` in the `<head>` of every document — `ssr`, `stream`, `static`, `isr`, and every `/admin` screen — **after** the surface stylesheet `<link>`, so the brand wins the cascade at equal specificity |
+| the served processes | admit the same body to `style-src` as a `sha256` source (`brandStyleCspSource(brand)`), so the enforced policy a container sends never blocks it |
+| an app with no `shared/theme.ts`, or one whose brand renders no CSS | nothing: no tag, no hash, no bytes |
+
+One file, one reader: `packages/cli/src/theme-brand.ts`. The `/_x` dev dashboard is framework chrome, not an app document, and keeps the shipped palette. No JavaScript is added: the brand is CSS, and the theme toggle and dark mode work as before — the brand answers `html[data-theme]` and `prefers-color-scheme` at every level `theme.scss` does, so the boot script and `ThemeToggle` flip between the brand's two palettes. A save to `theme.ts` is applied on the next `x dev`.
+
+| Failure | Code | When |
+|---|---|---|
+| a palette below WCAG AA | `X_UI_CONTRAST_INSUFFICIENT` | at boot: `x dev`, `ROLE=web` and `x build` import the module, and `defineTheme()` refuses at import |
+| an unknown role, rung or slot / an unusable value | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` | the same moment |
+| `shared/theme.ts` exports no `brand`, or a `brand` that is not a `defineTheme()` result (or carries `<`) | `X_CONFIG_INVALID` | at boot; `fix:` is the export to write |
+
+The demo app (`dummy/social-media-clone`) ships the `scifi` preset this way; `examples/dummy` keeps the default palette.
+
 ```ts
 import { brandStyleTag, defineTheme } from '@ultimat3/ui';
 
@@ -192,18 +218,18 @@ const brand = defineTheme({
 });
 
 brand.css;                  // the four CSS blocks, as a string
-brandStyleTag(brand);       // '<style>…</style>' — ship it after global.scss
+brandStyleTag(brand);       // '<style>…</style>' — exactly what the framework inlines
 ```
 
 | Field | Shape | Notes |
 |---|---|---|
+| `preset` | `'scifi'` | a shipped palette every other slot layers onto, role by role |
 | `colors` | `Partial<Record<'light' \| 'dark', Partial<Record<ColorRole, string>>>>` | any subset of the 24 roles, per theme |
+| `shadows` | `Partial<Record<'light' \| 'dark', Partial<Record<ShadowName, string>>>>` | elevation is themed like colour |
 | `radius` | `Partial<Record<RadiusName, string>>` | `none sm md lg xl pill full` |
-| `font` | `Partial<Record<'sans' \| 'mono', string>>` | the two slots |
+| `font` | `Partial<Record<'sans' \| 'mono' \| 'data', string>>` | the font slots |
 
-Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius and font ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`.
-
-**Nothing is applied automatically.** `defineTheme()` returns a string; you ship it.
+Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius and font ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
 
 ### Values are validated, never escaped
 
@@ -248,6 +274,7 @@ On the client, `resolveTheme()` reads the same order back: stored choice, then t
 | `packages/ui/src/tokens/theme.scss` | the only stylesheet emitting global custom properties |
 | `packages/ui/src/tokens/contrast.ts` | WCAG ratios over the channel tokens |
 | `packages/ui/src/theme/brand.ts` | `defineTheme()` — the one brand-override seam |
+| `apps/web/shared/theme.ts` | the app's `brand` export — the one place an app declares its theme; read by `packages/cli/src/theme-brand.ts` |
 | `packages/ui/src/tokens/_index.scss` | what `@use '@ultimat3/ui/tokens' as t` forwards: maps, `t.role()`, `t.space()`, the mixins. Emits no CSS |
 | `apps/web/shared/tokens.scss` | the generated app's own layer. One line — `@forward '@ultimat3/ui/tokens'` — and it emits **zero bytes** of CSS by design: every module is its own Sass compilation, so a `:root` block here would be inlined once per stylesheet. Compiles as scaffolded, verified `As of 2026-08-19`; the bare specifier is resolved by `css-modules.ts`'s package importer, since `./tokens` is an `exports` entry only the module resolver can place |
 

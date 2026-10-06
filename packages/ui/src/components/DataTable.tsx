@@ -5,6 +5,9 @@
 // The four-way decision itself is NOT here — it is `asyncBranch`, shared with `AsyncRegion`, so a
 // table and a card list cannot disagree about what "loading with stale rows" looks like. Only the
 // PLACEHOLDER is local, because a table's is table-shaped: rows of cells, not lines of text.
+//
+// A narrow table is the SAME table restyled as labelled cards (`DataTable.module.scss`), never a
+// second copy: a duplicate is read twice or, hidden, is links the reader is told are not there.
 
 import { type AsyncState, finiteCount } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
@@ -14,6 +17,14 @@ import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import { type AsyncBranch, asyncBranch, isBusyBranch } from './async-branch';
 import styles from './DataTable.module.scss';
+import {
+  type ColumnPriority,
+  columnPriority,
+  type MoreColumn,
+  moreColumn,
+  priorityAttr,
+  TABLE_ROLES,
+} from './data-table-view';
 import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';
 import { Pagination } from './Pagination';
@@ -31,7 +42,17 @@ export interface Column<Row> {
   /** Right-aligns in LTR and left-aligns in RTL via `text-align: end`. */
   numeric?: boolean | undefined;
   width?: string | undefined;
+  /**
+   * 1 (default) is a cell at every width; 2 hides the cell while the TABLE is narrower than `md`,
+   * 3 while it is narrower than `lg`. A hidden value moves into the row's "more" disclosure, so it
+   * is never lost — which renders `cell` a second time: give a priority to columns that SHOW a
+   * value, never to one holding a form control or a fixed `id`.
+   */
+  priority?: ColumnPriority | undefined;
 }
+
+/** Below `sm`, `cards` restacks each row as a labelled card; `scroll` keeps the scrolling table. */
+export type DataTableNarrow = 'cards' | 'scroll';
 
 interface DataTableBaseProps<Row> {
   caption: string;
@@ -49,6 +70,10 @@ interface DataTableBaseProps<Row> {
   nextCursor?: string | undefined;
   prevCursor?: string | undefined;
   stickyHeader?: boolean | undefined;
+  /** Pins the first column while the table scrolls sideways. */
+  stickyFirstColumn?: boolean | undefined;
+  /** What a table narrower than `sm` becomes. Default `cards`. */
+  narrow?: DataTableNarrow | undefined;
   density?: 'comfortable' | 'compact' | undefined;
   /** Placeholder row count while loading. Match the usual page size. */
   skeletonRows?: number | undefined;
@@ -108,6 +133,43 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
 
   const branch = (): AsyncBranch<readonly Row[]> => asyncBranch(state());
 
+  const cards = (): boolean => (props.narrow ?? 'cards') === 'cards';
+  /** Read through the validator on every render, so a bad priority is refused, never shown. */
+  const priorityOf = (column: Column<Row>): string | undefined =>
+    priorityAttr(columnPriority(column.priority));
+
+  /** The card label rides inside the cell and is `aria-hidden`: the header already names it. */
+  const cellContent = (column: Column<Row>, row: Row): JSX.Element =>
+    cards()
+      ? [
+          // No class: the attribute is the stylesheet's hook, and this span is on every cell.
+          <span data-label="" aria-hidden="true">
+            {column.header}
+          </span>,
+          column.cell(row),
+        ]
+      : column.cell(row);
+
+  /**
+   * The hidden columns' values, each entry shown only over the widths its own cell is hidden —
+   * a `<details>`, so it opens with scripting off.
+   */
+  const disclosure = (more: MoreColumn<Column<Row>>, row: Row): JSX.Element => (
+    <td role={TABLE_ROLES.cell} class={styles['more']} data-more={more.until}>
+      <details class={styles['disclosure']}>
+        <summary class={styles['summary']}>{ui.t(UI_KEYS.more)}</summary>
+        <dl class={styles['entries']}>
+          {more.columns.map((column) => (
+            <div class={styles['entry']} data-priority={priorityOf(column)}>
+              <dt>{column.header}</dt>
+              <dd>{column.cell(row)}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+    </td>
+  );
+
   const body = (): JSX.Element => {
     if (branch().kind === 'pending') {
       // `Array.from({ length: NaN })` is `[]`, so a busy tbody with no placeholders in it is the
@@ -116,23 +178,33 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       // neither, because `NaN` is not nullish. 0 stays legal: a loading table with no placeholders
       // is a choice, and it is a visible one.
       const placeholders = finiteCount('DataTable', 'skeletonRows', props.skeletonRows ?? 5, 0);
+      const more = moreColumn(props.columns);
       return Array.from({ length: placeholders }, () => (
-        <tr>
-          {props.columns.map(() => (
-            <td>
+        <tr role={TABLE_ROLES.row} class={styles['row']}>
+          {props.columns.map((column) => (
+            <td role={TABLE_ROLES.cell} class={styles['cell']} data-priority={priorityOf(column)}>
               <Skeleton height="1.1em" />
             </td>
           ))}
+          {more === undefined ? null : (
+            <td role={TABLE_ROLES.cell} class={styles['more']} data-more={more.until} />
+          )}
         </tr>
       ));
     }
+    const more = moreColumn(props.columns);
     return props.rows.map((row) => (
-      <tr data-row={props.rowKey(row)}>
+      <tr role={TABLE_ROLES.row} class={styles['row']} data-row={props.rowKey(row)}>
         {props.columns.map((column) => (
-          <td class={column.numeric === true ? styles['numeric'] : undefined}>
-            {column.cell(row)}
+          <td
+            role={TABLE_ROLES.cell}
+            class={cx(styles['cell'], column.numeric === true && styles['numeric'])}
+            data-priority={priorityOf(column)}
+          >
+            {cellContent(column, row)}
           </td>
         ))}
+        {more === undefined ? null : disclosure(more, row)}
       </tr>
     ));
   };
@@ -168,6 +240,10 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
    * linked, a button that calls back when it is not. A linked table with no `sortHrefFor` gets the
    * header text alone — a `<button>` on a page that never hydrates is a control that does nothing.
    */
+  /** Whether a header renders a control at all — the card view shows only those headers. */
+  const hasSortControl = (column: Column<Row>): boolean =>
+    column.sortable === true && (props.hrefFor === undefined || props.sortHrefFor !== undefined);
+
   const sortControl = (column: Column<Row>): JSX.Element => {
     if (column.sortable !== true) return column.header;
     const label = `${column.header}: ${sortLabel(column.key)}`;
@@ -201,28 +277,55 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
 
   // An array, not a fragment: this package's `.tsx` compiles to two factories (Solid's and render's
   // `h`), and only an array means the same sibling list to both.
-  const table = (decided: AsyncBranch<readonly Row[]>): JSX.Element => [
-    <Table
-      caption={props.caption}
-      stickyHeader={props.stickyHeader !== false}
-      density={props.density ?? 'comfortable'}
-    >
-      <thead>
-        <tr>
+  const header = (): JSX.Element => {
+    const more = moreColumn(props.columns);
+    return (
+      <thead
+        role={TABLE_ROLES.rowgroup}
+        class={styles['head']}
+        data-sortable={props.columns.some(hasSortControl) ? '' : undefined}
+      >
+        <tr role={TABLE_ROLES.row}>
           {props.columns.map((column) => (
             <th
               scope="col"
+              role={TABLE_ROLES.columnheader}
               style={column.width === undefined ? undefined : { 'inline-size': column.width }}
               aria-sort={ariaSortFor(props.sort, column.key)}
-              class={column.numeric === true ? styles['numeric'] : undefined}
+              class={cx(styles['heading'], column.numeric === true && styles['numeric'])}
+              data-priority={priorityOf(column)}
+              data-sort-control={hasSortControl(column) ? '' : undefined}
             >
               {sortControl(column)}
             </th>
           ))}
+          {more === undefined ? null : (
+            <th
+              scope="col"
+              role={TABLE_ROLES.columnheader}
+              class={styles['more']}
+              data-more={more.until}
+            >
+              {ui.t(UI_KEYS.more)}
+            </th>
+          )}
         </tr>
       </thead>
+    );
+  };
+
+  const table = (decided: AsyncBranch<readonly Row[]>): JSX.Element => [
+    <Table
+      caption={props.caption}
+      stickyHeader={props.stickyHeader !== false}
+      stickyFirstColumn={props.stickyFirstColumn === true}
+      explicitRoles
+      density={props.density ?? 'comfortable'}
+    >
+      {header()}
       <tbody
-        class={decided.kind === 'ready' && decided.busy ? styles['stale'] : undefined}
+        role={TABLE_ROLES.rowgroup}
+        class={cx(styles['body'], decided.kind === 'ready' && decided.busy && styles['stale'])}
         aria-busy={ariaBool(isBusyBranch(decided))}
       >
         {body()}
@@ -249,5 +352,9 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     return table(decided);
   };
 
-  return <div class={cx(styles['wrap'], props.class)}>{content()}</div>;
+  return (
+    <div class={cx(styles['wrap'], props.class)} data-narrow={props.narrow ?? 'cards'}>
+      {content()}
+    </div>
+  );
 }

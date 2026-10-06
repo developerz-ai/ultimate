@@ -269,9 +269,9 @@ describe('unit · a working filter per shape, with no option list written in the
     // A sortable header is an anchor at the next state of the cycle.
     expect(html).toContain(`href="${BASE}?f.status=sent&amp;sort=issuedAt%3Aasc"`);
     // An unindexed text column is not sortable, so its header is text and not a link.
-    expect(html).toContain('<th scope="col" aria-sort="none">Number</th>');
+    expect(html).toMatch(/<th scope="col" role="columnheader" aria-sort="none"[^>]*>Number<\/th>/);
     expect(html).not.toContain('<script');
-    expect(html).not.toMatch(/<button type="button"(?![^>]*disabled)/);
+    expect(html).not.toMatch(/<button type="button"(?![^>]*(disabled|popovertarget))/);
   });
 
   test('an unknown filter or sort is a 400 naming what the list answers — never the unfiltered list', async () => {

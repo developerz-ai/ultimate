@@ -75,11 +75,16 @@ export const jobsPanel: DevPanel<JobsPanelData> = {
     };
   },
   /**
-   * One jobs UI: the tab draws the admin's own overview component over this process's queue.
-   * Dynamic, so `/_x`'s mount graph loads no view until this tab is opened.
+   * One jobs UI: the tab draws the admin's own overview component over this process's queue,
+   * under a ring of the runs this panel read by state. Dynamic, so `/_x`'s mount graph loads no
+   * view until this tab is opened.
    */
-  async html(params, tabPath) {
-    const { jobsTabHtml } = await import('../jobs/overview-tab');
-    return jobsTabHtml(tabPath, params);
+  async html(params, tabPath, data) {
+    const [{ jobsTabHtml }, { jobsStateHtml }] = await Promise.all([
+      import('../jobs/overview-tab'),
+      import('./jobs-state-chart'),
+    ]);
+    const ring = data === undefined ? '' : await jobsStateHtml(data);
+    return `${ring}${await jobsTabHtml(tabPath, params)}`;
   },
 };

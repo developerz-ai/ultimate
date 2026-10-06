@@ -55,4 +55,65 @@ export const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as token
   margin-inline: auto;
   color: tokens.role('fg');
 }
+
+// The trend beside the ring and the dial: side by side once the main column is wide enough for the
+// area chart to keep its 14 day labels legible, stacked before that.
+.charts {
+  display: grid;
+  gap: tokens.space(6);
+  min-inline-size: 0;
+
+  @include tokens.respond-to('lg') {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+// The ring and the dial share a column: two across on a tablet, where one alone would leave half
+// the row empty, one above the other on a phone and in the narrow side column of a monitor.
+.side {
+  display: grid;
+  gap: tokens.space(4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+`;
+
+/**
+ * `apps/web/shared/theme.ts`: the app's brand, which the boot reads by this path and inlines in every
+ * document (`theme-brand.ts`). Emitted as the default theme — `defineTheme({})` renders no CSS, so
+ * no tag and no CSP entry — with the preset one edit away: the look is the app's choice (axiom 8).
+ */
+export const themeFile =
+  (): string => `// This app's brand: the boot reads \`brand\` from this file and inlines it in every document,
+// after global.scss, with its hash in the CSP. \`defineTheme({})\` is @ultimat3/ui's default theme
+// and renders nothing, so today no tag is emitted.
+//
+// \`defineTheme()\` is the one seam for restyling — colours, radii, fonts and shadows by role,
+// validated at the call. The dashboard look (near-black panels, a cyan accent, glowing edges, its
+// own eight chart series) is one edit:
+//
+//   export const brand = defineTheme({ preset: 'scifi' });
+//
+// Every other slot layers onto the preset role by role:
+//   defineTheme({ preset: 'scifi', colors: { dark: { 'chart-1': '120 220 255' } } })
+// A preset never forces a theme: to open dark whatever the OS says, set \`theme.defaultMode\` in
+// app.config.ts.
+import { defineTheme } from '@ultimat3/ui';
+
+export const brand = defineTheme({});
+`;
+
+/** Its test: what the brand renders is a fact the app pins, so opting in is a visible diff. */
+export const themeTest =
+  (): string => `// The brand the boot inlines. The default theme renders no CSS — no \`<style>\`, no CSP entry —
+// and the preset is a whole palette; either way \`defineTheme()\` validated it at import.
+import { expect, unitTest } from '@ultimat3/testing';
+import { defineTheme } from '@ultimat3/ui';
+import { brand } from './theme';
+
+unitTest('the app ships the default theme until it opts into a preset', () => {
+  expect(brand.css).toBe('');
+  // The opt-in is one edit, and what it would ship is real CSS the boot inlines.
+  expect(defineTheme({ preset: 'scifi' }).css).toContain('--color-');
+});
 `;

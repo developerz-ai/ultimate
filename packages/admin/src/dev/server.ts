@@ -5,10 +5,10 @@
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
 import { DEFAULT_ENVIRONMENT, escapeHtml, tryResolveEnvironment } from '@ultimat3/core';
-import { FRAMEWORK_CATALOG_LOCALE, translatorFor } from '@ultimat3/i18n';
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
 import { defaultDevSources } from './data';
+import { t } from './dev-t';
 import type { DevSources } from './facts';
 import { type DevPanel, type PanelPayload, panelPayload } from './panel';
 import { cachePanel } from './panel-cache';
@@ -20,6 +20,7 @@ import { manifestPanel } from './panel-manifest';
 import { policyPanel } from './panel-policy';
 import { routesPanel } from './panel-routes';
 import { timelinePanel } from './panel-timeline';
+import { WATERFALL_STYLE } from './timeline-style';
 
 export const DEV_PANELS: readonly DevPanel[] = [
   routesPanel,
@@ -43,6 +44,13 @@ export interface DevDashboardOptions {
   readonly basePath?: string;
   readonly sources?: DevSources;
   readonly panels?: readonly DevPanel[];
+  /**
+   * The app surface's stylesheet URL — what `<link rel="stylesheet">` on an `app/` document carries.
+   * A drawn panel (the jobs tab) renders ui's own components, whose rules live there and not in the
+   * inlined shell; the host that mounts `/_x` is the one that knows the content-hashed URL. Asked
+   * per request, because a rebuild under `x dev` moves the hash. Absent or `undefined`: no link.
+   */
+  readonly stylesheetHref?: () => string | undefined;
 }
 
 const envOf = (name: string): string | undefined => {
@@ -85,7 +93,11 @@ const jsonResponse = (body: unknown, status = 200): Response =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
 
-/** The six roles /_x paints with. `--x-*` is the admin's namespace; the values are ui's. */
+/**
+ * The roles /_x paints with. `--x-*` is the admin's namespace; the values are ui's. The chart
+ * series are the timeline's span kinds — `chart-*` is contrast-gated against both surfaces, and
+ * every kind is named in text beside its bar, so colour is never the only key.
+ */
 const SHELL_ROLES = [
   'bg',
   'surface-raised',
@@ -93,6 +105,13 @@ const SHELL_ROLES = [
   'fg-muted',
   'line',
   'accent',
+  'chart-1',
+  'chart-2',
+  'chart-3',
+  'chart-4',
+  'chart-5',
+  'chart-6',
+  'chart-7',
 ] as const satisfies readonly ColorRole[];
 
 const SHELL_LAYOUT = `
@@ -107,7 +126,7 @@ p.question { color: rgb(var(--x-color-fg-muted)); margin: 0 0 1rem; }
 pre { background: rgb(var(--x-color-surface-raised)); border: 1px solid rgb(var(--x-color-line));
   padding: 1rem; overflow: auto; }
 :focus-visible { outline: 2px solid rgb(var(--x-color-accent)); outline-offset: 2px; }
-`;
+${WATERFALL_STYLE}`;
 
 let stylePromise: Promise<string> | undefined;
 
@@ -154,15 +173,10 @@ html[data-theme="dark"] { ${block('dark')} }
 ${SHELL_LAYOUT}`;
 }
 
-/**
- * /_x is the framework's own tool, in the framework's own locale (`<html lang="en">` below): its
- * strings are registered under `FRAMEWORK_CATALOG_LOCALE` only, so the AMBIENT locale — the app's,
- * `es-co` for an app that defaults to it — answered `⟦dev.panel.mail.title⟧` for every tab.
- */
-const t = (key: string): string => translatorFor(FRAMEWORK_CATALOG_LOCALE)(key);
-
 function shell(
   style: string,
+  /** The app surface's stylesheet, linked BEFORE the shell's `<style>` so the shell wins ties. */
+  stylesheetHref: string | undefined,
   basePath: string,
   panels: readonly DevPanel[],
   active: DevPanel,
@@ -181,7 +195,11 @@ function shell(
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>_x · ${escapeHtml(active.key)}</title><style>${style}</style></head>
+<title>_x · ${escapeHtml(active.key)}</title>${
+    stylesheetHref === undefined
+      ? ''
+      : `<link rel="stylesheet" href="${escapeHtml(stylesheetHref)}">`
+  }<style>${style}</style></head>
 <body><header><h1>_x</h1><nav>${tabs}</nav>
 <a href="${basePath}/${active.key}?json=1">--json</a></header>
 <main><p class="question">${escapeHtml(t(active.questionKey))}</p>
@@ -238,8 +256,19 @@ export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
       if (wantsJson) return jsonResponse(payload, payload.ok ? 200 : 500);
       const tabPath = `${basePath}/${panel.key}`;
       const drawn =
-        payload.ok && panel.html !== undefined ? await panel.html(url.searchParams, tabPath) : null;
-      return new Response(shell(await devShellStyle(), basePath, panels, panel, payload, drawn), {
+        payload.ok && panel.html !== undefined
+          ? await panel.html(url.searchParams, tabPath, payload.data)
+          : null;
+      const page = shell(
+        await devShellStyle(),
+        opts.stylesheetHref?.(),
+        basePath,
+        panels,
+        panel,
+        payload,
+        drawn,
+      );
+      return new Response(page, {
         status: 200,
         headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
       });

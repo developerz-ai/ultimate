@@ -1,0 +1,73 @@
+@use '../tokens' as t;
+
+// A square box, centred, never wider than a phone column needs: the centre label is HTML laid
+// over the ring, so it keeps its type step at every size (issue 494's rule).
+.donut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  max-inline-size: t.rem(224px);
+  margin-inline: auto;
+  aspect-ratio: 1;
+  // The ring is drawn clockwise from twelve in either direction; its overlay must agree.
+  direction: ltr;
+}
+
+.ring {
+  grid-area: 1 / 1;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.track {
+  fill: t.role('line', 0.35);
+}
+
+.segment {
+  fill: var(--series);
+}
+
+// The marker is cut out of the segment in the surface colour, so its SHAPE names the series.
+.marker {
+  fill: t.role('surface');
+}
+
+.centre {
+  grid-area: 1 / 1;
+  display: grid;
+  justify-items: center;
+  gap: t.space(1);
+  max-inline-size: 55%;
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.total {
+  @include t.data-text;
+  font-size: t.text(xl);
+  font-weight: t.weight(semibold);
+  line-height: t.leading(tight);
+  color: t.role('fg-strong');
+}
+
+.caption {
+  @include t.label-caps;
+  color: t.role('fg-muted');
+}
+
+.key {
+  display: block;
+  inline-size: t.space(3);
+  block-size: t.space(3);
+}
+
+.keyBlock {
+  fill: var(--series);
+}
+
+.keyMarker {
+  fill: t.role('surface');
+}

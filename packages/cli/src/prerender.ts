@@ -51,6 +51,7 @@ import {
   serviceWorkerRegistration,
 } from './sw-artifacts';
 import { loadThemeMode, themeBoot } from './theme-boot';
+import { loadThemeBrand } from './theme-brand';
 import { writeErrorLine } from './write-line';
 
 export type { PrerenderedPage, PrerenderReport } from './prerender-report';
@@ -191,6 +192,8 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // names it either.
   const pwa = await loadPwaArtifacts(options.root);
   const theme = themeBoot(await loadThemeMode(options.root));
+  // The brand the served process carries, so an exported page and a served one paint alike.
+  const brand = await loadThemeBrand(options.root);
   // The client router, for the surfaces that opted in: written BEFORE any document names it, for
   // the register's reason below — `measureDocumentJs` weighs it off disk, and it is charged to
   // the route (the interactivity the app asked for), so it must be there to be weighed.
@@ -263,6 +266,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const documentOptions = {
     resolveIsland: (file: string) => islands.resolverFor(file),
     themeHead: theme.head,
+    ...(brand === undefined ? {} : { brandHead: brand.head }),
     ...(speculation === undefined ? {} : { speculationHead: speculation.head }),
     origin,
     ...(navigation.head === undefined ? {} : { navigation: navigation.head }),

@@ -114,7 +114,10 @@ describe('unit · a stored session is sealed at rest', () => {
     expect(body).not.toContain('s3cret-cookie-value');
     expect(body).not.toContain('bearer-abc-123');
     expect(body).not.toContain('shop.test');
-    expect(body).not.toContain('sid');
+    // The cookie NAME as plaintext JSON would be the quoted `"sid"`. Bare `sid` is three letters of
+    // base64url, which the ciphertext contains about once in a thousand runs — a red no code caused.
+    // A quote is not in the base64url alphabet, so the quoted form is exact.
+    expect(body).not.toContain('"sid"');
   });
 
   test('the object is one JSON document holding one sealed string, under the same path', async () => {

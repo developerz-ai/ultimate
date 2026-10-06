@@ -4,7 +4,12 @@
   display: grid;
   gap: t.space(1);
   inline-size: 100%;
-  margin: 0;
+  // The svg does not mirror in a right-to-left page; the keyboard layer over it must not either.
+  direction: ltr;
+}
+
+.box {
+  position: relative;
 }
 
 .plot {
@@ -33,10 +38,15 @@
   }
 }
 
-// The second series — what went wrong, stacked on what went right.
+// The second series — what went wrong, stacked on what went right. Its dashed outline is the cue
+// that does not depend on telling red from blue; the legend's swatch carries the same edge.
 .secondary {
   fill: t.role('danger');
   opacity: 0.6;
+  stroke: t.role('fg-strong');
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
   transition: opacity t.duration(fast) t.easing(out);
 
   &:hover {
@@ -67,4 +77,18 @@
   display: flex;
   justify-content: space-between;
   gap: t.space(2);
+}
+
+// Legend keys: the bar's own fill, and the second series' fill with its dashed edge.
+.swatch {
+  display: block;
+  inline-size: t.space(3);
+  block-size: t.space(3);
+  border-radius: t.radius(sm);
+  background: t.role('accent');
+}
+
+.swatchSecondary {
+  border: t.stroke(hairline) dashed t.role('fg-strong');
+  background: t.role('danger', 0.6);
 }

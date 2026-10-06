@@ -185,7 +185,18 @@
       "name": "Admin"
     },
     "dashboard": {
-      "title": "Dashboard"
+      "title": "Dashboard",
+      "records": {
+        "title": "Records",
+        "label": "Records per resource",
+        "resource": "Resource",
+        "total": "records in all"
+      },
+      "access": {
+        "title": "Access",
+        "allowed": "{allowed} of {total} allowed",
+        "open": "Open the list"
+      }
     },
     "denied": {
       "body": "This account is missing {permission} ({reason})."
@@ -489,7 +500,27 @@
       },
       "timeline": {
         "title": "Timeline",
-        "question": "where did the time go in this request?"
+        "question": "where did the time go in this request?",
+        "requests": "Recent requests",
+        "spans": "Spans, on the request's own clock",
+        "byKind": "Time by kind",
+        "ms": "{ms} ms",
+        "empty": "No request has been traced yet — open a page of the app, then reload this tab.",
+        "kind": {
+          "http": "http",
+          "render": "render",
+          "action": "action",
+          "policy": "policy",
+          "sql": "sql",
+          "cache": "cache",
+          "job": "job"
+        },
+        "nPlusOne": {
+          "title": "Repeated statements",
+          "fix": "fix:",
+          "clean": "no statement repeated past the detector's threshold in this request",
+          "unwired": "no N+1 detector is attached to this process — x dev wires one"
+        }
       },
       "live": {
         "title": "Live",
@@ -497,7 +528,19 @@
       },
       "jobs": {
         "title": "Jobs",
-        "question": "is the queue moving, and which step failed?"
+        "question": "is the queue moving, and which step failed?",
+        "chart": {
+          "label": "Recent runs by state",
+          "total": "recent runs",
+          "state": "State",
+          "runs": "Runs"
+        },
+        "state": {
+          "ok": "done",
+          "running": "running",
+          "failed": "failed",
+          "dead": "dead"
+        }
       },
       "db": {
         "title": "DB",

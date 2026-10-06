@@ -80,19 +80,33 @@ export function frameworkDedupePlugin(root: string): BunPlugin {
         const pkg = await pending;
         const path = pkg === null ? undefined : appPackagePath(pkg, subpath);
         if (path === undefined) return undefined;
-        // Only when Bun's own answer is a SECOND copy. A path a plugin returns loses its package's
-        // `sideEffects`, so taking over every import shipped ~2.2 KB of untree-shaken core in each
-        // island of examples/dummy (21,945 → 24,202 B on /pricing) while folding nothing on Linux.
+        // Only when Bun's own answer is a SECOND copy, or this file under a second spelling
+        // (`sameModule`). A path a plugin returns loses its package's `sideEffects`, so taking over
+        // every import shipped ~2.2 KB of untree-shaken core in each island of examples/dummy
+        // (21,945 → 24,202 B on /pricing) while folding nothing on Linux.
         return sameModule(path, args.path, args.importer) ? undefined : { path };
       });
     },
   };
 }
 
-/** Whether Bun, left alone, resolves `specifier` from `importer` to `path` itself (by realpath). */
-export function sameModule(path: string, specifier: string, importer: string): boolean {
+/**
+ * Whether Bun, left alone, resolves `specifier` from `importer` to `path` itself — as the same
+ * STRING, because Bun keys a module by its path string, never by the file. This compared realpaths
+ * once, which is right on Linux (Bun's resolver answers a realpath, so the strings agree) and wrong
+ * on Windows, where it answers the junction spelling: both sides realpath to one file, Bun kept its
+ * own spelling, every nest this plugin folded got the realpath one, and one file shipped as two
+ * modules (the windows job's `/posts`, 81,306 B against Linux's 59,849 B). `resolve` is injectable
+ * so that spelling can be handed in on a host whose resolver never produces it.
+ */
+export function sameModule(
+  path: string,
+  specifier: string,
+  importer: string,
+  resolve: (specifier: string, from: string) => string = Bun.resolveSync,
+): boolean {
   try {
-    return realpathSync(Bun.resolveSync(specifier, dirname(importer))) === realpathSync(path);
+    return resolve(specifier, dirname(importer)) === path;
   } catch {
     // Unresolvable from the importer: the app's copy is the only answer there is.
     return false;

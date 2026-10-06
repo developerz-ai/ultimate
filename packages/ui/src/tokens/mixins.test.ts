@@ -81,9 +81,9 @@ describe('visually-hidden', () => {
 });
 
 describe('data-text', () => {
-  test('is the mono family with tabular figures — columns of data must not wobble', async () => {
+  test('is the data family with tabular figures — columns of data must not wobble', async () => {
     const css = await body('data-text');
-    expect(css).toMatch(/font-family:\s*var\(--font-mono\)/);
+    expect(css).toMatch(/font-family:\s*var\(--font-data\)/);
     expect(css).toMatch(/font-variant-numeric:\s*tabular-nums/);
   });
 });

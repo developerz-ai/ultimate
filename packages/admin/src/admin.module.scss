@@ -12,27 +12,125 @@
   background: t.role('bg');
   color: t.role('fg');
 
-  // One column under the `md` rung: the sidebar becomes a block above the screen it navigates.
+  // One column under the `md` rung: the menu bar, then the screen; the sidebar is the panel the
+  // bar opens — or, in an engine with no popovers, a block above the screen it navigates.
   @include t.respond-down('md') {
     grid-template-columns: 1fr;
+    gap: 0;
   }
 }
 
+// Off-screen until focused, then pinned at the inline-start corner. It used to stay visually
+// hidden even WITH focus — the focus ring drew around a 1px box nobody could see.
 .skip {
-  @include t.visually-hidden;
+  @include t.focus-ring;
 
-  &:focus-visible {
-    @include t.focus-ring;
+  position: fixed;
+  z-index: t.z(skip-nav);
+  inset-block-start: t.space(2);
+  inset-inline-start: t.space(2);
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+  border-radius: t.radius('md');
+  background: t.role('surface-raised');
+  color: t.role('fg-strong');
+  box-shadow: t.shadow(md);
+  text-decoration: none;
+
+  &:not(:focus-visible) {
+    @include t.visually-hidden;
   }
 }
 
+// Hidden unless the engine can open the panel: a menu button that does nothing is worse than the
+// block an engine without popovers still shows.
+.bar {
+  display: none;
+}
+
+// A touch target: this bar exists for a phone.
+.menuButton,
+.close {
+  @include t.focus-ring;
+  @include t.touch-target;
+
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  padding-inline: t.space(3);
+  border: 0;
+  border-radius: t.radius('md');
+  background: none;
+  color: t.role('fg-strong');
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+}
+
+.close {
+  display: none;
+  justify-content: center;
+  align-self: flex-end;
+}
+
+// Every `[popover]` gets a UA style — fixed, centred, hidden while closed — so the column undoes
+// each; this box is the sidebar at `md` and up, and at every width where there is no popover.
 .side {
   @include t.surface('surface', 'sm');
   @include t.padding-block(t.space(6));
   @include t.padding-inline(t.space(4));
   @include t.column(t.space(4));
 
+  position: static;
+  inset: auto;
+  inline-size: auto;
+  block-size: auto;
+  margin: 0;
+  color: t.role('fg');
   border-inline-end: t.stroke(hairline) solid t.role('line');
+  overflow: auto;
+}
+
+@include t.respond-down('md') {
+  @supports selector(:popover-open) {
+    .bar {
+      display: flex;
+      align-items: center;
+      padding-block: t.space(1);
+      padding-inline: t.space(2);
+      border-block-end: t.stroke(hairline) solid t.role('line');
+      background: t.role('surface');
+    }
+
+    .side:not(:popover-open) {
+      display: none;
+    }
+
+    // The same edge sheet as `Drawer`'s inline-start side: raised surface, line edge, scrim.
+    .side:popover-open {
+      @include t.scrim-backdrop;
+
+      position: fixed;
+      inset-block: 0;
+      inset-inline-start: 0;
+      inset-inline-end: auto;
+      inline-size: min(t.rem(320), calc(100vw - #{t.space(12)}));
+      block-size: 100dvh;
+      max-block-size: 100dvh;
+      border: 0;
+      border-inline-end: t.stroke(hairline) solid t.role('line');
+      border-radius: 0;
+      background: t.role('surface-raised');
+      box-shadow: t.shadow(xl);
+    }
+
+    .close {
+      display: inline-flex;
+    }
+  }
 }
 
 .brand {
@@ -50,8 +148,17 @@
   color: t.role('fg-muted');
 }
 
+// One track that may shrink to the column: an `auto` track is at least its content's min-content
+// width, and a text input's is its `size` — wider than a 256px sidebar's content box, so the box
+// stuck out past the sidebar's edge at every width.
 .search {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
+
+  > form {
+    min-inline-size: 0;
+  }
 }
 
 .hidden {
@@ -95,6 +202,13 @@
 
   &:focus-visible {
     @include t.focus-ring;
+  }
+
+  // A touch-target row on a narrow screen, where the link is tapped rather than clicked.
+  @include t.respond-down('md') {
+    display: flex;
+    align-items: center;
+    min-block-size: t.touch(target);
   }
 }
 

@@ -18,10 +18,13 @@ export interface DevPanel<Data = unknown> {
   data(sources: DevSources, params: URLSearchParams): Promise<Data>;
   /**
    * The tab's body as HTML, when the panel draws one — the jobs tab renders the admin's own
-   * jobs overview. Absent: the tab is its `--json` payload in a `<pre>`. Asked only once `data`
-   * answered, so an unwired source is still the payload's own error with its fix.
+   * jobs overview, the timeline its waterfall. Absent: the tab is its `--json` payload in a
+   * `<pre>`. Asked only once `data` answered, and handed that answer, so the drawing and the
+   * `--json` payload are the same facts and an unwired source is still the payload's own error.
+   * Optional only for a caller that draws a tab outside the server (a test of the jobs tab); the
+   * server always hands it.
    */
-  html?(params: URLSearchParams, tabPath: string): Promise<string>;
+  html?(params: URLSearchParams, tabPath: string, data?: Data): Promise<string>;
 }
 
 export type PanelPayload =

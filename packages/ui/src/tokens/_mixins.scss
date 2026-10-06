@@ -241,11 +241,13 @@ $-under: 0.02px;
   }
 }
 
-/// The mono family with tabular figures, for slugs, counts, timestamps, ids and URLs — data
-/// whose columns must not wobble as the value changes. Lifted from an app that had restated
-/// these two lines in six stylesheets before the catalog carried them.
+/// The `data` family with tabular figures, for slugs, counts, timestamps, ids, URLs and every
+/// figure in a chart axis or a table column — data whose columns must not wobble as the value
+/// changes. Lifted from an app that had restated these two lines in six stylesheets before the
+/// catalog carried them; reads `--font-data` since 2026-10, a slot `defineTheme()` can restyle
+/// without touching `mono` (code).
 @mixin data-text {
-  font-family: var(--font-mono);
+  font-family: var(--font-data);
   font-variant-numeric: tabular-nums;
 }
 

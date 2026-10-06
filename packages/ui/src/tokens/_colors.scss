@@ -1,6 +1,10 @@
 // Canonical colour token source. Semantic roles only, stored as space-separated
 // RGB channels so `rgb(var(--color-x) / 0.5)` composites without a second token.
 // `tokens.ts` mirrors these values; `x verify` fails if the two drift.
+//
+// `chart-1` … `chart-8` are the categorical series: Okabe–Ito hues, darkened for the light page and
+// lifted for the dark one until each clears 3:1 on every surface and every pair stays apart under
+// protan/deutan/tritan simulation (`contrast.test.ts`, `colour-vision.test.ts`).
 
 $light: (
   bg: 253 246 240,
@@ -27,6 +31,14 @@ $light: (
   info: 31 110 178,
   info-soft: 224 239 252,
   info-fg: 255 255 255,
+  chart-1: 0 107 170,
+  chart-2: 189 107 14,
+  chart-3: 0 125 90,
+  chart-4: 189 44 16,
+  chart-5: 170 70 140,
+  chart-6: 47 135 195,
+  chart-7: 118 97 18,
+  chart-8: 60 60 60,
 );
 
 $dark: (
@@ -54,6 +66,14 @@ $dark: (
   info: 96 170 240,
   info-soft: 22 38 56,
   info-fg: 12 20 30,
+  chart-1: 105 201 255,
+  chart-2: 230 153 0,
+  chart-3: 0 167 113,
+  chart-4: 236 111 60,
+  chart-5: 203 126 189,
+  chart-6: 124 153 252,
+  chart-7: 246 234 72,
+  chart-8: 181 181 180,
 );
 
 /// The tone vocabulary, in the order components expose it. Mirrors `TONES` in

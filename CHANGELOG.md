@@ -18,10 +18,39 @@ twins, and ships the guard that keeps each one gone. Sweep 8a makes native Windo
 WSL) a supported platform for contributing and for building an app, gated by a `windows` CI job;
 sweep 8b fixes what that job found. Sweep 8c makes a deploy zero-downtime: a working worker finishes,
 then restarts. Sweep 8d root-causes the flaky tests. Sweep 9 makes realtime cheaper and
-honest: one runtime per page, writes named on every frame, no stale first paint offline.
+honest: one runtime per page, writes named on every frame, no stale first paint offline. Sweep
+9b ships dashboards: charts, phone-ready tables, a sci-fi theme preset and the seam to use it.
 
 ### Added
 
+- **Dashboards.**
+  - `@ultimat3/ui` charts: `LineChart`, `AreaChart`, `DonutChart`, `Gauge` and `ChartFrame`. They are
+    server-rendered SVG, add no island and no JS, and carry a legend, a visually-hidden data table,
+    and a dash and marker per series as well as a colour. Ticks are whole on count data,
+    label density follows a container query, and an optional `focusable` readout is CSS-only.
+    `BarChart` gains the legend, the table, `format` and `focusable`.
+  - Colour-blind-safe series roles `chart-1` … `chart-8`, 3:1 on every surface and apart under
+    protan, deutan and tritan simulation.
+  - `glow-*` and `tinted-*` shadow rungs, a `--font-data` slot, and a `--touch-target` token
+    with `t.touch-target`, `t.glow-edge` and `t.grid-texture`.
+  - `defineTheme({ preset: 'scifi', shadows })`: a contrast-gated sci-fi preset your overrides
+    layer onto.
+- **An app declares its theme once:** `export const brand = defineTheme(…)` in
+  `apps/web/shared/theme.ts`. `x dev`, the container, the static export and `/admin` inline it
+  after the surface stylesheet, with its hash in `style-src`. No module, nothing emitted. The
+  demo ships `scifi`.
+- **Tables on a phone:** `DataTable` collapses to labelled cards below `sm` (`narrow`), hides
+  lower-`priority` columns behind a per-row disclosure without losing a value, and pins its first
+  column (`stickyFirstColumn`, on `Table` too). New `InlineBar`.
+- **Navigation on a phone:** `AppShell` and the admin layout collapse the sidebar into a no-JS
+  `popover` panel below `md`, with touch-target buttons (0 B of JS).
+- **`/admin`** opens on a KPI row (one linked tile per resource the viewer may list, counted
+  through that resource's own repo and row scope) and a donut of those counts. Each permission
+  matrix sits below in a closed `<details>`.
+- **`/_x`:** the timeline is a server-rendered span waterfall with the N+1 verdicts, and the jobs
+  tab opens on a ring of runs by state.
+- **The scaffold's example dashboard** shows an area chart, a donut, a gauge and a priority-aware
+  table, and ships a `shared/theme.ts` with a one-line `scifi` opt-in.
 - `drain.deadlineMs` in `app.config.ts` (default 25 s, 1 ms to 1 h): the drain budget for every
   role, including how long a running job has to finish on a deploy.
 - `x deploy --method compose` rolls roles with no published host port start-first (scale up, wait
@@ -269,6 +298,15 @@ honest: one runtime per page, writes named on every frame, no stale first paint 
 
 ### Fixed
 
+- An app error page's `<style>` was blocked under the container's enforced CSP: its hash was
+  hashed twice on its way to `style-src`.
+- The admin skip link now becomes visible when focused. The admin sidebar search box no longer
+  overflows its column, and the scaffolded app no longer lays out wider than a 390px phone.
+- An island chunk that bundles one of the framework's modules twice (one file under two path
+  spellings, or a second `@ultimat3/*` copy) fails the build with `X_ISLAND_MODULE_DUPLICATED`,
+  naming every spelling and the bytes wasted. A third-party package installed twice is a warning
+  with its byte cost. The framework now spells every `@ultimat3/*` file by its realpath, the likely
+  cause of the Windows `/posts` island shipping 81,306 B against Linux's 59,849 B.
 - realtime: a live-query `patch` frame names the writes that made it (`writes`; a delta resume names
   every write it replays), and the page settles them in the frame's own batch, so a live list no
   longer paints the server's truth and the pending overlay at once (#507).

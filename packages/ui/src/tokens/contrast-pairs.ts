@@ -11,8 +11,8 @@
 // benchmark (EN 301 549, ADA Title II, the EAA). 4.5:1 for body text (1.4.3), 3:1 for large text
 // and non-text UI (1.4.11).
 
+import { CHART_ROLES, type ColorRole } from './color-tokens';
 import { AA_LARGE, AA_TEXT } from './contrast';
-import type { ColorRole } from './tokens';
 
 /** What a page, a card and a raised panel are made of. */
 const SURFACES: readonly ColorRole[] = ['bg', 'bg-soft', 'surface', 'surface-raised'];
@@ -68,4 +68,9 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   ...STATUS.flatMap((status) => onSurfaces(status, AA_TEXT, 'status text on a surface')),
   ...onSurfaces('accent', AA_LARGE, 'the focus ring against a surface'),
   ...onSurfaces('line', VISIBLE_EDGE, 'a border or divider against a surface'),
+  // A series mark is non-text UI (1.4.11), and a dashboard puts the same series on the page, in a
+  // card and in a raised popover — so every surface, not the one a chart usually sits on.
+  ...CHART_ROLES.flatMap((role) =>
+    onSurfaces(role, AA_LARGE, `the ${role} series mark — a bar, line or slice — on a surface`),
+  ),
 ];

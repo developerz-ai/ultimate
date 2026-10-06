@@ -18,6 +18,20 @@ $font-family: (
     Consolas,
     monospace,
   ),
+  // Numbers in columns: a monospace-friendly stack whose figures align without `tnum` support,
+  // read through `@include t.data-text`, which adds `tabular-nums` for every family that has it.
+  // A slot of its own so a brand can put a proportional face with tabular figures here and keep
+  // `mono` for code.
+  data: (
+    ui-monospace,
+    'SFMono-Regular',
+    'Cascadia Mono',
+    'JetBrains Mono',
+    'Roboto Mono',
+    Menlo,
+    Consolas,
+    monospace,
+  ),
 );
 
 $font-size: (

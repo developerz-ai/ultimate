@@ -45,9 +45,10 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`idempotency.ts:201` compares a stored `requestHash` with a recomputed one to decide REPLAY vs conflict. Both sides are hashes this process computed from a body it already holds; the answer is not an authentication decision.',
   },
   admin: {
-    count: 2,
+    // why: `dev/jobs-state-chart.tsx:24` compares a job run's `status` with a job STATE it counts — a lifecycle enum, no secret.
+    count: 3,
     reason:
-      '`resource.ts:225,235` walk `LABEL_CANDIDATES` / `SORT_CANDIDATES` — two literal lists of FIELD NAMES in that file — and match each `candidate` against the resource’s declared fields. `candidate` is in the vocabulary because `mfa.ts` uses the word for a recovery code; here it is a loop variable over a constant, not a predicate’s own parameter, so the rule still reads it.',
+      '`resource.ts:225,235` walk `LABEL_CANDIDATES` / `SORT_CANDIDATES` — two literal lists of FIELD NAMES in that file — and match each `candidate` against the resource’s declared fields. `candidate` is in the vocabulary because `mfa.ts` uses the word for a recovery code; here it is a loop variable over a constant, not a predicate’s own parameter, so the rule still reads it. The third (2026-10-05, plan 101 sweep 9b) is `dev/jobs-state-chart.tsx:24`, which counts runs per job state for the `/_x` jobs ring: `state` there is a job lifecycle value (`queued`, `running`, …), the word the rule reads as an OAuth state.',
   },
   ai: {
     count: 1,

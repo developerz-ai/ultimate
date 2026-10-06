@@ -1,9 +1,22 @@
+@use 'sass:map';
 @use '../tokens' as t;
 
+// The table's OWN width decides its layout, never the viewport's: the same table is a card list
+// in a sidebar and a full table in a wide main column. The rungs are the one breakpoint ladder,
+// read as container widths.
+$sm: map.get(t.$breakpoints, 'sm');
+$md: map.get(t.$breakpoints, 'md');
+$lg: map.get(t.$breakpoints, 'lg');
+
 .wrap {
+  @include t.container(datatable);
   display: flex;
   flex-direction: column;
   gap: t.space(3);
+  // Inline-size containment sizes the box without its content, so it must take its width from
+  // the parent: a shrink-to-fit container would otherwise collapse to nothing.
+  inline-size: 100%;
+  min-inline-size: 0;
 }
 
 // Numbers align to the trailing edge in both writing directions.
@@ -39,4 +52,181 @@
 .stale {
   opacity: 0.6;
   transition: opacity t.duration(fast) t.easing(out);
+}
+
+// --- What hides at which width -------------------------------------------------------------------
+// A lower-priority cell hides while the table is narrow, and the row's disclosure shows exactly
+// the entries whose cells are hidden: at every width each value is on screen once.
+
+.cell > [data-label],
+.more,
+.entry {
+  display: none;
+}
+
+@container datatable (width < #{$lg}) {
+  .wrap .cell[data-priority='3'],
+  .wrap .heading[data-priority='3'] {
+    display: none;
+  }
+
+  .wrap .more[data-more='lg'] {
+    display: table-cell;
+  }
+
+  .wrap .entry[data-priority='3'] {
+    display: grid;
+  }
+}
+
+@container datatable (width < #{$md}) {
+  .wrap .cell[data-priority],
+  .wrap .heading[data-priority] {
+    display: none;
+  }
+
+  .wrap .more {
+    display: table-cell;
+  }
+
+  .wrap .entry {
+    display: grid;
+  }
+}
+
+.disclosure {
+  white-space: normal;
+}
+
+.summary {
+  @include t.focus-ring;
+  border-radius: t.radius(sm);
+  color: t.role('accent');
+  cursor: pointer;
+}
+
+.entries {
+  display: grid;
+  gap: t.space(1);
+  margin: 0;
+  margin-block-start: t.space(2);
+}
+
+.entry {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: t.space(3);
+
+  :global(dt) {
+    color: t.role('fg-muted');
+  }
+
+  :global(dd) {
+    margin: 0;
+  }
+}
+
+// --- Cards ---------------------------------------------------------------------------------------
+// Below `sm` a row is a card and each cell a labelled line. Every element still carries its table
+// role (the markup declares them), because WebKit drops table semantics on a `display` change. The
+// header row stays in the accessibility tree — it is what names each cell — and shows only the
+// headers that are sort controls, as a row of chips above the cards.
+
+@container datatable (width < #{$sm}) {
+  .wrap[data-narrow='cards'] {
+    :global(table),
+    :global(caption),
+    .body {
+      display: block;
+    }
+
+    .head {
+      display: block;
+      border-block-end: 1px solid t.role('line');
+    }
+
+    .head:not([data-sortable]) {
+      @include t.visually-hidden;
+    }
+
+    .head :global(tr) {
+      display: flex;
+      flex-wrap: wrap;
+      gap: t.space(2);
+      padding-block: t.space(3);
+      padding-inline: t.space(4);
+    }
+
+    .heading {
+      display: block;
+      position: static;
+      padding: 0;
+      border: 0;
+      background: none;
+    }
+
+    .heading:not([data-sort-control]) {
+      @include t.visually-hidden;
+    }
+
+    .heading[data-sort-control] {
+      padding-block: t.space(1);
+      padding-inline: t.space(3);
+      border: 1px solid t.role('line');
+      border-radius: t.radius(pill);
+    }
+
+    .row {
+      display: grid;
+      gap: t.space(2);
+      padding-block: t.space(3);
+      padding-inline: t.space(4);
+      border-block-end: 1px solid t.role('line');
+    }
+
+    .body .row:last-child {
+      border-block-end: 0;
+    }
+
+    // `:first-child` matches the specificity the sticky-column rule pins it with, so a card is
+    // never a sticky cell.
+    .cell,
+    .cell:first-child {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      align-items: baseline;
+      gap: t.space(3);
+      position: static;
+      padding: 0;
+      border: 0;
+      background: none;
+      white-space: normal;
+      text-align: start;
+    }
+
+    .cell.numeric {
+      text-align: end;
+    }
+
+    .cell > [data-label] {
+      display: block;
+      text-align: start;
+      color: t.role('fg-muted');
+      font-size: t.text(xs);
+      font-weight: t.weight(medium);
+    }
+
+    // Every value is a line of the card already: the disclosure has nothing left to hold, and no
+    // priority hides anything.
+    .more {
+      display: none;
+    }
+
+    .cell[data-priority] {
+      display: grid;
+    }
+
+    .heading[data-priority] {
+      display: block;
+    }
+  }
 }

@@ -1,0 +1,23 @@
+@use '../tokens' as t;
+
+// The figure first, the bar filling what is left: in a numeric column the figures align at the
+// trailing edge and the bars start where the figures end, so the column reads as one chart.
+.inlineBar {
+  display: inline-grid;
+  grid-template-columns: auto minmax(t.space(12), 1fr);
+  align-items: center;
+  gap: t.space(2);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.value {
+  @include t.data-text;
+  text-align: end;
+}
+
+// `Meter` draws in an SVG, whose x axis is physical: mirrored here so the bar grows from the
+// inline start in a right-to-left document too.
+.bar:dir(rtl) {
+  scale: -1 1;
+}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { names } from './naming';
+import { dashboardFiles } from './scaffold-dashboard';
 import { i18nFiles, i18nIndex } from './scaffold-i18n';
 
 describe('unit · the generated app catalog index', () => {
@@ -61,6 +62,28 @@ describe('unit · the generated app catalog index', () => {
     // Both shapes read the same file: the example's chart keys and the bare app's route keys.
     expect(dashboard['chartLabel']).toBeDefined();
     expect(dashboard['columnRender']).toBeDefined();
+  });
+
+  // The page reads a TYPED catalog (`useT()` over `typeof en`), so a key it renders that the catalog
+  // lacks is a compile error in the generated app — found here, not on a stranger's first `check`.
+  test('every app.dashboard key either dashboard renders is in the catalog', () => {
+    const catalog = i18nFiles(names('demo'), '1.0.0').find(
+      (file) => file.path === 'packages/i18n/catalogs/en.json',
+    );
+    const parsed = JSON.parse(String(catalog?.contents)) as {
+      app?: { dashboard?: Record<string, unknown> };
+    };
+    const known = new Set(Object.keys(parsed.app?.dashboard ?? {}));
+    for (const example of [true, false]) {
+      const page = dashboardFiles(names('demo'), example).find((file) =>
+        file.path.endsWith('dashboard/page.tsx'),
+      );
+      const read = [...String(page?.contents).matchAll(/t\('app\.dashboard\.(\w+)'\)/g)].map(
+        (match) => match[1] ?? '',
+      );
+      expect(read.length).toBeGreaterThan(5);
+      expect(read.filter((key) => !known.has(key))).toEqual([]);
+    }
   });
 
   test('i18nFiles still scaffolds the single-locale shape at x new time', () => {

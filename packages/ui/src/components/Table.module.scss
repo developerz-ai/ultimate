@@ -75,3 +75,33 @@
 .striped :global(tbody tr:nth-child(even) td) {
   background: t.role('bg-soft', 0.6);
 }
+
+// The first column stays at the inline start while the scroller moves the rest. A sticky cell
+// needs an opaque background or the scrolled cells show through it; the edge line is a border,
+// not an inset shadow, because a border is logical and mirrors under RTL by itself.
+.table[data-sticky-first] :global(:is(th, td):first-child) {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: t.z(raised);
+  background-color: t.role('surface');
+  border-inline-end: 1px solid t.role('line');
+}
+
+.table[data-sticky-first] :global(th:first-child) {
+  background-color: t.role('bg-soft');
+}
+
+// The corner cell is sticky on both axes, so it must sit above both the header row and the column.
+.sticky[data-sticky-first] :global(thead th:first-child) {
+  z-index: t.z(sticky);
+}
+
+.sticky[data-sticky-first] :global(thead th:not(:first-child)) {
+  z-index: t.z(raised);
+}
+
+// A striped row keeps its stripe on the pinned cell: the translucent stripe laid over the opaque
+// surface, so the stripe shows and the scrolled cells still do not.
+.striped[data-sticky-first] :global(tbody tr:nth-child(even) td:first-child) {
+  background: linear-gradient(t.role('bg-soft', 0.6), t.role('bg-soft', 0.6)), t.role('surface');
+}

@@ -1,14 +1,18 @@
 // The admin shell: skip link, sidebar (brand, who is acting, search, permission-filtered nav, the
 // way back to the app), main region. Landmarks and a visible focus order are the accessibility
 // contract; the theme attributes come from the token system, so nothing here knows a colour.
-// Every control is a link or a native form — the shell ships no script.
+// Every control is a link, a native form or a native popover — the shell ships no script: below
+// `md` the sidebar is a `popover` panel the menu button opens by `popovertarget`, and an engine
+// with no popovers keeps it as a block above the screen (`admin.module.scss`).
 
 // why: `*.module.scss` is typed by ONE ambient declaration, and it is `@ultimat3/ui`'s. A copy
 // here would be a `.d.ts` in `src/`, which the package-shape gate reads as a build artifact.
 /// <reference path="../../ui/src/scss.d.ts" />
 
 import { t } from '@ultimat3/i18n';
-import { Input } from '@ultimat3/ui';
+import { Icon, Input, UI_KEYS } from '@ultimat3/ui';
+import { iconMenu } from '@ultimat3/ui/icons/menu';
+import { iconX } from '@ultimat3/ui/icons/x';
 import type { JSX } from 'solid-js';
 import type { AdminApp } from './admin';
 import styles from './admin.module.scss';
@@ -27,6 +31,9 @@ export interface AdminLayoutProps {
   readonly children: JSX.Element;
 }
 
+/** The panel's id: the menu button and the close button both name it. */
+const SIDE_ID = 'x-admin-side';
+
 /** The one rendering of "who am I acting as", so no two screens can disagree about it. */
 export const actorLabel = (actor: AdminActor | null | undefined): string =>
   actor === null || actor === undefined || actor.id === 'anonymous'
@@ -44,10 +51,29 @@ export function AdminLayout(props: AdminLayoutProps): JSX.Element {
       data-density={theme['data-density']}
       style={theme.style}
     >
-      <aside class={styles['side']}>
-        <a class={styles['skip']} href="#x-admin-main">
-          {t('admin.a11y.skip-to-content')}
-        </a>
+      {/* Ahead of the panel, not inside it: a closed panel is `display: none`, and so would be
+          the first Tab stop on every admin screen. */}
+      <a class={styles['skip']} href="#x-admin-main">
+        {t('admin.a11y.skip-to-content')}
+      </a>
+
+      <div class={styles['bar']}>
+        <button type="button" class={styles['menuButton']} popovertarget={SIDE_ID}>
+          <Icon glyph={iconMenu} size="md" />
+          {t(UI_KEYS.menu)}
+        </button>
+      </div>
+
+      <aside id={SIDE_ID} class={styles['side']} popover="auto">
+        <button
+          type="button"
+          class={styles['close']}
+          popovertarget={SIDE_ID}
+          popovertargetaction="hide"
+          aria-label={t(UI_KEYS.close)}
+        >
+          <Icon glyph={iconX} size="md" />
+        </button>
 
         <a class={styles['brand']} href={base}>
           {props.app.branding.logo === undefined ? null : (

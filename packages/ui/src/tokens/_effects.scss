@@ -1,0 +1,59 @@
+// Surface effects a dashboard opts into: a glowing edge and a grid/scanline ground. Paired with
+// the `scifi` preset (`defineTheme({ preset: 'scifi' })`) and meaningful without it — every colour
+// is a role and every glow a shadow token, so each follows whatever palette the page resolved.
+// Nothing here animates, so there is no motion for `prefers-reduced-motion` to take away.
+
+@use 'colors';
+@use 'shadow';
+@use 'space';
+@use 'stroke';
+
+/// A hairline ring in the accent plus a glow rung, as one `box-shadow`. For a live tile, a focused
+/// panel, a selected series. Forced-colours mode drops box shadows itself; the `border` an
+/// element already has is what remains there, which is why this draws no border of its own.
+@mixin glow-edge($glow: 'glow-sm', $alpha: 0.55) {
+  box-shadow:
+    inset 0 0 0 stroke.stroke(hairline) colors.role('accent', $alpha),
+    shadow.shadow($glow);
+}
+
+/// A faint accent grid on one spacing pitch, with optional horizontal scanlines over it: the
+/// "instrument panel" ground. Only `background-image` and `background-size` are written, so the
+/// element's own `background-color` shows through. Withdrawn under `prefers-contrast: more` and
+/// `forced-colors: active`, where texture behind text is noise and not atmosphere.
+@mixin grid-texture($pitch: space.space(6), $alpha: 0.08, $scanlines: true) {
+  $grid-x: linear-gradient(
+    90deg,
+    colors.role('accent', $alpha) stroke.stroke(hairline),
+    transparent stroke.stroke(hairline)
+  );
+  $grid-y: linear-gradient(
+    180deg,
+    colors.role('accent', $alpha) stroke.stroke(hairline),
+    transparent stroke.stroke(hairline)
+  );
+
+  @if $scanlines {
+    background-image:
+      repeating-linear-gradient(
+        180deg,
+        colors.role('fg', $alpha * 0.5) 0 stroke.stroke(hairline),
+        transparent stroke.stroke(hairline) stroke.stroke(heavy)
+      ),
+      $grid-x,
+      $grid-y;
+    background-size:
+      auto,
+      $pitch $pitch,
+      $pitch $pitch;
+  } @else {
+    background-image: $grid-x, $grid-y;
+    background-size:
+      $pitch $pitch,
+      $pitch $pitch;
+  }
+
+  @media (prefers-contrast: more), (forced-colors: active) {
+    background-image: none;
+  }
+}

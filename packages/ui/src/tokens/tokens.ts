@@ -5,93 +5,10 @@
 // `tokens.test.ts` (run by `x verify`) fails if the two ever disagree.
 
 import { unknownTokenError } from '../errors';
+import { COLOR_ROLES, type ColorRole, colorTokens, type Theme } from './color-tokens';
 
-export type Theme = 'light' | 'dark';
-
-export const COLOR_ROLES = [
-  'bg',
-  'bg-soft',
-  'surface',
-  'surface-raised',
-  'fg',
-  'fg-strong',
-  'fg-muted',
-  'line',
-  'scrim',
-  'accent',
-  'accent-strong',
-  'accent-fg',
-  'success',
-  'success-soft',
-  'success-fg',
-  'warning',
-  'warning-soft',
-  'warning-fg',
-  'danger',
-  'danger-soft',
-  'danger-fg',
-  'info',
-  'info-soft',
-  'info-fg',
-] as const;
-
-export type ColorRole = (typeof COLOR_ROLES)[number];
-
-/** Space-separated RGB channels, mirroring `_colors.scss`. */
-export const colorTokens: Readonly<Record<Theme, Readonly<Record<ColorRole, string>>>> = {
-  light: {
-    bg: '253 246 240',
-    'bg-soft': '245 237 230',
-    surface: '250 245 241',
-    'surface-raised': '255 255 255',
-    fg: '38 34 31',
-    'fg-strong': '17 15 13',
-    'fg-muted': '110 102 94',
-    line: '208 198 188',
-    scrim: '17 15 13',
-    accent: '31 110 178',
-    'accent-strong': '21 92 152',
-    'accent-fg': '255 255 255',
-    success: '21 123 80',
-    'success-soft': '222 244 232',
-    'success-fg': '255 255 255',
-    warning: '155 93 7',
-    'warning-soft': '253 240 213',
-    'warning-fg': '255 255 255',
-    danger: '190 42 42',
-    'danger-soft': '253 227 227',
-    'danger-fg': '255 255 255',
-    info: '31 110 178',
-    'info-soft': '224 239 252',
-    'info-fg': '255 255 255',
-  },
-  dark: {
-    bg: '18 18 20',
-    'bg-soft': '28 28 32',
-    surface: '34 34 39',
-    'surface-raised': '44 44 50',
-    fg: '228 226 222',
-    'fg-strong': '248 247 245',
-    'fg-muted': '155 151 145',
-    line: '72 72 80',
-    scrim: '0 0 0',
-    accent: '96 170 240',
-    'accent-strong': '130 190 248',
-    'accent-fg': '16 20 26',
-    success: '74 190 130',
-    'success-soft': '22 46 34',
-    'success-fg': '12 26 18',
-    warning: '226 170 66',
-    'warning-soft': '52 42 20',
-    'warning-fg': '28 20 6',
-    danger: '240 110 110',
-    'danger-soft': '56 26 26',
-    'danger-fg': '30 12 12',
-    info: '96 170 240',
-    'info-soft': '22 38 56',
-    'info-fg': '12 20 30',
-  },
-} as const;
+export type { ChartRole, ColorRole, Theme } from './color-tokens';
+export { CHART_ROLES, COLOR_ROLES, colorTokens } from './color-tokens';
 
 export const spaceTokens = {
   '0': '0',
@@ -153,13 +70,39 @@ export const easingTokens = {
   spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
 } as const;
 
-export const shadowTokens: Readonly<Record<Theme, Readonly<Record<string, string>>>> = {
+/**
+ * The elevation rungs, then the two accent-drawn families: `glow-*` (a halo, no offset — a focused
+ * or live edge) and `tinted-*` (a lift whose shadow carries the accent hue — coloured elevation).
+ */
+export const SHADOW_NAMES = [
+  'xs',
+  'sm',
+  'md',
+  'lg',
+  'xl',
+  'glow-sm',
+  'glow-md',
+  'glow-lg',
+  'tinted-sm',
+  'tinted-md',
+  'tinted-lg',
+] as const;
+
+export type ShadowName = (typeof SHADOW_NAMES)[number];
+
+export const shadowTokens: Readonly<Record<Theme, Readonly<Record<ShadowName, string>>>> = {
   light: {
     xs: '0 1px 2px rgb(17 15 13 / 0.06)',
     sm: '0 2px 6px rgb(17 15 13 / 0.08)',
     md: '0 4px 14px rgb(17 15 13 / 0.1)',
     lg: '0 12px 32px rgb(17 15 13 / 0.14)',
     xl: '0 24px 56px rgb(17 15 13 / 0.18)',
+    'glow-sm': '0 0 6px rgb(var(--color-accent) / 0.28)',
+    'glow-md': '0 0 14px rgb(var(--color-accent) / 0.26)',
+    'glow-lg': '0 0 28px rgb(var(--color-accent) / 0.24)',
+    'tinted-sm': '0 2px 8px rgb(var(--color-accent) / 0.14)',
+    'tinted-md': '0 6px 18px rgb(var(--color-accent) / 0.16)',
+    'tinted-lg': '0 14px 36px rgb(var(--color-accent) / 0.18)',
   },
   dark: {
     xs: '0 1px 2px rgb(0 0 0 / 0.4)',
@@ -167,7 +110,18 @@ export const shadowTokens: Readonly<Record<Theme, Readonly<Record<string, string
     md: '0 6px 20px rgb(0 0 0 / 0.56)',
     lg: '0 16px 40px rgb(0 0 0 / 0.64)',
     xl: '0 28px 64px rgb(0 0 0 / 0.72)',
+    'glow-sm': '0 0 6px rgb(var(--color-accent) / 0.45)',
+    'glow-md': '0 0 14px rgb(var(--color-accent) / 0.4)',
+    'glow-lg': '0 0 28px rgb(var(--color-accent) / 0.35)',
+    'tinted-sm': '0 2px 8px rgb(var(--color-accent) / 0.24)',
+    'tinted-md': '0 6px 18px rgb(var(--color-accent) / 0.28)',
+    'tinted-lg': '0 14px 36px rgb(var(--color-accent) / 0.32)',
   },
+} as const;
+
+/** WCAG 2.5.5's 44 CSS px, as rem so a reader's larger text grows the target with it. */
+export const touchTokens = {
+  target: '2.75rem',
 } as const;
 
 export const breakpointTokens = {

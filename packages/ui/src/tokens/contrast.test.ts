@@ -13,7 +13,7 @@ import {
   roleContrast,
 } from './contrast';
 import { CONTRAST_PAIRS, VISIBLE_EDGE } from './contrast-pairs';
-import { COLOR_ROLES, type ColorRole, colorTokens, type Theme } from './tokens';
+import { CHART_ROLES, COLOR_ROLES, type ColorRole, colorTokens, type Theme } from './tokens';
 
 const THEMES: readonly Theme[] = ['light', 'dark'];
 /**
@@ -92,6 +92,22 @@ describe('every shipped pairing meets WCAG AA in both themes', () => {
     );
     // Every row says what it IS: a refusal naming two role names explains nothing to the author.
     expect(CONTRAST_PAIRS.filter((pair) => pair.what === '')).toEqual([]);
+  });
+
+  /**
+   * A series mark — a bar, a line, a donut slice — is non-text UI the reader must find against the
+   * page (WCAG 2.2 1.4.11, 3:1), on every surface a chart can sit on: a dashboard puts the same
+   * series on the page, in a card and in a raised popover. Named per role, so dropping one series
+   * from the table fails here rather than shipping a slice nobody measured.
+   */
+  test('every chart series is held to 3:1 against all four surfaces', () => {
+    const SURFACES = ['bg', 'bg-soft', 'surface', 'surface-raised'];
+    for (const role of CHART_ROLES) {
+      const rows = CONTRAST_PAIRS.filter((pair) => pair.fg === role);
+      expect(`${role}: ${rows.map((pair) => `${pair.bg}@${pair.minimum}`).join(' ')}`).toBe(
+        `${role}: ${SURFACES.map((bg) => `${bg}@${AA_LARGE}`).join(' ')}`,
+      );
+    }
   });
 
   // A backdrop is composited at alpha over arbitrary page content, so a ratio against one role

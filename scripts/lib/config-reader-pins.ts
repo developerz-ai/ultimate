@@ -46,10 +46,7 @@ export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
  * Every one of these is a `jobs.driver` candidate, not a cleared key. Each row says what would
  * settle it, and settling one is deleting the row.
  */
-export const CONFIG_AMBIGUOUS_PINS: Readonly<Record<string, string>> = {
-  'theme.tokens':
-    "SUSPECT, the widest of the four: 24 files match the bare `tokens` — `@ultimat3/ui`'s own `tokens/` directory and every i18n token walker among them — and none is under `packages/ui/`. `@ultimat3/ui` takes tokens as props and reads no config, which is the sentence `theme.defaultMode` already carries one table up.",
-};
+export const CONFIG_AMBIGUOUS_PINS: Readonly<Record<string, string>> = {};
 
 /**
  * What this leaf is excused for today, or `undefined`. Absent means the doubt is a finding — and so

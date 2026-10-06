@@ -90,7 +90,7 @@ export function Shell(props: ShellProps): JSX.Element {
                 <span class={styles.env}>
                   {/* The pulse is a CSS opacity animation: alive without a byte of script. */}
                   <span class={styles.envDot} aria-hidden="true" />
-                  {environment}
+                  <span class={styles.envLabel}>{environment}</span>
                 </span>
               )}
               {props.actions}
@@ -125,9 +125,13 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
   justify-content: space-between;
   gap: tokens.space(4);
   inline-size: 100%;
+  // Free to shrink below its content: on a 390px phone the brand gives way, never the page.
+  min-inline-size: 0;
 }
 
+// The controls keep their size; the brand is what truncates.
 .end {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: tokens.space(3);
@@ -136,6 +140,7 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 .brand {
   display: inline-flex;
   align-items: center;
+  min-inline-size: 0;
   gap: tokens.space(3);
   color: tokens.role('fg-strong');
 
@@ -146,6 +151,7 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 // One accent tile. The only saturated surface in the chrome, so the eye has exactly one anchor.
 .mark {
+  flex: none;
   display: inline-grid;
   place-items: center;
   inline-size: tokens.space(8);
@@ -159,6 +165,7 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .wordmark {
   @include tokens.data-text;
+  @include tokens.truncate;
 
   font-size: tokens.text('sm');
   font-weight: tokens.weight('medium');
@@ -176,6 +183,13 @@ const shellStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
   border-radius: tokens.radius('pill');
   color: tokens.role('fg-muted');
   font-size: tokens.text('xs');
+}
+
+// Below sm the pill is its dot: the word stays readable to assistive tech, not to the layout.
+.envLabel {
+  @include tokens.respond-down(sm) {
+    @include tokens.visually-hidden;
+  }
 }
 
 .envDot {

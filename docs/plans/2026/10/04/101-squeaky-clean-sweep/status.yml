@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 65
-current_focus: "sweep 9 (09-realtime-islands.md); carried: the windows budgets read of /posts, then make the windows job required"
+percent: 72
+current_focus: "sweep 9b (14-dashboards.md); carried: windows /posts island ships 81,306 B vs Linux 59,849 B — a module bundled twice under two spellings"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -93,13 +93,13 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 09-realtime-islands.md
     tier: 3
     sweep: "9"
-    status: in_progress
-    percent: 0
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#663"]
   - file: 14-dashboards.md
     tier: 4
     sweep: "9b"
-    status: not_started
+    status: in_progress
     percent: 0
     evidence: []
     notes: "added by the owner 2026-10-05: charts, tables, a sci-fi preset, mobile"

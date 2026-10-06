@@ -224,10 +224,14 @@ unitTest('the tiles are the framework registries, counted', async () => {
 unitTest('the table is the route table: path, surface and render mode per route', async () => {
   const t = useT();
   const view = await renderRoute(page, { url });
-  expect(view.html.match(/<tr data-row=/g)).toHaveLength(1);
-  expect(view.html).toMatch(
-    /<tr data-row="\\/dashboard"><td>\\/dashboard<\\/td><td>app<\\/td><td>ssr<\\/td>/,
-  );
+  expect(view.html.match(/<tr[^>]*\\sdata-row=/g)).toHaveLength(1);
+  // Each cell ends in its value; on a phone a card label rides in front of it, hidden from AT.
+  const row = view.html.match(/<tr[^>]*data-row="\\/dashboard">([\\s\\S]*?)<\\/tr>/)?.[1] ?? '';
+  expect([...row.matchAll(/([^>]*)<\\/td>/g)].map((cell) => cell[1])).toEqual([
+    '/dashboard',
+    'app',
+    'ssr',
+  ]);
   expect(view.text).toContain(t('app.dashboard.routesCaption'));
   expect(view.meta.title).toBe(t('app.dashboard.title'));
   // The sidebar knows where it is.

@@ -48,7 +48,7 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **A table read by a runtime key is `Object.hasOwn` / a `Map`, never a bare index** — `impliedBy`, the `/_x` counters, `list-filters.ts`' operator table, `renderers.tsx` (`bun run proto-index`).
 - **The `/_x` SQL runs in `readOnlyQuery`** (`dev/sql-runner.ts`, `readOnlySql(client)` — what a host wires as `runSql`): read-only transaction, timeout, `DEV_SQL_MAX_ROWS`.
 - **One read-only SQL guard, and it is `@ultimat3/mcp`'s** — no local keyword scan; the panel keeps only the emptiness test and the way out (`psql "$DATABASE_URL"`, the developer's own client — `x db` has no `psql`).
-- **Every admin operation is audited, reads included.** `ListResult` carries its `AuditEntry` on both branches, keyed on the table (`entityId: null`). `AdminSearchResult.audit` carries one entry per resource it decided about — `allowed` per searched resource, a `deniedDraft` per refused one; a resource skipped for no text field, no repo or a repo that THREW (`admin.search.skipped.failed`) is listed in `skipped`, never a 500 for the rest.
+- **Every admin operation is audited, reads included**, not `/admin`'s counts (a count reads no row). `ListResult` carries its `AuditEntry` on both branches, keyed on the table (`entityId: null`). `AdminSearchResult.audit` carries one entry per resource it decided about — `allowed` per searched resource, a `deniedDraft` per refused one; a resource skipped for no text field, no repo or a repo that THREW (`admin.search.skipped.failed`) is listed in `skipped`, never a 500 for the rest.
 - **A write's RESULT satisfies the actor's row scope** (`row-scope-write.ts`): a create, and an update over the fields it touches, outside `rows(actor)` is refused before the repo — `admin.error.row-out-of-scope`, audited as a denial. The one predicate evaluator in this package; an ordering over text is refused, never guessed. `row-scope-write.test.ts`.
 - **An action's `when(row)` is asked by the button AND by the call** (`actionApplies`, `action-gate.ts`): a row it excludes is `X_ADMIN_ACTION_NOT_APPLICABLE` (409 on a screen, the code over MCP), audited `admin.error.action-not-applicable`. The row it reads carries no sealed column. Every action on one row runs through `invokeRowAction` (`findRow` first).
 - **An action with an `input` schema is a form, never a bare post**: its button links to `<row>?action=<name>`, the form posts `input.<field>` (`action-input.ts`, through `tryIntrospect`), the gate validates against the schema and a refusal is a 422 with issues on their fields. No schema: a confirm only.
@@ -63,13 +63,13 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **An action on a row the actor cannot see is refused, `when` or none** (`actionApplies`: a `null` row is no row).
 - **An action's input field is labelled `admin.input.<action>.<field>`** — never under `admin.action.<action>`, which is a leaf: a JSON catalog cannot hold both.
 - **`x_admin_audit`'s DDL is the leaf `audit-schema.ts`** (`@ultimat3/admin/schema`): the boot applies it in every role; `serve-graph.test.ts` exempts exactly that file.
-- Money through `assertMoney`, timestamps through `assertZone`, pagination through `pagination.ts`. No `offset`, ever.
+- Money via `assertMoney`, timestamps via `assertZone`, pagination via `pagination.ts`. No `offset`, ever.
 - **One cursor codec.** `pagination.ts` is the only file calling core's `encodeCursor`/`decodeCursor`; it wraps them as `encodeAdminCursor`/`decodeAdminCursor`, scoped `admin:<resource>`. An invalid cursor is page one here, not an error page — but the signature is checked first, so a forged one cannot seek.
 - Labels are i18n keys derived in `resource.ts` (`admin.<entity>.field.<name>`); only `.tsx` calls `t()`. An action's is `actionLabelKey` (`action-label.ts`), never respelled. `AdminApp.catalogKeys()` (`catalog-keys.ts`) is every derived key — the CLI's `i18n` step audits exactly that list. MCP tool descriptions are literal English (protocol payload, not UI copy).
 - Colours only via `ThemeTokenRef` (`--x-*`). Raw hex does not typecheck.
 - **One owner of `globalThis.React` is `@ultimat3/ui`'s** (`probe`/`unprobe`); `inert-jsx.ts` keeps only the walkers. `inert-jsx.test.ts` drives both install orders.
 - **A `/_x` panel orders by CODE UNIT, never `localeCompare`**; **the locale picker reads `registeredLocales()`**, never a bundled list.
-- Views are pure functions of props — no `createSignal`, no local state, no event handler.
+- Views are pure functions of props: no `createSignal`, local state or event handler.
 - **No test reaches a `.tsx` statically.** `routes.ts` reaches the screens, so a test does `await import('@ultimat3/render/server')` and then `await import('./routes')`: a static import compiles JSX before the loader exists and every later render dies with `React is not defined`.
 
 ## Layout

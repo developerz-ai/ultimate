@@ -1,0 +1,39 @@
+// The touch target: the smallest box a finger can hit reliably. WCAG 2.5.5's 44 CSS px, as rem
+// so a reader's larger text grows the target with it. One rung, in a map so it emits and reads
+// back like every other scale.
+
+$touch: (
+  target: 2.75rem,
+);
+
+@mixin emit {
+  :root {
+    @each $name, $value in $touch {
+      --touch-#{$name}: #{$value};
+    }
+  }
+}
+
+@function touch($name) {
+  @return var(--touch-#{$name});
+}
+
+/// Make the element hittable. Default: the box itself is at least the target, both axes. With
+/// `$extend: true` the BOX keeps its size and an invisible `::after` grows the hit area around it,
+/// centred — for a chart point, a dense icon row, a close glyph whose visual size is the design.
+/// The pseudo-element is the element's own, so its clicks are the element's clicks.
+@mixin touch-target($extend: false) {
+  @if $extend {
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset-block: min(0px, calc((100% - #{touch(target)}) / 2));
+      inset-inline: min(0px, calc((100% - #{touch(target)}) / 2));
+    }
+  } @else {
+    min-block-size: touch(target);
+    min-inline-size: touch(target);
+  }
+}

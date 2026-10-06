@@ -223,3 +223,30 @@ describe('a panel that draws itself', () => {
     expect(refused).toContain('X_INTERNAL');
   });
 });
+
+// The jobs tab draws ui's own components — tiles, a bar chart, a ring, a table — whose rules live
+// in the app surface's stylesheet, not in the inlined shell. With no link to it every one of them
+// rendered as unstyled lists and black rects.
+describe('the stylesheet a drawn panel needs', () => {
+  test('is linked when the host names it, before the shell so the shell keeps the last word', async () => {
+    const dashboard = devDashboard({
+      env: 'development',
+      sources,
+      stylesheetHref: () => '/_x/assets/app.abc123.css',
+    });
+    const html = (await (await dashboard.handle(new Request('http://x/_x/routes')))?.text()) ?? '';
+    const link = html.indexOf('<link rel="stylesheet" href="/_x/assets/app.abc123.css">');
+    expect(link).toBeGreaterThan(-1);
+    expect(html.indexOf('<style>')).toBeGreaterThan(link);
+  });
+
+  test('is absent when the host names none — no dangling link', async () => {
+    const plain = devDashboard({ env: 'development', sources });
+    const unnamed = devDashboard({ env: 'development', sources, stylesheetHref: () => undefined });
+    for (const dashboard of [plain, unnamed]) {
+      const html =
+        (await (await dashboard.handle(new Request('http://x/_x/routes')))?.text()) ?? '';
+      expect(html).not.toContain('<link rel="stylesheet"');
+    }
+  });
+});

@@ -1,10 +1,8 @@
-// `/admin` — the dashboard: every resource this actor may open, the decision behind each of its
-// operations, and the app-wide actions. No row is read here: a dashboard that listed five rows of
-// every resource would be one query per entity on every visit to the front page.
+// `/admin` — the dashboard: how many rows of each resource this actor may open, the decision behind
+// each of its operations, and the app-wide actions. No row is READ here: a figure is one
+// `count()` per resource (`screen-home-counts.ts`), never a page of rows per entity per visit.
 
 import { t } from '@ultimat3/i18n';
-import { Card } from '@ultimat3/ui';
-import type { JSX } from 'solid-js';
 import { AdminActionForm } from './action-form';
 import { actionButtons, invokeAdminAction } from './action-gate';
 import { decodeActionInput, postedActionInput } from './action-input';
@@ -12,12 +10,10 @@ import { ACTION_OPERATION, ACTION_PARAM, AdminActions, OPERATION_FIELD } from '.
 import type { AdminApp, AdminRoute } from './admin';
 import styles from './admin.module.scss';
 import { decideAll } from './authz';
-import type { CrudCtx } from './crud';
-import { canOperate, decideOperation, permissionsForOperation } from './crud';
+import { canOperate } from './crud';
 import { posted } from './form-decode';
-import { ADMIN_OPERATIONS, type AdminOperation, confirmationToken } from './permissions';
+import { confirmationToken } from './permissions';
 import type { AdminAction } from './registry';
-import type { AdminResource } from './resource';
 import {
   type AdminRouteRequest,
   type AdminRouteResponse,
@@ -26,70 +22,12 @@ import {
   refused,
   refusedPage,
 } from './screen-frame';
+import { HomeAccess, operationMatrix } from './screen-home-access';
+import { resourceCounts } from './screen-home-counts';
+import { HomeKpis } from './screen-home-kpis';
 import type { ValidationIssue } from './validate';
 
-/** One row of an operation matrix: the decision the dashboard renders AND the call obeys. */
-export interface OperationDecision {
-  readonly operation: AdminOperation;
-  readonly allowed: boolean;
-  readonly permissions: readonly string[];
-  readonly reason: string;
-}
-
-/**
- * Every operation the resource OFFERS, with its decision. This IS the view-only proof, rendered
- * rather than asserted. One it does not offer has no row: "denied" would read as a missing grant
- * the operator should ask for, when no grant opens it.
- */
-export const operationMatrix = (
-  resource: AdminResource,
-  ctx: CrudCtx,
-): readonly OperationDecision[] =>
-  ADMIN_OPERATIONS.filter((operation) => resource.operations.includes(operation)).map(
-    (operation) => {
-      const decision = decideOperation(resource, operation, ctx);
-      return {
-        operation,
-        allowed: decision.allowed,
-        permissions: permissionsForOperation(resource.permission, operation),
-        reason: decision.reason,
-      };
-    },
-  );
-
-/**
- * The permission matrix, rendered. A reader can see that `create`, `update` and `delete` are
- * refused and WHICH permission refused them — the same decision the call obeys, not a note about
- * a button that was left out.
- */
-export function OperationMatrix(props: {
-  readonly rows: readonly OperationDecision[];
-}): JSX.Element {
-  return (
-    <table class={styles['matrix']}>
-      <thead>
-        <tr>
-          <th>{t('admin.matrix.operation')}</th>
-          <th>{t('admin.matrix.permissions')}</th>
-          <th>{t('admin.matrix.verdict')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row) => (
-          <tr class={row.allowed ? styles['allowed'] : styles['denied']}>
-            <td>{t(`admin.operation.${row.operation}`)}</td>
-            <td class={styles['mono']}>{row.permissions.join(' + ')}</td>
-            <td>
-              {row.allowed
-                ? t('admin.matrix.allowed')
-                : `${t('admin.matrix.deniedBy')} ${row.reason}`}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
+export { type OperationDecision, OperationMatrix, operationMatrix } from './screen-home-access';
 
 /** An app-wide action's POST: the same gate, with no row for a subject. */
 async function globalWrite(
@@ -172,6 +110,8 @@ export function homeScreen(app: AdminApp, route: AdminRoute): AdminScreen {
     }
 
     const open = app.resources.filter((resource) => canOperate(resource, 'list', request.ctx));
+    // Counted only over what the actor may list: the size of a table is itself a fact to gate.
+    const counts = await resourceCounts(open, request.ctx.actor);
     return framed(
       app,
       request,
@@ -184,17 +124,16 @@ export function homeScreen(app: AdminApp, route: AdminRoute): AdminScreen {
           href={app.basePath}
         />
         {open.length === 0 ? <p class={styles['note']}>{t('admin.actions.none')}</p> : null}
-        {open.map((resource) => (
-          <Card
-            header={
-              <h2>
-                <a href={`${app.basePath}${resource.path}`}>{t(resource.titleKey)}</a>
-              </h2>
-            }
-          >
-            <OperationMatrix rows={operationMatrix(resource, request.ctx)} />
-          </Card>
-        ))}
+        {counts.length === 0 ? null : <HomeKpis basePath={app.basePath} counts={counts} />}
+        {open.length === 0 ? null : (
+          <HomeAccess
+            basePath={app.basePath}
+            entries={open.map((resource) => ({
+              resource,
+              rows: operationMatrix(resource, request.ctx),
+            }))}
+          />
+        )}
       </div>,
     );
   };

@@ -5,14 +5,17 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
+import { iconMenu } from '@ultimat3/ui/icons/menu';
 import type { AdminApp } from './admin';
 import {
   byComponent,
   byTag,
+  type InertNode,
   installFactory,
   one,
   renderShallowNodes,
   restoreFactory,
+  shallowNodesOf,
   withAttr,
 } from './inert-jsx-fixture';
 import type { NavGroup } from './nav';
@@ -33,6 +36,8 @@ registerCatalog('en', {
   'admin.actor.anonymous': 'nobody (probe)',
   'admin.actor.signedIn': '{id} as {roles} (probe)',
   'admin.backToApp': 'Back (probe)',
+  'ui.menu': 'Menu (probe)',
+  'ui.close': 'Close (probe)',
 });
 
 beforeAll(installFactory);
@@ -224,5 +229,110 @@ describe('nothing in the shell needs a script', () => {
     // Both were a select/button with an `onChange` — dead controls on a page that never hydrates.
     expect(byComponent(nodes, 'ThemeToggle')).toHaveLength(0);
     expect(byComponent(nodes, 'LocaleSwitcher')).toHaveLength(0);
+  });
+});
+
+/**
+ * Below `md` the sidebar is a panel behind a menu button, and an admin screen never hydrates — so
+ * the panel is a native `popover` the button opens by `popovertarget`, with no script at all. An
+ * engine with no popovers keeps the sidebar as a block above the screen, which the stylesheet
+ * test below holds: the panel is only hidden where something can open it.
+ */
+describe('below md the sidebar is a panel a menu button opens, with no script', () => {
+  const side = (nodes: Nodes): InertNode => one(byTag(nodes, 'aside'), '<aside>');
+  const inside = (nodes: Nodes): Nodes => shallowNodesOf(side(nodes).props['children']);
+
+  test('the aside is a popover, and the menu button names it by id', () => {
+    const nodes = render();
+    const aside = side(nodes);
+    expect(aside.props['popover']).toBe('auto');
+    expect(aside.props['id']).toBe('x-admin-side');
+
+    const opener = one(
+      withAttr(byTag(nodes, 'button'), 'popovertarget', 'x-admin-side').filter(
+        (node) => node.props['popovertargetaction'] === undefined,
+      ),
+      'menu button',
+    );
+    expect(opener.props['type']).toBe('button');
+    expect(opener.props['children']).toContain('Menu (probe)');
+    expect(
+      one(byComponent(shallowNodesOf(opener.props['children']), 'Icon'), 'icon').props['glyph'],
+    ).toBe(iconMenu);
+    // The opener is outside the panel it opens — inside, it could never be reached while closed.
+    expect(byTag(inside(nodes), 'button').includes(opener)).toBe(false);
+  });
+
+  test('the panel holds its own close button, aimed at itself and named', () => {
+    const close = one(
+      withAttr(byTag(inside(render()), 'button'), 'popovertargetaction', 'hide'),
+      'close',
+    );
+    expect(close.props['popovertarget']).toBe('x-admin-side');
+    expect(close.props['aria-label']).toBe('Close (probe)');
+  });
+
+  test('the skip link is outside the panel, so a closed panel never hides it', () => {
+    const nodes = render();
+    expect(withAttr(inside(nodes), 'href', '#x-admin-main')).toEqual([]);
+    expect(withAttr(nodes, 'href', '#x-admin-main')).toHaveLength(1);
+  });
+
+  test('everything the sidebar held is still in the panel', () => {
+    const held = inside(render());
+    expect(byTag(held, 'nav')).toHaveLength(1);
+    expect(byTag(held, 'form')).toHaveLength(1);
+    expect(withAttr(held, 'href', '/')).toHaveLength(1);
+    expect(withAttr(held, 'href', '/back-office')).toHaveLength(1);
+  });
+});
+
+describe('the panel’s no-popover fallback is in the stylesheet', () => {
+  const SHEET = Bun.fileURLToPath(new URL('./admin.module.scss', import.meta.url));
+  const TOKENS = Bun.fileURLToPath(new URL('../../ui/src/tokens', import.meta.url));
+
+  /** The admin sheet as Sass emits it, with the ui tokens resolved off this checkout. */
+  const compiled = async (): Promise<string> => {
+    const renderDir = Bun.fileURLToPath(new URL('../../render', import.meta.url));
+    const sass = (await import(Bun.resolveSync('sass', renderDir))) as {
+      compileString(source: string, options: { url: URL }): { css: string };
+    };
+    const source = (await Bun.file(SHEET).text()).replace("'@ultimat3/ui/tokens'", `'${TOKENS}'`);
+    return sass.compileString(source, { url: Bun.pathToFileURL(SHEET) }).css;
+  };
+
+  test('a closed panel is hidden only below md, and only where the engine has popovers', async () => {
+    const css = await compiled();
+    expect(css.match(/\.side:not\(:popover-open\)/g)).toHaveLength(1);
+    expect(
+      /@media \(max-width: 767\.98px\)\s*\{\s*@supports selector\(:popover-open\)\s*\{[^@]*\.side:not\(:popover-open\)\s*\{\s*display:\s*none/.test(
+        css,
+      ),
+    ).toBe(true);
+  });
+
+  test('the menu bar is hidden unless it can open something', async () => {
+    const css = await compiled();
+    expect(/(^|\})\s*\.bar\s*\{[^}]*display:\s*none/.test(css)).toBe(true);
+    expect(
+      /@supports selector\(:popover-open\)\s*\{[^@]*\.bar\s*\{[^}]*display:\s*flex/.test(css),
+    ).toBe(true);
+  });
+
+  test('the menu button, the close button and a narrow nav link are touch targets', async () => {
+    const css = await compiled();
+    expect(
+      /\.menuButton,\s*\.close\s*\{[^}]*min-block-size:\s*var\(--touch-target\)/.test(css),
+    ).toBe(true);
+    expect(/\.navLink\s*\{[^}]*min-block-size:\s*var\(--touch-target\)/.test(css)).toBe(true);
+  });
+
+  test('the search box shrinks to the sidebar column instead of sticking out of it', async () => {
+    const css = await compiled();
+    const search = /(?:^|\})\s*\.search\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    // An `auto` track is never narrower than the input's intrinsic width.
+    expect(search).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(search).toContain('min-inline-size: 0');
+    expect(css).toMatch(/\.search > form\s*\{\s*min-inline-size: 0/);
   });
 });

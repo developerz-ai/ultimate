@@ -70,6 +70,8 @@ export type { BarRect, ChartPoint } from './components/bar-chart-view';
 export { barRects } from './components/bar-chart-view';
 export type { CardProps, Elevation } from './components/Card';
 export { Card } from './components/Card';
+export type { ChartFrameProps, ChartLegendItem } from './components/ChartFrame';
+export { ChartFrame } from './components/ChartFrame';
 export type { CheckboxProps } from './components/Checkbox';
 export { Checkbox } from './components/Checkbox';
 export type { ComboboxProps } from './components/Combobox';
@@ -80,6 +82,17 @@ export type { ContainerProps, ContainerSize } from './components/Container';
 export { Container } from './components/Container';
 export type { CopyButtonProps } from './components/CopyButton';
 export { COPIED_MS, CopyButton } from './components/CopyButton';
+export type {
+  ChartSeries,
+  ChartTable,
+  ChartTableInput,
+  ChartTableRow,
+  MarkerShape,
+  SeriesStyle,
+} from './components/chart-frame-view';
+export { CHART_SERIES_SLOTS, chartTable, seriesStyle } from './components/chart-frame-view';
+export type { NiceScale, NiceTicksOptions } from './components/chart-ticks-view';
+export { niceTicks } from './components/chart-ticks-view';
 export type { ComboboxOption } from './components/combobox-filter';
 export { filterOptions, normalizeQuery } from './components/combobox-filter';
 export type { CommandPaletteItem, PaletteKeyAction } from './components/command-palette-view';
@@ -93,6 +106,7 @@ export type {
   Column,
   DataTableCallbackProps,
   DataTableLinkProps,
+  DataTableNarrow,
   DataTableProps,
 } from './components/DataTable';
 export { DataTable } from './components/DataTable';
@@ -102,10 +116,13 @@ export type { DialogProps } from './components/Dialog';
 export { Dialog } from './components/Dialog';
 export type { DividerProps } from './components/Divider';
 export { Divider } from './components/Divider';
+export type { DonutChartProps, DonutSegment } from './components/DonutChart';
+export { DonutChart } from './components/DonutChart';
 export type { DrawerProps, DrawerSide } from './components/Drawer';
 export { Drawer } from './components/Drawer';
 export type { DropzoneProps } from './components/Dropzone';
 export { Dropzone } from './components/Dropzone';
+export type { ColumnPriority } from './components/data-table-view';
 export type {
   DateStyle,
   DateTimeFormatter,
@@ -136,6 +153,8 @@ export {
   formatBytes,
   selectFiles,
 } from './components/file-input-view';
+export type { GaugeProps } from './components/Gauge';
+export { Gauge } from './components/Gauge';
 export type { GridProps } from './components/Grid';
 export { Grid } from './components/Grid';
 export type { HeadingLevel, HeadingTag } from './components/heading-level';
@@ -149,6 +168,8 @@ export type { ImageBaseProps, ImageDimensions, ImageProps } from './components/I
 export { Image } from './components/Image';
 export type { InfiniteScrollProps } from './components/InfiniteScroll';
 export { InfiniteScroll } from './components/InfiniteScroll';
+export type { InlineBarProps } from './components/InlineBar';
+export { InlineBar } from './components/InlineBar';
 export type { InputProps, InputType } from './components/Input';
 export { Input } from './components/Input';
 export type { IconElement, IconGlyph, IconTag } from './components/icon-glyph';
@@ -165,6 +186,8 @@ export { boxFor, reservedRatio, sourceSetsFor, srcsetFor } from './components/im
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
 export type { KbdProps } from './components/Kbd';
 export { Kbd } from './components/Kbd';
+export type { AreaChartProps, LineChartProps } from './components/LineChart';
+export { AreaChart, LineChart } from './components/LineChart';
 export type { ButtonLinkProps, LinkProps, TextLinkProps } from './components/Link';
 export { Link } from './components/Link';
 export type { LocaleSwitcherProps } from './components/LocaleSwitcher';
@@ -312,6 +335,9 @@ export {
   useUi,
 } from './theme/context';
 export { INERT_SOLID_RUNTIME } from './theme/inert-runtime';
+export type { ThemePreset } from './theme/preset-shape';
+export type { ThemePresetName } from './theme/presets';
+export { THEME_PRESET_NAMES, THEME_PRESETS } from './theme/presets';
 export type { UiProviderProps } from './theme/provider';
 export { UiProvider } from './theme/provider';
 // The slot is its own module so that registering a runtime does not drag `errors.ts` — and with it
@@ -354,6 +380,14 @@ export {
 export type { ToastEnv, ToastStore } from './toast/toast-store';
 export { browserToastEnv, createToastStore, INERT_TOAST_ENV } from './toast/toast-store';
 export { useToasts } from './toast/use-toasts';
+export type { ColourVision } from './tokens/colour-vision';
+export {
+  CHART_DISTINCT_MIN,
+  COLOUR_VISIONS,
+  closestChartPair,
+  colourDistance,
+  simulateColourVision,
+} from './tokens/colour-vision';
 export type { Channels } from './tokens/contrast';
 export {
   AA_LARGE,
@@ -365,11 +399,12 @@ export {
 } from './tokens/contrast';
 export type { ContrastPair } from './tokens/contrast-pairs';
 export { CONTRAST_PAIRS } from './tokens/contrast-pairs';
-export type { ColorRole, RadiusName, Theme } from './tokens/tokens';
+export type { ChartRole, ColorRole, RadiusName, ShadowName, Theme } from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
 export {
   assertColorRole,
   breakpointTokens,
+  CHART_ROLES,
   COLOR_ROLES,
   color,
   colorRgb,
@@ -381,8 +416,10 @@ export {
   fontWeightTokens,
   lineHeightTokens,
   radiusTokens,
+  SHADOW_NAMES,
   shadowTokens,
   spaceTokens,
   strokeTokens,
+  touchTokens,
   zTokens,
 } from './tokens/tokens';

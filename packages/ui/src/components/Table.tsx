@@ -1,6 +1,6 @@
-// Presentational table. Owns two things every hand-rolled table gets wrong:
-// a sticky header, and horizontal overflow contained inside the table's own
-// scroll container so the page body never scrolls sideways.
+// Presentational table. Owns what every hand-rolled table gets wrong: a sticky header, a first
+// column that stays put while the rest scrolls, and horizontal overflow contained inside the
+// table's own scroll container so the page body never scrolls sideways.
 
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
@@ -13,6 +13,14 @@ export interface TableProps {
   /** Hide the caption visually while keeping it for assistive tech. */
   hideCaption?: boolean | undefined;
   stickyHeader?: boolean | undefined;
+  /** Pins the first column at the inline start while the table scrolls sideways. Off by default. */
+  stickyFirstColumn?: boolean | undefined;
+  /**
+   * Declares `role="table"` on the element itself. For a caller that restyles the table's
+   * `display` (DataTable's card view): WebKit drops a table's semantics once `display` changes,
+   * and the explicit role is what keeps it a table. The rows and cells are the caller's to mark.
+   */
+  explicitRoles?: boolean | undefined;
   density?: 'comfortable' | 'compact' | undefined;
   /** Zebra striping. Off by default — a border is usually enough. */
   striped?: boolean | undefined;
@@ -27,6 +35,9 @@ export function Table(props: TableProps): JSX.Element {
     // inside it — and a <section> with no name is generic, so the table keeps its own caption.
     <section class={cx(styles['scroller'], props.class)} tabindex="0">
       <table
+        role={props.explicitRoles === true ? 'table' : undefined}
+        // An attribute, not a class: it is state the stylesheet and a test both read.
+        data-sticky-first={props.stickyFirstColumn === true ? '' : undefined}
         class={cx(
           styles['table'],
           styles[`density-${props.density ?? 'comfortable'}`],

@@ -1,6 +1,6 @@
-// AppShell's two rules, kept away from the markup: the id the skip link points at is derived
-// from the same place the <main> gets it, and which landmarks the frame emits in which order.
-// Both are silent failures when wrong — a skip link to nowhere, or two <main> elements.
+// AppShell's rules, kept away from the markup: the ids the skip link and the menu button point at
+// are derived from the same place the <main> and the <nav> get them, and which landmarks the frame
+// emits in which order. All are silent failures when wrong — a skip link or a menu to nowhere.
 
 export type ShellLandmark = 'banner' | 'navigation' | 'main' | 'contentinfo';
 
@@ -8,6 +8,8 @@ export interface ShellIds {
   readonly mainId: string;
   /** Always `#` + `mainId`. One derivation, so the link and the target cannot drift. */
   readonly skipHref: string;
+  /** The sidebar `<nav>`, which the menu button's `popovertarget` names below `md`. */
+  readonly navId: string;
 }
 
 export interface ShellSlots {
@@ -18,7 +20,7 @@ export interface ShellSlots {
 
 export function shellIds(base: string): ShellIds {
   const mainId = `${base}-main`;
-  return { mainId, skipHref: `#${mainId}` };
+  return { mainId, skipHref: `#${mainId}`, navId: `${base}-nav` };
 }
 
 /**

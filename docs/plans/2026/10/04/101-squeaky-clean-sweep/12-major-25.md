@@ -21,6 +21,7 @@ A deletion that is not breaking does not wait here — it belongs in [`07-cleanu
 | M8 | owner "delete" answers: O-12 `Page`, O-6 config keys, O-loc locales keys, O-5 NATS stub, O-4/O-7/O-14/O-18/O-20 per answer | per row in [`00-owner-decisions.md`](00-owner-decisions.md) | per row |
 | M9 | B9 `AuditRecord.action` → `name` (if 10 B9 landed behind a compat field) | `action/src/audit.ts:38` → core | — |
 | M10 | `http.drainTimeoutMs` — a second knob for the drain budget `drain.deadlineMs` owns since 8c (axiom 1); on the web role it still wins, applied after `lifecycleForRole` | `packages/http/src/config.ts`, `http/src/server.ts` drain read, `cli/src/serve-boot.ts` | config test: one drain key; the web role's budget is `drain.deadlineMs` |
+| M11 | `theme.tokens` in app config — read by nothing in the framework since 9b's theme seam (`export const brand` in `apps/web/shared/theme.ts`); a second, dead theming path (axiom 1) | `packages/core/src/config.ts:49` and its defaults/validation | config test: no `theme.tokens` key |
 
 Pre-PR: `bug-hunter` + `architecture-reviewer` read-only over the diff (high-stakes rule).
 
