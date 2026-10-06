@@ -202,6 +202,14 @@ describe('the admin in the contract diff', () => {
     ]);
   });
 
+  // A baseline written before the fields existed carries neither; `schema.ts` reads absent as false.
+  test('an older baseline without readonly/matching is no change against a build stating false', () => {
+    const { readonly: _readonly, matching: _matching, ...older } = publish;
+    const before = admin({ resources: [posts({ actions: [older as typeof publish] })] });
+    expect(changes([before], [admin()])).toEqual([]);
+    expect(changes([admin()], [before])).toEqual([]);
+  });
+
   test('layout, related lists and the audit log are internal', () => {
     const moved = posts({
       sections: [{ title: 'admin.posts.section.main', fields: ['title'] }],

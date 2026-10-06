@@ -47,8 +47,11 @@ function diffGate(at: string, before: AdminActionFact, after: AdminActionFact): 
     changes.push({ kind, path: `${at}.gate`, detail: `admin gate ${was} -> ${is}` });
   }
   for (const key of ['readonly', 'matching'] as const) {
-    if (before[key] === after[key]) continue;
-    const detail = `${key} ${String(before[key])} -> ${String(after[key])}`;
+    // An absent flag reads as `false` (`schema.ts`): a baseline written before the field existed
+    // is not a change against a build that states `false`.
+    const [had, has] = [before[key] === true, after[key] === true];
+    if (had === has) continue;
+    const detail = `${key} ${String(had)} -> ${String(has)}`;
     changes.push({ kind: 'internal', path: `${at}.${key}`, detail });
   }
   return changes;

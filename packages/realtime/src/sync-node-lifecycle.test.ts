@@ -18,11 +18,16 @@ class GatedTransport implements Transport {
   readonly shared = this.inner.shared;
   subscribes = 0;
   live = 0;
+  /** The first subscribe fails once the gate opens: an older start's failure, landing late. */
+  failFirst = false;
   #gate = Promise.withResolvers<void>();
 
   open(): void {
     this.#gate.resolve();
   }
+
+  // Input to the code under test, not a verdict: built once, then thrown.
+  readonly refusal = new TypeError('the bus refused the first subscribe');
 
   publish(subject: string, payload: string): Promise<void> {
     return this.inner.publish(subject, payload);
@@ -30,7 +35,9 @@ class GatedTransport implements Transport {
 
   async subscribe(subject: string, handler: TransportHandler): Promise<TransportSubscription> {
     this.subscribes += 1;
+    const nth = this.subscribes;
     await this.#gate.promise;
+    if (this.failFirst && nth === 1) throw this.refusal;
     const subscription = await this.inner.subscribe(subject, handler);
     this.live += 1;
     return {
@@ -91,6 +98,21 @@ describe('a stop or drain that lands while start() is subscribing', () => {
     transport.open();
     await Promise.all([started, drained]);
     expect({ ready: node.ready, live: transport.live }).toEqual({ ready: false, live: 0 });
+  });
+
+  // A failed OLDER start cleared the memo of the newer one, so a third start subscribed again and
+  // every change fanned out twice. The memo is cleared only by the attempt that owns it.
+  test('an older start failing late cannot wipe a newer start: still one subscription', async () => {
+    const { node, transport } = gatedNode();
+    transport.failFirst = true;
+    const first = node.start().catch(() => undefined);
+    const stopped = node.stop();
+    const second = node.start();
+    transport.open();
+    await Promise.all([first, stopped, second]);
+    await node.start();
+    expect({ ready: node.ready, live: transport.live }).toEqual({ ready: true, live: 1 });
+    await node.stop();
   });
 
   test('two overlapping starts subscribe once, and a stopped node can start again', async () => {

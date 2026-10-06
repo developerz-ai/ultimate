@@ -306,11 +306,15 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
     start(): Promise<void> {
       // Memoised: two overlapping starts were two subscriptions, every change fanned out twice.
-      started ??= begin().catch((error: unknown) => {
-        started = null;
+      if (started !== null) return started;
+      // Cleared only if it is still THIS attempt's memo: an older start failing after a stop and
+      // a newer start must not wipe the newer one, or a third start subscribes a second time.
+      const attempt: Promise<void> = begin().catch((error: unknown) => {
+        if (started === attempt) started = null;
         throw error;
       });
-      return started;
+      started = attempt;
+      return attempt;
     },
 
     stopAccepting(): void {
@@ -319,7 +323,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
     async stop(): Promise<void> {
       await halt();
-      release();
+      // A start() that began while this stop waited owns what it subscribes — the older start is
+      // fenced by its generation — so releasing here would tear down the NEWER node's bus.
+      if (started === null) release();
     },
 
     async fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined> {

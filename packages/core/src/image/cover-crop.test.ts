@@ -36,6 +36,15 @@ describe('cover with an aspect mismatch', () => {
     expect(layout.crop).toEqual({ x: 0, y: 100, width: 1, height: 1 });
   });
 
+  // A ROUNDED window shifted a .5 offset half a source pixel off centre: 10x10 into 40x20 took
+  // rows 3–8 of an exact 2.5–7.5. The covering window (floor to ceil) is clipped back to centre.
+  test('a small source upscaled crops the whole pixels covering the exact window', () => {
+    const layout = layOut({ width: 10, height: 10 }, { width: 40, height: 20, fit: 'cover' });
+    expect(layout.crop).toEqual({ x: 0, y: 2, width: 10, height: 6 });
+    // One scaled source pixel (4 px) a side over the inner 40x20, clipped evenly by composeOnto.
+    expect(layout.drawn).toEqual({ width: 40, height: 24 });
+  });
+
   test('a skinny strip covers a large box from its centre, within the pixel budget', async () => {
     const out = decodeImage(
       await transformImageBytes(encodeImage(strip()), { width: 1000, height: 1000, fit: 'cover' }),
