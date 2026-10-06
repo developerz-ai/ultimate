@@ -10,9 +10,9 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { describeAgents, resetAgents } from './agent-facts';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { definePrompt, type Prompt } from './prompt';
-import { EchoProvider } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 

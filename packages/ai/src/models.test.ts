@@ -88,7 +88,8 @@ describe('the registry is open', () => {
         cacheWriteTokens: 0,
       }),
     ).toEqual({ minor: 250, currency: 'USD' });
-    expect(moreCapableThan('claude-sonnet-5')).toBe('claude-opus-5');
+    expect(moreCapableThan('claude-opus-5')).toBe('claude-opus-5-5');
+    expect(moreCapableThan('claude-sonnet-5-5')).toBe('claude-opus-5');
   });
 
   test('resetModels restores exactly the built-in catalogue', () => {
@@ -112,8 +113,13 @@ describe('moreCapableThan', () => {
   // the default model with `claude-sonnet-5` — the fix line told an operator to retry a refusal
   // on a weaker model, which is the one retry that cannot help.
   test('has no answer for the most capable model, rather than a downgrade', () => {
-    expect(moreCapableThan(DEFAULT_MODEL)).toBeUndefined();
     expect(moreCapableThan(ANTHROPIC_MODEL_IDS[0])).toBeUndefined();
+    // The default is no longer the top rung, and its answer is the rung above — never below it.
+    expect(moreCapableThan(DEFAULT_MODEL)).toBe(
+      ANTHROPIC_MODEL_IDS[
+        (ANTHROPIC_MODEL_IDS as readonly string[]).indexOf(DEFAULT_MODEL) - 1
+      ] as string,
+    );
   });
 
   test('has no answer for a model nobody registered, rather than the bottom rung', () => {
@@ -124,18 +130,22 @@ describe('moreCapableThan', () => {
     for (let i = 1; i < ANTHROPIC_MODEL_IDS.length; i += 1) {
       const model = ANTHROPIC_MODEL_IDS[i];
       if (model === undefined) continue;
-      const better = moreCapableThan(model);
-      expect(better).toBe(ANTHROPIC_MODEL_IDS[i - 1] as string);
-      // "More capable" is not a vibe here: the ladder is priced, and the rung above costs more.
-      expect(modelSpec(better ?? DEFAULT_MODEL).outputPerMillion.minor).toBeGreaterThan(
-        modelSpec(model).outputPerMillion.minor,
-      );
+      expect(moreCapableThan(model)).toBe(ANTHROPIC_MODEL_IDS[i - 1] as string);
     }
   });
 
-  test('the catalogue is ordered most capable first, which is what makes the walk sound', () => {
-    const prices = ANTHROPIC_MODEL_IDS.map((id) => modelSpec(id).outputPerMillion.minor);
-    expect(prices).toEqual([...prices].sort((a, b) => b - a));
+  // Price order WAS the proof of capability order until Opus 5.5 shipped newer, stronger and
+  // cheaper than Opus 5 — so the ladder is pinned by name, and price only ever rises across LINES.
+  test('the catalogue is ordered most capable first: by line, newest first within one', () => {
+    const line = (id: string): number =>
+      ['fable', 'opus', 'sonnet', 'haiku'].findIndex((name) => id.includes(`-${name}-`));
+    const lines = ANTHROPIC_MODEL_IDS.map(line);
+    expect(lines).toEqual([...lines].sort((a, b) => a - b));
+    expect(lines).not.toContain(-1);
+    const top = (n: number) => modelSpec(ANTHROPIC_MODEL_IDS[lines.indexOf(n)] ?? DEFAULT_MODEL);
+    for (let n = 1; n < 4; n += 1) {
+      expect(top(n).outputPerMillion.minor).toBeLessThan(top(n - 1).outputPerMillion.minor);
+    }
   });
 });
 

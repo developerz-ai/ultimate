@@ -27,10 +27,11 @@ const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/
  * What only a process that serves documents evaluates. In the static graph these were 107 modules
  * every worker, scheduler and migrate pod loaded to render nothing (966 static, 2026-10-01).
  */
-// `admin/src/audit-schema.ts` is the one admin module every role may load: the leaf the boot's
-// `FRAMEWORK_SCHEMA` applies `x_admin_audit` from, reached as `@ultimat3/admin/schema`.
+// `admin/src/audit-schema.ts` and `mcp/src/confirmation-schema.ts` are the one admin and the one
+// mcp module every role may load: the leaves the boot's `FRAMEWORK_SCHEMA` applies `x_admin_audit`
+// and `x_mcp_confirmations` from, reached as `@ultimat3/admin/schema` and `@ultimat3/mcp/schema`.
 const WEB_ONLY =
-  /packages\/(?:pwa|mcp|manifest|ui)\/src\/|packages\/admin\/src\/(?!audit-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
+  /packages\/(?:pwa|manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!audit-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
 
 /**
  * What no role evaluates at boot, whatever the app: reachable only behind an `await import()` at
@@ -60,8 +61,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 615 → 620, measured 620 (2026-10-06, plan 101 sweep 10b): the modules named on
  * `SERVING_ROLE_CEILING` for sweep 10b that `ROLE=migrate` reaches through the db and entity
  * barrels — the append-only trigger it must create and the drift check that refuses a missing one.
+ * raised 620 → 622, measured 622 (2026-10-06, plan 101 sweep 10c): `mcp/src/confirmation-schema.ts`
+ * (the leaf `@ultimat3/mcp/schema` the boot applies `x_mcp_confirmations` from) and
+ * `http/src/request-facts.ts` (the one request-facts builder mcp and the bearer mount share).
  */
-const MIGRATE_CEILING = 620;
+const MIGRATE_CEILING = 622;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -101,8 +105,12 @@ const MIGRATE_CEILING = 620;
  * trigger) and `drift-append-only.ts` (a missing trigger is drift); audited reads —
  * `core/src/audit.ts` (the one audit contract action and query share), `query/src/audit-gate.ts`
  * and `audit-errors.ts`.
+ * raised 907 → 912, measured 912 (2026-10-06, plan 101 sweep 10c): the two named on
+ * `MIGRATE_CEILING` for 10c, and the SES transport a worker sends mail through —
+ * `mail/src/driver-ses.ts`, `ses-failure.ts` (SES error types onto retry classes) and
+ * `retain-mime.ts`. The SNS/Resend receivers stay off every role, behind `@ultimat3/mail/events`.
  */
-const SERVING_ROLE_CEILING = 907;
+const SERVING_ROLE_CEILING = 912;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -133,8 +141,14 @@ const SERVING_ROLE_CEILING = 907;
  * `SERVING_ROLE_CEILING` for sweep 10a.
  * raised 1004 → 1011, measured 1011 (2026-10-06, plan 101 sweep 10b): the seven modules named on
  * `SERVING_ROLE_CEILING` for sweep 10b.
+ * raised 1011 → 1023, measured 1023 (2026-10-06, plan 101 sweep 10c): the five named on
+ * `SERVING_ROLE_CEILING` for 10c, MCP human confirmation and its audit hook on the web role —
+ * `mcp/src/confirmations.ts`, `confirmation-gate.ts`, `confirmation-store.ts`,
+ * `confirmation-postgres.ts`, `confirmation-errors.ts`, `audit-hook.ts` — and
+ * `mcp/src/errors-transport.ts`, the transport error classes split out so `errors.ts` stays under
+ * the 500-line ceiling once the seven confirmation codes are registered.
  */
-const WEB_ROLE_CEILING = 1011;
+const WEB_ROLE_CEILING = 1023;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

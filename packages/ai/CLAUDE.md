@@ -22,7 +22,10 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | File | Job |
 |---|---|
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts |
-| `provider.ts` | `Provider` interface, the request half, the money arithmetic, Anthropic + Echo |
+| `provider.ts` | `Provider` interface, the request half, the money arithmetic, `AnthropicProvider` |
+| `echo-provider.ts` | `EchoProvider`, the deterministic double — split from `provider.ts` at its line ceiling |
+| `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
+| `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `errors.ts` |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
 | `error-body.ts` | what a failure body SAYS (`detailOf`) and what must never survive into it (`withoutKey`) — one copy, both transports |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
@@ -170,6 +173,12 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - `AnthropicProvider.models` is its own list; `EchoProvider.models` reads the registry.
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
   control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row in `MODELS`.
+  `disableThinkingUpTo: 'never'` (Opus 5.5, Fable 5.1) refuses `thinking: 'disabled'` at every effort;
+  `disabledThinking: 'between_tools'` (Sonnet 5.5) is the wire spelling of the same declaration. Every
+  number in a built-in row is the vendor's published one, pinned by `models-catalogue.test.ts`.
+- **Media blocks are screened once, by `assertMediaContent`, at the top of BOTH body builders** —
+  malformed is `X_AI_REQUEST_INVALID`, untakeable (role, the row's `input`, the wire) is
+  `X_AI_CONTENT_UNSUPPORTED`; never dropped, never approximated (`provider-parity-content.test.ts`).
 - `generate()` above `STREAM_ONLY_MAX_TOKENS` runs the streaming transport.
 - **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
   differences; never a second class per vendor:
@@ -182,7 +191,8 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
     except `[DONE]` with pending tool fragments, which is refused;
   - only `gpt-5.6-sol` / `-terra` / `-luna` are priced; `registerOpenAiModels()` re-registers after
     `resetModels()` (every `openai-*.test.ts` calls it in `beforeEach`);
-  - no new `X_*` code; `AiTransportError` takes the provider's `envVar`; the key is revealed late,
+  - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
+    `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
 - **`embedBatched` enforces the `Embedder` arity per batch** (`X_AI_EMBEDDER_INVALID` with both
   counts). One `RemoteEmbedder` for every vendor; vectors L2-normalised; a wrong width is

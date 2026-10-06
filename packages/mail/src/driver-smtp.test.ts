@@ -425,3 +425,35 @@ test('a recipient that would open a second envelope command is still refused', a
     server.stop();
   }
 });
+
+test('retainMime keeps the exact message the server received, and only for an accepted send', async () => {
+  const server = startLocalSmtp();
+  const retained: string[] = [];
+  try {
+    const driver = createSmtpDriver({
+      url: `smtp://127.0.0.1:${server.port}`,
+      from: FROM,
+      allowInsecure: true,
+      timeoutMs: 2_000,
+      retainMime: { onRetained: (entry) => void retained.push(entry.id) },
+    });
+    const result = await driver.send(messageFixture());
+    if (result.mime?.kind !== 'kept') return expect.unreachable('expected the MIME to be kept');
+    // The server's capture stops before the CRLF that `.` terminates; nothing here is dot-stuffed.
+    expect(result.mime.raw).toBe(`${server.messages[0] ?? ''}\r\n`);
+    expect(retained).toEqual([result.id]);
+  } finally {
+    server.stop();
+  }
+
+  const refused = createSmtpDriver({
+    url: 'smtp://127.0.0.1:1',
+    from: FROM,
+    allowInsecure: true,
+    timeoutMs: 500,
+    retainMime: { onRetained: (entry) => void retained.push(entry.id) },
+    connect: () => Promise.reject(new TypeError('connect ECONNREFUSED')),
+  });
+  expect(codeOf(await caught(refused.send(messageFixture())))).toBe('X_MAIL_SEND_FAILED');
+  expect(retained).toHaveLength(1);
+});

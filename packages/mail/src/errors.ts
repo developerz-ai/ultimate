@@ -21,6 +21,9 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_ADDRESS_INVALID',
   'X_MAIL_SEND_FAILED',
   'X_MAIL_TRANSFORM_FAILED',
+  'X_MAIL_EVENT_UNVERIFIED',
+  'X_MAIL_EVENT_INVALID',
+  'X_MAIL_EVENT_PROVIDER_UNREACHABLE',
 ] as const;
 
 export type MailErrorCode = (typeof MAIL_ERROR_CODES)[number];
@@ -36,6 +39,9 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_ADDRESS_INVALID: 'an envelope address could restructure the SMTP command line',
   X_MAIL_SEND_FAILED: 'the mail transport refused the message',
   X_MAIL_TRANSFORM_FAILED: 'the app mail transform threw or returned no message',
+  X_MAIL_EVENT_UNVERIFIED: 'a delivery notification is not signed by its provider',
+  X_MAIL_EVENT_INVALID: 'a delivery notification is not a shape this receiver reads',
+  X_MAIL_EVENT_PROVIDER_UNREACHABLE: 'an SNS endpoint the receiver needed did not answer',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -177,12 +183,13 @@ export const mailCredentialMissing = (environment: Environment): MailError =>
   new MailError({
     code: 'X_MAIL_CREDENTIAL_MISSING',
     cause:
-      `neither SMTP_URL nor RESEND_API_KEY is set in ${environment}, so this process has no ` +
-      'transport — the message was not delivered and was not queued anywhere',
+      `none of SMTP_URL, RESEND_API_KEY or SES_REGION is set in ${environment}, so this process ` +
+      'has no transport — the message was not delivered and was not queued anywhere',
     fix:
-      'set SMTP_URL="smtps://user:pass@host:465" (or RESEND_API_KEY=re_...) and ' +
+      'set SMTP_URL="smtps://user:pass@host:465" (or RESEND_API_KEY=re_..., or SES_REGION with ' +
+      'SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY) and ' +
       'MAIL_FROM="App <no-reply@yourdomain.test>" in the deployment environment, then restart',
-    meta: { environment, missing: ['SMTP_URL', 'RESEND_API_KEY'] },
+    meta: { environment, missing: ['SMTP_URL', 'RESEND_API_KEY', 'SES_REGION'] },
   });
 
 /**
@@ -309,7 +316,7 @@ export type SendStage =
  * code or an HTTP status — because "mail failed" without either is not a diagnosis.
  */
 export interface SendFailure {
-  readonly driver: 'smtp' | 'resend';
+  readonly driver: 'smtp' | 'resend' | 'ses';
   readonly stage: SendStage;
   readonly detail: string;
   /** SMTP reply code (4xx/5xx) or HTTP status. Absent when the socket never answered. */

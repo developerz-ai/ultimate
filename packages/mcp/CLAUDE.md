@@ -22,6 +22,8 @@ import. The CLI wires it.
 | `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor, and the per-caller rate limit it enforces itself |
+| `audit-hook.ts` | `onAudit`; `resolveToken`'s 2nd arg is http's `RequestFacts` (`seen.address` only, never `x-forwarded-for`), re-exported as `McpRequestFacts` |
+| `confirmations.ts` · `confirmation-{gate,store,postgres,errors}.ts` | `mcpConfirmations`, a factory over `action` (the decision) · the gate on `handle` · row + memory store · `x_mcp_confirmations` · codes |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`); the authorization server is the app's |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
@@ -141,15 +143,15 @@ import. The CLI wires it.
   and `tools/list` are silent by design (answered pre-filtered). `resource-security.test.ts` reads
   both streams: core's logger puts `error` on stderr.
 - **A tool that renders its OWN `isError` result may NAME the code it refused with**
-  (`McpToolResult.code`), and `outcomeForResult` sends it through the same `outcomeForCode` a
-  THROWN error goes through. Audit-only: `server.ts` never puts it on the wire, because the code is
-  already inside the rendered body. Without it every self-rendered refusal was `policy-denied` at
-  `warn` — so `@ultimat3/admin`'s `X_ADMIN_INVALID` (a client mistyping an argument the published
-  JSON Schema could not have refused: admin publishes a `type` per field and nothing else) sat in
-  the bucket this package's enumeration alert watches. `X_ADMIN_INVALID` is `ARGUMENT_CODES`;
-  `X_INPUT_INVALID` deliberately stays `failed`, because a projected action publishes its WHOLE
-  schema and input this server already validated failing inside it means the two have drifted.
-  A result naming no code keeps the conservative `policy-denied`.
+  (`McpToolResult.code`, audit-only, never on the wire); `outcomeForResult` sends it through the
+  `outcomeForCode` a thrown error takes. Unnamed keeps the conservative `policy-denied`. Why:
+  `X_ADMIN_INVALID` (`ARGUMENT_CODES`) sat in the enumeration alert's bucket. `X_INPUT_INVALID`
+  stays `failed` — a projected action's whole schema was already validated, so it means drift.
+  `X_MCP_CONFIRMATION_PENDING`/`_EXPIRED` are `unconfirmed` (`info`); `_REJECTED` is a denial.
+- **`onAudit` is a second DESTINATION, never a second path** (`audit-hook.ts`, `As of 2026-10`):
+  the line is written, then the decision handed on, unawaited; a throwing hook changes no answer
+  (`mcp.audit-hook.failed`). Core's `AuditSink` = what a primitive DID; `onAudit` = what the gate
+  decided, refused tokens included (`mcp.auth.<reason>`). The route reads `server.audit`.
 - **A `--` comment ends at the first CR *or* LF — Postgres' own boundary set** (`readonly-sql.ts`,
   `endOfLineComment`). A scanner stopping at LF alone read `select 1;--\rupdate …` as one read.
 - `security.test.ts` and `app-security.test.ts` are the executable contract for all of the
@@ -221,20 +223,11 @@ import. The CLI wires it.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
-- **Banned function families** (each is a ban already made elsewhere in another spelling):
-  `pg_notify` (= `NOTIFY`, a write keyword); server control (`pg_cancel_backend`,
-  `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
-  `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*` —
-  advancing a slot is a write no `ROLLBACK` undoes); `pg_file_*`; `txid_current` /
-  `pg_current_xact_id`; `pg_import_*`; SQL run from a string (`*_to_xml*`, `ts_stat`, `ts_rewrite`). `U&"…"` is
-  refused, never decoded; a keyword is a whole identifier (`set2` is a column). Catalog VIEWS
-  (`pg_replication_slots`) are read `from`, never called.
+- **Banned function families** — each a ban already made elsewhere in another spelling; the list
+  and why lives in README's `db.query` section, held by `readonly-sql-forbidden-calls.test.ts`.
+  `U&"…"` is refused, never decoded; a keyword is a whole identifier (`set2` is a column).
 - Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never
-  a name (`pg_sleep_for` passed an exact `pg_sleep` ban). The unit is the call (`name(`), so a
-  column `pg_sleep_for_seconds` is fine; the call scan keeps quoted-identifier content
-  (`"pg_advisory_lock"(1)` is a call), the keyword scan blanks it. `pg_advisory_*` (a session lock
-  survives layer 2's `ROLLBACK`; `packages/testing/src/db-integration.test.ts`), `pg_sleep*` (the
-  one ban that holds on PGlite), `nextval`/`setval` (a consumed id is not rolled back).
+  a name (`pg_sleep_for` passed an exact `pg_sleep` ban); the call unit and the three named bans: README.
 - `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
   (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
   `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
@@ -258,6 +251,10 @@ import. The CLI wires it.
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
   error still exists — it is what an authenticated agent gets. Failures spend a per-ADDRESS bucket
   (`seen.address`), and an exhausted address is `429` BEFORE `resolveToken` — a valid guess too.
+- **Confirmation order: visibility → scope → args → `admit` → confirmation → policy.** An approval
+  binds actor + tool + `keyedFingerprint(args)` (rotation ⇒ new row); `consume` (CAS) makes one approval run one
+  call; rejected/expired is told once, then the call asks again. An agent never decides (in the
+  policy). Its statuses must stay < 500, or `forAudience` hides the id the agent relays.
 - **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
   `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
   back-pressure; only a child-process test can see it.

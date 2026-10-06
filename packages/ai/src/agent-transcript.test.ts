@@ -10,10 +10,11 @@ import { createContext, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { definePrompt, type Prompt } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { costOf } from './provider';
 import { configureAi } from './runtime';
 import type { ProjectableAction } from './tools';
 

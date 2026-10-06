@@ -7,10 +7,10 @@
  */
 
 import { expect, test } from 'bun:test';
+import { EchoProvider } from './echo-provider';
 import { fixLineCases, fixLineEval } from './fix-line.evals-fixture';
 import { fixLinePrompt } from './fix-line-fixture';
 import { createGateway } from './gateway';
-import { EchoProvider } from './provider';
 
 /** What the model answered when this baseline was recorded, keyed by case name. */
 const RECORDED: Readonly<Record<string, string>> = {

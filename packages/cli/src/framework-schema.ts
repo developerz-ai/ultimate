@@ -11,6 +11,7 @@ import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema
 import { AUTH_TABLE_NAMES, AUTH_TABLES, SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
+import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
 import {
   SQL_NOTIFY_DELIVERIES_TABLE,
   SQL_NOTIFY_DIGESTS_TABLE,
@@ -134,6 +135,16 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/admin',
     tables: Object.freeze([ADMIN_AUDIT_TABLE]),
     ddl: Object.freeze([SQL_ADMIN_AUDIT_TABLE]),
+  }),
+  /**
+   * `mcpConfirmations`' pending rows — what `postgresConfirmationStore()` reads and writes. Without
+   * this row the first gated `tools/call` met `42P01`. Through `@ultimat3/mcp/schema`, a leaf
+   * module that imports nothing, for the admin row's reason: no MCP server on a worker's path.
+   */
+  Object.freeze({
+    pkg: '@ultimat3/mcp',
+    tables: Object.freeze([MCP_CONFIRMATIONS_TABLE]),
+    ddl: Object.freeze([SQL_MCP_CONFIRMATIONS_TABLE]),
   }),
 ]);
 

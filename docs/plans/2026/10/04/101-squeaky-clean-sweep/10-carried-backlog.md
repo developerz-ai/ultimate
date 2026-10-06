@@ -59,7 +59,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 |---|---|---|
 | A | B14, B20 | `packages/admin/src/{mcp,mcp-tools}.ts`, `screen-home*.ts` (B20) + tests |
 | B | B15 (a)–(c), (g) | `packages/cli/src/templates/{scaffold-container,scaffold-helm,scaffold-dashboard-example,scaffold-domain-package}.ts`, `packages/cli/src/{app-boundaries,generate-kinds}.ts` |
-| C | B15 (d)–(f), B18 | `packages/cli/src/i18n-audit.ts`, `templates/github/ci.yml.ts`, `templates/{scaffold-repo,scaffold-auth}.ts`; the binary's runtime resolution + `.github/workflows/ci.yml` windows job (B18) |
+| C | B15 (d)–(f), B18, B21 | `packages/cli/src/i18n-audit.ts`, `templates/github/ci.yml.ts`, `templates/{scaffold-repo,scaffold-auth}.ts`; the binary's runtime resolution + `.github/workflows/ci.yml` windows job (B18) |
 | D | B16, B17 | `examples/dummy/**` factory uses and the `likedByMe` read (B17), `dummy/social-media-clone/**/e2e`, `scripts/primitive-factories.test.ts` |
 
 | Row | Pkg | What | Test |
@@ -71,11 +71,13 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B18 | cli (Windows, carried from 08 W7/W8) | On `windows-latest` the scaffold smoke is green through `x build --target binary`, but the binary never answers `/healthz`: `error: Cannot find module '@ultimat3/core' from '<app>\\app.config.ts'`. The binary launches an app tree from its cwd and imports `app.config.ts` at runtime; resolving the app's packages from that file fails under Windows' copied `file:` install. **Fix:** Resolve the app tree's imports from its own `node_modules` at runtime (or bundle `app.config.ts` into the binary); then drop `continue-on-error` from the job and make it required in `verify` | the windows job's binary step, then `ci-workflow-shape` pins the job as required |
 | B19 | ui (found by 9b's security audit, Low) | `FONT_STACK_PATTERN` (`ui/src/theme/brand-declarations.ts:22`) accepts `\r` through `\s`; a CRLF font stack makes the browser's normalised bytes miss the server's sha256, so the brand is blocked (fails closed). **Fix:** `\s` → a literal space | `brand-preset.test.ts`: a `\r` in a font stack is refused |
 | B20 | admin (found by 9b's security audit, Low) | `/admin` home runs one full `count()` per listable resource on every visit (`screen-home.tsx:114`, `screen-home-counts.ts:33`) — any admin user amplifies DB load by reloading. **Fix:** Per-resource opt-in (`count: true`, as the list tabs require, `list-scope.ts:107-115`), or a short per-actor cache | `screen-home.test.ts`: a resource without the opt-in is not counted |
+| B21 | cli (from 10c B11) | `runtime-services.ts` calls `selectMailDriver(env)` with no options, so an app on the `x` runtime cannot turn on mail's `retainMime`. **Fix:** a `mail.retainMime` config key read at boot and passed through | runtime-services test: the config key reaches the selected driver |
+| B22 | docs (from 10c B11) | the six `SES_*` mail env keys are documented in mail's README only. **Fix:** add them wherever the wiki lists mail's env keys (the page `driver-env.test.ts` cites) | doc-paths and wiki-tables green |
 
 ## Sweep 10e — docs
 | Agent | Rows | Exclusive paths |
 |---|---|---|
-| A | docs | `wiki/Known-Gaps.md`, `wiki/PWA-And-Offline.md` |
+| A | docs, B22 | `wiki/Known-Gaps.md`, `wiki/PWA-And-Offline.md`, the wiki page listing mail's env keys (B22) |
 
 - `wiki/Known-Gaps.md` rows for every B-row still open after 10a–10d, each with its tracking issue.
 - `wiki/PWA-And-Offline.md:270-280` after O-11.

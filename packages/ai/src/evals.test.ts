@@ -3,13 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asyncRefusal } from './bounds-fixture';
+import { EchoProvider } from './echo-provider';
 import type { EvalBaseline } from './eval-baseline';
 import { RECORD_ENV, writeBaseline } from './eval-baseline';
 import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
-import { EchoProvider } from './provider';
 import type { Scorer } from './scorers';
 import { exact } from './scorers';
 

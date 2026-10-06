@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 82
-current_focus: "sweep 10b (B6, B8, B9; B7 waits on owner O-1, which has no default)"
+percent: 85
+current_focus: "sweep 10c (B10 mcp, B11 mail, B12 ai, B19 ui; B13 stays reserved per O-13)"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -112,14 +112,14 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 10-carried-backlog.md
     tier: 1
     sweep: "10b"
-    status: in_progress
-    percent: 0
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#666"]
   - file: 10-carried-backlog.md
     tier: 4
     sweep: "10c"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
     evidence: []
   - file: 10-carried-backlog.md
     tier: 5

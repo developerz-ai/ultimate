@@ -167,7 +167,7 @@ registerModel({
 configureAi({ gateway: createGateway({ providers: [new InternalGatewayProvider()] }) });
 ```
 
-**The three built-ins register through this same call.** There is one way to put a model in the
+**The built-ins register through this same call.** There is one way to put a model in the
 catalogue, and the default path is the app's path. Re-registering an id replaces its spec and keeps
 its rung — which is how a negotiated enterprise rate is expressed, and why there is no second
 `overrideModel` call. An id nothing registered is `X_AI_MODEL_UNKNOWN` at the first read, naming
@@ -175,20 +175,67 @@ the registered set; that check is what replaced the closed union, so a wrong id 
 without making a right one inexpressible.
 
 Registration order is the capability ladder, most capable first — `moreCapableThan` is its only
-reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it.
+reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it. It is the vendor's line
+order (Fable, Opus, Sonnet, Haiku), newest first within a line — **not** price order: Opus 5.5 is
+newer, stronger and cheaper than Opus 5.
 
-Built in, `As of 2026-08`:
+Built in, `As of 2026-10-06`, every number read from platform.claude.com's models overview, pricing,
+prompt-caching and thinking pages (`models-catalogue.test.ts` pins each row whole):
 
-| Model | Context | Max output | Input / MTok | Output / MTok | `effort` | adaptive thinking |
+| Model | Context | Max output | Input / MTok | Output / MTok | `effort` | `thinking: 'disabled'` |
 |---|---|---|---|---|---|---|
-| `claude-opus-5` (default) | 1M | 128K | $5 | $25 | yes | yes, off only at `effort ≤ high` |
-| `claude-sonnet-5` | 1M | 128K | $3 | $15 | yes | yes |
-| `claude-haiku-4-5` | 200K | 64K | $1 | $5 | no — a 400 | no — a 400 |
+| `claude-fable-5-1` | 1M | 128K | $10 | $50 | yes | refused — thinking is always on |
+| `claude-opus-5-5` | 1M | 128K | $4 | $20 | yes | refused — thinking is always on |
+| `claude-opus-5` (default) | 1M | 128K | $5 | $25 | yes | sent, only at `effort ≤ high` |
+| `claude-sonnet-5-5` | 1M | 128K | $2 | $10 | yes | sent as `between_tools`, only at `effort ≤ high` |
+| `claude-sonnet-5` | 1M | 128K | $2 | $10 | yes | sent |
+| `claude-haiku-4-5` | 200K | 64K | $1 | $5 | no — a 400 | nothing to send (no adaptive thinking) |
 
 The last two columns are data on the spec, not prose: `body()` builds the reasoning half from
 them, so a downgrade for price cannot become a request the provider rejects.
-`AnthropicProvider.models` is its own list, never the registry's — your internal model is not
-routed to Anthropic.
+`disableThinkingUpTo: 'never'` is the row for a model with no off switch, and
+`disabledThinking: 'between_tools'` the row for one that spells it differently — one
+`thinking: 'disabled'` declaration either way. `AnthropicProvider.models` is its own list, never the
+registry's — your internal model is not routed to Anthropic. `claude-haiku-4-5` is the documented
+API alias of the pinned `claude-haiku-4-5-20251001`.
+
+## Images and documents
+
+A user turn carries `image` and `document` blocks in the Messages API's own shapes:
+
+```ts
+import { createGateway, AnthropicProvider } from '@ultimat3/ai';
+
+declare const png: string;      // base64, no data: prefix
+declare const pdf: string;
+declare const minutes: string;
+const ai = createGateway({ providers: [new AnthropicProvider()] });
+
+await ai.generate({
+  model: 'claude-opus-5-5',
+  maxTokens: 1_024,
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } },
+      { type: 'image', source: { type: 'url', url: 'https://cdn.example.com/chart.webp' } },
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdf }, title: 'q3.pdf' },
+      { type: 'document', source: { type: 'text', media_type: 'text/plain', data: minutes } },
+      { type: 'text', text: 'Reconcile the chart with the report.' },
+    ],
+  }],
+});
+```
+
+| Rule | Why |
+|---|---|
+| Image media types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`; a base64 document is `application/pdf` | the one list both wire formats publish; anything else is `X_AI_REQUEST_INVALID` before the socket |
+| base64 is the standard alphabet, padded, no `data:` prefix, at most `MAX_IMAGE_BASE64_CHARS` (10 MiB) for an image and `MAX_DOCUMENT_BASE64_CHARS` (32 MiB) for a document | the Claude API's per-image limit and its whole-request limit; one table for both formats, the stricter, so which provider answers never changes the verdict |
+| A `url` source is `https:` only | a `data:` URL is the base64 source spelled twice; `http:` is a fetch anyone on the path can rewrite |
+| A media block outside a `user` turn is `X_AI_CONTENT_UNSUPPORTED` | neither format takes one from the assistant |
+| A model takes only the kinds its row lists in `input` — absent is text only | an app's text-only endpoint must not be sent a picture; every built-in row lists `['image', 'document']` |
+| The OpenAI format refuses a document by URL and a `text/plain` document (`X_AI_CONTENT_UNSUPPORTED`, naming the provider) | chat completions has no document-by-URL part and takes only PDF files; the fix names the block it does take |
+| An image reserves `IMAGE_TOKEN_ESTIMATE` (4,784) tokens pre-flight, a base64 PDF its length over four, a PDF by URL nothing | the most visual tokens one image costs; `record` reconciles to the real usage afterwards |
 
 ## The OpenAI **format** — Azure, vLLM, Ollama, your own gateway
 
@@ -681,6 +728,7 @@ fail-closed `terminal` default.
 | `X_AI_GATEWAY_MISSING` | an `llm()` action ran before `configureAi` |
 | `X_AI_PROMPT_VERSION` | version drift, or a render missing a declared variable |
 | `X_AI_MODEL_UNKNOWN` | a model id nothing called `registerModel` for; names the registered set |
+| `X_AI_CONTENT_UNSUPPORTED` | an image or document block the role, the model's `input` row or the wire format cannot take; names which, refused before the socket |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret`, which would render `[redacted]` into the prompt |
 | `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
 | `X_LLM_STREAM_INVALID` | a streamed answer failed its schema, and a stream cannot take a repair turn |
@@ -702,6 +750,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
 | `AgentToolUnexposedError` | `X_AGENT_TOOL_UNEXPOSED` | `src/errors.ts` |
 | `AiBudgetExceededError` | `X_AI_BUDGET_EXCEEDED` | `src/errors.ts` |
+| `AiContentUnsupportedError` | `X_AI_CONTENT_UNSUPPORTED` | `src/content-errors.ts` |
 | `AiGatewayMissingError` | `X_AI_GATEWAY_MISSING` | `src/errors.ts` |
 | `AiKeyMissingError` | `X_AI_KEY_MISSING` | `src/errors.ts` |
 | `AiModelUnknownError` | `X_AI_MODEL_UNKNOWN` | `src/errors.ts` |

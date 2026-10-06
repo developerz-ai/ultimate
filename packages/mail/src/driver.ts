@@ -13,6 +13,7 @@ import {
 } from '@ultimat3/core';
 import { driverUnavailable, mailCredentialMissing } from './errors';
 import { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
+import type { RetainedMime } from './retain-mime';
 
 /** The rendered envelope. Everything a transport needs; nothing it does not. */
 export interface MailMessage {
@@ -46,6 +47,11 @@ export interface SendResult {
   /** True when the message was handed to the queue instead of a transport. */
   readonly queued: boolean;
   readonly idempotencyKey: string;
+  /**
+   * The exact MIME this process handed the provider — present only on a transport that builds it
+   * (SMTP, SES) constructed with `retainMime`. Bounded: over the cap only the digest is kept.
+   */
+  readonly mime?: RetainedMime | undefined;
 }
 
 export interface MailDriver {

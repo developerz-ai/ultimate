@@ -15,6 +15,8 @@ import { memoryRateLimitStore, toBucket } from './rate-limit';
 import { rateLimited } from './rate-limit-errors';
 import { rateLimitHeaders } from './rate-limit-headers';
 import type { UltimateRequest } from './request';
+import type { RequestFacts } from './request-facts';
+import { requestFacts } from './request-facts';
 import type { Route, RouteMeta } from './router';
 import { HTTP_METHODS } from './router';
 
@@ -28,8 +30,16 @@ export interface BearerCaller {
   readonly scopes: ReadonlySet<string>;
 }
 
-/** `null` for a malformed, unknown, revoked or expired token — all one indistinguishable 401. */
-export type BearerResolver = (token: string) => Promise<BearerCaller | null> | BearerCaller | null;
+/**
+ * `null` for a malformed, unknown, revoked or expired token — all one indistinguishable 401.
+ * `facts` is how the request arrived (`RequestFacts`: the pipeline's address, user agent, `Origin`,
+ * path) — the same shape `@ultimat3/mcp` hands its resolver, so one resolver serves both. A
+ * one-argument resolver is still one.
+ */
+export type BearerResolver = (
+  token: string,
+  facts: RequestFacts,
+) => Promise<BearerCaller | null> | BearerCaller | null;
 
 export interface BearerMountRateLimit {
   readonly limit: number;
@@ -152,7 +162,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
         ctx.headers.set('www-authenticate', 'Bearer');
         return null;
       }
-      const caller = await input.resolveToken(token);
+      // `ctx.ip` is the pipeline's trusted-hop answer — the facts never read a forwarding header.
+      const facts = requestFacts({ headers: request.raw.headers, url: ctx.url, address: ctx.ip });
+      const caller = await input.resolveToken(token, facts);
       if (caller === null) {
         ctx.headers.set('www-authenticate', 'Bearer error="invalid_token"');
         return null;

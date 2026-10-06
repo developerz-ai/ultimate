@@ -89,4 +89,24 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_BODY_TOO_LARGE: 413,
   // @ultimat3/ai — a vector store was read with no tenant bound inside an org request
   X_VECTOR_UNSCOPED: 500,
+  // @ultimat3/ai — an image or document block the role, model or wire format cannot take
+  X_AI_CONTENT_UNSUPPORTED: 422,
+  // @ultimat3/mcp — a gated MCP tool call waits for a person to approve it
+  X_MCP_CONFIRMATION_PENDING: 409,
+  // @ultimat3/mcp — an MCP confirmation expired before it was used or decided
+  X_MCP_CONFIRMATION_EXPIRED: 410,
+  // @ultimat3/mcp — a person rejected this MCP tool call
+  X_MCP_CONFIRMATION_REJECTED: 403,
+  // @ultimat3/mcp — an MCP confirmation was already decided
+  X_MCP_CONFIRMATION_DECIDED: 409,
+  // @ultimat3/mcp — no MCP confirmation has that id
+  X_MCP_CONFIRMATION_UNKNOWN: 404,
+  // @ultimat3/mcp — identical concurrent MCP calls kept racing one confirmation
+  X_MCP_CONFIRMATION_CONTESTED: 503,
+  // @ultimat3/mail — a delivery notification is not signed by its provider
+  X_MAIL_EVENT_UNVERIFIED: 401,
+  // @ultimat3/mail — a delivery notification is not a shape this receiver reads
+  X_MAIL_EVENT_INVALID: 400,
+  // @ultimat3/mail — an SNS endpoint the receiver needed did not answer
+  X_MAIL_EVENT_PROVIDER_UNREACHABLE: 503,
 } satisfies Readonly<Record<string, number>>;

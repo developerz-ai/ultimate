@@ -113,3 +113,20 @@ export function paramsOf(req: JsonRpcRequest): Record<string, unknown> | null {
   if (typeof req.params !== 'object' || req.params === null) return null;
   return req.params as Record<string, unknown>;
 }
+
+/**
+ * Which wire one message arrived on, so a refusal can name the unit THAT transport counts in.
+ * `handle` is transport-independent and stays so — this is a hint for the wording of one fix, never
+ * a branch in dispatch. HTTP carries its mounted path because `mcpHttpRoute({ path })` is a knob:
+ * a batch refusal that told every client to retry `POST /mcp` was wrong for an app mounted at
+ * `/app-mcp`, which is how this came to be threaded rather than spelled.
+ */
+export type McpWire =
+  | { readonly transport: 'http'; readonly path: string }
+  | { readonly transport: 'stdio' };
+
+/** The unit a transport counts one request in — or the neutral word when no wire said. */
+export const messageUnitOf = (wire: McpWire | undefined): string => {
+  if (wire === undefined) return 'message';
+  return wire.transport === 'http' ? `POST ${wire.path}` : 'line';
+};

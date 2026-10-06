@@ -6,8 +6,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createMemorySemanticCache } from '@ultimat3/cache';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
-import { EchoProvider } from './provider';
 import {
   configureAi,
   MAX_SEMANTIC_CACHE_SCOPES,

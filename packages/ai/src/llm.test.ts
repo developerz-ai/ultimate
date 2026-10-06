@@ -10,6 +10,7 @@ import { anonymousCtx, isAction } from '@ultimat3/action';
 import { createContext, PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
+import { EchoProvider } from './echo-provider';
 import { llm } from './llm';
 import {
   ANSWER,
@@ -24,7 +25,7 @@ import {
 } from './llm-fixture';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
-import { costOf, EchoProvider } from './provider';
+import { costOf } from './provider';
 import { resetAiRuntime } from './runtime';
 
 beforeEach(() => {

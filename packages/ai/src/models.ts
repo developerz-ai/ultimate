@@ -24,7 +24,10 @@ export type ModelId = string;
  * the registry's: an app that registers an internal model must not have it routed to Anthropic.
  */
 export const ANTHROPIC_MODEL_IDS = [
+  'claude-fable-5-1',
+  'claude-opus-5-5',
   'claude-opus-5',
+  'claude-sonnet-5-5',
   'claude-sonnet-5',
   'claude-haiku-4-5',
 ] as const;
@@ -49,6 +52,9 @@ export type Effort = (typeof EFFORTS)[number];
  */
 export type ThinkingMode = 'adaptive' | 'disabled';
 
+/** A non-text content block kind a model may accept (`AiContentBlock`'s `image` / `document`). */
+export type ContentKind = 'image' | 'document';
+
 /**
  * What one model's request surface accepts. Every field here is a 400 when it is sent to a model
  * that does not take it, which is why it is data on the spec rather than a rule in the request
@@ -59,8 +65,19 @@ export interface ModelReasoning {
   readonly effort: boolean;
   /** `thinking: {type:'adaptive'}`. Older models take a token budget this package never sends. */
   readonly adaptive: boolean;
-  /** Deepest effort that still accepts `thinking: 'disabled'`; `undefined` = every effort does. */
-  readonly disableThinkingUpTo: Effort | undefined;
+  /**
+   * Deepest effort at which thinking may be switched off; `undefined` = every effort, `'never'` =
+   * none. `'never'` is a row, not an absence: on Opus 5.5 and Fable 5.1 an off switch is a 400 at
+   * every effort, and refusing it locally names `effort` as the knob that replaced it.
+   */
+  readonly disableThinkingUpTo: Effort | 'never' | undefined;
+  /**
+   * How this model SPELLS "no up-front thinking" on the wire. Absent is `'disabled'`. Sonnet 5.5
+   * answers `disabled` with a 400 pointing at `between_tools`, its lowest setting — the same
+   * request in the vendor's own migration guide, so the framework's one `thinking: 'disabled'`
+   * stays one declaration across the catalogue rather than a per-model vocabulary.
+   */
+  readonly disabledThinking?: 'disabled' | 'between_tools';
 }
 
 export interface ModelSpec {
@@ -71,9 +88,27 @@ export interface ModelSpec {
   readonly inputPerMillion: Money;
   /** Cost of one million output tokens, in minor units. */
   readonly outputPerMillion: Money;
+  /**
+   * Cost of one million cache-READ tokens, in minor units. Absent is 0.1x `inputPerMillion`, the
+   * standard multiplier — which is wrong for exactly the rows that publish their own: 0.05x on
+   * Opus 5.5 and 0.025x on Fable 5.1, so a row with a vendor rate states it.
+   */
+  readonly cacheReadPerMillion?: Money;
+  /**
+   * Cost of one million cache-WRITE tokens at the 5-minute TTL, in minor units; absent is 1.25x
+   * input. The 5-minute rate because it is the API's default TTL and this package never asks for
+   * the 1-hour one (2x), and `usage` does not split the two.
+   */
+  readonly cacheWritePerMillion?: Money;
   /** Minimum cacheable prefix; a shorter prefix silently does not cache. */
   readonly cacheMinimumTokens: number;
   readonly reasoning: ModelReasoning;
+  /**
+   * The non-text blocks a message to this model may carry. Absent is TEXT ONLY, deliberately: an
+   * app's own row for a text-only endpoint must not have an image sent to it, and the refusal
+   * (`X_AI_CONTENT_UNSUPPORTED`) names this field, so a row that does take images is one edit.
+   */
+  readonly input?: readonly ContentKind[];
   /**
    * Which ladder this model is a rung on. A capability comparison only means anything inside one
    * — registration order across vendors is arrival order, not capability — so `moreCapableThan`
@@ -136,6 +171,12 @@ export function registerModel(spec: ModelSpec): ModelSpec {
   finiteCount(SUBJECT, `${spec.id} cacheMinimumTokens`, spec.cacheMinimumTokens);
   finiteCount(SUBJECT, `${spec.id} inputPerMillion.minor`, spec.inputPerMillion.minor);
   finiteCount(SUBJECT, `${spec.id} outputPerMillion.minor`, spec.outputPerMillion.minor);
+  if (spec.cacheReadPerMillion !== undefined) {
+    finiteCount(SUBJECT, `${spec.id} cacheReadPerMillion.minor`, spec.cacheReadPerMillion.minor);
+  }
+  if (spec.cacheWritePerMillion !== undefined) {
+    finiteCount(SUBJECT, `${spec.id} cacheWritePerMillion.minor`, spec.cacheWritePerMillion.minor);
+  }
   registry.set(spec.id, spec);
   return spec;
 }
@@ -254,7 +295,7 @@ export function reasoningBody(
 
   if (thinking === 'disabled') {
     assertDisableAllowed(model, rules, effort ?? 'high');
-    body['thinking'] = { type: 'disabled' };
+    body['thinking'] = { type: rules.disabledThinking ?? 'disabled' };
     return body;
   }
   // Nothing asked for, nothing sent — the rule this file states, now the rule it follows.
@@ -268,6 +309,12 @@ export function reasoningBody(
 /** Some models cap the effort at which thinking may be switched off. Above the cap it is a 400. */
 function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Effort): void {
   const cap = rules.disableThinkingUpTo;
+  if (cap === 'never') {
+    throw new AiRequestInvalidError({
+      detail: `model "${model}" has thinking always on; thinking: 'disabled' is a 400 on it at every effort`,
+      fix: `effort: 'low'   # in definePrompt, in place of thinking: 'disabled' — or set model: '${DEFAULT_MODEL}' on the llm() declaration`,
+    });
+  }
   if (cap === undefined || rankOf(effort) <= rankOf(cap)) return;
   throw new AiRequestInvalidError({
     detail: `model "${model}" allows thinking: 'disabled' only at effort '${cap}' or below, not '${effort}'`,
@@ -276,11 +323,52 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
 }
 
 /**
- * The blessed models. Opus 5 is the default; the others are explicit downgrades. IDs are exact
+ * The blessed models. Opus 5 is the default; the others are explicit choices. IDs are exact
  * alias strings — never append a date suffix. Registered through the public `registerModel`, in
  * ladder order, so nothing about the built-in path is a private door an app cannot use.
+ *
+ * Every number is the vendor's, read As of 2026-10-06 from platform.claude.com/docs/en/ —
+ * `models/overview` (context, output, prices), `about-claude/pricing` (list, cache-hit and
+ * 5-minute cache-write rates),
+ * `build-with-claude/prompt-caching` (cache minimum) and `build-with-claude/thinking` (the
+ * per-model thinking table). `models-catalogue.test.ts` pins each row whole. The ladder is the
+ * vendor's own ordering of its lines (Fable, Opus, Sonnet, Haiku), newer above older within one;
+ * it is NOT price order — Opus 5.5 is both newer and cheaper than Opus 5.
+ *
+ * Every row accepts images and PDFs (`input`): "All current models support text and image input",
+ * and "All active models support PDF processing".
  */
 function registerBuiltInModels(): void {
+  const input = ['image', 'document'] as const;
+  // $10 / $50 per MTok. Thinking is adaptive and ALWAYS on: `disabled` is a 400 at every effort.
+  registerModel({
+    id: 'claude-fable-5-1',
+    family: ANTHROPIC_FAMILY,
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    inputPerMillion: usd(1_000),
+    outputPerMillion: usd(5_000),
+    cacheReadPerMillion: usd(25),
+    cacheWritePerMillion: usd(1_250),
+    cacheMinimumTokens: 512,
+    input,
+    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'never' },
+  });
+  // $4 / $20 per MTok. Thinking always on, as on Fable 5.1; its API default effort is `medium`,
+  // which changes nothing here because an unasked effort is never sent.
+  registerModel({
+    id: 'claude-opus-5-5',
+    family: ANTHROPIC_FAMILY,
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    inputPerMillion: usd(400),
+    outputPerMillion: usd(2_000),
+    cacheReadPerMillion: usd(20),
+    cacheWritePerMillion: usd(500),
+    cacheMinimumTokens: 512,
+    input,
+    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'never' },
+  });
   // $5 / $25 per MTok.
   registerModel({
     id: 'claude-opus-5',
@@ -289,26 +377,51 @@ function registerBuiltInModels(): void {
     maxOutput: 128_000,
     inputPerMillion: usd(500),
     outputPerMillion: usd(2_500),
+    cacheReadPerMillion: usd(50),
+    cacheWritePerMillion: usd(625),
     cacheMinimumTokens: 512,
+    input,
     // Thinking is on by default here, and switching it OFF is legal only at `high` or below.
     reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'high' },
   });
-  // $3 / $15 per MTok. The introductory rate is deliberately NOT modelled: a price that lapses on
-  // a date makes every recorded cost depend on when it was read, and a budget that under-reports
-  // spend after the lapse is a budget that is not one. List price over-reserves, which is safe.
+  // $2 / $10 per MTok. "No up-front thinking" is `between_tools` here, legal at `high` or below.
+  registerModel({
+    id: 'claude-sonnet-5-5',
+    family: ANTHROPIC_FAMILY,
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    inputPerMillion: usd(200),
+    outputPerMillion: usd(1_000),
+    cacheReadPerMillion: usd(20),
+    cacheWritePerMillion: usd(250),
+    cacheMinimumTokens: 512,
+    input,
+    reasoning: {
+      effort: true,
+      adaptive: true,
+      disableThinkingUpTo: 'high',
+      disabledThinking: 'between_tools',
+    },
+  });
+  // $2 / $10 per MTok — the STANDARD price: the pricing page records that the launch rate became
+  // permanent and the $3 / $15 step-up scheduled for 2026-09-01 did not happen.
   registerModel({
     id: 'claude-sonnet-5',
     family: ANTHROPIC_FAMILY,
     contextWindow: 1_000_000,
     maxOutput: 128_000,
-    inputPerMillion: usd(300),
-    outputPerMillion: usd(1_500),
+    inputPerMillion: usd(200),
+    outputPerMillion: usd(1_000),
+    cacheReadPerMillion: usd(20),
+    cacheWritePerMillion: usd(250),
     cacheMinimumTokens: 1_024,
+    input,
     reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
   });
   // $1 / $5 per MTok. Pre-4.6, so it has neither knob: an `output_config.effort` or an adaptive
   // `thinking` block sent here is a 400 on every request, which is what made the cheap tier
-  // uncallable while the request body was one shape for the whole catalogue.
+  // uncallable while the request body was one shape for the whole catalogue. `claude-haiku-4-5`
+  // is the documented Claude API alias of the pinned `claude-haiku-4-5-20251001`.
   registerModel({
     id: 'claude-haiku-4-5',
     family: ANTHROPIC_FAMILY,
@@ -316,7 +429,10 @@ function registerBuiltInModels(): void {
     maxOutput: 64_000,
     inputPerMillion: usd(100),
     outputPerMillion: usd(500),
+    cacheReadPerMillion: usd(10),
+    cacheWritePerMillion: usd(125),
     cacheMinimumTokens: 4_096,
+    input,
     reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
   });
 }

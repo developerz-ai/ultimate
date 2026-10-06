@@ -34,6 +34,12 @@ const FAMILY = {
   /** Automatic caching starts at a 1024-token prefix; a shorter one silently does not cache. */
   cacheMinimumTokens: 1_024,
   reasoning: { effort: true, adaptive: false, disableThinkingUpTo: undefined },
+  /**
+   * Images and PDFs. developers.openai.com/api/docs/guides/images-vision lists all three 5.6 ids as
+   * taking image input, and guides/pdf-files gives PDF parsing to vision-capable models (read
+   * 2026-10-06). The format's own limits — PDF only, no file by URL — are `openai-messages.ts`'s.
+   */
+  input: ['image', 'document'],
 } as const;
 
 /**
@@ -49,7 +55,7 @@ const FAMILY = {
  * | `gpt-5.6-luna` | $0.20 | $0.02 | $1.20 |
  *
  * Deliberately not registered: `gpt-4o`, `gpt-4o-mini` and the `o1` family, whose cached input is
- * **0.5x** their input rate rather than the 0.1x `costOf` assumes — a spec that prices them would
+ * **0.5x** their input rate rather than the 0.1x `costOf` defaults to — a spec that prices them would
  * under-report a cache-heavy workload by four fifths, and `costOf` answers confidently either way.
  * `gpt-5.5-pro` and `o1-pro` are out for the same class of reason: they publish no cached rate.
  * A wrong price is worse than no entry, so an app wanting one of those registers it itself, with
@@ -61,18 +67,21 @@ export function registerOpenAiModels(): void {
     ...FAMILY,
     inputPerMillion: usd(500),
     outputPerMillion: usd(3_000),
+    cacheReadPerMillion: usd(50),
   });
   registerModel({
     id: 'gpt-5.6-terra',
     ...FAMILY,
     inputPerMillion: usd(200),
     outputPerMillion: usd(1_200),
+    cacheReadPerMillion: usd(20),
   });
   registerModel({
     id: 'gpt-5.6-luna',
     ...FAMILY,
     inputPerMillion: usd(20),
     outputPerMillion: usd(120),
+    cacheReadPerMillion: usd(2),
   });
 }
 

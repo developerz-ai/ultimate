@@ -4,11 +4,13 @@
 // catalogue and the per-model rules, ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
+import type { AiMediaBlock } from './content-blocks';
+import { assertMediaContent, blockText, mediaTokenEstimate } from './content-blocks';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
 import type { Effort, ModelId, ThinkingMode } from './models';
-import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelIds, modelSpec, reasoningBody } from './models';
+import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
@@ -23,7 +25,8 @@ import {
 /**
  * One block of a structured message. A plain string message is still the common case and still
  * legal; blocks exist because a tool loop cannot be expressed without them — a `tool_result` has
- * to name the `tool_use` it answers, and a string has nowhere to put the id.
+ * to name the `tool_use` it answers, and a string has nowhere to put the id — and because an image
+ * or a PDF is not a string at all (`./content-blocks` owns those two and screens them).
  *
  * The field names are the Messages API's, not a translated set, so `body()` passes a block
  * through untouched. A second vocabulary here would be a mapping table to keep in step with a
@@ -42,7 +45,8 @@ export type AiContentBlock =
       readonly tool_use_id: string;
       readonly content: string;
       readonly is_error?: boolean;
-    };
+    }
+  | AiMediaBlock;
 
 export interface AiMessage {
   readonly role: 'user' | 'assistant';
@@ -55,13 +59,7 @@ export interface AiMessage {
  */
 export function messageText(message: AiMessage): string {
   if (typeof message.content === 'string') return message.content;
-  return message.content
-    .map((block) => {
-      if (block.type === 'text') return block.text;
-      if (block.type === 'tool_result') return block.content;
-      return JSON.stringify(block.input);
-    })
-    .join(' ');
+  return message.content.map(blockText).join(' ');
 }
 
 export interface GenerateRequest {
@@ -163,10 +161,17 @@ export interface Provider {
  */
 export function costOf(model: ModelId, usage: TokenUsage): Money {
   const spec = modelSpec(model);
-  // Cache reads are ~0.1x input; cache writes ~1.25x. Scaled by 10 to stay integral.
+  const input = spec.inputPerMillion.minor;
+  // In TWENTIETHS of a minor unit, so the standard multipliers stay integral on any whole price:
+  // a cache read is 0.1x input (2/20) and a 5-minute write 1.25x (25/20) unless the row states
+  // its own — Opus 5.5 reads at 0.05x and Fable 5.1 at 0.025x, which a fixed 0.1x overstated.
+  const read =
+    spec.cacheReadPerMillion === undefined ? input * 2 : spec.cacheReadPerMillion.minor * 20;
+  const write =
+    spec.cacheWritePerMillion === undefined ? input * 25 : spec.cacheWritePerMillion.minor * 20;
   const inputUnits =
-    usage.inputTokens * 10 + usage.cacheReadTokens * 1 + Math.ceil(usage.cacheWriteTokens * 12.5);
-  const inputMinor = divideCeil(inputUnits * spec.inputPerMillion.minor, 10_000_000);
+    usage.inputTokens * input * 20 + usage.cacheReadTokens * read + usage.cacheWriteTokens * write;
+  const inputMinor = divideCeil(inputUnits, 20_000_000);
   const outputMinor = divideCeil(usage.outputTokens * spec.outputPerMillion.minor, 1_000_000);
   return { minor: inputMinor + outputMinor, currency: spec.inputPerMillion.currency };
 }
@@ -285,6 +290,8 @@ export class AnthropicProvider implements Provider {
   /** The request body. Pure and side-effect free so a test can assert it directly. */
   body(request: GenerateRequest): Record<string, unknown> {
     const model = request.model ?? DEFAULT_MODEL;
+    // The blocks pass through untouched below — they ARE this wire's shapes — so this is the screen.
+    assertMediaContent(request.messages, { provider: this.name, model });
     const body: Record<string, unknown> = {
       model,
       max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
@@ -381,87 +388,6 @@ export function parseMessage(model: ModelId, raw: Record<string, unknown>): Gene
   };
 }
 
-// ── Echo ─────────────────────────────────────────────────────────────────────
-
-export interface EchoProviderInput {
-  /** Fixed replies keyed by the last user message, for eval fixtures. */
-  readonly replies?: Readonly<Record<string, string>>;
-  /** Fallback when no key matches. Defaults to echoing the last user message. */
-  readonly fallback?: (prompt: string) => string;
-  readonly tokensPerCall?: number;
-}
-
-/**
- * Deterministic provider. Same input, same output, same usage — which is what makes an eval
- * suite a test rather than a sample. Token counts are derived from length, so a budget test
- * can assert a refusal without a network.
- */
-export class EchoProvider implements Provider {
-  readonly name = 'echo';
-  /**
-   * A getter over the whole registry, not a snapshot: the test double has to serve whatever the
-   * test registered, and a field read at construction time would miss a model registered after.
-   */
-  get models(): readonly ModelId[] {
-    return modelIds();
-  }
-
-  private readonly config: EchoProviderInput;
-
-  constructor(config: EchoProviderInput = {}) {
-    this.config = config;
-  }
-
-  async generate(request: GenerateRequest): Promise<GenerateResult> {
-    const model = request.model ?? DEFAULT_MODEL;
-    const prompt = lastUserMessage(request.messages);
-    const text = this.fixedReply(prompt) ?? this.config.fallback?.(prompt) ?? prompt;
-    const usage: TokenUsage = {
-      inputTokens: this.config.tokensPerCall ?? estimateTokens(request),
-      outputTokens: estimateTextTokens(text),
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    };
-    return {
-      model,
-      text,
-      toolCalls: [],
-      stopReason: 'end_turn',
-      stopDetails: undefined,
-      usage,
-      cost: costOf(model, usage),
-    };
-  }
-
-  /**
-   * The fixture reply for this prompt. `Object.hasOwn`, never `replies?.[prompt]`: the key is
-   * MESSAGE TEXT, so a prompt of `toString` read a function off the prototype chain and returned
-   * it as the model's answer — a double that answers with JS source is worse than one that cannot.
-   */
-  private fixedReply(prompt: string): string | undefined {
-    const { replies } = this.config;
-    if (replies === undefined || !Object.hasOwn(replies, prompt)) return undefined;
-    return replies[prompt];
-  }
-
-  async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const result = await this.generate(request);
-    // One word per chunk: enough to exercise a consumer's assembly logic.
-    for (const word of result.text.split(' ')) {
-      if (word !== '') yield { type: 'text', text: `${word} ` };
-    }
-    yield { type: 'done', result };
-  }
-}
-
-function lastUserMessage(messages: readonly AiMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message !== undefined && message.role === 'user') return messageText(message);
-  }
-  return '';
-}
-
 /**
  * ~4 characters per token. Deliberately an ESTIMATE and never used for billing — the gateway's
  * pre-flight budget check needs a number before the call exists, and `usage` replaces it after.
@@ -477,7 +403,8 @@ const completionCeiling = (request: GenerateRequest): number =>
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
   const body = request.messages.map(messageText).join(' ');
-  return estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
+  const text = estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
+  return text + mediaTokenEstimate(request.messages);
 }
 
 /**

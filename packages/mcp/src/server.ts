@@ -3,9 +3,11 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import type { ErrorAudience } from '@ultimat3/core';
+import type { Clock, ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
-import { auditResourceRead, auditToolCall, outcomeForResult } from './audit';
+import { outcomeForResult } from './audit';
+import type { McpAuditHook, McpAuditor } from './audit-hook';
+import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import { asFrameworkError, forAudience } from './framework-error';
 import { metaCall } from './meta-call';
@@ -27,7 +29,7 @@ import { ResourceRegistry } from './resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult } from './server-voice';
 import { admitted, thrownResponse } from './tool-thrown';
-import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
+import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
   defaultServerInfo,
   errorResponse,
@@ -38,26 +40,12 @@ import {
   isNotification,
   MCP_PROTOCOL_VERSION,
   METHOD_NOT_FOUND,
+  messageUnitOf,
   paramsOf,
   resultResponse,
 } from './wire';
 
-/**
- * Which wire one message arrived on, so a refusal can name the unit THAT transport counts in.
- * `handle` is transport-independent and stays so — this is a hint for the wording of one fix, never
- * a branch in dispatch. HTTP carries its mounted path because `mcpHttpRoute({ path })` is a knob:
- * a batch refusal that told every client to retry `POST /mcp` was wrong for an app mounted at
- * `/app-mcp`, which is how this came to be threaded rather than spelled.
- */
-export type McpWire =
-  | { readonly transport: 'http'; readonly path: string }
-  | { readonly transport: 'stdio' };
-
-/** The unit a transport counts one request in — or the neutral word when no wire said. */
-const messageUnitOf = (wire: McpWire | undefined): string => {
-  if (wire === undefined) return 'message';
-  return wire.transport === 'http' ? `POST ${wire.path}` : 'line';
-};
+export type { McpWire } from './wire';
 
 export interface CreateMcpServerInput {
   readonly tools?: readonly AnyMcpTool[];
@@ -82,6 +70,10 @@ export interface CreateMcpServerInput {
    * serves `'caller'`.
    */
   readonly errorAudience?: ErrorAudience | undefined;
+  /** Every gate decision as data, after its log line — see `audit-hook.ts`. The route reads it too. */
+  readonly onAudit?: McpAuditHook | undefined;
+  /** Stamps each `onAudit` event's `at`. */
+  readonly clock?: Clock | undefined;
 }
 
 /** The set of JSON-RPC methods this server answers. Kept in sync with `classify`. */
@@ -111,6 +103,9 @@ export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
     input.serverInfo ?? defaultServerInfo(),
     meta,
     { instructions: input.instructions, errorAudience: input.errorAudience ?? 'developer' },
+    input.onAudit === undefined && input.clock === undefined
+      ? LOG_ONLY_AUDITOR
+      : mcpAuditor({ onAudit: input.onAudit, clock: input.clock }),
   );
 }
 
@@ -122,6 +117,8 @@ export class McpServer {
   /** `undefined` for a flat-only server — every existing app, byte for byte. */
   private readonly meta: MetaSurface | undefined;
   private readonly voice: McpServerVoice;
+  /** Where every decision is audited — the log line, then `onAudit`. Public for the HTTP route. */
+  readonly audit: McpAuditor;
 
   constructor(
     tools: ToolRegistry,
@@ -130,6 +127,7 @@ export class McpServer {
     serverInfo: ServerInfo,
     meta?: MetaSurface,
     voice: McpServerVoice = { errorAudience: 'developer' },
+    audit: McpAuditor = LOG_ONLY_AUDITOR,
   ) {
     this.tools = tools;
     this.resources = resources;
@@ -137,6 +135,7 @@ export class McpServer {
     this.serverInfo = serverInfo;
     this.meta = meta;
     this.voice = voice;
+    this.audit = audit;
   }
 
   async handle(
@@ -275,6 +274,7 @@ export class McpServer {
       const answered = await metaCall(
         {
           tools: this.tools,
+          audit: this.audit,
           dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
         },
@@ -293,7 +293,7 @@ export class McpServer {
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
   private notFound(id: JsonRpcId, name: string, caller: McpCaller, fix: string): JsonRpcResponse {
-    auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
+    this.audit.toolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
     return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name} — ${fix}`);
   }
 
@@ -327,7 +327,7 @@ export class McpServer {
       // nothing — and the fix travels with it, built by the error that owns the wording.
       case 'scope-denied': {
         const denial = new McpScopeDeniedError({ name, scope: resolved.scope });
-        auditToolCall({
+        this.audit.toolCall({
           tool: name,
           outcome: 'scope-denied',
           caller,
@@ -346,9 +346,10 @@ export class McpServer {
         // they send gets the denial `handle` would give, never the issue list — which describes
         // the arguments of a tool they may not call.
         const refused = admitted(resolved.tool, caller);
-        if (refused !== undefined) return thrownResponse(id, name, refused, caller, audience);
+        if (refused !== undefined)
+          return thrownResponse(id, name, refused, caller, audience, this.audit);
         const invalid = invalidArgsResult(name, resolved.issues, audience);
-        auditToolCall({ tool: name, outcome: 'invalid-args', caller, code: invalid.code });
+        this.audit.toolCall({ tool: name, outcome: 'invalid-args', caller, code: invalid.code });
         return resultResponse(id, invalid.result);
       }
       case 'ok':
@@ -359,13 +360,13 @@ export class McpServer {
     try {
       result = await resolved.tool.handle(resolved.args, caller);
     } catch (error) {
-      return thrownResponse(id, name, error, caller, audience);
+      return thrownResponse(id, name, error, caller, audience, this.audit);
     }
 
     // A tool may answer `isError` itself (admin renders its own denial). Outcome 3 unless it
     // NAMED the code it refused with, in which case the same classifier a thrown error goes
     // through decides — a tool's own argument check is not a denial a prober drove.
-    auditToolCall({
+    this.audit.toolCall({
       tool: name,
       outcome: outcomeForResult(result),
       caller,
@@ -406,7 +407,7 @@ export class McpServer {
       // `code` on the audit line either, because the wire carries none — the tool surface's
       // `X_MCP_TOOL_UNKNOWN` is an error class this branch has no twin for.
       case 'not-found':
-        auditResourceRead({ uri, outcome: 'hidden', caller });
+        this.audit.resourceRead({ uri, outcome: 'hidden', caller });
         return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
       // OUTCOME 2. The caller can already see this resource, so naming the missing scope leaks
       // nothing — and the fix travels with it, built by the error that owns the wording.
@@ -416,7 +417,7 @@ export class McpServer {
           scope: resolved.scope,
           subject: 'resource',
         });
-        auditResourceRead({
+        this.audit.resourceRead({
           uri,
           outcome: 'scope-denied',
           caller,
@@ -444,16 +445,16 @@ export class McpServer {
       if (contents === undefined) {
         // The resolver said `ok` and the registry then had nothing: a bug here, not a walk, so it
         // is `failed` in the log while the caller still gets the same not-found it would have.
-        auditResourceRead({ uri, outcome: 'failed', caller });
+        this.audit.resourceRead({ uri, outcome: 'failed', caller });
         return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
       }
-      auditResourceRead({ uri, outcome: 'ok', caller });
+      this.audit.resourceRead({ uri, outcome: 'ok', caller });
       return resultResponse(id, { contents: [contents] });
     } catch (error) {
       const thrown = asFrameworkError(error);
       if (thrown !== undefined) {
         const framework = forAudience(thrown, this.voice.errorAudience);
-        auditResourceRead({ uri, outcome: 'failed', caller, code: framework.code });
+        this.audit.resourceRead({ uri, outcome: 'failed', caller, code: framework.code });
         return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
           code: framework.code,
           cause: framework.cause,
@@ -463,7 +464,7 @@ export class McpServer {
       }
       // No internals: a provider's own message names a path, a query or a host the caller has no
       // business seeing, exactly as a failing tool's does.
-      auditResourceRead({ uri, outcome: 'failed', caller });
+      this.audit.resourceRead({ uri, outcome: 'failed', caller });
       return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
     }
   }

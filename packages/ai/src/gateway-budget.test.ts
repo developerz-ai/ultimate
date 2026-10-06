@@ -5,10 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { BudgetStore } from './budget';
 import { MemoryBudgetStore } from './budget';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { ANTHROPIC_MODEL_IDS } from './models';
 import type { Provider, StreamChunk } from './provider';
-import { costOf, EchoProvider, totalTokens } from './provider';
+import { costOf, totalTokens } from './provider';
 
 const echo = new EchoProvider();
 

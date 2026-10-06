@@ -27,6 +27,25 @@ export {
   MemoryBudgetStore,
   withBudget,
 } from './budget';
+export type {
+  AiDocumentBlock,
+  AiDocumentSource,
+  AiImageBlock,
+  AiImageSource,
+  AiMediaBlock,
+  ImageMediaType,
+} from './content-blocks';
+export {
+  IMAGE_MEDIA_TYPES,
+  IMAGE_TOKEN_ESTIMATE,
+  isMediaBlock,
+  MAX_DOCUMENT_BASE64_CHARS,
+  MAX_IMAGE_BASE64_CHARS,
+} from './content-blocks';
+export type { ContentRefusal } from './content-errors';
+export { AiContentUnsupportedError } from './content-errors';
+export type { EchoProviderInput } from './echo-provider';
+export { EchoProvider } from './echo-provider';
 export type { Embedder, HashEmbedderInput } from './embeddings';
 export {
   cosine,
@@ -104,7 +123,14 @@ export type { LlmAction, LlmBudget, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
-export type { Effort, ModelId, ModelReasoning, ModelSpec, ThinkingMode } from './models';
+export type {
+  ContentKind,
+  Effort,
+  ModelId,
+  ModelReasoning,
+  ModelSpec,
+  ThinkingMode,
+} from './models';
 export {
   ANTHROPIC_MODEL_IDS,
   assertModel,
@@ -148,7 +174,6 @@ export type {
   AiContentBlock,
   AiMessage,
   AnthropicProviderInput,
-  EchoProviderInput,
   GenerateRequest,
   GenerateResult,
   Provider,
@@ -160,7 +185,6 @@ export type {
 export {
   AnthropicProvider,
   costOf,
-  EchoProvider,
   estimateCost,
   estimateInputTokens,
   estimateTextTokens,

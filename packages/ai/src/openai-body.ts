@@ -4,6 +4,7 @@
 // The per-model rules live in the model's spec, never in an `if` here — same rule as
 // `reasoningBody()`: adding a model an endpoint serves is a `registerModel` row, not a branch.
 
+import { assertMediaContent } from './content-blocks';
 import { AiRequestInvalidError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec } from './models';
@@ -14,6 +15,8 @@ export interface ChatCompletionBodyInput {
   readonly request: GenerateRequest;
   /** Already resolved — the gateway picks the model, the provider never guesses mid-request. */
   readonly model: ModelId;
+  /** The provider's `name`, so a content refusal names the endpoint that cannot take the block. */
+  readonly provider: string;
   readonly stream: boolean;
 }
 
@@ -27,11 +30,12 @@ export interface ChatCompletionBodyInput {
  *     reject outright.
  */
 export function chatCompletionBody(input: ChatCompletionBodyInput): Record<string, unknown> {
-  const { request, model, stream } = input;
+  const { request, model, stream, provider } = input;
   const spec = modelSpec(model);
+  assertMediaContent(request.messages, { provider, model });
   const body: Record<string, unknown> = {
     model,
-    messages: toOpenAiMessages(request.system, request.messages),
+    messages: toOpenAiMessages(request.system, request.messages, { provider, model }),
     max_completion_tokens: Math.min(request.maxTokens, spec.maxOutput),
     ...reasoningFields(model, request.effort, request.thinking),
   };
@@ -78,6 +82,13 @@ export function reasoningFields(
     throw new AiRequestInvalidError({
       detail: `model "${model}" has no adaptive thinking; the OpenAI format's only depth control is reasoning_effort`,
       fix: 'drop thinking from definePrompt and set effort instead, or route the prompt to a model registered with reasoning: { adaptive: true }',
+    });
+  }
+  // The row says reasoning cannot be switched off, whatever the wire would spell the switch as.
+  if (thinking === 'disabled' && rules.disableThinkingUpTo === 'never') {
+    throw new AiRequestInvalidError({
+      detail: `model "${model}" is registered with reasoning always on (disableThinkingUpTo: 'never'), so reasoning_effort: 'none' cannot be sent to it`,
+      fix: "effort: 'low'   # in definePrompt, in place of thinking: 'disabled'",
     });
   }
   if (thinking === 'disabled' && effort !== undefined) {

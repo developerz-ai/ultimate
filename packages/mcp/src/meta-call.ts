@@ -2,7 +2,7 @@
 // its flat name. Split from `server.ts` for the size ceiling only — it holds no gate of its own:
 // every call it runs goes back through the server's `resolve` → `dispatch`, the flat path.
 
-import { auditToolCall } from './audit';
+import type { McpAuditor } from './audit-hook';
 import { META_UNKNOWN_FIX } from './meta-errors';
 import type { MetaSurface } from './meta-surface';
 import {
@@ -21,6 +21,7 @@ import { errorResponse, METHOD_NOT_FOUND, resultResponse } from './wire';
 /** The server's own two steps, handed in so this file cannot grow a second path. */
 export interface MetaHost {
   readonly tools: ToolRegistry;
+  readonly audit: McpAuditor;
   dispatch(
     id: JsonRpcId,
     name: string,
@@ -53,21 +54,21 @@ export async function metaCall(
     return host.dispatch(id, name, { kind: 'invalid-args', name, issues: args.issues }, caller);
   }
   if (name === LIST_RESOURCES) {
-    auditToolCall({ tool: name, outcome: 'ok', caller });
+    host.audit.toolCall({ tool: name, outcome: 'ok', caller });
     return resultResponse(id, textResult(renderCatalog(meta.listResources(caller))));
   }
   if (name === DESCRIBE_RESOURCE) {
     const described = meta.describe(args.value['resources'] as readonly string[], caller);
     if (!described.ok) {
       // Absent and hidden are one answer, with no `data`, exactly as for a tool.
-      auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
+      host.audit.toolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
       return errorResponse(
         id,
         METHOD_NOT_FOUND,
         `resource not found: ${described.name} — ${META_UNKNOWN_FIX}`,
       );
     }
-    auditToolCall({ tool: name, outcome: 'ok', caller });
+    host.audit.toolCall({ tool: name, outcome: 'ok', caller });
     return resultResponse(id, jsonResult({ resources: described.resources }));
   }
   // `manage_resource`: address → the SAME resolve and dispatch a flat call takes, audited under

@@ -32,3 +32,19 @@ describe('@ultimat3/mail public surface', () => {
     expect(() => parse(receipt.input, { name: 'Ada', url: 'not-a-url' })).toThrow();
   });
 });
+
+describe('@ultimat3/mail/events stays off the barrel', () => {
+  // Every serving role evaluates the barrel; SNS/Svix verification is for a webhook route only.
+  test('the receivers are on the subpath and not on the barrel', async () => {
+    const barrel: Record<string, unknown> = await import('./index');
+    const events: Record<string, unknown> = await import('./events');
+    for (const name of ['createSesEventReceiver', 'createResendEventReceiver']) {
+      expect(typeof events[name]).toBe('function');
+      expect(barrel[name]).toBeUndefined();
+    }
+    const barrelSource = await Bun.file(new URL('./index.ts', import.meta.url)).text();
+    expect(barrelSource).not.toMatch(/from '\.\/(?:ses|resend)-event-receiver'/);
+    expect(barrelSource).not.toMatch(/from '\.\/(?:sns|resend)-signature'/);
+    expect(barrelSource).not.toMatch(/^export \{[^}]*\} from '\.\/delivery-event/m);
+  });
+});

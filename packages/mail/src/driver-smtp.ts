@@ -17,6 +17,7 @@ import { envelopeRecipients, type MailDriver, type MailMessage, resultFor } from
 import { sendFailed } from './errors';
 import { mailMessageIdToken } from './idempotency';
 import { addressDomain, buildMimeMessage } from './mime';
+import { type RetainMimeOptions, resolveRetainMime, withRetainedMime } from './retain-mime';
 import {
   type SmtpConnector,
   type SmtpSessionOptions,
@@ -44,6 +45,8 @@ export interface SmtpDriverOptions {
   /** Speak to a server that offers no STARTTLS. Off by default: mail and password in the clear. */
   readonly allowInsecure?: boolean | undefined;
   readonly clock?: Clock | undefined;
+  /** Keep the exact MIME of every accepted send on `SendResult.mime` and hand it to `onRetained`. */
+  readonly retainMime?: RetainMimeOptions | undefined;
   /** Injected in tests; production dials with `Bun.connect`. */
   readonly connect?: SmtpConnector | undefined;
 }
@@ -170,6 +173,7 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
     1,
   );
   const limit = createLimiter(resolvePoolSize(options.poolSize));
+  const retain = resolveRetainMime('createSmtpDriver', options.retainMime);
   const session: SmtpSessionOptions = {
     clientName: options.clientName ?? addressDomain(options.from),
     secure: target.tls,
@@ -224,7 +228,6 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
         { from: options.from, recipients: envelopeRecipients(message), data },
         session,
       );
-      return resultFor('smtp', message, messageId);
     } catch (error) {
       // A framework error already names its stage; anything else (a socket reset mid-DATA) would
       // otherwise escape as a bare Error and lose the code the queue's dead-letter view reads.
@@ -239,6 +242,14 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
     } finally {
       stream.close();
     }
+    // Past the try on purpose: the server took the message, so nothing from here on may be
+    // reported as a send failure — a retry of an accepted send is a second email.
+    return await withRetainedMime(
+      retain,
+      resultFor('smtp', message, messageId),
+      message.mailId,
+      data,
+    );
   }
 }
 

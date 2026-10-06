@@ -327,6 +327,12 @@ exactly three things. Apps declare it through `defineApi({ http: { mounts } })` 
 For API keys, `resolveToken` is `@ultimat3/auth`'s `apiKeyResolver(() => store)` — a live key is
 `{ actor, scopes }`, every wrong one is the same `null`, and a store fault stays a throw.
 
+`resolveToken(token, facts)` (`As of 2026-10`): `facts` is `RequestFacts` — `{ address, userAgent,
+origin, path }`, frozen, built by `requestFacts()`. `address` is `ctx.ip`, the pipeline's
+trusted-hop answer, never a forwarding header. `@ultimat3/mcp` hands its resolver the same object
+(`McpRequestFacts`), so one resolver can bind a token to a network or refuse a browser `Origin` on
+both doors. A one-argument resolver still works.
+
 ## Inbound webhooks
 
 `verifyWebhookSignature(request, { secret })` is the receiving half of the framework's webhook

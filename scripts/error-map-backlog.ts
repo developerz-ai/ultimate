@@ -153,6 +153,7 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_TOOL_UNDECLARED',
     'X_MCP_TOOL_UNKNOWN',
     'X_MCP_TOOL_UNSAFE',
+    'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules plus faults raised in
   // the BROWSER, where there is no response to give a status to.

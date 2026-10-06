@@ -5,11 +5,11 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { ANSWER, declare, POST_ID, promptFor, stub } from './llm-fixture';
 import { ANTHROPIC_MODEL_IDS } from './models';
 import type { Provider } from './provider';
-import { EchoProvider } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 
 const echo = new EchoProvider();

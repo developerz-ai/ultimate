@@ -77,6 +77,7 @@ setMailTransform(async (rendered, meta) =>
 | `createUnconfiguredDriver(env)` | a deploy that configured no transport | refuses every send with `X_MAIL_CREDENTIAL_MISSING`; delivers nothing and claims nothing |
 | `createSmtpDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |
 | `createResendDriver({ apiKey, from })` | prod | one `POST /emails`, `Idempotency-Key` on every request |
+| `createSesDriver({ region, credentials, from })` | prod | one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK |
 
 ### Which one a boot installs
 
@@ -89,6 +90,7 @@ the app changes between environments; the credential does.
 | *(nothing set)*, `staging` / `production` | `createUnconfiguredDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING` |
 | `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)`, `MAIL_POOL_SIZE` optional |
 | `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` |
+| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `createSesDriver(...)`; `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
 
 **No credential outside development is a refusal, not the embedded default.** The memory driver
 there answered `accepted` for mail that never left the process — password resets, receipts and
@@ -125,6 +127,65 @@ mailIdempotencyKey(message)` — a job retry after a timeout hands Resend the id
 that header is what makes it one email. 408/409/425/429 and 5xx are retryable (`isRetryableStatus`, `@ultimat3/core`); every other non-2xx
 is a configuration problem that retrying cannot fix.
 
+### SES
+
+`POST https://email.<region>.amazonaws.com/v2/email/outbound-emails` with `Content.Raw` — the
+MIME `mime.ts` builds — and the envelope in `Destination` (`Bcc` included, never a header).
+
+| SES says | `error.retry` |
+|---|---|
+| `TooManyRequestsException`, `ThrottlingException`, `LimitExceededException` | `retryable` |
+| `MessageRejected`, `SendingPausedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, any auth failure, `NotFoundException` | `terminal` |
+| anything else | core's `isRetryableStatus(status)` |
+
+All `X_MAIL_SEND_FAILED`, each with its own `aws sesv2 …` fix. SES has no idempotency header: a
+retry after a timeout SES had already accepted is a second email, as over SMTP.
+
+### `retainMime`
+
+```ts
+import { createSesDriver } from '@ultimat3/mail';
+
+declare const env: Record<string, string>;
+declare function saveAuditRow(row: unknown): Promise<void>;
+
+export const driver = createSesDriver({
+  region: 'eu-west-1',
+  credentials: { accessKeyId: env['SES_ACCESS_KEY_ID'] ?? '', secretAccessKey: env['SES_SECRET_ACCESS_KEY'] ?? '' },
+  from: 'Postly <no-reply@postly.test>',
+  retainMime: { maxBytes: 262_144, onRetained: (entry) => saveAuditRow(entry) },
+});
+```
+
+SMTP and SES (the transports that build the MIME). The exact bytes handed to the provider, on
+`SendResult.mime` and to `onRetained` — the durable half, because a queued send's result is not
+persisted. Cap: default 256 KiB, at most 10 MiB; **over it only `{ kind: 'digest-only', sha256,
+byteLength }` is kept, never a truncated message.** A throwing `onRetained` is logged
+(`mail.retain_mime.failed`) and does not fail the send. `selectMailDriver(env, { retainMime })`
+refuses it for Resend, which builds the MIME on its own side.
+
+### Delivery events
+
+Imported from **`@ultimat3/mail/events`**, never the barrel: only a webhook route needs them, and every serving role loads `@ultimat3/mail` to send. One receiver per provider, mounted in an `api/` route; each verifies, then normalises to
+`DeliveryEvent` — `delivered` · `bounced` (`bounce: 'hard' | 'soft'`) · `complained` · `delayed`,
+with `messageId` (= the sending driver's `SendResult.id`), `recipient`, `at`, `eventId` and `raw`.
+One event per recipient; `(eventId, recipient)` is the dedupe key.
+
+```ts
+import { createResendEventReceiver, createSesEventReceiver } from '@ultimat3/mail/events';
+
+declare const env: Record<string, string>;
+
+export const ses = createSesEventReceiver({ topicArns: [env['SES_EVENTS_TOPIC_ARN'] ?? ''] });
+export const resend = createResendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET'] ?? '' });
+// const outcome = await ses.receive(request);  // { type: 'events' | 'ignored' | 'subscription', … }
+```
+
+| Receiver | Proves |
+|---|---|
+| `createSesEventReceiver` | SNS: the topic is in `topicArns`, the cert URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 (RSA-SHA1) or 2 (RSA-SHA256) over AWS's canonical string, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
+| `createResendEventReceiver` | Svix: HMAC-SHA256 over `svix-id.svix-timestamp.body` under the `whsec_` secret, constant-time, any `v1,` entry, within `toleranceMs` (5 min) |
+
 ## Framework mails
 
 Registered by importing them — the import IS the registration. `FRAMEWORK_MAILS` is the list, and
@@ -155,6 +216,9 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | a recipient may hold no control character, its mailbox no `<`/`>` and no non-ASCII byte (`meta.reason`); `Jane Doe <jane@x.test>` is fine |
 | `X_MAIL_TRANSFORM_FAILED` | the `setMailTransform` hook threw or returned no `{ subject, html, text }` — fix the hook; the mail was not sent |
+| `X_MAIL_EVENT_UNVERIFIED` | a delivery notification failed its signature check — `meta.reason` names which (`unsigned`, `signature`, `stale`, `topic`, `certificate-url`, `signature-version`); answer 401 |
+| `X_MAIL_EVENT_INVALID` | authentic or not, the body is not the provider's notification shape (`meta.problem`); answer 400 |
+| `X_MAIL_EVENT_PROVIDER_UNREACHABLE` | the SNS certificate or confirm URL did not answer; answer 503 so SNS redelivers |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
 
 ### Error classes
@@ -164,7 +228,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
-| `MailError` | any `MailErrorCode` — `MAIL_ERROR_CODES` | `src/errors.ts` |
+| `MailError` | any `MailErrorCode` — `MAIL_ERROR_CODES` | `src/errors.ts` (the `X_MAIL_EVENT_*` factories export from `@ultimat3/mail/events`) |
 
 ## Commands
 

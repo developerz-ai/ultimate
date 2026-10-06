@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { asyncRefusal } from './bounds-fixture';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
-import { EchoProvider } from './provider';
 import {
   clampScore,
   contains,

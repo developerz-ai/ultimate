@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { registerModel } from './models';
+import { modelSpec, registerModel } from './models';
 import { chatCompletionBody } from './openai-body';
 import { registerOpenAiModels } from './openai-models';
 import type { GenerateRequest } from './provider';
@@ -49,13 +49,19 @@ describe('the request body', () => {
    * A provider that sends the old name is a 400 on every single call to the vendor it is named for.
    */
   test('sends max_completion_tokens and never max_tokens', () => {
-    const body = chatCompletionBody({ request: request(), model: MODEL, stream: false });
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request(),
+      model: MODEL,
+      stream: false,
+    });
     expect(body['max_completion_tokens']).toBe(1_000);
     expect(body['max_tokens']).toBeUndefined();
   });
 
   test("clamps the ceiling to the model's own maxOutput", () => {
     const body = chatCompletionBody({
+      provider: 'openai',
       request: request({ maxTokens: 1_000_000 }),
       model: MODEL,
       stream: false,
@@ -64,7 +70,12 @@ describe('the request body', () => {
   });
 
   test('never sends a sampling knob, and never response_format', () => {
-    const body = chatCompletionBody({ request: request(), model: MODEL, stream: false });
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request(),
+      model: MODEL,
+      stream: false,
+    });
     expect(body['temperature']).toBeUndefined();
     expect(body['top_p']).toBeUndefined();
     expect(body['presence_penalty']).toBeUndefined();
@@ -77,19 +88,30 @@ describe('the request body', () => {
    * nothing, and a reservation for a call that really happened is refunded in full.
    */
   test('a streamed request asks for usage explicitly', () => {
-    const body = chatCompletionBody({ request: request(), model: MODEL, stream: true });
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request(),
+      model: MODEL,
+      stream: true,
+    });
     expect(body['stream']).toBe(true);
     expect(body['stream_options']).toEqual({ include_usage: true });
   });
 
   test('a non-streamed request says nothing about streaming', () => {
-    const body = chatCompletionBody({ request: request(), model: MODEL, stream: false });
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request(),
+      model: MODEL,
+      stream: false,
+    });
     expect(body['stream']).toBeUndefined();
     expect(body['stream_options']).toBeUndefined();
   });
 
   test('tools travel with a forced choice when there is exactly one of them', () => {
     const body = chatCompletionBody({
+      provider: 'openai',
       request: request({ tools: [respond], stopSequences: ['STOP'] }),
       model: MODEL,
       stream: false,
@@ -103,17 +125,23 @@ describe('the request body', () => {
 describe('reasoning', () => {
   test('an effort the caller asked for is sent, and one nobody asked for is omitted', () => {
     expect(
-      chatCompletionBody({ request: request({ effort: 'xhigh' }), model: MODEL, stream: false })[
-        'reasoning_effort'
-      ],
+      chatCompletionBody({
+        provider: 'openai',
+        request: request({ effort: 'xhigh' }),
+        model: MODEL,
+        stream: false,
+      })['reasoning_effort'],
     ).toBe('xhigh');
     expect(
-      chatCompletionBody({ request: request(), model: MODEL, stream: false })['reasoning_effort'],
+      chatCompletionBody({ provider: 'openai', request: request(), model: MODEL, stream: false })[
+        'reasoning_effort'
+      ],
     ).toBeUndefined();
   });
 
   test("thinking: 'disabled' is this format's `none`", () => {
     const body = chatCompletionBody({
+      provider: 'openai',
       request: request({ thinking: 'disabled' }),
       model: MODEL,
       stream: false,
@@ -124,7 +152,12 @@ describe('reasoning', () => {
   test('adaptive is the server default here, so nothing is sent for it', () => {
     // Only reachable on a model registered as adaptive-capable; the built-ins are not, and asking
     // for adaptive on one of those is refused below rather than dropped.
-    const body = chatCompletionBody({ request: request(), model: MODEL, stream: false });
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request(),
+      model: MODEL,
+      stream: false,
+    });
     expect(body['thinking']).toBeUndefined();
     expect(body['reasoning_effort']).toBeUndefined();
   });
@@ -132,6 +165,7 @@ describe('reasoning', () => {
   test('asking for both thinking and effort is refused, because they are one wire field', () => {
     expect(() =>
       chatCompletionBody({
+        provider: 'openai',
         request: request({ effort: 'high', thinking: 'disabled' }),
         model: MODEL,
         stream: false,
@@ -141,10 +175,16 @@ describe('reasoning', () => {
 
   test('a model with no effort control refuses the control locally, not with a 400', () => {
     expect(() =>
-      chatCompletionBody({ request: request({ effort: 'high' }), model: PLAIN, stream: false }),
+      chatCompletionBody({
+        provider: 'openai',
+        request: request({ effort: 'high' }),
+        model: PLAIN,
+        stream: false,
+      }),
     ).toThrow(/effort control/);
     expect(() =>
       chatCompletionBody({
+        provider: 'openai',
         request: request({ thinking: 'adaptive' }),
         model: PLAIN,
         stream: false,
@@ -153,10 +193,28 @@ describe('reasoning', () => {
     // Nothing to switch off, so nothing is sent — the model stays callable.
     expect(
       chatCompletionBody({
+        provider: 'openai',
         request: request({ thinking: 'disabled' }),
         model: PLAIN,
         stream: false,
       })['reasoning_effort'],
     ).toBeUndefined();
+  });
+
+  // A row that says reasoning is always on means it on this wire too: `none` is the off switch.
+  test("a row registered with disableThinkingUpTo: 'never' refuses reasoning_effort: 'none'", () => {
+    registerModel({
+      ...modelSpec(MODEL),
+      id: 'acme-always-thinks',
+      reasoning: { effort: true, adaptive: false, disableThinkingUpTo: 'never' },
+    });
+    expect(() =>
+      chatCompletionBody({
+        provider: 'openai',
+        request: request({ thinking: 'disabled' }),
+        model: 'acme-always-thinks',
+        stream: false,
+      }),
+    ).toThrow(/always on/);
   });
 });

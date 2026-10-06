@@ -24,6 +24,11 @@ export type McpOutcome =
   /** Arguments failed the schema the agent was handed. Not an authz outcome. */
   | 'invalid-args'
   /**
+   * Did not run because no live human approval exists for this exact call: one is pending, or the
+   * one there was expired. Expected — `mcpConfirmations` answers it by design — so `info`.
+   */
+  | 'unconfirmed'
+  /**
    * The handler threw something that is not an authz denial: a non-authz framework refusal
    * (`db.migrate` aimed at prod), or a bug. Both want a human — a projected action rejecting
    * input MCP already validated means the JSON Schema and the real schema have drifted.
@@ -39,6 +44,7 @@ export type McpOutcome =
 const DENIAL_CODES: ReadonlySet<string> = new Set([
   'X_ADMIN_DENIED',
   'X_FORBIDDEN',
+  'X_MCP_CONFIRMATION_REJECTED',
   'X_UNAUTHENTICATED',
 ]);
 
@@ -54,9 +60,19 @@ const DENIAL_CODES: ReadonlySet<string> = new Set([
  */
 const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID']);
 
+/**
+ * `mcpConfirmations`' answers for a call no live approval covers. A rejection is NOT here: a human
+ * saying no is a denial, and it belongs in the bucket the denial alert reads.
+ */
+const UNCONFIRMED_CODES: ReadonlySet<string> = new Set([
+  'X_MCP_CONFIRMATION_PENDING',
+  'X_MCP_CONFIRMATION_EXPIRED',
+]);
+
 /** Classify a code a tool threw. Denials are outcome 3; everything else wants a human. */
 export function outcomeForCode(code: string): McpOutcome {
   if (DENIAL_CODES.has(code)) return 'policy-denied';
+  if (UNCONFIRMED_CODES.has(code)) return 'unconfirmed';
   return ARGUMENT_CODES.has(code) ? 'invalid-args' : 'failed';
 }
 
@@ -108,6 +124,7 @@ const LEVEL: ReadonlyMap<McpOutcome, 'info' | 'warn' | 'error'> = new Map([
   ['scope-denied', 'warn'],
   ['policy-denied', 'warn'],
   ['invalid-args', 'info'],
+  ['unconfirmed', 'info'],
   ['failed', 'error'],
 ]);
 // An outcome is a closed union, so the `Map` is total; `?? 'error'` is the type's witness, not a

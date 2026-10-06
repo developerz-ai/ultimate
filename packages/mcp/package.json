@@ -14,7 +14,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./schema": "./src/confirmation-schema.ts"
   },
   "files": [
     "src",

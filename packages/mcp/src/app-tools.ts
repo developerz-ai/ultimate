@@ -9,10 +9,13 @@
 // `frameworkResources` and `mcpHttpRoute` exist.
 
 import type { ErrorAudience } from '@ultimat3/core';
-import type { RateLimitStore } from '@ultimat3/http';
+import type { RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyAppToolDefinition, AppTools } from './app-tool';
 import { appToolPrimitives } from './app-tool';
+import type { McpAuditHook } from './audit-hook';
+import { withConfirmations } from './confirmation-gate';
+import type { McpConfirmations } from './confirmations';
 import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import { toolsFrom, toolsListed } from './from-action';
@@ -121,8 +124,27 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * `x policy explain …`, which stays in the log line. `'developer'` restores the author's fix.
    */
   readonly errorAudience?: ErrorAudience;
-  /** Bearer-token resolution. Omit to expose no HTTP route (stdio/embedded only). */
-  resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
+  /**
+   * Bearer-token resolution, handed how the request arrived (`McpRequestFacts`) as a second
+   * argument it may ignore. Omit to expose no HTTP route (stdio/embedded only).
+   */
+  resolveToken?(
+    token: string,
+    facts: McpRequestFacts,
+  ): Promise<ResolvedToken | null> | ResolvedToken | null;
+  /**
+   * Every gate decision as data — each `tools/call` and `resources/read` outcome and every refused
+   * token — after its `mcp.*` log line is written. What an action or query DID still goes to
+   * core's `setAuditSink`; this is what the gate decided, mostly before anything ran. A hook that
+   * throws changes no answer (`audit-hook.ts`).
+   */
+  readonly onAudit?: McpAuditHook | undefined;
+  /**
+   * Tools whose every call waits for a person: `mcpConfirmations({ tools, store, permission })`,
+   * which IS the approve/reject action — register it like any other so a person can reach it. A
+   * name it gates that this server does not project is `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at boot.
+   */
+  readonly confirmations?: McpConfirmations | undefined;
   /** Mount path. Defaults to `/mcp`. */
   readonly path?: string;
   /**
@@ -216,7 +238,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     { source: "include: 'exposed'", tools: included },
     { source: 'tools:', tools: written },
   ]);
-  const projected = withScopes(named, input.scopes);
+  // Scopes, then the gate: the gate wraps `handle`, which every resolve reaches last.
+  const projected = withConfirmations(withScopes(named, input.scopes), input.confirmations);
 
   const config: CreateMcpServerInput = {
     tools: projected,
@@ -227,6 +250,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     ...(input.groups === undefined ? {} : { groups: input.groups }),
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     errorAudience: input.errorAudience ?? 'caller',
+    ...(input.onAudit === undefined ? {} : { onAudit: input.onAudit }),
   };
   const server = createMcpServer(config);
 

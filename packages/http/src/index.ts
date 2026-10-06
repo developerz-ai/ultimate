@@ -187,6 +187,8 @@ export {
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';
+export type { RequestFacts, RequestFactsInput } from './request-facts';
+export { requestFacts } from './request-facts';
 export type { CacheHint, RedirectIntent, RedirectStatus } from './response';
 export {
   applyCacheHeaders,

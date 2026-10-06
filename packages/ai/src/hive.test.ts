@@ -14,11 +14,12 @@ import { allow, deny } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { asyncRefusal, NOT_A_BOUND } from './bounds-fixture';
+import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { hive } from './hive';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf, EchoProvider, messageText } from './provider';
+import { costOf, messageText } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 
 const USAGE: TokenUsage = {

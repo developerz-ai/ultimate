@@ -4,7 +4,7 @@
 // authorization server(s) a client goes to for a token. The authorization server itself is the
 // APP's — its consent page, its token endpoint, its revocation list — never this package's.
 
-import { McpOAuthInvalidError } from './errors';
+import { McpOAuthInvalidError } from './errors-transport';
 
 /** The well-known suffix RFC 9728 §3 defines. */
 export const PROTECTED_RESOURCE_WELL_KNOWN = '/.well-known/oauth-protected-resource';
