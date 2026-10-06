@@ -34,7 +34,7 @@ core's error machinery would make tier 0 a cycle.
 
 ## Generated-app rules — `packages/cli/src/app-boundaries.ts`
 
-Five, each with its own code. `x verify` reports them as findings and `x fix boundary` re-reports the
+Six, each with its own code (`BOUNDARY_CODES`, `As of 2026-10`). `x verify` reports them as findings and `x fix boundary` re-reports the
 same violation as a cut, off one rule → code table.
 
 | Rule id | Code | Forbids | Prevents concretely |
@@ -42,7 +42,8 @@ same violation as a cut, off one rule → code table.
 | `site-imports-app` | `X_BOUNDARY_SITE_TO_APP` | `site/` → `app/`, transitively | the marketing page that ships a charting library three hops away from any reviewed file ([`../idea/06-surfaces.md`](../idea/06-surfaces.md)) |
 | `shared-is-a-leaf` | `X_BOUNDARY_SHARED_LEAF` | `shared/` → `site/` or `app/` at runtime | `shared/` stops being a leaf |
 | `app-imports-api-at-runtime` | `X_BOUNDARY_APP_TO_API` | `app/` → `api/` as a **value** import | bundling server handlers into the client. `import type` is allowed; call the typed client instead |
-| route → db | `X_BOUNDARY_ROUTE_TO_DB` | `page.tsx` / `layout.tsx` / `route.ts` importing `@ultimat3/db`, a `*/db` specifier or `drizzle-orm` | N+1 queries in a `<head>` computation, SQL no policy guards, a route that cannot be unit-tested |
+| `surface-imports-surface` | `X_BOUNDARY_SURFACE_IMPORT` | every other surface crossing `SURFACE_SPECS` does not allow — `api/ → site/`, `site/ → api/`, `app/ → site/` (`classify`, `packages/render/src/surfaces.ts`) | a surface table whose `mayImport` lists were read by nothing, so those crossings classified as no violation |
+| route → db | `X_BOUNDARY_ROUTE_TO_DB` | `page.tsx` / `layout.tsx` / `route.ts` importing `@ultimat3/db`, a `*/db` or `packages/db/` specifier, `drizzle-orm`, or a slice's `repo.ts` (`./repo`, `../posts/repo`, `repo/index` — `isRepoSpecifier`); the cause names the repo hop | N+1 queries in a `<head>` computation, SQL no policy guards, a route that cannot be unit-tested |
 | service → http | `X_BOUNDARY_SERVICE_TO_HTTP` | `service.ts` importing `@ultimat3/http` or a `*/http` specifier | a service that only works inside a request — so the identical logic gets re-implemented in a job |
 
 **Four rules this page claimed and no checker implements**, `As of 2026-10`: `component-holds-logic`,

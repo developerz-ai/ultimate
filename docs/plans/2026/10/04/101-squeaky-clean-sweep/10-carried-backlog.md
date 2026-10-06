@@ -80,6 +80,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B26 | schema, entity (from 10d B16) | No array item-count bounds (`t.array(...)` has no `min`/`max`; Postly uses `t.refine`), and `transition()` has no row loader, so its policy can't see the row (authorship). **Fix:** `t.array(x, { min, max })` and a `row` loader on `transition()`, the same seam actions have | schema and entity unit |
 | B27 | cli (from 10d B16) | An app needing a Postgres executor writes its own (`examples/dummy/packages/db/src/executor.ts`) because `pgExecutorFor` isn't exported. **Fix:** export it from the one place apps import runtime seams, or say why not | cli export test; Postly uses it |
 | B28 | examples/dummy (from #684 review) | `summarize` interpolates the post's title and body unfenced, so a body with `## Rules` can pose as instructions; `reviewDraft` already fences its draft as `<post_title>`/`<post_body>` data with closing tags escaped. **Fix:** `summarize@5`, fenced the same way, with a re-recorded baseline | `prompt-artifacts.test.ts` and the summarize eval |
+| B29 | manifest (found by 10e) | the manifest does not record an admin action's `readonly`, so a change from `admin:write` to `admin:read` is invisible to `x manifest diff`. **Fix:** `actionOf` in `packages/manifest/src/sources-admin.ts` records `readonly` (and `matching`, which forces write) | manifest unit: flipping `readonly` changes the manifest |
 
 ## Sweep 10e — docs
 | Agent | Rows | Exclusive paths |

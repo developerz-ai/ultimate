@@ -123,7 +123,7 @@ There is no `realtime.drain` config key — the spread window is `createSyncNode
 
 ```
 x build --target docker     # one image, all roles (default)
-x build --target binary     # single Bun-compiled executable, no runtime install
+x build --target binary     # a Bun-compiled launcher: no Bun on the host, but the app tree beside it
 x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 x build --target prebuilt   # the line the Dockerfile runs INSIDE the image build
 ```
@@ -131,7 +131,7 @@ x build --target prebuilt   # the line the Dockerfile runs INSIDE the image buil
 | Target | Output | Use |
 |---|---|---|
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path |
-| `binary` | `.x/app` — `bun build --compile`, all roles inside. Boots `As of 2026-08`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
+| `binary` | `.x/app` — `bun build --compile` of `apps/web/server.ts`, `ROLE` selects behavior. A **launcher**, not a self-contained artifact: it embeds the Bun runtime, and at run time reads the app's `package.json` and `tsconfig.json`, imports `app.config.ts` and `apps/*`, and loads `@ultimat3/*` from the app's `node_modules` (kept external — `binaryArgs`, `packages/cli/src/cmd-build.ts`). Start it from the app root with the source and installed `node_modules` beside it. Boots on Linux and Windows `As of 2026-10-06`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
 | `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
 | `prebuilt` | `node_modules/.cache/ultimate/` — every island chunk and every compiled stylesheet. No gate, no subprocess, takes neither `--tag` nor `--out` | never by hand: it is `docker`'s other half, a `RUN` line in the image |
 

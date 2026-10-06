@@ -84,7 +84,7 @@ Three distinct outcomes, deliberately different:
 | Situation | Response | Why |
 |---|---|---|
 | Actor's **role** can never invoke this tool | the tool is **absent from `tools/list`**, and a direct call answers `ToolNotFound` | a `Forbidden` answer confirms the tool exists |
-| Actor's role could invoke it, but the **connection's scope** does not include it | explicit refusal: `X_MCP_SCOPE_DENIED`, naming the missing scope + `fix: reconnect with scope <name>` | the caller can legitimately fix this; hiding it would strand a well-behaved client |
+| Actor's role could invoke it, but the **connection's scope** does not include it | explicit refusal: `X_MCP_SCOPE_DENIED`, naming the missing scope; its `fix:` is reconnecting with a token whose scopes include it | the caller can legitimately fix this; hiding it would strand a well-behaved client |
 | Tool invoked, but the **policy denies this input** | `X_FORBIDDEN` with the denial reason | identical to the HTTP answer for the same call |
 
 Each outcome is declared in exactly one place:
@@ -218,7 +218,7 @@ accounting un-bypassable: a stray `fetch` is the only way around it, and there i
 
 | Step | Detail |
 |---|---|
-| resolve the model | `request.model ?? defaultModel ?? DEFAULT_MODEL` |
+| resolve the model | `resolveModel('gateway', request.model, defaultModel)` ([`model-resolve.ts`](../../packages/ai/src/model-resolve.ts)) — the first one declared. Neither declared: the built-in `DEFAULT_MODEL` (`claude-opus-5`), **deprecated** `As of 2026-10` — counted on `ai_deprecated_fallbacks_total`, logged `ai.deprecation` once per site, removed in 25.0.0 ([`deprecations.ts`](../../packages/ai/src/deprecations.ts)). Declare the model, or configure the gateway's `defaultModel` |
 | read the cache | `cacheKeyFor(resolved)` — core's `fingerprint` over model, system, messages, `maxTokens`, `effort`, `thinking`, each tool **whole** (name, description, `input_schema`), stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another, and one over tool names alone served an answer shaped for an old `output` schema — every `llm()` tool is `respond` |
 | a hit costs nothing, so it is **not debited** | |
 | `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached — on the ambient ledger, or `callLedger({})` when no scope is open (a raw call has no caller to key) |
@@ -227,10 +227,13 @@ accounting un-bypassable: a stray `fetch` is the only way around it, and there i
 | `record(usage, cost, reservation)` | replaces the estimate with the provider's real counts, so only the *difference* lands |
 | cache the result **unless it is a refusal** | a cached refusal keeps serving a classifier decision after the prompt was fixed. A `set` that throws is logged (`ai.cache.write_failed`), never raised — the call was paid for and recorded, and a retry would pay twice |
 
-`stream()` reserves the same way and reconciles at the `done` chunk. It is **not retried
-mid-flight** — the consumer has already seen tokens and replaying from the top would duplicate them
-— so only the handshake retries, and a `finally` releases the reservation when `done` never arrived
-because the stream threw or its consumer abandoned it.
+`stream()` is **routed before it reserves** — the single first provider serving the model, or
+`X_AI_PROVIDER_UNAVAILABLE` with nothing debited — then reserves the same way and reconciles at the
+`done` chunk. It is **never retried and never falls back**, the handshake included: `provider.stream()`
+is one call that yields, so there is no point where a retry could hide a duplicated token. Backoff
+and cross-provider fallback are `generate`'s alone. A `finally` releases the reservation when `done`
+never arrived because the stream threw or its consumer abandoned it
+([`gateway.ts`](../../packages/ai/src/gateway.ts) `Gateway#stream`, `As of 2026-10`).
 
 ### The provider seam
 
@@ -252,7 +255,7 @@ Four members, and the gateway routes by `models.includes(model)`.
 | Retry is exponential with **full jitter** | synchronised retries from N workers reproduce the rate limit they are backing off from. The arithmetic is `@ultimat3/core`'s `backoffDelay` since 2026-08-23 — `backoffMs` is the mapping from `RetryPolicy`'s own `baseDelayMs`/`maxDelayMs` onto it, and nothing else. Two things came with it: the delay is now **rounded** where it floored (≤ 1 ms), and a policy carrying a `NaN` waits `0` rather than handing `setTimeout` a value it fires on the next tick, i.e. a tight spin. `random` is injected, so the schedule is a list a test pins rather than a range it samples ([`20-flight-control.md`](./20-flight-control.md)) |
 | `isRetryable` is core's `isRetryableStatus` — `408`, `409`, `425`, `429`, any `>= 500` — plus `ETIMEDOUT` / `ECONNRESET` | **"a 4xx is never retried" was this row until 2026-08-23 and the three that joined make it false.** Every *other* 4xx still burns the budget for nothing — the same body gets the same rejection — but 408, 409 and 425 are transient by construction. The `code` branch stays in `@ultimat3/ai` because core's table is HTTP status only |
 | No provider serves the model → `X_AI_PROVIDER_UNAVAILABLE` | listing what each candidate said, or that none serves it |
-| A **locally** raised coded refusal reaches the caller verbatim | `As of 2026-08-23`. `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the socket opens, so the same rejection is waiting on every candidate and every attempt — collecting one into `X_AI_PROVIDER_UNAVAILABLE` discarded its runnable `fix:` and answered the same failure differently from `stream`, which never routes through the fallback loop. Only `AiTransportError`, which **is** `X_AI_PROVIDER_UNAVAILABLE`, still collects across candidates ([`packages/ai/src/gateway.ts:205`](../../packages/ai/src/gateway.ts)) |
+| A **locally** raised coded refusal reaches the caller verbatim | `As of 2026-08-23`. `X_AI_KEY_MISSING` and `X_AI_REQUEST_INVALID` are raised before the socket opens, so the same rejection is waiting on every candidate and every attempt — collecting one into `X_AI_PROVIDER_UNAVAILABLE` discarded its runnable `fix:` and answered the same failure differently from `stream`, which never routes through the fallback loop. Only `AiTransportError`, which **is** `X_AI_PROVIDER_UNAVAILABLE`, still collects across candidates ([`packages/ai/src/gateway.ts:287`](../../packages/ai/src/gateway.ts)) |
 
 Two hand-written providers ship — Anthropic Messages and the OpenAI chat-completions **wire format**
 (Azure, vLLM, Ollama, LiteLLM, your own gateway) — and `provider-parity.test.ts` asserts both sides

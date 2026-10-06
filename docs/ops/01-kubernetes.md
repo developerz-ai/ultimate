@@ -231,11 +231,11 @@ until somebody restarts it, up to 90 days later.
 
 ## Pod hardening baseline
 
-The shipped chart already sets all of this. Keep it.
+Both charts — this repo's `docker/helm/` and the one `x new` writes — set all of this; only the uid differs, below. Keep it.
 
 | Setting | Value | Why |
 |---|---|---|
-| `runAsNonRoot` / `runAsUser` | `true` / `65532` | correct for **this repo's** distroless image. An app scaffolded by `x new` runs on `oven/bun:1.4-alpine` as user `bun` — read the uid out of your own image (`docker run --rm <image> id -u`) rather than copying 65532, or every pod fails to start |
+| `runAsNonRoot` / `runAsUser` | `true` / `65532` in **this repo's** chart; `true` / `1000` (plus `runAsGroup` and `fsGroup: 1000`) in the chart `x new` writes | each matches its own image (`As of 2026-10`): this repo's is distroless `nonroot`, 65532; a scaffolded app's is `oven/bun:1.4-alpine` with `USER 1000:1000`, the base image's `bun` user — one constant, `RUNTIME_UID` in [`scaffold-helm.ts`](../../packages/cli/src/templates/scaffold-helm.ts), read by both its Dockerfile and its chart. A hand-written manifest set reads the uid out of its own image (`docker run --rm <image> id -u`) rather than copying either number |
 | `readOnlyRootFilesystem` | `true` | with an `emptyDir` at `/tmp`, **and** `ULTIMATE_STATE_DIR=/tmp/x` in the release's Secret: as of 2026-09-23 a boot still creates `.x/` (the embedded-state directory) whenever any binding is embedded — `NATS_URL` unset is one — and `/app/.x` is on the read-only root (plan 101 slice 12 k narrows it to an embedded database or disk) |
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |

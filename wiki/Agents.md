@@ -4,6 +4,53 @@
 
 `As of 2026-08`. Source: [`packages/ai/src/agent.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/agent.ts). The gateway, prompts, evals and the MCP surface are [MCP and AI](MCP-And-AI); the primitive vocabulary is [The eight primitives](The-Eight-Primitives).
 
+## Register your models, pick your provider
+
+**The app names every model an agent runs on, and the provider that serves it.** `As of 2026-10`. The framework ships the mechanism — the `Provider` contract, two wire-format adapters as peers, the gateway, budgets, `registerModel` — and no vendor choice. Full reference: [`packages/ai/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/README.md).
+
+```ts
+// app.config.ts, or any module the boot imports
+import { configureAi, createGateway, openAiProvider, registerModel } from '@ultimat3/ai';
+
+registerModel({
+  id: 'house-large',
+  contextWindow: 200_000,
+  maxOutput: 32_000,
+  inputPerMillion: { minor: 300, currency: 'USD' },
+  outputPerMillion: { minor: 1_500, currency: 'USD' },
+  cacheMinimumTokens: 1_024,
+  reasoning: { effort: true, adaptive: false, disableThinkingUpTo: undefined },
+});
+
+configureAi({
+  gateway: createGateway({
+    providers: [
+      openAiProvider({
+        apiKey: Bun.env['LLM_TOKEN'] ?? '',
+        baseUrl: Bun.env['LLM_URL'] ?? 'http://127.0.0.1:8000/v1',
+        models: ['house-large'],
+      }),
+    ],
+    defaultModel: 'house-large',
+  }),
+});
+```
+
+| Provider | Speaks |
+|---|---|
+| `new AnthropicProvider({ apiKey?, baseUrl? })` | the Anthropic Messages format |
+| `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format, on any compatible server |
+| your own `Provider` | anything — `{ name, models, generate, stream }` |
+
+An agent's model resolves from, first match wins: its `model`, its prompt's `model`, then `createGateway({ defaultModel })` (`resolveModel`, `packages/ai/src/model-resolve.ts`). The gateway routes it to the first provider whose `models` lists it.
+
+**Deprecated, removed in 25.0.0** — the vendor data the package still ships. Each use logs `ai.deprecation` once per site or row and counts `ai_deprecated_fallbacks_total{kind, subject}`:
+
+| Leaning on | `kind` | Do instead |
+|---|---|---|
+| the built-in `DEFAULT_MODEL` (`claude-opus-5`), when none of the three names a model | `default-model` | `model:` on the declaration, or `createGateway({ defaultModel })` |
+| a built-in catalogue row the app never registered, to price a call | `built-in-price` | `registerModel({ id, … })` at boot with your own prices — a restated built-in id is yours from then on |
+
 ## Quick answers
 
 | Question | Answer |
@@ -45,7 +92,7 @@ const supportPrompt = definePrompt<{ orderId: string }>({
 });
 
 export const supportAgent = agent({
-  model: 'claude-sonnet-5',
+  model: 'house-large', // registered above
   input: t.object({ orderId: t.string }),
   output: t.object({ answer: t.string, refunded: t.boolean }),
   prompt: supportPrompt,
@@ -74,7 +121,7 @@ export const supportAgent = agent({
 | `vars` | yes | — | the one declared place a run loads data, and the one place a redactor sees it. A `Secret` here is `X_AI_PROMPT_SECRET` |
 | `tools` | yes | — | real `action()`s. Each must be `mcp: { expose: true }` |
 | `policy` | yes | — | the action's own policy, evaluated on every surface identically |
-| `model` | no | the prompt's `model`, else `claude-opus-5` | |
+| `model` | no | the prompt's `model`, else the gateway's `defaultModel`, else the deprecated built-in `DEFAULT_MODEL` | a model id the app registered — [Register your models](#register-your-models-pick-your-provider) |
 | `maxTurns` | no | **8** | reaching it is `X_AGENT_MAX_TURNS`, never a partial answer |
 | `maxTokens` | no | **4,096** | completion ceiling **per turn**. The model never sees it |
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
@@ -392,13 +439,13 @@ import { describeAgents } from '@ultimat3/ai';
 
 describeAgents();
 // [{ name: 'supportAgent', prompt: 'support@1.0.0', promptId: 'support', promptHash: '…',
-//    model: 'claude-sonnet-5', maxTurns: 6, maxToolResultChars: 4000,
+//    model: 'house-large', modelFrom: 'declaration', maxTurns: 6, maxToolResultChars: 4000,
 //    tools: ['issueRefund', 'lookupOrder'],
 //    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' } },
 //    mcp: true }]
 ```
 
-An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*.
+An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt`, `gateway`, or `built-in-default` (the deprecated `DEFAULT_MODEL`); `gateway` and `built-in-default` are as of the gateway installed when the row is read. Reading a row records no deprecation.
 
 Names are read when you ask, not when the agent was declared: `registerAction` stamps them at boot, long after `agent()` ran at module scope. An agent nothing registered has **no row**, and that is not a silent drop — an action with no name reaches no route, no tool catalogue and no queue, so there is no capability for a row to describe. Register it: `registerAction('supportAgent', support)`.
 
@@ -420,7 +467,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret` | drop the key from `vars()` and the template, or `revealSecret(value)` if the model genuinely has to read it |
-| `X_AI_GATEWAY_MISSING` | the agent ran before `configureAi` | `configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) })` at boot |
+| `X_AI_GATEWAY_MISSING` | the agent ran before `configureAi`; the cause lists the peer providers | `configureAi({ gateway: createGateway({ providers: [provider] }) })` at boot, with `provider` your choice — [above](#register-your-models-pick-your-provider) |
 | `X_ABORTED` | `ctx.signal` fired mid-run | pass a longer deadline, or run it as a job |
 
 Full list: [Error codes](Error-Codes).
