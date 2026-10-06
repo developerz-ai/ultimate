@@ -123,8 +123,6 @@ export { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './clien
 export { notifyClientWrite, onClientWrite } from './client-writes';
 export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
-  AiConfig,
-  AiConfigInput,
   AppConfig,
   AppConfigInput,
   AppConfigOverlay,
@@ -132,7 +130,6 @@ export type {
   CacheConfig,
   DatabaseConfig,
   JobsConfig,
-  McpConfig,
   NotifyConfig,
   PwaConfigInput,
   RealtimeConfig,
@@ -141,9 +138,16 @@ export type {
   ThemeMode,
 } from './config';
 export { defineConfig, INBOX_RETENTION_KEYS } from './config';
+export type { AiConfig, AiConfigInput, McpConfig } from './config-ai';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
 export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
+export type {
+  MailConfig,
+  MailRetainMimeConfig,
+  MailSection,
+  MailSectionInput,
+} from './config-mail';
 export type {
   NavigationConfig,
   NavigationSection,

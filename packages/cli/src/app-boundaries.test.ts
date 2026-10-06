@@ -17,6 +17,7 @@ import {
   resolveSpecifier,
 } from './app-boundaries';
 import { appBoundaryFindings } from './boundary-findings';
+import { scaffoldFixture } from './scaffold-fixture';
 
 const file = (path: string, source: string): SourceFile => ({ path, source });
 
@@ -55,6 +56,52 @@ describe('unit · app boundaries', () => {
     expect(findings[0]?.code).toBe('X_BOUNDARY_ROUTE_TO_DB');
     // Every fix is a line a caller can paste: a command first, the rest behind a `#`.
     expect(findings[0]?.fix).toStartWith('x g query orders');
+  });
+
+  // A slice's `repo.ts` is the typed handle one hop away: a page reading it skips the query that
+  // carries the read's policy, its bound and its cache tag, so `dashboard:read` alone showed every
+  // post. Same rule, same code: the database by another name.
+  test('a route may not import a repo either, resolved or not', () => {
+    const repo = file('apps/web/app/post/repo.ts', "import { db } from '@acme/db';");
+    for (const specifier of ['../post/repo', './repo', '../post/repo.ts', '@acme/web/post/repo']) {
+      const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
+      const codes = checkImportRules([repo, page])
+        .filter((finding) => finding.at === page.path)
+        .map((finding) => finding.code);
+      expect({ specifier, codes }).toEqual({ specifier, codes: ['X_BOUNDARY_ROUTE_TO_DB'] });
+    }
+  });
+
+  test('a repo-like name is not a repo, and a service or query may still read one', () => {
+    for (const specifier of ['../post/report', '../post/repository', '../repos/list']) {
+      const page = file('apps/web/app/dashboard/page.tsx', `import * as r from '${specifier}';`);
+      expect({ specifier, findings: checkImportRules([page]) }).toEqual({
+        specifier,
+        findings: [],
+      });
+    }
+    const readers = ['service.ts', 'live/post-list.ts', 'jobs/reindex.ts'].map((name) =>
+      file(`apps/web/app/post/${name}`, "import * as repo from '../post/repo';"),
+    );
+    expect(checkImportRules(readers)).toEqual([]);
+  });
+
+  // The scaffold is the first app every author reads: a page of its own reaching past a query is
+  // the pattern copied into every slice after it.
+  test('nothing `x new --example` and the generators write reads a repo from a route', () => {
+    // The files `readAppSources` would read off the scaffolded tree.
+    const appSource = new Bun.Glob('apps/*/{site,app,api,shared}/**/*.{ts,tsx}');
+    const sources = scaffoldFixture().flatMap((generated) =>
+      typeof generated.contents === 'string' &&
+      appSource.match(generated.path) &&
+      !generated.path.includes('.test.')
+        ? [file(generated.path, generated.contents)]
+        : [],
+    );
+    const routeToDb = checkImportRules(sources).filter(
+      (finding) => finding.code === 'X_BOUNDARY_ROUTE_TO_DB',
+    );
+    expect(routeToDb.map((finding) => finding.at)).toEqual([]);
   });
 
   test('a service may not know about HTTP', () => {

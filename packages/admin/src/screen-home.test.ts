@@ -35,6 +35,7 @@ const db = database({ widgets, vaults }, { driver: memoryDriver() });
 
 let open: AdminApp;
 let scoped: AdminApp;
+const COUNTED = { home_widgets: { count: true }, home_vaults: { count: true } } as const;
 
 beforeAll(async () => {
   resetCatalogs();
@@ -48,12 +49,17 @@ beforeAll(async () => {
     viewer: { grants: ['admin:read', 'home_widgets:read'] },
     keeper: { grants: ['admin:read', 'home_widgets:read', 'home_vaults:read'] },
   });
-  open = defineAdmin({ entities: [widgets, vaults], db });
+  // `count: true` on both: a home tile is a full count per visit, so it is asked for per resource.
+  open = defineAdmin({ entities: [widgets, vaults], db, resources: COUNTED });
   scoped = defineAdmin({
     entities: [widgets, vaults],
     db,
     resources: {
-      home_widgets: { rows: (actor) => [{ field: 'owner', op: 'eq', value: actor.id }] },
+      ...COUNTED,
+      home_widgets: {
+        count: true,
+        rows: (actor) => [{ field: 'owner', op: 'eq', value: actor.id }],
+      },
     },
   });
   await db.widgets.insert({ title: 'Sprocket', owner: 'u-viewer' });
@@ -159,7 +165,9 @@ describe('unit · /admin home counts what the actor may list', () => {
       entities: [widgets, vaults],
       db,
       resources: {
+        ...COUNTED,
         home_vaults: {
+          count: true,
           repo: {
             list: async () => [],
             find: async () => null,
@@ -181,5 +189,44 @@ describe('unit · /admin home counts what the actor may list', () => {
     const before = (await open.audit.entries()).length;
     await home(open, 'keeper');
     expect((await open.audit.entries()).length).toBe(before);
+  });
+
+  // Every visit to `/admin` ran one full `count()` per listable resource, so any operator could
+  // multiply database load by reloading the front page. A count is now asked for, per resource.
+  test('a resource without count: true is not counted, and the home still renders', async () => {
+    let counted = 0;
+    const quiet = defineAdmin({
+      entities: [widgets, vaults],
+      db,
+      resources: {
+        home_widgets: { count: true },
+        home_vaults: {
+          repo: {
+            list: async () => [],
+            find: async () => null,
+            create: async () => expect.unreachable('no write'),
+            update: async () => expect.unreachable('no write'),
+            destroy: async () => expect.unreachable('no write'),
+            count: async () => {
+              counted += 1;
+              return 99;
+            },
+          },
+        },
+      },
+    });
+    const html = await home(quiet, 'keeper');
+    expect(counted).toBe(0);
+    expect(stat(html, 'admin-count-home_vaults')).toBeUndefined();
+    expect(stat(html, 'admin-count-home_widgets')).toBe('3');
+    // Uncounted is not unreachable: the permission matrix still lists the resource.
+    expect(html).toContain('admin:read + home_vaults:read');
+  });
+
+  test('with no resource counted the home renders no KPI row at all', async () => {
+    const plain = defineAdmin({ entities: [widgets, vaults], db });
+    const html = await home(plain, 'keeper');
+    expect(html).not.toContain('data-stat="admin-count-');
+    expect(html).toContain('admin:read + home_widgets:read');
   });
 });

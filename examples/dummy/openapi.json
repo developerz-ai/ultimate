@@ -85,6 +85,105 @@
         ],
         "type": "object"
       },
+      "ConfirmAgentPublishInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "description": "any JSON value, nested at most 256 levels deep"
+            },
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "__proto__",
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "decision": {
+            "enum": [
+              "view",
+              "approve",
+              "reject"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "ConfirmAgentPublishOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "description": "any JSON value, nested at most 256 levels deep"
+            },
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "__proto__",
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "tool": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "status",
+          "decidedAt",
+          "expiresAt",
+          "arguments"
+        ],
+        "type": "object"
+      },
       "ConnectSiteInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -771,6 +870,69 @@
         ],
         "type": "object"
       },
+      "MovePostStatusInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "enum": [
+              "draft",
+              "scheduled"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "to": {
+            "enum": [
+              "draft",
+              "scheduled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "MovePostStatusOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "properties": {
           "cause": {
@@ -953,6 +1115,80 @@
           "publishedAt",
           "authorId",
           "authorName"
+        ],
+        "type": "object"
+      },
+      "RequestPostsExportInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "type": "object"
+      },
+      "RequestPostsExportOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "exportId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "prefix": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "exportId",
+          "prefix"
+        ],
+        "type": "object"
+      },
+      "ReviewDraftInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "type": "object"
+      },
+      "ReviewDraftOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "ready",
+              "revise"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "notes"
         ],
         "type": "object"
       },
@@ -1299,6 +1535,198 @@
         "required": [
           "summary",
           "tags"
+        ],
+        "type": "object"
+      },
+      "SummarizePostsInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postIds": {
+            "description": "postIds names between 1 and 20 posts",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array",
+            "x-ultimate-refinements": [
+              {
+                "message": "postIds names between 1 and 20 posts",
+                "name": "a-page-of-posts"
+              }
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "postIds"
+        ],
+        "type": "object"
+      },
+      "SummarizePostsOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cost": {
+            "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code",
+            "properties": {
+              "currency": {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              "minor": {
+                "description": "amount in minor units, never a float",
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "scale": {
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "maximum": 15,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "type": "object"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "index": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "const": "ok"
+                    },
+                    "value": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "summary": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "tags": {
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "summary",
+                        "tags"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "index": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "status": {
+                      "const": "failed"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "code",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "index": {
+                      "maximum": 9007199254740991,
+                      "minimum": -9007199254740991,
+                      "type": "integer"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "status": {
+                      "const": "skipped"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "reason"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "status"
+              }
+            },
+            "type": "array"
+          },
+          "ok": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tokens": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "members",
+          "ok",
+          "failed",
+          "skipped",
+          "tokens",
+          "cost"
         ],
         "type": "object"
       },
@@ -3058,6 +3486,75 @@
         }
       }
     },
+    "/api/agent-publishes/confirm": {
+      "post": {
+        "operationId": "confirmAgentPublish",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAgentPublishInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmAgentPublishOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "confirmAgentPublish",
+        "tags": [
+          "agent-publishes"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/avatar-uploads/grant": {
       "post": {
         "operationId": "grantAvatarUpload",
@@ -3401,6 +3898,75 @@
         }
       }
     },
+    "/api/drafts/review": {
+      "post": {
+        "operationId": "reviewDraft",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDraftInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDraftOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Review a draft post and say whether it is ready to publish",
+        "tags": [
+          "drafts"
+        ],
+        "x-ultimate": {
+          "capability": "post:read",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "reviewDraft",
+          "rateLimit": null
+        }
+      }
+    },
     "/api/members/invite": {
       "post": {
         "operationId": "inviteMember",
@@ -3541,6 +4107,186 @@
             "plan"
           ],
           "mcpTool": "upgradePlan",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/post-status/move": {
+      "post": {
+        "operationId": "movePostStatus",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovePostStatusInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovePostStatusOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "movePostStatus",
+        "tags": [
+          "post-status"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts-exports/request": {
+      "post": {
+        "operationId": "requestPostsExport",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestPostsExportInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestPostsExportOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Export every post of the actor’s org as CSV to storage",
+        "tags": [
+          "posts-exports"
+        ],
+        "x-ultimate": {
+          "capability": "post:export",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": "requestPostsExport",
           "rateLimit": null
         }
       }
@@ -3778,6 +4524,75 @@
             "post"
           ],
           "mcpTool": "publishPost",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts/summarize": {
+      "post": {
+        "operationId": "summarizePosts",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummarizePostsInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummarizePostsOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Summarise up to twenty posts of the actor’s org at once",
+        "tags": [
+          "posts"
+        ],
+        "x-ultimate": {
+          "capability": "post:read",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "summarizePosts",
           "rateLimit": null
         }
       }
@@ -4654,6 +5469,9 @@
   },
   "tags": [
     {
+      "name": "agent-publishes"
+    },
+    {
       "name": "avatar-uploads"
     },
     {
@@ -4666,13 +5484,22 @@
       "name": "digest-opt-ins"
     },
     {
+      "name": "drafts"
+    },
+    {
       "name": "members"
     },
     {
       "name": "plans"
     },
     {
+      "name": "post-status"
+    },
+    {
       "name": "posts"
+    },
+    {
+      "name": "posts-exports"
     },
     {
       "name": "preferences"

@@ -91,24 +91,30 @@ unitTest('formatCount follows the locale', () => {
 export const examplePageTest = (
   app: NameSet,
 ): string => `// The dashboard, rendered as a request renders it: \`load\` reads the actor's org through the
-// slice's repo — the in-memory driver under test — and the page turns the rows into tiles, a chart
-// and a table. Losing the policy is the other regression worth a test: the page still renders, to
-// anyone.
+// slice's query — the in-memory driver under test — and the page turns the rows into tiles, a chart
+// and a table. Losing a policy is the other regression worth a test: the page's own, and the read's
+// — \`dashboard:read\` opens the page, and only \`post:read\` shows its posts.
 ${sortedImports([
   `import { driver } from '@${app.kebab}/db';`,
   `import { useT } from '@${app.kebab}/i18n';`,
-  "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+  "import { createContext, frozenClock, isUltimateError, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { dbUnavailable } from '@ultimat3/db';",
   "import { afterEach, expect, renderRoute, unitTest } from '@ultimat3/testing';",
 ])}
+// The app's API, as boot loads it: \`defineApi\` is what names the query the page reads, and a
+// query with no name is refused (X_QUERY_UNREGISTERED) before it reads a row.
+import '../../api';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
 import * as repo from '../post/repo';
 import * as page from './page';
 
 const url = 'https://example.test/dashboard';
-const viewer = testActor('viewer', { orgId: DEMO_ORG_ID }).actor;
-const stranger = testActor('stranger', { orgId: '00000000-0000-4000-8000-000000000009' }).actor;
+// The read grant, a direct one: what a \`member\` holds in apps/web/shared/roles.ts.
+const read = 'post:read';
+const viewer = testActor('viewer', { orgId: DEMO_ORG_ID, permissions: [read] }).actor;
+const elsewhere = '00000000-0000-4000-8000-000000000009';
+const stranger = testActor('stranger', { orgId: elsewhere, permissions: [read] }).actor;
 
 const DAY_MS = 86_400_000;
 
@@ -148,7 +154,7 @@ unitTest('it counts and lists the posts of the org that is looking', async () =>
   await post('This week', 3, 1900);
   await post('Today', 0);
   const view = await renderRoute(page, { url, actor: viewer });
-  // Newest first, as the repo orders them — and each tile counts its own window.
+  // Newest first, as the query orders them — and each tile counts its own window.
   expect(view.data.rows.map((row) => row.title)).toEqual(['Today', 'This week', 'Last month']);
   expect(stat(view.html, 'posts-total')).toBe('3');
   expect(stat(view.html, 'posts-week')).toBe('2');
@@ -177,6 +183,15 @@ unitTest('another org sees none of them: the page says so instead of an empty ta
   expect(view.text).toContain(t('app.dashboard.emptyTitle'));
   expect(view.meta.title).toBe(t('app.dashboard.title'));
   expect(view.meta.description).toBe(t('app.dashboard.description'));
+});
+
+unitTest('a viewer the post read refuses is refused, never shown the org’s posts', async () => {
+  await post('Not for them', 0);
+  // In the org, onto the page, without \`post:read\`: the query's policy decides, not the page's.
+  const outsider = testActor('outsider', { orgId: DEMO_ORG_ID }).actor;
+  const rendering = renderRoute(page, { url, actor: outsider });
+  const refused = await rendering.catch((error: unknown) => error);
+  expect(isUltimateError(refused) && refused.code).toBe('X_FORBIDDEN');
 });
 
 unitTest('the build measures the empty page: no database is not a failure there', async () => {

@@ -62,11 +62,20 @@ export const boundaryCodeOf = (rule: BoundaryRule): BoundaryCode => CODE_OF[rule
 
 const isRoute = (path: string): boolean => /\/(page|layout|route)\.[cm]?tsx?$/.test(path);
 const isService = (path: string): boolean => /\/service\.[cm]?ts$/.test(path);
+/**
+ * A slice's `repo.ts` counts: it is the typed handle one hop away, and a page reading it skips the
+ * query that carries the read's policy, bound and cache tag — the scaffold's own dashboard showed
+ * every post to a viewer holding `dashboard:read` alone. Matched as a whole module name, resolved
+ * (`…/repo.ts`) or not (`../post/repo`), so `report` and `repository` are names, not repos.
+ */
+const isRepoSpecifier = (specifier: string): boolean =>
+  /(^|\/)repo(\/index)?(\.[cm]?tsx?)?$/.test(specifier);
 const isDbSpecifier = (specifier: string): boolean =>
   /(^|\/)packages\/db($|\/)/.test(specifier) ||
   specifier.endsWith('/db') ||
   /^@[^/]+\/db$/.test(specifier) ||
-  specifier === 'drizzle-orm';
+  specifier === 'drizzle-orm' ||
+  isRepoSpecifier(specifier);
 /**
  * `node:http` and `node:https` are HTTP too, and the anchor could not reach them: `http` had to
  * follow a `/` or start the string, and a `node:` specifier has a colon there. So the one spelling
@@ -193,7 +202,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
       if (isRoute(file.path) && isDbSpecifier(specifier)) {
         findings.push({
           code: 'X_BOUNDARY_ROUTE_TO_DB',
-          cause: `route imports the database ("${specifier}") — routes call actions and queries`,
+          cause: `route imports the database ("${specifier}")${isRepoSpecifier(specifier) ? ', through a repo' : ''} — routes call actions and queries`,
           fix: generate('query', file.path, 'then call it from'),
           docs: ERROR_DOCS_URL,
           at: file.path,

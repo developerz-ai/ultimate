@@ -262,10 +262,12 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   const from = resolveDefaultLocale(app.defaultLocale, catalogs);
   // `from === locale` is the default locale asked to sync itself, and `undefined` is an app with
   // no resolvable default at all — one branch, because both have no catalog to merge from.
+  // A real merge copies the default locale's strings MARKED (`seedCatalog`, as `x i18n add` does):
+  // copied bare they rendered English to every `fr` reader under a green gate.
   const seeded = from === undefined || from === locale;
   const source = seeded
     ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
-    : (catalogs[from] ?? {});
+    : seedCatalog(catalogs[from] ?? {});
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
   // Unconditional, and not only when keys moved: a catalog that reached disk some other way — a
@@ -282,8 +284,8 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
     command: 'i18n',
     summary: msg('cli.i18n.synced', { locale, from: from ?? locale, added: added.length, total }),
     // The keys themselves, raw — `runCheck` lists gaps the same way, because a key is a value an
-    // author copies and never prose the catalog owns.
-    lines: seeded ? added.map((key) => `  ${key}`) : [],
+    // author copies and never prose the catalog owns. Every added key is one a human still owes.
+    lines: added.map((key) => `  ${key}`),
     findings,
     data: {
       locale,
@@ -292,9 +294,10 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       total,
       path: catalogPath(locale),
       registered,
-      // Which of `added` still need a human. Empty on a real merge, where every value is a real
-      // string copied from the default locale — `--json` must be able to tell the two apart.
-      placeholders: seeded ? added : [],
+      // Which of `added` still need a human: all of them. `⟦key⟧` where there was no catalog to
+      // copy from, `⟦<default string>⟧` on a real merge — both are what `x i18n check` counts as
+      // missing until replaced, so `--json` never reports a copy as a translation.
+      placeholders: added,
     },
   };
 }

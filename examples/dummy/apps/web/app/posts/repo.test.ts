@@ -6,17 +6,24 @@
  * body, a read that stops at the org boundary.
  */
 
-import { expect, test } from 'bun:test';
-import { db } from '@postly/db';
+import { afterAll, expect, test } from 'bun:test';
+import { db, driver } from '@postly/db';
 import { type MemberId, memberId, type OrgId, orgId, type PostId, postId } from '@postly/domain';
 import * as repo from './repo';
 
 /** Distinct per call, so one test's rows never answer another's read — the store is process-wide. */
 let issued = 0;
+// Ids from this file's own range (`…a0…`), never the low sequence other files hard-code: bun runs
+// several test files in one process, over one in-memory driver.
 const nextId = (): string => {
   issued += 1;
-  return `00000000-0000-4000-8000-${String(issued).padStart(12, '0')}`;
+  return `00000000-0000-4000-8000-a0${String(issued).padStart(10, '0')}`;
 };
+
+// What this file wrote is no other file's fixture.
+afterAll(() => {
+  driver.reset?.();
+});
 
 const AUTHOR = 'Ada Lovelace';
 
@@ -121,6 +128,22 @@ test('a replayed like writes nothing, and the recount stays at one', async () =>
   expect(await repo.insertLike(at.orgId, id, at.authorId)).toEqual({ inserted: false });
 
   expect((await repo.recountLikes(at.orgId, id)).likeCount).toBe(1);
+});
+
+test('recordById carries whether THIS member likes the post, and only this one', async () => {
+  // B17: the record the page's store seeds is what the like twin reads, so a member who liked in an
+  // earlier session must arrive with the flag set — or a repeat like paints +1 and drops back.
+  const at = await anOrg();
+  const id = await aPost(at, { slug: 'already-liked' });
+  const other = memberId(nextId());
+  await repo.insertLike(at.orgId, id, at.authorId);
+
+  const [mine] = await repo.recordById(at.orgId, id, at.authorId);
+  const [theirs] = await repo.recordById(at.orgId, id, other);
+
+  expect(mine).toMatchObject({ id, likeCount: 0, likedByMe: true });
+  expect(theirs).toMatchObject({ id, likedByMe: false });
+  expect(await repo.recordById(orgId(nextId()), id, at.authorId)).toEqual([]);
 });
 
 test('deleteLike removes the composite-key row and reports whether it was there', async () => {

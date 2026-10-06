@@ -5,12 +5,12 @@
 // Tool descriptions are literal English on purpose: they are protocol payload read by a
 // model, not UI copy read by a person, so they are not `t()` keys.
 
-import { decideAction, permissionsForAction } from './action-gate';
+import { adminPermissionForAction, decideAction, permissionsForAction } from './action-gate';
 import type { AdminApp } from './admin';
 import { type AdminDecision, decideAll } from './authz';
 import { type CrudCtx, decideOperation, permissionsForOperation } from './crud';
 import type { AdminFieldType } from './fields';
-import type { AdminOperation } from './permissions';
+import { type AdminOperation, type AdminPermission, adminPermissionFor } from './permissions';
 import type { AdminAction } from './registry';
 import type { AdminResource } from './resource';
 
@@ -32,6 +32,12 @@ export interface AdminMcpTool {
   readonly entity: string | null;
   readonly action: string | null;
   readonly permissions: readonly string[];
+  /**
+   * The MCP scope a token must carry to call it: the admin-level permission it needs — `admin:read`
+   * for a read and a `readonly` action, `admin:write` for a write, `admin:destroy` for a delete or a
+   * destructive action. The connection's gate, checked before the actor's own policy.
+   */
+  readonly scope: AdminPermission;
   /** Destructive tools require the confirmation token; agents must read before they delete. */
   readonly destructive: boolean;
   readonly input: readonly AdminToolField[];
@@ -110,6 +116,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         entity: resource.name,
         action: null,
         permissions: permissionsForOperation(resource.permission, 'list'),
+        scope: adminPermissionFor('list'),
         destructive: false,
         input: [
           CURSOR_FIELD,
@@ -126,6 +133,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         entity: resource.name,
         action: null,
         permissions: permissionsForOperation(resource.permission, 'detail'),
+        scope: adminPermissionFor('detail'),
         destructive: false,
         input: [ID_FIELD],
       };
@@ -137,6 +145,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         entity: resource.name,
         action: null,
         permissions: permissionsForOperation(resource.permission, 'create'),
+        scope: adminPermissionFor('create'),
         destructive: false,
         input: formFields(resource),
       };
@@ -148,6 +157,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         entity: resource.name,
         action: null,
         permissions: permissionsForOperation(resource.permission, 'update'),
+        scope: adminPermissionFor('update'),
         destructive: false,
         input: [ID_FIELD, ...formFields(resource)],
       };
@@ -159,6 +169,7 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
         entity: resource.name,
         action: null,
         permissions: permissionsForOperation(resource.permission, 'delete'),
+        scope: adminPermissionFor('delete'),
         destructive: true,
         input: [ID_FIELD, { name: 'confirmation', type: 'text', required: true }],
       };
@@ -202,6 +213,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
           entity: action.entity ?? null,
           action: action.name,
           permissions: permissionsForAction(action),
+          scope: adminPermissionForAction(action),
           destructive: action.destructive === true,
           input: actionEnvelope(action),
         },
@@ -220,6 +232,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
       entity: null,
       action: null,
       permissions: permissionsForOperation('admin', 'search'),
+      scope: adminPermissionFor('search'),
       destructive: false,
       input: [{ name: 'term', type: 'text', required: true }],
     },
@@ -237,6 +250,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
         entity: null,
         action: action.name,
         permissions: permissionsForAction(action),
+        scope: adminPermissionForAction(action),
         destructive: action.destructive === true,
         input: actionEnvelope(action),
       },

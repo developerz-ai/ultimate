@@ -20,7 +20,9 @@ import {
   setMailDriver,
   tryMailDriver,
 } from '@ultimat3/mail';
-import { notifySubscribers } from './jobs';
+import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { jobTest } from '@ultimat3/testing';
+import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
 
 const ORG = '00000000-0000-4000-8000-00000000f001';
 const POST = '00000000-0000-4000-8000-00000000f0a1';
@@ -207,3 +209,39 @@ test('a blip on the third recipient re-sends the third, not the first two', asyn
     mail.restore();
   }
 });
+
+// `exportPosts` — `exportRows()` over the org's posts, run through the real queue the fixture
+// installs, onto the app's disk. What can fail: the artifact's location, its header, and the
+// tenant boundary — a part that held another org's post would be the whole defect.
+
+const text = async (key: string): Promise<string> =>
+  new TextDecoder().decode((await disk().get(key)).bytes);
+
+jobTest(
+  'exportPosts writes one org’s posts as CSV, and a manifest that counts the parts',
+  async ({ seed, actorFor, runJobs }) => {
+    const { tenancy, offline, ada } = await seed('dev').pick({
+      tenancy: 'post:tenancy',
+      offline: 'post:offline', // Tinta's: must not appear in Acme's export
+      ada: 'member:ada',
+    });
+    const target = { orgId: tenancy.orgId, exportId: '00000000-0000-4000-8000-00000000e001' };
+    // The app's disk, as boot would build it — in memory, and released before the next test.
+    resetStorage();
+    defineStorage({ disks: { local: memoryDriver() }, default: 'local' });
+    using _storage = { [Symbol.dispose]: resetStorage };
+
+    const trace = await runJobs(exportPosts, target, { actor: actorFor(ada) });
+    expect(trace.executions.map((run) => [run.outcome, run.error])).toEqual([
+      ['completed', undefined],
+    ]);
+
+    const prefix = postsExportPrefix(target);
+    const part = await text(`${prefix}/part-00000.csv`);
+    const [header, ...rows] = part.trimEnd().split('\n');
+    expect(header).toBe('id,slug,title,status,likeCount,publishedAt,createdAt');
+    expect(rows.some((row) => row.startsWith(`${tenancy.id},`))).toBe(true);
+    expect(part).not.toContain(offline.id);
+    expect(JSON.parse(await text(`${prefix}/manifest.json`))).toMatchObject({ parts: 1 });
+  },
+);

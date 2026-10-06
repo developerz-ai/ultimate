@@ -3,20 +3,45 @@
 The LLM gateway primitive. Every model call in an Ultimate app goes through it, so budgets
 and cost accounting cannot be bypassed by a stray `fetch`.
 
-```ts
-import { budgetKeysFor, createGateway, AnthropicProvider, EchoProvider } from '@ultimat3/ai';
+**Register your models, pick your provider.** The framework ships the mechanism — the `Provider`
+contract, two wire-format adapters, the gateway, budgets, `registerModel` — and no vendor choice:
+which models an app runs, at what price, through which endpoint, is the app's, dated in the app's
+repo.
 
+```ts
+import {
+  budgetKeysFor,
+  configureAi,
+  createGateway,
+  openAiProvider,
+  registerModel,
+} from '@ultimat3/ai';
+
+// 1. Your models: your ids, your contract's prices (integer minor units), the source you read them from.
+registerModel({
+  id: 'house-large',
+  contextWindow: 200_000,
+  maxOutput: 32_000,
+  inputPerMillion: { minor: 300, currency: 'USD' },
+  outputPerMillion: { minor: 1_500, currency: 'USD' },
+  cacheMinimumTokens: 1_024,
+  reasoning: { effort: true, adaptive: false, disableThinkingUpTo: undefined },
+});
+
+// 2. Your provider — any of the three below — and the model a call with none declared runs on.
 export const ai = createGateway({
-  providers: [new AnthropicProvider(), new EchoProvider()],   // ANTHROPIC_API_KEY, or { apiKey }
+  providers: [openAiProvider({ apiKey: env.LLM_TOKEN, baseUrl: env.LLM_URL, models: ['house-large'] })],
+  defaultModel: 'house-large',
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },  // tokens
   cache: memoCache,
 });
+configureAi({ gateway: ai });
 
 // Budgets are scoped, and every nested call inside the scope shares one ledger. `llm()`, `agent()`
 // and `hive()` open one keyed on their caller (`budgetKeysFor(ctx.actor)`) without being asked.
 const answer = await ai.scope(budgetKeysFor(actor), async () => {
   const { text } = await ai.generate({
-    model: 'claude-opus-5',
+    model: 'house-large',
     system: 'You summarise support tickets.',
     messages: [{ role: 'user', content: ticket.body }],
     maxTokens: 1_024,
@@ -25,6 +50,27 @@ const answer = await ai.scope(budgetKeysFor(actor), async () => {
   return text;
 });
 ```
+
+| Provider | Speaks | For |
+|---|---|---|
+| `new AnthropicProvider({ apiKey?, baseUrl? })` | the Anthropic Messages format | Anthropic, or any server speaking that format |
+| `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format | OpenAI, Azure, vLLM, Ollama, LiteLLM, a company gateway — [below](#the-openai-format--azure-vllm-ollama-your-own-gateway) |
+| your own `Provider` | anything | `{ name, models, generate, stream }` — the same contract both adapters implement |
+
+Peers: neither adapter is the default, and the gateway routes a model to the first provider whose
+`models` lists it. A model resolves from the declaration's `model`, then its prompt's, then
+`createGateway({ defaultModel })`.
+
+**Deprecated, removed in 25.0.0** — the vendor data this package still ships:
+
+| What | Today | Recorded once per process as `ai.deprecation` | Do instead |
+|---|---|---|---|
+| `DEFAULT_MODEL` (`claude-opus-5`) | answers a call with no model declared anywhere | `kind: 'default-model'`, per `site` (`llm`, `agent`, `gateway`, `provider`, `echo-provider`) | `createGateway({ defaultModel })`, or `model:` on the declaration |
+| the built-in catalogue (6 Anthropic, 3 OpenAI rows) | prices a model the app never registered | `kind: 'built-in-price'`, per row | `registerModel({ id, … })` at boot with your own prices — a restated built-in id is yours from then on |
+
+Each warns once (a `warn` line, `msg: 'ai.deprecation'`, with `fix` and `removedIn`) and counts every
+use on `ai_deprecated_fallbacks_total{kind, subject}` — the number that says when it is safe to
+upgrade.
 
 ## Budgets — and which of the three is fleet-wide
 
@@ -179,14 +225,16 @@ reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it. It is the
 order (Fable, Opus, Sonnet, Haiku), newest first within a line — **not** price order: Opus 5.5 is
 newer, stronger and cheaper than Opus 5.
 
-Built in, `As of 2026-10-06`, every number read from platform.claude.com's models overview, pricing,
-prompt-caching and thinking pages (`models-catalogue.test.ts` pins each row whole):
+Built in — **deprecated reference data, removed in 25.0.0**; pricing through a row you did not
+register records `ai.deprecation` (above). `As of 2026-10-06`, every number read from
+platform.claude.com's models overview, pricing, prompt-caching and thinking pages
+(`models-catalogue.test.ts` pins each row whole):
 
 | Model | Context | Max output | Input / MTok | Output / MTok | `effort` | `thinking: 'disabled'` |
 |---|---|---|---|---|---|---|
 | `claude-fable-5-1` | 1M | 128K | $10 | $50 | yes | refused — thinking is always on |
 | `claude-opus-5-5` | 1M | 128K | $4 | $20 | yes | refused — thinking is always on |
-| `claude-opus-5` (default) | 1M | 128K | $5 | $25 | yes | sent, only at `effort ≤ high` |
+| `claude-opus-5` (the deprecated `DEFAULT_MODEL`) | 1M | 128K | $5 | $25 | yes | sent, only at `effort ≤ high` |
 | `claude-sonnet-5-5` | 1M | 128K | $2 | $10 | yes | sent as `between_tools`, only at `effort ≤ high` |
 | `claude-sonnet-5` | 1M | 128K | $2 | $10 | yes | sent |
 | `claude-haiku-4-5` | 200K | 64K | $1 | $5 | no — a 400 | nothing to send (no adaptive thinking) |
@@ -272,7 +320,8 @@ openAiProvider({
 openAiProvider({ apiKey: 'ollama', baseUrl: 'http://localhost:11434/v1', models: ['qwen3'] });
 ```
 
-Priced built-ins — list price from `developers.openai.com/api/docs/pricing`, read **2026-08-16**:
+Priced built-ins — deprecated reference data like the Anthropic rows, removed in 25.0.0 — list
+price from `developers.openai.com/api/docs/pricing`, read **2026-08-16**:
 
 | Model | Context | Max output | Input / MTok | Output / MTok | `reasoning_effort` |
 |---|---|---|---|---|---|
@@ -554,7 +603,7 @@ The gateway is ambient, installed once at boot — a declaration is evaluated at
 long before a provider exists:
 
 ```ts
-configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) });
+configureAi({ gateway: createGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });
 ```
 
 Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.

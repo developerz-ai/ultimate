@@ -2,8 +2,9 @@
 // from ./provider, which owns the real Messages API, because a double and the socket it stands in
 // for are two jobs — and the request half had reached its line ceiling holding both.
 
+import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL, modelIds } from './models';
+import { modelIds } from './models';
 import type {
   AiMessage,
   GenerateRequest,
@@ -44,11 +45,11 @@ export class EchoProvider implements Provider {
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    const model = request.model ?? DEFAULT_MODEL;
+    const model = resolveModel('echo-provider', request.model);
     const prompt = lastUserMessage(request.messages);
     const text = this.fixedReply(prompt) ?? this.config.fallback?.(prompt) ?? prompt;
     const usage: TokenUsage = {
-      inputTokens: this.config.tokensPerCall ?? estimateTokens(request),
+      inputTokens: this.config.tokensPerCall ?? estimateTokens({ ...request, model }),
       outputTokens: estimateTextTokens(text),
       cacheReadTokens: 0,
       cacheWriteTokens: 0,

@@ -22,10 +22,27 @@ honest: one runtime per page, writes named on every frame, no stale first paint 
 9b ships dashboards: charts, phone-ready tables, a sci-fi theme preset and the seam to use it.
 Sweep 10a lands the tier 0–1 seams the superseded plans owed; sweep 10b the tier 2–3 ones:
 append-only entities, one way to set a cookie, and audited reads; sweep 10c the tier 4 ones: human
-confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 models and media blocks.
+confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 models and media blocks;
+sweep 10d the tier 5 ones: admin scopes, a scaffold that boots as a binary on every OS, and the AI
+package's first step to apps bringing their own models and providers.
 
 ### Added
 
+- core: `mail.retainMime` in `app.config.ts` (`boolean | { maxBytes }`) turns mail retention on for
+  an app on the `x` runtime.
+- admin: an `AdminAction` marked `readonly: true` is gated on `admin:read`, and `destructive` still
+  wins. Admin MCP tools carry real scopes (`admin:read` / `admin:write` / `admin:destroy`), enforced by
+  the MCP scope gate (`X_MCP_SCOPE_DENIED`); `adminMcp({ actor })` may return `tokenScopes`.
+- ai: `createGateway({ defaultModel })` is read by `llm()` and `agent()` before any built-in default,
+  and `describeAgents()` reports the model a call would use, with `AgentFact.modelFrom`
+  (`declaration` / `prompt` / `gateway` / `built-in-default`).
+- admin: an action declaring `matching` always needs `admin:write`, even with `readonly`, because it
+  changes every row a list matches.
+- mail: `selectMailDriver` refuses a `retainMime.maxBytes` above the ceiling before choosing a
+  transport, on every branch; `retainMimeKey` names where the option came from. The scaffolded image
+  workflow always runs on `ubuntu-latest`, whatever `CI_RUNNER` says.
+- `x new` writes `.github/workflows/image.yml` (GHCR, after a green `ci`); both workflows run on
+  `vars.CI_RUNNER`, defaulting to the free `ubuntu-latest`.
 - mcp: `mcpConfirmations({ tools, permission, store })` — a person approves a named tool's call
   before it runs. A factory over `action`. The agent's call opens a pending row holding its
   arguments **sealed** and a keyed fingerprint of them; a person reads the exact arguments with
@@ -232,6 +249,22 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 
 ### Changed
 
+- **Deprecated (ai):** resolving a model through the built-in `DEFAULT_MODEL`, or pricing one through
+  a built-in catalogue row the app never registered, logs `ai.deprecation` once per site or row and
+  counts `ai_deprecated_fallbacks_total`. Apps bring their own models and providers: set a
+  declaration's `model` or `createGateway({ defaultModel })`, and `registerModel` what you use. Both
+  are removed in 25.0.0. No fix line names a vendor as the default any more.
+- admin: the `/admin` home counts a resource only when it declares `count: true`; it used to run a
+  full `count()` per listable resource on every visit.
+- `x i18n add` and `x i18n sync <locale>` mark every copied value `⟦…⟧`, so `x i18n check` reports
+  it missing until someone translates it.
+- `x new`: the scaffold depends on `@ultimat3/auth` and installs a session authenticator in every
+  environment; the dev viewer is only the no-session fallback under `x dev`. The Dockerfile runs as
+  `USER 1000:1000`, and the Helm chart's `runAsUser`/`runAsGroup`/`fsGroup` match: it used to run as
+  65532, a user the alpine image does not have. The dashboard example reads through the `postList`
+  query.
+- boundaries: a `page`/`layout`/`route` importing a slice's `repo` is `X_BOUNDARY_ROUTE_TO_DB`.
+- CI: the `windows` job is required.
 - ai: `costOf` charges each model's published cache-read and 5-minute cache-write rates
   (`ModelSpec.cacheReadPerMillion` / `cacheWritePerMillion`; a custom row keeps the 0.1x / 1.25x
   defaults). Opus 5.5 cache reads were overcharged 2x and Fable 5.1's 4x. `claude-sonnet-5` is
@@ -374,6 +407,15 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 
 ### Fixed
 
+- `x build --target binary` boots, on Linux and Windows. The binary read no `package.json` or
+  `tsconfig.json` at run time, so no `@ultimat3/*` import resolved from the app; once one did, the
+  framework existed twice, and the app filled the registries the server never read. The binary
+  now reads both files at run time and keeps the framework external.
+- `launchChrome` over the port wire no longer reports a live Windows Chrome as closed: an `EBUSY`
+  read of `DevToolsActivePort` (Chrome holds the file while writing it) means "not written yet".
+- Postly: a repeat like on a post the reader already liked no longer flashes +1 (`postRecord`
+  carries the reader's `likedByMe`). Its `summarize` is bounded to 512 output tokens and is no longer
+  refused by its own budget.
 - ui: a brand font stack carrying a CR, LF or tab was accepted, and the browser's normalised bytes
   then missed the server's CSP hash, so the whole brand stylesheet was blocked. It is now refused.
 - The social demo's session cookie overwrote any other cookie set on the same response

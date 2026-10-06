@@ -107,6 +107,10 @@ export const admin = defineAdmin({
   // tools an agent is offered are tools that can answer.
   db,
   resources: {
+    // The home page's tiles: one `count()` per visit each, so only the two tables that stay small —
+    // an org's roster, and the orgs themselves (`count: true`, opt-in since sweep 10d).
+    orgs: { count: true },
+    members: { count: true },
     runs: {
       operations: READ_ONLY,
       listFields: ['status', 'code', 'connectionId', 'startedAt'],

@@ -64,20 +64,22 @@ export const admin = defineAdmin({ entities: [posts, users], db });
 `/admin/posts/<id>`, `/admin/posts/<id>/edit`, plus `/admin/search`, `/admin/audit` and the jobs
 dashboard (`/admin/jobs`, below).
 
-`/admin` itself opens on a KPI row — one `StatTile` per resource the actor may list, its figure
-that resource's `AdminRepo.count()` over its `rows` scope, each tile a link to the list — and a
-`DonutChart` of the same counts, then the permission matrix per resource. A resource the actor may
-not list has no tile, no segment and no matrix; a repo with no `count()`, or one whose count the
-store refuses (`X_TENANCY_UNSCOPED` for an actor with no org), has no tile and never fails the page.
-A count reads no row, so it is not audited. One `count()` per listable resource per visit. Each
-matrix is a closed `<details>` whose summary reads "N of M allowed".
+`/admin` itself opens on a KPI row — one `StatTile` per resource the actor may list AND that
+declared `resources.<entity>.count: true`, its figure that resource's `AdminRepo.count()` over its
+`rows` scope, each tile a link to the list — and a `DonutChart` of the same counts, then the
+permission matrix per resource. Opt-in, as a scope tab's `count` is: a tile is one full `count()`
+per visit, so an operator reloading the front page over a big table is a load generator. A resource
+the actor may not list has no tile, no segment and no matrix; one that did not opt in, a repo with no
+`count()`, or one whose count the store refuses (`X_TENANCY_UNSCOPED` for an actor with no org), has
+no tile and never fails the page. A count reads no row, so it is not audited. Each matrix is a
+closed `<details>` whose summary reads "N of M allowed".
 
 | Input | What it is | Omitted |
 |---|---|---|
 | `entities` | the objects `entity()` returned — `adminEntitiesOf(db)` is every entity the handle serves | required |
 | `db` | the app's `database()` handle. Each resource reads through its own table: tenancy, soft delete, sealing and invariants are the handle's, and the admin adds no predicate | `resources.<entity>.repo` per resource, or `X_ADMIN_REPO_UNBOUND` at declaration |
-| `resources` | per-entity overrides — `listFields`, `labelField`, `columns`, `scopes`, `rows`, `sections`, `formGroups`, `related`, `fields.<name>.{sensitive,hintKey,on}`, `operations`, `repo`, `permission` (the noun its operations are named after; default the entity's name) | derived |
-| `actions` | `AdminAction[]` — a `permission` (never optional) plus a handler; optional `input` schema, `when(row)`, `batch` | none |
+| `resources` | per-entity overrides — `listFields`, `labelField`, `columns`, `scopes`, `count` (a tile on `/admin`), `rows`, `sections`, `formGroups`, `related`, `fields.<name>.{sensitive,hintKey,on}`, `operations`, `repo`, `permission` (the noun its operations are named after; default the entity's name) | derived |
+| `actions` | `AdminAction[]` — a `permission` (never optional) plus a handler; optional `input` schema, `when(row)`, `batch`, `readonly`, `destructive` | none |
 | `pages` | custom screens, see below | none |
 | `auth.actor` | who is acting | the actor the HTTP pipeline resolved for the request |
 | `auth.authz` | the one decision path | `roleAuthz()` — the role map decides each permission by name |
@@ -221,7 +223,8 @@ export const suspendUser: AdminAction = {
 | `batch` | the list's batch bar — checked rows, or every row the list's URL matches — each row through the button's gate and on the audit log, answered with `done` / `refused` / `failed` / `queued` / `remaining`. 200 rows inline per request (`MAX_BATCH_ROWS`), 1,000 queued (`MAX_BATCH_QUEUED_ROWS`); "all matching" continues from where it stopped |
 | `matching` | "all matching" as ONE set-based call: handed the list's `where` (row scope, scope, filters), it answers `{ affected, remaining }` — a store's bounded bulk verb. Decided and audited once (`admin.batch.matching`); a destructive one types `<entity>:all matching`. Checked rows still run row by row. Requires `batch` |
 | `batch.threshold` | past it, one `admin.batch` job per `chunk` (default: the threshold), run by a worker as the operator who queued it. The worker must load the module calling `defineAdmin` (`X_ADMIN_MOUNT_MISSING`) |
-| destructive | one row: type `<entity>:<id>`; a batch: type `<entity>:<n> rows` |
+| `readonly` | the action changes nothing (an export, a verification): its admin-level gate is `admin:read`, not `admin:write`, so a read-only staff role and an `admin:read` MCP token may run it. `destructive` (`admin:destroy`) and `matching` (`admin:write`) win over it |
+| destructive | gated on `admin:destroy`; one row: type `<entity>:<id>`; a batch: type `<entity>:<n> rows` |
 | MCP | still ONE tool, `admin.action.<name>`; a batch action's takes `ids: [...]` |
 | `labelKey` | the button's, the form's and the batch bar's label; absent: `admin.action.<name>` |
 
@@ -437,6 +440,23 @@ import { adminMcp, adminMcpTools } from '@ultimat3/admin';
 export const mcp = adminMcp({ app: admin, actor: (session) => actorFor(session.token) });
 adminMcpTools(admin, ctx); // admin.post.list · admin.post.read · admin.search · admin.action.post.publish
 ```
+
+Every tool carries a **scope**, the admin-level permission it needs. The MCP registry asks, in
+order: visibility — the actor's own admin authz (`adminMcpTools`); a tool it denies is ABSENT and
+answers tool-not-found, whatever the token holds — then the token's scope (`X_MCP_SCOPE_DENIED`
+naming it, before any argument is validated or a handler runs), then the call's own row-level
+decision inside the tool:
+
+| Scope | Tools |
+|---|---|
+| `admin:read` | `admin.<entity>.list`, `admin.<entity>.read`, `admin.search`, a `readonly` action |
+| `admin:write` | `admin.<entity>.create`, `admin.<entity>.update`, any other action |
+| `admin:destroy` | `admin.<entity>.delete`, a `destructive` action |
+
+The token's scopes are what `actor(session)` returns as `tokenScopes` (`AdminMcpActor`), expanded by
+`adminTokenScopes` (`admin:destroy` ⇒ `admin:write` ⇒ `admin:read`): `tokenScopes: ['admin:read']`
+is a read-only agent token. Absent, the token is as strong as its actor. A stdio host builds its
+caller's `scopes` with `adminTokenScopes(granted)` too — an empty set is refused every tool.
 
 The list tool takes the list screen's own grammar: `scope` by name and `where` as
 `[{ field, op?, value }]`, through the same validator a URL passes — and the resource's `rows`

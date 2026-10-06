@@ -43,12 +43,14 @@ missing and the parse fails. `x deploy` passes it on every step.
 
 ```sh
 x build --target static --out dist/static   # one HTML file per `render: 'static'` route
-x build --target binary --out dist/app      # a single executable, no Bun install needed
+x build --target binary --out dist/app      # a single executable carrying the Bun runtime
 ```
 
-The binary bundles the framework, not the app: the registries are filled by scanning
-`apps/*/{site,app,api,shared}` at boot, so it is a launcher that must be **started from the app
-root**, with the source tree beside it. The image is the self-contained artifact.
+The binary bundles neither the app nor the framework: `@ultimat3/*` stays external, and at run
+time both are resolved from the app tree — its `package.json`, its `tsconfig.json` and its
+installed `node_modules` — while the registries are filled by scanning
+`apps/*/{site,app,api,shared}` at boot. So it is a launcher that must be **started from the app
+root**, with the installed source tree beside it. The image is the self-contained artifact.
 
 ## A PaaS (Heroku, Render, Fly, Railway, Cloud Run, App Runner…)
 

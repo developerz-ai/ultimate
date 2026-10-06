@@ -9,6 +9,7 @@ export {
   type AdminActionButton,
   actionButtons,
   actionDecisions,
+  adminPermissionForAction,
   decideAction,
   type InvokeInput,
   type InvokeResult,
@@ -230,12 +231,14 @@ export {
 } from './list-scope';
 export { AdminScopeTabs, type AdminScopeTabsProps } from './list-scope-tabs';
 export {
+  type AdminMcpActor,
   type AdminMcpOptions,
   type AdminToolResult,
   adminMcp,
   callAdminTool,
   type McpInput,
 } from './mcp';
+export { adminTokenScopes, adminToolScopes } from './mcp-scopes';
 export {
   type AdminMcpTool,
   type AdminToolField,

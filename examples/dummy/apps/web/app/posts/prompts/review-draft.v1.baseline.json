@@ -1,0 +1,11 @@
+{
+  "eval": "posts.review-draft",
+  "prompt": "posts.review-draft@1",
+  "promptHash": "397a6c7adf727464b3554de94e1d908f",
+  "score": 1,
+  "cases": {
+    "english/ready": 1,
+    "english/revise": 1,
+    "spanish/ready": 1
+  }
+}

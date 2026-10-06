@@ -218,7 +218,7 @@ describe('unit · x i18n check', () => {
 });
 
 describe('unit · x i18n sync', () => {
-  test('adds every key the default locale has that this one lacks, and never overwrites an existing value', async () => {
+  test('adds every key the default locale has that this one lacks, MARKED, and never overwrites a value', async () => {
     const appRoot = await seedApp();
     const before = await readCatalog(join(appRoot, 'packages/i18n/catalogs/es.json'));
     expect(before['greeting']).toBe('Hola distinta');
@@ -243,16 +243,17 @@ describe('unit · x i18n sync', () => {
       // `syncI18nIndex` runs unconditionally on a sync, so a catalog that reached disk some other
       // way — a hand-created file, a merge — is registered by the command its own `fix:` names.
       registered: true,
-      // A real merge copies real strings, so nothing here is waiting on a human.
-      placeholders: [],
+      // A copied string is not a translation: every key it added waits on a human, by name.
+      placeholders: ['extra', 'farewell', 'nav.about'],
     });
 
     const after = await readCatalog(join(appRoot, 'packages/i18n/catalogs/es.json'));
     expect(after['greeting']).toBe('Hola distinta');
-    expect(after['farewell']).toBe('Bye');
-    expect(after['extra']).toBe('Unused key');
+    // Copied INSIDE the placeholder marker: copied bare, `es` rendered English under a green gate.
+    expect(after['farewell']).toBe('⟦Bye⟧');
+    expect(after['extra']).toBe('⟦Unused key⟧');
     // The nested pair: the missing leaf arrives, the translated sibling is untouched.
-    expect(after['nav.about']).toBe('About');
+    expect(after['nav.about']).toBe('⟦About⟧');
     expect(after['nav.home']).toBe('Inicio');
   });
 
@@ -333,11 +334,13 @@ describe('unit · x i18n sync', () => {
     await registerSeededCatalogs(appRoot);
 
     const result = await i18nCommand.run(contextFor(appRoot, ['check']));
+    // `en` is clear. `es` is not, and rightly: what the sync copied into it is marked until a
+    // human translates it — the same instruction, one locale on.
     const missing = result.findings?.filter((f) => f.code === 'X_CATALOG_MISSING_KEYS') ?? [];
-    expect(missing).toEqual([]);
+    expect(missing.map((f) => f.at)).toEqual(['packages/i18n/catalogs/es.json']);
   });
 
-  // A placeholder propagates: `sync es` copies `en`'s values verbatim, marker included, so a key
+  // A placeholder propagates: `sync es` copies `en`'s values marked, a marker kept as it is, so a key
   // nobody has translated is red in every locale rather than red in one and silently wrong in the
   // rest. The `en` finding above is the one an author acts on.
   test('a placeholder copied into another locale is missing there too', async () => {
@@ -364,7 +367,7 @@ describe('unit · x i18n sync', () => {
 });
 
 describe('unit · x i18n add', () => {
-  test('seeds a new locale from the resolved default, sorted and copied verbatim', async () => {
+  test('seeds a new locale from the resolved default, sorted, every copied value marked', async () => {
     const appRoot = await seedApp();
     const result = await i18nCommand.run(contextFor(appRoot, ['add', 'fr']));
 
@@ -385,10 +388,10 @@ describe('unit · x i18n add', () => {
     expect(written).toBe(
       `${JSON.stringify(
         {
-          extra: 'Unused key',
-          farewell: 'Bye',
-          greeting: 'Hello',
-          nav: { about: 'About', home: 'Home' },
+          extra: '⟦Unused key⟧',
+          farewell: '⟦Bye⟧',
+          greeting: '⟦Hello⟧',
+          nav: { about: '⟦About⟧', home: '⟦Home⟧' },
         },
         null,
         2,

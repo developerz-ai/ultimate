@@ -45,6 +45,9 @@ export const admin: AdminApp = defineAdmin({
       ],
       // The person's posts and uploads, each drawn as THAT resource's own list filtered to them.
       related: ['posts', 'media'],
+      // The home page's one tile: a `count()` per visit, so the people and not the posts or uploads
+      // (`count: true`, opt-in since sweep 10d).
+      count: true,
     },
     posts: {
       labelField: 'body',

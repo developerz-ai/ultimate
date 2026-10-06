@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { loadCatalog } from '@ultimat3/i18n';
+import { auditCatalogs, loadCatalog } from '@ultimat3/i18n';
 import {
   auditApp,
   loadCatalogs,
@@ -23,6 +23,7 @@ import {
   serializeCatalog,
   syncCatalog,
 } from './i18n-audit';
+import { isLoudMiss, withPlaceholdersMissing } from './i18n-registration';
 
 let root = '';
 
@@ -228,10 +229,31 @@ describe('unit · resolveDefaultLocale', () => {
 });
 
 describe('unit · seedCatalog, syncCatalog, serializeCatalog', () => {
-  test('seedCatalog copies values verbatim and sorts the keys', () => {
-    const seeded = seedCatalog({ 'b.b': 'B', 'a.a': 'A' });
+  test('seedCatalog marks every copied value, keeps the source string inside it, sorts the keys', () => {
+    const seeded = seedCatalog({ 'b.b': 'B {name}', 'a.a': 'A' });
     expect(Object.keys(seeded)).toEqual(['a.a', 'b.b']);
-    expect(seeded).toEqual({ 'a.a': 'A', 'b.b': 'B' });
+    // The source text stays in place for the translator, `{name}` and all, inside the one marker
+    // the CLI spells for "no human wrote this" — so the copy is visible on the page it renders on.
+    expect(seeded).toEqual({ 'a.a': '\u27E6A\u27E7', 'b.b': '\u27E6B {name}\u27E7' });
+    expect(Object.values(seeded).every((value) => isLoudMiss(value))).toBe(true);
+    // A value already a placeholder is kept as it is: one marker, never two.
+    expect(seedCatalog({ 'c.c': '\u27E6c.c\u27E7' })).toEqual({ 'c.c': '\u27E6c.c\u27E7' });
+  });
+
+  test('the audit reports every seeded copy as missing until a human replaces it', () => {
+    const source = { greeting: 'Hello', 'nav.home': 'Home' };
+    const extraction = {
+      usages: [
+        { key: 'greeting', file: 'a.tsx', line: 1, column: 1 },
+        { key: 'nav.home', file: 'a.tsx', line: 2, column: 1 },
+      ],
+      dynamic: [],
+    };
+    const catalogs = { en: source, fr: { ...seedCatalog(source), greeting: 'Bonjour' } };
+    const report = withPlaceholdersMissing(auditCatalogs({ extraction, catalogs }), catalogs);
+    expect(report.locales.find((audit) => audit.locale === 'fr')?.missing).toEqual(['nav.home']);
+    expect(report.locales.find((audit) => audit.locale === 'en')?.missing).toEqual([]);
+    expect(report.ok).toBe(false);
   });
 
   test('syncCatalog adds only the missing keys and never overwrites an existing value', () => {

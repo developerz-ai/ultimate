@@ -4,19 +4,14 @@
 
 import { finiteCount } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
-import { decideAction } from './action-gate';
+import { adminPermissionForAction, decideAction } from './action-gate';
 import { invokeRowAction } from './action-row';
 import type { AdminDecision } from './authz';
 import { runMatching } from './batch-matching';
 import { queueBatch } from './batch-queue';
 import { type CrudCtx, decideOperation } from './crud';
 import { type AdminListRequest, listWhere } from './list-scope';
-import {
-  ADMIN_DESTROY,
-  ADMIN_WRITE,
-  CONFIRMATION_REQUIRED_REASON,
-  confirmationToken,
-} from './permissions';
+import { ADMIN_DESTROY, CONFIRMATION_REQUIRED_REASON, confirmationToken } from './permissions';
 import type { AdminAction, AdminFilter } from './registry';
 import { rowId } from './registry';
 import { type AdminResource, repoOf } from './resource';
@@ -202,7 +197,7 @@ export async function runAdminBatch(input: AdminBatchInput): Promise<AdminBatchA
   if (action.batch === undefined) {
     return denied({
       allowed: false,
-      permission: action.destructive === true ? ADMIN_DESTROY : ADMIN_WRITE,
+      permission: adminPermissionForAction(action),
       reason: BATCH_NOT_OFFERED_REASON,
       trace: [`batch: ${action.name} does not declare batch`],
     });

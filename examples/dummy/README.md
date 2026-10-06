@@ -48,6 +48,12 @@ before.
 | `job` | [`apps/web/app/digest/jobs.ts`](apps/web/app/digest/jobs.ts) | `sendDigest` — 09:00 **local per member**, DST-correct, delivered one (org, zone) group at a time |
 | `job` | [`apps/web/app/posts/backfills/post-excerpts.ts`](apps/web/app/posts/backfills/post-excerpts.ts) | `postExcerpts` — `backfill()` is a **job factory**, not a ninth primitive: one pass over the rows that are behind, every page in its own `step.run`, the checkpoint a cursor and never the page, the handler idempotent because `handle` is at-least-once |
 | `job` | [`apps/web/app/runs/jobs.ts`](apps/web/app/runs/jobs.ts) | `syncConnection` — `scrape()` is a **job factory**: a recorded site (`fixtureBrowser`), `egress` looked up in the worker, one run per connection (`concurrency: { key, whenBusy: 'fail' }` → `X_JOB_KEY_BUSY`), a sealed stored session, a prompt a person answers mid-run over the event bus, and `onSettled` recording how each run ended and what it used |
+| `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `summarizePosts` — `hive()`, a fan-out as one action: one `summarize` member per post, in the order asked, a foreign post failing alone · `reviewDraft` — `agent()`, a tool loop as one action, its one tool the `summarize` action under the same actor · `requestPostsExport` enqueues the export below |
+| `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `movePostStatus` — `transition()` over `posts.status`'s declared machine: one compare-and-set statement, `draft` ⇄ `scheduled`, `published` reachable only through `publishPost` |
+| `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `exportPosts` — `exportRows()`: an org's posts to CSV parts plus a manifest on the app's disk, a page at a time |
+| `job` | [`apps/web/app/posts/notifiers.ts`](apps/web/app/posts/notifiers.ts) | `commentPosted` — `notifier()`: the post's author is mailed about a comment, once per comment, through the delivery ledger |
+| `job` | [`apps/web/app/mcp/jobs.ts`](apps/web/app/mcp/jobs.ts) | `purgeMcpConfirmations` — `purge()`: a month of MCP confirmations kept, the rest deleted hourly (`hourlyPurge` in `api/tasks.ts`) |
+| `action` | [`packages/mcp/src/confirmations.ts`](packages/mcp/src/confirmations.ts) | `confirmAgentPublish` — `mcpConfirmations()`: an agent's `publishPost` waits for a person to view and approve that exact call |
 | `task` | [`apps/web/api/tasks.ts`](apps/web/api/tasks.ts) | `nightlyDigest` cron with an explicit `tz` |
 | `route` | [`apps/web/site/page.tsx`](apps/web/site/page.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
 | `route` | [`apps/web/site/pricing/page.tsx`](apps/web/site/pricing/page.tsx) | `isr`, money formatted at the edge |
@@ -106,6 +112,7 @@ layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface)).
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
 | **Admin** | [`apps/admin/app/admin/admin.ts`](apps/admin/app/admin/admin.ts) | the whole dashboard, mounted under `/admin` by one `defineAdmin` — and the run console's operator view with no page of its own: `running` / `failed` tabs with counts, a run's events as related rows, `cancel` on a live run or a selection |
 | **Prompts** | [`apps/web/app/posts/prompts`](apps/web/app/posts/prompts) | versioned `.md` artifact + typed slots + a scored eval |
+| **Models** | [`apps/web/app/models.ts`](apps/web/app/models.ts) | the app registers every model it names (`registerModel`, source and date beside each number); a prompt imports the id, never spells it |
 
 ## Six test types
 

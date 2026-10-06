@@ -70,6 +70,13 @@ export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
    */
   readonly scopes?: Readonly<Record<string, AdminScopeOptions>>;
   /**
+   * Show this resource's row count on the `/admin` home. Opt-in, as a scope tab's `count` is: the
+   * figure is one full `count()` over the actor's rows on EVERY visit to the front page, so on a
+   * big table any operator reloading it is a load generator. Absent: no tile, the resource is still
+   * listed in the permission matrix.
+   */
+  readonly count?: boolean;
+  /**
    * The rows this ACTOR may see at all. Applied to every read of the resource — list, search,
    * detail, lookup, labels, MCP — so it is the one place a second audience is declared.
    */
@@ -134,6 +141,8 @@ export interface AdminResource<Row extends AdminRow = AdminRow> {
   readonly columns: readonly AdminComputedColumn[];
   /** Declared scopes, in tab order. Empty for a resource that declares none. */
   readonly scopes: readonly AdminScope[];
+  /** The `/admin` home counts this resource — `count: true` declared. */
+  readonly count: boolean;
   /** `rows`, validated per call. Absent for a resource every permitted actor sees whole. */
   readonly rowScope?: AdminRowScope;
   /** The detail page's groups. Always at least one: undeclared fields have a default section. */
@@ -309,6 +318,7 @@ export function adminResource<Row extends AdminRow = AdminRow>(
     searchFields: fields.filter((field) => field.searchable),
     columns: computedColumnsOf(declared, opts.columns),
     scopes: scopesOf(declared, opts.scopes, opts.repo),
+    count: opts.count === true,
     ...(rowScope === undefined ? {} : { rowScope }),
     sections: layoutOf(
       {

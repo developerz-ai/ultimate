@@ -6,8 +6,8 @@ import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
 
-/** The keys `config-site.ts`, `config-navigation.ts` and `config-islands.ts` default themselves. */
-type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands';
+/** The keys their own files default: `config-site.ts`, `-navigation`, `-islands`, `-mail`. */
+type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands' | 'mail';
 
 export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
   return {

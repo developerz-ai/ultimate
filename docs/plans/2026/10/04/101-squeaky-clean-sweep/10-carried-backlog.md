@@ -75,6 +75,11 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B21 | cli (from 10c B11) | `runtime-services.ts` calls `selectMailDriver(env)` with no options, so an app on the `x` runtime cannot turn on mail's `retainMime`. **Fix:** a `mail.retainMime` config key read at boot and passed through | runtime-services test: the config key reaches the selected driver |
 | B22 | docs (from 10c B11) | the six `SES_*` mail env keys are documented in mail's README only. **Fix:** add them wherever the wiki lists mail's env keys (the page `driver-env.test.ts` cites) | doc-paths and wiki-tables green |
 | B23 | ai (owner, 2026-10-06: apps bring their own models and providers) | 24.x half of M12: resolving a model through the built-in `DEFAULT_MODEL`, or pricing one through a built-in catalogue row the app never registered, records a deprecation (`core/src/deprecation.ts`) naming `createGateway({ defaultModel })` / `registerModel`. `X_AI_GATEWAY_MISSING`'s fix is provider-neutral (`ai/src/errors.ts:136`). The README leads with "register your models, pick your provider", with Anthropic and the OpenAI format as peer adapters. Both tracked apps register the models they use | ai unit: each deprecation fires once; the fix line names no vendor; the apps' `llm()`s resolve without a built-in row |
+| B24 | jobs, ai (from 10d B16) | `agentJob` has no idiomatic reference-app use: a queued run keeps no output (`x_jobs` has no result column), so a background agent needs an idempotent write tool. **Fix:** a stored, bounded job result, or document the idempotent-tool requirement and give Postly one | `scripts/primitive-factories.test.ts`: `agentJob` leaves the pending list |
+| B25 | jobs (from 10d B16) | `webhook` has no reference-app use: it needs an endpoints table with a sealed secret and a delivery ledger the app owns. **Fix:** give Postly that table and one webhook, or ship the table as a framework schema leaf | `webhook` leaves the pending list |
+| B26 | schema, entity (from 10d B16) | No array item-count bounds (`t.array(...)` has no `min`/`max`; Postly uses `t.refine`), and `transition()` has no row loader, so its policy can't see the row (authorship). **Fix:** `t.array(x, { min, max })` and a `row` loader on `transition()`, the same seam actions have | schema and entity unit |
+| B27 | cli (from 10d B16) | An app needing a Postgres executor writes its own (`examples/dummy/packages/db/src/executor.ts`) because `pgExecutorFor` isn't exported. **Fix:** export it from the one place apps import runtime seams, or say why not | cli export test; Postly uses it |
+| B28 | examples/dummy (from #684 review) | `summarize` interpolates the post's title and body unfenced, so a body with `## Rules` can pose as instructions; `reviewDraft` already fences its draft as `<post_title>`/`<post_body>` data with closing tags escaped. **Fix:** `summarize@5`, fenced the same way, with a re-recorded baseline | `prompt-artifacts.test.ts` and the summarize eval |
 
 ## Sweep 10e — docs
 | Agent | Rows | Exclusive paths |
@@ -83,6 +88,8 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 
 - `wiki/Known-Gaps.md` rows for every B-row still open after 10a–10d, each with its tracking issue.
 - `wiki/PWA-And-Offline.md:270-280` after O-11.
+- From 10d B14/B20/B23: `wiki/Agents.md:423` (the gateway fix names no vendor); `wiki/Admin-Dashboard.md` (`readonly` actions, the admin tool-scope table, `tokenScopes`, the home's `count: true`); `packages/admin/CLAUDE.md` is at its ceiling, so move narrative to `docs/history/` and add the scopes/`count` rules and the `mcp-scopes.ts` row.
+- From 10d B15: `docs/ops/README.md:111` and `docs/ops/01-kubernetes.md:238` say the scaffold runs uid/gid 1000 in both the Dockerfile and the chart; `docs/architecture/02-boundaries.md:45` and `wiki/Troubleshooting.md:52` say a route importing a slice's `repo.ts` is `X_BOUNDARY_ROUTE_TO_DB`.
 
 ## Done when
 - Every B-row merged or explicitly moved to Known-Gaps with an issue; `bun run verify` green after each sweep.

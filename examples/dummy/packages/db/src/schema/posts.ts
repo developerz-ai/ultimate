@@ -31,7 +31,18 @@ export const posts = entity('posts', {
     body: text(),
     /** Nullable: a post without a cover renders the generated OG image instead. */
     coverUrl: url().nullable(),
-    status: enumerated(POST_STATUSES).default('draft'),
+    /**
+     * A machine, so a move is one compare-and-set statement (`movePostStatus`, the posts mutator).
+     * `published` is terminal and reached only by `publish()`, which stamps `publishedAt` in the
+     * same write — `post_publish_coherent` below refuses a published row without one.
+     */
+    status: enumerated(POST_STATUSES)
+      .transitions({
+        draft: ['scheduled', 'published'],
+        scheduled: ['draft', 'published'],
+        published: [],
+      })
+      .default('draft'),
     likeCount: integer().default(0),
     /** Nullable by contract: set exactly when status becomes `published`. */
     publishedAt: timestamp().nullable(),

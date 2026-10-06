@@ -32,5 +32,5 @@ Body:
 
 ## Output
 
-Return JSON matching the declared output schema: `{ "summary": string, "tags": string[] }`.
+Return JSON matching the declared output schema: { "summary": string, "tags": string[] }.
 Nothing else — no code fence, no commentary.

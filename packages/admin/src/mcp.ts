@@ -39,6 +39,7 @@ import {
 import { AdminFilterInvalidError } from './errors';
 import type { AdminFieldType } from './fields';
 import { type AskedFilter, checkedFilter } from './list-filters';
+import { adminTokenScopes, adminToolScopes } from './mcp-scopes';
 import { type AdminMcpTool, adminMcpTools, adminToolCatalog } from './mcp-tools';
 import type { AdminAction, AdminRow } from './registry';
 import { adminSearch } from './search';
@@ -241,10 +242,22 @@ function crudResult(result: CrudResult<AdminRow>): AdminToolResult {
   return invalidIssues(result.issues);
 }
 
+/**
+ * What a session token resolves to: the actor, and optionally the admin scopes the TOKEN was
+ * issued for — narrower than the actor, never wider (the actor's policy still decides each tool).
+ * `['admin:read']` is a read-only token: list, read, search and `readonly` actions. Absent: the
+ * token is as strong as its actor (`adminTokenScopes`). Named `tokenScopes`, not `scopes`, because
+ * core's `Actor.scopes` is a different thing (framework capabilities) and an actor handed straight
+ * through must not have its `[]` read as "this token may do nothing".
+ */
+export interface AdminMcpActor extends AdminActor {
+  readonly tokenScopes?: readonly string[];
+}
+
 export interface AdminMcpOptions {
   readonly app: AdminApp;
   /** Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. */
-  actor(session: { readonly token?: string }): Promise<AdminActor | null> | AdminActor | null;
+  actor(session: { readonly token?: string }): Promise<AdminMcpActor | null> | AdminMcpActor | null;
   readonly requestId?: () => string;
 }
 
@@ -425,10 +438,15 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
  */
 export function adminMcp(opts: AdminMcpOptions): AppMcp {
   const requestId = opts.requestId ?? ((): string => crypto.randomUUID());
+  const catalog = adminToolCatalog(opts.app);
 
   return defineAppMcp({
     name: 'admin',
-    tools: adminToolCatalog(opts.app).map((tool) => toMcpTool(opts, requestId, tool)),
+    tools: catalog.map((tool) => toMcpTool(opts, requestId, tool)),
+    // The connection gate: each tool needs its admin-level permission as a token scope, checked
+    // by the registry BEFORE the actor's policy. A stdio host builds its caller's scopes with
+    // `adminTokenScopes`, as `resolveToken` does below.
+    scopes: adminToolScopes(catalog),
     async resolveToken(token: string): Promise<ResolvedToken | null> {
       const actor = await opts.actor({ token });
       // `kind: 'agent'` — the same actor shape an agent gets everywhere else, so a policy
@@ -442,7 +460,7 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
         ? null
         : {
             actor: agentActor({ id: actor.id, roles: actor.roles ?? [], orgId: actor.orgId }),
-            scopes: new Set(),
+            scopes: adminTokenScopes(actor.tokenScopes),
           };
     },
   });

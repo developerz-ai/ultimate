@@ -117,4 +117,59 @@ describe('portConnection', () => {
     expect(error).toBeUltimateError('X_CDP_TIMEOUT');
     expect(performance.now() - started).toBeLessThan(2_000);
   });
+
+  // Windows CI, PR #668: Chrome had printed "DevTools listening", the file EXISTED, and the read
+  // threw `EBUSY: resource busy or locked` because Chrome still held it open for its write. That
+  // throw left the poll as a "closed" launch with the browser alive. A file its writer still holds
+  // is a file not written yet — the same answer a half-written one gets.
+  test('a file the browser still holds open (EBUSY) is not announced yet, and the wait goes on', async () => {
+    const server = standIn();
+    const profileDir = mkdtempSync(join(scratch, 'profile-'));
+    const path = join(profileDir, DEVTOOLS_ACTIVE_PORT);
+    await Bun.write(path, `${String(server.port)}\n/devtools/browser/stand-in\n`);
+    let reads = 0;
+    try {
+      const connection = await portConnection({
+        profileDir,
+        exited: () => false,
+        deadlineMs: 5_000,
+        timeoutMs: 5_000,
+        readText: async (file) => {
+          reads += 1;
+          if (reads <= 3) throw busy(file);
+          return await Bun.file(file).text();
+        },
+      });
+      expect(reads).toBe(4);
+      expect(await connection.send('Browser.getVersion')).toEqual({
+        result: { product: 'StandIn' },
+      });
+      connection.close();
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  // Only the two codes that mean "not there yet": anything else is the launch failing, by name.
+  test('any other read failure still ends the wait, naming it', async () => {
+    const profileDir = mkdtempSync(join(scratch, 'profile-'));
+    await Bun.write(join(profileDir, DEVTOOLS_ACTIVE_PORT), 'x');
+    const error = await portConnection({
+      profileDir,
+      exited: () => false,
+      deadlineMs: 5_000,
+      timeoutMs: 5_000,
+      readText: async () => {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      },
+    }).catch((e: unknown) => e);
+    expect(String((error as { message?: unknown }).message)).toContain('EACCES');
+  });
 });
+
+/** The error Bun raises on Windows for a file another process holds open without read sharing. */
+function busy(path: string): Error {
+  return Object.assign(new Error(`EBUSY: resource busy or locked, open '${path}'`), {
+    code: 'EBUSY',
+  });
+}

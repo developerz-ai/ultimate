@@ -371,3 +371,49 @@ describe('the image prebuilds what a web pod would otherwise build at every boot
     ).toBe(true);
   });
 });
+
+// The Dockerfile chowns `/app/.x` to its runtime user and the chart's pod security context runs the
+// process as a uid of its own: two numbers for one user, and the chart's was distroless'
+// `nonroot` (65532) on an alpine image that has no such user — a pod that cannot write the one
+// directory the image prepared for it. `BASE_IMAGE_UIDS` is what `docker run --rm --entrypoint id
+// <image> bun` printed for the series the scaffold pins (2026-10-06): a new base image is a new
+// row, measured, never a guess.
+describe('unit · the image and the chart run the process as one uid', () => {
+  const BASE_IMAGE_UIDS: Readonly<Record<string, number>> = { 'oven/bun:1.4-alpine': 1000 };
+
+  const runtime = (): { readonly user: string; readonly chown: string; readonly base: string } => {
+    const dockerfile = fileAt('docker/Dockerfile');
+    const users = [...dockerfile.matchAll(/^USER (\S+)$/gm)].map((match) => match[1] ?? '');
+    const chown = /chown -R (\S+) \/app\/\.x/.exec(dockerfile)?.[1];
+    const base = /^FROM ([^@\s]+)@/m.exec(dockerfile)?.[1];
+    expect(users).toHaveLength(1);
+    if (chown === undefined || base === undefined) return expect.unreachable('no chown or FROM');
+    return { user: users[0] ?? '', chown, base };
+  };
+
+  test('USER is numeric, so a kubelet can verify runAsNonRoot without the chart', () => {
+    expect(runtime().user).toMatch(/^\d+:\d+$/);
+  });
+
+  test('the uid is the base image`s own bun user, as measured', () => {
+    const { user, base } = runtime();
+    const measured = BASE_IMAGE_UIDS[base];
+    if (measured === undefined) return expect.unreachable(`no measured uid for ${base}`);
+    expect(user).toBe(`${measured}:${measured}`);
+  });
+
+  test('chown, USER and the pod security context agree on uid, gid and fsGroup', () => {
+    const { user, chown } = runtime();
+    const values = Bun.YAML.parse(fileAt('docker/helm/values.yaml')) as {
+      podSecurityContext?: Record<string, unknown>;
+    };
+    const [uid, gid] = user.split(':').map(Number);
+    expect(chown).toBe(user);
+    expect(values.podSecurityContext).toMatchObject({
+      runAsNonRoot: true,
+      runAsUser: uid,
+      runAsGroup: gid,
+      fsGroup: gid,
+    });
+  });
+});

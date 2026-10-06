@@ -20,6 +20,10 @@
  * same scan rather than keeping a second import list that could disagree with this one.
  */
 
+// `mcpConfirmations()` returns an ACTION — the one a person approves an agent's gated call with —
+// so it registers here like any other. From its own module: `@postly/mcp`'s index builds the MCP
+// server, which snapshots the registry and must load after this call, never inside it.
+import * as mcpConfirmationActions from '@postly/mcp/confirmations';
 import { defineApi } from '@ultimat3/action';
 import * as authActions from '../app/auth/actions';
 import * as contactActions from '../app/contact/actions';
@@ -42,7 +46,10 @@ import * as postQueries from '../app/posts/live';
 // A mutator IS an action, so it registers as one: the optimistic local twin rides on the same
 // declaration instead of living in a parallel registry with a parallel authz path.
 import * as postMutators from '../app/posts/mutator';
+// `notifier()` is a job factory, so a notification registers in the `jobs` list.
+import * as postNotifiers from '../app/posts/notifiers';
 import '../app/posts/service';
+import * as mcpJobs from '../app/mcp/jobs';
 import * as runActions from '../app/runs/actions';
 // `scrape()` is a job factory, so the sync registers in the `jobs` list like any other job. It
 // names itself (`runs.sync`): a scrape's name is a durable queue key, never an export name.
@@ -56,10 +63,27 @@ import * as settingsMutators from '../app/settings/mutator';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
-  actions: [postActions, orgActions, settingsActions, contactActions, authActions, runActions],
+  actions: [
+    postActions,
+    orgActions,
+    settingsActions,
+    contactActions,
+    authActions,
+    runActions,
+    mcpConfirmationActions,
+  ],
   mutators: [postMutators, settingsMutators],
   queries: [postQueries, runQueries],
-  jobs: [postJobs, postBackfills, orgJobs, digestJobs, contactJobs, runJobs],
+  jobs: [
+    postJobs,
+    postNotifiers,
+    postBackfills,
+    orgJobs,
+    digestJobs,
+    contactJobs,
+    runJobs,
+    mcpJobs,
+  ],
   tasks: [scheduledTasks],
   // A second door for machine callers, onto the run actions a browser already calls: same
   // handler, same policy, a bearer key instead of a session. `/api/runs/start` is `/v1/runs/start`.

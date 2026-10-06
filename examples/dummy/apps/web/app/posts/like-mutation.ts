@@ -29,13 +29,12 @@ import type { Api } from '../../api';
  * optimistic row and the record every island renders one object rather than two: the page's store
  * keys `posts:<id>`, and `tx.posts.update(postId, …)` writes that same key.
  *
- * `likedByMe` is what makes the twin replayable. It is per-device state about the acting member,
- * not a column on `posts` — the server's authoritative row is the `likes` composite key, and this
- * is the local projection of "this device has already applied my like to this row". A page load is
- * a device that has applied none, so it seeds `false`; a member who liked in an earlier session and
- * likes again therefore sees a +1 this device cannot know is redundant, until the server's own row
- * lands on the next `rebase` frame. Closing that needs `likedByMe` on the post VIEW, which is a
- * change to what `postById` answers rather than anything this file can decide.
+ * `likedByMe` is what makes the twin replayable. It is state about the acting member, not a column
+ * on `posts` — the server's authoritative row is the `likes` composite key — and it reaches the
+ * store two ways: `postRecord` seeds it per actor (`repo.recordById`), and this twin sets it while
+ * its own like is pending. The seed is why a member who liked in an earlier session and likes again
+ * sees no +1: before it, a fresh page held `false`, the twin painted a like the server ignores
+ * (insert-or-ignore), and the count dropped back when the answer landed (sweep 10d, B17).
  */
 declare module '@ultimat3/action' {
   interface LocalTables {

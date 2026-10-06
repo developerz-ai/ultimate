@@ -21,11 +21,13 @@ import {
   type MemberId,
   type OrgId,
   type PostId,
+  type PostStatus,
   memberId as toMemberId,
   orgId as toOrgId,
+  postId as toPostId,
 } from '@postly/domain';
 import { serviceActor, withChildContext } from '@ultimat3/core';
-import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
+import { CROSS_TENANT_SCOPE, crossTenant, type ReadBuilder } from '@ultimat3/entity';
 import { type CommentView, PostAuthor, type PostSummary, type PostView } from './entity';
 
 /** The post page's aggregate: one row, its comments attached. Shared by the query and the route. */
@@ -171,9 +173,24 @@ export const recentRows = async (orgId: OrgId, limit: number): Promise<Post[]> =
   ...(await db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()),
 ];
 
-export const rowById = async (orgId: OrgId, id: PostId): Promise<Post[]> => {
+/**
+ * One post as the page's store holds it: the whole row, plus `likedByMe` for the member READING it.
+ * The flag is per actor, so it rides only this read — never the `org-posts` channel, whose frames
+ * every member of the org receives. The store merges a frame column by column, so a frame leaves the
+ * flag where this read put it, and the like twin (`like-mutation.ts`) can tell a repeat like from a
+ * new one on a fresh page instead of painting +1 the server will never confirm.
+ */
+export type PostRecordRow = Post & { readonly likedByMe: boolean };
+
+export const recordById = async (
+  orgId: OrgId,
+  id: PostId,
+  viewer: MemberId,
+): Promise<PostRecordRow[]> => {
   const row = await db.posts.where({ orgId, id }).one();
-  return row === null ? [] : [row];
+  if (row === null) return [];
+  const liked = await db.likes.where({ orgId, postId: id, memberId: viewer }).count();
+  return [{ ...row, likedByMe: liked > 0 }];
 };
 
 export const bySlug = async (orgId: OrgId, slug: string): Promise<PostView | null> => {
@@ -202,6 +219,25 @@ export const insertDraft = async (row: {
   excerpt: string;
   body: string;
 }): Promise<PostView> => writeView(await db.posts.insert(row));
+
+/**
+ * Every post of one org, as `exportPosts` pages it (`jobs.ts`): the chain, never the rows — the
+ * export reads it a batch at a time, so the org's whole history is never one array in the heap.
+ */
+export const exportSource = (orgId: OrgId): ReadBuilder<Post> => db.posts.where({ orgId });
+
+/**
+ * The status column's state machine, as `transition()` (the posts mutator) addresses it: one
+ * conditional statement, tenant-scoped by the request's actor like every read here. Structural —
+ * the one method the factory calls — so the mutator never touches `db`.
+ */
+export const postStatus = {
+  transition: (
+    column: 'status',
+    id: string,
+    move: { readonly from: PostStatus; readonly to: PostStatus },
+  ) => db.posts.transition(column, toPostId(id), move),
+};
 
 export const markPublished = async (orgId: OrgId, id: PostId, at: Date): Promise<PostView> =>
   writeView(await db.posts.update(id, { status: 'published', publishedAt: at }, { orgId }));

@@ -6,11 +6,13 @@
 import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';
 import { assertMediaContent, blockText, mediaTokenEstimate } from './content-blocks';
+import { recordBuiltInPrice } from './deprecations';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
+import { resolveModel } from './model-resolve';
 import type { Effort, ModelId, ThinkingMode } from './models';
-import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelSpec, reasoningBody } from './models';
+import { ANTHROPIC_MODEL_IDS, modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
@@ -161,6 +163,8 @@ export interface Provider {
  */
 export function costOf(model: ModelId, usage: TokenUsage): Money {
   const spec = modelSpec(model);
+  // The one price lookup, so the one place a built-in row's price is noticed (removed in 25.0.0).
+  recordBuiltInPrice(spec);
   const input = spec.inputPerMillion.minor;
   // In TWENTIETHS of a minor unit, so the standard multipliers stay integral on any whole price:
   // a cache read is 0.1x input (2/20) and a 5-minute write 1.25x (25/20) unless the row states
@@ -207,7 +211,7 @@ export const STREAM_ONLY_MAX_TOKENS = 16_000;
 
 /** Whether this request has to go over the streaming transport to arrive at all. */
 export function requiresStreaming(request: GenerateRequest): boolean {
-  const model = request.model ?? DEFAULT_MODEL;
+  const model = resolveModel('provider', request.model);
   return Math.min(request.maxTokens, modelSpec(model).maxOutput) > STREAM_ONLY_MAX_TOKENS;
 }
 
@@ -239,7 +243,7 @@ export class AnthropicProvider implements Provider {
     if (requiresStreaming(request)) return this.assemble(request);
     const response = await this.send({ ...this.body(request), stream: false }, request.signal);
     const raw = (await response.json()) as Record<string, unknown>;
-    return parseMessage(request.model ?? DEFAULT_MODEL, raw);
+    return parseMessage(resolveModel('provider', request.model), raw);
   }
 
   /** Drive `stream()` to its `done` chunk. It throws on a cut stream, so a partial never lands. */
@@ -259,7 +263,7 @@ export class AnthropicProvider implements Provider {
    * result, so a consumer that only wants the answer can ignore every chunk before it.
    */
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const model = request.model ?? DEFAULT_MODEL;
+    const model = resolveModel('provider', request.model);
     const response = await this.send({ ...this.body(request), stream: true }, request.signal);
     if (response.body === null) {
       throw new AiTransportError({
@@ -289,7 +293,7 @@ export class AnthropicProvider implements Provider {
 
   /** The request body. Pure and side-effect free so a test can assert it directly. */
   body(request: GenerateRequest): Record<string, unknown> {
-    const model = request.model ?? DEFAULT_MODEL;
+    const model = resolveModel('provider', request.model);
     // The blocks pass through untouched below — they ARE this wire's shapes — so this is the screen.
     assertMediaContent(request.messages, { provider: this.name, model });
     const body: Record<string, unknown> = {
@@ -398,7 +402,7 @@ export function estimateTokens(request: GenerateRequest): number {
 }
 
 const completionCeiling = (request: GenerateRequest): number =>
-  Math.min(request.maxTokens, modelSpec(request.model ?? DEFAULT_MODEL).maxOutput);
+  Math.min(request.maxTokens, modelSpec(resolveModel('provider', request.model)).maxOutput);
 
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
@@ -413,7 +417,7 @@ export function estimateInputTokens(request: GenerateRequest): number {
  * optimistic estimate is a ceiling one long completion walks through.
  */
 export function estimateCost(request: GenerateRequest): Money {
-  return costOf(request.model ?? DEFAULT_MODEL, {
+  return costOf(resolveModel('provider', request.model), {
     inputTokens: estimateInputTokens(request),
     outputTokens: completionCeiling(request),
     cacheReadTokens: 0,

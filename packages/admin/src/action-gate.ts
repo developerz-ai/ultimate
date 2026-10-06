@@ -16,7 +16,9 @@ import { atomicallyAudited } from './crud-outcome';
 import { AdminActionNotApplicableError } from './errors';
 import {
   ADMIN_DESTROY,
+  ADMIN_READ,
   ADMIN_WRITE,
+  type AdminPermission,
   CONFIRMATION_REQUIRED_REASON,
   confirmationToken,
 } from './permissions';
@@ -47,11 +49,26 @@ export const ACTION_NOT_APPLICABLE_REASON = 'admin.error.action-not-applicable';
 /** The reason an action whose input its own schema refused is audited with. */
 const ACTION_INVALID_REASON = 'admin.error.invalid-input';
 
+/**
+ * The admin-level gate an action needs, and the MCP scope its tool carries. `destructive` is
+ * checked first so a declaration marked both `readonly` and `destructive` gets the stricter gate —
+ * a contradiction that fails closed rather than open.
+ */
+export function adminPermissionForAction<Input, Output>(
+  action: AdminAction<Input, Output>,
+): AdminPermission {
+  if (action.destructive === true) return ADMIN_DESTROY;
+  // `matching` CHANGES every row the list matches (its contract answers how many it changed), so a
+  // `readonly` beside it is the same contradiction as beside `destructive`: the write gate holds.
+  if (action.matching !== undefined) return ADMIN_WRITE;
+  return action.readonly === true ? ADMIN_READ : ADMIN_WRITE;
+}
+
 /** The permissions an action needs: the admin-level gate, then the action's own policy. */
 export function permissionsForAction<Input, Output>(
   action: AdminAction<Input, Output>,
 ): readonly string[] {
-  return [action.destructive === true ? ADMIN_DESTROY : ADMIN_WRITE, action.permission];
+  return [adminPermissionForAction(action), action.permission];
 }
 
 export function decideAction<Input, Output>(

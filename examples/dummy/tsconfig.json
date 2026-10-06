@@ -25,6 +25,7 @@
       "@postly/i18n": ["./packages/i18n/src/index.ts"],
       "@postly/ui": ["./packages/ui/src/index.ts"],
       "@postly/mcp": ["./packages/mcp/src/index.ts"],
+      "@postly/mcp/confirmations": ["./packages/mcp/src/confirmations.ts"],
       "@postly/web/*": ["./apps/web/*"]
     }
   },

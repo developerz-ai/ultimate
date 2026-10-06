@@ -9,6 +9,7 @@
 
 import type { AnyAction } from '@ultimat3/action';
 import type { Money } from '@ultimat3/money';
+import type { ModelSource } from './model-resolve';
 
 /** The declared ceilings, flattened so a manifest row is plain JSON. `null` is "not declared". */
 export interface AgentBudgetFact {
@@ -27,7 +28,13 @@ export interface AgentFact {
    * which agent ran and not which agent it was — the same reason every eval result carries it.
    */
   readonly promptHash: string;
+  /** The model a call runs on: the declaration's, its prompt's, then the gateway's `defaultModel`. */
   readonly model: string;
+  /**
+   * Which of those answered. `built-in-default` is the deprecated `DEFAULT_MODEL` (removed in
+   * 25.0.0); `gateway` and `built-in-default` are as of the gateway installed when the row is read.
+   */
+  readonly modelFrom: ModelSource;
   readonly maxTurns: number;
   readonly maxToolResultChars: number;
   /** Tool names, sorted — the catalogue this agent may call, which is its blast radius. */

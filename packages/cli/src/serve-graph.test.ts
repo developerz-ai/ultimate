@@ -64,8 +64,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 620 → 622, measured 622 (2026-10-06, plan 101 sweep 10c): `mcp/src/confirmation-schema.ts`
  * (the leaf `@ultimat3/mcp/schema` the boot applies `x_mcp_confirmations` from) and
  * `http/src/request-facts.ts` (the one request-facts builder mcp and the bearer mount share).
+ * raised 622 → 623, measured 623 (2026-10-06, plan 101 sweep 10d): `core/src/config-mail.ts` — the
+ * `mail.retainMime` app-config key, validated where every config section is.
  */
-const MIGRATE_CEILING = 622;
+const MIGRATE_CEILING = 623;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -109,8 +111,11 @@ const MIGRATE_CEILING = 622;
  * `MIGRATE_CEILING` for 10c, and the SES transport a worker sends mail through —
  * `mail/src/driver-ses.ts`, `ses-failure.ts` (SES error types onto retry classes) and
  * `retain-mime.ts`. The SNS/Resend receivers stay off every role, behind `@ultimat3/mail/events`.
+ * raised 912 → 914, measured 914 (2026-10-06, plan 101 sweep 10d): `core/src/config-mail.ts` (named
+ * on `MIGRATE_CEILING`) and `cli/src/runtime-mail.ts`, which hands that key to the mail driver a
+ * worker sends through.
  */
-const SERVING_ROLE_CEILING = 912;
+const SERVING_ROLE_CEILING = 914;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -148,8 +153,10 @@ const SERVING_ROLE_CEILING = 912;
  * must carry back the exact arguments `view` showed, compared by keyed digest) — and
  * `mcp/src/errors-transport.ts`, the transport error classes split out so `errors.ts` stays under
  * the 500-line ceiling once the eight confirmation codes are registered.
+ * raised 1024 → 1026, measured 1026 (2026-10-06, plan 101 sweep 10d): the two modules named on
+ * `SERVING_ROLE_CEILING` for 10d (`admin/src/mcp-scopes.ts` is behind the admin mount's lazy import).
  */
-const WEB_ROLE_CEILING = 1024;
+const WEB_ROLE_CEILING = 1026;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

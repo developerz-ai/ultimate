@@ -41,15 +41,16 @@ import type { LlmCache } from './llm-cache';
 import { openCache } from './llm-cache';
 import type { LlmSink, LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, streamOneTurn, withLlmSink } from './llm-stream';
+import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL, moreCapableThan } from './models';
+import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { parseJsonish, RESPOND, respondFor } from './respond';
-import { aiGateway, aiRedactor } from './runtime';
+import { aiGateway, aiRedactor, installedGateway } from './runtime';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -191,7 +192,8 @@ async function generate<
   // The prompt ref is the identity every failure here is about, and unlike the action's
   // export name it exists before registration and can never twin.
   const name = prompt.ref;
-  const model = def.model ?? prompt.model ?? DEFAULT_MODEL;
+  // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
+  const model = resolveModel('llm', def.model, prompt.model, installedGateway()?.defaultModel);
   // `vars()` is the one declared place a model call loads data, so it is the one place the
   // framework can refuse a `Secret` and the one place an app's redactor can see the row before it
   // leaves the process. Both run here, between the load and the request, and neither is optional

@@ -4,7 +4,7 @@
 
 // why: Bun exposes no path-join primitive; the announcement file lives in the profile directory.
 import { join } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+import { renderThrowable, stringField } from '@ultimat3/core';
 import type { CdpConnection } from './cdp-connection';
 import { cdpConnect, cdpConnectOver } from './cdp-connection';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
@@ -109,6 +109,35 @@ export interface PortConnectionInput {
   readonly deadlineMs: number;
   /** Every call's deadline once connected. */
   readonly timeoutMs: number;
+  /**
+   * How the announcement is read — `Bun.file(path).text()` unless a test hands a reader that
+   * refuses the way Windows does, which no Linux file system can be made to.
+   */
+  readonly readText?: ((path: string) => Promise<string>) | undefined;
+}
+
+/**
+ * The read errors that mean "not announced YET", never "the launch failed": `ENOENT`, the file
+ * gone between the existence check and the read, and `EBUSY`, which is how Bun reports a Windows
+ * sharing violation — Chrome writes `DevToolsActivePort` in place and holds it open without read
+ * sharing while it does. Seen on windows-latest (PR #668): "DevTools listening" on stderr, the file
+ * present, the read refused, and the launch reported `closed` with the browser alive.
+ */
+const NOT_YET = new Set(['ENOENT', 'EBUSY']);
+
+const readFile = (path: string): Promise<string> => Bun.file(path).text();
+
+/** The announcement's text, or `undefined` while its writer still holds it. */
+async function readAnnouncement(
+  path: string,
+  read: (path: string) => Promise<string>,
+): Promise<string | undefined> {
+  try {
+    return await read(path);
+  } catch (error) {
+    if (NOT_YET.has(stringField(error, 'code') ?? '')) return undefined;
+    throw error;
+  }
 }
 
 /**
@@ -122,8 +151,10 @@ export async function portConnection(input: PortConnectionInput): Promise<CdpCon
   for (;;) {
     // A FRESH handle per look: a `BunFile` that once answered "absent" keeps answering it (measured
     // on Bun 1.4.2 — `exists()` false and `text()` empty after the file was written).
-    const file = Bun.file(path);
-    const endpoint = (await file.exists()) ? devToolsEndpoint(await file.text()) : undefined;
+    const text = (await Bun.file(path).exists())
+      ? await readAnnouncement(path, input.readText ?? readFile)
+      : undefined;
+    const endpoint = text === undefined ? undefined : devToolsEndpoint(text);
     const left = input.deadlineMs - (performance.now() - began);
     if (endpoint !== undefined) return dialWithin(endpoint, Math.max(1, left), input.timeoutMs);
     if (input.exited()) {

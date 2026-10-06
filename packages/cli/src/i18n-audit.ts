@@ -20,6 +20,7 @@ import {
   missingFrom,
   nestCatalog,
 } from '@ultimat3/i18n';
+import { isLoudMiss, loudMiss } from './i18n-registration';
 import { posixRelative } from './posix-path';
 import { eachSourceFile, isTest } from './source-files';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
@@ -186,11 +187,23 @@ function sortCatalog(catalog: Catalog): Catalog {
 }
 
 /**
- * `x i18n add`'s seed: every key the default locale defines, values copied verbatim — an
- * untranslated string that renders is strictly better than a missing key that renders `⟦key⟧`.
+ * `x i18n add`'s seed, and `x i18n sync`'s source on a real merge: every key the default locale
+ * defines, each value copied INSIDE the CLI's
+ * one placeholder marker — `⟦Hello {name}⟧`. A bare copy rendered the default locale's string to
+ * every `fr` reader under a green gate, an untranslated catalog no audit could tell from a
+ * finished one. Marked, the source text still sits where the translation goes, the page shows the
+ * brackets, and `withPlaceholdersMissing` counts every key as missing (`X_CATALOG_MISSING_KEYS`)
+ * until a human replaces it. `loudMiss` is the marker's one spelling — a second one would be a
+ * placeholder this command writes and the gate cannot see.
  */
 export function seedCatalog(source: Catalog): Catalog {
-  return sortCatalog(source);
+  const marked: Record<string, string> = {};
+  for (const key of catalogKeys(source)) {
+    const value = source[key];
+    // A value already a placeholder stays one, as written — never `⟦⟦key⟧⟧`.
+    if (value !== undefined) marked[key] = isLoudMiss(value) ? value : loudMiss(value);
+  }
+  return marked;
 }
 
 export interface SyncResult {

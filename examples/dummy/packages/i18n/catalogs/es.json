@@ -233,6 +233,11 @@
       "body": "{author} acaba de publicar un artículo en {org}.",
       "cta": "Leerlo en Postly"
     },
+    "commentPosted": {
+      "subject": "{commenter} comentó en {title}",
+      "body": "{commenter} dejó un comentario en tu artículo.",
+      "cta": "Leer el comentario"
+    },
     "welcome": {
       "subject": "Te damos la bienvenida a Postly, {org}",
       "body": "Tu organización está lista. Invita a tu equipo y publica algo pequeño hoy mismo.",

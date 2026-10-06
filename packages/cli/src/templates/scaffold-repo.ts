@@ -92,6 +92,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
   "dependencies": {
     "@ultimat3/action": "^${version}",
     "@ultimat3/admin": "^${version}",
+    "@ultimat3/auth": "^${version}",
     "@ultimat3/cache": "^${version}",
     "@ultimat3/cli": "^${version}",
     "@ultimat3/core": "^${version}",

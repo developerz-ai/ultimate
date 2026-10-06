@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "b025413694123fac",
+  "buildId": "f509c359c9b0637f",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1152,6 +1152,116 @@
       }
     },
     {
+      "name": "confirmAgentPublish",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "view",
+              "approve",
+              "reject"
+            ]
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": {
+              "description": "any JSON value, nested at most 256 levels deep"
+            },
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "__proto__",
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": {
+              "description": "any JSON value, nested at most 256 levels deep"
+            },
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "__proto__",
+                  "constructor",
+                  "prototype"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "status",
+          "decidedAt",
+          "expiresAt",
+          "arguments"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "connectSite",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1964,6 +2074,81 @@
       }
     },
     {
+      "name": "movePostStatus",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "status",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      },
+      "mutator": true
+    },
+    {
       "name": "publishPost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2091,6 +2276,104 @@
       "mcp": {
         "expose": true,
         "description": "Publish a draft post"
+      }
+    },
+    {
+      "name": "requestPostsExport",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "exportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "exportId",
+          "prefix"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:export",
+      "permissions": [
+        "post:export"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Export every post of the actor’s org as CSV to storage"
+      }
+    },
+    {
+      "name": "reviewDraft",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "revise"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "verdict",
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Review a draft post and say whether it is ready to publish"
       }
     },
     {
@@ -2501,6 +2784,210 @@
       "mcp": {
         "expose": true,
         "description": "Summarise a post into two sentences and up to four tags"
+      }
+    },
+    {
+      "name": "summarizePosts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "postIds names between 1 and 20 posts",
+            "x-ultimate-refinements": [
+              {
+                "name": "a-page-of-posts",
+                "message": "postIds names between 1 and 20 posts"
+              }
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "postIds"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "members": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "index": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "summary": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "summary",
+                        "tags"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "failed"
+                    },
+                    "index": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "code": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "code",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "skipped"
+                    },
+                    "index": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "index",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "discriminator": {
+                "propertyName": "status"
+              }
+            }
+          },
+          "ok": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "tokens": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "cost": {
+            "type": "object",
+            "properties": {
+              "minor": {
+                "type": "integer",
+                "description": "amount in minor units, never a float",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              "scale": {
+                "type": "integer",
+                "description": "decimal places `minor` counts; absent means the currency’s own",
+                "minimum": 0,
+                "maximum": 15
+              }
+            },
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "additionalProperties": false,
+            "description": "integer minor units plus an ISO 4217 currency code"
+          }
+        },
+        "required": [
+          "members",
+          "ok",
+          "failed",
+          "skipped",
+          "tokens",
+          "cost"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Summarise up to twenty posts of the actor’s org at once"
       }
     },
     {
@@ -4554,6 +5041,135 @@
       "steps": []
     },
     {
+      "name": "post.commented",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "postId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "orgId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "commentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "commenterId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "commenter": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "postId",
+              "orgId",
+              "commentId",
+              "commenterId",
+              "title",
+              "commenter"
+            ],
+            "additionalProperties": false
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "locale": {
+                  "type": "string",
+                  "format": "bcp47-locale"
+                },
+                "tz": {
+                  "type": "string",
+                  "format": "iana-time-zone"
+                },
+                "to": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "params"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "postly.mcp.purge",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "posts.export",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "exportId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "orgId",
+          "exportId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "runs.sync",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4688,6 +5304,14 @@
     }
   ],
   "tasks": [
+    {
+      "name": "hourlyPurge",
+      "cron": "23 * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "postly.mcp.purge"
+      ]
+    },
     {
       "name": "nightlyDigest",
       "cron": "0 3 * * *",
@@ -4832,6 +5456,12 @@
       ]
     },
     {
+      "permission": "post:export",
+      "enforcedIn": [
+        "action:requestPostsExport"
+      ]
+    },
+    {
       "permission": "post:like",
       "enforcedIn": [
         "action:likePost"
@@ -4840,6 +5470,8 @@
     {
       "permission": "post:publish",
       "enforcedIn": [
+        "action:confirmAgentPublish",
+        "action:movePostStatus",
         "action:publishPost"
       ]
     },
@@ -4847,7 +5479,9 @@
       "permission": "post:read",
       "enforcedIn": [
         "action:createComment",
+        "action:reviewDraft",
         "action:summarize",
+        "action:summarizePosts",
         "query:postById",
         "query:postRecord"
       ]
@@ -4949,6 +5583,7 @@
     "orgs:read",
     "orgs:write",
     "post:create",
+    "post:export",
     "post:like",
     "post:publish",
     "post:read",

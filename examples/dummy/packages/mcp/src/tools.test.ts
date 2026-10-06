@@ -11,12 +11,12 @@
 import { describeActions } from '@ultimat3/action';
 import { defineAppMcp, t } from '@ultimat3/mcp';
 import { expect, test } from '@ultimat3/testing';
-import { mcp } from './tools';
+import { postlyHandWrittenMcp } from './tools';
 
 const bare = (name: string): string => name.replace(/^postly\./, '');
 
 test('every action that declares mcp.expose is a tool, and the hand-written set is exactly three', () => {
-  const toolNames = mcp.tools.map((tool) => bare(tool.name));
+  const toolNames = postlyHandWrittenMcp().tools.map((tool) => bare(tool.name));
 
   // Action/tool parity is deliberately NOT asserted here. `include: 'exposed'` snapshots the
   // action registry when this module loads, and the registry is process-global — so what it
@@ -53,13 +53,13 @@ test('no tool reaches a client without a policy — it fails at boot, not at cal
 });
 
 test('a read tool is not metered as destructive, and every tool carries a schema', () => {
-  const quote = mcp.tools.find((tool) => bare(tool.name) === 'planQuote');
+  const quote = postlyHandWrittenMcp().tools.find((tool) => bare(tool.name) === 'planQuote');
   expect(quote).toBeDefined();
   // planQuote must never charge — see @postly/mcp CLAUDE.md. `destructive` defaults to true,
   // so a read tool has to say so explicitly, and a new mutating tool cannot be cheap by default.
   expect(quote?.destructive).toBe(false);
 
-  for (const tool of mcp.tools) {
+  for (const tool of postlyHandWrittenMcp().tools) {
     expect(tool.description.length).toBeGreaterThan(0);
     expect(tool.inputSchema).toBeDefined();
   }

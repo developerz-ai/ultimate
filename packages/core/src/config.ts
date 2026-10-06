@@ -7,13 +7,14 @@ import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
 import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
+import type { AiConfig, AiConfigInput } from './config-ai';
 import { countIssue } from './config-count';
 import { configDefaults } from './config-defaults';
 import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
-import type { DrainConfig, HealthConfig } from './config-health';
-import { readinessModeIssue } from './config-health';
+import { type DrainConfig, type HealthConfig, readinessModeIssue } from './config-health';
 import type { IslandsConfig, IslandsSectionInput } from './config-islands';
 import { islandsIssues, mergeIslands } from './config-islands';
+import { type MailConfig, type MailSectionInput, mailIssues, mergeMail } from './config-mail';
 import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
 import { mergeNavigation, navigationIssues } from './config-navigation';
@@ -180,23 +181,6 @@ export interface RealtimeConfig {
   readonly maxSocketsPerActor?: number | undefined;
 }
 
-export interface McpConfig {
-  readonly expose: boolean;
-  readonly path: string;
-}
-
-/**
- * No `modelEnv`. It named the env KEY holding the model id, "so no model string is baked into the
- * image" — and its only reader was this file's own merge, copying input to output. Nothing
- * consumed the merged value, so `modelEnv: 'ANTHROPIC_MODEL'` selected no model: `@ultimat3/ai`
- * reads env for API KEYS only, and the model is `request.model ?? DEFAULT_MODEL`, a compile-time
- * constant in `models.ts`. The exact thing the key existed to prevent is what it delivered.
- * Deleted 2026-08 — pass `model` on the request, or read your own env key and pass it.
- */
-export interface AiConfig {
-  readonly mcp: McpConfig;
-}
-
 export interface AppConfig {
   readonly name: string;
   readonly locales: readonly string[];
@@ -219,11 +203,7 @@ export interface AppConfig {
   readonly seo: SeoConfig;
   readonly navigation: NavigationConfig;
   readonly islands: IslandsConfig;
-}
-
-/** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
-export interface AiConfigInput {
-  readonly mcp?: Input<McpConfig> | undefined;
+  readonly mail: MailConfig;
 }
 
 /**
@@ -240,7 +220,8 @@ export interface PwaConfigInput extends Omit<Input<PwaConfig>, 'offline'> {
 export interface AppConfigInput
   extends SiteSectionsInput,
     NavigationSectionInput,
-    IslandsSectionInput {
+    IslandsSectionInput,
+    MailSectionInput {
   readonly name: string;
   readonly locales?: readonly string[] | undefined;
   readonly defaultLocale?: string | undefined;
@@ -360,6 +341,7 @@ function validate(config: AppConfig): void {
   siteIssues(config, issues);
   navigationIssues(config, issues);
   islandsIssues(config, issues);
+  mailIssues(config, issues);
 
   // A rung the ladder cannot build is the defect this key had: `sortTiers` places a name by its
   // index in `CACHE_TIERS`, and a name missing from it sorts to `-1` — AHEAD of the request memo.
@@ -471,6 +453,7 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
     ...mergeSite(layers),
     ...mergeNavigation(layers),
     ...mergeIslands(layers),
+    ...mergeMail(layers),
   };
 }
 
