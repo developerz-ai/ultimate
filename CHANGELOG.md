@@ -429,6 +429,8 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
   subscription; the `NatsClient` port gains an optional `onClosed`.
 - **cli (security):** `x shot` (and MCP `ui.interact`) enforces its host allow list on popups
   (`target=_blank`, `window.open`) by pausing requests at the browser target, as scraping does.
+  **Behaviour change:** with `--cdp-url`, a provider that refuses the browser-target attach now
+  fails the open (`X_CDP_CALL_FAILED`), where it used to proceed without the popup fence.
 - **ui:** `<Form>` focuses the first invalid field once per failed submit; touching or editing
   afterwards no longer pulls focus back. A successful submit keeps the fields edited while it was in
   flight dirty. `Dropzone` without `multiple` accepts one dropped file. A closed `Menu`'s trigger
