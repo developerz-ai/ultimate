@@ -14,6 +14,14 @@ export type SchemaKind =
   | 'union'
   | 'record'
   | 'money'
+  /**
+   * Any JSON value — `t.json()`. A kind and not a field on `unknown`, because they are different
+   * facts: `unknown` is the IR saying it CANNOT describe a value (`@ultimat3/entity`'s view of a
+   * column it has no node for), `json` is the IR saying exactly what it holds. Every foreign
+   * `default:` already degrades to the right projection — `{}`, a raw pass-through, a `null`
+   * sample, admin's JSON textarea — so a consumer that has never heard of it is still correct.
+   */
+  | 'json'
   | 'unknown';
 
 /** JSON Schema `format`, plus the framework's own semantic formats. */

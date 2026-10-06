@@ -22,6 +22,7 @@ import { charCount } from './char-count';
 import { expected } from './describe-value';
 import { discriminatedUnionSchema } from './discriminated-union';
 import { isIsoDateTime, isZonelessDateTime } from './iso-date';
+import { type JsonValue, jsonSchema } from './json-value';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
@@ -414,6 +415,8 @@ export interface TNamespace {
   readonly locale: StringSchema;
   readonly slug: StringSchema;
   readonly cursor: StringSchema;
+  /** Any JSON value, bounded in depth — a payload whose shape is somebody else's. */
+  json(): Schema<JsonValue, JsonValue>;
   object<S extends Shape>(shape: S): ObjectSchema<S>;
   array<S extends AnySchema>(items: S): Schema<readonly InferInput<S>[], InferOutput<S>[]>;
   enum<const V extends readonly [string, ...string[]]>(values: V): Schema<V[number], V[number]>;
@@ -468,6 +471,7 @@ export const builtinT: TNamespace = Object.freeze({
     { kind: 'string', format: 'cursor', pattern: CURSOR_RE.source },
     'an opaque base64url cursor',
   ),
+  json: jsonSchema,
   object: objectSchema,
   array: arraySchema,
   enum: enumSchema,

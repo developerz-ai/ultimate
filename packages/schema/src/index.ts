@@ -52,6 +52,8 @@ export type {
   ToJsonSchemaOptions,
 } from './json-schema';
 export { nodeToJsonSchema, toJsonSchema } from './json-schema';
+export type { JsonValue } from './json-value';
+export { JSON_MAX_DEPTH, jsonSchema } from './json-value';
 export type { MoneyValue } from './money-value';
 export {
   CURRENCY_CODE_PATTERN,

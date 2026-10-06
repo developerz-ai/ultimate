@@ -3,6 +3,7 @@
 // even for modules that captured `t` at import time.
 
 import type { AnySchema, Refinement, Schema, Shape } from './builder';
+import type { JsonValue } from './json-value';
 import type { MoneyValue } from './money-value';
 import { schemaProvider } from './provider';
 import type { InferInput, InferOutput, StandardSchemaV1 } from './standard';
@@ -48,6 +49,14 @@ export const t: TNamespace = {
   },
   get cursor(): StringSchema {
     return provider().cursor;
+  },
+  /**
+   * `t.json()` — any JSON value: null, a boolean, a finite number, a string, and arrays and plain
+   * objects of them, at most `JSON_MAX_DEPTH` deep. The column it pairs with is entity's
+   * `json(t.json())`, a `jsonb` that stores what it was sent.
+   */
+  json(): Schema<JsonValue, JsonValue> {
+    return provider().json();
   },
   object<S extends Shape>(shape: S): ObjectSchema<S> {
     return provider().object(shape);

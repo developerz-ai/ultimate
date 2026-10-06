@@ -68,4 +68,6 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_PUT_FAILED: 500,
   // @ultimat3/storage — the object could not be read
   X_STORAGE_READ_FAILED: 500,
+  // @ultimat3/storage — the object is under retention or a legal hold
+  X_STORAGE_OBJECT_LOCKED: 409,
 } satisfies Readonly<Record<string, number>>;

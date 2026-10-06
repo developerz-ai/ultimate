@@ -25,6 +25,13 @@ import {
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
 import { checksumMismatch, getTooLarge, objectNotFound } from './errors';
+import {
+  assertObjectLockOptions,
+  isLocked,
+  type ObjectLock,
+  ObjectLockedError,
+  requestedLock,
+} from './object-lock';
 import { assertSafeKey } from './path';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
@@ -47,6 +54,8 @@ export interface MemoryStorageDriver extends StorageDriver {
 interface Stored {
   readonly bytes: Uint8Array;
   readonly object: StorageObject;
+  /** The local disk's sidecar lock, held here instead. */
+  readonly lock?: ObjectLock | undefined;
 }
 
 /**
@@ -82,6 +91,16 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
   // The name a registry gave this disk, so a miss names `disk('<it>')` — the call the author wrote.
   let registered: string = DRIVER_NAME;
 
+  /** The lock that holds NOW, or `undefined` — the local disk's rule, read off the map. */
+  const lockAt = (key: string): ObjectLock | undefined => {
+    const lock = stored.get(key)?.lock;
+    return isLocked(lock, clock.now()) ? lock : undefined;
+  };
+  const refuseOverwrite = (key: string, action: 'overwrite' | 'copy onto'): void => {
+    const lock = lockAt(key);
+    if (lock !== undefined) throw new ObjectLockedError({ disk: registered, key, action, lock });
+  };
+
   const found = (key: string): Stored => {
     const hit = stored.get(key);
     if (hit === undefined) throw objectNotFound(registered, key);
@@ -116,6 +135,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
         });
       }
       assertPutOptions(DRIVER_NAME, putOptions);
+      assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
       const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
@@ -133,8 +153,15 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
           : { cacheControl: putOptions.cacheControl }),
         ...(putOptions?.metadata === undefined ? {} : { metadata: putOptions.metadata }),
       };
+      // Checked AFTER the body is read, with no await between check and write: the map is the
+      // queue the local disk needs a `keyedQueue` for.
+      refuseOverwrite(safe, 'overwrite');
       // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
-      stored.set(safe, { bytes: bytes.slice(), object: snapshot(object) });
+      stored.set(safe, {
+        bytes: bytes.slice(),
+        object: snapshot(object),
+        lock: requestedLock(putOptions),
+      });
       return snapshot(object);
     },
 
@@ -163,6 +190,7 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
       // refusal whether or not the source exists.
       const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
       const source = found(from_);
+      refuseOverwrite(destination, 'copy onto');
       const object: StorageObject = {
         ...source.object,
         key: destination,
@@ -173,7 +201,17 @@ export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDr
     },
 
     async delete(key: string): Promise<void> {
-      stored.delete(assertSafeKey(key));
+      const safe = assertSafeKey(key);
+      const lock = lockAt(safe);
+      if (lock !== undefined) {
+        throw new ObjectLockedError({ disk: registered, key: safe, action: 'delete', lock });
+      }
+      stored.delete(safe);
+    },
+
+    async retentionOf(key: string): Promise<ObjectLock> {
+      const lock = found(assertSafeKey(key)).lock;
+      return lock === undefined ? { legalHold: false } : structuredClone(lock);
     },
 
     async exists(key: string): Promise<boolean> {

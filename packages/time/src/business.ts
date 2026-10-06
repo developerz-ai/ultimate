@@ -4,6 +4,7 @@
  */
 
 import { scheduleInvalid, type TimeError } from './errors';
+import { holidaySet } from './holidays';
 import type { Instant } from './instant';
 import { daysBetween, fromZoned, isoDateInZone, toZoned, type ZonedDateTime } from './zoned';
 import { type TimeZone, utcEpoch } from './zones';
@@ -30,8 +31,8 @@ export function isWeekend(at: Instant, zone: TimeZone, weekendDays = WEEKEND_SAT
 }
 
 export function isHoliday(at: Instant, calendar: BusinessCalendar): boolean {
-  const holidays = calendar.holidays ?? [];
-  return holidays.includes(isoDateInZone(at, calendar.zone));
+  // A `Set` built once per list (`holidays.ts`): every business-day walk asks this per day.
+  return holidaySet(calendar.holidays).has(isoDateInZone(at, calendar.zone));
 }
 
 /** A business day is a non-weekend, non-holiday local day. */

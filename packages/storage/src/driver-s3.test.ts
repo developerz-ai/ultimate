@@ -6,7 +6,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
-import { type S3ListEntryLike, s3Driver } from './driver-s3';
+import { s3Driver } from './driver-s3';
+import type { S3ListEntryLike } from './driver-s3-client';
 import { bytesOf, catchError, codeOf, FakeS3Client, textOf } from './driver-s3-fixture';
 import type { StorageError } from './errors';
 import { META_DIR, scopedKey } from './path';

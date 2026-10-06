@@ -98,12 +98,26 @@ signed request with one does.
 
 ## Object Lock
 
-Plan `docs/plans/2026/09/22/102-downstream-app-gaps/03-storage-object-lock.md` will need a
-lock-enabled bucket. `As of 2026-10-01`: with `VGW_VERSIONING_DIR` set, Versity creates one and a
-client reads it back as enabled; a per-object retention round trip was not measured, because the
-signed PUT that carries `x-amz-object-lock-*` is that plan's `signAwsRequest`, which does not exist
-yet. Such a bucket is made by a `CreateBucket` call with the lock header, so it will need the init
-step the plain bucket does not.
+`As of 2026-10-06` (plan 101 sweep 10a): the signed PUT exists — core's `signAwsRequest`, sent by
+`@ultimat3/storage`'s `driver-s3-signed.ts` — and a per-object retention and legal hold round trip
+was measured on Versity v1.8.0 with versioning. The compose gateway still has no
+`VGW_VERSIONING_DIR`, so its bucket cannot hold a lock and the lock case in
+`driver-s3.live.test.ts` skips unless `S3_OBJECT_LOCK_BUCKET` is set. To run it:
+
+1. Start a VERSIONED gateway beside the plain one (any free port):
+   `docker run -d --rm --name lock-s3 -p 127.0.0.1:9100:9000 -e VGW_BACKEND=posix -e VGW_BACKEND_ARG=/data -e VGW_PORT=':9000' -e VGW_REGION=auto -e ROOT_ACCESS_KEY=ultimate -e ROOT_SECRET_KEY=ultimate-test -e VGW_VERSIONING_DIR=/versions --tmpfs /data --tmpfs /versions versity/versitygw:v1.8.0`
+2. Create a plain bucket and a LOCK-ENABLED one — `CreateBucket` with
+   `x-amz-bucket-object-lock-enabled: true`; a lock cannot be turned on after creation. Either
+   `aws s3api create-bucket --bucket locked --object-lock-enabled-for-bucket --endpoint-url http://127.0.0.1:9100`,
+   or a signed `PUT /locked` through `signAwsRequest({ service: 's3', region: 'auto', … })`.
+3. `TEST_S3_URL=http://ultimate:ultimate-test@127.0.0.1:9100/plain S3_OBJECT_LOCK_BUCKET=locked bun test packages/storage/src/driver-s3.live.test.ts`
+4. `docker stop lock-s3` — the tmpfs goes with it, so no locked object outlives the run.
+
+What it showed: a DELETE without a version id on a locked object SUCCEEDS (a delete marker) and an
+overwrite writes a newer version — the locked version stays. That is S3's Object Lock, and it is
+why the s3 driver hands both calls to the provider while the local and memory disks refuse them
+(`X_STORAGE_OBJECT_LOCKED`). Plan 102/03's premise that S3 answers a locked delete with a refusal
+was false.
 
 ## Logs in the test run itself
 

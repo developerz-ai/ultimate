@@ -88,8 +88,13 @@ const MIGRATE_CEILING = 615;
  * raised 893 → 894, measured 894 (2026-10-05, plan 101 sweep 9, #506): `render/src/island-hold.ts`
  * — a realtime island on a page-boot document is held hidden until every held island has mounted
  * over the restored store and outbox, so an offline reload never paints the stale count first.
+ * raised 894 → 900, measured 900 (2026-10-06, plan 101 sweep 10a): `schema/src/json-value.ts`
+ * (`t.json()`), `core/src/aws-sigv4.ts` (the one SigV4 signer), and S3 Object Lock in storage —
+ * `object-lock.ts`, `driver-s3-signed.ts` (the signed PUT a locked or metadata-carrying put takes),
+ * `driver-s3-lock.ts` (its headers and the retention reads) and `driver-s3-client.ts` (moved out so
+ * `driver-s3.ts` stays under the ceiling).
  */
-const SERVING_ROLE_CEILING = 894;
+const SERVING_ROLE_CEILING = 900;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -116,8 +121,10 @@ const SERVING_ROLE_CEILING = 894;
  * build's duplicate-module guard — `island-duplicates.ts` (detection), `island-duplicate-refusal.ts`
  * (refuse a framework duplicate, warn on a third-party one) and `island-entry-missing.ts` (the
  * refusals moved out so `island-bundle.ts` stays under the 500-line ceiling).
+ * raised 998 → 1004, measured 1004 (2026-10-06, plan 101 sweep 10a): the six modules named on
+ * `SERVING_ROLE_CEILING` for sweep 10a.
  */
-const WEB_ROLE_CEILING = 998;
+const WEB_ROLE_CEILING = 1004;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

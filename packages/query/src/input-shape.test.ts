@@ -49,6 +49,8 @@ describe('an input a query string cannot carry is refused where it is declared',
       t.object({ tags: t.record(t.string) }),
       t.object({ price: t.money }),
       t.object({ rows: t.array(t.object({ a: t.string })) }),
+      // Any JSON value may be an object, which a search string cannot carry.
+      t.object({ payload: t.json() }),
     ]) {
       expect(refusal(input).code).toBe('X_QUERY_INPUT_UNENCODABLE');
     }

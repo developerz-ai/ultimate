@@ -137,6 +137,10 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       }
       return raw;
     }
+    // Named rather than left to `default`: a query parameter is TEXT, and text is already a JSON
+    // value. Parsing it would make `?q=12` a number for one caller and a string for the next.
+    case 'json':
+      return raw;
     default:
       return raw;
   }

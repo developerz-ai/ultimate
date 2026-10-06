@@ -21,7 +21,7 @@ import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/cor
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { s3Driver } from './driver-s3';
-import { bytesOf, catchError, codeOf, FakeS3Client, s3Error } from './driver-s3-fixture';
+import { bytesOf, catchError, codeOf, FAKE_ENV, FakeS3Client, s3Error } from './driver-s3-fixture';
 import { SIGNED_URL_PARAMS } from './signed-url';
 
 const KEY = 'org/org-1/a.txt';
@@ -181,28 +181,41 @@ describe('put refuses what its disk cannot honour', () => {
     }
   });
 
-  test('metadata and cacheControl are the one PutOptions pair the disks disagree about', async () => {
-    // KNOWN DIVERGENCE, pinned rather than resolved. `Bun.S3Client.write` exposes `type`, `acl`
-    // and `storageClass` and no header hook for `x-amz-meta-*` or `Cache-Control`, so the s3
-    // driver refuses with an out-of-band command; the local driver stores both in its sidecar and
-    // reads them back. An app that develops on `local` and ships on `s3` meets this at its first
-    // production `put()`.
+  test('metadata and cacheControl are STORED by both; only the local disk reads them back', async () => {
+    // The write half agrees: the local disk keeps both in its sidecar, the s3 disk sends them as
+    // `x-amz-meta-*` / `Cache-Control` on a signed PUT (it used to refuse, `X_NOT_IMPLEMENTED`,
+    // while `Bun.S3Client` was its only transport). Both report them on the returned object.
     //
-    // Both halves are here so neither moves alone: the day Bun grows the hook, the s3 line fails
-    // and the resolution is to make it store them — never to make the local disk forget how.
-    const object = await local.put(KEY, bytesOf('x'), {
-      cacheControl: 'public, max-age=60',
-      metadata: { uploadedBy: 'user-1' },
-    });
-    expect(object.cacheControl).toBe('public, max-age=60');
-    expect(object.metadata).toEqual({ uploadedBy: 'user-1' });
+    // KNOWN DIVERGENCE on the read half, pinned: `get()`/`stat()` on s3 go through Bun's HEAD,
+    // whose `stat()` exposes no user metadata and no cache-control — so they are absent there,
+    // never invented. The day the read moves onto the signed wire, the s3 line fails.
+    const options = { cacheControl: 'public, max-age=60', metadata: { uploadedBy: 'user-1' } };
+    const signedS3 = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
+    for (const disk of [local, signedS3]) {
+      const object = await disk.put(KEY, bytesOf('x'), options);
+      expect(object.cacheControl).toBe('public, max-age=60');
+      expect(object.metadata).toEqual({ uploadedBy: 'user-1' });
+    }
+    expect((await local.get(KEY)).object.metadata).toEqual({ uploadedBy: 'user-1' });
+    expect((await signedS3.get(KEY)).object.metadata).toBeUndefined();
+    expect(fake.headersOf.get(KEY)?.['x-amz-meta-uploadedby']).toBe('user-1');
+  });
 
-    expect(
-      await catchError(() => s3.put(KEY, bytesOf('x'), { metadata: { a: 'b' } })),
-    ).toBeUltimateError('X_NOT_IMPLEMENTED');
-    expect(
-      await catchError(() => s3.put(KEY, bytesOf('x'), { cacheControl: 'no-cache' })),
-    ).toBeUltimateError('X_NOT_IMPLEMENTED');
+  test('a locked object: the local disk refuses the delete, s3 hands it to the provider', async () => {
+    // KNOWN DIVERGENCE, and it is S3's own semantics. Object Lock protects a VERSION: a DELETE
+    // with no version id on a lock-enabled (so versioned) bucket writes a delete marker and keeps
+    // the locked version — the provider answers 204. The local disk keeps ONE version per key, so
+    // the only way it can keep the locked bytes is to refuse; the overwrite case is the same.
+    const signedS3 = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
+    for (const disk of [local, signedS3]) await disk.put(KEY, bytesOf('x'), { legalHold: true });
+    expect(codeOf(await catchError(() => local.delete(KEY)))).toBe('X_STORAGE_OBJECT_LOCKED');
+    expect(codeOf(await catchError(() => local.put(KEY, bytesOf('y'))))).toBe(
+      'X_STORAGE_OBJECT_LOCKED',
+    );
+    await signedS3.delete(KEY);
+    expect(fake.store.has(KEY)).toBe(false);
+    // Both report the hold the same way.
+    expect(await local.retentionOf?.(KEY)).toEqual({ legalHold: true });
   });
 
   test('the server-side byte ceiling is enforced by both, with the same code', async () => {

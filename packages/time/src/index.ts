@@ -101,6 +101,7 @@ export {
   toIso,
   toIsoDateUtc,
 } from './instant';
+export { addMonthsInZone, addPlainMonths } from './months';
 export {
   addPlainDays,
   comparePlainDates,
@@ -116,6 +117,11 @@ export {
   plainDateUtc,
   plainDaysBetween,
 } from './plain-date';
+export {
+  MAX_PLAIN_DATE_RANGE_DAYS,
+  type PlainDateRangeOptions,
+  plainDateRange,
+} from './plain-date-range';
 export {
   type LocalSlot,
   nextLocalSlot,

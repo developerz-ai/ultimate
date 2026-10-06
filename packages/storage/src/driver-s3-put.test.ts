@@ -1,13 +1,13 @@
 // Single responsibility: everything the s3 driver's `put()` REFUSES — the byte ceiling that keeps
-// a buffered write from being an OOM kill, per-object encryption Bun cannot express, user
-// metadata and cache-control it has no header hook for, and a checksum the bytes contradict.
-// Split from `driver-s3.test.ts`, which owns the paths that succeed; both drive one fake client.
+// a buffered write from being an OOM kill, per-object encryption Bun cannot express, and a
+// checksum the bytes contradict. Split from `driver-s3.test.ts`, which owns the paths that
+// succeed; both drive one fake client. Metadata, cache-control and Object Lock are SENT, over the
+// signed wire — `driver-s3-lock.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { NotImplementedError } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
 import { s3Driver } from './driver-s3';
-import { bytesOf, catchError, codeOf, FakeS3Client } from './driver-s3-fixture';
+import { bytesOf, catchError, codeOf, FAKE_ENV, FakeS3Client } from './driver-s3-fixture';
 import type { StorageError } from './errors';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
@@ -110,27 +110,21 @@ describe('s3Driver put', () => {
     });
   });
 
-  describe('put: metadata / cacheControl not implemented', () => {
-    test("metadata throws core's NotImplementedError (X_NOT_IMPLEMENTED)", async () => {
+  describe('put: metadata / cacheControl are no longer refused', () => {
+    // They were `X_NOT_IMPLEMENTED` while `Bun.S3Client` was the only transport; core's
+    // `signAwsRequest` lets the driver send the headers itself.
+    test('metadata and cacheControl travel on one signed PUT, not on the Bun client', async () => {
       const fake = new FakeS3Client();
-      const driver = s3Driver({ bucket: 'b', client: fake });
-      const caught = await catchError(() =>
-        driver.put('org/org-1/f.txt', bytesOf('x'), { metadata: { owner: 'a' } }),
-      );
-      expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
-      expect((caught as StorageError).fix).toBe(
-        'aws s3 cp s3://b/org/org-1/f.txt s3://b/org/org-1/f.txt --metadata-directive REPLACE',
-      );
-      expect(caught).toBeInstanceOf(NotImplementedError);
-    });
-
-    test("cacheControl throws core's NotImplementedError (X_NOT_IMPLEMENTED)", async () => {
-      const fake = new FakeS3Client();
-      const driver = s3Driver({ bucket: 'b', client: fake });
-      const caught = await catchError(() =>
-        driver.put('org/org-1/g.txt', bytesOf('x'), { cacheControl: 'no-cache' }),
-      );
-      expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
+      const driver = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV });
+      await driver.put('org/org-1/f.txt', bytesOf('x'), {
+        metadata: { owner: 'a' },
+        cacheControl: 'no-cache',
+      });
+      expect(fake.signedCalls).toHaveLength(1);
+      expect(fake.headersOf.get('org/org-1/f.txt')).toMatchObject({
+        'x-amz-meta-owner': 'a',
+        'cache-control': 'no-cache',
+      });
     });
   });
 });

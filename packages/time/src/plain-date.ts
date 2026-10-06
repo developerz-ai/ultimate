@@ -37,8 +37,11 @@ export interface PlainDateParts {
 
 const pad = (value: number, width: number): string => String(value).padStart(width, '0');
 
-/** Days in a month, Gregorian. February is the only interesting one. */
-const daysInMonth = (year: number, month: number): number =>
+/**
+ * Days in a month, Gregorian. February is the only interesting one. Exported for `months.ts`'s
+ * clamp — one leap-year rule in the package — and deliberately not re-exported by `index.ts`.
+ */
+export const daysInMonth = (year: number, month: number): number =>
   month === 2
     ? (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
       ? 29

@@ -29,6 +29,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_KEY_CONFLICT',
   'X_STORAGE_PUT_FAILED',
   'X_STORAGE_READ_FAILED',
+  'X_STORAGE_OBJECT_LOCKED',
 ] as const;
 
 /**
@@ -68,6 +69,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_KEY_CONFLICT: 'the key collides with another key on the local disk',
   X_STORAGE_PUT_FAILED: 'the object could not be written',
   X_STORAGE_READ_FAILED: 'the object could not be read',
+  X_STORAGE_OBJECT_LOCKED: 'the object is under retention or a legal hold',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

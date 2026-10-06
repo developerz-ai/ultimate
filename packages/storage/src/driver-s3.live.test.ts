@@ -14,7 +14,7 @@
 // bucket root (`ERR_S3_INVALID_PATH`), so this file cannot make one.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError, markListening } from '@ultimat3/core';
+import { type Clock, isUltimateError, markListening } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { sha256Base64 } from './driver';
 import { s3Driver } from './driver-s3';
@@ -48,6 +48,15 @@ const targetOf = (raw: string | undefined): Target | undefined => {
 
 const target = targetOf(Bun.env['TEST_S3_URL']);
 
+/**
+ * The WALL clock. The preload freezes `Date`, and a signed request dated at the frozen instant is
+ * `RequestTimeTooSkewed` — the server's clock is real. `performance` is not frozen.
+ */
+const wallClock: Clock = {
+  now: () => new Date(performance.timeOrigin + performance.now()),
+  monotonic: () => performance.now(),
+};
+
 /** One namespace per run: a shared bucket survives two runs at once, and a run that died. */
 const PREFIX = `xlive-${crypto.randomUUID()}`;
 const at = (name: string): string => `${PREFIX}/${name}`;
@@ -68,6 +77,7 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
         S3_ACCESS_KEY_ID: target.accessKeyId,
         S3_SECRET_ACCESS_KEY: target.secretAccessKey,
       },
+      clock: wallClock,
     });
     // A presigned URL is only proved by an HTTP request, and the preload seals `fetch`. The origin
     // is the service this run was handed, on the same footing as a server this process booted —
@@ -279,4 +289,78 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
     expect(put.status).toBe(403);
     expect(textOf((await disk.get(at('readonly.txt'))).bytes)).toBe('original');
   });
+
+  test('metadata and cache-control travel on the signed PUT and come back as headers', async () => {
+    // Off the Bun client: core's `signAwsRequest` signs this one, so the gateway checking it is
+    // the proof the signer and the scope agree with a real server, not only with AWS's vectors.
+    const written = await disk.put(at('meta.txt'), bytesOf('with headers'), {
+      contentType: 'text/plain',
+      cacheControl: 'private, max-age=60',
+      metadata: { owner: 'ada' },
+    });
+    expect(written.metadata).toEqual({ owner: 'ada' });
+    expect(textOf((await disk.get(at('meta.txt'))).bytes)).toBe('with headers');
+
+    const served = await fetch(await disk.signedUrl(at('meta.txt'), { expiresInMs: 60_000 }));
+    expect(served.headers.get('x-amz-meta-owner')).toBe('ada');
+    expect(served.headers.get('cache-control')).toBe('private, max-age=60');
+    await served.arrayBuffer();
+  });
+
+  test('retentionOf on a bucket made without Object Lock reports nothing locking it', async () => {
+    await disk.put(at('unlocked.txt'), bytesOf('x'));
+    expect(await disk.retentionOf?.(at('unlocked.txt'))).toEqual({ legalHold: false });
+    expect(
+      codeOf(await catchError(() => disk.retentionOf?.(at('absent.txt')) ?? Promise.resolve())),
+    ).toBe('X_STORAGE_NOT_FOUND');
+  });
 });
+
+/**
+ * A bucket CREATED with Object Lock, on the same endpoint and key pair as `TEST_S3_URL`. Opt-in:
+ * the plain test gateway has no versioning, and an object locked here cannot be deleted until its
+ * retention lapses — so the retention is GOVERNANCE and an hour, and the keys are this run's.
+ */
+const lockBucket = Bun.env['S3_OBJECT_LOCK_BUCKET'];
+
+describe.skipIf(target === undefined || lockBucket === undefined || lockBucket === '')(
+  'live · s3 · Object Lock against a lock-enabled bucket',
+  () => {
+    let locked: StorageDriver;
+    let release: () => void = () => undefined;
+
+    beforeAll(() => {
+      if (target === undefined || lockBucket === undefined) return;
+      locked = s3Driver({
+        bucket: lockBucket,
+        endpoint: target.endpoint,
+        forcePathStyle: true,
+        env: {
+          S3_ACCESS_KEY_ID: target.accessKeyId,
+          S3_SECRET_ACCESS_KEY: target.secretAccessKey,
+        },
+        clock: wallClock,
+      });
+      release = markListening(target.endpoint);
+    });
+
+    afterAll(() => release());
+
+    test('a retention and a legal hold are set on put and read back exactly', async () => {
+      // Whole seconds: S3 stores the instant at second precision.
+      const retainUntil = new Date(
+        Math.ceil((wallClock.now().getTime() + 3_600_000) / 1000) * 1000,
+      );
+      await locked.put(at('locked.txt'), bytesOf('retained'), {
+        retention: { mode: 'GOVERNANCE', retainUntil },
+        legalHold: true,
+      });
+      expect(await locked.retentionOf?.(at('locked.txt'))).toEqual({
+        retention: { mode: 'GOVERNANCE', retainUntil },
+        legalHold: true,
+      });
+      await locked.put(at('plain.txt'), bytesOf('plain'), { metadata: { a: 'b' } });
+      expect(await locked.retentionOf?.(at('plain.txt'))).toEqual({ legalHold: false });
+    });
+  },
+);

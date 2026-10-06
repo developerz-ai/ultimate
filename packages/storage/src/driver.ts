@@ -6,6 +6,7 @@
 import type { Clock } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import { putTooLarge } from './errors';
+import type { ObjectLock, ObjectLockOptions } from './object-lock';
 import type { SignedUrlVerification } from './signed-url';
 
 export type StorageBody = Uint8Array | ReadableStream<Uint8Array> | Blob;
@@ -53,7 +54,12 @@ export interface ServerSideEncryption {
   readonly kmsKeyId?: string | undefined;
 }
 
-export interface PutOptions {
+/**
+ * `retention` and `legalHold` (from `ObjectLockOptions`) are S3 Object Lock, per object: sent as
+ * `x-amz-object-lock-*` on s3 — which needs a bucket created with Object Lock — and EMULATED by the
+ * local and memory disks, which refuse a delete or an overwrite of a locked object until it lapses.
+ */
+export interface PutOptions extends ObjectLockOptions {
   readonly contentType?: string | undefined;
   readonly cacheControl?: string | undefined;
   readonly metadata?: Readonly<Record<string, string>> | undefined;
@@ -151,6 +157,14 @@ export interface StorageDriver {
   exists(key: string): Promise<boolean>;
   list(options?: ListOptions): Promise<ListPage>;
   signedUrl(key: string, options?: SignedUrlOptions): Promise<string>;
+  /**
+   * What locks one object — its Object Lock retention and legal hold — read back from the disk.
+   * `{ legalHold: false }` with no `retention` means nothing does, including on a bucket created
+   * without Object Lock. `X_STORAGE_NOT_FOUND` when no object is at the key. Optional, like
+   * `registerAs`: every shipped disk answers it, and a third-party driver that does not is a
+   * driver with no lock to report.
+   */
+  retentionOf?(key: string): Promise<ObjectLock>;
   /**
    * Verify a URL THIS disk minted — without surrendering the key it minted with.
    *

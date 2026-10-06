@@ -60,7 +60,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | Concept | Owner | Note |
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never a second env var |
-| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` | never copied (`X_HELPER_COPY`) |
+| one-home helpers | `store-mode` `html-escape` `cookie` `fnv1a` `pg-executor` `deprecation` `aws-sigv4` | never copied (`X_HELPER_COPY`) |
 | what this process does | `roles.ts` (`ROLE`) | |
 | how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments. Read by `@ultimat3/render`'s `compilePattern` and `@ultimat3/pwa`'s rule order — both tier 4, so the one copy lives here. `@ultimat3/http`'s trie encodes the same order by its walk, not by this number. Never a sum: 100/10/1 ranked `/:a/b/c` above `/a/:x/:y` |
@@ -219,7 +219,7 @@ bun run typecheck
 ```
 
 The root is not a preference: `bunfig.toml`'s preload installs `@ultimat3/testing`'s matchers, and
-Bun reads `bunfig.toml` from the cwd (`scripts/coverage-gate.ts` runs from the root for the same reason).
+Bun reads `bunfig.toml` from the cwd (`scripts/coverage-gate.ts` runs from the root too).
 
 Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.

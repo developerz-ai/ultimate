@@ -5,12 +5,13 @@
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
 import {
-  ConfigInvalidError,
-  EnvMissingError,
+  type Clock,
   finiteCount,
+  isUltimateError,
   NotImplementedError,
   renderFixLiteral,
   renderFixShellArg,
+  systemClock,
 } from '@ultimat3/core';
 import {
   assertListOptions,
@@ -30,7 +31,10 @@ import {
   toBytes,
 } from './driver';
 import { isAbsentObject } from './driver-s3-absent';
+import { buildClient, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
+import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
 import { regionMismatch } from './driver-s3-region';
+import type { S3FetchLike } from './driver-s3-signed';
 import {
   checksumMismatch,
   deleteFailed,
@@ -41,52 +45,12 @@ import {
   putFailed,
   readFailed,
 } from './errors';
+import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
-
-/** Structural view of `Bun.S3Client` — typing it here keeps `bun-types` out of the contract. */
-export interface S3FileLike {
-  /** `S3FileLike` is in the union because Bun's own `write` takes an `S3File` — that is `copy`. */
-  write(data: Uint8Array | Blob | S3FileLike, options?: { type?: string }): Promise<number>;
-  arrayBuffer(): Promise<ArrayBuffer>;
-  exists(): Promise<boolean>;
-  delete(): Promise<void>;
-  stream(): ReadableStream<Uint8Array>;
-  stat(): Promise<S3StatLike>;
-  presign(options: { method?: string; expiresIn?: number; type?: string }): string;
-}
-
-export interface S3StatLike {
-  readonly size: number;
-  readonly type?: string | undefined;
-  readonly etag?: string | undefined;
-  readonly lastModified?: string | Date | undefined;
-}
-
-export interface S3ListEntryLike {
-  readonly key?: string | undefined;
-  readonly size?: number | undefined;
-  readonly eTag?: string | undefined;
-  readonly lastModified?: string | Date | undefined;
-}
-
-export interface S3ListResultLike {
-  readonly contents?: readonly S3ListEntryLike[] | undefined;
-  readonly isTruncated?: boolean | undefined;
-  readonly nextContinuationToken?: string | undefined;
-}
-
-export interface S3ClientLike {
-  file(key: string): S3FileLike;
-  list(input: {
-    prefix?: string;
-    maxKeys?: number;
-    continuationToken?: string;
-  }): Promise<S3ListResultLike>;
-}
 
 export interface S3DriverOptions {
   readonly bucket: string;
@@ -109,6 +73,15 @@ export interface S3DriverOptions {
   /** Injected in tests; production constructs `Bun.S3Client`. */
   readonly client?: S3ClientLike | undefined;
   /**
+   * Injected in tests; production uses the global `fetch`. Carries the SIGNED requests the Bun
+   * client has no option for — a `put()` with `metadata`, `cacheControl`, `retention` or
+   * `legalHold`, and `retentionOf()` — signed by core's `signAwsRequest` against the same
+   * endpoint, region and credentials.
+   */
+  readonly fetch?: S3FetchLike | undefined;
+  /** Signs the signed requests and screens a `retainUntil`. Default `systemClock`. */
+  readonly clock?: Clock | undefined;
+  /**
    * Ceiling on ONE server-side `put()`, because `put()` buffers the whole body. Defaults to the
    * upload policy's ceiling — the same number for the same fact. Raise it for a disk that really
    * does write large objects from the server; a user upload belongs on `grantUpload` instead,
@@ -121,59 +94,6 @@ export interface S3DriverOptions {
    * an object past it is read with `stream()`.
    */
   readonly maxGetBytes?: number | undefined;
-}
-
-interface S3ClientConstructor {
-  new (options: Record<string, unknown>): S3ClientLike;
-}
-
-function requireEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  name: string,
-  partner: string,
-): string {
-  const value = env[name];
-  if (value === undefined || value === '') {
-    throw new EnvMissingError({
-      cause: `${name} is not set, so the s3 disk cannot authenticate`,
-      fix: `set ${name} and ${partner} in .env (or the container's secret store), then re-run`,
-      meta: { missing: name },
-    });
-  }
-  return value;
-}
-
-function buildClient(options: S3DriverOptions): S3ClientLike {
-  if (options.client !== undefined) return options.client;
-  if (options.bucket === '') {
-    throw new ConfigInvalidError({
-      cause: 's3 disk was defined without a bucket',
-      fix: 'set storage.disks.<name>.bucket in app.config.ts',
-    });
-  }
-  const env = options.env ?? process.env;
-  const idVar = options.accessKeyIdEnv ?? 'S3_ACCESS_KEY_ID';
-  const secretVar = options.secretAccessKeyEnv ?? 'S3_SECRET_ACCESS_KEY';
-  const Client = (Bun as unknown as { S3Client?: S3ClientConstructor }).S3Client;
-  if (Client === undefined) {
-    throw new ConfigInvalidError({
-      cause: 'Bun.S3Client is unavailable in this runtime',
-      fix: 'upgrade the runtime: bun upgrade   # the s3 disk needs bun >= 1.3',
-    });
-  }
-  const tokenVar = options.sessionTokenEnv;
-  const sessionToken = tokenVar === undefined ? undefined : env[tokenVar];
-  // Bun's flag is the inverse: path style means "not virtual hosted".
-  const pathStyle = options.forcePathStyle;
-  return new Client({
-    bucket: options.bucket,
-    accessKeyId: requireEnv(env, idVar, secretVar),
-    secretAccessKey: requireEnv(env, secretVar, idVar),
-    ...(options.region === undefined ? {} : { region: options.region }),
-    ...(options.endpoint === undefined ? {} : { endpoint: options.endpoint }),
-    ...(pathStyle === undefined ? {} : { virtualHostedStyle: !pathStyle }),
-    ...(sessionToken === undefined ? {} : { sessionToken }),
-  });
 }
 
 /**
@@ -189,15 +109,7 @@ const dated = (value: string | Date | undefined): { readonly lastModified?: Date
  * `PutOptions` so that "this disk cannot prove per-object encryption" is something an engineer
  * meets while writing the call, not while answering a security review.
  */
-function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptions): void {
-  if (putOptions?.metadata !== undefined || putOptions?.cacheControl !== undefined) {
-    const uri = renderFixShellArg(`s3://${bucket}/${key}`, "'<s3-uri>'");
-    throw new NotImplementedError({
-      cause:
-        'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet) is not implemented by this driver — drop metadata/cacheControl from put(), or set them out of band with the command in fix',
-      fix: `aws s3 cp ${uri} ${uri} --metadata-directive REPLACE`,
-    });
-  }
+function refuseUnsupportedPut(bucket: string, putOptions?: PutOptions): void {
   const sse = putOptions?.serverSideEncryption;
   if (sse === undefined) return;
   // The key id is the caller's own option, spliced into single-quoted JSON: `renderFixLiteral`
@@ -233,6 +145,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
   // The key `defineStorage` registered this disk under: a not-found `fix:` is `disk('<it>')…`,
   // and the driver kind there is `X_STORAGE_DISK_UNKNOWN` on any app that named its disk.
   let diskName = DRIVER_NAME;
+  const clock = options.clock ?? systemClock;
   let client: S3ClientLike | undefined;
   const conn = (): S3ClientLike => {
     client ??= buildClient(options);
@@ -257,6 +170,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
   const refusedWrite =
     (key: string) =>
     (error: unknown): never => {
+      // A refusal this process already coded — a screened header, a missing credential — is its
+      // own answer, never re-read as the provider refusing the write.
+      if (isUltimateError(error)) throw error;
       throwIfMisconfigured(error);
       throw putFailed(
         DRIVER_NAME,
@@ -305,8 +221,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
-      refuseUnsupportedPut(options.bucket, safe, putOptions);
+      refuseUnsupportedPut(options.bucket, putOptions);
       assertPutOptions(DRIVER_NAME, putOptions);
+      assertObjectLockOptions(DRIVER_NAME, putOptions, clock);
       // Buffered on purpose: size and checksum must be known before the object exists — so this
       // path is for objects that FIT IN MEMORY, and `maxPutBytes` is what makes that a contract
       // rather than a hope. User uploads never come through here: they go direct to the bucket
@@ -316,6 +233,20 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       if (claimed !== undefined) {
         const actual = sha256Base64(bytes);
         if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
+      }
+      if (putOptions !== undefined && needsSignedPut(putOptions)) {
+        // Off the Bun client only for what it cannot send: `S3File.write` takes a type, an ACL and
+        // a storage class and no header. One request either way — never a PUT then a second call.
+        const refusal = await signedPut(options, safe, bytes, putOptions).catch(refusedWrite(safe));
+        if (refusal !== undefined) refusedWrite(safe)(refusal);
+        // Stored — the PUT succeeded with them — so reported, as the local disk reports its own.
+        return {
+          ...(await statObject(safe)),
+          ...(putOptions.cacheControl === undefined
+            ? {}
+            : { cacheControl: putOptions.cacheControl }),
+          ...(putOptions.metadata === undefined ? {} : { metadata: { ...putOptions.metadata } }),
+        };
       }
       await conn()
         .file(safe)
@@ -390,6 +321,21 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
     async exists(key: string): Promise<boolean> {
       return present(assertSafeKey(key));
+    },
+
+    /** Signed `GET ?retention` and `?legal-hold`, in parallel. A bucket with no lock reports none. */
+    async retentionOf(key: string): Promise<ObjectLock> {
+      const safe = assertSafeKey(key);
+      const read = await readObjectLock(options, safe).catch(refusedRead(safe));
+      if (read.kind === 'lock') return read.lock;
+      if (isAbsentObject(read.refusal)) throw objectNotFound(diskName, safe);
+      throwIfMisconfigured(read.refusal);
+      throw readFailed(
+        DRIVER_NAME,
+        safe,
+        read.refusal,
+        `aws s3api get-object-retention --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(safe, "'<key>'")}   # reproduces the refusal; grant s3:GetObjectRetention and s3:GetObjectLegalHold to the app's role`,
+      );
     },
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
