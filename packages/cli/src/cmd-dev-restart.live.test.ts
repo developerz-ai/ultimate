@@ -10,10 +10,11 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { allowHost } from '@ultimat3/testing';
 import { descendantsOf, leftovers, pump, reap, reapIn, waitFor } from './dev-live-fixture';
+import { processRoot } from './process-root-fixture';
 
 /** Two boots of embedded Postgres, the queue and the HTTP role — explicit, and generous. */
 const TIMEOUT_MS = 120_000;
-const ROOT = join(import.meta.dir, '..', '.dev-restart-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.dev-restart-fixture'));
 const BIN = join(import.meta.dir, 'bin.ts');
 const SERVICE = 'apps/web/app/greet/service.ts';
 

@@ -12,9 +12,10 @@ import { fixProblem } from './error-contract';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands } from './island-bundle';
 import { islandRoutes } from './island-routes';
+import { processRoot } from './process-root-fixture';
 import { appRoutes } from './runtime-render';
 
-const ROOT = join(import.meta.dir, '..', '.island-routes-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-routes-fixture'));
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
 const SHARED = { sharedChunks: true } as const;
 const BUILD_ID = 'islands-under-test';

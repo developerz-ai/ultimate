@@ -17,11 +17,12 @@ import { METRICS_PATH } from '@ultimat3/core';
 // package.json has listed `@ultimat3/testing` as a dependency of the CLI all along.
 import { allowHost } from '@ultimat3/testing';
 import { planNewApp } from './cmd-new';
+import { processRoot } from './process-root-fixture';
 
 /** Embedded Postgres, the queue, the transport and an HTTP role is seconds of real work. */
 const BOOT_TIMEOUT_MS = 90_000;
 
-const ROOT = join(import.meta.dir, '..', '.serve-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.serve-fixture'));
 
 /** The template `x new` writes, taken from the plan rather than retyped. */
 function scaffolded(path: string): string {

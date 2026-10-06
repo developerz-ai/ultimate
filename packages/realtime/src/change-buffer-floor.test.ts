@@ -75,6 +75,7 @@ const insert = (row: Row, lsn: number): ChangeEvent => ({
   txid: String(lsn),
   orgId: 'o1',
   at: clock.now().getTime(),
+  write: null,
 });
 
 test('a cursor minted on another node is answered with a snapshot, never a partial delta', async () => {

@@ -422,7 +422,7 @@ export class PgReplicationStream {
       txid: transaction.xid.toString(10),
       orgId: tenantOf(after ?? before),
       at: transaction.commitAt,
-      ...(transaction.write === undefined ? {} : { write: transaction.write }),
+      write: transaction.write ?? null,
       ...(omitted.length === 0 ? {} : { omitted }),
     };
     await handlers.onChange(event);

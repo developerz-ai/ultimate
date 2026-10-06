@@ -9,9 +9,10 @@ import { join } from 'node:path';
 import { clearRoutes } from '@ultimat3/render';
 import { clearStylesheets, setStylesheetRoot } from '@ultimat3/render/server';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 
 // Inside the package, so the fixture's `@ultimat3/*` imports resolve; `app` is the point.
-const FIXTURE = join(import.meta.dir, '..', '.prerender-app-root-fixture');
+const FIXTURE = processRoot(join(import.meta.dir, '..', '.prerender-app-root-fixture'));
 const APP_ROOT = join(FIXTURE, 'app');
 
 beforeEach(async () => {

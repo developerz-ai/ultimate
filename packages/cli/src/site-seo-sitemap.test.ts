@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import type { RouteConfig } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { processRoot } from './process-root-fixture';
 import { SitemapExtraInvalidError, siteSeo } from './site-seo';
 import { resetLastmodCache } from './sitemap-lastmod';
 
@@ -27,7 +28,7 @@ const route = (file: string, patch: Partial<RouteConfig> = {}): void => {
 };
 
 const BASE = 'https://notificado.co';
-const ROOT = join(import.meta.dir, '..', '.site-seo-sitemap-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.site-seo-sitemap-fixture'));
 const locs = (xml: string) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 const lastmods = (xml: string) =>
   [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1]);

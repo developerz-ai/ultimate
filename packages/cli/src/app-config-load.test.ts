@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SPECULATION, isUltimateError } from '@ultimat3/core';
 import { APP_CONFIG_EXPORT, appConfigExport, loadAppConfig } from './app-config-load';
+import { processRoot } from './process-root-fixture';
 
 const dirs: string[] = [];
 
@@ -146,7 +147,7 @@ describe('loadAppConfig', () => {
   // config: `examples/dummy/app.config.ts` calls `defineMeasurementActor`, process-global state
   // that made `prerender-actor.test.ts` measure as the wrong actor when it ran later in one process.
   test('a config built by defineConfig re-merges to itself', async () => {
-    const root = join(import.meta.dir, '..', '.app-config-load-fixture');
+    const root = processRoot(join(import.meta.dir, '..', '.app-config-load-fixture'));
     dirs.push(root);
     await Bun.write(
       join(root, 'app.config.ts'),

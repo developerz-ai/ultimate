@@ -1,14 +1,12 @@
-// The ONE read hook. Live-ness is the query's, not the hook's: a live ref subscribes over the
-// page socket, any other is one HTTP read through `@ultimat3/query`'s client (and so through
-// core's one transport). Either way a list is an ORDER of keys and the rows are the page store's,
-// so a record updated anywhere re-renders every list showing it without refetching the list.
+// The ONE read hook. Live-ness is the query's: a live ref subscribes over the page socket, any other
+// is one HTTP read through `@ultimat3/query`'s client — both the page runtime's, never bundled here.
+// Either way a list is an ORDER of keys and the rows are the page store's, so a record updated
+// anywhere re-renders every list showing it without refetching the list.
 
 import { type AsyncState, isSuperseded, type RecordEnvelope, type Row } from '@ultimat3/core/page';
-import { queryClientMethodFor } from '@ultimat3/query/client';
 import type { LiveHandle } from './client-contract';
 import type { JsonValue } from './json';
-import { pageSocket } from './page-socket';
-import { pageStore } from './page-store';
+import { installedPage, type PageServices } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import { type RecordStore, recordKey } from './record-store';
 
@@ -71,11 +69,12 @@ export function useQuery<R extends object = Row>(
       [Symbol.dispose]: nothing,
     });
   }
+  const page = installedPage('useQuery');
   const [version, setVersion] = signal(0);
   const bump = (): void => setVersion(version() + 1);
   return ref.live === true
-    ? liveAccessor<R>(pageSocket('useQuery').subscribeLive<R>(ref, input), version, bump)
-    : readAccessor<R>(pageStore(), ref, input, options, version, bump);
+    ? liveAccessor<R>(page.services.socket('useQuery').subscribeLive<R>(ref, input), version, bump)
+    : readAccessor<R>(page.store, page.services.read(ref.name), ref, input, options, version, bump);
 }
 
 function liveAccessor<R extends object>(
@@ -115,6 +114,7 @@ function liveAccessor<R extends object>(
 
 function readAccessor<R extends object>(
   store: RecordStore,
+  method: ReturnType<PageServices['read']>,
   ref: QueryRef,
   input: JsonValue,
   options: QueryOptions,
@@ -122,7 +122,6 @@ function readAccessor<R extends object>(
   bump: () => void,
 ): QueryAccessor<R> {
   const type = ref.entity;
-  const method = queryClientMethodFor(ref.name, { baseUrl: '' });
   let state: AsyncState<readonly Row[]> = PENDING;
   /** Record keys in answer order when the rows are records; the rows themselves when not. */
   let keys: readonly string[] = [];

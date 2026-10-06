@@ -15,8 +15,8 @@
 // `globalThis` object created lazily by the first transport call or realtime hook. Measured before
 // that decision on `examples/dummy`, a core-importing wrapper cost contact-sales 875 → 8,827 B.
 // What IS prepended is the realtime install, and only where the island's graph reaches
-// `@ultimat3/realtime` (`island-realtime.ts`). Measured on a fixture, As of 2026-09-22: a Solid
-// island reading `useConnection` 64,964 → 65,067 B (+103 B); an island not reaching realtime +0.
+// `@ultimat3/realtime` (`island-realtime.ts`); the page runtime it awaits is ONE more output,
+// `page-runtime.<identity>.js` beside the entries (`island-runtime.ts`), never inlined into one (#505).
 
 // Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
@@ -34,6 +34,8 @@ import {
   reachesRealtime,
   realtimeIslandEntry,
 } from './island-realtime';
+import type { Runtimes } from './island-runtime';
+import { loadingRuntime, mergeBuilds, runtimeBuilder, runtimeShared } from './island-runtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
 import type { SourcePaths } from './island-sources';
 import { sourcesOnDisk } from './island-sources';
@@ -126,6 +128,7 @@ async function buildAll(
   root: string,
   files: readonly string[],
   splitting: boolean,
+  runtimes: Runtimes,
 ): Promise<{ readonly chunks: readonly IslandChunk[]; readonly shared: readonly SharedChunk[] }> {
   if (files.length === 0) return { chunks: [], shared: [] };
   // Inside the refusal: the realtime probe PARSES the island's graph, and a file that will not
@@ -141,6 +144,7 @@ async function buildAll(
   // Only an island whose own graph reaches `@ultimat3/realtime` is wrapped (`island-realtime.ts`);
   // every other one is built from its own file, byte for byte what it was.
   const live = files.filter((_, index) => realtime[index] === true);
+  const runtime = live[0] === undefined ? undefined : await runtimes(live[0]);
   const entrypoints = files.map((file, index) =>
     realtime[index] === true ? realtimeIslandEntry(file) : join(root, file),
   );
@@ -172,7 +176,7 @@ async function buildAll(
       // gets the same rule (`island-package-dedupe.ts`): a nested copy is a second module where no
       // symlink folds it, which is every `file:` install on Windows.
       plugins: [
-        ...(live[0] === undefined ? [] : [islandRealtimePlugin(root, live[0])]),
+        ...(runtime === undefined ? [] : [islandRealtimePlugin(root, runtime)]),
         solidDedupePlugin(root),
         ...frameworkDedupePlugins(root),
         solidJsxPlugin,
@@ -199,7 +203,7 @@ async function buildAll(
       sourcemap: 'external',
     });
   } catch (error) {
-    throw await blame(root, files, error, splitting);
+    throw await blame(root, files, error, splitting, runtimes);
   }
   if (!built.success) {
     throw new IslandBuildFailedError({
@@ -209,8 +213,9 @@ async function buildAll(
   }
   const sources = new Map<string, SourcePaths>();
   const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
-  const chunks = entryChunks(files, linked, sources);
-  return { chunks, shared: sharedChunks(chunks, linked, sources) };
+  const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime);
+  const shared = sharedChunks(chunks, linked, sources);
+  return { chunks, shared: [...shared, ...runtimeShared(runtime, live)] };
 }
 
 /**
@@ -223,11 +228,12 @@ async function blame(
   files: readonly string[],
   error: unknown,
   splitting: boolean,
+  runtimes: Runtimes,
 ): Promise<IslandBuildFailedError> {
   if (files.length > 1) {
     for (const file of files) {
       try {
-        await buildAll(root, [file], splitting);
+        await buildAll(root, [file], splitting, runtimes);
       } catch (alone) {
         if (alone instanceof IslandBuildFailedError) return alone;
       }
@@ -392,14 +398,15 @@ export async function buildIslands(
   // an empty bundle here would surface two steps later, as a chunk table with no entry for a file
   // the caller can see on disk.
   if (only !== undefined && files.length === 0) throw onlyMissing(only, discovered);
+  const runtimes = runtimeBuilder(root, ISLAND_BASE_PATH);
   if (options.sharedChunks ?? (await loadSharedChunks(root))) {
-    const built = await buildAll(root, files, true);
+    const built = await buildAll(root, files, true, runtimes);
     return islandBundle(built.chunks, built.shared);
   }
-  // One build per island, splitting off: each chunk is self-contained, so its size is the whole
-  // answer to "what does booting this island cost?" and nothing is shaken for another island.
-  const solo = await Promise.all(files.map((file) => buildAll(root, [file], false)));
-  return islandBundle(solo.flatMap((one) => one.chunks));
+  // One build per island, splitting off: each chunk is self-contained but for the page runtime,
+  // the ONE file beside it every realtime island loads, counted once however many load it.
+  const solo = await Promise.all(files.map((file) => buildAll(root, [file], false, runtimes)));
+  return islandBundle(...mergeBuilds(solo));
 }
 
 /**

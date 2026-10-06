@@ -34,11 +34,13 @@ export interface ChangeEvent<R extends Row = Row> {
   readonly at: number;
   /**
    * The write that made this change: `writeDigest` of the idempotency key its request carried
-   * (`@ultimat3/core`). Absent for a change no keyed request made. Read off the WAL message the
-   * Postgres driver writes first in the transaction, or off the request scope in-process; a
-   * channel stamps it on the `records` frame so the writing page recognises its own echo.
+   * (`@ultimat3/core`). `null` for a change no keyed request made — a job, a script, raw SQL. Read
+   * off the WAL message the Postgres driver writes first in the transaction, or off the request
+   * scope in-process; a channel stamps it on its `records` frame and a live query on its `patch`
+   * frame, so the writing page settles its own echo in the same batch. REQUIRED, never optional:
+   * a producer that forgets it is a type error, not a page that paints truth plus overlay.
    */
-  readonly write?: string;
+  readonly write: string | null;
   /**
    * Row properties `after` does NOT carry because Postgres did not log them: an UPDATE that left
    * an out-of-line (TOAST) value untouched sends no bytes for it, and under any replica identity
@@ -144,7 +146,13 @@ export class InMemoryChangeFeed implements ChangeFeed {
   async push(
     entity: string,
     op: ChangeOp,
-    rows: { before?: Row | null; after?: Row | null; orgId?: string | null; at?: number },
+    rows: {
+      before?: Row | null;
+      after?: Row | null;
+      orgId?: string | null;
+      at?: number;
+      write?: string | null;
+    },
   ): Promise<ChangeEvent> {
     this.#position += 1n;
     const event: ChangeEvent = {
@@ -156,6 +164,7 @@ export class InMemoryChangeFeed implements ChangeFeed {
       txid: this.#position.toString(10),
       orgId: rows.orgId ?? null,
       at: rows.at ?? 0,
+      write: rows.write ?? null,
     };
     await this.emit(event);
     return event;

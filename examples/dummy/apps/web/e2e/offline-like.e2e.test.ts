@@ -6,9 +6,11 @@
  *
  * Kenji on "Nadie formatea…" (Acme, 1 like in the seed — ada's). Not mara on the Tinta post, which
  * `postById`'s policy answers 403 for, measured 2026-09-22. Every count the page ever
- * rendered is recorded by an init script into `sessionStorage`, which survives the reload, so
- * "no flicker" is a statement about every paint and not about the last one. Fails until slice 12
- * and the island migration land — that is expected.
+ * PAINTED is recorded by an init script into `sessionStorage`, which survives the reload, so
+ * "no flicker" is a statement about every paint and not about the last one — the reload's first
+ * included (#506): the cached document's server markup shows the count it was rendered with, and
+ * a held island (`data-x-hold`) is what keeps that markup off screen until the mount rebuilt the
+ * queued write's overlay.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -30,11 +32,21 @@ import {
 
 const SEEN = 'e2e-like-counts';
 
-/** Records every set of island like counts the document shows, across reloads, before any app script runs. */
+/**
+ * Records every set of like counts the document PAINTS, across reloads, before any app script runs.
+ * Per island root (the like control and the header's badge): a held root paints nothing; a mounted
+ * one paints its `data-like-count`; a root still showing its server markup paints the number in
+ * that markup's rendered text (`innerText`, so the props `<script>` inside the root is not read).
+ */
 const RECORDER = `(() => {
   const record = () => {
-    const counts = [...document.querySelectorAll('[data-like-count][data-post="${POSTS.timezones.id}"]')]
-      .map((el) => Number(el.dataset.likeCount));
+    const counts = [];
+    for (const root of document.querySelectorAll('[data-x-island^="like-"], [data-x-island^="likes-badge-"]')) {
+      if (root.hasAttribute('data-x-hold')) continue;
+      const live = root.querySelector('[data-like-count][data-post="${POSTS.timezones.id}"]');
+      const shown = live ? live.dataset.likeCount : (root.innerText.match(/\\d+/) || [])[0];
+      if (shown !== undefined) counts.push(Number(shown));
+    }
     if (counts.length === 0) return;
     const seen = JSON.parse(sessionStorage.getItem('${SEEN}') || '[]');
     const now = counts.join(',');
@@ -43,7 +55,10 @@ const RECORDER = `(() => {
   };
   addEventListener('DOMContentLoaded', () => {
     record();
-    new MutationObserver(record).observe(document.body, { subtree: true, childList: true, characterData: true });
+    new MutationObserver(record).observe(document.body, {
+      subtree: true, childList: true, characterData: true,
+      attributes: true, attributeFilter: ['data-x-hold', 'data-like-count'],
+    });
   });
 })();`;
 
@@ -118,8 +133,10 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
     const firstLiked = seen.findIndex(allTwo);
     expect(firstLiked).toBeGreaterThan(-1);
     expect(seen.slice(firstLiked, reloadedAt).filter((entry) => !allTwo(entry))).toEqual([]);
-    // The reload's first paint (SSR/SW-cached HTML shows 1 until IndexedDB adopts 2) is not
-    // asserted: tracked follow-up #506.
+    // No flicker on the reload (#506): the service worker's cached document was rendered before
+    // the like and says 1, and until the boot restored the queued write the store says 1 too —
+    // from the reload's FIRST paint to the reconnect, every paint reads 2.
+    expect(seen.slice(reloadedAt, reconnectedAt).filter((entry) => !allTwo(entry))).toEqual([]);
     // No flicker on reconnect: from the last all-2 paint before the socket came back, nothing but
     // 2 — not the seed's 1, and not 3, which is the replayed like's own frame painted under its
     // still-pending twin (the write counted twice) until the HTTP answer settled it.

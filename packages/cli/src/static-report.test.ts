@@ -10,6 +10,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RENDER_MODES } from '@ultimat3/core';
 import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';
+import { processRoot } from './process-root-fixture';
 import type { StaticReport } from './static-report';
 import {
   parseStaticReport,
@@ -23,7 +24,7 @@ import {
   writeStaticReport,
 } from './static-report';
 
-const ROOT = join(import.meta.dir, '..', '.static-report-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.static-report-fixture'));
 
 afterEach(async () => {
   await rm(ROOT, { recursive: true, force: true });

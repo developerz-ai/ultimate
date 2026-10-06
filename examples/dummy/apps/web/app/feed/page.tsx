@@ -76,8 +76,28 @@ export const config = defineRoute({
    * (`@ultimat3/core/page`). Down from 133,009 when the outbox left the island for the boot
    * (8,288 B). Each island still carries its own copy of the page's realtime (`splitting:
    * false`); the shared runtime is #505, and this number comes DOWN again when it lands.
+   *
+   * raised 123kb → 149kb (plan 101 sweep 9, #505). measured: 151,095 B (2026-10-05;
+   * `x build --target static`'s `.x/build-stats.json`, which now weighs this page AS SERVED — scoped,
+   * with its page boot), against 152,576. The document: the page boot 68,980 (the page runtime —
+   * store, socket host, channel book, query client, transport — moved INTO it), the feed island
+   * 59,712, the client router 19,940, the update banner 710, the inline hydration runtime 1,753.
+   * why: the runtime left the island (103,382 → 59,712 B) for the boot, once per page, and the
+   * served document went 163,072 → 151,095 B (−11,977). The 123kb budget was a number about a
+   * document no browser downloads: the static step rendered this page UNSCOPED, so it never weighed
+   * the boot (37,287 B then) — an interim 132.5kb measured 134,488 B the same way, with
+   * `/islands/page-runtime.<id>.js` charged in the boot's place. +1,481 B of headroom is Bun's
+   * tree-shaker flap (`island-bytes.test.ts`, up to 1,124 B).
+   * raised 149kb → 150.5kb (plan 101 sweep 9, #506). measured: 152,795 B (2026-10-05;
+   * `x build --target static`), against 154,112. why: +794 B is the offline reload's first paint —
+   * the inline runtime 1,753 → 2,229 (+417 B for the held-island part: hide the server's stale
+   * count until every held island mounted, a 3 s cap, a CSS reveal with no script; +59 B for
+   * `catchUp` letting go of a press after a mount it did not flush, so it never runs twice) and
+   * +318 B in the feed island for `holdFirstPaint` (its mount waits for the restored records and the
+   * open outbox, capped at 1 s). The other +906 B is the page boot (68,980 → 69,531) and the feed
+   * island's own growth from the rest of sweep 9, measured here and stated here.
    */
-  budget: { js: '123kb' },
+  budget: { js: '150.5kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

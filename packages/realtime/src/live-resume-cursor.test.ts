@@ -83,6 +83,7 @@ const change = (op: 'insert' | 'delete', row: Row, lsn: number): ChangeEvent => 
   txid: String(lsn),
   orgId: 'o1',
   at: clock.now().getTime(),
+  write: null,
 });
 
 const BOB_ROW: Row = { id: 'p3', orgId: 'o1', ownerId: 'bob', title: 'bob secret' };

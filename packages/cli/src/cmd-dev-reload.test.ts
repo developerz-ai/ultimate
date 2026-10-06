@@ -13,8 +13,9 @@ import type { StalePin } from './app-reload-graph';
 import type { DevServer } from './cmd-dev';
 import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES, resetRegistries } from './cmd-dev-fixture';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.dev-reload-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.dev-reload-fixture'));
 
 /**
  * The shared fixture, plus the two shapes a real app's save goes through that it does not have:

@@ -117,8 +117,18 @@ export const config = defineRoute({
    * why: the router's input fixes (22.8.1) — a click the view transition aimed at `<html>` is given
    * to the element under the pointer, a press skips the running transition, and a press or click
    * cancels the pending prefetch, so a fast click sends one request, not two (+795 B).
+   *
+   * raised 153.5kb → 156.5kb, measured 159,862 B (2026-10-05, plan 101 sweep 9, #505; summed the
+   * way the 2026-09-22 line is, from `buildIslands` and `buildPageBoot`, because this route is not
+   * prerendered and `x verify` weighs no value of `:id`) — the like control 41,738 + the header's
+   * count 26,865 + the update banner 710 + the page boot 68,856 + the router and the `idle`
+   * runtime 21,693, against 160,256. The same sum the same day before it: 181,414 (85,609 +
+   * 36,115 + 710 + 37,287 + 21,693) — unenforced, it had grown past `153.5kb` unseen.
+   * why: −21,552 B. The page runtime (the store, the socket host, the channel book) is in the page
+   * boot, once, and neither island carries a copy: the like control lost 43,871 B, the count
+   * 9,250. What both islands still each carry is solid-js and the error tables (#505 cut 2).
    */
-  budget: { js: '153.5kb' },
+  budget: { js: '156.5kb' },
   /**
    * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
    * registries are separate keys on `Api` precisely so this cannot be confused.

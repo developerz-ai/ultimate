@@ -12,6 +12,7 @@ import type { MountedIsland } from '@ultimat3/testing';
 import { mountIsland } from '@ultimat3/testing';
 import { buildIslands, discoverIslands, ISLAND_BASE_PATH, islandBundle } from './island-bundle';
 import { clearIslandChunkCache, stableChunk } from './island-identity';
+import { processRoot } from './process-root-fixture';
 import { transformIslandTsx } from './solid-loader';
 
 // `.island-fixture/bundle`, never `.island-fixture` itself. This suite wipes its root in both
@@ -19,7 +20,7 @@ import { transformIslandTsx } from './solid-loader';
 // under that same directory — so owning the parent deleted a sibling suite's app mid-build, which
 // bun surfaced only under the full concurrent run as `ENOENT … counter.island.tsx`. Nobody owns
 // the parent now.
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'bundle');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'bundle'));
 
 const MODULE = (text: string): string =>
   `export function mount(el: HTMLElement): void { el.textContent = ${JSON.stringify(text)}; }\n`;

@@ -17,10 +17,11 @@ import { VERIFY_STEPS } from './cmd-verify';
 import type { ExecResult, Runner } from './exec';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer } from './mcp-host';
+import { processRoot } from './process-root-fixture';
 
 // Dot-prefixed and under `packages/cli/`, exactly as `cmd-mcp.test.ts`'s fixture: out of every
 // workspace glob, and resolving `@ultimat3/*` through the same tsconfig paths.
-const ROOT = join(import.meta.dir, '..', '.mcp-host-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.mcp-host-fixture'));
 const STATE = join(ROOT, '.x');
 
 interface RunnerCall {

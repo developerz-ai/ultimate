@@ -48,6 +48,7 @@ const event = (over: Partial<ChangeEvent>): ChangeEvent => ({
   txid: '1',
   orgId: 'o1',
   at: 0,
+  write: null,
   ...over,
 });
 
@@ -400,6 +401,7 @@ describe('a truncate crosses the bus', () => {
     txid: '9',
     orgId: null,
     at: 0,
+    write: null,
   };
 
   test('normalize keeps it and the envelope decoder reads it back', () => {

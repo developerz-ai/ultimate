@@ -1,7 +1,7 @@
-// The acceptance test for "one store, one socket per PAGE": two islands are two separately built
-// bundles, each with its own copy of this package and of `@ultimat3/core`. Both copies must reach
-// ONE record store and open ONE socket — which a module-scope singleton could never do, because
-// it is one per bundle. Built for real with `Bun.build`, the way `x build` builds an island.
+// The acceptance test for "one runtime, one store, one socket per PAGE": two islands are two
+// separately built bundles, each with its own copy of the hooks and of `@ultimat3/core`, and the
+// page runtime is a THIRD build, loaded once. Both islands must reach its one store and open ONE
+// socket while carrying none of it (#505). Built for real, the way `x build` builds an island.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: `node:fs`/`node:os` — Bun has no temp-directory API and no recursive remove.
@@ -15,12 +15,21 @@ interface IslandCopy {
   installRealtime(install: unknown): void;
   useRecord(type: string, key: string): () => AsyncState<Row | undefined>;
   useQuery(ref: unknown, input: unknown): () => AsyncState<readonly Row[]>;
-  RecordStore: unknown;
 }
+
+interface RuntimeCopy {
+  installPageRuntime(): { readonly store: unknown };
+}
+
+/** A string only `record-store.ts` holds: present in a bundle exactly when the store's code is. */
+const STORE_CODE = 'it arrived under an empty key';
 
 let dir = '';
 let first: IslandCopy;
 let second: IslandCopy;
+let runtime: RuntimeCopy;
+/** Every bundle's emitted code, by name — what a browser would download for each. */
+const code = new Map<string, string>();
 const dialled: string[] = [];
 /** Bun's own, put back afterwards: a suite later in this process dials a real node with it. */
 const realWebSocket = globalThis.WebSocket;
@@ -58,13 +67,15 @@ const spawned = async (
   return { exitCode, stdout, stderr };
 };
 
-async function island(name: string): Promise<IslandCopy> {
-  // An island's own entry, importing the barrel the way island code does.
+/** An island's own entry, importing the barrel the way island code does. */
+const ISLAND_SOURCE = `export { installRealtime, useQuery, useRecord } from '${import.meta.dir}/index.ts';\n`;
+
+/** The page runtime's entry, as the CLI's runtime chunk is built from it. */
+const RUNTIME_SOURCE = `export { installPageRuntime } from '${import.meta.dir}/page-runtime.ts';\n`;
+
+async function bundle<T>(name: string, source: string): Promise<T> {
   const entry = `${dir}/${name}.ts`;
-  await Bun.write(
-    entry,
-    `export { installRealtime, RecordStore, useQuery, useRecord } from '${import.meta.dir}/index.ts';\n`,
-  );
+  await Bun.write(entry, source);
   // A separate `bun build`, as `x build` runs one: inside the test runtime, `Bun.build` resolves a
   // workspace package's own imports differently from the CLI, and the CLI is what ships.
   const out = `${dir}/${name}`;
@@ -77,15 +88,17 @@ async function island(name: string): Promise<IslandCopy> {
   ]);
   if (built.exitCode !== 0) expect(built.stderr).toBe('');
   const output = `${out}/${name}.js`;
-  return (await import(output)) as IslandCopy;
+  code.set(name, await Bun.file(output).text());
+  return (await import(output)) as T;
 }
 
 beforeAll(async () => {
   resetPage();
   dir = await mkdtemp(`${tmpdir()}/ultimate-page-client-`);
   (globalThis as { WebSocket?: unknown }).WebSocket = CountingSocket;
-  first = await island('first');
-  second = await island('second');
+  first = await bundle<IslandCopy>('first', ISLAND_SOURCE);
+  second = await bundle<IslandCopy>('second', ISLAND_SOURCE);
+  runtime = await bundle<RuntimeCopy>('runtime', RUNTIME_SOURCE);
 });
 
 afterAll(async () => {
@@ -96,11 +109,20 @@ afterAll(async () => {
 
 describe('two island bundles on one page', () => {
   test('are two copies of the package — the premise, or this test proves nothing', () => {
-    expect(first.RecordStore).not.toBe(second.RecordStore);
+    expect(first.useRecord).not.toBe(second.useRecord);
+  });
+
+  test('carry none of the store: its code is in the page runtime, once', () => {
+    expect(code.get('first')).not.toContain(STORE_CODE);
+    expect(code.get('second')).not.toContain(STORE_CODE);
+    expect(code.get('runtime')).toContain(STORE_CODE);
   });
 
   test('share ONE record store: a record adopted through either shows in both', () => {
     const sync = { url: 'ws://node.test/_x/sync', buildId: 'build-1' };
+    // What the page boot (or the runtime chunk) does before any island's hook runs.
+    const installed = runtime.installPageRuntime();
+    expect(runtime.installPageRuntime()).toBe(installed); // once per page, whoever asks again
     first.installRealtime({ signal, sync });
     second.installRealtime({ signal, sync });
     const a = first.useRecord('posts', 'p1');

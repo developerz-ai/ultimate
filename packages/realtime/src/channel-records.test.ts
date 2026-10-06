@@ -35,6 +35,7 @@ const change = (over: Partial<ChangeEvent>): ChangeEvent => ({
   txid: '1',
   orgId: null,
   at: 0,
+  write: null,
   ...over,
 });
 

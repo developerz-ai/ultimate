@@ -306,7 +306,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     await waitFor(() => events.length >= 3);
     await feed.stop();
 
-    expect(events.map((event) => event.write)).toEqual([digest, digest, undefined]);
+    expect(events.map((event) => event.write)).toEqual([digest, digest, null]);
   }, 60_000);
 
   /**

@@ -10,6 +10,7 @@ import { resetAppLoad } from './app-load';
 import { REQUIRED_BUN } from './app-root';
 import { dedupe, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
+import { processRoot } from './process-root-fixture';
 import type { GeneratedFile } from './templates';
 import { thrownBy } from './thrown-by-fixture';
 
@@ -87,7 +88,7 @@ describe('unit · dedupe rejects a merge: json file a generator could not have m
 describe('unit · x g regenerates the app catalog index for every locale on disk', () => {
   // Under `packages/cli/`, same as the manifest fixture in cmd-generate.test.ts, and its own
   // directory so the two fixtures' independent beforeAll/afterAll never race each other.
-  const ROOT = join(import.meta.dir, '..', '.generate-i18n-fixture');
+  const ROOT = processRoot(join(import.meta.dir, '..', '.generate-i18n-fixture'));
   const INDEX_PATH = join(ROOT, 'packages/i18n/src/index.ts');
 
   const contextFor = (locales: string): CommandContext => ({

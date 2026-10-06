@@ -11,7 +11,9 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
 import { clearPlugins, ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 
-const ROOT = join(import.meta.dir, '..', '.isolated-plugins-fixture');
+// One root per PROCESS: two runs of this file share a checkout, and on one fixed root a peer's
+// `rm` deleted this run's corpus mid-`bun test`.
+const ROOT = join(import.meta.dir, '..', '.isolated-plugins-fixture', `run-${process.pid}`);
 const PRELOAD = join(import.meta.dir, 'preload.ts');
 const FILES = 8;
 

@@ -110,6 +110,7 @@ const change = (position: number, after: Row, before: Row | null): ChangeEvent =
   txid: String(position),
   orgId: 'o1',
   at: 1_000,
+  write: null,
 });
 
 /** One subscriber whose first gate call during a delivery takes ten microtask turns to answer. */

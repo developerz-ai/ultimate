@@ -10,6 +10,7 @@ import { clearRoutes, defineRoute, island, registerRoute, themeScriptBody } from
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
+import { processRoot } from './process-root-fixture';
 import { readStaticReport } from './static-report';
 import { VERIFY_STEPS } from './verify-checks';
 import type { VerifyContext } from './verify-step';
@@ -30,7 +31,7 @@ const VERIFY_CTX: VerifyContext = {
 // Its own directory: `prerender.test.ts` and `prerender-budgets.test.ts` wrote the SAME root, and
 // under the gate's parallel workers one file's `app.config.ts` (a PWA) landed in the other's build
 // — a `<script src="/x-sw-register.js">` on a page this file asserts ships no script.
-const ROOT = join(import.meta.dir, '..', '.prerender-islands-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-islands-fixture'));
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and these are the exact
 // configs `x new` writes for site/page.tsx and app/dashboard/page.tsx.

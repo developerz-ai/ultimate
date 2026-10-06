@@ -38,10 +38,11 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
+import { processRoot } from './process-root-fixture';
 import type { ThrownShape } from './thrown-by-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.registries-fixture');
-const BROKEN = join(import.meta.dir, '..', '.registries-broken-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.registries-fixture'));
+const BROKEN = processRoot(join(import.meta.dir, '..', '.registries-broken-fixture'));
 const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
 
 const ACTION_NAME = 'publishPost';

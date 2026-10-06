@@ -3,7 +3,7 @@
 // registry owns the lanes and the entry table while this owns what happens inside one of them —
 // and because one file runs one job. The lane itself is never taken here: the caller is holding it.
 
-import type { Clock } from '@ultimat3/core';
+import { type Clock, isWriteDigest } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import { advance, type LiveCursor, makeCursor, type ResumeSource } from './cursor';
 import type { Row, RowPatch } from './json';
@@ -12,6 +12,7 @@ import { applyToWindow, bridgeChange, type Projection, projectionOf } from './ma
 import { type QueryEntry, refillWindowInLane } from './query-window';
 import { type Subscriber, type SubscriberGate, windowIndex } from './subscriber-gate';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { FRAME_LIMITS } from './wire-version';
 
 export interface FanoutDeps {
   readonly gate: SubscriberGate;
@@ -47,6 +48,12 @@ export async function fanoutChange(
     return { sent: 0, stale: 0 };
   }
   if (change.op === 'truncate') return await truncated(deps, entry, change);
+  // Screened, not trusted: a frame carrying anything but a digest is refused WHOLE by the decoder,
+  // so a malformed label would cost every subscriber this change rather than one page its echo.
+  const write = isWriteDigest(change.write) ? change.write : null;
+  const writes = write === null ? [] : [write];
+  // What a re-snapshot out of rows that hold this change may name: the write, by the row it made.
+  const named = namedBy(entry, change, write);
   const reread = entry.stale;
   if (reread) {
     await refillWindowInLane(entry);
@@ -62,7 +69,7 @@ export async function fanoutChange(
     // there is nothing to patch. Returning before the loop below was the defect: the guard after
     // this refused the change as stale and every desynced subscriber went without the change AND
     // without its snapshot — a run console frozen on its first event after one `updateWhere`.
-    if (change.lsn <= entry.lsn) return { sent: await resnapshotAll(deps, entry), stale: 0 };
+    if (change.lsn <= entry.lsn) return { sent: await resnapshotAll(deps, entry, named), stale: 0 };
   }
   // The consume-side twin of the replicator's own duplicate guard, which had none. `entry.lsn =
   // change.lsn` was unconditional, so a change the window already holds — a redelivery, or one
@@ -70,7 +77,8 @@ export async function fanoutChange(
   // to it and asked them to fold state they had already folded over newer rows.
   if (entry.lsn !== '' && change.lsn <= entry.lsn) return { sent: 0, stale: 1 };
   const bridged = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
-  // Matching nothing ends the fanout, but never before a re-read's marks are answered.
+  // Matching nothing ends the fanout, but never before a re-read's marks are answered. Named
+  // nothing: that read began before this change, so it is not truth that holds its write.
   if (!bridged) return { sent: reread ? await resnapshotAll(deps, entry) : 0, stale: 0 };
   // Keyed ONCE, here, before the retained window stores them: a resume replays the same key.
   const result = { ...bridged, patches: keyPatches(entry, change, bridged.patches) };
@@ -84,8 +92,10 @@ export async function fanoutChange(
   const guessed = result.refill || partial;
   if (guessed) entry.stale = true;
   // The retained window holds the pre-policy patch; resume re-filters it per subscriber. A partial
-  // row is never retained: replayed, it is the same missing column on a resuming client.
-  if (!partial) for (const patch of result.patches) deps.source.append(entry.qid, patch);
+  // row is never retained: replayed, it is the same missing column on a resuming client. Each
+  // retained patch keeps the write that made it, so a delta resume can name it too.
+  if (!partial)
+    for (const patch of result.patches) deps.source.append(entry.qid, retain(patch, write));
   // And the ring says so now, not at the re-read: a resume in between got a delta lacking it.
   else deps.source.floorAt?.(entry.qid, change.lsn, { exclusive: true });
 
@@ -109,7 +119,8 @@ export async function fanoutChange(
     // healthy socket. A marked subscriber is re-snapshotted out of the shared window instead, at
     // the cost of one frame and no DB read, and only then is the mark cleared.
     if (subscription.socket.desynced.has(subscription.sid)) {
-      if (await resnapshot(deps, entry, subscription)) sent += 1;
+      // Out of the window this change was just folded into, so it holds the change's write.
+      if (await resnapshot(deps, entry, subscription, named)) sent += 1;
       continue;
     }
     const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
@@ -131,13 +142,7 @@ export async function fanoutChange(
       continue;
     }
     if (allowed.length === 0) continue;
-    const frame: Frame = {
-      type: 'patch',
-      v: PROTOCOL_VERSION,
-      sid: subscription.sid,
-      patches: allowed,
-      lsn: change.lsn,
-    };
+    const frame = patchFrame(subscription.sid, allowed, change.lsn, writes);
     if (subscription.socket.send(frame)) {
       subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
       sent += 1;
@@ -196,11 +201,15 @@ async function truncated(
 }
 
 /** Each marked subscriber, re-snapshotted out of the window just read. Frames that left. */
-async function resnapshotAll(deps: FanoutDeps, entry: QueryEntry): Promise<number> {
+async function resnapshotAll(
+  deps: FanoutDeps,
+  entry: QueryEntry,
+  named: readonly NamedWrite[] = [],
+): Promise<number> {
   let sent = 0;
   for (const subscription of entry.subscribers.values()) {
     if (!subscription.socket.desynced.has(subscription.sid)) continue;
-    if (await resnapshot(deps, entry, subscription)) sent += 1;
+    if (await resnapshot(deps, entry, subscription, named)) sent += 1;
   }
   return sent;
 }
@@ -231,6 +240,7 @@ async function resnapshot(
   deps: FanoutDeps,
   entry: QueryEntry,
   subscription: LiveSubscription,
+  named: readonly NamedWrite[],
 ): Promise<boolean> {
   const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
   let rows: readonly Row[];
@@ -242,29 +252,56 @@ async function resnapshot(
     return false;
   }
   const cursor = makeCursor(entry.qid, entry.lsn, rows, deps.clock.now().getTime());
-  if (!subscription.socket.send(snapshotFrame(entry, subscription.sid, rows, cursor))) return false;
+  const frame = snapshotFrame(entry, subscription.sid, rows, cursor, named);
+  if (!subscription.socket.send(frame)) return false;
   subscription.cursor = cursor;
   subscription.socket.clearDesynced(subscription.sid);
   return true;
 }
 
+/** A write this truth may hold, and the RECORD key of the row it made — what it is shown by. */
+export interface NamedWrite {
+  readonly write: string;
+  readonly key: string;
+}
+
 /**
- * The one place a snapshot frame is built, so the identity scope and the record keys cannot be
- * told to one caller only. `keys` rides only when some key differs from its row's `id` — an entity
- * keyed by `id` sends the frame it always sent.
+ * The one place a snapshot frame is built, so the identity scope, the record keys and the writes
+ * cannot be told to one caller only. `keys` rides only when some key differs from its row's `id`
+ * — an entity keyed by `id` sends the frame it always sent. A write in `named` is sent only when
+ * the row it made is among `rows`, which are already filtered for THIS subscriber: a write behind
+ * a row it may not see is another actor's, never named to it.
  */
 export function snapshotFrame(
   entry: QueryEntry,
   sid: string,
   rows: readonly Row[],
   cursor: LiveCursor,
+  named: readonly NamedWrite[] = [],
 ): Frame {
-  const base = { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows, cursor } as const;
-  const scoped = entry.rowEntity === null ? base : { ...base, entity: entry.rowEntity };
   const keyOf = entry.rowKey;
-  if (keyOf === null) return scoped;
-  const keys = rows.map((row) => keyOf(row));
+  const keys = rows.map((row) => (keyOf === null ? row.id : keyOf(row)));
+  const shown = new Set(keys);
+  const writes = new Set<string>();
+  for (const { write, key } of named) if (shown.has(key)) writes.add(write);
+  const base = { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows, cursor } as const;
+  // Capped where the decoder caps it: a frame over the ceiling is refused whole, and a write left
+  // unnamed only settles on its own HTTP answer.
+  const listed = [...writes].slice(0, FRAME_LIMITS.patches);
+  const withWrites = listed.length === 0 ? base : { ...base, writes: listed };
+  const scoped = entry.rowEntity === null ? withWrites : { ...withWrites, entity: entry.rowEntity };
   return keys.every((key, index) => key === rows[index]?.id) ? scoped : { ...scoped, keys };
+}
+
+/** The change's write, by the record key of the row it made; nothing for an unkeyed change. */
+function namedBy(
+  entry: QueryEntry,
+  change: ChangeEvent,
+  write: string | null,
+): readonly NamedWrite[] {
+  const whole = change.after ?? change.before;
+  if (write === null || whole === null) return [];
+  return [{ write, key: entry.rowKey === null ? whole.id : entry.rowKey(whole) }];
 }
 
 /**
@@ -281,4 +318,24 @@ function keyPatches(
   if (keyOf === null || whole === null) return patches;
   const key = keyOf(whole);
   return patches.map((patch) => (key === patch.id ? patch : { ...patch, key }));
+}
+
+/** The patch the ring retains: the pre-policy patch plus the write that made its change. */
+function retain(patch: RowPatch, write: string | null): RowPatch {
+  return write === null ? patch : { ...patch, write };
+}
+
+/**
+ * The one place a patch frame is built, so a live fanout and a delta resume cannot spell it two
+ * ways. `writes` rides only when some keyed write made a patch here: an unkeyed change sends the
+ * frame it always sent.
+ */
+export function patchFrame(
+  sid: string,
+  patches: readonly RowPatch[],
+  lsn: string,
+  writes: readonly string[],
+): Frame {
+  const base = { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn } as const;
+  return writes.length === 0 ? base : { ...base, writes };
 }

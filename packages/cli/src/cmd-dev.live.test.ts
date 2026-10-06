@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { descendantsOf, leftovers, pump, reap, reapIn, waitFor } from './dev-live-fixture';
+import { processRoot } from './process-root-fixture';
 
 /**
  * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
@@ -22,7 +23,7 @@ const BOOT_TIMEOUT_MS = 60_000;
 // inside the promise `run` resolves is a dev server the exit code takes down between the line
 // announcing the url and the first request to it — which is what `x dev` did. Only a real process
 // can show that, so this one is spawned rather than called.
-const HOLD_ROOT = join(import.meta.dir, '..', '.dev-hold-fixture');
+const HOLD_ROOT = processRoot(join(import.meta.dir, '..', '.dev-hold-fixture'));
 const BIN = join(import.meta.dir, 'bin.ts');
 
 // A timed-out test never reaches its `finally`; this is what still reaps its children.

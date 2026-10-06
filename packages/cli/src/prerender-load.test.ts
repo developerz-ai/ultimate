@@ -10,9 +10,10 @@ import { clearRoutes } from '@ultimat3/render';
 import { clearStylesheets } from '@ultimat3/render/server';
 import { prerenderSite } from './prerender';
 import { EXPORT_MARKER } from './prerender-out';
+import { processRoot } from './process-root-fixture';
 
 // Inside the package, so the fixture's `@ultimat3/*` imports resolve.
-const ROOT = join(import.meta.dir, '..', '.prerender-load-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-load-fixture'));
 const OUT = join(ROOT, 'static');
 
 beforeEach(async () => {

@@ -141,6 +141,7 @@ const insert = (row: Row, op: ChangeEvent['op'] = 'insert'): ChangeEvent => ({
   txid: '1',
   orgId: ORG,
   at: 0,
+  write: null,
 });
 
 const records = (ws: FakeWs): ChannelRecordsFrame[] =>

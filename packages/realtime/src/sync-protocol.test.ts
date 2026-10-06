@@ -41,6 +41,7 @@ const fixtures: Record<FrameKind, Frame> = {
     rows: [{ id: 'p1', title: 'hello' }],
     cursor,
     entity: 'posts',
+    writes: ['e'.repeat(32)],
   },
   patch: {
     type: 'patch',
@@ -48,6 +49,7 @@ const fixtures: Record<FrameKind, Frame> = {
     sid: 'sid-1',
     patches: [{ op: 'update', id: 'p1', row: { likes: 3 }, lsn: '000000000000000a' }],
     lsn: '000000000000000a',
+    writes: ['d'.repeat(32)],
   },
   ack: {
     type: 'ack',
@@ -142,6 +144,32 @@ describe('sync-protocol', () => {
     expect(() => decode(JSON.stringify(raw))).toThrow(/records.write/);
     expect(() => decode(JSON.stringify({ ...fixtures.records, write: 7 }))).toThrow(
       /records.write/,
+    );
+  });
+
+  test('a patch frame names its writes, nothing but digests, and reads without them', () => {
+    const { writes: _named, ...unnamed } = fixtures.patch as Extract<Frame, { type: 'patch' }>;
+    // What a node one deploy behind sends, and what a node with no keyed write behind it sends.
+    expect(decode(JSON.stringify(unnamed))).toEqual(unnamed);
+    expect(decode(JSON.stringify({ ...unnamed, writes: [] }))).toEqual(unnamed);
+    const raw = { ...unnamed, writes: ['likePost:0192f0c4-0000-7000-8000-000000000001'] };
+    expect(() => decode(JSON.stringify(raw))).toThrow(/patch.writes/);
+    expect(() => decode(JSON.stringify({ ...unnamed, writes: 'd'.repeat(32) }))).toThrow(
+      /patch.writes/,
+    );
+    const flood = { ...unnamed, writes: Array(FRAME_LIMITS.patches + 1).fill('d'.repeat(32)) };
+    expect(() => decode(JSON.stringify(flood))).toThrow(/over the limit/);
+  });
+
+  test('a snapshot names its writes the same way, and reads without them', () => {
+    const { writes: _named, ...unnamed } = fixtures.snapshot as Extract<
+      Frame,
+      { type: 'snapshot' }
+    >;
+    expect(decode(JSON.stringify(unnamed))).toEqual(unnamed);
+    expect(decode(JSON.stringify({ ...unnamed, writes: [] }))).toEqual(unnamed);
+    expect(() => decode(JSON.stringify({ ...unnamed, writes: ['likePost:raw'] }))).toThrow(
+      /snapshot.writes/,
     );
   });
 

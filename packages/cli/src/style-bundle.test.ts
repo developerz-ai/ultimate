@@ -10,12 +10,13 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clearStylesheets, loadStylesheet, setStylesheetRoot } from '@ultimat3/render/server';
 import { exec } from './exec';
+import { processRoot } from './process-root-fixture';
 import { STYLE_BASE_PATH, styleBundle, styleBundleOf, writeStyles } from './style-bundle';
 
 const SITE = '/srv/demo/apps/web/site/page.module.scss';
 const APP = '/srv/demo/apps/web/app/feed/page.module.scss';
 const PACKAGE = '/srv/demo/packages/kit/src/kit.scss';
-const OUT = join(import.meta.dir, '..', '.style-fixture');
+const OUT = processRoot(join(import.meta.dir, '..', '.style-fixture'));
 
 // Both ends: the registry is process-global and every suite in this package that builds an island
 // registers into it, so a test that only cleaned up after itself would read another file's CSS.

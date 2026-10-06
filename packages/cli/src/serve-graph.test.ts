@@ -85,8 +85,11 @@ const MIGRATE_CEILING = 615;
  * closes), `worker-tally.ts` (counters split so `worker.ts` stays under the ceiling) — plus
  * `core/src/drain-deadline.ts` (`drain.deadlineMs`) and `db/src/migrate-rollback.ts` (a rollback
  * onto a newer build's ledger is accepted, not `X_MIGRATION_CONFLICT`).
+ * raised 893 → 894, measured 894 (2026-10-05, plan 101 sweep 9, #506): `render/src/island-hold.ts`
+ * — a realtime island on a page-boot document is held hidden until every held island has mounted
+ * over the restored store and outbox, so an offline reload never paints the stale count first.
  */
-const SERVING_ROLE_CEILING = 893;
+const SERVING_ROLE_CEILING = 894;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -104,8 +107,12 @@ const SERVING_ROLE_CEILING = 893;
  * without symlinks had bundled twice (+15 KB on `/posts`).
  * raised 987 → 992, measured 992 (2026-10-05, plan 101 sweep 8c): the five modules named on
  * `SERVING_ROLE_CEILING` for sweep 8c.
+ * raised 992 → 994, measured 994 (2026-10-05, plan 101 sweep 9): `render/src/island-hold.ts` (named on
+ * `SERVING_ROLE_CEILING`, #506) and `cli/src/island-runtime.ts` (#505: the page runtime built once
+ * per page instead of inlined into every realtime island; split out so `island-bundle.ts` stays
+ * under the ceiling).
  */
-const WEB_ROLE_CEILING = 992;
+const WEB_ROLE_CEILING = 994;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

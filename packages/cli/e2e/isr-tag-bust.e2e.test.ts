@@ -13,10 +13,11 @@ import { invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import { NotImplementedError, resetLifecycle } from '@ultimat3/core';
 import { clearRoutes } from '@ultimat3/render';
 import { resetAppLoad } from '../src/app-load';
+import { processRoot } from '../src/process-root-fixture';
 import { serveApp } from '../src/serve';
 import type { ServedApp } from '../src/serve-types';
 
-const ROOT = join(import.meta.dir, '..', '.isr-e2e-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.isr-e2e-fixture'));
 const PROBE = '__xIsrE2eProbe';
 const BOOT_TIMEOUT_MS = 120_000;
 

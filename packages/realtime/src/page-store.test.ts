@@ -7,7 +7,7 @@ import { bootPage } from './boot';
 import { resetPage } from './hooks-fixture';
 import { pageLocalStore } from './local-store-idb';
 import { pageOutbox } from './page-outbox';
-import { pageRealtime } from './page-store';
+import { pageRealtime, pageStore } from './page-store';
 
 const realFetch = globalThis.fetch;
 const host = globalThis as { document?: unknown };
@@ -154,7 +154,7 @@ describe('a write queued inside the persister debounce', () => {
     };
     await bootPage();
     const disk = await pageLocalStore();
-    pageRealtime().store.adopt('posts', { p9: { id: 'p9', likes: 1 } });
+    pageStore().adopt('posts', { p9: { id: 'p9', likes: 1 } });
     expect((await disk.rows('p:carol')).get('posts')).toBeUndefined(); // still debounced
 
     await pageOutbox().enqueue({ key: 'likePost:k9', name: 'likePost', input: { postId: 'p9' } });

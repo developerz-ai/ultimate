@@ -133,6 +133,7 @@ function change(after: FeedRow, before: FeedRow | null): ChangeEvent {
     txid: '2',
     orgId: 'o1',
     at: 1_000,
+    write: null,
   };
 }
 

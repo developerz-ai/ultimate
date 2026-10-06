@@ -288,7 +288,11 @@ describe('RecordStore — rows restored from disk', () => {
 });
 
 describe('RecordStore — an answer that did not carry every row the write touched', () => {
-  function manual(): { schedule: (fn: () => void, ms: number) => () => void; fire(): void } {
+  function manual(): {
+    schedule: (fn: () => void, ms: number) => () => void;
+    fire(): void;
+    armed(): boolean;
+  } {
     let armed: (() => void) | null = null;
     return {
       schedule: (fn) => {
@@ -298,8 +302,32 @@ describe('RecordStore — an answer that did not carry every row the write touch
         };
       },
       fire: () => armed?.(),
+      armed: () => armed !== null,
     };
   }
+
+  // A frame's echo confirmed one row, so the write waits for the other; then the HTTP answer
+  // carries both and the overlay goes. The wait went on running for the whole bound behind it.
+  test('an overlay that leaves while waiting takes its timer with it', () => {
+    const timer = manual();
+    const s = new RecordStore({ schedule: timer.schedule });
+    s.adopt('posts', { p1: { id: 'p1', likes: 1 }, p2: { id: 'p2', likes: 1 } });
+    s.push(
+      'like:a',
+      (tx) => {
+        tx['posts']?.update('p1', { seen: true });
+        tx['posts']?.update('p2', { seen: true });
+      },
+      'server-wins',
+    );
+    s.settle('like:a', new Set([recordKey('posts', 'p1')]));
+    expect(timer.armed()).toBe(true);
+
+    s.settle('like:a', new Set([recordKey('posts', 'p1'), recordKey('posts', 'p2')]));
+
+    expect(s.pending()).toEqual([]);
+    expect(timer.armed()).toBe(false);
+  });
 
   test('keeps the overlay until the server row for it arrives — no flicker back', () => {
     const timer = manual();

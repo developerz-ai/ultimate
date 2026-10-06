@@ -11,6 +11,7 @@ import {
   resetErrorReporting,
 } from '@ultimat3/core';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
+import { processRoot } from './process-root-fixture';
 import {
   CONTAINER_BINDING,
   configureReporting,
@@ -113,7 +114,7 @@ test('the binding a role starts with is dev: false on the resolved host, and the
 // The app's `apps/<app>/runtime.ts`, resolved ONCE per public entry: a caller's own `runtime` wins,
 // the file fills in when none was passed, and a root with no `apps/` at all is handed back as is.
 test('withAppRuntime reads apps/<app>/runtime.ts only when the caller passed no runtime', async () => {
-  const root = join(import.meta.dir, '..', '.serve-runtime-fixture');
+  const root = processRoot(join(import.meta.dir, '..', '.serve-runtime-fixture'));
   await rm(root, { recursive: true, force: true });
   try {
     await Bun.write(

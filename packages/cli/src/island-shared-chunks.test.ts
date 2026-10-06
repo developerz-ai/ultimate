@@ -10,8 +10,9 @@ import { join } from 'node:path';
 import { mountIsland } from '@ultimat3/testing';
 import { buildIslands, writeIslands } from './island-bundle';
 import { clearIslandChunkCache } from './island-identity';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'shared-chunks');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'shared-chunks'));
 /** `islands: { sharedChunks: true }`, asked of the build directly rather than through a config file. */
 const SHARED = { sharedChunks: true } as const;
 

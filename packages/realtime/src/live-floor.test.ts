@@ -110,6 +110,7 @@ const write = (table: Table, row: Row, lsn: number): ChangeEvent => {
     txid: String(lsn),
     orgId: 'o1',
     at: clock.now().getTime(),
+    write: null,
   };
 };
 

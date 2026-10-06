@@ -1227,6 +1227,34 @@ before quoting.
 | `useQuery` | 47,696 |
 | `useChannel` | 45,585 |
 
+## 2026-10-05 — the page runtime, once per page (#505 cut 1, plan 101 sweep 9)
+
+`bun build --target=browser --minify`, one entry importing one hook from the barrel (Bun 1.4.2).
+Re-measure before quoting.
+
+| Entry | Bytes |
+|---|---|
+| `useRecord` | 12,379 |
+| `useMutation` | 18,299 |
+| `useQuery` | 14,256 |
+| `useChannel` | 12,111 |
+| `useConnection` | 12,266 |
+| `@ultimat3/realtime/page-runtime` (once per page) | 52,649 |
+| `@ultimat3/realtime/boot` (once per page; now carries the runtime) | 68,389 |
+
+The hooks stopped importing the store, `page-socket.ts`, `queryClientMethodFor` and
+`clientTransport`: they read the page object (`installedPage`) and call its `services`, which
+`page-runtime.ts` installs. What is left in a hook's bundle is the hook, `reactivity.ts` and the
+error tables (cut 2). `examples/dummy`'s islands by `buildIslands`: `like` 85,609 → 41,738,
+`likes-badge` 36,115 → 26,865, `feed` 103,382 → 59,588, `run-console` 111,554 → 73,320.
+
+Why not the boot alone: it is absent from an unscoped document (`route-islands.ts`), an app with
+realtime off (`page-sync.ts`) and every static export (prerender renders no sync head), so a
+realtime island there had no store. The island awaits the boot where the document carries it and
+loads the runtime chunk where not (`page-runtime-wait.ts`) — one runtime per page either way.
+Rejected: a static import of the chunk (a scoped page would fetch it AND the boot), and
+`splitting: true` (#505 refuses it as a quick win; the global seam is the point).
+
 ## 2026-10-02 — the replication pipeline (plan 101, slice 08)
 
 Seven decisions, each with what was rejected.

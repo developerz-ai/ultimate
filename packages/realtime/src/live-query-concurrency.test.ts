@@ -92,6 +92,7 @@ const change: ChangeEvent = {
   txid: '2',
   orgId: 'o1',
   at: 1_000,
+  write: null,
 };
 
 describe('a socket that goes away mid-subscribe', () => {
@@ -286,6 +287,7 @@ describe('a cold subscribe whose read races a write', () => {
       txid: '5',
       orgId: 'o1',
       at: 2_000,
+      write: null,
     });
     gate.resolve({ rows: before, lsn: '' });
     const forAlice = await first;

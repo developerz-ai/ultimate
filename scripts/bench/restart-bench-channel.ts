@@ -34,5 +34,6 @@ export function probeChange(seq: number, at: number): ChangeEvent {
     txid: String(seq),
     orgId: null,
     at,
+    write: null,
   };
 }

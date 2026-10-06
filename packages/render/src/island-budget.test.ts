@@ -37,8 +37,11 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * HEAVIEST single-strategy runtime, so the ceiling below is taken over the worse of the two.
      * 1,744 -> 1,784 on 2026-09-28 (+40 B in the shared prelude): `each` visits an island root once
      * per tab, so the client router can re-run this runtime over a swapped-in body.
+     * 1,784 -> 1,843 on 2026-10-05 (+59 B in the shared `catchUp`): a capture listener lets go on
+     * the first event after a mount something else made — a held island (`island-hold.ts`) is
+     * booted by the hold, so its first click after the reveal was replayed into it, running twice.
      */
-    hydrateRuntimeIdle: 1_784,
+    hydrateRuntimeIdle: 1_843,
     /**
      * `DEFAULT_ISLAND_HYDRATE` is `'interaction'` (`route.ts:33`), so THIS is the runtime an island
      * route declaring no `hydrate` actually ships. The budget derivation used `idle` and understated
@@ -63,8 +66,11 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      *
      * Moved 1,629 -> 1,669 on 2026-09-28: the prelude's `each` marks the roots it visited (+40 B),
      * so the runtime is safe to run again over a body the client router swapped in.
+     *
+     * Moved 1,669 -> 1,728 on 2026-10-05: `catchUp`'s `on` detaches once the island is mounted
+     * (+59 B, the same bytes as `idle`'s) — the held-island double run, above.
      */
-    hydrateRuntimeDefault: 1_669,
+    hydrateRuntimeDefault: 1_728,
   } as const;
 
   /** What the allowance has to clear: the costlier of the two runtimes an island gets unasked. */

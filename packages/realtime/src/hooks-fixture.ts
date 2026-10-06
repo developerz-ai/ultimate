@@ -7,7 +7,8 @@ import { frozenClock } from '@ultimat3/core';
 import { pageClient } from '@ultimat3/core/page';
 import { type ClientSocket, LiveClient } from './client';
 import type { SignalFactory } from './client-contract';
-import { type PageRealtime, pageRealtime } from './page-store';
+import { installPageRuntime } from './page-runtime';
+import type { InstalledPage } from './page-store';
 import { installRealtime, uninstallRealtime } from './reactivity';
 import { decode, encode, type Frame } from './sync-protocol';
 
@@ -82,7 +83,7 @@ export function resetPage(): void {
 }
 
 export interface PageHarness {
-  readonly page: PageRealtime;
+  readonly page: InstalledPage;
   readonly client: LiveClient;
   readonly socket: FakeSocket;
   readonly clock: ReturnType<typeof frozenClock>;
@@ -90,9 +91,10 @@ export interface PageHarness {
 }
 
 /**
- * A browser page as the island bootstrap leaves it: realtime installed with this bundle's signal,
- * and the page socket pre-seated with a client over a fake socket — so `pageSocket()` finds it and
- * never reaches `new WebSocket`.
+ * A browser page as the island bootstrap leaves it: the page runtime installed (what the page boot
+ * or the runtime chunk does before any island's hook runs), realtime installed with this bundle's
+ * signal, and the page socket pre-seated with a client over a fake socket — so `pageSocket()`
+ * finds it and never reaches `new WebSocket`.
  */
 export function pageHarness(
   options: {
@@ -100,8 +102,8 @@ export function pageHarness(
   } = {},
 ): PageHarness {
   resetPage();
+  const page = installPageRuntime();
   installRealtime({ signal, sync: { url: 'ws://node.test/_x/sync', buildId: 'build-1' } });
-  const page = pageRealtime();
   const socket = new FakeSocket();
   const clock = frozenClock(1_000);
   const errors: unknown[] = [];

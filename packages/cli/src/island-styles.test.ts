@@ -14,8 +14,9 @@ import {
   registeredStylesheets,
 } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
+import { processRoot } from './process-root-fixture';
 
-const ROOT = join(import.meta.dir, '..', '.island-styles-fixture');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-styles-fixture'));
 
 const SCSS = '.track { color: red; }\n.knob { color: blue; }\n';
 

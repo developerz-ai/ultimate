@@ -24,9 +24,10 @@ import { VERIFY_STEPS } from './cmd-verify';
 import type { CommandContext } from './command';
 import { msg } from './messages';
 import type { FlagValue } from './parse';
+import { processRoot } from './process-root-fixture';
 
-const WHOLE = join(import.meta.dir, '..', '.manifest-whole-fixture');
-const PARTIAL = join(import.meta.dir, '..', '.manifest-partial-fixture');
+const WHOLE = processRoot(join(import.meta.dir, '..', '.manifest-whole-fixture'));
+const PARTIAL = processRoot(join(import.meta.dir, '..', '.manifest-partial-fixture'));
 
 const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
 

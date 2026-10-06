@@ -70,6 +70,7 @@ describe('unit · registerLiveQueries · resume', () => {
       txid: '7',
       orgId: 'o1',
       at: held.at,
+      write: null,
     });
 
     // The same client, on a new socket, with the cursor its first snapshot handed it.

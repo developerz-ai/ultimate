@@ -1,6 +1,6 @@
-// The page's ONE socket: built on the first live or channel hook, by whichever island bundle asks
-// first, and shared by every other one through the page state. A form-only island never imports
-// this module, so it ships none of the connection lifecycle.
+// The page's ONE socket: built on the first live or channel hook, and shared by every island
+// through the page state. Part of the page runtime (`page-runtime.ts`), so no island bundle carries
+// the connection lifecycle: a hook reaches it as `services.socket`, off the page object.
 
 import { onRescope, pageClient } from '@ultimat3/core/page';
 import { queryClientMethodFor } from '@ultimat3/query/client';
@@ -8,7 +8,7 @@ import { LiveClient } from './client';
 import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 import { peekOutbox } from './outbox-slot';
 import { SyncUnconfiguredError } from './page-errors';
-import { pageRealtime } from './page-store';
+import { installedPage } from './page-store';
 import {
   openHost,
   type RehostingHost,
@@ -20,7 +20,7 @@ import { pageSyncTarget, syncWorkerFromMeta } from './sync-meta';
 
 /** Get-or-create, and connect on creation. `hook` names the caller in the refusal. */
 export function pageSocket(hook: string): LiveClient {
-  const page = pageRealtime();
+  const page = installedPage(hook);
   // Its one writer is below, so the stored value is always this class — from SOME bundle's copy,
   // which is why it is read structurally and never checked with `instanceof`.
   if (page.socket !== undefined) return page.socket as LiveClient;
@@ -110,17 +110,8 @@ export function resetPageSocket(
   hosts = options.openHost ?? openHost;
 }
 
-/**
- * Whether this page holds a socket — `false` on a server render and before any live hook ran.
- * The guard a component with a static fallback asks (an offline banner, an update prompt).
- */
-export function hasPageSocket(): boolean {
-  const host = globalThis as { [key: symbol]: unknown };
-  const page = host[Symbol.for('ultimate.realtime')];
-  return (
-    typeof page === 'object' && page !== null && (page as { socket?: unknown }).socket !== undefined
-  );
-}
+/** Where `hasPageSocket` lives, re-exported for the callers that reach it from here. */
+export { hasPageSocket } from './page-store';
 
 function hostFor(scope: string | null, buildId: string): SocketHost {
   const workerUrl =

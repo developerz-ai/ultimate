@@ -100,8 +100,12 @@ export const config = defineRoute({
    * raised 59kb → 60kb, measured 60,437 B (2026-10-05, plan 101 sweep 2; the reference-app gate's
    * `x build --target static`): +90 B for the client-side action error registry, which now carries
    * `X_IDEMPOTENT_REPLAY_REDACTED` (#591) so a refused replay renders its own title and fix.
+   * raised 60kb → 61kb (plan 101 sweep 9). measured: 61,494 B (2026-10-05;
+   * `x build --target static`), against 62,464. why: +59 B in the inline `idle` runtime — `catchUp`
+   * lets go of a press after a mount it did not flush (a held island's first click ran twice, #506);
+   * the other +998 B is the settings island's growth from the rest of sweep 9, measured here.
    */
-  budget: { js: '60kb' },
+  budget: { js: '61kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

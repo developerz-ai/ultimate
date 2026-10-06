@@ -1,12 +1,14 @@
 // Realtime installed for the author, on exactly the islands that use it: an island whose own import
-// graph reaches `@ultimat3/realtime` is built from a virtual entry that first calls
-// `installRealtime({ signal: createSignal })` with THIS bundle's solid-js, then re-exports the
-// island whole. Every other island is built from its own file and pays nothing (plan 101 slice 14).
+// graph reaches `@ultimat3/realtime` is built from a virtual entry that first awaits the page
+// runtime (`island-runtime.ts`), then calls `installRealtime({ signal: createSignal })` with THIS
+// bundle's solid-js, then re-exports the island whole. Every other island pays nothing.
 
-// why: Bun ships no path API; the entry is joined to the root and resolved from its directory.
-import { dirname, join } from 'node:path';
+// why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename.
+import { basename, join } from 'node:path';
 import type { BunPlugin } from 'bun';
+import { RUNTIME_CHUNK_SPECIFIER, type RuntimeChunk } from './island-runtime';
 import { firstInGraph } from './live-routes';
+import { PAGE_BOOT_BASE_PATH } from './worker-bundle';
 
 /**
  * What `Bun.build` is handed for a realtime island: this prefix plus the island's app-root-relative
@@ -22,6 +24,7 @@ const REALTIME = '@ultimat3/realtime';
 const NAMESPACE = 'ultimate-island';
 const INSTALL = 'ultimate:island-realtime';
 const MODULE = 'ultimate:island-module:';
+const WAIT = 'ultimate:island-page-wait';
 
 /**
  * Whether the island's own graph value-imports realtime. Relative specifiers only, which is the
@@ -71,19 +74,31 @@ const entrySource = (file: string): string =>
  * source is part of the chunk's `sourcesContent`, which is what `graphHash` names the URL from, so
  * a path in it gave the same island a different URL in every checkout and every image build.
  * `solid-js` goes through `island-solid-dedupe.ts` like every other import in the graph.
+ *
+ * The await comes first: no hook may run before the page runtime is installed, and the module
+ * graph is not done — so `mount` is not called — until it is. The page boot carries the runtime
+ * on a document rendered for a principal; anywhere else the island loads the runtime chunk, by a
+ * path relative to its own URL, so it resolves under `/islands/` and beside it in `mountIsland`.
+ * The chunk's URL is in this source, so a new runtime is a new URL for every island loading it.
+ * Then the first-paint hold (#506): `mount` waits for the restored records and the open outbox
+ * (capped), so a reload's first render already carries a queued write's overlay.
  */
-const INSTALL_SOURCE =
-  `import { installRealtime } from '${REALTIME}';\n` +
+const installSource = (runtimeUrl: string): string =>
+  `import { holdFirstPaint, installRealtime } from '${REALTIME}';\n` +
+  `import { awaitPageRuntime } from '${WAIT}';\n` +
   `import { createSignal } from 'solid-js';\n` +
+  `await awaitPageRuntime({ boot: '${PAGE_BOOT_BASE_PATH}/', load: () => import('./${basename(runtimeUrl)}') });\n` +
+  `await holdFirstPaint();\n` +
   `installRealtime({ signal: createSignal });\n`;
 
 /**
- * `file` is the island whose directory every bare `@ultimat3/realtime` resolves from — the first
- * realtime island of the build. One directory for all of them, because one copy in the bundle is
- * the requirement: the signal the install sets is only read by hooks from the same module instance.
+ * `runtime` names the realtime every bare `@ultimat3/realtime` of the build resolves to — the copy
+ * the runtime chunk was built against, resolved from the first realtime island's directory. One
+ * copy for all of them, because one copy in the bundle is the requirement: the signal the install
+ * sets is only read by hooks from the same module instance, and the page object it reads is the
+ * shape that copy's runtime installs.
  */
-export function islandRealtimePlugin(root: string, file: string): BunPlugin {
-  const island = join(root, file);
+export function islandRealtimePlugin(root: string, runtime: RuntimeChunk): BunPlugin {
   return {
     name: 'ultimate-island-realtime',
     setup(build) {
@@ -98,16 +113,21 @@ export function islandRealtimePlugin(root: string, file: string): BunPlugin {
       build.onResolve({ filter: /^ultimate:island-module:/ }, (args) => ({
         path: join(root, args.path.slice(MODULE.length)),
       }));
+      // The wait is realtime's, from the copy the hooks are bundled from; the runtime chunk is
+      // another file of this build's output, fetched by the browser and never bundled in.
+      build.onResolve({ filter: /^ultimate:island-page-wait$/ }, () => ({ path: runtime.wait }));
+      build.onResolve({ filter: RUNTIME_CHUNK_SPECIFIER }, (args) => ({
+        path: args.path,
+        external: true,
+      }));
       // Every bare `@ultimat3/realtime` in this build, the virtual install's included — a virtual
       // module has no directory to resolve from. The island's directory for all of them, which is
       // what the island itself would get.
-      build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({
-        path: Bun.resolveSync(REALTIME, dirname(island)),
-      }));
+      build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({ path: runtime.realtime }));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
         contents: args.path.startsWith('entry:')
           ? entrySource(args.path.slice('entry:'.length))
-          : INSTALL_SOURCE,
+          : installSource(runtime.url),
         loader: 'js',
       }));
     },

@@ -1,13 +1,14 @@
-// `@ultimat3/realtime/boot` — the page's boot, ONE classic script per document (plan 101), built
-// and served by the CLI the way the sync worker is. It restores the principal's persisted records
-// and opens the outbox, so a reload replays what the previous load queued even on a page whose
-// islands only read. Here and not in `page-store.ts`, so no island bundle carries it.
+// `@ultimat3/realtime/boot` — the page's boot, ONE classic script per document (plan 101), served
+// by the CLI like the sync worker. It installs the page runtime (store, socket, host, channel book;
+// islands await and read it, never carry it — #505), restores the principal's persisted records
+// and opens the outbox, so a reload replays what the last load queued even if islands only read.
 
 import type { ClientScope } from '@ultimat3/core/page';
 import { pageClient } from '@ultimat3/core/page';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import { pageOutbox } from './page-outbox';
-import { BOOT_KEY, BOOT_RELEASE_KEY, type BootHost, pageRealtime } from './page-store';
+import { installPageRuntime } from './page-runtime';
+import { BOOT_KEY, BOOT_RELEASE_KEY, type BootHost } from './page-store';
 import { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 import type { RecordStore } from './record-store';
 
@@ -50,9 +51,12 @@ async function restoreFromDisk(store: RecordStore, principal: () => Principal): 
 type Principal = ClientScope['principal'];
 
 /**
- * Once per page, whoever calls first; the promise is what `pageRealtime().booted` answers. The
- * scope is the page's own — a parameter only so a test can boot an unscoped page (an OBJECT, so an
- * explicit `undefined` principal is not mistaken for "use the default").
+ * Once per page, whoever calls first; the promise is what `pageRealtime().booted` answers — the
+ * one moment an island may treat the page's records as restored (#506 holds first paint on it).
+ * The runtime is installed synchronously, before the first await, so an island waiting on this
+ * script (`awaitPageRuntime`) is released by the script's `load` with the store already there.
+ * The scope is the page's own — a parameter only so a test can boot an unscoped page (an OBJECT,
+ * so an explicit `undefined` principal is not mistaken for "use the default").
  */
 export function bootPage(scope?: { readonly principal: Principal }): Promise<void> {
   const host = globalThis as BootHost;
@@ -61,10 +65,11 @@ export function bootPage(scope?: { readonly principal: Principal }): Promise<voi
   // Already booting — unless what sits there is an island's placeholder, which this boot claims.
   if (started !== undefined && waiting === undefined) return started;
   Reflect.deleteProperty(host, BOOT_RELEASE_KEY);
+  const page = installPageRuntime();
   // Asked each time, never captured: the page's principal is whatever `rescope()` last said.
   const principal = (): Principal =>
     scope === undefined ? pageClient().scope.principal : scope.principal;
-  const booted = restoreFromDisk(pageRealtime().store, principal);
+  const booted = restoreFromDisk(page.store, principal);
   if (started !== undefined && waiting !== undefined) {
     void booted.then(waiting);
     return started;

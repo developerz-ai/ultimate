@@ -100,6 +100,7 @@ export {
 } from './island';
 export type { IslandCollector, IslandCollectorInput } from './island-collector';
 export { createIslandCollector, islandModuleIds } from './island-collector';
+export { ISLAND_HOLD_ATTRIBUTE, ISLAND_HOLD_MS, ISLAND_HOLD_REVEAL } from './island-hold';
 export type { IslandProps, JsonValue } from './island-props';
 export { ISLAND_PROPS_MAX_BYTES } from './island-props';
 export { parseByteBudget } from './islands';

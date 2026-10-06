@@ -86,6 +86,7 @@ class — stay on `.`.
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `.` | `useQuery`, `useRecord`, `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
+| first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`: the boot's restore and the open outbox, capped (#506) |
 | offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `MemoryLocalStore` |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
 
@@ -122,10 +123,13 @@ whose name `registerQueries()` stamps at boot is picked up. The reference app's
 ## The hooks
 
 One record store and one socket per **page**, on `globalThis`: every island is its own bundle, so a
-module-level singleton would be one per island. The island bootstrap `x build` prepends installs
-realtime for its bundle — `installRealtime({ signal: createSignal, sync: { url, buildId } })` — and
-an island never constructs a client or a socket. The socket opens on the first live hook; an island
-that only reads records or writes ships none of it.
+module-level singleton would be one per island. Both belong to the **page runtime** — the store,
+the socket stack, the query client and core's transport — installed ONCE per page and never inside
+an island: the page boot carries it, and where no boot is rendered the island loads
+`/islands/page-runtime.<id>.js`, the one chunk `x build` builds from `@ultimat3/realtime/page-runtime`.
+The island bootstrap `x build` prepends awaits that runtime, then installs realtime for its bundle —
+`installRealtime({ signal: createSignal })` — so a hook is a thin reader and an island never
+constructs a client or a socket. The socket opens on the first live hook.
 
 ```ts
 import {
@@ -161,8 +165,9 @@ const room = usePresence(orgFeed, { orgId });                      // the channe
 same engine runs in-page. Writes that find no network go to the page's outbox — overlay kept — and
 replay over HTTP, under their original idempotency keys, when the socket comes back. The outbox is
 the page boot's (`@ultimat3/realtime/boot`): an island only reads it off the page. On a page the
-CLI renders no boot for (no scope tag, so nothing on it persists) such a write is refused like any
-other — rejected, overlay taken back — never held in memory a reload would silently lose.
+CLI renders no boot for (no scope tag, so nothing on it persists) the island's runtime chunk opens
+no outbox, and such a write is refused like any other — rejected, overlay taken back — never held
+in memory a reload would silently lose.
 
 `<AsyncRegion state={feed()} …/>` takes the answer as-is: `AsyncState` is `@ultimat3/core`'s, the
 same type `@ultimat3/ui` renders.
@@ -320,6 +325,7 @@ over it, and an HTTP answer's records, a socket patch and an optimistic write al
 | The live path names the type server-side (`recordTypeForTable`) | a changefeed speaks tables; the store speaks entities |
 | Two layers: synced truth and the optimistic overlay | a refused write drops its overlay and shows exactly what the server said — never a stale before-image |
 | The overlay is REPLAYED over every server update | two pending writes on one row land in order on top of someone else's change |
+| A server frame that echoes this page's write names it — `records.write`, `patch.writes` (a delta resume names each it replays), `writeDigest(idempotencyKey)` — and settles it in the frame's own batch | merged under its still-pending twin, the echo painted the write twice (truth plus overlay) until the HTTP answer landed. `ChangeEvent.write` is `string \| null`, required, so a producer cannot forget it |
 | A value is **replaced, never mutated**; a write **merges** columns | a mutated row is a render that never happens; a narrower projection must not blank a wider one |
 | A structurally bad row is `X_RECORD_REJECTED`, dropped and reported | never partially merged — a keyless row would overwrite another record |
 | The last holder leaving evicts the record | an infinite scroll must not retain every row it ever saw |

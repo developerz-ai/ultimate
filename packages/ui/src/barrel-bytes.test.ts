@@ -43,7 +43,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm, rmdir } from 'node:fs/promises';
 // why: same import, same reason — `relative` is what keeps the generated entry's specifier honest
 // when the fixture directory moves, instead of a hand-counted `../`.
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 /**
  * `.tmp/` is gitignored repo-wide, so an interrupted run leaves nothing tracked behind. It has to
@@ -53,8 +53,8 @@ import { join, relative, resolve } from 'node:path';
  * of this file deleted each other's entries mid-build — reproduced with six, 3 of them red with
  * `File not found ".../packages/ui/.tmp/moneyText-deep.ts"`.
  */
-const TMP_ROOT = join(import.meta.dir, '..', '.tmp');
-const FIXTURE_DIR = join(TMP_ROOT, `barrel-bytes-${process.pid}`);
+const FIXTURE_DIR = join(import.meta.dir, '..', '.tmp', `barrel-bytes-${process.pid}`);
+const TMP_ROOT = dirname(FIXTURE_DIR);
 
 /** `packages/<name>` — the directory a retained module's path is refused or allowed by. */
 const packageDir = (name: string): string => `${resolve(import.meta.dir, '..', '..', name)}/`;

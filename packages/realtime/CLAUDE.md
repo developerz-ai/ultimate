@@ -222,14 +222,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   optimistic writes, REPLAYED over synced truth whenever it moves. Installed as core's `RecordSink` on
   `pageClient().store`.
 - **Page state lives on `globalThis[Symbol.for('ultimate.realtime')]` (`page-store.ts`)**, never module
-  scope — every island is its own bundle (`page-client.test.ts` builds the package twice). Never
+  scope — every island is its own bundle (`page-client.test.ts` builds two islands). Never
   `instanceof` across copies.
 - **The signal factory is per BUNDLE**: `installRealtime({ signal, sync })` (`reactivity.ts`). No
   install and a DOM is `X_REALTIME_UNINSTALLED`; no DOM is a server render — hooks answer
   `pending`/online and create no page state. `useRecord` and `useQuery` return `AsyncState` accessors.
-- **One socket per page, built by the first live hook (`page-socket.ts`)**; `browser-socket.ts`
-  holds the framework's only `new WebSocket`. `hasPageSocket()` lives in `page-store.ts`. A principal
-  change (`rescope`) clears the store and redials.
+- **The page runtime (`page-runtime.ts`) is installed once per page, never in an island**;
+  hooks call `installedPage(hook).services`. One socket per page (`page-socket.ts`);
+  `browser-socket.ts` holds the only `new WebSocket`. `rescope` clears the store, redials.
 - **One socket per ORIGIN and principal, in a SharedWorker**: `socket-engine.ts` holds it and talks
   to tabs over `MessagePort`s (`socket-host.ts`'s virtual socket); wants are ref-counted and frames
   routed; a port silent for `REAP_AFTER_BEATS` is reaped; each tab resubscribes from its OWN cursors.
@@ -240,11 +240,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **`LiveClient` holds no signal** — plain reads plus `onStatus` / `onChange`; hooks wrap them.
 - **An answer that did not carry a touched row keeps that row's overlay** until the server's next row
   for it, bounded by `DEFAULT_AWAIT_SERVER_MS` (10 s).
-- **A `records` frame names the write that produced it** (`ChannelRecordsFrame.write =
-  writeDigest(idempotencyKey)`, never the key). `RecordStore.push` digests every overlay key before
-  the request leaves (`record-names.ts`); `client-channels.ts` settles inside the frame's own batch.
-  A non-digest `write` is a protocol error (`wire-channel.ts`) and dropped on the bus. Rows an answer
-  or echo partly confirmed go to `OverlayEntry.confirmed` and stop painting. `write-echo.test.ts`.
+- **A frame names the write that produced it**: `records.write`, `patch.writes` (a live patch
+  one, a resume each it replays, off `RowPatch.write` in the ring) — `writeDigest(key)`, from a
+  REQUIRED `ChangeEvent.write: string | null`. `RecordStore.push` digests each overlay key first
+  (`record-names.ts`); `client-channels.ts` / `live-rows.ts` settle in the frame's own batch. A
+  non-digest is a protocol error, dropped on the bus. Partly confirmed rows go to
+  `OverlayEntry.confirmed`. `write-echo.test.ts`, `live-write-echo.test.ts`.
 - `local(tx, input)` is pure and CONVERGENT: no I/O, no `Date.now()`, no `Math.random()`.
 - **One conflict vocabulary**: `ConflictPolicy` from `@ultimat3/core`, resolved by core's
   `resolveConflict(overlayRow, serverRow)` in `RecordStore.settle`. A server delete is not a conflict.
@@ -286,12 +287,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## The page boot
 
-Browser bytes per hook, as last measured: `docs/history/realtime.md`. Re-measure before quoting.
+Browser bytes per hook: `docs/history/realtime.md`. Re-measure before quoting.
 
 - **The disk boot is ONE page script (`boot.ts`, `./boot`)**, served at `/_x/page-boot/<hash>.js`
-  on a document with the scope tag and a realtime island; it wipes every other principal's stored
-  scope — the scope kept is read at the wipe, after the disk opens, never at boot start — then
-  restores. `booted` reads its promise off `globalThis[Symbol.for('ultimate.page-boot')]`.
+  on a document with the scope tag and a realtime island; it installs the runtime, wipes every other
+  principal's stored scope (read at the wipe), then restores. `booted` reads its promise off
+  `globalThis[Symbol.for('ultimate.page-boot')]`. No boot: islands load its chunk.
 - **An island never carries the outbox**: `boot.ts` builds it; `useMutation` and the page socket read
   it through `outbox-slot.ts` after `page.booted`. No boot ⇒ a refused write is rejected, not queued.
 
@@ -310,7 +311,7 @@ Browser bytes per hook, as last measured: `docs/history/realtime.md`. Re-measure
 ## Commands
 
 ```
-bun test packages/realtime/src            # from the REPO ROOT, never from packages/realtime
+bun test packages/realtime/src   # from the REPO ROOT
 bun run typecheck
 ```
 

@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 50
-current_focus: "sweep 8a (#660) in review; next 8b — every failure on the windows job, then make it required"
+percent: 65
+current_focus: "sweep 9 (09-realtime-islands.md); carried: the windows budgets read of /posts, then make the windows job required"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -72,28 +72,28 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 08-windows.md
     tier: 0
     sweep: "8b"
-    status: in_progress
-    percent: 90
+    status: complete
+    percent: 100
     evidence: ["#661"]
-    notes: "every windows unit subset green. Open: the scaffold app's `budgets` on Windows reads /posts at 80.2kb while the island bundles to 59.8kb (measured on the job under the framework's own plugins) — a measurement bug in budgets.ts's document read, not a bundle. Then the binary boot, then make the job required."
+    notes: "every windows unit subset green. Open: the scaffold app's `budgets` on Windows reads /posts at 80.2kb while the island bundles to 59.8kb (measured on the job under the framework's own plugins) — corrected in sweep 9: the measurement is sound (Linux 60,704 B = chunk 59,849 + inline 855); the 59.8kb probe did not build the way buildIslands does, so ~21 KB more really ships on Windows. Suspect: island-package-dedupe.ts path spelling under Windows' copied file: installs; the budgets finding now names each charged file and its bytes. Then the binary boot, then make the job required."
   - file: 13-deploy-drain.md
     tier: 3
     sweep: "8c"
-    status: not_started
-    percent: 0
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#662"]
     notes: "added by the owner 2026-10-05: frequent zero-downtime deploys; a working worker finishes, then restarts"
   - file: 15-flakes.md
     tier: 0
     sweep: "8d"
-    status: not_started
-    percent: 0
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#662"]
     notes: "added by the owner 2026-10-05: every flaky test root-caused; investigation over 300 ci runs"
   - file: 09-realtime-islands.md
     tier: 3
     sweep: "9"
-    status: not_started
+    status: in_progress
     percent: 0
     evidence: []
   - file: 14-dashboards.md

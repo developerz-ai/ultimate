@@ -79,7 +79,7 @@ export class ChannelLogs {
         frames += this.#reopen(update.topic, open.target);
         continue;
       }
-      const entry = open.ring.append(update.adopt, update.remove, change.write);
+      const entry = open.ring.append(update.adopt, update.remove, change.write ?? undefined);
       const frame = renderRecords(update.topic, open.ring.epoch, entry);
       frames += this.#sockets.deliverRecords(update.topic, open.ring.epoch, frame);
     }

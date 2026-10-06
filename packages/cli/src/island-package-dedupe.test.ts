@@ -17,9 +17,10 @@ import {
   resolveAppPackage,
   splitFrameworkSpecifier,
 } from './island-package-dedupe';
+import { processRoot } from './process-root-fixture';
 
 // Its own root under `.island-fixture`: `island-bundle.test.ts` explains why nobody owns the parent.
-const ROOT = join(import.meta.dir, '..', '.island-fixture', 'package-dedupe');
+const ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'package-dedupe'));
 const APP = join(ROOT, 'app');
 const ALPHA = join(APP, 'node_modules', '@ultimat3', 'alpha');
 const BETA = join(APP, 'node_modules', '@ultimat3', 'beta');
