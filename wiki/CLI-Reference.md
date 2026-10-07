@@ -481,7 +481,7 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 |---|---|
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
-| `packages/db/migrations/<id>.hash` | the hash of the loaded entity **registry** that `x verify`'s `drift` step checks — the entity SOURCE text was what it hashed until 8.0.0, which could not see a change in what `describe()` means by that text |
+| `packages/db/migrations/<id>.hash` | the hash `x verify`'s `drift` step checks: the loaded entity **registry** plus every non-test file under `packages/db/src` — the registry half sees what `describe()` means, the source half sees a seed or helper edit |
 
 **Plus the schema dump** — `packages/db/schema/`, the whole schema as SQL, one file per table, rewritten on every `x db gen` and `x db migrate` and held by the `drift` step (`X_SCHEMA_DUMP_DRIFT`). Layout, limits and what it is not: [Migrations and backfills → The schema dump](Migrations-And-Backfills#the-schema-dump).
 

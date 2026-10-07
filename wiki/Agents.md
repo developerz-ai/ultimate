@@ -375,7 +375,7 @@ Worked example: the reference app's `keepDraftReview` → `reviewDraftLater` (`e
 
 ### The at-least-once trap
 
-> **Rule you must satisfy: every tool an `agentJob` may call is replay-safe. The framework does not and cannot check this.**
+> **Rule you must satisfy: every write an `agentJob` run makes — by the wrapping action or by any tool — is idempotent. The framework does not and cannot check this.**
 
 **`idempotencyKey` dedupes the ENQUEUE, never the ATTEMPT.**
 
