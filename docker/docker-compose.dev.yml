@@ -55,7 +55,7 @@ services:
   events:
     # 2.11 is the floor, not a preference: presence is a JetStream KV bucket, and batch direct get
     # plus per-message TTL landed there. An older server is X_TRANSPORT_PROTOCOL on the first dial.
-    image: nats:2.11-alpine@sha256:e4bf19f15fd3218814a4e3c9e0064e1334bd8aa20d5984b9f1a0afd084f8cc00
+    image: nats:2.15-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
     command: ['-js', '-m', '8222']
     ports: ['127.0.0.1:4222:4222', '127.0.0.1:8222:8222']
 
