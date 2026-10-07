@@ -71,6 +71,9 @@ export interface SchemaNode {
   readonly integer?: boolean | undefined;
   readonly properties?: Readonly<Record<string, SchemaNode>> | undefined;
   readonly items?: SchemaNode | undefined;
+  /** An array's inclusive item-count bounds — JSON Schema's `minItems`/`maxItems`, by the same name. */
+  readonly minItems?: number | undefined;
+  readonly maxItems?: number | undefined;
   readonly values?: readonly (string | number)[] | undefined;
   readonly literal?: string | number | boolean | null | undefined;
   readonly anyOf?: readonly SchemaNode[] | undefined;

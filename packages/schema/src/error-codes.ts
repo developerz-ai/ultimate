@@ -27,4 +27,5 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
       title: 'a schema default cannot be copied per parse',
     },
     X_SCHEMA_DEFAULT_INVALID: { title: 'a schema default fails its own schema' },
+    X_SCHEMA_BOUNDS_INVALID: { title: 'an array bound no array can satisfy' },
   });

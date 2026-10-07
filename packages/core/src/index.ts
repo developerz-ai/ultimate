@@ -36,6 +36,7 @@ export {
   actorOrigin,
   agentActor,
   anonymousActor,
+  grantCovers,
   hasRole,
   hasScope,
   isActorKind,

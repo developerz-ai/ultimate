@@ -19,6 +19,7 @@ import type {
   TtlJitter,
 } from './tiers';
 import { assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
+import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */
 export interface RedisLike {
@@ -285,7 +286,9 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       // death handed a fresh five minutes, one tier closer to the request.
       if ('kind' in lease && lease.kind === 'reaped') return undefined;
       try {
-        const parsed = JSON.parse(raw) as StoredEntry;
+        // `decodeCacheValue`, not `JSON.parse`: the LRU decodes with the same codec, so a `Date`
+        // promoted out of here is a `Date` there too. Plain JSON written before the codec reads as-is.
+        const parsed = decodeCacheValue(raw) as StoredEntry;
         return {
           value: parsed.v as T,
           tags: parsed.t.map(parseTag),
@@ -314,6 +317,8 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       const tags = setOptions?.tags ?? [];
       const ttlMs = assertTtl(key, setOptions?.ttlMs ?? defaultTtlMs, 'redis', jitter);
       const payload: StoredEntry = { v: value, t: tags.map(serializeTag) };
+      // Before any bucket is joined: an unencodable value is refused with nothing left behind.
+      const text = encodeCacheValue(payload, { key, tier: 'redis' });
       const stored = valueKey(key);
       // `PX`, not `EX`: the value's lease is spent in the milliseconds it was validated and
       // jittered in. `Math.ceil(ttlMs / 1000)` honoured a 1,001ms lease as 2s — rounding toward
@@ -329,7 +334,7 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
           conn().send('EVAL', [TAG_MEMBER_SCRIPT, '1', bucket, stored, bucketTtlSeconds]),
         ),
       );
-      await conn().send('SET', [stored, JSON.stringify(payload), 'PX', String(Math.ceil(ttlMs))]);
+      await conn().send('SET', [stored, text, 'PX', String(Math.ceil(ttlMs))]);
       if (buckets.length === 0) return;
       const membership = await Promise.all(
         buckets.map((bucket) => conn().send('SISMEMBER', [bucket, stored])),

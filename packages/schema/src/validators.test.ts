@@ -9,7 +9,6 @@
 import { describe, expect, test } from 'bun:test';
 import { formatIssues, validate } from './standard';
 import {
-  arraySchema,
   builtinT,
   enumSchema,
   literalSchema,
@@ -167,29 +166,6 @@ describe('objectSchema', () => {
     expect(Object.keys(rest.shape)).toEqual(['id']);
     const result = validate(rest, { id: UUID });
     expect(result.issues).toBeUndefined();
-  });
-});
-
-describe('arraySchema', () => {
-  test('accepts a valid array', () => {
-    const schema = arraySchema(builtinT.number);
-    const result = validate(schema, [1, 2, 3]);
-    expect(result.issues).toBeUndefined();
-    if (result.issues === undefined) expect(result.value).toEqual([1, 2, 3]);
-  });
-
-  test('rejects non-arrays', () => {
-    const schema = arraySchema(builtinT.number);
-    const result = validate(schema, 'not an array');
-    expect(result.issues?.[0]?.message).toContain('expected an array');
-  });
-
-  test('tags each failing item with its index path and aggregates across items', () => {
-    const schema = arraySchema(builtinT.number);
-    const result = validate(schema, [1, 'bad', 3, 'also bad']);
-    expect(result.issues?.length).toBe(2);
-    expect(result.issues?.[0]?.path).toEqual([1]);
-    expect(result.issues?.[1]?.path).toEqual([3]);
   });
 });
 

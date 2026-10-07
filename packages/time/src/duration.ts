@@ -40,7 +40,7 @@ export function parseDuration(input: string): number {
   const negative = value.startsWith('-');
   const body = negative ? value.slice(1) : value;
 
-  if (/^p/i.test(body)) return (negative ? -1 : 1) * parseIso8601Duration(body, input);
+  if (/^p/i.test(body)) return safeTotal(parseIso8601Duration(body, input), negative, input);
 
   COMPONENT.lastIndex = 0;
   let total = 0;
@@ -58,7 +58,18 @@ export function parseDuration(input: string): number {
   // Sticky matching starts at 0, so anything short of the end is trailing junk, and a
   // zero-length match means there was no unit at all (`'3'` must not mean 3 of anything).
   if (matched === 0 || matched !== body.length) throw durationInvalid(input);
-  return (negative ? -1 : 1) * Math.round(total);
+  return safeTotal(Math.round(total), negative, input);
+}
+
+/**
+ * Each component is finite and their SUM still need not be: `'9'.repeat(305) + 'd'` is
+ * `Infinity`, and twenty nines of days is 8.64e27 — past 2^53, where no timer, `Date` or
+ * `wakeAt > now` reads what was written. Refused like any other unreadable duration, on the
+ * rounded total of both arms.
+ */
+function safeTotal(ms: number, negative: boolean, input: string): number {
+  if (!Number.isSafeInteger(ms)) throw durationInvalid(input);
+  return negative ? -ms : ms;
 }
 
 /**

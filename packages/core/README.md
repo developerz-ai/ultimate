@@ -11,6 +11,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the one lazy `AsyncLocalStorage`, every ambient scope in the framework | `async-context.ts` |
 | request context on that seam | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
+| whether a permission grant reaches a name — `grantCovers`, `*` and `<prefix>:*` | `actor.ts` |
 | acting as another actor, with an origin and a reason | `impersonate.ts` |
 | is an error worth retrying? one classification per code | `error-retry.ts` |
 | how long to wait before the next attempt — one curve, one jitter table | `backoff.ts` |

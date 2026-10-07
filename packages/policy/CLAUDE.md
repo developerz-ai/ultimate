@@ -111,6 +111,10 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   which this file and `policy-anonymous.ts` both document as ALLOWED, and it states the wrong rule —
   `not` inverts a decision about grants, and whether one was made without an actor is `or`'s to
   report.
+- **A wildcard grant reaches its PREFIX, never its first segment**: `grantMatches` and the grant
+  index both ask core's `grantCovers` (`auth` cuts API keys with it too — same tier, so the one
+  copy lives in core). `billing:invoice:*` never grants `billing:refund:issue`
+  (`grant-wildcard.test.ts`). `resourceOf` is for grouping (`byResource`), never for coverage.
 - **`defineRoles()` merges** and refuses a role two modules define differently
   (`X_ROLE_REDEFINED`, naming both declaration sites). A re-declaration of an *identical*
   role is a no-op, which is what keeps `defineRoles({ ...roleDefinitions(), … })` legal.

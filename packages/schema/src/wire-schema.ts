@@ -18,6 +18,8 @@ export interface WireJsonSchema {
   readonly required?: readonly string[];
   readonly additionalProperties?: boolean;
   readonly items?: WireJsonSchema;
+  readonly minItems?: number;
+  readonly maxItems?: number;
   readonly enum?: readonly (string | number | boolean | null)[];
   readonly const?: string | number | boolean | null;
   readonly default?: unknown;
@@ -76,6 +78,8 @@ function narrow(source: JsonSchema): WireJsonSchema {
       ? {}
       : { additionalProperties: source.additionalProperties !== false }),
     ...(source.items === undefined ? {} : { items: narrow(source.items) }),
+    ...(source.minItems === undefined ? {} : { minItems: source.minItems }),
+    ...(source.maxItems === undefined ? {} : { maxItems: source.maxItems }),
     ...(source.enum === undefined ? {} : { enum: source.enum }),
     ...(source.const === undefined ? {} : { const: source.const }),
     ...(source.default === undefined ? {} : { default: source.default }),

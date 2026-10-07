@@ -3,10 +3,16 @@
 // disagreed with a guard about where a literal ends is a `;` sent as data or a `delete` read as
 // prose, and the two answers must be the same answer.
 
-const IDENTIFIER_START = /[A-Za-z_]/;
+/**
+ * Postgres's `ident_start`/`dolq_start`: any non-ASCII character too (`\200-\377` per UTF-8 byte),
+ * so `$é$` opens a body and `é$x$` is one name — read against a server, `sql-scan.test.ts`.
+ */
+const IDENTIFIER_START = /[A-Za-z_\u0080-\uffff]/;
 export const IDENTIFIER_PART = /[A-Za-z0-9_]/;
+/** A tag's `dolq_cont`: an identifier character without the `$`, non-ASCII included. */
+const TAG_PART = /[A-Za-z0-9_\u0080-\uffff]/;
 /** `$` is legal in an identifier after the first character — `a$b` is one name, not three. */
-const IDENTIFIER_TAIL = /[A-Za-z0-9_$]/;
+const IDENTIFIER_TAIL = /[A-Za-z0-9_$\u0080-\uffff]/;
 
 export type NoiseKind = 'line-comment' | 'block-comment' | 'string' | 'identifier' | 'dollar-body';
 
@@ -23,11 +29,13 @@ function skipLineComment(script: string, index: number): number {
 }
 
 /**
- * Past a block comment. Postgres **nests** them, so the depth is counted rather than matched to
- * the first terminator — a commented-out block that itself contains a comment closes once, and
- * every `;` after that point would otherwise be read as data.
+ * Past a block comment opening at `index`, or `null` when it never closes. Postgres **nests**
+ * them, so the depth is counted rather than matched to the first terminator — a commented-out
+ * block that itself contains a comment closes once, and every `;` after that point would otherwise
+ * be read as data. Exported for `@ultimat3/mcp`'s read-only check, which REFUSES an unclosed
+ * comment where this lexer runs it to the end: one rule for where a comment ends, two readers.
  */
-function skipBlockComment(script: string, index: number): number {
+export function endOfBlockComment(script: string, index: number): number | null {
   let depth = 0;
   let at = index;
   while (at < script.length) {
@@ -46,8 +54,12 @@ function skipBlockComment(script: string, index: number): number {
     }
     at += 1;
   }
-  return script.length;
+  return null;
 }
+
+/** An unclosed comment runs to the end: Postgres reports that syntax error, not this lexer. */
+const skipBlockComment = (script: string, index: number): number =>
+  endOfBlockComment(script, index) ?? script.length;
 
 /**
  * Past a run closing on `quote`, where a doubled quote is an escaped one — `'it''s'` and
@@ -104,7 +116,7 @@ export function dollarTagAt(script: string, index: number): string | null {
   let at = index + 1;
   while (at < script.length) {
     const char = script[at] ?? '';
-    const valid = at === index + 1 ? IDENTIFIER_START.test(char) : IDENTIFIER_PART.test(char);
+    const valid = at === index + 1 ? IDENTIFIER_START.test(char) : TAG_PART.test(char);
     if (!valid) break;
     at += 1;
   }

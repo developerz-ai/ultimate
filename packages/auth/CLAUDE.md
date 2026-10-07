@@ -167,7 +167,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   keys beside their sessions, and logs before its first write.
 - **A key's scopes only ever shrink** (`apiKeyScopes`, `policy-bridge.ts`): `*` and `<res>:*` are
   refused at `issueApiKey` (`X_CONFIG_INVALID`) and dropped from a stored row; an OWNED key keeps
-  only what its owner's grants cover. Roles are policy's to expand, so the default grants are the
+  only what its owner's grants cover (core's `grantCovers`, never a local copy). Roles are policy's to expand, so the default grants are the
   row's `permissions` + `scopes` (`directGrants`) and a role-based app passes
   `apiKeyResolver(store, { grantsOf })`. Never union a key with the owner's roles.
 - **`apiKeyResolver(() => store)` is the ONE token → caller mapping** (`api-key-resolver.ts`):

@@ -99,3 +99,37 @@ describe('the refusal names the caller, not the conversion', () => {
     expect(fixOf(() => toSeconds(Number.NaN))).toContain('pass a finite duration to toSeconds');
   });
 });
+
+/**
+ * The string arm's own bound. Every component is finite, but their SUM need not be: 305 nines of
+ * days is `Infinity`, and twenty nines is 8.64e27 — a number past 2^53 that no timer, `Date` or
+ * `wakeAt > now` comparison reads as what was written. Refused like any other unreadable duration.
+ */
+describe('parseDuration refuses a total that is not a safe integer', () => {
+  const codeOf = (input: string): string => {
+    try {
+      parseDuration(input);
+    } catch (error) {
+      return error instanceof UltimateError ? error.code : 'not-an-ultimate-error';
+    }
+    return 'accepted';
+  };
+
+  for (const input of [
+    `${'9'.repeat(305)}d`,
+    `${'9'.repeat(20)}d`,
+    `-${'9'.repeat(20)}d`,
+    `P${'9'.repeat(305)}D`,
+    `PT${'9'.repeat(20)}H`,
+  ]) {
+    test(`${input.slice(0, 12)}… (${input.length} chars) is X_DURATION_INVALID`, () => {
+      expect(codeOf(input)).toBe('X_DURATION_INVALID');
+    });
+  }
+
+  test('the largest safe total still parses, in both forms', () => {
+    expect(parseDuration(`${Number.MAX_SAFE_INTEGER}ms`)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(parseDuration('104249991d')).toBe(104_249_991 * 86_400_000);
+    expect(parseDuration('P104249991D')).toBe(104_249_991 * 86_400_000);
+  });
+});

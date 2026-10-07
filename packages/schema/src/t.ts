@@ -2,6 +2,7 @@
 // Every member delegates to the active provider, so `configureSchemaProvider()` takes effect
 // even for modules that captured `t` at import time.
 
+import type { ArrayBounds } from './array-schema';
 import type { AnySchema, Refinement, Schema, Shape } from './builder';
 import type { JsonValue } from './json-value';
 import type { MoneyValue } from './money-value';
@@ -61,8 +62,15 @@ export const t: TNamespace = {
   object<S extends Shape>(shape: S): ObjectSchema<S> {
     return provider().object(shape);
   },
-  array<S extends AnySchema>(items: S): Schema<readonly InferInput<S>[], InferOutput<S>[]> {
-    return provider().array(items);
+  /**
+   * `t.array(t.uuid, { min: 1, max: 20 })` — inclusive item-count bounds on the array itself, so
+   * OpenAPI and the MCP tool schema publish them as `minItems`/`maxItems`. Omitted, any length.
+   */
+  array<S extends AnySchema>(
+    items: S,
+    bounds?: ArrayBounds,
+  ): Schema<readonly InferInput<S>[], InferOutput<S>[]> {
+    return provider().array(items, bounds);
   },
   enum<const V extends readonly [string, ...string[]]>(values: V): Schema<V[number], V[number]> {
     return provider().enum(values);

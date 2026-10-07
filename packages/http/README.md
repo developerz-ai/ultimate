@@ -185,7 +185,7 @@ and one `insert … on conflict` per take (a peek is one `select`), so N replica
 line over the client the boot already opened; **never `Bun.sql`**, whose `.query` is `undefined`.
 
 ```ts
-import { db, type SqlFragment } from '@ultimat3/db';
+import { baseClient, dbExecutor } from '@ultimat3/db';
 import {
   httpServer,
   defineHttpConfig,
@@ -196,13 +196,9 @@ import {
 
 declare const routes: readonly Route[];
 
-// The client this process already opened, wrapped in one line. `@ultimat3/cli`'s `pgExecutorFor`
-// is this exact function, and it is what the boot passes when it installs the store for you.
-const client = db();
-const executor: PgExecutor = {
-  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
-    client.query<R>({ text, values } satisfies SqlFragment),
-};
+// The pool this process already opened, never a request's open transaction — the boot builds
+// the same executor when it installs the store for you.
+const executor: PgExecutor = dbExecutor(baseClient);
 
 httpServer({
   routes,
@@ -368,6 +364,7 @@ export async function POST(request: Request): Promise<Response> {
 | a replay is detectable | `eventId` is signed and returned, so it cannot be moved in transit; the seen-set is your table, because the framework has nowhere to keep one |
 | moving the timestamp breaks it | the timestamp is inside the canonical string, so editing `t=` on a captured request invalidates the mac |
 | the raw bytes are what is verified | the body is read through core's counting reader — the same one `UltimateRequest` uses — so a sender that declares no length cannot make this handler hold an unbounded payload |
+| no secret is refused, never verified against | an empty or non-string `secret` (an unset `process.env.X`) throws `X_CONFIG_INVALID` before the request is read — a mac under an empty key is one anyone can compute. Only empty is refused, not short: the sender signs with any non-empty secret |
 | the mac is checked BEFORE the window | `X_WEBHOOK_SIGNATURE_STALE` means *authentic and old*, never *unreadable and old*, so an operator reading it goes to a clock or a replay |
 
 `X_WEBHOOK_SIGNATURE_INVALID` and `X_WEBHOOK_SIGNATURE_STALE` are both **401**: the request is

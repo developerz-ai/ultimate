@@ -55,6 +55,17 @@ const AMP_WRITTEN = /[:,]\s*(['"`])&amp;\1/g;
 const PG_EXECUTOR_METHOD =
   /\bquery\s*<\s*\w+\s*>\s*\(\s*\w+\s*:\s*string\s*,\s*\w+\s*:\s*readonly\s+unknown\s*\[\s*\]\s*\)\s*:\s*Promise\s*<\s*readonly\s+\w+\s*\[\s*\]\s*>\s*;/g;
 
+/** A wildcard-grant test, in any quote: `.endsWith(':*')`. */
+const WILDCARD_TEST = /\.endsWith\(\s*(['"`]):\*\1\s*\)/g;
+/** What turns that test into a MATCHER: a prefix compare, or a read of the first segment. */
+const GRANT_READ = /\.startsWith\s*\(|\bresourceOf\s*\(|\.split\(\s*(['"`]):\1\s*\)/;
+
+/** Offsets of `first` with `second` within `window` characters on EITHER side. */
+const around = (text: string, first: RegExp, second: RegExp, window: number): number[] =>
+  offsets(text, first).filter((index) =>
+    second.test(text.slice(Math.max(0, index - window), index + window)),
+  );
+
 export const HELPER_HOMES: readonly HelperHome[] = [
   { helper: 'fnv1a', home: 'packages/core/src/fnv1a.ts', find: fnvConstants },
   {
@@ -122,6 +133,15 @@ export const HELPER_HOMES: readonly HelperHome[] = [
     // configurable besides, so a server could listen for a header no client of it sent. The meta
     // is the same spelling by construction (`BUILD_ID_HEADER = CLIENT_BUILD_META`), so one literal.
     find: ({ stripped }) => offsets(stripped, /(['"`])x-ultimate-build\1/g),
+  },
+  {
+    helper: 'grantCovers',
+    home: 'packages/core/src/actor.ts',
+    // `stripped`: the `':*'` is string contents. Three copies — policy's matcher, its grant index
+    // and auth's API-key cut — read `billing:invoice:*` by its FIRST segment, so an invoice clerk
+    // could issue refunds and a key could outreach its owner. Naming or collecting a wildcard
+    // (`isWildcardScope`, the index's `push`) has no prefix read beside it and is not a copy.
+    find: ({ stripped }) => around(stripped, WILDCARD_TEST, GRANT_READ, 160),
   },
 ];
 

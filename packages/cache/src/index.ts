@@ -19,6 +19,7 @@ export {
   CacheTagUnknownError,
   CacheTooLargeError,
   CacheTtlInvalidError,
+  CacheValueUnencodableError,
 } from './errors';
 export type { CacheFence, FenceScope } from './fence';
 export { FENCE_MEMORY, markInvalidated, sampleFence } from './fence';
