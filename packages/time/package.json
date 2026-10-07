@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/time",
-  "version": "24.0.0",
+  "version": "25.0.0",
   "description": "UTC instants, DST-correct zone math, cron, durations and Intl formatting with an explicit timezone",
   "license": "MIT",
   "type": "module",
@@ -35,7 +35,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "24.0.0",
-    "@ultimat3/schema": "24.0.0"
+    "@ultimat3/core": "25.0.0",
+    "@ultimat3/schema": "25.0.0"
   }
 }

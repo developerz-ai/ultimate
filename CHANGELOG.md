@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 25.0.0 - 2026-10-07
+
 **Plan 2026/10/04/101 — squeaky-clean sweep** ([`docs/plans/2026/10/04/101-squeaky-clean-sweep/`](docs/plans/2026/10/04/101-squeaky-clean-sweep/overview.md)).
 Sweep 1 is security, in three PRs (1a, 1b, 1c). Sweep 2 is data integrity: interruption never runs a side effect twice
 that the framework could have fenced, and never strands work. Sweep 3 moves to Bun 1.4.2 and retires the 1.4.0
@@ -1199,6 +1203,36 @@ Not breaking.
   every step runs and the first failure is rethrown (D9).
 - `cli`: an all-digit image tag (`1234567`) no longer renders as `%!s(int64=…)` and stalls the
   rollout (D10).
+
+### Commits
+
+- feat: plan 101 sweep 12c — the customer's 15 issues and the #689 prompt fence, before 25.0.0 (#698)
+- feat: plan 101 sweep 12a-2 — close the 25.0.0 cut (#697)
+- feat: plan 101 sweep 12a — 25.0.0 breaking deletions (#696)
+- fix: plan 101 sweep 11c — wave 5 audit, 14 tooling and guard gaps closed (#695)
+- fix: plan 101 sweep 11b — wave 4 audit, 25 proven defects fixed (NATS recovery, shot popups, form focus, below-fold scraping) (#694)
+- fix: plan 101 sweep 11 — audit of every unreached file, 36 proven defects fixed, guards tightened (#692)
+- docs: plan 101 sweep 10e — docs match the code after 10a–10d; every open row tracked (#690)
+- feat: plan 101 sweep 10d — the binary boots on every OS (Windows CI required), admin scopes, scaffold fixes, every factory in the reference app, apps bring their own models (#684)
+- feat: plan 101 sweep 10c — MCP human confirmation, SES + verified delivery events, Claude 5.5 models and media blocks (#668)
+- fix: sweep 10b review — legacy audit records, append-only repair over a disabled trigger, cookie guard case (#667)
+- feat: plan 101 sweep 10b — append-only entities, one way to set a cookie, audited reads (#666)
+- feat: plan 101 sweep 10a — serializeSetCookie, t.json(), month math, one SigV4 signer, S3 Object Lock (#665)
+- feat: plan 101 sweep 9b — dashboards: charts, phone-ready tables and nav, a sci-fi preset and the theme seam (#664)
+- feat: plan 101 sweep 9 — one realtime runtime per page, writes named on every frame, no stale first paint offline (#663)
+- fix: plan 101 sweeps 8c + 8d — zero-downtime deploys (a working worker finishes, then restarts); flaky tests root-caused (#662)
+- feat: plan 101 sweep 8b — native Windows, part 2: binary, browser, processes, paths (W7–W21) (#661)
+- feat: plan 101 sweep 8a — native Windows: LF everywhere, bun-run app scripts, real paths, a windows CI job (W1–W6) (#660)
+- chore: plan 101 sweep 7 — trash, twins and stale docs, each kept gone by a guard (T1–T17) (#659)
+- fix: plan 101 sweep 6 — CLI, guards, test harness and CI held to their claims (K1–K19) (#658)
+- fix: plan 101 sweep 5 — navigation, ui as-prop + BarChart, compact MCP catalog, dev error page (#657)
+- fix: plan 101 sweep 4 — correctness and parity (C1–C13), open redirect closed (#656)
+- chore: plan 101 sweep 3 — Bun 1.4.2, retire the 1.4.0 workarounds, sideEffects that hold (#653)
+- fix: plan 101 sweep 2 — data integrity (drain, leases, webhooks, digests, idempotency at rest) (#652)
+- fix: plan 101 sweep 1c — per-principal sync caps (S7); fix-shell-arg sees every site (S12) (#651)
+- fix: plan 101 sweep 1b — security, cross-surface rows (MCP scopes, bearer 404, rate limits everywhere, hive disclosure) (#650)
+- fix: plan 101 sweep 1a — security, standalone rows (auth, storage, scraping, webhook, /media) (#649)
+- docs: plan 2026/10/04/101 — squeaky-clean sweep to 25.0.0 (#647)
 
 ## 24.0.0 - 2026-10-04
 
