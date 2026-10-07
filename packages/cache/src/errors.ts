@@ -76,8 +76,8 @@ export class CacheTooLargeError extends UltimateError {
 }
 
 /**
- * A value the cache codec (`value-codec.ts`) cannot write: a cycle, or a `toJSON` that throws.
- * Refused at the WRITE, in every tier alike — the LRU used to hold it by reference while Redis
+ * A value the cache codec (`value-codec.ts`) cannot write: a cycle, a `toJSON` that throws, nesting
+ * past `MAX_CACHE_VALUE_DEPTH`, or a `bigint` past `MAX_CACHE_BIGINT_DIGITS`. Refused at the WRITE, in every tier alike — the LRU used to hold it by reference while Redis
  * threw a bare `TypeError`, so the same `set` worked on one rung and failed on the next. `reason`
  * is `renderThrowable` output, never the value: a cached value is application data.
  */

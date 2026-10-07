@@ -415,7 +415,7 @@ cache).
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |
 | `X_CACHE_TTL_INVALID` | a `ttlMs` that is not a positive, finite number of milliseconds |
-| `X_CACHE_VALUE_UNENCODABLE` | a value with a cycle, or a throwing `toJSON`, written to any tier |
+| `X_CACHE_VALUE_UNENCODABLE` | a value with a cycle, a throwing `toJSON`, nesting past 512 levels or a `bigint` past 4096 digits, written to any tier |
 
 ### Error classes
 
