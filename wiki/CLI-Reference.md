@@ -481,7 +481,7 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 |---|---|
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
-| `packages/db/migrations/<id>.hash` | the hash of the loaded entity **registry** that `x verify`'s `drift` step checks — the entity SOURCE text was what it hashed until 8.0.0, which could not see a change in what `describe()` means by that text |
+| `packages/db/migrations/<id>.hash` | the hash `x verify`'s `drift` step checks: the loaded entity **registry** plus every non-test file under `packages/db/src` — the registry half sees what `describe()` means, the source half sees a seed or helper edit |
 
 **Plus the schema dump** — `packages/db/schema/`, the whole schema as SQL, one file per table, rewritten on every `x db gen` and `x db migrate` and held by the `drift` step (`X_SCHEMA_DUMP_DRIFT`). Layout, limits and what it is not: [Migrations and backfills → The schema dump](Migrations-And-Backfills#the-schema-dump).
 
@@ -497,10 +497,12 @@ clause inside `create table`, so the order entities happen to register in cannot
 unappliable.
 
 **`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
-step hashes the loaded entity **registry** against the `.hash` sidecars — no database, so it runs
-in a CI with nothing listening, and it catches "you edited an entity and never generated". The
-entity SOURCE text was what it hashed until 8.0.0, which read every byte under `packages/db/src`
-and could not see an entity declared under `apps/` at all. `x db migrate` diffs
+step hashes the loaded entity **registry** plus the bytes of every non-test file under
+`packages/db/src` against the `.hash` sidecars — no database, so it runs in a CI with nothing
+listening, and it catches "you edited an entity and never generated". The registry half sees an
+entity declared under `apps/`; the source half sees a seed or helper edit. Bytes, not meaning: a
+formatter pass over `packages/db/src` after `x db gen` moves the hash too, and `x db gen` answers
+"no migration needed" and re-records it. `x db migrate` diffs
 the live catalog against the `x_migrations` ledger — a database, so it runs only where one is open,
 and it catches "someone changed the schema by hand". A table in the `x_` namespace is framework
 bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never counted as drift.

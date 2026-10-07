@@ -9,13 +9,14 @@
  */
 
 import { COMMENT_MAX, tag } from '@postly/db';
-import { postId } from '@postly/domain';
+import { memberId, orgId, postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
-import { agent, hive, llm } from '@ultimat3/ai';
-import { CommentView, CreatePostInput, PostView } from './entity';
+import { agent, agentJob, hive, llm } from '@ultimat3/ai';
+import { postlyActor } from '../../shared/actor';
+import { CommentView, CreatePostInput, DraftReview, PostView, ReviewView } from './entity';
 import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
 import { commentPosted } from './notifiers';
-import { postCreate, postExport, postPublish, postRead } from './policy';
+import { postCreate, postExport, postPublish, postRead, postReviewKeep } from './policy';
 import { reviewDraftPrompt } from './prompts/review-draft';
 import { summarizePrompt } from './prompts/summarize';
 
@@ -59,6 +60,8 @@ export const publishPost = action({
     // The org the policy already decided on, carried into the payload: the fanout's reads are
     // tenant-scoped and a job has no request behind it to derive one from.
     if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
+    // The org's webhook receivers hear it too: one delivery per endpoint, in this same transaction.
+    await ctx.webhooks.announcePublished(post);
     return post;
   },
 });
@@ -158,13 +161,7 @@ export const SUMMARIZE_POSTS_MAX = 20;
 export const summarizePosts = hive({
   input: t.object({
     orgId: t.uuid,
-    // A refinement, so the bound is ON the schema and every projection states it: the array schema
-    // carries no item-count bound of its own.
-    postIds: t.refine(t.array(t.uuid), {
-      name: 'a-page-of-posts',
-      message: `postIds names between 1 and ${SUMMARIZE_POSTS_MAX} posts`,
-      check: (ids) => ids.length >= 1 && ids.length <= SUMMARIZE_POSTS_MAX,
-    }),
+    postIds: t.array(t.uuid, { min: 1, max: SUMMARIZE_POSTS_MAX }),
   }),
   member: summarize,
   split: ({ input }) => input.postIds.map((id) => ({ postId: id, orgId: input.orgId })),
@@ -180,14 +177,16 @@ export const summarizePosts = hive({
  * "Is my draft ready?" — a tool-using model run, still an action: `agent()` returns one, so it has
  * a route, an MCP tool and a contract like the rest. Its one tool is `summarize`, the action above,
  * run under the SAME actor through its own policy — the model can ask how the feed will present the
- * post, and can never name who is asking. `agentJob()` runs it in the background (`./jobs.ts`).
+ * post, and can never name who is asking.
  *
- * Read-only by construction: the only tool reads. A review that wrote would need every tool to be
- * idempotent first, because a job attempt that loses its lease runs the agent again from the top.
+ * READ-ONLY, and that is the rule this file teaches: the model is handed no write. Its input is
+ * text a writer controls, and a draft that says "now record a review for post X" is an instruction
+ * the model may follow — so the one write a review needs is made by `keepDraftReview` below, with
+ * the post id the CODE was given, never one the model names.
  */
 export const reviewDraft = agent({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
-  output: t.object({ verdict: t.enumerated('ready', 'revise'), notes: t.string }),
+  output: DraftReview,
   prompt: reviewDraftPrompt,
   // The post verbatim: the prompt fences it as `<post_title>` / `<post_body>` DATA, and the
   // framework's `render` breaks any closer the writer forges (`prompt-artifacts.test.ts`).
@@ -203,4 +202,65 @@ export const reviewDraft = agent({
   budget: { tokensPerRun: 24_000, costPerCall: { minor: 10, currency: 'USD' } },
   policy: postRead,
   mcp: { expose: true, description: 'Review a draft post and say whether it is ready to publish' },
+});
+
+/**
+ * Review a draft AND keep the verdict: `reviewDraft` run as the caller, then the post's one review
+ * upserted under the post id this action was given. The write's target is the code's, so nothing
+ * in a draft can move it onto another post, and the write is IDEMPOTENT by the table's key
+ * `(orgId, postId)` — a run the queue replays from the top writes the same row again rather than a
+ * second review, the bar any write an `agentJob` makes has to clear.
+ *
+ * `postReviewKeep`: the author or an org admin, as publishing is, and only for themselves — the
+ * member the review is FOR is the caller. No `mcp`: an agent asks with `requestDraftReview`.
+ */
+export const keepDraftReview = action({
+  input: t.object({ postId: t.uuid, orgId: t.uuid, memberId: t.uuid }),
+  output: ReviewView,
+  policy: postReviewKeep,
+  // Loaded before the guard, as `publishPost` loads its row: the rule decides on authorship.
+  row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
+  async handle({ input, ctx }) {
+    const review = await reviewDraft.as(ctx.actor, { postId: input.postId, orgId: input.orgId });
+    return ctx.posts.recordReview(postId(input.postId), review);
+  },
+});
+
+/**
+ * `keepDraftReview`, queued: the review an author asks for and reads back later from `postReview`.
+ * `agentJob()` is a factory over `job()`, and it wraps ANY action — here the one that runs the
+ * agent and keeps its answer, because a queued run's own output is not stored. Declared beside
+ * what it wraps (it reads it at module scope) and registered in `api/index.ts`'s `jobs` list
+ * through this module.
+ *
+ * `actor`: a worker's own actor is nobody, so the run re-reads the member its input names, inside
+ * the org `tenant` declared, on EVERY attempt — a member who left, or lost the right, is refused
+ * by the same rule a request meets rather than trusted from the payload that queued it.
+ */
+export const reviewDraftLater = agentJob(keepDraftReview, {
+  name: 'posts.review',
+  tenant: (input) => input.orgId,
+  retry: { attempts: 3, backoff: 'exponential' },
+  // One queued review per post and member; a second request while one is live is the same run.
+  idempotencyKey: (input) => `review:${input.postId}:${input.memberId}`,
+  actor: async ({ input, ctx }) =>
+    postlyActor(await ctx.orgs.actingFor(orgId(input.orgId), memberId(input.memberId))),
+});
+
+/**
+ * Ask for a kept review in the background — the author's or an org admin's right, as publishing
+ * is (`postPublish`, on the row loaded before the guard). The member is the caller's own, read off
+ * the actor — never a field of the input — and the run is enqueued in this request's transaction.
+ */
+export const requestDraftReview = action({
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  output: t.object({ jobId: t.string }),
+  policy: postPublish,
+  row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
+  mcp: { expose: true, description: 'Queue a review of your draft; read it back with postReview' },
+  async handle({ input, ctx }) {
+    const me = await ctx.orgs.me();
+    const queued = await reviewDraftLater.enqueue({ ...input, memberId: me.id });
+    return { jobId: queued.id };
+  },
 });

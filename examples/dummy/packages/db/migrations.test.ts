@@ -322,9 +322,12 @@ describe('the newest migration records the schema this chain creates', () => {
       'members',
       'orgs',
       'plans',
+      'post_reviews',
       'posts',
       'run_events',
       'runs',
+      'webhook_deliveries',
+      'webhook_endpoints',
     ]);
     expect(recorded.map((table) => table.name).sort()).toEqual([...chain.tables].sort());
   });

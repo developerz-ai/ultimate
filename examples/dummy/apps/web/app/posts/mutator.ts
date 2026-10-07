@@ -58,5 +58,7 @@ export const movePostStatus = transition({
   states: SCHEDULABLE,
   localTable: 'posts',
   output: posts.$view(['id', 'orgId', 'status', 'updatedAt']),
+  // Loaded BEFORE the guard, as `publishPost` loads its row: `postSchedule` decides on authorship.
+  row: ({ input, ctx }) => ctx.posts.authorship(toPostId(input.id)),
   policy: postSchedule,
 });

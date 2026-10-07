@@ -7,7 +7,7 @@
  * `t` comes from @ultimat3/notify, not @ultimat3/schema: a notifier file imports one package.
  */
 
-import { memberId as toMemberId, postId as toPostId } from '@postly/domain';
+import { memberId as toMemberId, orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { send } from '@ultimat3/mail';
 import { mailChannel, notifier, t } from '@ultimat3/notify';
 import { type CommentPostedData, commentPostedMail } from './mail';
@@ -37,9 +37,12 @@ export const commentPosted = notifier({
   tenant: (params) => params.orgId,
   key: (params) => `comment:${params.commentId}`,
   recipients: async ({ input, ctx }) => {
-    const post = await ctx.posts.byId(toPostId(input.postId));
-    if (post.authorId === input.commenterId) return [];
-    const author = await ctx.orgs.memberById(toMemberId(post.authorId));
+    // Reads that NAME the org the payload carries: a served worker's actor is nobody, so the
+    // acting-member reads (`byId`, `memberById`) have no member to scope by.
+    const orgId = toOrgId(input.orgId);
+    const post = await ctx.posts.inOrg(orgId, toPostId(input.postId));
+    if (post === null || post.authorId === input.commenterId) return [];
+    const author = await ctx.orgs.memberIn(orgId, toMemberId(post.authorId));
     return [{ id: author.id, to: author.email, locale: author.locale, tz: author.tz }];
   },
   deliver: [

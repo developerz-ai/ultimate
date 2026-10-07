@@ -1,6 +1,49 @@
 {
   "components": {
     "schemas": {
+      "AddWebhookEndpointInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "AddWebhookEndpointOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "secret": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "secret"
+        ],
+        "type": "object"
+      },
       "AnswerPromptInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -732,6 +775,72 @@
         ],
         "type": "object"
       },
+      "KeepDraftReviewInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "KeepDraftReviewOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "maxLength": 600,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "ready",
+              "revise"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "verdict",
+          "notes",
+          "reviewedBy",
+          "reviewedAt"
+        ],
+        "type": "object"
+      },
       "LikePostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1118,6 +1227,72 @@
         ],
         "type": "object"
       },
+      "RemoveWebhookEndpointInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "endpointId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "endpointId"
+        ],
+        "type": "object"
+      },
+      "RemoveWebhookEndpointOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "endpointId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpointId"
+        ],
+        "type": "object"
+      },
+      "RequestDraftReviewInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "type": "object"
+      },
+      "RequestDraftReviewOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
       "RequestPostsExportInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1175,6 +1350,7 @@
         "additionalProperties": false,
         "properties": {
           "notes": {
+            "maxLength": 600,
             "minLength": 1,
             "type": "string"
           },
@@ -1547,18 +1723,13 @@
             "type": "string"
           },
           "postIds": {
-            "description": "postIds names between 1 and 20 posts",
             "items": {
               "format": "uuid",
               "type": "string"
             },
-            "type": "array",
-            "x-ultimate-refinements": [
-              {
-                "message": "postIds names between 1 and 20 posts",
-                "name": "a-page-of-posts"
-              }
-            ]
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
           }
         },
         "required": [
@@ -3066,6 +3237,145 @@
         }
       }
     },
+    "/_x/query/post-review": {
+      "get": {
+        "operationId": "postReview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "postId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "page size; present, the response is the page envelope rather than the bare rows (1 to 10000)",
+            "in": "query",
+            "name": "_first",
+            "required": false,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "the nextCursor a previous page answered; needs _first",
+            "in": "query",
+            "name": "_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "items": {},
+                      "type": "array"
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": true
+                            },
+                            "nextCursor": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": false
+                            },
+                            "nextCursor": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "hasMore": {
+                          "description": "whether another page follows",
+                          "type": "boolean"
+                        },
+                        "nextCursor": {
+                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rows": {
+                          "items": {},
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor",
+                        "hasMore"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID or X_CURSOR_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Read the latest review of a post",
+        "tags": [
+          "query"
+        ],
+        "x-ultimate": {
+          "cacheTags": [],
+          "capability": "post:read",
+          "live": false,
+          "tool": "postReview"
+        }
+      }
+    },
     "/_x/query/public-post": {
       "get": {
         "operationId": "publicPost",
@@ -3993,6 +4303,144 @@
             "member"
           ],
           "mcpTool": "toggleDigestOptIn",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/draft-reviews/keep": {
+      "post": {
+        "operationId": "keepDraftReview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepDraftReviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepDraftReviewOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "keepDraftReview",
+        "tags": [
+          "draft-reviews"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/draft-reviews/request": {
+      "post": {
+        "operationId": "requestDraftReview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestDraftReviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestDraftReviewOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "Queue a review of your draft; read it back with postReview",
+        "tags": [
+          "draft-reviews"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": "requestDraftReview",
           "rateLimit": null
         }
       }
@@ -5564,6 +6012,144 @@
           "rateLimit": null
         }
       }
+    },
+    "/api/webhook-endpoints/add": {
+      "post": {
+        "operationId": "addWebhookEndpoint",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWebhookEndpointInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddWebhookEndpointOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "addWebhookEndpoint",
+        "tags": [
+          "webhook-endpoints"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/webhook-endpoints/remove": {
+      "post": {
+        "operationId": "removeWebhookEndpoint",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveWebhookEndpointInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveWebhookEndpointOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "removeWebhookEndpoint",
+        "tags": [
+          "webhook-endpoints"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
     }
   },
   "tags": [
@@ -5581,6 +6167,9 @@
     },
     {
       "name": "digest-opt-ins"
+    },
+    {
+      "name": "draft-reviews"
     },
     {
       "name": "drafts"
@@ -5626,6 +6215,9 @@
     },
     {
       "name": "themes"
+    },
+    {
+      "name": "webhook-endpoints"
     }
   ]
 }

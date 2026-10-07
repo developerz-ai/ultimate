@@ -16,7 +16,7 @@
  * decided the caller may read; what spans tenants is only ever a `status: 'published'` read.
  */
 
-import { type Comment, db, type Post } from '@postly/db';
+import { type Comment, db, type Post, type PostReview } from '@postly/db';
 import {
   type MemberId,
   type OrgId,
@@ -26,7 +26,7 @@ import {
   orgId as toOrgId,
   postId as toPostId,
 } from '@postly/domain';
-import { serviceActor, withChildContext } from '@ultimat3/core';
+import { assert, serviceActor, withChildContext } from '@ultimat3/core';
 import { CROSS_TENANT_SCOPE, crossTenant, type ReadBuilder } from '@ultimat3/entity';
 import { type CommentView, PostAuthor, type PostSummary, type PostView } from './entity';
 
@@ -382,3 +382,35 @@ export const publishedSlugs = (): Promise<readonly PublishedSlug[]> =>
       .select({ slug: true, updatedAt: true, status: true, publishedAt: true })
       .all(),
   );
+
+/**
+ * A post's review, written whole. The conflict target IS the table's key — the org and the post —
+ * so a second write of the same review lands on the same row: what lets `keepDraftReview` be work
+ * a replayed `agentJob` attempt runs again without leaving a second review behind.
+ */
+export const upsertReview = async (row: {
+  readonly orgId: OrgId;
+  readonly postId: PostId;
+  readonly verdict: PostReview['verdict'];
+  readonly notes: string;
+  readonly reviewedBy: MemberId;
+}): Promise<PostReview> => {
+  const [written] = await db.postReviews.upsertAll([row], { onConflict: ['orgId', 'postId'] });
+  // `onMatch: 'update'` (the default) answers the row it wrote, inserted or overwritten alike.
+  assert(
+    written !== undefined,
+    `the review of post ${row.postId} was upserted and no row came back`,
+    'bun test examples/dummy/apps/web/app/posts/repo.test.ts -t review',
+  );
+  return written;
+};
+
+/** The post's review, or `null` before any was recorded. */
+export const reviewOf = (orgId: OrgId, postId: PostId): Promise<PostReview | null> =>
+  db.postReviews.where({ orgId, postId }).one();
+
+/** The same read as a query's source: one row, or none, as `from()` takes it. */
+export const reviewRows = async (orgId: OrgId, postId: PostId): Promise<PostReview[]> => {
+  const review = await reviewOf(orgId, postId);
+  return review === null ? [] : [review];
+};

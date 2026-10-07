@@ -95,16 +95,13 @@ Each of these is a defect somebody has already argued about, and the reasoning i
 
 ## Carried backlog
 
-`As of 2026-10-06`. Rows plan 101 carried from superseded plans and sweeps 10a–10e left open. **The
+`As of 2026-10-07`. Rows plan 101 carried from superseded plans and sweeps 10a–10e left open. **The
 backlog row is the record** — cause, evidence and fix live there and in the issue; a row here says
 only what you meet and how to get past it. Backlog: [`10-carried-backlog.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md).
 
-| Row | Gap | Work around it by | Issue |
-|---|---|---|---|
-| [B24](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `agentJob` keeps no output once a queued run settles | give the agent one idempotent write tool that stores its answer, and read the result from there | [#685](https://github.com/developerz-ai/ultimate/issues/685) |
-| [B25](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `webhook` needs an endpoints table and a persisted `WebhookLedger` the framework does not ship (`memoryWebhookLedger()` is dev-only) | declare the endpoints entity (secret `.sealed()`) and a Postgres-backed `WebhookLedger` in the app | [#686](https://github.com/developerz-ai/ultimate/issues/686) |
-| [B26](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `t.array(items)` has no `min`/`max`; `transition()` has no row loader for its `policy` | `t.refine` for the bounds; a plain `action` that loads the row, checks it, then writes, for an authorship rule | [#687](https://github.com/developerz-ai/ultimate/issues/687) |
-| [B27](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `pgExecutorFor` is not exported | copy `examples/dummy/packages/db/src/executor.ts` | [#688](https://github.com/developerz-ai/ultimate/issues/688) |
+None open, `As of 2026-10-07`: sweep 13 closed the last four — B24 (`agentJob` output, #685), B25
+(`webhook`'s endpoints and ledger, #686), B26 (`t.array` bounds and `transition()`'s row loader, #687)
+and B27 (one `PgExecutor` builder, `dbExecutor()`, #688), in PRs #701, #703 and #706.
 
 ## Deferred by plan 101
 

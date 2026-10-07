@@ -22,6 +22,7 @@ import {
 } from '@ultimat3/mail';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { jobTest } from '@ultimat3/testing';
+import { publishPost } from './actions';
 import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
 
 const ORG = '00000000-0000-4000-8000-00000000f001';
@@ -83,7 +84,7 @@ const contextFor = (reads: Reads): Ctx =>
     role: 'worker',
     services: {
       posts: {
-        byId: () => {
+        inOrg: () => {
           reads.posts += 1;
           return Promise.resolve(post);
         },
@@ -219,11 +220,10 @@ const text = async (key: string): Promise<string> =>
 
 jobTest(
   'exportPosts writes one org’s posts as CSV, and a manifest that counts the parts',
-  async ({ seed, actorFor, runJobs }) => {
-    const { tenancy, offline, ada } = await seed('dev').pick({
+  async ({ seed, runJobs }) => {
+    const { tenancy, offline } = await seed('dev').pick({
       tenancy: 'post:tenancy',
       offline: 'post:offline', // Tinta's: must not appear in Acme's export
-      ada: 'member:ada',
     });
     const target = { orgId: tenancy.orgId, exportId: '00000000-0000-4000-8000-00000000e001' };
     // The app's disk, as boot would build it — in memory, and released before the next test.
@@ -231,7 +231,8 @@ jobTest(
     defineStorage({ disks: { local: memoryStorageDriver() }, default: 'local' });
     using _storage = { [Symbol.dispose]: resetStorage };
 
-    const trace = await runJobs(exportPosts, target, { actor: actorFor(ada) });
+    // No `actor`: the production worker is nobody; the declared tenant is all the run has.
+    const trace = await runJobs(exportPosts, target);
     expect(trace.executions.map((run) => [run.outcome, run.error])).toEqual([
       ['completed', undefined],
     ]);
@@ -243,5 +244,30 @@ jobTest(
     expect(rows.some((row) => row.startsWith(`${tenancy.id},`))).toBe(true);
     expect(part).not.toContain(offline.id);
     expect(JSON.parse(await text(`${prefix}/manifest.json`))).toMatchObject({ parts: 1 });
+  },
+);
+
+jobTest(
+  'a publish mails every opted-in member of its org, run by the production worker',
+  async ({ seed, actorFor, runJobs, mail }) => {
+    const { draft, ada, bruno } = await seed('dev').pick({
+      draft: 'post:draft-money', // Acme's; Kenji opted out of mail
+      ada: 'member:ada',
+      bruno: 'member:bruno',
+    });
+
+    await publishPost.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+    expect(await runJobs.depth(notifySubscribers)).toBe(1);
+    // No `actor`: a served worker is nobody, and the org `tenant` declared is all the run has. The
+    // stubbed-service tests above cannot see that; this one reads through the real services.
+    const trace = await runJobs.drain();
+
+    expect(trace.executions.map((run) => [run.job, run.outcome, run.error])).toContainEqual([
+      'notifySubscribers',
+      'completed',
+      undefined,
+    ]);
+    const to = mail.outbox().flatMap((sent) => sent.message.to);
+    expect(to.sort()).toEqual([ada.email, bruno.email].sort());
   },
 );

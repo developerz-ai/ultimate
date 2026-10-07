@@ -136,3 +136,27 @@ test('a rolled-back invite never enqueues its mail', async ({ seed, actorFor, ru
 
   expect(await runJobs.depth(sendInvite)).toBe(1); // no ghost job from the failed transaction
 });
+
+test('an invite mails the invited member, run by the production worker', async ({
+  seed,
+  actorFor,
+  runJobs,
+  mail,
+}) => {
+  const { owner } = await seed('dev').pick({ owner: 'member:mara' });
+  await inviteMember.as(actorFor(owner), {
+    orgId: owner.orgId,
+    email: 'third@tinta.example',
+    role: 'author',
+  });
+
+  // No `actor`: a served worker is nobody; the org `tenant` declared is all the run has.
+  const trace = await runJobs.drain();
+
+  expect(trace.executions.map((run) => [run.job, run.outcome, run.error])).toContainEqual([
+    'sendInvite',
+    'completed',
+    undefined,
+  ]);
+  expect(mail.outbox().flatMap((sent) => sent.message.to)).toContain('third@tinta.example');
+});

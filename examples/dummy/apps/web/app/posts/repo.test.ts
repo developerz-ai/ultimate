@@ -195,3 +195,32 @@ test('authorshipOf answers two columns, and only inside the org it was asked for
   });
   expect(await repo.authorshipOf(other.orgId, id)).toBeNull();
 });
+
+test('a review written twice is one row, holding the second write — the replay a tool must survive', async () => {
+  const org = await anOrg();
+  const post = await aPost(org, { slug: `reviewed-${nextId()}` });
+  const review = { orgId: org.orgId, postId: post, reviewedBy: org.authorId };
+
+  await repo.upsertReview({ ...review, verdict: 'revise', notes: 'The title names no subject.' });
+  const second = await repo.upsertReview({ ...review, verdict: 'ready', notes: 'Ready.' });
+
+  expect(second.verdict).toBe('ready');
+  expect(await db.postReviews.where({ orgId: org.orgId, postId: post }).count()).toBe(1);
+  expect((await repo.reviewOf(org.orgId, post))?.notes).toBe('Ready.');
+});
+
+test('a review is read inside its org only, and is absent before one is recorded', async () => {
+  const org = await anOrg();
+  const other = await anOrg();
+  const post = await aPost(org, { slug: `unreviewed-${nextId()}` });
+  expect(await repo.reviewOf(org.orgId, post)).toBeNull();
+
+  await repo.upsertReview({
+    orgId: org.orgId,
+    postId: post,
+    reviewedBy: org.authorId,
+    verdict: 'ready',
+    notes: 'Ready.',
+  });
+  expect(await repo.reviewOf(other.orgId, post)).toBeNull();
+});

@@ -25,7 +25,7 @@ import { type Post, posts, tag } from '@postly/db';
 import { type MemberId, orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { publicPostRead } from '@postly/web/shared/policies';
 import { from, query, t } from '@ultimat3/query';
-import type { PostSummary, PostView } from './entity';
+import type { PostSummary, PostView, ReviewView } from './entity';
 import { feedRead, postRead } from './policy';
 import type { ActivitySummary, PostWithComments, PublishedSlug } from './repo';
 import * as repo from './repo';
@@ -129,6 +129,22 @@ export const feedActivity = query({
     from<ActivitySummary>('posts', () => repo.activitySummary(toOrgId(orgId)))
       .where({ orgId })
       .orderBy('orgId')
+      .limit(1),
+});
+
+/**
+ * A post's latest review — what `keepDraftReview` kept, which is the only place a queued
+ * `reviewDraftLater` run's verdict lands. Not cached: a review that just landed has to be the one
+ * read back, and a tag for it would be a second invalidation to keep in step with the upsert.
+ */
+export const postReview = query({
+  input: t.object({ orgId: t.uuid, postId: t.uuid }),
+  policy: postRead,
+  mcp: { expose: true, description: 'Read the latest review of a post' },
+  sql: ({ orgId, postId }) =>
+    from<ReviewView>('post_reviews', () => repo.reviewRows(toOrgId(orgId), toPostId(postId)))
+      .where({ orgId, postId })
+      .orderBy('postId')
       .limit(1),
 });
 

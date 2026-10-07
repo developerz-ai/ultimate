@@ -516,21 +516,29 @@ export const summariseBacklog = agentJob(summarisePost, {
 });
 ```
 
-An agent whose policy reads a member — every real app's — names who it runs for. The reference
-app's `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`) is the worked call, with
-its idempotent `recordReview` tool and its `review.job.test.ts` on the production worker:
+An agent whose policy reads a member — every real app's — names who it runs for. And an agent
+whose result must be KEPT is queued through an action that runs it and makes the write itself.
+
+**Never hand the model a write tool whose target it chooses.** The model's input is text someone
+else wrote — a draft, a ticket, a page — and "now record this for record X" is an instruction a
+model may follow, so a write tool is a write that text can aim. The action binds the target from
+its OWN input, and the agent stays read-only. The reference app's `keepDraftReview` →
+`reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`, tested on the production
+worker in `review.job.test.ts`) is the worked call:
 
 ```ts
-import { t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
 import { type Actor, userActor } from '@ultimat3/core';
 import { agent, agentJob, definePrompt } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
 
-// The app's own read, under the job's tenant: a member of another org is simply not found.
+// The app's own reads and its one write, scoped by the job's tenant.
 declare function memberById(id: string): Promise<{ id: string; orgId: string; role: string }>;
+declare function saveReview(postId: string, review: { verdict: string }): Promise<{ verdict: string }>;
 
+// READ-ONLY: no tool here writes, so nothing in the post it reads can aim a write.
 const reviewDraft = agent({
-  input: t.object({ postId: t.uuid, orgId: t.uuid, memberId: t.uuid }),
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
   output: t.object({ verdict: t.string }),
   prompt: definePrompt<{ postId: string }>({
     id: 'review-draft',
@@ -542,7 +550,18 @@ const reviewDraft = agent({
   policy: can('post:read'),
 });
 
-export const reviewLater = agentJob(reviewDraft, {
+// The write, bound to the post id THIS action was given — an upsert, so a replayed run is one row.
+const keepReview = action({
+  input: t.object({ postId: t.uuid, orgId: t.uuid, memberId: t.uuid }),
+  output: t.object({ verdict: t.string }),
+  policy: can('post:publish'),
+  async handle({ input, ctx }) {
+    const review = await reviewDraft.as(ctx.actor, { postId: input.postId, orgId: input.orgId });
+    return saveReview(input.postId, review);
+  },
+});
+
+export const reviewLater = agentJob(keepReview, {
   name: 'posts.review',
   tenant: (input) => input.orgId,
   retry: { attempts: 3, backoff: 'exponential' },
@@ -566,7 +585,7 @@ the sweep and `hive()` for the fan-out inside one page.
 | one execution path, and it is the action's | `run` is `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and the `ctx` is the worker's, so an attempt timing out aborts the agent's turn loop |
 | the actor is the worker context's, never the model's | the org comes from the job's declared `tenant`; nothing a model emits can reach the identity. In a served app the worker's actor is the **anonymous** one, so a member policy refuses it `X_UNAUTHENTICATED` — declare `actor` |
 | `actor({ input, ctx })` resolves who the run acts FOR, on every attempt | the jobs rule — a job acting for a user takes the user's id in its input and re-authorises it in the body — for a body that is the agent's. Load the member under the job's tenant; the swap is core's `impersonate`, so the worker stays on the record as `onBehalfOf`. An actor in another org than `tenant` is `X_JOB_TENANT_MISMATCH` before the agent starts — terminal, so it dead-letters on attempt 1 |
-| a queued run's return value is **not stored** | `x_jobs` keeps no result column. What the agent produces is written by one of its TOOLS — which is why that tool has to be idempotent (below) |
+| a queued run's return value is **not stored** | `x_jobs` keeps no result column. What the agent produces is kept by the ACTION `agentJob` wraps — it runs the agent, then writes with the ids in its own input — never by a write tool whose target the model picks. That write has to be idempotent (below) |
 
 ### The at-least-once trap, said plainly
 
@@ -575,8 +594,10 @@ one row. One row that a worker claims, half-runs and loses the lease on is claim
 agent runs a second time from the top** — as does every page a `backfill()` replays, since its
 `handle` is at-least-once by construction.
 
-So every tool the agent may call has to be idempotent: an `upsertAll`, an `updateWhere`, a statement
-whose second run changes nothing. Otherwise a replayed attempt issues a second refund.
+So every write a run makes has to be idempotent — the wrapping action's, and any tool's: an
+`upsertAll`, an `updateWhere`, a statement whose second run changes nothing. Otherwise a replayed
+attempt issues a second refund. And a write the run needs belongs in the wrapping action, bound to
+its input, rather than in a tool: idempotent is not the same as aimed where you meant.
 
 An action declaring `idempotent: true` offers the model the same optional `idempotencyKey`
 argument `@ultimat3/mcp` advertises, and the key reaches `invoke`: a model retrying an ambiguous

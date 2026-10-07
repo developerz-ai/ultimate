@@ -6,7 +6,13 @@
  * primitive, so schema *is* its one import. Every primitive package re-exports the same object.
  */
 
-import { comments, type Post } from '@postly/db';
+import {
+  comments,
+  POST_REVIEW_VERDICTS,
+  type Post,
+  postReviews,
+  REVIEW_NOTES_MAX,
+} from '@postly/db';
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, TITLE_MAX } from '@postly/domain';
 import { type Infer, t } from '@ultimat3/schema';
 
@@ -81,3 +87,29 @@ export const CreatePostInput = t.object({
 });
 
 export type CreatePostInput = Infer<typeof CreatePostInput>;
+
+/** A post's latest review, as `keepDraftReview` answers it and `postReview` reads it back. */
+export const ReviewView = postReviews.$view([
+  'postId',
+  'orgId',
+  'verdict',
+  'notes',
+  'reviewedBy',
+  'reviewedAt',
+]);
+
+export type ReviewView = typeof ReviewView.$row;
+
+/** What a review says. The verdict list is the table's, so the agent's answer cannot outgrow it. */
+export const ReviewVerdict = t.enumerated(...POST_REVIEW_VERDICTS);
+
+/**
+ * What `reviewDraft` answers and `keepDraftReview` keeps. The notes are bounded by the column, so
+ * an over-long answer is the agent's repair turn, never a refused write after the model was paid.
+ */
+export const DraftReview = t.object({
+  verdict: ReviewVerdict,
+  notes: t.string.max(REVIEW_NOTES_MAX),
+});
+
+export type DraftReview = Infer<typeof DraftReview>;

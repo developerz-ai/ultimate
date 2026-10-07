@@ -10,14 +10,15 @@ import { orgId as toOrgId, postId as toPostId } from '@postly/domain';
 import { exportRows, job, t } from '@ultimat3/jobs';
 import { send } from '@ultimat3/mail';
 import { disk } from '@ultimat3/storage';
+import { PostNotFound } from './errors';
 import { postPublished } from './mail';
 import { exportSource } from './repo';
 
 export const notifySubscribers = job({
   /**
    * `orgId` rides beside the post id, and it is not redundant with it: `posts`, `members` and
-   * `comments` are tenant-scoped, so the first read — `ctx.posts.byId` — is already scoped by the
-   * acting actor's org, and a job's actor gets one only from `tenant` below. Reading the org OFF
+   * `comments` are tenant-scoped, so the first read — `ctx.posts.inOrg` — names the org, and a
+   * job's actor carries one only because `tenant` below put it there. Reading the org OFF
    * the post to declare it is circular. One org's fanout, so the org belongs in the payload; the
    * escape hatch (`tenant: 'none'` plus `crossTenant`) is for a sweep that genuinely spans orgs.
    */
@@ -30,7 +31,13 @@ export const notifySubscribers = job({
   /** One fanout in flight at a time; a retry cannot race its own first attempt. */
   concurrency: 1,
   async run({ input, step, ctx }) {
-    const post = await step.run('load-post', () => ctx.posts.byId(toPostId(input.postId)));
+    // `inOrg`, naming the org the payload carries: `byId` needs an acting MEMBER, and a served
+    // worker's actor is nobody — it holds the org `tenant` declared and nothing else.
+    const post = await step.run('load-post', async () => {
+      const found = await ctx.posts.inOrg(toOrgId(input.orgId), toPostId(input.postId));
+      if (found === null) throw new PostNotFound(input.postId);
+      return found;
+    });
 
     // No channel announcement here, and it is a gap rather than a decision: a `ChannelHub` is
     // built by the process that serves sockets (`new ChannelHub(...)` in

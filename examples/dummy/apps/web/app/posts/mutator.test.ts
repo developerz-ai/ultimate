@@ -101,7 +101,27 @@ test('movePostStatus cannot reach another org’s post, nor be called without th
   });
   const move = { id: draft.id, from: 'draft', to: 'scheduled' } as const;
 
-  // Mara holds `post:publish` in Tinta: the table, scoped to her org, holds no such row.
-  await expect(movePostStatus.as(actorFor(mara), move)).rejects.toBeUltimateError('X_NOT_FOUND');
+  // Mara holds `post:publish` in Tinta: the row loader, scoped to her org, finds no such post, and
+  // a missing row is a denial — the same answer `publishPost` gives, and no existence oracle.
+  await expect(movePostStatus.as(actorFor(mara), move)).rejects.toBeUltimateError('X_FORBIDDEN');
   await expect(movePostStatus.as(actorFor(reader), move)).rejects.toBeUltimateError('X_FORBIDDEN');
+});
+
+test('movePostStatus is owns-or-org-admin, as publishing is: a colleague’s draft is not yours to schedule', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, ada, kenji } = await seed('dev').pick({
+    draft: 'post:draft-money', // Bruno's
+    ada: 'member:ada', // Acme's owner
+    kenji: 'member:kenji',
+  });
+  const move = { id: draft.id, from: 'draft', to: 'scheduled' } as const;
+
+  // Kenji as an AUTHOR of the same org: the grant and the tenancy hold, the authorship does not.
+  await expect(
+    movePostStatus.as(actorFor({ ...kenji, role: 'author' }), move),
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
+  // The org's owner runs the calendar for everyone.
+  expect(await movePostStatus.as(actorFor(ada), move)).toMatchObject({ status: 'scheduled' });
 });
