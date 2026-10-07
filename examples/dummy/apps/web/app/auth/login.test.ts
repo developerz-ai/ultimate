@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { OAuthFetch, OAuthLoginOptions } from '@ultimat3/auth';
 import {
   authenticate,
-  type MemoryAdapter,
+  type MemoryAuthAdapter,
   memoryAuthAdapter,
   readSessionCookie,
 } from '@ultimat3/auth';
@@ -52,7 +52,7 @@ const SEAMS = {
   baseUrl: ORIGIN,
 } as const;
 
-let adapter: MemoryAdapter;
+let adapter: MemoryAuthAdapter;
 let auth: ReturnType<typeof postlyAuth>;
 let login: ReturnType<typeof postlyLogin>;
 

@@ -53,6 +53,7 @@ async function lane(index: number): Promise<void> {
           })
         : await fetch(`${base}/`, { headers });
       const body = await res.text();
+      // core's BUILD_ID_HEADER, spelled out: `bun -e` runs this with no module graph to import from.
       bump(builds, res.headers.get('x-ultimate-build') ?? 'none');
       if (res.status < 200 || res.status > 299) fail(`${verb} ${res.status}`, body);
     } catch (error) {

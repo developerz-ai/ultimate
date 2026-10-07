@@ -8,10 +8,10 @@ import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
   accountKey,
-  authLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
+  memoryAuthLimiter,
 } from './rate-limit';
 
 // Fast KDF parameters: this suite is about the throttle, not about argon2's cost.
@@ -104,7 +104,7 @@ describe('auth rate limiting', () => {
 
     test('forgets a key once its window has emptied', async () => {
       const clock = frozenClock(0);
-      const limiter = authLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 1_000 }));
+      const limiter = memoryAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 1_000 }));
       await limiter.reserve(ipKey('198.51.100.9'));
       expect(limiter.size).toBe(1);
 
@@ -116,7 +116,7 @@ describe('auth rate limiting', () => {
 
     test('holds a locked key for the whole lockout, not just the window', async () => {
       const clock = frozenClock(0);
-      const limiter = authLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 600_000 }));
+      const limiter = memoryAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 600_000 }));
       const victim = accountKey('ada@example.test');
       for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.reserve(victim);
 
@@ -138,7 +138,7 @@ describe('auth rate limiting', () => {
       (maxKeys) => {
         let code = 'no-error-thrown';
         try {
-          authLimiter(frozenClock(0), policy({ maxKeys }));
+          memoryAuthLimiter(frozenClock(0), policy({ maxKeys }));
         } catch (error) {
           code = isUltimateError(error) ? error.code : `not-an-ultimate-error: ${String(error)}`;
         }
@@ -147,7 +147,7 @@ describe('auth rate limiting', () => {
     );
 
     test('a rotating-address spray cannot grow the table past its cap', async () => {
-      const limiter = authLimiter(frozenClock(0), policy({ maxKeys: 10 }));
+      const limiter = memoryAuthLimiter(frozenClock(0), policy({ maxKeys: 10 }));
       for (let index = 0; index < 500; index += 1) {
         await limiter.reserve(ipKey(`2001:db8::${index.toString(16)}`));
         expect(limiter.size).toBeLessThanOrEqual(10);
@@ -155,7 +155,7 @@ describe('auth rate limiting', () => {
     });
 
     test('the cap evicts an unlocked key before a locked one', async () => {
-      const limiter = authLimiter(frozenClock(0), policy({ maxKeys: 4 }));
+      const limiter = memoryAuthLimiter(frozenClock(0), policy({ maxKeys: 4 }));
       const victim = accountKey('ada@example.test');
       for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.reserve(victim);
       expect(await limiter.lockedUntil(victim)).not.toBeNull();
@@ -170,7 +170,7 @@ describe('auth rate limiting', () => {
     });
 
     test('a success and a reset both shrink the table', async () => {
-      const limiter = authLimiter(frozenClock(0));
+      const limiter = memoryAuthLimiter(frozenClock(0));
       await limiter.reserve(ipKey('198.51.100.9'));
       await limiter.reserve(accountKey('ada@example.test'));
       expect(limiter.size).toBe(2);
@@ -182,7 +182,7 @@ describe('auth rate limiting', () => {
     });
 
     test('an evicted key throttles again from a clean window, not a corrupt one', async () => {
-      const limiter = authLimiter(frozenClock(0), policy({ maxKeys: 1 }));
+      const limiter = memoryAuthLimiter(frozenClock(0), policy({ maxKeys: 1 }));
       const victim = ipKey('198.51.100.9');
       await limiter.reserve(victim);
       await limiter.reserve(ipKey('203.0.113.7'));
@@ -216,7 +216,7 @@ describe('auth rate limiting', () => {
         ...over,
         scope: 'shared',
       };
-      const backing = authLimiter(clock, enforced);
+      const backing = memoryAuthLimiter(clock, enforced);
       return {
         policy: enforced,
         reserve: backing.reserve,
@@ -354,7 +354,7 @@ describe('auth rate limiting', () => {
 describe('a hostile value cannot forge a line in the lockout refusal', () => {
   test('a newline in the key is escaped, not printed', async () => {
     const clock = frozenClock(0);
-    const limiter = authLimiter(clock, {
+    const limiter = memoryAuthLimiter(clock, {
       ...DEFAULT_AUTH_RATE_LIMIT,
       maxAttempts: 1,
       lockoutMs: 60_000,

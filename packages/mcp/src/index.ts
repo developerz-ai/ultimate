@@ -5,7 +5,7 @@
 export type { RequestFacts as McpRequestFacts } from '@ultimat3/http';
 /** Re-exported so a `defineAppMcp` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
-export { formatIssues, t } from '@ultimat3/schema';
+export { t } from '@ultimat3/schema';
 export type {
   AnyAppToolDefinition,
   AppToolArgs,
@@ -56,7 +56,7 @@ export type {
   McpConfirmationsInput,
 } from './confirmations';
 export { DEFAULT_MCP_CONFIRMATION_TTL_MS, mcpConfirmations } from './confirmations';
-export type { CreateDevServerInput } from './dev-host';
+export type { DevMcpServerInput } from './dev-host';
 export { devHost, devMcpServer, frameworkIntrospection } from './dev-host';
 export type {
   DevCapabilities,
@@ -211,7 +211,7 @@ export {
 } from './resources';
 export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
-export type { CreateMcpServerInput, McpServer, McpWire } from './server';
+export type { McpServer, McpServerInput, McpWire } from './server';
 export { mcpServer } from './server';
 export type { McpInstructions, McpServerVoice } from './server-voice';
 export type { McpSurfaceBudget, McpSurfaceSize } from './surface-budget';

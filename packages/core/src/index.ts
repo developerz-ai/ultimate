@@ -306,7 +306,6 @@ export {
   statedDelayMs,
   stringField,
   toUltimateError,
-  ULTIMATE_ERROR_BRAND,
   UltimateError,
 } from './exports/error-contract';
 export type {

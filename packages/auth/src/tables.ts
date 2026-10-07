@@ -1,4 +1,4 @@
-// Single responsibility: the DDL `BuiltinAdapter` expects, as `AUTH_TABLES` — applied at every boot
+// Single responsibility: the DDL `PostgresAuthAdapter` expects, as `AUTH_TABLES` — applied at every boot
 // by `@ultimat3/cli`'s `FRAMEWORK_SCHEMA`, upgrades of an older table included. Plain strings, so
 // what auth stores is verifiable by reading, never by trusting. There is nothing to paste into a
 // migration any more: the per-table exports and `X_USERS_MIGRATION_1_3` are gone (22.0.0).

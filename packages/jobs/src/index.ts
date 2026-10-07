@@ -107,9 +107,9 @@ export {
   resetJobDriver,
   setJobDriver,
 } from './driver';
-export type { MemoryDriverOptions, MemoryJobDriver } from './driver-memory';
+export type { MemoryJobDriver, MemoryJobDriverOptions } from './driver-memory';
 export { memoryJobDriver } from './driver-memory';
-export type { PgDriverOptions } from './driver-pg';
+export type { PostgresJobDriverOptions } from './driver-pg';
 export { postgresJobDriver, postgresLeader } from './driver-pg';
 // Only the statement another workspace runs: the install (`cli/src/framework-schema.ts`, action,
 // notify). The rest are this package's internals, read where they are defined, and tested there
@@ -163,7 +163,7 @@ export {
   resetEventBus,
   setEventBus,
 } from './events';
-export type { PgEventBusOptions } from './events-pg';
+export type { PostgresEventBusOptions } from './events-pg';
 export { postgresEventBus } from './events-pg';
 export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
 export { executeJob } from './execute';
@@ -255,8 +255,8 @@ export {
 export type {
   EnqueueOptions,
   JobsFacade,
-  MemoryOutboxOptions,
   MemoryOutboxStore,
+  MemoryOutboxStoreOptions,
   OutboxDeps,
   OutboxRecord,
   OutboxStore,
@@ -272,7 +272,7 @@ export {
 // One definition of the lease, consumed by both stores — a memory default and a pg default that
 // could drift are two answers to "how long is a claim mine for", and the shorter one duplicates.
 export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
-export type { PgOutboxOptions } from './outbox-pg';
+export type { PostgresOutboxStoreOptions } from './outbox-pg';
 export { postgresOutboxStore } from './outbox-pg';
 export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { outboxRelay } from './outbox-relay';
@@ -306,7 +306,7 @@ export {
 export type { LeaderElection } from './scheduler-leader';
 export { soleLeader } from './scheduler-leader';
 export { nextTaskRun } from './scheduler-occurrences';
-export type { PgLeaseLeaderOptions } from './scheduler-pg';
+export type { PostgresLeaseLeaderOptions } from './scheduler-pg';
 export {
   currentLeader,
   DEFAULT_LEADER_TTL_MS,

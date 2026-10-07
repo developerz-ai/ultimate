@@ -1,5 +1,5 @@
 // Vector storage and retrieval: the `VectorStore` contract and the in-memory dev store.
-// `PgVectorStore` — the production path — implements this same contract in `pg-vector.ts`.
+// `PostgresVectorStore` — the production path — implements this same contract in `pg-vector.ts`.
 //
 // The store interface is shaped for pgvector (one table, one index, SQL you can read), with
 // an in-memory cosine implementation as the dev default. Hybrid search is first-class rather
@@ -128,7 +128,7 @@ export class MemoryVectorStore implements VectorStore {
   }
 
   /**
-   * Same envelope, same rule as `PgVectorStore.scoped`. The dev store enforces it too, because
+   * Same envelope, same rule as `PostgresVectorStore.scoped`. The dev store enforces it too, because
    * a tenant leak that only reproduces against production Postgres is a leak nobody finds.
    */
   scoped(scope: VectorScope): MemoryVectorStore {

@@ -14,9 +14,10 @@ import { join } from 'node:path';
 import { isUltimateError, toUltimateError, UltimateError } from '@ultimat3/core';
 import type { UiInteractInput, UiInteractResult, UiInteractStepResult } from '@ultimat3/mcp';
 import { UI_INTERACT_LIMITS } from '@ultimat3/mcp';
+import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import type { ShotPage } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
-import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
+import { runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import type { InspectDeps, Seen } from './mcp-ui-inspect';
 import { readInspect, selectorsOf } from './mcp-ui-inspect';
 import { SETTLE_POLL_MS } from './shot-settle';
@@ -265,7 +266,7 @@ export async function interactRoute(
     outDir,
     driver,
     boot: deps.boot,
-    settleMs: DEFAULT_SETTLE_MS,
+    settleMs: IDLE_HYDRATE_TIMEOUT_MS,
     timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
     fullPage: input.fullPage,
     colorScheme: input.colorScheme,

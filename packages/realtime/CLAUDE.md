@@ -189,7 +189,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 ## Replication
 
 - Exactly one `replicator` per DB, by a session-level advisory lock. **`start()` and
-  `PgAdvisoryLock.tryAcquire` are MEMOISED**; `stop()`/`release()` await the in-flight one. A start
+  `PostgresAdvisoryLock.tryAcquire` are MEMOISED**; `stop()`/`release()` await the in-flight one. A start
   that FAILS hands the lock back; `running` is set once the feed pumps.
 - **The pump has one way out, `#die`**: failure recorded, timer stopped, connection closed, then
   `onEnd(reason)`. `start()` awaits the previous pump. **`stop()` releases everything first.**

@@ -141,8 +141,8 @@ a `DbClient` is the framework's own. `Bun.sql` does **not** satisfy it.
 All three tables grow with traffic, and the boot's hourly `x.purge` job sweeps them — but only
 against the **Postgres** stores. `postgresInboxStore` carries `purgeBefore`, `postgresDeliveryLedger`
 and `postgresDigestStore` carry `purgeExpired`; the memory ones do not, and a boot that installed a
-memory store sweeps nothing. The methods are on those stores' own wider types (`PgInboxStore`,
-`PgDeliveryLedger`, `PgDigestStore`), not on the seams, so an app that wrote its own implementation
+memory store sweeps nothing. The methods are on those stores' own wider types (`PostgresInboxStore`,
+`PostgresDeliveryLedger`, `PostgresDigestStore`), not on the seams, so an app that wrote its own implementation
 is unaffected.
 
 | Table | Window | Default |

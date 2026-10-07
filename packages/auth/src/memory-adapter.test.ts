@@ -4,9 +4,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AuthAccount, AuthApiKeyRecord, AuthSession, AuthVerification } from './adapter';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 
-const user = (overrides: Partial<Parameters<MemoryAdapter['createUser']>[0]> = {}) => ({
+const user = (overrides: Partial<Parameters<MemoryAuthAdapter['createUser']>[0]> = {}) => ({
   id: 'user-1',
   email: 'A@Example.com',
   passwordHash: 'hash',

@@ -39,7 +39,7 @@ interface OutboxRow {
   readonly claimed_by?: string | null;
 }
 
-export interface PgOutboxOptions {
+export interface PostgresOutboxStoreOptions {
   /**
    * The pooled executor the RELAY uses: `claim`, `markPublished` and `pendingCount` all run after
    * the caller's transaction is gone, so they must not be bound to it.
@@ -87,7 +87,7 @@ function toRecord(row: OutboxRow): OutboxRecord {
   };
 }
 
-export function postgresOutboxStore(options: PgOutboxOptions): OutboxStore {
+export function postgresOutboxStore(options: PostgresOutboxStoreOptions): OutboxStore {
   // What each open transaction has staged, for `commit()`'s return value only. Never the source
   // of truth — that is the row, and the row's fate is the transaction's. A WeakMap so a `Tx` that
   // is neither committed nor rolled back (a process killed mid-request) leaves nothing behind.

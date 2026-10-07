@@ -64,7 +64,8 @@ describe('which spellings are retired', () => {
     'pgliteExecutor',
     'upgradeSchema',
   ])('%s is not', (name) => {
-    // `PgDriverOptions` WOULD read as a class here: a type is excluded by the scan, not the name.
+    // `PgDriverOptions` WOULD read as a class here: a type is excluded by the VALUE scan, not the
+    // name — the type rules (`factory-names-types.ts`) read it against the factory that takes it.
     expect(canonicalName(name)).toBeUndefined();
   });
 });
@@ -248,6 +249,17 @@ describe('a class beside a factory for the same seam', () => {
     ).toEqual([]);
   });
 
+  test('a class exported under an alias is read by the binding it names', () => {
+    const findings = ai(
+      "export { Impl as AnthropicProvider, open as openAiProvider } from './p';",
+      [
+        ['Impl', 'class', undefined, ['Provider']],
+        ['open', 'value', 'Provider'],
+      ],
+    );
+    expect(findings.map((one) => one.cause.split(' ')[2])).toEqual(['AnthropicProvider']);
+  });
+
   test('an error class is not a seam: instanceof is its API and extends its declaration', () => {
     expect(
       ai("export { UltimateError, toUltimateError } from './e';", [
@@ -272,6 +284,32 @@ describe('one value name, one package', () => {
     expect(findings[0]?.cause).toContain('@ultimat3/core and @ultimat3/ui both export formatBytes');
   });
 
+  test('an aliased export is the package’s own declaration under the name apps import', () => {
+    const findings = checkFactoryNames([
+      jobs,
+      pkgEntry('ui', "export { bytes as formatBytes } from './f';", declared([['bytes', 'value']])),
+      pkgEntry('core', "export { formatBytes } from './b';", declared([['formatBytes', 'value']])),
+    ]);
+    expect(findings.map((one) => one.at)).toEqual([
+      'packages/core/src/index.ts',
+      'packages/ui/src/index.ts',
+    ]);
+  });
+
+  test('another package’s binding is not this package’s, even where a local shares its name', () => {
+    expect(
+      checkFactoryNames([
+        jobs,
+        pkgEntry('core', "export { ANY_HOST } from './hosts';", declared([['ANY_HOST', 'value']])),
+        pkgEntry(
+          'scraping',
+          "export { ANY_HOST } from '@ultimat3/core';",
+          declared([['ANY_HOST', 'value']]),
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
   test('a re-export of another package’s binding is not a second meaning — not this rule’s', () => {
     expect(
       checkFactoryNames([
@@ -280,6 +318,38 @@ describe('one value name, one package', () => {
         pkgEntry('scraping', "export { ANY_HOST } from './hosts';", declared([])),
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('what the guard cannot read', () => {
+  test('an `export *` is reported unscanned, never read as a clean module', () => {
+    const findings = checkFactoryNames([
+      jobs,
+      pkgEntry('mail', "export * from './drivers';", declared([])),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain("export * from './drivers'");
+    expect(findings[0]?.fix).toContain("export { … } from './drivers'");
+  });
+});
+
+describe('a type spelled after a retired factory', () => {
+  test('is a finding at the entry that exports it, naming the factory’s spelling', () => {
+    const findings = checkFactoryNames([
+      pkgEntry(
+        'jobs',
+        "export { type PgDriverOptions, postgresJobDriver, memoryJobDriver } from './d';",
+        new Map<string, Declaration>([
+          [
+            'postgresJobDriver',
+            { kind: 'value', implements: [], returns: 'JobDriver', accepts: 'PgDriverOptions' },
+          ],
+        ]),
+      ),
+    ]);
+    expect(findings.map((one) => one.cause.split(' ')[2])).toEqual(['PgDriverOptions']);
+    expect(findings[0]?.fix).toContain('rename PgDriverOptions to PostgresJobDriverOptions');
+    expect(findings[0]?.fix).toContain('export type { PostgresJobDriverOptions }');
   });
 });
 

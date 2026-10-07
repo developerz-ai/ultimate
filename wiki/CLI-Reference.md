@@ -903,7 +903,7 @@ onto sealed second-factor secrets owes — `completeMfa` refuses a plaintext val
 | Needs | the master key: `ULTIMATE_SECRETS_KEY` or `.secrets.key`. With neither it is `X_SEAL_KEY_MISSING` and no row is written |
 | Idempotent | a sealed value is counted and never rewritten, so an interrupted run is finished by running it again |
 | Safe under traffic | each write is a compare-and-set on the value read: a user who re-enrolled mid-run keeps the new secret, and the row is counted `skipped` |
-| Reaches | `BuiltinAdapter`'s `x_users`. An app on its own `AuthAdapter` calls `sealMfaSecrets({ adapter })` from `@ultimat3/auth` |
+| Reaches | `PostgresAuthAdapter`'s `x_users`. An app on its own `AuthAdapter` calls `sealMfaSecrets({ adapter })` from `@ultimat3/auth` |
 
 ```bash
 $ x auth seal-mfa --json

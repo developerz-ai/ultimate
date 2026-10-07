@@ -1,6 +1,6 @@
 // Single responsibility: environment → change feed. The one place that decides which `ChangeFeed`
 // a boot installs, so `x dev`, a replicator container and any custom host resolve it identically.
-// `PgLogicalReplicationFeed` is useless until something constructs it from a connection string;
+// `PostgresChangeFeed` is useless until something constructs it from a connection string;
 // this is that something, keyed on env rather than a config field so one image deploys everywhere.
 
 import type { Clock } from '@ultimat3/core';

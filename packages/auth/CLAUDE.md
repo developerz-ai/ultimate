@@ -63,7 +63,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   the pool is the host's.
 - **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
-  `config.limiter` → the installed factory → `authLimiter`. `installedAuthLimiter` and
+  `config.limiter` → the installed factory → `memoryAuthLimiter`. `installedAuthLimiter` and
   `installedLimiterCount()` are NOT in `src/index.ts`. `purgeAuthLimits()` sweeps only the
   **widest** window among the built limiters (retained one per `windowMs` in a `Map`), on the
   limiter's own clock. `AuthLimiter.purgeExpired` is optional.
@@ -149,10 +149,10 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
   limiter inert against stuffing. A password proven with a second factor still owed clears
   NOTHING: `completeMfa` is what clears, or a repeat of the first leg wipes the wrong codes.
-- **`MemoryAdapter.createUser` and `updateUser` enforce `x_users.id`, `email` and `external_id`
+- **`MemoryAuthAdapter.createUser` and `updateUser` enforce `x_users.id`, `email` and `external_id`
   uniqueness** (`authUniqueViolation`, `X_AUTH_WRITE_FAILED`), NULLS DISTINCT like Postgres;
-  `BuiltinAdapter` answers the same code through `builtin-adapter-violation.ts`.
-  **`MemoryAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
+  `PostgresAuthAdapter` answers the same code through `builtin-adapter-violation.ts`.
+  **`MemoryAuthAdapter` takes a `Clock`** (default `systemClock`) and stamps every instant from it.
   `adapter-parity.test.ts` pins both.
 - **`listUsersByOrg` orders by byte**: `collate "C"` in Postgres, a code-point compare in memory —
   never `localeCompare`, never UTF-16 `<` (`list-users-order.live.test.ts`, on an `en_US` db).
@@ -171,7 +171,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `verifyApiKey` → `apiKeyActor`, `X_API_KEY_INVALID` → `null`, everything else rethrown. Its
   `ApiKeyCaller` is structurally http's `BearerCaller` and mcp's `ResolvedToken` — declared here
   because tier 2 imports neither. The store is a thunk (a mount is declared before boot installs
-  the database client). No second in-memory key store: `MemoryAdapter` IS an `ApiKeyStore`.
+  the database client). No second in-memory key store: `MemoryAuthAdapter` IS an `ApiKeyStore`.
 - Rotate the session id on any privilege change (`rotateSession`, called by `updatePrivileges` in
   `privileges.ts`), never patch the row. A `passwordHash` change also ends every OTHER session of
   that user (`deleteOtherSessions`), or all of them when the caller passed no session of theirs.
@@ -198,7 +198,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
   (`{ ok: false, step: null }`), `totpCode` and `enrolTotp` throw `X_MFA_SECRET_INVALID`. The secret
   never reaches `cause:`/`fix:`. No length floor beyond one byte.
-- **`totpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
+- **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
   whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
   evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
   first (`boundedSubjects`): anything not a positive finite integer takes the default.
@@ -259,7 +259,7 @@ Gotchas:
   this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
   without a title. A `hasErrorCode()` guard would suppress the `X_ERROR_CODE_DUPLICATE` that is
   supposed to fire when two packages claim one code.
-- Tests run against `MemoryAdapter`; the one ADAPTER test that boots a database is
+- Tests run against `MemoryAuthAdapter`; the one ADAPTER test that boots a database is
   `adapter-parity-identity.test.ts` (PGlite). The two other exceptions are
   `postgresAuthLimiter`'s, and they are exceptions in the shape the repo already has: the
   scripted-executor twin (`rate-limit-postgres.test.ts`) proves the protocol with no server,

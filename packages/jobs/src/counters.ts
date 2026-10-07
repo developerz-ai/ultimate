@@ -45,7 +45,7 @@ export interface MemoryCounters {
 }
 
 /** The memory driver's counters. Same buckets, same tiers, same fold as `x_job_counters`. */
-export function createMemoryCounters(): MemoryCounters {
+export function memoryCounters(): MemoryCounters {
   const buckets = new Map<string, JobCounter>();
   const keyOf = (job: string, bucketMs: number, bucketStart: number): string =>
     `${bucketMs}\u0000${bucketStart}\u0000${job}`;

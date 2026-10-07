@@ -18,7 +18,7 @@ import {
 } from './verify';
 
 /**
- * A write log over the real `MemoryAdapter`, never a second store: both methods delegate, so these
+ * A write log over the real `MemoryAuthAdapter`, never a second store: both methods delegate, so these
  * cases run the same verification lifecycle every other suite in this package does and a drift in
  * the adapter fails here too. `written` exists only because `putVerification` is the one call whose
  * *argument* a test needs to read — proving the token is stored hashed.

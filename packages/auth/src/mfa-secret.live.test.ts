@@ -9,7 +9,7 @@ import { frozenClock, isSealed } from '@ultimat3/core';
 import { postgresClient, raw, sql } from '@ultimat3/db';
 import { defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
+import { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 import { generateRecoveryCodes, totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { countUnsealedMfaSecrets, saveTotpSecret, sealMfaSecrets } from './mfa-secret';
@@ -23,7 +23,7 @@ const DOMAIN = 'mfa-secret-live.test';
 const clock = frozenClock(1_700_000_000_000);
 
 let client: ReturnType<typeof postgresClient>;
-let adapter: BuiltinAdapter;
+let adapter: PostgresAuthAdapter;
 
 const wipe = async (): Promise<void> => {
   await client.execute(sql`delete from x_users where email like ${`%@${DOMAIN}`}`);

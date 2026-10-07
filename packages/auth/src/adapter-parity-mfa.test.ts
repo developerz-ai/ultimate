@@ -48,9 +48,9 @@ const seeded = async (adapter: AuthAdapter): Promise<AuthAdapter> => {
 };
 
 const adapters: readonly (readonly [string, () => Promise<AuthAdapter>])[] = [
-  ['MemoryAdapter', () => seeded(memoryAuthAdapter())],
+  ['MemoryAuthAdapter', () => seeded(memoryAuthAdapter())],
   [
-    'BuiltinAdapter',
+    'PostgresAuthAdapter',
     async () => {
       await client.execute(raw('delete from x_users'));
       return await seeded(postgresAuthAdapter(client));

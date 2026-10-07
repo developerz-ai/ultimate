@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { type RecordingClient, recordingClient } from '@ultimat3/db';
-import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
+import { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
 
 const ID = '00000000-0000-7000-8000-000000000101';
@@ -41,7 +41,7 @@ const sessionRow = (over: Record<string, unknown> = {}): Record<string, unknown>
 });
 
 let client: RecordingClient;
-let adapter: BuiltinAdapter;
+let adapter: PostgresAuthAdapter;
 
 const setup = (): void => {
   client = recordingClient();
@@ -51,7 +51,7 @@ const setup = (): void => {
 const lastText = (): string => client.texts.at(-1) ?? '';
 const lastValues = (): readonly unknown[] => client.statements.at(-1)?.values ?? [];
 
-describe('BuiltinAdapter — users', () => {
+describe('PostgresAuthAdapter — users', () => {
   test('findUserByEmail selects by bound value and maps every column', async () => {
     setup();
     client.on('select', { rows: [userRow()] });
@@ -173,7 +173,7 @@ describe('BuiltinAdapter — users', () => {
   });
 });
 
-describe('BuiltinAdapter — sessions', () => {
+describe('PostgresAuthAdapter — sessions', () => {
   test('createSession inserts and returns the same object it was given', async () => {
     setup();
     const session = {
@@ -226,7 +226,7 @@ describe('BuiltinAdapter — sessions', () => {
   });
 });
 
-describe('BuiltinAdapter — accounts', () => {
+describe('PostgresAuthAdapter — accounts', () => {
   test('linkAccount upserts on the provider/providerAccountId pair', async () => {
     setup();
     const account = {
@@ -265,7 +265,7 @@ describe('BuiltinAdapter — accounts', () => {
   });
 });
 
-describe('BuiltinAdapter — verification tokens', () => {
+describe('PostgresAuthAdapter — verification tokens', () => {
   test('putVerification upserts and resets consumedAt to null on reissue', async () => {
     setup();
     await adapter.putVerification({
@@ -329,7 +329,7 @@ describe('BuiltinAdapter — verification tokens', () => {
   });
 });
 
-describe('BuiltinAdapter — api keys', () => {
+describe('PostgresAuthAdapter — api keys', () => {
   test('putApiKey inserts the scopes array', async () => {
     setup();
     await adapter.putApiKey({

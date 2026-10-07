@@ -6,12 +6,13 @@ import { join } from 'node:path';
 // Bun ships no equivalent: `join` builds the host-separator path from the scan root to a hit.
 // Sizing is Bun's own (`Bun.file().size`), so nothing here reaches for `node:fs`.
 import { nearestName, renderFixShellArg } from '@ultimat3/core';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
 import { isIgnoredTestPath } from './test-ignores';
 import type { TestType } from './verify-tests';
-import { ownerOf, TEST_TYPES } from './verify-tests';
+import { ownerOf } from './verify-tests';
 
 export interface TestFile {
   readonly path: string;

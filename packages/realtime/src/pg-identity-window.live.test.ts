@@ -12,7 +12,7 @@ import { ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, entityForTable, text } from '@ultimat3/entity';
 import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
-import { type ChangeEvent, type PgLogicalReplicationFeed, postgresChangeFeed } from './changefeed';
+import { type ChangeEvent, type PostgresChangeFeed, postgresChangeFeed } from './changefeed';
 import type { Row } from './json';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
@@ -83,7 +83,7 @@ class FakeWs implements WsLike {
 describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () => {
   let sql: PgConnection;
   let reader: PgConnection;
-  let feed: PgLogicalReplicationFeed;
+  let feed: PostgresChangeFeed;
   const events: ChangeEvent[] = [];
   const ws = new FakeWs();
   let delivered: Promise<unknown> = Promise.resolve();

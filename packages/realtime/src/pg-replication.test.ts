@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { bigint, entity, entityForTable, text } from '@ultimat3/entity';
-import type { PgLogicalReplicationFeed } from './changefeed';
+import type { PostgresChangeFeed } from './changefeed';
 import { pgTimestampToEpochMs } from './pg-bytes';
 import { changeLsn, commitPositionOf } from './pg-replication';
 import {
@@ -290,7 +290,7 @@ const settle = async (): Promise<void> => {
 };
 
 /** A feed that dials a *fresh* walsender each time — the only way to watch a restart redial. */
-const redialable = (): { feed: PgLogicalReplicationFeed; servers: FakeWalsender[] } => {
+const redialable = (): { feed: PostgresChangeFeed; servers: FakeWalsender[] } => {
   const servers: FakeWalsender[] = [];
   return {
     servers,

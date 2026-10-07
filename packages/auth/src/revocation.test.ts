@@ -9,7 +9,7 @@ import { frozenClock, setLogSink } from '@ultimat3/core';
 import { issueApiKey, verifyApiKey } from './api-keys';
 import { type Auth, defineAuth } from './auth';
 import { AuthError } from './errors';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import {
   disableUser,
   enableUser,
@@ -21,7 +21,7 @@ import { createSession } from './session';
 
 const START = 1_700_000_000_000;
 
-const setup = async (): Promise<{ auth: Auth; adapter: MemoryAdapter }> => {
+const setup = async (): Promise<{ auth: Auth; adapter: MemoryAuthAdapter }> => {
   const adapter = memoryAuthAdapter();
   const auth = defineAuth({ adapter, clock: frozenClock(START) });
   const members: readonly [string, string | null][] = [
@@ -45,7 +45,7 @@ const setup = async (): Promise<{ auth: Auth; adapter: MemoryAdapter }> => {
   return { auth, adapter };
 };
 
-const liveFor = async (adapter: MemoryAdapter, userId: string): Promise<number> =>
+const liveFor = async (adapter: MemoryAuthAdapter, userId: string): Promise<number> =>
   (await adapter.listSessions(userId)).length;
 
 describe('revocation', () => {

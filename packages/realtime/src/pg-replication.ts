@@ -4,7 +4,7 @@
 // the lsn is the only authority the pipeline has.
 
 import { type Clock, finiteOption, logger, renderThrowable, systemClock } from '@ultimat3/core';
-import type { ChangeEvent, ChangeOp, PgLogicalReplicationOptions } from './changefeed';
+import type { ChangeEvent, ChangeOp, PostgresChangeFeedOptions } from './changefeed';
 import { ReplicationProtocolError } from './errors';
 import { ByteReader, ByteWriter, epochMsToPgTimestamp, printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
@@ -90,11 +90,11 @@ export interface ReplicationStreamHandlers {
 }
 
 /**
- * One slot, one connection, one process. Started by `PgLogicalReplicationFeed`, which is itself
+ * One slot, one connection, one process. Started by `PostgresChangeFeed`, which is itself
  * held by the single `replicator` role — the advisory lock upstream is what keeps that "one" true.
  */
 export class PgReplicationStream {
-  readonly #options: PgLogicalReplicationOptions;
+  readonly #options: PostgresChangeFeedOptions;
   readonly #clock: Clock;
   readonly #entities: ReadonlySet<string>;
   readonly #slot: string;
@@ -116,7 +116,7 @@ export class PgReplicationStream {
   #failure: string | null = null;
   #onEnd: ((reason: string) => void) | undefined;
 
-  constructor(options: PgLogicalReplicationOptions) {
+  constructor(options: PostgresChangeFeedOptions) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#entities = new Set(options.entities.map((name) => assertIdentifier('entity', name)));

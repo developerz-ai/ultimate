@@ -14,6 +14,7 @@
 import { rm } from 'node:fs/promises';
 // why: Bun ships no path-join primitive.
 import { dirname, join } from 'node:path';
+import { ISOLATED_ENV } from '@ultimat3/testing';
 import type { CoverageMap } from './coverage-lcov';
 import { fileCoverageOf, mergeCoverage, parseLcov } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
@@ -21,7 +22,7 @@ import { execOutput } from './exec';
 import { msg } from './messages';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
-import { failureOf, ISOLATED_TEST_ENV } from './test-shards';
+import { failureOf } from './test-shards';
 import { SLOT_HELD_ENV } from './test-slots';
 import type { StepOutcome } from './verify-step';
 
@@ -113,7 +114,7 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
   const isolate = options.isolate === true;
   const overrides = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
-    ...(isolate ? { [ISOLATED_TEST_ENV]: '1' } : {}),
+    ...(isolate ? { [ISOLATED_ENV]: '1' } : {}),
     ...(lease === undefined ? {} : { [SLOT_HELD_ENV]: '1' }),
   };
   const results = new Array<ExecResult>(slices.length);

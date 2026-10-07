@@ -84,7 +84,7 @@ describe('hybrid search', () => {
 });
 
 /**
- * The dev store enforces the SAME envelope `PgVectorStore` compiles into SQL. A tenant leak
+ * The dev store enforces the SAME envelope `PostgresVectorStore` compiles into SQL. A tenant leak
  * that only reproduces against production Postgres is a leak nobody finds locally.
  */
 describe('scope', () => {

@@ -13,7 +13,7 @@ import type { Rng } from './thundering-herd';
 /** A key reaches a simple query unparameterised, so its charset is the injection boundary. */
 const KEY_PATTERN = /^[A-Za-z0-9:_.-]+$/;
 
-export interface PgAdvisoryLockOptions {
+export interface PostgresAdvisoryLockOptions {
   /** Connection string for the database whose replicator this is. */
   readonly url: string;
   /** Lock identity, e.g. `x:replicator:<slot>`. Hashed by Postgres, not by us. */
@@ -30,9 +30,9 @@ export interface PgAdvisoryLockOptions {
  * already holds the key would need a matching second `pg_advisory_unlock`, and `release()` only
  * ever issues one, so taking a second grant here would be a leak, not a no-op.
  */
-export class PgAdvisoryLock implements AdvisoryLock {
+export class PostgresAdvisoryLock implements AdvisoryLock {
   readonly key: string;
-  readonly #options: PgAdvisoryLockOptions;
+  readonly #options: PostgresAdvisoryLockOptions;
   #connection: PgConnection | null = null;
   /**
    * The acquisition in flight, if any. `#connection` cannot answer "am I already taking this" —
@@ -47,7 +47,7 @@ export class PgAdvisoryLock implements AdvisoryLock {
   #acquiring: Promise<boolean> | null = null;
   readonly #lostListeners = new Set<(reason: string) => void>();
 
-  constructor(options: PgAdvisoryLockOptions) {
+  constructor(options: PostgresAdvisoryLockOptions) {
     if (!KEY_PATTERN.test(options.key)) {
       throw new ReplicationFailedError({
         stage: 'preflight',
@@ -178,6 +178,6 @@ export class PgAdvisoryLock implements AdvisoryLock {
 }
 
 /** The one way to build the session lock — the twin of `memoryAdvisoryLock()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
-export function postgresAdvisoryLock(options: PgAdvisoryLockOptions): PgAdvisoryLock {
-  return new PgAdvisoryLock(options);
+export function postgresAdvisoryLock(options: PostgresAdvisoryLockOptions): PostgresAdvisoryLock {
+  return new PostgresAdvisoryLock(options);
 }

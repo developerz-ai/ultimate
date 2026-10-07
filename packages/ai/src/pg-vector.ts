@@ -26,7 +26,7 @@ import type {
 } from './vector';
 import { assertTenantRead, narrowScope, tenantOf, UNBOUND, type VectorScope } from './vector-scope';
 
-export interface PgVectorStoreInput {
+export interface PostgresVectorStoreInput {
   /** The table. Also the store's name in errors, and the stem of every index name. */
   readonly name: string;
   readonly dimension: number;
@@ -49,14 +49,14 @@ interface HitRow {
   readonly score: unknown;
 }
 
-export class PgVectorStore implements VectorStore {
+export class PostgresVectorStore implements VectorStore {
   readonly name: string;
   readonly dimension: number;
   readonly scope: VectorScope;
-  private readonly input: PgVectorStoreInput;
+  private readonly input: PostgresVectorStoreInput;
   private readonly target: PgVectorTable;
 
-  constructor(input: PgVectorStoreInput) {
+  constructor(input: PostgresVectorStoreInput) {
     this.input = input;
     this.name = input.name;
     this.dimension = input.dimension;
@@ -78,8 +78,8 @@ export class PgVectorStore implements VectorStore {
    * A view of the same table through a narrower envelope. A store opened with `scope: UNSCOPED`
    * is the backfill path; a request handler derives from it and can never widen back out.
    */
-  scoped(scope: VectorScope): PgVectorStore {
-    return new PgVectorStore({
+  scoped(scope: VectorScope): PostgresVectorStore {
+    return new PostgresVectorStore({
       ...this.input,
       scope: narrowScope(this.name, this.scope, scope),
     });
@@ -183,8 +183,8 @@ export class PgVectorStore implements VectorStore {
  * The one way to build the pgvector-backed store — the twin of `memoryVectorStore()`. The class is
  * a type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
  */
-export function postgresVectorStore(input: PgVectorStoreInput): PgVectorStore {
-  return new PgVectorStore(input);
+export function postgresVectorStore(input: PostgresVectorStoreInput): PostgresVectorStore {
+  return new PostgresVectorStore(input);
 }
 
 function toHit(row: HitRow): SearchHit {

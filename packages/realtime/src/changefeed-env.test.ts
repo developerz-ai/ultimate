@@ -3,7 +3,7 @@
 // decoding a stream the app never writes to.
 
 import { describe, expect, test } from 'bun:test';
-import { InMemoryChangeFeed, PgLogicalReplicationFeed } from './changefeed';
+import { MemoryChangeFeed, PostgresChangeFeed } from './changefeed';
 import {
   DEFAULT_REPLICATION_PUBLICATION,
   DEFAULT_REPLICATION_SLOT,
@@ -19,7 +19,7 @@ const entities = ['posts', 'comments'];
 describe('selectChangeFeed', () => {
   test('no connection string installs the in-process feed', () => {
     const selection = selectChangeFeed({}, { entities });
-    expect(selection.feed).toBeInstanceOf(InMemoryChangeFeed);
+    expect(selection.feed).toBeInstanceOf(MemoryChangeFeed);
     expect(selection.mode).toBe('embedded');
     expect(selection.slot).toBeNull();
     expect(selection.detail).toContain('DATABASE_URL');
@@ -31,7 +31,7 @@ describe('selectChangeFeed', () => {
 
   test('DATABASE_URL installs the Postgres feed and reports the key that selected it', () => {
     const selection = selectChangeFeed({ DATABASE_URL: APP_URL }, { entities });
-    expect(selection.feed).toBeInstanceOf(PgLogicalReplicationFeed);
+    expect(selection.feed).toBeInstanceOf(PostgresChangeFeed);
     expect(selection.mode).toBe('external');
     expect(selection.detail).toBe('DATABASE_URL');
     expect(selection.slot).toBe(DEFAULT_REPLICATION_SLOT);

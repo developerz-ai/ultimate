@@ -65,7 +65,7 @@ export const emailVerifiedNotStored = (provider: string, userId: string): AuthEr
     // implements `updateUser` and lost a write it accepted.
     code: 'X_AUTH_WRITE_FAILED',
     cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
-    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
+    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAuthAdapter.updateUser is the reference implementation',
     meta: { provider, userId },
   });
 
@@ -149,7 +149,7 @@ async function applyGrants(auth: Auth, user: AuthUser, grants: OAuthGrants): Pro
  * display casing (`Ada@Example.com`) and change it between logins, and `x_users.email` is a plain
  * case-sensitive `unique` column — so unnormalised, the lookup below missed the account the user
  * registered and `createUserFor` minted a second one at the same address, which `login()` could
- * then never reach. `MemoryAdapter` used to fold case itself, which is why no test saw it.
+ * then never reach. `MemoryAuthAdapter` used to fold case itself, which is why no test saw it.
  */
 const profileEmail = (profile: OAuthProfile): string | null =>
   profile.email === null ? null : normaliseEmail(profile.email);

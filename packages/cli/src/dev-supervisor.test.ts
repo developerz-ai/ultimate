@@ -9,6 +9,7 @@ import {
   DEV_CHILD_ENV,
   DEV_RESTART_EXIT_CODE,
   devSupervision,
+  freeDevPort,
   restartFinding,
   restartReason,
   stopChild,
@@ -53,6 +54,36 @@ const fakeChildren = (codes: readonly number[]) => {
   };
   return { spawned, spawn };
 };
+
+describe('unit · freeDevPort picks a free PAIR', () => {
+  test('a candidate whose neighbour is taken is skipped: x dev binds port and port + 1', () => {
+    const candidates = [20_904, 31_000];
+    const taken = new Set([20_905]);
+    expect(
+      freeDevPort(
+        () => candidates.shift() ?? 0,
+        (port) => !taken.has(port),
+      ),
+    ).toBe(31_000);
+  });
+
+  test('the top of the range is never a candidate: its neighbour is not a port', () => {
+    const candidates = [65_535, 40_000];
+    expect(
+      freeDevPort(
+        () => candidates.shift() ?? 0,
+        () => true,
+      ),
+    ).toBe(40_000);
+  });
+
+  test('a real call answers a port whose neighbour binds', () => {
+    const port = freeDevPort();
+    expect(port).toBeGreaterThan(0);
+    const pair = Bun.serve({ port: port + 1, fetch: () => new Response() });
+    pair.stop(true);
+  });
+});
 
 describe('unit · superviseDev', () => {
   test('a restart exit boots the next child with the same argv; any other code is the answer', async () => {

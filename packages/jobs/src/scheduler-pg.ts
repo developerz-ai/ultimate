@@ -87,7 +87,7 @@ export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
   return state;
 }
 
-export interface PgLeaseLeaderOptions {
+export interface PostgresLeaseLeaderOptions {
   readonly executor: PgExecutor;
   /** One key per elected role. Default `'scheduler'`. */
   readonly lockKey?: string;
@@ -120,7 +120,7 @@ export const LEASE_RENEWALS_PER_TTL = 3;
  * with nothing to clean up, which is the one property the advisory lock had and a plain
  * `insert ... on conflict do nothing` would not.
  */
-export function postgresLeaseLeader(options: PgLeaseLeaderOptions): LeaderElection {
+export function postgresLeaseLeader(options: PostgresLeaseLeaderOptions): LeaderElection {
   const lockKey = options.lockKey ?? 'scheduler';
   const holder = options.holder ?? `scheduler-${uuidV7()}`;
   const ttlMs = finiteOption(

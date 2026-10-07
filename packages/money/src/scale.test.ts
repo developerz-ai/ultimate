@@ -4,8 +4,9 @@
 // can answer where storing the widened value would rightly be refused.
 
 import { describe, expect, test } from 'bun:test';
+import { MAX_MONEY_SCALE } from '@ultimat3/schema';
 import { fromMinor } from './money';
-import { assertScale, MAX_MONEY_SCALE, minorAt, moneyScale, toMinor } from './scale';
+import { assertScale, minorAt, moneyScale, toMinor } from './scale';
 
 describe('moneyScale', () => {
   test('a value without a scale carries its currency’s own', () => {

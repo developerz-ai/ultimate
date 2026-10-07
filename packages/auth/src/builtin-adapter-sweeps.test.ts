@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type RecordingClient, recordingClient } from '@ultimat3/db';
-import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
+import { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 
 const ID = '00000000-0000-7000-8000-000000000101';
 
@@ -37,7 +37,7 @@ const sessionRow = (over: Record<string, unknown> = {}): Record<string, unknown>
 });
 
 let client: RecordingClient;
-let adapter: BuiltinAdapter;
+let adapter: PostgresAuthAdapter;
 
 const setup = (): void => {
   client = recordingClient();
@@ -53,7 +53,7 @@ const lastValues = (): readonly unknown[] => client.statements.at(-1)?.values ??
  * reading an `org_id` off the session, because that copy goes stale the moment somebody moves org
  * and a stale row is exactly the session the sweep was run to kill.
  */
-describe('BuiltinAdapter — lookups and sweeps', () => {
+describe('PostgresAuthAdapter — lookups and sweeps', () => {
   test('findUserByExternalId binds the id rather than interpolating it', async () => {
     setup();
     client.on('select', { rows: [userRow({ external_id: 'okta|42' })] });

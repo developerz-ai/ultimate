@@ -156,24 +156,24 @@ const slotArgs = (slot: DigestSlot): readonly unknown[] => [
 const epochOf = (value: Date | string): number =>
   (value instanceof Date ? value : new Date(value)).getTime();
 
-export interface PgDigestStoreOptions {
+export interface PostgresDigestStoreOptions {
   readonly executor: PgExecutor;
   /** How long a closed window is kept. Defaults to `DEFAULT_DIGEST_RETENTION_MS`. */
   readonly retentionMs?: number | undefined;
 }
 
 /**
- * The Postgres store's own wider type, exactly as `PgDeliveryLedger` is: `purgeExpired` is not on
+ * The Postgres store's own wider type, exactly as `PostgresDeliveryLedger` is: `purgeExpired` is not on
  * `DigestStore`, because a heap map bounded by process life has nothing to delete and a new
  * method on the seam breaks every app that wrote its own store.
  */
-export interface PgDigestStore extends DigestStore {
+export interface PostgresDigestStore extends DigestStore {
   readonly retentionMs: number;
   /** Delete windows closed more than `retentionMs` before `nowMs` (the job's clock); answer how many. */
   purgeExpired(nowMs: number): Promise<number>;
 }
 
-export function postgresDigestStore(options: PgDigestStoreOptions): PgDigestStore {
+export function postgresDigestStore(options: PostgresDigestStoreOptions): PostgresDigestStore {
   const { executor } = options;
   const retentionMs = finiteCount(
     'postgresDigestStore',

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type FrozenClock, frozenClock } from '@ultimat3/core';
 import type { SessionStore } from './adapter';
 import { AuthError } from './errors';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import {
   clearSessionCookie,
   createSession,
@@ -153,7 +153,7 @@ describe('session', () => {
  */
 describe('the idle window slides, it does not grind', () => {
   /** Counts writes without changing behaviour: the real adapter still does the work. */
-  const counting = (base: MemoryAdapter): { store: SessionStore; writes: () => number } => {
+  const counting = (base: MemoryAuthAdapter): { store: SessionStore; writes: () => number } => {
     let writes = 0;
     const store: SessionStore = {
       getSession: (id) => base.getSession(id),

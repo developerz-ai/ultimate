@@ -1,4 +1,4 @@
-// `x auth seal-mfa` as shipped — the real opener, the real `BuiltinAdapter`, a real server: rows
+// `x auth seal-mfa` as shipped — the real opener, the real `PostgresAuthAdapter`, a real server: rows
 // a previous release left in the clear are sealed in place, and a second run changes nothing.
 //
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`: this file creates and drops a

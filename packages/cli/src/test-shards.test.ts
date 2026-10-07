@@ -14,12 +14,13 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no temp-directory root.
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
+import { ISOLATED_ENV } from '@ultimat3/testing';
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
 import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
-import { filesIn, ISOLATED_TEST_ENV, reproduceFor, runShards, testArgs } from './test-shards';
+import { filesIn, reproduceFor, runShards, testArgs } from './test-shards';
 import { SHARED_BATCH_FILES_PER_WORKER as BATCH_FILES_PER_WORKER } from './test-workers';
 
 interface Call {
@@ -114,7 +115,7 @@ describe('unit · x test execution', () => {
   test('only an isolated child is told so — the default shared-global run is not', async () => {
     const shared = recorder();
     await runShards({ root: '/repo', runner: shared.runner, files: corpus(6), workers: 2 });
-    expect(shared.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBeUndefined();
+    expect(shared.calls[0]?.env?.[ISOLATED_ENV]).toBeUndefined();
     const isolated = recorder();
     await runShards({
       root: '/repo',
@@ -123,7 +124,7 @@ describe('unit · x test execution', () => {
       workers: 2,
       isolate: true,
     });
-    expect(isolated.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+    expect(isolated.calls[0]?.env?.[ISOLATED_ENV]).toBe('1');
     const optedIn = recorder();
     await runShards({
       root: '/repo',
@@ -132,7 +133,7 @@ describe('unit · x test execution', () => {
       workers: 2,
       passthrough: ['--isolate'],
     });
-    expect(optedIn.calls[0]?.env?.[ISOLATED_TEST_ENV]).toBe('1');
+    expect(optedIn.calls[0]?.env?.[ISOLATED_ENV]).toBe('1');
   });
 
   test('a default-width run leases each batch from the machine pool and runs at what it got', async () => {

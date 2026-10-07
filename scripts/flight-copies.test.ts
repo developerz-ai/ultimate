@@ -12,12 +12,8 @@ import {
   flightCopyResult,
   readSources,
 } from './flight-copies';
-import {
-  CORE_REEXPORT_EXEMPT,
-  CORE_REEXPORT_PENDING,
-  coreReexportKeys,
-} from './lib/core-reexports';
 import { render } from './lib/log';
+import { PACKAGE_REEXPORT_EXEMPT, packageReexportKeys, reexportKey } from './lib/package-reexports';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Every test below scans the whole tree, so the budget is the file's default rather than a third
@@ -99,12 +95,24 @@ describe('this repository', () => {
     expect(codes(file('packages/x/src/escape.ts', copy))).toEqual(['X_HELPER_COPY']);
   });
 
-  // A pending core re-export is a debt with an owner, and it is green only while it is real: the
-  // change that deletes the re-export must delete its pin too, or the list outlives what it tracks.
-  test('and every pinned core re-export is still in the tree', async () => {
-    const found = new Set((await readSources(ROOT)).flatMap(coreReexportKeys));
-    const pins = [...CORE_REEXPORT_EXEMPT.keys(), ...CORE_REEXPORT_PENDING.keys()];
-    expect(pins.filter((pin) => !found.has(pin))).toEqual([]);
+  test("and refuses another package's value re-exported, through the same entry", () => {
+    const copy = "export { formatIssues } from '@ultimat3/schema';\n";
+    expect(codes(file('packages/x/src/index.ts', copy))).toEqual(['X_HELPER_COPY']);
+  });
+
+  test('and refuses a blind export *, through the same entry', () => {
+    expect(codes(file('packages/x/src/index.ts', "export * from './a';\n"))).toEqual([
+      'X_HELPER_COPY',
+    ]);
+  });
+
+  // An exemption is green only while it is real: the change that deletes the re-export must delete
+  // its row too, or the table outlives what it argues for.
+  test('and every exempt re-export is still in the tree', async () => {
+    const found = new Set((await readSources(ROOT)).flatMap(packageReexportKeys));
+    const rows = PACKAGE_REEXPORT_EXEMPT.map((row) => reexportKey(row.at, row.from, row.name));
+    expect(rows.filter((row) => !found.has(row))).toEqual([]);
+    expect(rows.length).toBeGreaterThan(0);
   });
 
   test('and the scan really walked shipped source, skipping tests', async () => {

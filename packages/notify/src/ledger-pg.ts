@@ -102,7 +102,7 @@ delete from x_notify_deliveries where at < $1
  */
 const SQL_NOTIFY_DELIVERIES_PURGE_COUNTED = `${SQL_NOTIFY_DELIVERIES_PURGE} returning key`;
 
-export interface PgDeliveryLedgerOptions {
+export interface PostgresDeliveryLedgerOptions {
   readonly executor: PgExecutor;
   /**
    * How long a settled claim is kept. Defaults to `DEFAULT_DELIVERY_WINDOW_MS`.
@@ -125,12 +125,14 @@ export const DEFAULT_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
  * seam every implementation must satisfy is a breaking change for an app that wrote its own.
  * Exactly the shape `PostgresIdempotencyStore` already has.
  */
-export interface PgDeliveryLedger extends DeliveryLedger {
+export interface PostgresDeliveryLedger extends DeliveryLedger {
   readonly windowMs: number;
   purgeExpired(nowMs: number): Promise<number>;
 }
 
-export function postgresDeliveryLedger(options: PgDeliveryLedgerOptions): PgDeliveryLedger {
+export function postgresDeliveryLedger(
+  options: PostgresDeliveryLedgerOptions,
+): PostgresDeliveryLedger {
   const { executor } = options;
   const windowMs = finiteCount(
     'postgresDeliveryLedger',

@@ -3,7 +3,7 @@
 // CREATES — `FRAMEWORK_SCHEMA` in `@ultimat3/cli` being the one applier the framework has.
 //
 // THE DEFECT THIS EXISTS FOR. `packages/auth/src/tables.ts` declares `x_users`, `x_sessions`,
-// `x_accounts`, `x_verifications` and `x_api_keys` — the five relations `BuiltinAdapter` reads —
+// `x_accounts`, `x_verifications` and `x_api_keys` — the five relations `PostgresAuthAdapter` reads —
 // and until 2026-08-24 NOTHING created them, in dev or in production — from the initial commit
 // through all 21 released versions. They are not `entity()`
 // declarations, so `x db gen` never saw them; the file exported the DDL "so an app can paste it

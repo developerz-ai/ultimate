@@ -104,7 +104,7 @@ function byClaimOrder(a: OutboxRecord, b: OutboxRecord): number {
   return a.id < b.id ? -1 : 1;
 }
 
-export interface MemoryOutboxOptions {
+export interface MemoryOutboxStoreOptions {
   readonly clock?: Clock;
   readonly claimLeaseMs?: number;
 }
@@ -123,7 +123,7 @@ export interface MemoryOutboxStore extends OutboxStore {
  * transaction" guarantee needs no cooperation from the DB layer and rollback is a delete.
  * The pg store swaps this for a real `x_outbox` table written by the same connection.
  */
-export function memoryOutboxStore(options: MemoryOutboxOptions = {}): MemoryOutboxStore {
+export function memoryOutboxStore(options: MemoryOutboxStoreOptions = {}): MemoryOutboxStore {
   const staged = new WeakMap<object, OutboxRecord[]>();
   const committed = new Map<string, OutboxRecord>();
   /** Each claimed row's lease: when it was taken and by whom. Absent is `claimed_at is null`. */

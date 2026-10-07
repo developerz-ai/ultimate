@@ -67,6 +67,39 @@ const CLEAN = JSON.stringify({
 const PAGE =
   '<!doctype html><html><body><div data-x-island="i1" data-x-hydrate="idle" data-x-entry="/_x/islands/a.js"></div></body></html>';
 
+// `settleMs` is an agent's argument: NaN reached the browser's settle wait as "wait forever".
+describe('unit · ui.shot refuses a settle that is not a whole number of ms', () => {
+  test('NaN and a negative settle are X_INVARIANT, never a shot', async () => {
+    for (const settleMs of [Number.NaN, -1]) {
+      let boots = 0;
+      const ui = uiCapabilities({
+        root: process.env['TMPDIR'] ?? '/tmp',
+        env: {},
+        boot: async () => {
+          boots += 1;
+          return { url: SERVER_URL, origin: 'booted', stop: async () => {} };
+        },
+        driver: async () => fakeShotDriver([{ url: `${SERVER_URL}/dash`, html: PAGE }]),
+        routes: () => [{ path: '/dash', file: 'apps/web/app/dash/page.tsx', budgetJs: '10kb' }],
+        settleMs,
+      });
+      const shot = {
+        route: '/dash',
+        viewport: { width: 390, height: 844 },
+        colorScheme: 'dark' as const,
+        fullPage: true,
+      };
+      const thrown: unknown = await ui.shotRoute(shot).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeUltimateError('X_INVARIANT');
+      await ui.close();
+      expect(boots).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 describe('unit · ui.shot boots the server it photographs once per host, never once per call', () => {
   test('two calls share one boot; runShot cannot stop it; close() does, once', async () => {
     // No `node:` import for a scratch directory: Bun's shell makes and removes it.

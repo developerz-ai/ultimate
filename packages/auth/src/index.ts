@@ -61,7 +61,7 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
-export { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
+export { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 /** The opaque per-principal id a per-request document hands the page's client store. */
 export type { ClientScopeOptions } from './client-scope';
 export { clientScopeOf } from './client-scope';
@@ -123,7 +123,7 @@ export type { AuthLimiterFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
 export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
-export { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,
   MemoryTotpReplayGuard,
@@ -140,12 +140,12 @@ export {
   enrolTotp,
   generateRecoveryCodes,
   generateTotpSecret,
+  memoryTotpReplayGuard,
   recoveryCodeHash,
   TOTP_DIGITS,
   TOTP_DRIFT_STEPS,
   TOTP_STEP_SECONDS,
   totpCode,
-  totpReplayGuard,
   totpStep,
   verifyTotp,
 } from './mfa';
@@ -284,11 +284,11 @@ export type {
 export {
   accountKey,
   assertAuthLimiterPolicy,
-  authLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
   loginFailed,
+  memoryAuthLimiter,
   orgKey,
   orgRateLimit,
 } from './rate-limit';

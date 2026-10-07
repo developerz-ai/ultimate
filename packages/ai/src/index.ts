@@ -154,7 +154,7 @@ export {
 } from './models';
 export type { OpenAiProviderInput } from './openai-provider';
 export { openAiProvider } from './openai-provider';
-export type { PgVectorStore, PgVectorStoreInput } from './pg-vector';
+export type { PostgresVectorStore, PostgresVectorStoreInput } from './pg-vector';
 export { postgresVectorStore } from './pg-vector';
 export type {
   PgHybridArgs,

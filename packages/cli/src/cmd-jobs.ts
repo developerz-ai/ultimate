@@ -259,8 +259,8 @@ export const jobsCommand: CliCommand = {
     const sub = ctx.args.subcommand ?? 'ls';
     // BEFORE `withJobDriver`, which boots the source queue: the answer needs no server, so a box
     // whose database is down gets it rather than the boot failure of a queue never to be used —
-    // and nothing is leased. `--to`/`--dry-run` stay declared so the parser lets every spelling
-    // of the subcommand 24.x documented reach this line instead of an unknown-flag refusal.
+    // and nothing is leased. 24.x's `--to`/`--dry-run` are deleted, so the parser refuses them
+    // (`X_CLI_BAD_FLAG`); only a bare `x jobs drain` reaches this answer.
     if (sub === 'drain') throw plannedSubcommand('jobs', 'drain');
     // A TRACE is the queue row projected through the job's own declaration — its concurrency key,
     // its retry schedule — and a declaration exists in this process only once the app is loaded.

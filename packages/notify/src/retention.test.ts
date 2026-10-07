@@ -4,18 +4,18 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { memoryDigestStore } from './digest';
-import type { PgDigestStore } from './digest-pg';
+import type { PostgresDigestStore } from './digest-pg';
 import { memoryInboxStore } from './inbox';
-import type { InboxPurgeBefore, PgInboxStore } from './inbox-pg';
+import type { InboxPurgeBefore, PostgresInboxStore } from './inbox-pg';
 import { memoryDeliveryLedger } from './ledger';
-import type { PgDeliveryLedger } from './ledger-pg';
+import type { PostgresDeliveryLedger } from './ledger-pg';
 import { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 import { resetNotifyStores, setNotifyStores } from './stores';
 
 const AT = new Date('2026-08-24T09:00:00Z');
 
 /** A Postgres inbox as far as the capability check is concerned: it has the method. */
-const purgeableInbox = (calls: InboxPurgeBefore[]): PgInboxStore => ({
+const purgeableInbox = (calls: InboxPurgeBefore[]): PostgresInboxStore => ({
   ...memoryInboxStore(),
   purgeBefore: (before) => {
     calls.push(before);
@@ -23,7 +23,7 @@ const purgeableInbox = (calls: InboxPurgeBefore[]): PgInboxStore => ({
   },
 });
 
-const purgeableLedger = (calls: number[]): PgDeliveryLedger => ({
+const purgeableLedger = (calls: number[]): PostgresDeliveryLedger => ({
   ...memoryDeliveryLedger(),
   windowMs: 60_000,
   purgeExpired: (nowMs) => {
@@ -74,7 +74,7 @@ describe('unit · notify retention seam', () => {
   // share the name but is not callable is not a store this can sweep either.
   test('a foreign store carrying a non-function of the same name is not swept', async () => {
     const notAMethod = { ...memoryInboxStore(), purgeBefore: 'soon' };
-    setNotifyStores({ inbox: notAMethod as unknown as PgInboxStore });
+    setNotifyStores({ inbox: notAMethod as unknown as PostgresInboxStore });
     expect(await purgeNotifyInbox({ read: AT })).toBe(0);
   });
 
@@ -86,7 +86,7 @@ describe('unit · notify retention seam', () => {
     expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
 
     const calls: number[] = [];
-    const store: PgDigestStore = {
+    const store: PostgresDigestStore = {
       ...memoryDigestStore(),
       retentionMs: 60_000,
       purgeExpired: (nowMs) => {

@@ -1,4 +1,4 @@
-// Single responsibility: an `x_users` unique violation as the code `MemoryAdapter` answers. One
+// Single responsibility: an `x_users` unique violation as the code `MemoryAuthAdapter` answers. One
 // duplicate signup must not be `X_AUTH_WRITE_FAILED` under `x dev` and `X_DB_UNIQUE_VIOLATION` in
 // production: an app that branches on the code passes its tests and misses on Postgres.
 

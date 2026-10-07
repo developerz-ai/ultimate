@@ -103,7 +103,7 @@ const change = (lsn: string): ChangeEvent => ({
   before: { id: 'p1', orgId: 'o1', likes: 0 },
   after: { id: 'p1', orgId: 'o1', likes: 1 },
   lsn,
-  // One commit per lsn, as `InMemoryChangeFeed` numbers them: the txid tracks the position rather
+  // One commit per lsn, as `MemoryChangeFeed` numbers them: the txid tracks the position rather
   // than being a constant, so two changes in this file are never the same transaction.
   txid: lsn,
   at: 0,

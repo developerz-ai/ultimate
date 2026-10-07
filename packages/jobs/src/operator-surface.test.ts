@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, logger, redactKeys } from '@ultimat3/core';
-import { counterBucketStart, createMemoryCounters } from './counters';
+import { counterBucketStart, memoryCounters } from './counters';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { inspectJob } from './inspect';
@@ -73,7 +73,7 @@ describe('the operator surface', () => {
 
 describe('counter buckets age into wider ones', () => {
   test('a bucket past its tier folds into the next, and past the last tier it is dropped', () => {
-    const counters = createMemoryCounters();
+    const counters = memoryCounters();
     const [minute, five, hour] = COUNTER_TIERS;
     const at = Date.UTC(2026, 9, 1, 12, 0, 30);
     counters.add('sync', 'done', 40, at);

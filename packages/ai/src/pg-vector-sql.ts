@@ -215,7 +215,7 @@ export function deleteSql(
   ids: readonly string[],
 ): SqlFragment {
   // `in ()` is a syntax error, so an empty list takes the same constant an empty allow-list does.
-  // `PgVectorStore.delete` returns before it gets here, but this function is exported from
+  // `PostgresVectorStore.delete` returns before it gets here, but this function is exported from
   // `index.ts` — an app compiling the statement itself is a caller too.
   const byId = ids.length === 0 ? NEVER : sql`"id" in (${join(ids.map((id) => sql`${id}`))})`;
   return sql`delete from ${identifier(target.table)}

@@ -11,9 +11,10 @@
 import { join } from 'node:path';
 import type { UiInspectInput, UiInspectResult, UiInspectSelector } from '@ultimat3/mcp';
 import { UI_INSPECT_LIMITS } from '@ultimat3/mcp';
+import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import type { AxNode, ShotDriver, ShotPage } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
-import { DEFAULT_SETTLE_MS, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
+import { runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import type { ShotServer } from './shot-server';
 import type { ShotVerdict } from './shot-verdict';
 import type { InspectProbe } from './ui-inspect-probe';
@@ -144,7 +145,7 @@ export async function inspectRoute(
     outDir,
     driver,
     boot: deps.boot,
-    settleMs: DEFAULT_SETTLE_MS,
+    settleMs: IDLE_HYDRATE_TIMEOUT_MS,
     timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
     fullPage: true,
     colorScheme: input.colorScheme,

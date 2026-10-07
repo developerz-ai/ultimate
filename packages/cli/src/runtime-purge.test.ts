@@ -27,7 +27,7 @@ import {
   resetTasks,
   stepRunner,
 } from '@ultimat3/jobs';
-import type { InboxPurgeBefore, PgInboxStore } from '@ultimat3/notify';
+import type { InboxPurgeBefore, PostgresInboxStore } from '@ultimat3/notify';
 import { memoryInboxStore, resetNotifyStores, setNotifyStores } from '@ultimat3/notify';
 import type { RetentionStores } from './runtime-purge';
 import { installRetentionSweep, PURGE_JOB_NAME, PURGE_TASK_NAME } from './runtime-purge';
@@ -199,7 +199,7 @@ describe('installRetentionSweep', () => {
           seen.push(before);
           return Promise.resolve(5);
         },
-      } as PgInboxStore,
+      } as PostgresInboxStore,
     });
     installAuthLimiter(4);
     installRetentionSweep({
@@ -230,7 +230,7 @@ describe('installRetentionSweep', () => {
           seen.push(before);
           return Promise.resolve(0);
         },
-      } as PgInboxStore,
+      } as PostgresInboxStore,
     });
     installAuthLimiter(4);
     installRetentionSweep({

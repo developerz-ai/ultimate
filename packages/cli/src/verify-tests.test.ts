@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { TEST_TYPES as TESTING_TEST_TYPES } from '@ultimat3/testing';
+import { TEST_TYPES } from '@ultimat3/testing';
 import type { ExecOptions, ExecResult } from './exec';
 import { belongsToType } from './test-select';
 import { filesIn } from './test-shards';
@@ -21,7 +21,6 @@ import {
   ownerOf,
   resetTestDiscovery,
   TEST_STEPS,
-  TEST_TYPES,
   testStepCommand,
   typeFiltersOf,
 } from './verify-tests';
@@ -230,9 +229,9 @@ describe('unit · the two types that cannot be split stay serial', () => {
  */
 describe('unit · the test-type vocabulary has one owner', () => {
   test('the gate reads the same list the test helpers declare', () => {
-    expect(TEST_TYPES).toBe(TESTING_TEST_TYPES);
     // `cli -> testing` is a declared sideways edge and `@ultimat3/testing` is already a runtime
-    // dependency of this package, so the import is the cheap half of the fix.
-    expect(TEST_STEPS.map((step) => step.name)).toEqual([...TESTING_TEST_TYPES]);
+    // dependency of this package, so the import is the cheap half of the fix — and the only path:
+    // `@ultimat3/cli` publishes no second `TEST_TYPES` (`bun run flight-copies`).
+    expect(TEST_STEPS.map((step) => step.name)).toEqual([...TEST_TYPES]);
   });
 });

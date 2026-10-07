@@ -362,7 +362,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       await started.stop();
       runtime = undefined;
 
-      // Back to `authLimiter`: a limiter over a pool this process has closed is worse than
+      // Back to `memoryAuthLimiter`: a limiter over a pool this process has closed is worse than
       // a per-process one, because every sign-in then fails instead of being counted narrowly.
       expect(defineAuth({ adapter: memoryAuthAdapter() }).limiter.policy.scope).toBe('process');
       expect(await runSweep()).toEqual({ swept: [], removed: 0 });

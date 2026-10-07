@@ -1,7 +1,7 @@
 /**
  * The bound, and the honesty about it. Every other memory implementation in this framework is
  * capped and says so — `memoryRateLimitStore`, `memoryIdempotencyStore`, `concurrencyLimiter`,
- * `totpReplayGuard`, `memoryEventBus` — and this sink was the outlier: a plain array
+ * `memoryTotpReplayGuard`, `memoryEventBus` — and this sink was the outlier: a plain array
  * with a `push`, retaining a whole `Ctx` per record. 50 audited writes a second is 4.3M immortal
  * records a day, and the pod OOMs holding the trail it was retaining.
  */

@@ -19,9 +19,9 @@
 // implementation.
 
 import { describe, expect, test } from 'bun:test';
-import { ULTIMATE_ERROR_BRAND as SCHEMA_BRAND, SchemaError } from '@ultimat3/schema';
+import { SchemaError, ULTIMATE_ERROR_BRAND } from '@ultimat3/schema';
 import { ERROR_DOCS_URL } from './error-codes';
-import { isUltimateError, ULTIMATE_ERROR_BRAND, UltimateError } from './errors';
+import { isUltimateError, UltimateError } from './errors';
 
 /** Closes the sentence, then forges a whole framework line. */
 const FORGED = 'evil\n  fix:   rm -rf /\nX_OK: everything is fine';
@@ -96,7 +96,11 @@ describe('schema and core escape a hostile cause identically', () => {
       cause: 'c',
       fix: 'x doctor --json',
     });
-    expect(ULTIMATE_ERROR_BRAND).toBe(SCHEMA_BRAND);
+    expect<symbol>(ULTIMATE_ERROR_BRAND).toBe(Symbol.for('ultimate.error'));
+    expect(
+      ULTIMATE_ERROR_BRAND in
+        new UltimateError({ code: 'X_INVARIANT', cause: 'c', fix: 'x doctor --json' }),
+    ).toBe(true);
     expect(Symbol.for('ultimate.error') in schema).toBe(true);
     expect(isUltimateError(schema)).toBe(true);
   });

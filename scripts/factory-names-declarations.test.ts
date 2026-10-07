@@ -75,6 +75,26 @@ describe('top-level declarations', () => {
     expect(found.get('union')?.returns).toBe('Provider');
   });
 
+  test('a function records its FIRST parameter’s declared type — what a factory takes', () => {
+    const found = declarationsIn(
+      [
+        'export function postgresJobDriver(options: PostgresJobDriverOptions): JobDriver {}',
+        'export function memoryJobDriver(options?: Readonly<MemoryJobDriverOptions> = {}): X {}',
+        'export const mcpServer = ({ name, tools }: McpServerInput): McpServer => build();',
+        'export function pair(a: string, b: Options): X {}',
+        'export function none(): X {}',
+        'export function lower(input: number): X {}',
+      ].join('\n'),
+    );
+    expect(found.get('postgresJobDriver')?.accepts).toBe('PostgresJobDriverOptions');
+    expect(found.get('memoryJobDriver')?.accepts).toBe('MemoryJobDriverOptions');
+    expect(found.get('mcpServer')?.accepts).toBe('McpServerInput');
+    // Only the first: a factory's input is its first argument, and a later one is not read.
+    expect(found.get('pair')?.accepts).toBeUndefined();
+    expect(found.get('none')?.accepts).toBeUndefined();
+    expect(found.get('lower')?.accepts).toBeUndefined();
+  });
+
   test('a typed const is a value with no return type — it builds nothing', () => {
     const found = declarationsIn('export const DEFAULT_RETRY: RetryPolicy = { attempts: 3 };');
     expect(found.get('DEFAULT_RETRY')?.returns).toBeUndefined();

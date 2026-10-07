@@ -28,7 +28,7 @@ import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
 import type { McpScopes } from './scopes';
 import { withScopes } from './scopes';
-import type { CreateMcpServerInput } from './server';
+import type { McpServerInput } from './server';
 import { type McpServer, mcpServer } from './server';
 import type { McpInstructions } from './server-voice';
 import type { McpRateLimits, McpRouteDescriptor, ResolvedToken } from './transport-http';
@@ -241,7 +241,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   // Scopes, then the gate: the gate wraps `handle`, which every resolve reaches last.
   const projected = withConfirmations(withScopes(named, input.scopes), input.confirmations);
 
-  const config: CreateMcpServerInput = {
+  const config: McpServerInput = {
     tools: projected,
     resources: input.resources ?? [],
     prompts: toPrompts(input.prompts ?? []),

@@ -59,7 +59,7 @@ Once, at boot, before the first amount in that currency is built. The rules, eac
 | Rule | Refusal |
 |---|---|
 | three A–Z letters — `Intl` throws a `RangeError` on anything else | `X_CURRENCY_INVALID` |
-| a whole exponent from 0 to `MAX_MONEY_SCALE` — there is no safe default, and a silent 2 is the corrupted maths this package exists to prevent | `X_CURRENCY_INVALID` |
+| a whole exponent from 0 to `@ultimat3/schema`'s `MAX_MONEY_SCALE` — there is no safe default, and a silent 2 is the corrupted maths this package exists to prevent | `X_CURRENCY_INVALID` |
 | a non-empty name | `X_CURRENCY_INVALID` |
 | one code, one declaration — a second exponent reinterprets every stored amount by a power of ten, and a second name makes `currencyInfo().name` depend on import order. An **identical** re-registration is a no-op, so a module imported twice is not a crash | `X_CURRENCY_REDEFINED` |
 | a shipped ISO row is not the app's to redefine | `X_CURRENCY_REDEFINED` |

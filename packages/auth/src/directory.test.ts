@@ -8,11 +8,11 @@ import { frozenClock } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
 import { describeUser, findUserByExternalId, listOrgUsers } from './directory';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 
 const START = 1_700_000_000_000;
 
-const seed = async (): Promise<{ auth: Auth; adapter: MemoryAdapter }> => {
+const seed = async (): Promise<{ auth: Auth; adapter: MemoryAuthAdapter }> => {
   const adapter = memoryAuthAdapter();
   const auth = defineAuth({ adapter, clock: frozenClock(START) });
   const rows: readonly [string, string, string | null, readonly string[]][] = [

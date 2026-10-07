@@ -184,7 +184,7 @@ Absolute and idle expiry are evaluated **independently**: activity never moves t
 
 ### Auth tables
 
-`@ultimat3/auth` exports `AUTH_TABLES` — the DDL `BuiltinAdapter` expects, as plain strings, so what
+`@ultimat3/auth` exports `AUTH_TABLES` — the DDL `PostgresAuthAdapter` expects, as plain strings, so what
 auth stores is verifiable by reading. **Every boot applies them** (`@ultimat3/cli`'s
 `FRAMEWORK_SCHEMA`), the upgrade of an older `x_users` included, so an app writes no migration for
 `x_users`, `x_sessions`, `x_accounts`, `x_verifications` or `x_api_keys`, `As of 2026-09-23`. The

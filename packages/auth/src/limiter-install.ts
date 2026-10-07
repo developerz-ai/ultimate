@@ -52,7 +52,7 @@ export function configureAuthLimiters(next: AuthLimiterFactory): void {
   built = new Map();
 }
 
-/** Back to `authLimiter`, the per-process default. A host that installs one calls this on stop. */
+/** Back to `memoryAuthLimiter`, the per-process default. A host that installs one calls this on stop. */
 export function resetAuthLimiters(): void {
   factory = undefined;
   built = new Map();

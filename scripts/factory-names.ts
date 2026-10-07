@@ -4,7 +4,8 @@
 // for the in-process and Postgres implementations, `<what it builds>()` for everything else.
 // `create(Memory|Pg|Postgres)X`, `pgX` and any `create<Thing>` export are findings; so is an
 // exported `(In)Memory|Pg|Postgres` CLASS, and a class exported as a VALUE beside a factory that
-// returns its seam (the factory is the value, the class a type only); so is one value name declared
+// returns its seam (the factory is the value, the class a type only); so is a TYPE a factory takes
+// or builds that is not spelled after it (`factory-names-types.ts`); so is one value name declared
 // by two packages.
 //
 // THE DEFECT THIS EXISTS FOR. 24.x shipped both spellings side by side — `memoryAuditLog` and
@@ -20,11 +21,14 @@
 //
 // WHAT IS READ. Every `exports` target of every `packages/*/package.json` and of
 // `create-ultimate` — `src/index.ts` and each subpath (`@ultimat3/admin/schema`, …), because a
-// subpath is as public as the barrel. Names come from `Bun.Transpiler#scan`, so `export type` is
-// already gone (a type is not a factory — `export type { MemoryVectorStore }` is how a class stays
-// nameable) and `export { a as createPgX }` is caught as `createPgX`. What each name IS — a class,
-// what it implements, what a function returns, whether the package declares it or re-exports it —
-// comes from the package's own top-level declarations (`factory-names-declarations.ts`).
+// subpath is as public as the barrel. VALUE names come from `Bun.Transpiler#scan`, so `export
+// type` is not a value spelling (`export type { MemoryVectorStore }` is how a class stays nameable)
+// and `export { a as createPgX }` is caught as `createPgX`. TYPE names, the local binding behind an
+// alias and every `export *` come from `factory-names-exports.ts`; an `export *` names nothing
+// readable, so it is a finding, never a clean module. What each binding IS — a class, what it
+// implements, what a function takes and returns, whether the package declares it — comes from the
+// package's own top-level declarations (`factory-names-declarations.ts`), looked up by the LOCAL
+// name, so `export { Impl as Name }` is read as `Impl`.
 //
 // WHAT THIS CANNOT SEE. The rule is about SPELLING: a factory called `makeInMemoryQueue` matches
 // nothing here. `Pg` followed by a lower-case letter is a word (PGlite is a product, not
@@ -33,7 +37,7 @@
 // is, deliberately — it reads as a class. A class beside a factory is seen only when the factory
 // DECLARES its return type, and a re-export of another package's binding is the same binding — not
 // a second meaning; a second import PATH for one binding is a different defect, and core's is
-// `flight-copies`' (`lib/core-reexports.ts`).
+// `flight-copies`' (`lib/package-reexports.ts`).
 //
 // Pinned at ZERO, enforcing outright: `scripts/factory-names.test.ts` asserts the real tree. A
 // genuine exception, or a rename another package owes, is a row in `factory-names-pins.ts` with
@@ -47,8 +51,12 @@ import { join } from 'node:path';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import type { Declaration } from './factory-names-declarations';
 import { readDeclarations } from './factory-names-declarations';
+import type { ModuleExports } from './factory-names-exports';
+import { exportsIn, ownLocal } from './factory-names-exports';
 import type { FactoryNamePins } from './factory-names-pins';
 import { FACTORY_NAME_PINS, NO_PINS } from './factory-names-pins';
+import type { OwnExport } from './factory-names-types';
+import { typeMisspellings } from './factory-names-types';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -69,7 +77,7 @@ const CREATE_DRIVER = /^create([A-Z]\w*)Driver$/;
 /** `createGateway` — a factory is named for what it builds, never for the act of building. */
 const CREATE = /^create([A-Z0-9]\w*)$/;
 
-type Kind = 'factory' | 'class' | 'driver' | 'create' | 'seam';
+type Kind = 'factory' | 'class' | 'driver' | 'create' | 'seam' | 'type' | 'builder';
 
 interface Retired {
   readonly kind: Kind;
@@ -126,6 +134,9 @@ const WHY: Readonly<Record<Kind, string>> = {
   create:
     'a factory is named for what it builds (openAiProvider, postgresClient, memoryVectorStore), never create<Thing>, so an agent guessing a factory never has to guess which of two conventions a package chose',
   seam: 'an implementation is built by its factory and its class is not a public value, so `new X()` beside a sibling factory is never a second way to build one seam',
+  type: 'a type a factory takes or builds is spelled after that factory (postgresJobDriver takes PostgresJobDriverOptions, mcpServer takes McpServerInput), so the retired spelling never survives one import away from the new one',
+  builder:
+    'an in-process or Postgres implementation is built by a memoryX() / postgresX() factory, so the factory and the type it builds are never two spellings',
 };
 
 /** `@ultimat3/admin/schema` → `@ultimat3/admin`: a subpath re-exporting its own barrel is one package. */
@@ -147,6 +158,9 @@ function fixFor(name: string, found: Retired, at: string): string {
   if (found.kind === 'class' || found.kind === 'seam') {
     return `${grep}   # ${rename}: add \`export function ${found.canonical}(…): ${name}\` beside the class, keep the class exported from its own module, and export it from ${at} as \`export type { ${name} }\`; a caller's \`new ${name}(…)\` becomes \`${found.canonical}(…)\`, an in-package \`extends\` imports the module`;
   }
+  if (found.kind === 'type') {
+    return `${grep}   # ${rename}, keeping it a type export (\`export type { ${found.canonical} }\`)`;
+  }
   if (found.kind === 'driver') {
     return `${grep}   # ${rename} — or, naming what it builds, ${found.canonical.replace(/Driver$/, '')}<Thing>Driver (smtpMailDriver)`;
   }
@@ -167,6 +181,79 @@ const finding = (entry: EntryModule, name: string, found: Retired, why: string):
 });
 
 const exportsOf = (entry: EntryModule): readonly string[] => transpiler.scan(entry.text).exports;
+
+const parsed = new WeakMap<EntryModule, ModuleExports>();
+const parsedOf = (entry: EntryModule): ModuleExports => {
+  const known = parsed.get(entry);
+  if (known !== undefined) return known;
+  const read = exportsIn(entry.text);
+  parsed.set(entry, read);
+  return read;
+};
+
+/**
+ * The binding the PACKAGE declares behind an exported value name: `Impl` for
+ * `export { Impl as Name } from './x'`, nothing for a re-export of another package's binding. A
+ * name Bun's scan lists that the reading missed is taken as its own binding — the reading that
+ * flags more.
+ */
+function localOf(entry: EntryModule, name: string): string | undefined {
+  const read = parsedOf(entry);
+  const one = read.names.find((candidate) => !candidate.type && candidate.name === name);
+  return one === undefined ? name : ownLocal(one, read.imported);
+}
+
+/** Every name the entry exports — types included — with the binding its package declares. */
+function ownExports(entry: EntryModule): readonly OwnExport[] {
+  const read = parsedOf(entry);
+  return read.names.map((exported) => ({ exported, local: ownLocal(exported, read.imported) }));
+}
+
+/** `export * from './x'` adds names no rule here reads: reported unscanned, never read as clean. */
+function starKeyed(entry: EntryModule): readonly Keyed[] {
+  return parsedOf(entry).stars.map((from) => ({
+    key: `${packageOf(entry.specifier)} export * from ${from}`,
+    finding: {
+      code: CODE,
+      cause: `${entry.specifier} has \`export * from '${from}'\` (${entry.at}): an export * names nothing this rule can read, so every name it adds would pass unchecked — the module is reported unscanned, never clean`,
+      fix: `bun run scripts/factory-names.ts --json   # after replacing export * from '${from}' in ${entry.at} with export { … } from '${from}', each binding named`,
+      at: entry.at,
+    },
+  }));
+}
+
+/** Rules over TYPE exports (`factory-names-types.ts`), one package's entries at a time. */
+function typesKeyed(entries: readonly EntryModule[]): readonly Keyed[] {
+  const found: Keyed[] = [];
+  for (const group of byPackage(entries).values()) {
+    const declarations = group[0]?.declarations;
+    if (declarations === undefined) continue;
+    const all = group.flatMap((entry) => ownExports(entry).map((own) => ({ entry, own })));
+    const seen = new Set<string>();
+    for (const miss of typeMisspellings(
+      all.map((one) => one.own),
+      declarations,
+    )) {
+      const at = all.find((one) => one.own.exported.name === miss.name)?.entry ?? group[0];
+      if (at === undefined || seen.has(miss.name)) continue;
+      seen.add(miss.name);
+      const kind = miss.kind;
+      found.push(
+        finding(at, miss.name, { kind, canonical: miss.canonical }, `${miss.why}: ${WHY[kind]}`),
+      );
+    }
+  }
+  return found;
+}
+
+function byPackage(entries: readonly EntryModule[]): ReadonlyMap<string, readonly EntryModule[]> {
+  const grouped = new Map<string, EntryModule[]>();
+  for (const entry of entries) {
+    const pkg = packageOf(entry.specifier);
+    grouped.set(pkg, [...(grouped.get(pkg) ?? []), entry]);
+  }
+  return grouped;
+}
 
 function retiredKeyed(entry: EntryModule): readonly Keyed[] {
   const found: Keyed[] = [];
@@ -196,28 +283,27 @@ const isErrorClass = (name: string): boolean => /Error$/.test(name);
  * TransportSelection` is two seams, and a shared suffix proves nothing.
  */
 function classesBesideFactories(entries: readonly EntryModule[]): readonly Keyed[] {
-  const byPackage = new Map<string, EntryModule[]>();
-  for (const entry of entries) {
-    const pkg = packageOf(entry.specifier);
-    byPackage.set(pkg, [...(byPackage.get(pkg) ?? []), entry]);
-  }
   const found: Keyed[] = [];
-  for (const group of byPackage.values()) {
+  for (const group of byPackage(entries).values()) {
     const declarations = group[0]?.declarations;
     if (declarations === undefined) continue;
     const factories = new Map<string, string>();
-    for (const name of new Set(group.flatMap(exportsOf))) {
-      const returns = declarations.get(name)?.returns;
-      if (/^[a-z]/.test(name) && returns !== undefined && !factories.has(returns)) {
-        factories.set(returns, name);
+    for (const entry of group) {
+      for (const name of exportsOf(entry)) {
+        const local = localOf(entry, name);
+        const returns = local === undefined ? undefined : declarations.get(local)?.returns;
+        if (/^[a-z]/.test(name) && returns !== undefined && !factories.has(returns)) {
+          factories.set(returns, name);
+        }
       }
     }
     for (const entry of group) {
       for (const name of exportsOf(entry)) {
-        const declared = declarations.get(name);
+        const local = localOf(entry, name);
+        const declared = local === undefined ? undefined : declarations.get(local);
         if (declared?.kind !== 'class' || isErrorClass(name) || retired(name) !== undefined)
           continue;
-        const seam = [name, ...declared.implements].find((type) => factories.has(type));
+        const seam = [local ?? name, ...declared.implements].find((type) => factories.has(type));
         if (seam === undefined) continue;
         const factory = factories.get(seam) ?? '';
         const why = `a class VALUE while ${factory}() returns ${seam}: ${WHY.seam}`;
@@ -306,6 +392,8 @@ export function checkFactoryNames(
   const keyed = [
     ...entries.flatMap(retiredKeyed),
     ...classesBesideFactories(entries),
+    ...typesKeyed(entries),
+    ...entries.flatMap(starKeyed),
     ...sharedNamesKeyed(entries),
   ];
   const pinned = (key: string): boolean =>
@@ -327,7 +415,10 @@ function sharedNamesKeyed(entries: readonly EntryModule[]): readonly Keyed[] {
   const owners = new Map<string, Map<string, EntryModule>>();
   for (const entry of entries) {
     for (const name of exportsOf(entry)) {
-      if (entry.declarations !== undefined && !entry.declarations.has(name)) continue;
+      if (entry.declarations !== undefined) {
+        const local = localOf(entry, name);
+        if (local === undefined || !entry.declarations.has(local)) continue;
+      }
       const byPackage = owners.get(name) ?? new Map<string, EntryModule>();
       const pkg = packageOf(entry.specifier);
       if (!byPackage.has(pkg)) byPackage.set(pkg, entry);

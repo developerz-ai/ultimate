@@ -62,7 +62,7 @@ export interface DeliveryLedger {
 const keyOf = (claim: DeliveryClaim): string =>
   JSON.stringify([claim.notifier, claim.key, claim.recipient, claim.channel]);
 
-export interface MemoryLedgerOptions {
+export interface MemoryDeliveryLedgerOptions {
   /**
    * Rows kept before the oldest is evicted. A process-local ledger is a DEV ledger — it forgets
    * on restart and it is private to one replica — so it is bounded rather than allowed to grow
@@ -85,7 +85,9 @@ export interface MemoryDeliveryLedger extends DeliveryLedger {
  * `x dev`; a deployment with more than one replica needs `postgresDeliveryLedger`, because a claim
  * this replica took is invisible to the one that replays the job.
  */
-export function memoryDeliveryLedger(options: MemoryLedgerOptions = {}): MemoryDeliveryLedger {
+export function memoryDeliveryLedger(
+  options: MemoryDeliveryLedgerOptions = {},
+): MemoryDeliveryLedger {
   // `while (rows.size > max)` is the eviction, so a `max` that is not a number is not a large cap
   // — it is no cap, and this ledger grows into the heap of a process that was told it was bounded.
   // `??` guards nullish and `NaN` is not, so `Number(process.env.…)` on an unset variable arrives

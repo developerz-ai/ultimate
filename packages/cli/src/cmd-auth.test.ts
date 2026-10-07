@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { type MemoryAdapter, memoryAuthAdapter } from '@ultimat3/auth';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from '@ultimat3/auth';
 import { isSealed, isUltimateError, SECRETS_KEY_ENV } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { authCommandOver } from './cmd-auth';
@@ -48,7 +48,7 @@ const contextIn = (cwd: string, env: CommandContext['env']): CommandContext => (
   bunVersion: REQUIRED_BUN,
 });
 
-const seeded = async (): Promise<MemoryAdapter> => {
+const seeded = async (): Promise<MemoryAuthAdapter> => {
   const adapter = memoryAuthAdapter();
   for (const [id, secret] of [
     ['u1', 'JBSWY3DPEHPK3PXP'],
@@ -68,7 +68,7 @@ const seeded = async (): Promise<MemoryAdapter> => {
   return adapter;
 };
 
-const command = (adapter: MemoryAdapter, closed: { count: number }) =>
+const command = (adapter: MemoryAuthAdapter, closed: { count: number }) =>
   authCommandOver(async () => ({
     adapter,
     close: async () => {

@@ -7,7 +7,7 @@ import { postgresChangeFeed } from './changefeed';
 import { CHANNEL_IDENTITY_EVENT } from './pg-preflight';
 import { start } from './pg-replication-fixture';
 
-describe('PgLogicalReplicationFeed', () => {
+describe('PostgresChangeFeed', () => {
   test('an empty entity list is refused before a socket is opened', () => {
     expect(() =>
       postgresChangeFeed({

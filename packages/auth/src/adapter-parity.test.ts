@@ -1,5 +1,5 @@
-// One question, one answer, whichever `AuthAdapter` is asked. `MemoryAdapter` is what `x new`,
-// every test in this package and every test in an app runs against; `BuiltinAdapter` is what
+// One question, one answer, whichever `AuthAdapter` is asked. `MemoryAuthAdapter` is what `x new`,
+// every test in this package and every test in an app runs against; `PostgresAuthAdapter` is what
 // production runs against — and the question these two must never answer differently is "does this
 // account exist", because it decides both who may log in and whether a signup collides. Each case
 // asserts the memory adapter's BEHAVIOUR and the statement (or the DDL) that has to mean the same
@@ -10,12 +10,12 @@ import { frozenClock } from '@ultimat3/core';
 import { recordingClient } from '@ultimat3/db';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import { X_USERS_TABLE } from './tables';
 
 const ID = '00000000-0000-7000-8000-000000000101';
 
-const seed = async (adapter: MemoryAdapter, email: string): Promise<void> => {
+const seed = async (adapter: MemoryAuthAdapter, email: string): Promise<void> => {
   await adapter.createUser({
     id: ID,
     email,
@@ -72,7 +72,7 @@ describe('an address is looked up exactly as it is stored', () => {
 
 /**
  * `x_users.email` is `text not null unique` and `external_id` is `text unique`, so Postgres refuses
- * a second row at either address. `MemoryAdapter` enforced neither — and it is what `x new`
+ * a second row at either address. `MemoryAuthAdapter` enforced neither — and it is what `x new`
  * scaffolds and what every test in this package and in an app runs against, so the whole
  * `resolveUser`/`createUserFor` duplicate path was only ever exercised against the permissive one.
  *
@@ -158,7 +158,7 @@ describe('a duplicate identity is refused by both, not created by one', () => {
 // DISTINCT: it admits unlimited NULL rows and constrains only the rows that carry a value. The
 // memory adapter compared `!== undefined`, so the SECOND account with no external id at all
 // collided with the first — and `oauth-login.ts` passes `externalId: grants.externalId ?? null`
-// for every first-time OAuth user, which makes the second such signup on a `MemoryAdapter` app
+// for every first-time OAuth user, which makes the second such signup on a `MemoryAuthAdapter` app
 // fail with `X_AUTH_WRITE_FAILED` against a constraint production does not have.
 describe('a NULL external id collides with nothing, as NULLS DISTINCT says', () => {
   const SECOND_USER = '00000000-0000-7000-8000-000000000103';
@@ -201,7 +201,7 @@ describe('a NULL external id collides with nothing, as NULLS DISTINCT says', () 
 });
 
 // A consumed link is stamped with the moment it was REDEEMED, read off the clock each adapter was
-// handed. `BuiltinAdapter` wrote the server's `now()`; the memory adapter wrote `new Date(record.createdAt)` — the moment the
+// handed. `PostgresAuthAdapter` wrote the server's `now()`; the memory adapter wrote `new Date(record.createdAt)` — the moment the
 // link was ISSUED — so any window measured from that stamp (an audit line, a "was this used
 // before it expired" read) answered the wrong instant, and answered it identically for a link
 // redeemed a second later and one redeemed a week later.
@@ -247,7 +247,7 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
 
 /**
  * Re-linking an existing (provider, account) pair. Postgres's `on conflict … do update` refreshes
- * the tokens and KEEPS the row's `id`, `user_id` and `created_at` — while `MemoryAdapter` replaced
+ * the tokens and KEEPS the row's `id`, `user_id` and `created_at` — while `MemoryAuthAdapter` replaced
  * the whole row, so under `x dev` a second user could take over a provider account that production
  * leaves with its first owner. Both now answer the STORED row, not the object they were handed.
  */

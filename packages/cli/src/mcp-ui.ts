@@ -10,7 +10,7 @@
 
 // why: Bun exposes no path-join primitive, and the picture's directory is a path an agent opens.
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
+import { finiteCount, UltimateError } from '@ultimat3/core';
 import type {
   UiDiffInput,
   UiDiffResult,
@@ -23,11 +23,11 @@ import type {
   UiShotInput,
   UiShotResult,
 } from '@ultimat3/mcp';
-import { describePages } from '@ultimat3/render';
+import { describePages, IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { appBrowser } from './browser-launcher';
 import type { ShotDriver } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
-import { DEFAULT_SETTLE_MS, readRoute, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
+import { readRoute, runShot, SHOT_DIR, shotSlug } from './cmd-shot';
 import { islandShot } from './cmd-shot-island';
 import { islandVerdictJson } from './island-verdict';
 import { diffShots } from './mcp-ui-diff';
@@ -95,7 +95,7 @@ export interface UiHostInput {
   readonly driver?: ((viewport: UiShotInput['viewport']) => Promise<ShotDriver>) | undefined;
   /** Injected by a test: the route table, in place of the registry. */
   readonly routes?: (() => readonly DeclaredRoute[]) | undefined;
-  /** Injected by a test: the settle wait, in place of `DEFAULT_SETTLE_MS` (a real sleep per call). */
+  /** Injected by a test: the settle wait, in place of `IDLE_HYDRATE_TIMEOUT_MS` (a real sleep per call). */
   readonly settleMs?: number | undefined;
 }
 
@@ -165,7 +165,8 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
         outDir,
         driver,
         boot,
-        settleMs: input.settleMs ?? DEFAULT_SETTLE_MS,
+        // An agent's argument: a NaN or negative settle would wait forever or not at all.
+        settleMs: finiteCount('ui.shot', 'settleMs', input.settleMs ?? IDLE_HYDRATE_TIMEOUT_MS),
         timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
         fullPage: shot.fullPage,
         colorScheme: shot.colorScheme,
@@ -199,7 +200,7 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
         root,
         island: island.island,
         ...(island.state === undefined ? {} : { state: island.state }),
-        settleMs: input.settleMs ?? DEFAULT_SETTLE_MS,
+        settleMs: finiteCount('ui.island', 'settleMs', input.settleMs ?? IDLE_HYDRATE_TIMEOUT_MS),
         timeoutMs: DEFAULT_PAGE_TIMEOUT_MS,
         ...(executablePath === undefined ? {} : { executablePath }),
         ...(cdpUrl === undefined ? {} : { cdpUrl }),

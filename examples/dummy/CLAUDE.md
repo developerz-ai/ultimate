@@ -291,7 +291,7 @@ The two guards measured here, and their repairs, are recorded in
   until that seam exists.
 
   **Two things blocked a Postly session and one of them is now closed** (`As of 2026-08-25`). The
-  second was the schema: `BuiltinAdapter` reads `x_users`, `x_sessions`, `x_accounts`,
+  second was the schema: `PostgresAuthAdapter` reads `x_users`, `x_sessions`, `x_accounts`,
   `x_verifications` and `x_api_keys`, **nothing in the framework had ever created them**, and
   neither half was a file anybody could hand-write — `AUTH_TABLES` is DDL `@ultimat3/auth`
   exports "so an app can paste them into a migration", while `x db gen` diffs `describeEntities()`

@@ -299,7 +299,9 @@ Tier 0 — core.
   sink or test that builds a record writes both. The durable sink still files `name` in the
   `x_audit.action` column; no DDL changed.
 - **BREAKING — (#5) no package re-exports another package's value: import it from the one that
-  declares it.** The deprecation helpers led:
+  declares it.** A value an `@ultimat3/*` package exports is published by that package alone, from
+  every entry and subpath, in any spelling — `export { x } from`, aliased, imported then exported,
+  `export const y = x`, or bound to a local first. The deprecation helpers led:
   `@ultimat3/action` and `@ultimat3/query` no longer re-export `Deprecation`, `DeprecationField`,
   `DeprecationRender`, `recordDeprecatedCall` or `renderDeprecation`. The same holds for
   `createClientFlight` (now `clientFlight`, #6), `DEFAULT_CLIENT_RETRY`, `isSuperseded`,
@@ -337,11 +339,17 @@ Tier 0 — core.
   - `scraping`: `ANY_HOST`, `hostDecision`, `hostMatches`, the types `HostRule` / `HostDecision`;
     `DEFAULT_CONTENT_TYPE` → `@ultimat3/storage`; `throwIfAborted(signal)` is gone — call
     `signal.throwIfAborted()`.
+  - Not from core: `formatIssues` (`mcp`) and `MAX_MONEY_SCALE` (`money`) → `@ultimat3/schema`;
+    `ULTIMATE_ERROR_BRAND` (`core`) → `@ultimat3/schema`; `JOB_STATES` (`cli`) →
+    `@ultimat3/jobs`; `TEST_TYPES` (`cli`) → `@ultimat3/testing`.
 
   Every value keeps its meaning. Core gains `BUILD_ID_HEADER`, `THEME_STORAGE_KEY` and `actorOf`,
   the three that were declared below it. TS2305 at each import; change the module specifier. The
-  repository's guard is `bun run flight-copies` (`X_HELPER_COPY`), reading
-  `scripts/lib/core-reexports.ts`.
+  repository's guard is `bun run flight-copies` (`X_HELPER_COPY`), which also refuses a blind
+  `export *` in shipped package source. Its pinned exceptions, `scripts/lib/package-reexports.ts`:
+  schema's `t` through the eight primitive barrels (`action`, `ai`, `entity`, `jobs`, `mail`,
+  `mcp`, `notify`, `query`), so a primitive file is one import; and core's `describeValue` and
+  `isIsoDateTime`, over the declared `core → schema` edge.
 
 Tier 1 and up — one spelling per factory.
 
@@ -357,7 +365,8 @@ Tier 1 and up — one spelling per factory.
   `memory…`. In `mail`: `createMemoryDriver` → `memoryMailDriver`. In `notify`:
   `createMemory{DeliveryLedger,DigestStore,InboxStore,PreferenceStore}` and
   `createPg{DeliveryLedger,DigestStore,InboxStore}` → `memory…` / `postgres…`. A class exported
-  as a value becomes a factory, and the class stays a type only: `new MemoryIdempotencyStore(…)` →
+  as a value becomes a factory, and the class stays a type only (renamed to the factory's
+  spelling where it differs — below): `new MemoryIdempotencyStore(…)` →
   `memoryIdempotencyStore(…)` (`action`); `PgVectorStore` / `MemoryVectorStore` /
   `MemoryBudgetStore` → `postgresVectorStore()` / `memoryVectorStore()` / `memoryBudgetStore()`
   (`ai`); `BuiltinAdapter` / `MemoryAdapter` → `postgresAuthAdapter()` / `memoryAuthAdapter()`
@@ -370,15 +379,32 @@ Tier 1 and up — one spelling per factory.
   `resendMailDriver` / `logMailDriver` / `unconfiguredMailDriver` (`mail`; SES, new in this
   release, ships as `sesMailDriver`); `createSubscribeDriver` → `subscribeDriver` (`testing`);
   `memoryDriver` / `MemoryDriverOptions` → `memoryStorageDriver` / `MemoryStorageDriverOptions`
-  (`storage`). Arguments and return types are unchanged; other option types keep their names.
-  TS2305 / TS2724 at a removed name; TS1485 / TS1362 where a class now exported as a type is
+  (`storage`). Arguments are unchanged. A type a factory takes or builds is renamed to the
+  factory's spelling: `jobs` `PgDriverOptions` / `MemoryDriverOptions` / `PgEventBusOptions` /
+  `PgOutboxOptions` / `MemoryOutboxOptions` / `PgLeaseLeaderOptions` → `PostgresJobDriverOptions` /
+  `MemoryJobDriverOptions` / `PostgresEventBusOptions` / `PostgresOutboxStoreOptions` /
+  `MemoryOutboxStoreOptions` / `PostgresLeaseLeaderOptions`; `mcp` `CreateMcpServerInput` /
+  `CreateDevServerInput` → `McpServerInput` / `DevMcpServerInput`; `ai` `PgVectorStore` /
+  `PgVectorStoreInput` → `PostgresVectorStore` / `PostgresVectorStoreInput`; `auth`
+  `BuiltinAdapter` / `MemoryAdapter` → `PostgresAuthAdapter` / `MemoryAuthAdapter`; `notify`
+  `PgDigestStore(Options)` / `PgInboxStore(Options)` / `PgDeliveryLedger(Options)` /
+  `MemoryLedgerOptions` → `PostgresDigestStore(Options)` / `PostgresInboxStore(Options)` /
+  `PostgresDeliveryLedger(Options)` / `MemoryDeliveryLedgerOptions`; `@ultimat3/realtime/server`
+  `InMemoryAdvisoryLock` / `InMemoryChangeFeed(Options)` / `PgAdvisoryLock(Options)` /
+  `PgLogicalReplicationFeed` / `PgLogicalReplicationOptions` → `MemoryAdvisoryLock` /
+  `MemoryChangeFeed(Options)` / `PostgresAdvisoryLock(Options)` / `PostgresChangeFeed` /
+  `PostgresChangeFeedOptions`. TS2724 at an old type name; TS2305 / TS2724 at a removed name; TS1485 / TS1362 where a class now exported as a type is
   imported or `new`-ed as a value. The repository's guard is `bun run factory-names`
   (`X_FACTORY_NAME_SPELLING`): it refuses a `create(Memory|Pg|Postgres)X` or `pgX` export, a
-  PascalCase `(In)Memory|Pg|Postgres` value export, a `create<Vendor>Driver`, and one factory name
-  exported by two packages. The same rule, for every other factory — a `create<Thing>` export is
+  PascalCase `(In)Memory|Pg|Postgres` value export, a `create<Vendor>Driver`, one factory name
+  exported by two packages, a type a `memoryX` / `postgresX` factory takes or builds not spelled
+  after it, a `Create<Thing>` type beside no `create<Verb>`, and a `Memory*` type built by a value
+  not spelled `memoryX`; `export { Impl as Name }` is read as `Impl`, and a module with
+  `export *` is reported unscanned. The same rule, for every other factory — a `create<Thing>` export is
   renamed for what it builds, and a class beside its factory is a type only:
-  - `auth`: `createAuthLimiter` → `authLimiter`, `createJwksClient` → `jwksClient`, `createKdfGate`
-    → `boundedKdfGate`, `createPkce` → `pkcePair`, `createTotpReplayGuard` → `totpReplayGuard`.
+  - `auth`: `createAuthLimiter` → `memoryAuthLimiter`, `createJwksClient` → `jwksClient`,
+    `createKdfGate` → `boundedKdfGate`, `createPkce` → `pkcePair`, `createTotpReplayGuard` →
+    `memoryTotpReplayGuard`.
   - `cache`: `createCacheStack` → `cacheStack`, `createCdnTier` → `cdnTier`, `createLruTier` →
     `lruTier`, `createMemoTier` → `memoTier`, `createRedisTier` → `redisTier`.
   - `core`: `createClientFlight` → `clientFlight`, `createContext` → `ctxOf`, `createFence` →
@@ -578,7 +604,7 @@ After the cut — one name, one meaning; jobs.
     `testClock` is the former `createTestClock` (#6), a different clock.
 
   Same arguments, same answers, no alias; TS2305 / TS2724 at each import. `ULTIMATE_ERROR_BRAND` is
-  declared once, in `@ultimat3/schema`; core re-exports that binding. One pair stays on purpose:
+  declared and exported once, by `@ultimat3/schema` (#5). One pair stays on purpose:
   `@ultimat3/i18n`'s `t('key')` and `@ultimat3/schema`'s `t` never meet in one file, pinned with
   its measurement in `scripts/factory-names-pins.ts`. The guard is `bun run factory-names`
   (`X_FACTORY_NAME_SPELLING`), which refuses one value name declared by two packages.

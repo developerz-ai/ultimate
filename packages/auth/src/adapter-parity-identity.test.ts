@@ -54,9 +54,9 @@ const refusal = async (attempt: Promise<unknown>): Promise<string> => {
 };
 
 const ADAPTERS: readonly (readonly [string, () => Promise<AuthAdapter>])[] = [
-  ['MemoryAdapter', async () => memoryAuthAdapter(clock)],
+  ['MemoryAuthAdapter', async () => memoryAuthAdapter(clock)],
   [
-    'BuiltinAdapter on PGlite',
+    'PostgresAuthAdapter on PGlite',
     async () => {
       await client.execute(raw('delete from x_verifications'));
       await client.execute(raw('delete from x_users'));
@@ -153,7 +153,7 @@ const bunSqlError = (errno: string, constraint: string | undefined): unknown =>
     ...(constraint === undefined ? {} : { constraint }),
   });
 
-describe('BuiltinAdapter reads the violation off the driver error, wrapped or not', () => {
+describe('PostgresAuthAdapter reads the violation off the driver error, wrapped or not', () => {
   test.each([
     ['x_users_email_key', 'email'],
     ['x_users_external_id_key', 'external_id'],

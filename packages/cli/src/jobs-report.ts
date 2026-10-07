@@ -29,15 +29,6 @@ import {
 } from '@ultimat3/jobs';
 import { BadFlagError, JobUnknownError } from './errors';
 
-/**
- * The queue's own vocabulary, re-exported rather than restated — this file carried a copy of it,
- * and the copy was one member short. `cancelled` shipped in `@ultimat3/jobs` and never here, so
- * `x jobs cancel` created a state `x jobs ls --state cancelled` then refused to filter on: two
- * commands of one CLI disagreeing about what a job can be. Kept on this module's surface because
- * `index.ts` exports it from here.
- */
-export { JOB_STATES } from '@ultimat3/jobs';
-
 export function parseStateFlag(value: string | undefined): JobState | undefined {
   if (value === undefined) return undefined;
   if (isJobState(value)) return value;

@@ -372,7 +372,7 @@ export const authWriteFailed = (operation: string, table: string): AuthError =>
  * the same failure to an operator — the row is not there and the caller must not assume it is —
  * and the cause says which of the two happened.
  *
- * `MemoryAdapter` enforced neither `x_users.email` nor `x_users.external_id`, while `BuiltinAdapter`
+ * `MemoryAuthAdapter` enforced neither `x_users.email` nor `x_users.external_id`, while `PostgresAuthAdapter`
  * leans on both: two `register()` calls at one address made TWO rows in memory, and the second was
  * unreachable forever because `findUserByEmail` returns the first. That adapter is what `x new`
  * scaffolds and what every test runs against, so the duplicate path was only exercised against the

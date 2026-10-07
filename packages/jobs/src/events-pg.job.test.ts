@@ -32,7 +32,7 @@ afterAll(async () => {
 const busOnAPodSkewedBy = (at: number, skewMs: number): EventBus =>
   postgresEventBus({
     executor: pg.executor,
-    // @ts-expect-error — `PgEventBusOptions` has no `clock`: every instant is the database's.
+    // @ts-expect-error — `PostgresEventBusOptions` has no `clock`: every instant is the database's.
     clock: frozenClock(at + skewMs),
   });
 

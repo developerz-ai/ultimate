@@ -39,13 +39,13 @@ export function frameworkIntrospection(
   };
 }
 
-export interface CreateDevServerInput {
+export interface DevMcpServerInput {
   readonly host: DevHost;
   readonly resources?: FrameworkResourceProviders;
 }
 
 /** `x mcp serve` and `POST /mcp` in dev both build the server through this. */
-export function devMcpServer(input: CreateDevServerInput): McpServer {
+export function devMcpServer(input: DevMcpServerInput): McpServer {
   return mcpServer({
     tools: devTools(input.host),
     resources: frameworkResources(input.resources ?? {}),

@@ -2,7 +2,7 @@
  * The replicator's lifecycle and its counters: who holds the advisory lock, what `/readyz` reads,
  * and the three numbers that tell a standby node apart from a broken one.
  *
- * `InMemoryAdvisoryLock` keys a PROCESS-global set, so every test here mints its own key — sharing
+ * `MemoryAdvisoryLock` keys a PROCESS-global set, so every test here mints its own key — sharing
  * one would make the second test's `start()` depend on the first having run and released.
  */
 
@@ -119,14 +119,14 @@ describe('the advisory lock decides which node replicates', () => {
 /**
  * Two `start()` calls that overlap. The guard `if (running) return true` is a check, and the very
  * next line awaits `lock.tryAcquire()` — so both callers passed it, both were told they held the
- * lock (a real `PgAdvisoryLock` answers `true` to a holder), and BOTH called `feed.start()`. One
+ * lock (a real `PostgresAdvisoryLock` answers `true` to a holder), and BOTH called `feed.start()`. One
  * replication slot with two pumps means every change published twice, under two `seq` generations
  * from one producer id: `SeqGapDetector` on every sync node then reads a gap where there is none,
  * marks every window stale and re-snapshots the fleet, on every change, forever. Reachable from
  * `/readyz` polling a supervisor's start beside the takeover loop's own retry.
  */
 describe('start is memoised while it is in flight', () => {
-  /** The shape a real `PgAdvisoryLock` has: an await between being asked and answering. */
+  /** The shape a real `PostgresAdvisoryLock` has: an await between being asked and answering. */
   const awaitingLock = (): AdvisoryLock & {
     readonly calls: () => number;
     readonly releases: () => number;

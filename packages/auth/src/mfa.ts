@@ -196,7 +196,7 @@ export interface TotpReplayGuard {
   remember(subject: string, step: number, at: Date): void;
 }
 
-/** What `totpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
+/** What `memoryTotpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
 export interface MemoryTotpReplayGuard extends TotpReplayGuard {
   readonly size: number;
 }
@@ -245,9 +245,9 @@ const newestStep = (steps: ReadonlySet<number>): number => {
  * is *forgotten*, not evicted: `verifyTotp` only ever offers a step within ±drift of now, so that
  * entry answers exactly as a missing one and dropping it changes no decision. Only if forgetting
  * is not enough does the cap evict live state, furthest from the live window first — the shape
- * `authLimiter` evicts by, where a live lockout is the last bucket to go.
+ * `memoryAuthLimiter` evicts by, where a live lockout is the last bucket to go.
  */
-export function totpReplayGuard(
+export function memoryTotpReplayGuard(
   drift: number = TOTP_DRIFT_STEPS,
   maxSubjects: number = DEFAULT_MAX_TOTP_SUBJECTS,
 ): MemoryTotpReplayGuard {

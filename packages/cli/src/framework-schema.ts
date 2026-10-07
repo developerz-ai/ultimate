@@ -85,7 +85,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     ddl: Object.freeze([SQL_AUTH_LIMIT_TABLES]),
   }),
   /**
-   * The five tables `BuiltinAdapter` reads, and the oldest hole in this list.
+   * The five tables `PostgresAuthAdapter` reads, and the oldest hole in this list.
    *
    * Until this row nothing applied them, in dev or in production: they are not `entity()`
    * declarations, so `x db gen` never saw them, and an app was left to paste per-table exports

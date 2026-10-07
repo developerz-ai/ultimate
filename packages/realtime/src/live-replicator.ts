@@ -7,7 +7,7 @@
 // WHAT IS REAL HERE, and it is everything downstream of the decoder: the matcher, the shared window,
 // the per-subscriber `visible` gate, the cursor, the frames. This substitutes for the WAL DECODER
 // and for nothing else — `@ultimat3/entity`'s `setRowObserver` reports what a repository wrote, in
-// this process, and the events are shaped exactly as `PgLogicalReplicationFeed` shapes them.
+// this process, and the events are shaped exactly as `PostgresChangeFeed` shapes them.
 //
 // WHAT IS NOT: a write another process made is invisible, because nothing here reads a log. That is
 // the honest bound, and it is why `selectChangeFeed` never picks it — the boot that installs it
@@ -85,7 +85,7 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
   let position = 0;
   let delivered = 0;
   // One promise chain, because ORDERING is the guarantee the whole pipeline is built on — the same
-  // reason `InMemoryChangeFeed` serializes its deliveries rather than firing them concurrently.
+  // reason `MemoryChangeFeed` serializes its deliveries rather than firing them concurrently.
   let tail: Promise<void> = Promise.resolve();
   let stopped = false;
 

@@ -17,7 +17,18 @@ export interface Declaration {
   readonly implements: readonly string[];
   /** A function's declared return type's leading name, a `Promise<…>` unwrapped. */
   readonly returns?: string;
+  /** A function's FIRST parameter's declared type's leading name: what the factory takes. */
+  readonly accepts?: string;
 }
+
+interface Signature {
+  readonly returns?: string;
+  readonly accepts?: string;
+}
+
+/** `input: X`, `{ a, b }: X`, `options?: Readonly<X> = {}` → `X`. */
+const FIRST_PARAM =
+  /^\s*(?:[A-Za-z_$][\w$]*|\{[^}]*\}|\[[^\]]*\])\??\s*:\s*(?:(?:Readonly|Partial)\s*<\s*)?([A-Z][\w$]*)/;
 
 const TOP_LEVEL =
   /^(?:export\s+)?(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(class|function\*?|const|let|var|enum)\s+([A-Za-z_$][\w$]*)/gm;
@@ -47,17 +58,23 @@ const skipSpace = (text: string, at: number): number => {
   return next;
 };
 
-/** `(…): Type` at `at` (after a name or an `=`) → `Type`'s leading name, `Promise<…>` unwrapped. */
-function returnTypeAt(text: string, from: number): string | undefined {
+/**
+ * `(first: In, …): Out` at `from` (after a name or an `=`) → `Out`'s leading name, `Promise<…>`
+ * unwrapped, and `In`'s. An undeclared one is absent, never guessed.
+ */
+function signatureAt(text: string, from: number): Signature {
   let at = skipSpace(text, from);
   if (text.startsWith('async', at)) at = skipSpace(text, at + 'async'.length);
   if (text[at] === '<') at = skipSpace(text, skipBalanced(text, at));
-  if (text[at] !== '(') return undefined;
+  if (text[at] !== '(') return {};
   const closed = skipBalanced(text, at);
-  if (closed === -1) return undefined;
-  const rest = text.slice(closed);
-  const annotated = /^\s*:\s*(?:Promise\s*<\s*)?([A-Z][\w$]*)/.exec(rest);
-  return annotated?.[1];
+  if (closed === -1) return {};
+  const returns = /^\s*:\s*(?:Promise\s*<\s*)?([A-Z][\w$]*)/.exec(text.slice(closed))?.[1];
+  const accepts = FIRST_PARAM.exec(text.slice(at + 1, closed - 1))?.[1];
+  return {
+    ...(returns === undefined ? {} : { returns }),
+    ...(accepts === undefined ? {} : { accepts }),
+  };
 }
 
 /** `class X<…> extends Y<…> implements A<…>, B {` → `['A', 'B']`. */
@@ -84,18 +101,20 @@ export function declarationsIn(text: string): ReadonlyMap<string, Declaration> {
       continue;
     }
     if (found.get(name)?.kind === 'class') continue;
-    const returns = keyword.startsWith('function')
-      ? returnTypeAt(text, after)
+    const signature = keyword.startsWith('function')
+      ? signatureAt(text, after)
       : /^\s*=/.test(text.slice(after))
-        ? returnTypeAt(text, text.indexOf('=', after) + 1)
-        : undefined;
-    // An overload's first signature names the type; a later bare body must not erase it.
-    const earlier = found.get(name)?.returns;
-    const kept = returns ?? earlier;
+        ? signatureAt(text, text.indexOf('=', after) + 1)
+        : {};
+    // An overload's first signature names the types; a later bare body must not erase them.
+    const earlier = found.get(name);
+    const returns = signature.returns ?? earlier?.returns;
+    const accepts = signature.accepts ?? earlier?.accepts;
     found.set(name, {
       kind: 'value',
       implements: [],
-      ...(kept === undefined ? {} : { returns: kept }),
+      ...(returns === undefined ? {} : { returns }),
+      ...(accepts === undefined ? {} : { accepts }),
     });
   }
   return found;

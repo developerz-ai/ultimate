@@ -46,7 +46,7 @@ const { start, callback } = oauthLogin(auth);
 
 ## The lockout across replicas
 
-`authLimiter` keeps its table in the process, so `maxAttempts: 5` at `replicas: 3` lets an
+`memoryAuthLimiter` keeps its table in the process, so `maxAttempts: 5` at `replicas: 3` lets an
 account survive 15 guesses and hides each replica's lockout from the other two. An app that runs
 more than one process says so and brings a limiter that says the same:
 
@@ -193,7 +193,7 @@ A **factory** and not a limiter, because the host runs before the app: `defineAu
 limiter enforces against what the app declared, so a limiter built at boot on the framework
 defaults would be `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned its numbers. The
 factory is called once per bucket, with the resolved policy, so the two halves cannot disagree.
-Precedence is `defineAuth({ limiter })` → the installed factory → `authLimiter`, and
+Precedence is `defineAuth({ limiter })` → the installed factory → `memoryAuthLimiter`, and
 `resetAuthLimiters()` puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
 on every boot, so a scaffolded app gets a fleet-wide lockout with nothing to remember.
 
@@ -339,7 +339,7 @@ every enrolled user's second factor.
 |---|---|
 | `enrolTotp(auth, { account, issuer?, secret? })` | `{ secret, uri, digits, periodSeconds }` — `issuer` omitted is `auth.mfa.issuer`, `secret` omitted mints one |
 | `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
-| `totpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
+| `memoryTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `recoveryCodeHash(code)` | what a code is stored and looked up as — dashes, spaces and case removed first. `auth.adapter.consumeRecoveryCode(userId, hash)` removes it in ONE statement and answers whether it was there, so two requests carrying one code cannot both redeem it |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |
@@ -511,8 +511,8 @@ an adapter implementation, not a dependency of this package.
 
 | Driver | Use |
 |---|---|
-| `postgresAuthAdapter(client?, clock?)` | Postgres via `@ultimat3/db` (the `BuiltinAdapter` type) — the process client and `systemClock` by default; the clock stamps `x_verifications.consumed_at` |
-| `memoryAuthAdapter(clock?)` | `x new` before a database exists, and every test in this package (the `MemoryAdapter` type). Its clock — `systemClock` by default — stamps every instant it writes |
+| `postgresAuthAdapter(client?, clock?)` | Postgres via `@ultimat3/db` (the `PostgresAuthAdapter` type) — the process client and `systemClock` by default; the clock stamps `x_verifications.consumed_at` |
+| `memoryAuthAdapter(clock?)` | `x new` before a database exists, and every test in this package (the `MemoryAuthAdapter` type). Its clock — `systemClock` by default — stamps every instant it writes |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
 **An adapter stores and matches the address it is handed — it never folds case.** `x_users.email`

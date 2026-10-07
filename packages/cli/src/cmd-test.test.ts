@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import { testCommand } from './cmd-test';
 import type { CommandContext } from './command';
@@ -19,7 +20,6 @@ import { discoverTests } from './test-select';
 import { filesIn } from './test-shards';
 import { defaultWorkers, SERIAL_TYPES, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES } from './verify-tests';
 
 interface Recorder {
   readonly calls: readonly (readonly string[])[];

@@ -1,11 +1,13 @@
 // The helpers that live in exactly one module, and the SHAPE of a second implementation of each —
-// plus `core-reexports.ts`'s second import PATH: any core value republished elsewhere. Every row replaced
-// copies that had already drifted — four HTML escape sets, three cookie readers, four
-// `PgExecutor`s — and is enforced by `bun run flight-copies` (`X_HELPER_COPY`).
+// plus a second import PATH (`package-reexports.ts`: a package's value republished by another;
+// `export-all.ts`: a blind `export *` that rule could not see through). Every row replaced copies
+// that had already drifted — four HTML escape sets, three cookie readers, four `PgExecutor`s — and
+// is enforced by `bun run flight-copies` (`X_HELPER_COPY`).
 
 import { maskLiterals, stripComments } from '../../packages/core/src/source-mask';
-import { coreReexportViolations } from './core-reexports';
+import { exportAllViolations } from './export-all';
 import type { Finding } from './log';
+import { packageReexportViolations } from './package-reexports';
 import { lineOf } from './source-scan';
 
 export interface HelperSource {
@@ -150,6 +152,7 @@ export function checkHelperHomes(file: HelperSource): readonly Finding[] {
   }
   return [
     ...hits.sort((a, b) => a.index - b.index).map((hit) => finding(file, hit.rule, hit.index)),
-    ...coreReexportViolations(file),
+    ...packageReexportViolations(file),
+    ...exportAllViolations(file),
   ];
 }

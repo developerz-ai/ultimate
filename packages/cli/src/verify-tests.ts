@@ -40,7 +40,6 @@ import { runParallel } from './verify-test-run';
  * and `@ultimat3/testing` is already a runtime dependency of this package.
  */
 export type { TestType } from '@ultimat3/testing';
-export { TEST_TYPES } from '@ultimat3/testing';
 
 type TypedTest = Exclude<TestType, 'unit'>;
 

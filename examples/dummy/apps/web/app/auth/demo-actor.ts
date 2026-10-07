@@ -1,7 +1,7 @@
 /**
  * Who a browser is on a laptop, while Postly can issue no session of its own.
  *
- * `login.ts`'s two OAuth descriptors are declared and not served and `BuiltinAdapter`'s tables have
+ * `login.ts`'s two OAuth descriptors are declared and not served and `PostgresAuthAdapter`'s tables have
  * no migration, so this app configured no authenticator at all — and `hooks.authenticate` is the
  * only place an actor can come from, so every `app/` route answered 401 (`X_CONFIG_INVALID` at
  * boot) and the reference app could not be looked at. This is the stand-in and only that: a viewer

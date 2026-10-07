@@ -109,14 +109,14 @@ export interface AuthLimiter {
   reset(): Promise<void>;
   /**
    * Drop every expired row this limiter is keeping, and answer how many went. Optional because a
-   * limiter that bounds itself has nothing to sweep — `authLimiter` evicts on write, so it
+   * limiter that bounds itself has nothing to sweep — `memoryAuthLimiter` evicts on write, so it
    * omits this and `purgeAuthLimits()` skips it. A limiter backed by a table declares it, and
    * that is what makes the framework's purge job able to reach one without knowing it is Postgres.
    */
   purgeExpired?(): Promise<number>;
 }
 
-/** What `authLimiter` returns: the interface, plus the bound it keeps, observable. */
+/** What `memoryAuthLimiter` returns: the interface, plus the bound it keeps, observable. */
 export interface MemoryAuthLimiter extends AuthLimiter {
   readonly size: number;
 }
@@ -174,7 +174,7 @@ const SWEEP_EVERY_MS = 60_000;
  * forgotten anyway go first: a locked account is the last key to go, so filling the table is not
  * a way to buy back attempts against one.
  */
-export function authLimiter(
+export function memoryAuthLimiter(
   clock: Clock,
   policy: AuthRateLimitPolicy = DEFAULT_AUTH_RATE_LIMIT,
 ): MemoryAuthLimiter {

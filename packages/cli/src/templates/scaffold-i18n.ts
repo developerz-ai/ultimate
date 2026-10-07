@@ -2,6 +2,7 @@
 // blessed typed-catalog shape (modelled on examples/dummy/packages/i18n/src/index.ts) — split out
 // of scaffold-repo.ts to stay under the file-size ceiling.
 
+import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
 import { catalogJson } from './catalog-json';
 import type { GeneratedFile, NameSet } from './naming';
 import { camel } from './naming';
@@ -215,7 +216,7 @@ export function i18nFiles(app: NameSet, version: string): readonly GeneratedFile
       '**/*.ts',
       'catalogs/**/*',
     ]),
-    { path: 'packages/i18n/src/index.ts', contents: i18nIndex(['en']) },
+    { path: APP_CATALOGS_PATH, contents: i18nIndex(['en']) },
     { path: 'packages/i18n/src/index.test.ts', contents: i18nTest() },
     { path: 'packages/i18n/catalogs/en.json', contents: i18nCatalog(app), merge: 'json' },
   ];

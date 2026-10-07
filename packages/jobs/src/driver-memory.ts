@@ -30,7 +30,7 @@ import {
   nackState,
   REQUEUEABLE_STATES,
 } from './driver';
-import { createMemoryOperator } from './driver-memory-operator';
+import { memoryOperator } from './driver-memory-operator';
 import { signalEnqueued } from './enqueue-signal';
 import { JobDuplicateError, LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
@@ -42,7 +42,7 @@ import { isFinalAttempt } from './retry';
 import type { StepStore } from './steps';
 import { memoryStepStore } from './steps-memory';
 
-export interface MemoryDriverOptions {
+export interface MemoryJobDriverOptions {
   readonly clock?: Clock;
   readonly steps?: StepStore;
   /** Injectable for the same reason `steps` is: two drivers in one test sharing one ledger. */
@@ -62,7 +62,7 @@ export interface MemoryDriverOptions {
  */
 export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
 
-export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
+export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJobDriver {
   const clock = options.clock ?? systemClock;
   const stepStore = options.steps ?? memoryStepStore();
   // `SQL_STEP_PUT`'s fence: a write made under a claim lands only while that claim holds the row.
@@ -133,7 +133,7 @@ export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDri
     });
   };
 
-  const operator = createMemoryOperator({
+  const operator = memoryOperator({
     jobs,
     steps,
     clock,

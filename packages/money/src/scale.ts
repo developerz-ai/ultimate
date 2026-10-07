@@ -4,12 +4,10 @@
  * which is why nothing that predates this file has to change to keep meaning what it meant.
  */
 
-import { isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
+import { isMoneyScale } from '@ultimat3/schema';
 import { exponentOf } from './currency';
 import { scaleInvalid, scaleNotWidening, scaleOverflow } from './errors';
 import type { Money } from './money';
-
-export { MAX_MONEY_SCALE };
 
 /**
  * The decimal exponent this value's `minor` counts in — its own, or the currency's.

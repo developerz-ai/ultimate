@@ -725,7 +725,7 @@ principal.
   holds no window: a DELETE is routed to the topic the OLD row's params name, and under the default
   identity that image is the key alone — no topic, no `remove`, and members keep the deleted
   record. Preflight asks the catalog about exactly those tables (`paramsChannelTables()`, or
-  `PgLogicalReplicationOptions.fullIdentityTables`) and logs `replication.channel_identity_partial`
+  `PostgresChangeFeedOptions.fullIdentityTables`) and logs `replication.channel_identity_partial`
   with the fix `x db gen "replica identity full"`: `x db gen` grants FULL to those tables beside
   the live queries' `subscribes:` ones, so an app that declares a params channel owes one migration.
 - **For a live query, a keyed table does not need `REPLICA IDENTITY FULL`; a table with NO identity is warned**
