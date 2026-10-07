@@ -79,8 +79,12 @@ export interface PageLike {
   gotoStreamed(url: string): Promise<{ readonly html: string }>;
   /** Called only by `x g route`'s generated e2e template — no driver runs it yet. */
   reload(): Promise<unknown>;
-  /** Resolves once the service worker controls the page, so the offline assertions are not racy. */
-  waitForServiceWorker(): Promise<void>;
+  /**
+   * Resolves once the service worker controls the page, so the offline assertions are not racy. A
+   * page the worker cannot claim — the first of a run, committed before it activated — is reloaded
+   * once (that navigation IS answered by the worker). `timeoutMs` raises this call's budget.
+   */
+  waitForServiceWorker(options?: { readonly timeoutMs?: number | undefined }): Promise<void>;
   /** Called only by `x g route`'s generated e2e template — no driver runs it yet. */
   title(): Promise<string>;
   url(): string;

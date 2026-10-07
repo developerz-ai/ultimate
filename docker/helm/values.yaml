@@ -192,6 +192,12 @@ roles:
   worker:
     enabled: true
     replicas: 2
+    # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
+    # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
+    # (packages/cli/src/serve-retire.ts) — for a job whose side effect must happen at most once and
+    # may outlast drain.deadlineSeconds (at most 1 h). Added to this role's
+    # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
+    retireSeconds: 0
     resources:
       requests: { cpu: 200m, memory: 256Mi }
       limits: { memory: 1Gi }

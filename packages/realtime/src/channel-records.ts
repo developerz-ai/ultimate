@@ -37,7 +37,7 @@ export function skippedRemovals(): number {
 }
 
 /**
- * `change.entity` is the replicated RELATION name (`pg-replication.ts` reads it off the Relation
+ * `change.table` is the replicated RELATION name (`pg-replication.ts` reads it off the Relation
  * message), so it is matched against each projection's `table`, never its `type`.
  *
  * - insert/update: the new row is adopted on the topic its params name.
@@ -53,7 +53,7 @@ export function updatesFor(channels: Iterable<Channel>, change: ChangeEvent): To
   // open topic of every channel carrying the relation instead (`truncatedTopics`).
   if (change.op === 'truncate') return updates;
   for (const channel of channels) {
-    const projection = channel.records.find((candidate) => candidate.table === change.entity);
+    const projection = channel.records.find((candidate) => candidate.table === change.table);
     if (projection === undefined) continue;
     const after = change.op === 'delete' ? null : change.after;
     const before = change.before;
@@ -62,7 +62,7 @@ export function updatesFor(channels: Iterable<Channel>, change: ChangeEvent): To
     if (before !== null && beforeParams === null && channel.params.length > 0) {
       skipped += 1;
       removalsSkipped.add(1);
-      logger.warn('channel.removal_skipped', { channel: channel.name, table: change.entity });
+      logger.warn('channel.removal_skipped', { channel: channel.name, table: change.table });
     }
     const afterTopic = afterParams === null ? null : channel.topic(afterParams);
     const beforeTopic = beforeParams === null ? null : channel.topic(beforeParams);

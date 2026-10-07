@@ -10,14 +10,14 @@ import type { ChangeEvent } from './changefeed';
 import { formatLsn, memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
 import { CHANGE_SUBJECT_PREFIX, changeFeedReplicator } from './replicator';
-import { parseChange, parseEnvelope, SeqGapDetector } from './replicator-envelope';
+import { encodeEnvelope, parseChange, parseEnvelope, SeqGapDetector } from './replicator-envelope';
 
 const envelope = (
   producer: string | null,
   seq: number | null,
 ): Parameters<SeqGapDetector['observe']>[0] => ({
   change: {
-    entity: 'posts',
+    table: 'posts',
     op: 'insert',
     before: null,
     after: { id: 'p1' },
@@ -57,6 +57,48 @@ describe('SeqGapDetector', () => {
     expect(gaps.observe(envelope('r2', 2))).toBe(false);
     // A straggler from the old run is neither a new producer nor a skipped sequence.
     expect(gaps.observe(envelope('r1', 3))).toBe(false);
+  });
+
+  // Publishers run one per app process, side by side: a new one is no successor, and neither is a
+  // replicator run that follows only publishers. A hole inside one publisher's sequence still is.
+  test('a record publisher never succeeds another producer, and a hole in its own sequence is a gap', () => {
+    const gaps = new SeqGapDetector();
+    const published = (producer: string, seq: number) => ({
+      ...envelope(producer, seq),
+      source: 'publisher' as const,
+    });
+    expect(gaps.observe(published('w1', 1))).toBe(false);
+    expect(gaps.observe(published('w2', 1))).toBe(false);
+    expect(gaps.observe(envelope('r1', 1))).toBe(false);
+    expect(gaps.observe(published('w3', 1))).toBe(false);
+    expect(gaps.observe(published('w1', 3))).toBe(true);
+    // The replicator rule stands beside them: its next run is still a successor.
+    expect(gaps.observe(envelope('r2', 1))).toBe(true);
+  });
+
+  test('a source on the bus is read back, and only the one spelling the publisher writes', () => {
+    const wire = (source: unknown) =>
+      JSON.stringify({ ...envelope('w1', 1).change, seq: 1, producer: 'w1', source });
+    expect(parseEnvelope(wire('publisher'))?.source).toBe('publisher');
+    expect(parseEnvelope(wire('PUBLISHER'))?.source).toBeUndefined();
+    expect(parseEnvelope(wire(undefined))?.source).toBeUndefined();
+  });
+
+  // The ONE writer of the bus envelope, for both producers: what it writes is what `parseEnvelope`
+  // reads back, flat, with `source` only where a publisher sent it.
+  test("encodeEnvelope is parseEnvelope's inverse, for the replicator and a publisher alike", () => {
+    const { change } = envelope('r1', 4);
+    const replicated = encodeEnvelope(change, 4, 'r1');
+    expect(JSON.parse(replicated)).not.toHaveProperty('source');
+    expect(parseEnvelope(replicated)).toEqual({ change, seq: 4, producer: 'r1' });
+    // A consumer that only knows the change reads the same payload unchanged.
+    expect(parseChange(replicated)).toEqual(change);
+    expect(parseEnvelope(encodeEnvelope(change, 1, 'w1', 'publisher'))).toEqual({
+      change,
+      seq: 1,
+      producer: 'w1',
+      source: 'publisher',
+    });
   });
 
   test('forget() makes the next producer a first one again', () => {
@@ -105,7 +147,7 @@ describe('the replicator sequences what it publishes', () => {
     expect(envelopes[0]?.producer).not.toBeNull();
     // The narrow reader still answers on the same payload: the envelope is additive.
     const change = parseChange(published[0] ?? '') as ChangeEvent;
-    expect(change.entity).toBe('posts');
+    expect(change.table).toBe('posts');
     expect(change.after).toEqual({ id: 'p1' });
 
     await replicator.stop();
@@ -122,7 +164,7 @@ describe('the write a change belongs to crosses the bus', () => {
     // Dropped to `null`, the one spelling of "no keyed write": `ChangeEvent.write` is required.
     for (const malformed of ['likePost:raw-key', 7, null, undefined]) {
       const change = parseChange(payload(malformed));
-      expect(change?.entity).toBe('posts');
+      expect(change?.table).toBe('posts');
       expect(change?.write).toBeNull();
     }
   });

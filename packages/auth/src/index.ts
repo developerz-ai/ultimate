@@ -212,6 +212,7 @@ export type {
   OAuthTokens,
 } from './oauth-exchange';
 export { exchangeOAuthCode, oauthCredentials } from './oauth-exchange';
+export type { OAuthGrantContext } from './oauth-grant-context';
 export type {
   CompleteOAuthLoginInput,
   OAuthGrants,

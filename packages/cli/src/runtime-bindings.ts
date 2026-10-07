@@ -48,6 +48,15 @@ export const embeddedLocation = (scheme: 'pglite' | 'file', path: string): strin
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value.trim().length === 0 ? undefined : value;
 
+const s3EndpointOf = (env: Env): string | undefined => nonEmpty(env['S3_ENDPOINT']);
+
+/**
+ * THE storage choice: a non-empty `S3_ENDPOINT` is object storage, anything else the embedded disk
+ * — which alone mints its own signed URLs and so needs `STORAGE_SIGNING_SECRET`. Exported so the
+ * deploy contract (`framework-env.ts`) asks this function rather than restating the rule.
+ */
+export const storageIsExternal = (env: Env): boolean => s3EndpointOf(env) !== undefined;
+
 /**
  * Embedded Postgres is PGlite on disk under `.x/`, so a restart keeps the data and a `x db reset`
  * is a directory delete rather than a container dance.
@@ -62,7 +71,7 @@ export function resolveServices(
   // (`e2e-app.ts`) instead of resetting the developer's own, beside a running `x dev`.
   const stateDir = nonEmpty(env['ULTIMATE_STATE_DIR']) ?? join(root, '.x');
   const databaseUrl = nonEmpty(env['DATABASE_URL']);
-  const s3Endpoint = nonEmpty(env['S3_ENDPOINT']);
+  const s3Endpoint = s3EndpointOf(env);
   // Created only when something will actually live in it: the embedded database and the local disk
   // do, in-process events never touch the disk. A container whose bindings are external runs
   // non-root over a read-only app directory, and a mkdir there is an EACCES at boot for a directory

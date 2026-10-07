@@ -3,10 +3,10 @@
 // may import the other — so the join is here, in the one package allowed to know about both.
 
 import { finiteCount } from '@ultimat3/core';
-import { E2eServiceWorkerAbsentError } from './e2e-errors';
 import { evaluateClosure } from './e2e-evaluate';
 import { e2eLocator } from './e2e-locator';
 import type { E2eSelection } from './e2e-selection';
+import { callBudget, waitForServiceWorker } from './e2e-service-worker';
 import type { LocatorLike, PageLike } from './test-types';
 
 /**
@@ -39,7 +39,10 @@ export interface E2ePageOptions {
   readonly baseUrl: string;
   /** Per-navigation deadline, handed to the driver rather than enforced here. */
   readonly timeoutMs?: number | undefined;
-  /** How long `waitForServiceWorker()` waits before refusing. Bounded IN THE PAGE. */
+  /**
+   * How long `waitForServiceWorker()` waits before refusing, the handover reload included. Bounded
+   * IN THE PAGE. One test raises its own with `waitForServiceWorker({ timeoutMs })`.
+   */
   readonly serviceWorkerTimeoutMs?: number | undefined;
 }
 
@@ -78,24 +81,6 @@ const firstFlushExpression = (url: string): string =>
     .then((chunk) => JSON.stringify({ html: new TextDecoder().decode(chunk.value || new Uint8Array()) })))()`;
 
 /**
- * `ready` alone is not control: a first load activates a worker that is not yet the page's
- * controller, and an offline assertion made in that window tests nothing. So this waits for
- * `controllerchange` too — an EVENT, not a poll, so the harness still has exactly one retry loop.
- */
-const serviceWorkerExpression = (timeoutMs: number): string =>
-  `(() => {
-  if (!navigator.serviceWorker) return JSON.stringify({ controlled: false });
-  const controlled = new Promise((resolve) => {
-    if (navigator.serviceWorker.controller) { resolve(true); return; }
-    navigator.serviceWorker.addEventListener('controllerchange', () => resolve(true), { once: true });
-  });
-  const deadline = new Promise((resolve) => setTimeout(() => resolve(false), ${String(timeoutMs)}));
-  return Promise.race([navigator.serviceWorker.ready.then(() => controlled), deadline])
-    .catch(() => false)
-    .then((ok) => JSON.stringify({ controlled: ok === true }));
-})()`;
-
-/**
  * The adapter. Every member re-reads the live page: a `PageLike` handed to a test outlives every
  * navigation the test makes, so nothing here may capture a URL, a document or an element.
  */
@@ -132,12 +117,13 @@ export function e2ePage(options: E2ePageOptions): PageLike {
       const html = readField(await page.evaluate(firstFlushExpression(target)), 'html');
       return { html: typeof html === 'string' ? html : '' };
     },
-    waitForServiceWorker: async () => {
-      const raw = await page.evaluate(serviceWorkerExpression(swTimeout));
-      if (readField(raw, 'controlled') !== true) {
-        throw new E2eServiceWorkerAbsentError({ url: page.url(), timeoutMs: swTimeout });
-      }
-    },
+    // The handover is `e2e-service-worker.ts`'s: an unclaimed first page is reloaded once (#678).
+    waitForServiceWorker: async (waitOptions) =>
+      waitForServiceWorker({
+        page,
+        timeoutMs: callBudget(swTimeout, waitOptions?.timeoutMs),
+        navigationTimeoutMs: timeout,
+      }),
     evaluate: <T>(fn: () => T): Promise<T> => evaluateClosure(page, fn) as unknown as Promise<T>,
     locator: (selector) => locate({ kind: 'css', selector, first: false }),
     getByRole: (role, roleOptions) =>

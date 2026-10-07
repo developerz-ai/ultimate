@@ -105,7 +105,6 @@ only what you meet and how to get past it. Backlog: [`10-carried-backlog.md`](ht
 | [B25](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `webhook` needs an endpoints table and a persisted `WebhookLedger` the framework does not ship (`memoryWebhookLedger()` is dev-only) | declare the endpoints entity (secret `.sealed()`) and a Postgres-backed `WebhookLedger` in the app | [#686](https://github.com/developerz-ai/ultimate/issues/686) |
 | [B26](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `t.array(items)` has no `min`/`max`; `transition()` has no row loader for its `policy` | `t.refine` for the bounds; a plain `action` that loads the row, checks it, then writes, for an authorship rule | [#687](https://github.com/developerz-ai/ultimate/issues/687) |
 | [B27](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | `pgExecutorFor` is not exported | copy `examples/dummy/packages/db/src/executor.ts` | [#688](https://github.com/developerz-ai/ultimate/issues/688) |
-| [B28](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md) | the reference app's `summarize@4` interpolates post text unfenced | fence untrusted text as tagged data with closing tags escaped, as `reviewDraft` does | [#689](https://github.com/developerz-ai/ultimate/issues/689) |
 
 ## Deferred by plan 101
 

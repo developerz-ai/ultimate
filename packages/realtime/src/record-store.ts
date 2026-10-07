@@ -61,16 +61,21 @@ export class RecordStore implements RecordSink {
 
   /** Every record of one type, as seen — what a mutator's `tx.<type>.all()` walks. */
   all(type: string): readonly Row[] {
+    return this.keyed(type).map(([, row]) => row);
+  }
+
+  /** `all`, with each record's key — what a whole-type reader orders by. */
+  keyed(type: string): readonly (readonly [string, Row])[] {
     const prefix = `${type}:`;
-    const out: Row[] = [];
+    const out: (readonly [string, Row])[] = [];
     const seen = new Set<RecordKey>();
     for (const [rk, row] of this.#view) {
       if (!rk.startsWith(prefix)) continue;
       seen.add(rk);
-      if (row !== null) out.push(row);
+      if (row !== null) out.push([rk.slice(prefix.length), row]);
     }
     for (const [rk, row] of this.#synced.entries()) {
-      if (rk.startsWith(prefix) && !seen.has(rk)) out.push(row);
+      if (rk.startsWith(prefix) && !seen.has(rk)) out.push([rk.slice(prefix.length), row]);
     }
     return out;
   }
@@ -151,6 +156,18 @@ export class RecordStore implements RecordSink {
   release(type: string, key: string): void {
     const rk = recordKey(type, key);
     if (this.#synced.release(rk)) this.#touchSynced(rk);
+  }
+
+  /** Every record of `type` is shown by one reader: none is evicted while it is held. */
+  retainType(type: string): void {
+    this.#synced.retainType(type);
+  }
+
+  /** The last type hold leaving evicts the rows it alone kept (`SyncedLayer.releaseType`). */
+  releaseType(type: string): void {
+    this.batch(() => {
+      for (const rk of this.#synced.releaseType(type)) this.#touchSynced(rk);
+    });
   }
 
   /**

@@ -84,7 +84,7 @@ function feed(snapshot: () => Promise<{ rows: readonly Row[]; lsn: string }>): F
 }
 
 const change: ChangeEvent = {
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before: rows[0] as Row,
   after: { id: 'p1', orgId: 'o1', likes: 1 },
@@ -279,7 +279,7 @@ describe('a cold subscribe whose read races a write', () => {
     const inserted: Row = { id: 'p3', orgId: 'o1', likes: 0 };
     table.push(inserted);
     await registry.deliver({
-      entity: 'posts',
+      table: 'posts',
       op: 'insert',
       before: null,
       after: inserted,

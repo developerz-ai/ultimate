@@ -38,7 +38,7 @@ const BASE = 'http://127.0.0.1:3000';
 describe('e2e page — refusals', () => {
   test('waitForServiceWorker refuses when nothing took control', async () => {
     const page = e2ePage({
-      page: recorder([JSON.stringify({ controlled: false })]),
+      page: recorder([JSON.stringify({ state: 'absent' })]),
       baseUrl: BASE,
     });
     await expect(page.waitForServiceWorker()).rejects.toThrow(/X_E2E_SERVICE_WORKER_ABSENT/);
@@ -46,7 +46,7 @@ describe('e2e page — refusals', () => {
 
   test('the refusal names the budget it spent, so a reader knows it was bounded', async () => {
     const page = e2ePage({
-      page: recorder([JSON.stringify({ controlled: false })]),
+      page: recorder([JSON.stringify({ state: 'absent' })]),
       baseUrl: BASE,
     });
     let message = '';
@@ -59,20 +59,20 @@ describe('e2e page — refusals', () => {
   });
 
   test('the wait is bounded IN THE PAGE, never by a loop here', async () => {
-    const browser = recorder([JSON.stringify({ controlled: true })]);
+    const browser = recorder([JSON.stringify({ state: 'controlled' })]);
     await e2ePage({ page: browser, baseUrl: BASE }).waitForServiceWorker();
     expect(browser.evaluated[0]).toContain('setTimeout');
     expect(browser.evaluated).toHaveLength(1);
   });
 
-  test('a browser with no serviceWorker answers false rather than throwing in the page', async () => {
-    const browser = recorder([JSON.stringify({ controlled: true })]);
+  test('a browser with no serviceWorker answers absent rather than throwing in the page', async () => {
+    const browser = recorder([JSON.stringify({ state: 'controlled' })]);
     await e2ePage({ page: browser, baseUrl: BASE }).waitForServiceWorker();
     // The expression the driver built, run against a `navigator` that has no `serviceWorker` —
     // a browser with the feature disabled, which must refuse rather than raise `undefined is not
     // an object` and arrive labelled a dead socket.
     const raw = await runInFakePage(browser.evaluated[0] ?? '', { navigator: {} });
-    expect(JSON.parse(String(raw))).toEqual({ controlled: false });
+    expect(JSON.parse(String(raw))).toEqual({ state: 'absent' });
   });
 });
 
@@ -257,7 +257,7 @@ describe('e2e page — a deadline that is not a number', () => {
   });
 
   test('the deadline the caller declared is still the one the page is given', async () => {
-    const page = timing([JSON.stringify({ controlled: true })]);
+    const page = timing([JSON.stringify({ state: 'controlled' })]);
     const subject = e2ePage({ page, baseUrl: BASE, timeoutMs: 250, serviceWorkerTimeoutMs: 750 });
     await subject.goto('/feed');
     await subject.waitForServiceWorker();

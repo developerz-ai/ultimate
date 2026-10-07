@@ -70,6 +70,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
 | the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS` | `drain-deadline.ts` |
+| `jobs.concurrency`'s default and domain — one slot count for every queue a worker serves, or a table per queue (`{ banks: 4, 'banks-long': 2 }`; a queue the table does not name runs at the default). `JOBS_CONCURRENCY_DEFAULT` (8), `type JobsConcurrency` | `config-jobs.ts` |
 | SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
 | which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |
@@ -604,7 +605,9 @@ never a silently wrong page.
 | Secret | `configureCursorSigning()` at boot, else `ULTIMATE_CURSOR_SECRET`. An EMPTY value is unset — never an empty HMAC key — so `usesDevCursorSecret()` reports it and the boot refuses it outside a local environment. **Read when a cursor is signed, never at import** — an app whose `openSecrets()` sets the variable during boot would otherwise sign every cursor with the dev key. Rotating it invalidates every open cursor |
 | Also keys | `keyedFingerprint(value, purpose)` — `h1:<key id>:<HMAC>` over `canonicalJson`, under a per-purpose key derived from this secret; the fingerprint to PERSIST (`@ultimat3/action`'s idempotency `requestHash`). `compareFingerprint` answers `match` / `mismatch` / `unverifiable` (other key), and still checks a legacy bare `fingerprint()` exactly. Rotating the secret makes in-window stored fingerprints `unverifiable` |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
-| `usesDevCursorSecret()` | true while the shipped dev key is in use |
+| `usesDevCursorSecret({ env? })` | true while the shipped dev key is in use — this process, or the table `env` as signing would read it (empty and the published key count as unset) |
+| `CURSOR_SECRET_KEY` / `CURSOR_SECRET_FIX` | `'ULTIMATE_CURSOR_SECRET'` and the one `fix:` for `X_CURSOR_SECRET_DEV` (`export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"`) — the boot refusal and `@ultimat3/cli`'s deploy contract (`.env.example`, `x env check`, `x doctor`) read both |
+| `devSecretsRefused({ env? })` | THE rule for refusing a shipped dev secret: anything but `development`/`test`, and no named environment counts as production. The boot (`assertNoDevSecretsOutsideLocal`), `@ultimat3/storage`'s disk and the CLI's diagnostics all ask it |
 | `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |
 
 ### One page shape

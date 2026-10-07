@@ -18,7 +18,8 @@ import {
   type OAuthTokens,
   oauthCredentials,
 } from './oauth-exchange';
-import { type OAuthProfile, oauthProfile } from './oauth-profile';
+import { type OAuthGrantContext, oauthGrantContext } from './oauth-grant-context';
+import { type OAuthProfile, readOAuthProfile } from './oauth-profile';
 import { resolveActor } from './policy-bridge';
 import { loginFailed } from './rate-limit';
 import { createSession, sessionCookie } from './session';
@@ -89,8 +90,15 @@ export interface OAuthGrants {
   readonly externalId?: string | null | undefined;
 }
 
-/** Called once per callback, after the profile is proven and before the session is minted. */
-export type ResolveOAuthGrants = (profile: OAuthProfile) => Promise<OAuthGrants> | OAuthGrants;
+/**
+ * Called once per callback, after the profile is proven and before the session is minted. The
+ * `context` is what the IdP said beyond the profile — the token set, every id-token claim, and a
+ * lazy `userinfo()` — for an IdP that keeps its grants off the id token (#670).
+ */
+export type ResolveOAuthGrants = (
+  profile: OAuthProfile,
+  context: OAuthGrantContext,
+) => Promise<OAuthGrants> | OAuthGrants;
 
 export interface OAuthSignInInput {
   readonly profile: OAuthProfile;
@@ -332,11 +340,12 @@ export async function completeOAuthLogin(
     fetch: input.fetch,
     timeoutMs: input.timeoutMs,
   });
-  const profile = await oauthProfile(provider, tokens, {
-    fetch: input.fetch,
-    timeoutMs: input.timeoutMs,
-  });
-  const grants = input.resolveGrants === undefined ? undefined : await input.resolveGrants(profile);
+  const options = { fetch: input.fetch, timeoutMs: input.timeoutMs };
+  const { profile, userinfo } = await readOAuthProfile(provider, tokens, options);
+  const grants =
+    input.resolveGrants === undefined
+      ? undefined
+      : await input.resolveGrants(profile, oauthGrantContext(profile, tokens, options, userinfo));
   return await signInWithOAuth(auth, {
     profile,
     tokens,

@@ -70,7 +70,7 @@ What `x new` writes, and who owns it afterwards:
 | Artifact | Author | Rule |
 |---|---|---|
 | `.env.development` | generated, **complete and valid**, committed | non-secret defaults; per-box secrets go in `.env.development.local`, which wins. Dev secrets carry a loud `dev-only-` prefix. The scaffold writes no `.env` — Bun still loads `.env`, `.env.<mode>` and `.env.local` when they exist ([`packages/core/src/env-example.ts:31`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env-example.ts)), and `.env` is the one you never commit |
-| `.env.example` | generated from `envSchema` | never hand-edited — it is a projection of the declaration, and drift fails `x verify`. Regenerate with `x env example` |
+| `.env.example` | generated from `envSchema`, plus the framework's deploy-required secrets | never hand-edited — it is a projection of the declaration, and drift fails `x verify`. Regenerate with `x env example` |
 | `app.config.ts` | yours | the one config file; validated at boot ([Configuration](Configuration)) |
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
@@ -113,7 +113,7 @@ The `fix:` is per-key and built from your own declarations ([`packages/core/src/
 | Access | `env.STRIPE_KEY` is typed. A `process.env` read outside the schema is a lint error |
 | Per-role | a role requires only the keys it uses — `ROLE=worker` does not fail on a missing `VAPID` |
 | Repair | `x env example` regenerates `.env.example` from the schema; copy the keys it names into `.env.development.local` in dev, or into your platform's secret store in production. There is **no** `x env --fix` — `x env` declares `check` and `example` and no flags, so `x env check --fix` dies at the parser with `X_CLI_BAD_FLAG` |
-| CI | `x env check` runs inside `x verify`, against the schema — never against a checked-in example file |
+| CI | `x verify`'s `manifest` step holds `.env.example` to the schema's projection (`X_ENV_EXAMPLE_DRIFT`); `x env check` is not a gate step — run it against the deploy's own environment (`ULTIMATE_ENV=production x env check`), where it also reports the framework's deploy-required secrets |
 | Provenance | `/_x` → **Env** shows every resolved key and which source it came from |
 
 ## What Bun natives replace

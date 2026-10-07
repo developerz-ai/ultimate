@@ -68,6 +68,8 @@ export const devCommand: CliCommand = {
       release();
       throw error;
     });
+    // A restart retires this worker before it drains, so a save never cancels a running job.
+    restart.adopt(server.running.worker);
     const result: CommandResult = {
       ok: server.findings.length === 0,
       command: 'dev',

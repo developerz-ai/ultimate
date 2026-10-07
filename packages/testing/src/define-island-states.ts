@@ -3,12 +3,14 @@
 // applies are `island-states-check.ts`. Every default a declaration leaves out is resolved HERE, so
 // nothing downstream has to decide what an absent viewport or an absent theme list meant.
 
+import { decodeRecordEnvelope, encodeRecordEnvelope, isUltimateError } from '@ultimat3/core';
 import { DEFAULT_NOW } from './determinism';
 import {
   IslandStateDuplicateError,
   IslandStateIdInvalidError,
   IslandStateInstantInvalidError,
   IslandStateJsonInvalidError,
+  IslandStateRecordsInvalidError,
   IslandStateStubInvalidError,
   IslandStatesEmptyError,
   IslandStateZoneInvalidError,
@@ -18,6 +20,7 @@ import type {
   IslandStateDecl,
   IslandStatesDecl,
   IslandStatesManifest,
+  IslandStubResponse,
   IslandTheme,
   IslandViewport,
 } from './island-states';
@@ -101,14 +104,7 @@ function normalizeState(
     if (!isStubMatch(stub.match)) {
       throw new IslandStateStubInvalidError({ island: decl.island, match: stub.match });
     }
-    if (stub.respond.kind !== 'json') continue;
-    const bodyFault = jsonFault(
-      stub.respond.body,
-      `state "${state.id}" routes[${index}].respond.body`,
-    );
-    if (bodyFault !== undefined) {
-      throw new IslandStateJsonInvalidError({ island: decl.island, ...bodyFault });
-    }
+    checkStubBody(decl.island, stub.respond, `state "${state.id}" routes[${index}].respond`);
   }
 
   return {
@@ -120,6 +116,49 @@ function normalizeState(
     viewport: usableViewport(state.viewport) ?? inherited,
     themes: usableThemes(state.themes),
   };
+}
+
+type RecordsStub = Extract<IslandStubResponse, { kind: 'records' }>;
+
+/**
+ * The envelope the harness will send, through core's own pair: `encodeRecordEnvelope` builds it
+ * (as `island-harness-script.ts` does) and `decodeRecordEnvelope` is the client's own reader, so a
+ * stub is held to exactly what the page store will accept — never to a copy of that rule.
+ */
+function envelopeFault(respond: RecordsStub): string | undefined {
+  try {
+    decodeRecordEnvelope(encodeRecordEnvelope(respond.data, respond.records, respond.removed));
+    return undefined;
+  } catch (error) {
+    if (!isUltimateError(error)) throw error;
+    return error.cause;
+  }
+}
+
+/** A stub's answer survives the JSON trip, and a `records` one is an envelope the store adopts. */
+function checkStubBody(island: string, respond: IslandStubResponse, path: string): void {
+  if (respond.kind !== 'json' && respond.kind !== 'records') return;
+  const parts: readonly (readonly [string, unknown])[] =
+    respond.kind === 'json'
+      ? [['body', respond.body]]
+      : [
+          ['data', respond.data],
+          ['records', respond.records],
+          ['removed', respond.removed ?? null],
+        ];
+  for (const [member, value] of parts) {
+    const fault = jsonFault(value, `${path}.${member}`);
+    if (fault !== undefined) throw new IslandStateJsonInvalidError({ island, ...fault });
+  }
+  if (respond.kind !== 'records') return;
+  const fault = envelopeFault(respond);
+  if (fault !== undefined) {
+    throw new IslandStateRecordsInvalidError({
+      island,
+      path,
+      reason: `is not a records envelope (${fault})`,
+    });
+  }
 }
 
 /**

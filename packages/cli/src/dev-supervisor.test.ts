@@ -136,6 +136,21 @@ describe('unit · childRestart', () => {
     plain.exit(0);
     expect(childRestart('/app', { [DEV_CHILD_ENV]: '1' }).options.onRestart).toBeFunction();
   });
+
+  // Issue #677: the restart retires the worker this child booted before anything drains, and a
+  // second save landing while it waits joins that restart rather than starting another.
+  test('a restart retires the adopted worker, once however many saves land', () => {
+    const retired: unknown[] = [];
+    const restart = childRestart('/app', { [DEV_CHILD_ENV]: '1' }, undefined, (worker) => {
+      retired.push(worker);
+      return new Promise<void>(() => undefined);
+    });
+    const worker = { stats: () => Promise.reject(), stop: () => Promise.resolve() };
+    restart.adopt(worker);
+    restart.options.onRestart?.([]);
+    restart.options.onRestart?.([]);
+    expect(retired).toEqual([worker]);
+  });
 });
 
 describe('unit · stopChild', () => {

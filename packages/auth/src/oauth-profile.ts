@@ -133,11 +133,16 @@ async function githubPrimaryEmail(
   return verified.find((entry) => entry.primary) ?? verified[0] ?? null;
 }
 
-async function fromUserInfo(
+/**
+ * The provider's userinfo answer, whole: every claim, the ones `OAuthProfile` names and the ones it
+ * does not. Shared by the profile below and by `resolveGrants`' `userinfo()` (#670), so the two
+ * reads refuse the same three failures with the same codes — one endpoint, one reader.
+ */
+export async function userinfoBody(
   provider: OAuthProviderId,
   tokens: OAuthTokens,
   options: OAuthProfileOptions,
-): Promise<OAuthProfile> {
+): Promise<Record<string, unknown>> {
   const config = providerFor(provider);
   const url = config.userInfoUrl;
   if (url === null) {
@@ -167,12 +172,30 @@ async function fromUserInfo(
       fix: `confirm ${url} is the provider's real userinfo endpoint and not a proxy`,
     });
   }
+  return result.body;
+}
 
-  const body = result.body;
-  // GitHub's id is a number; OIDC's `sub` is a string. Both are stable, so both are accepted.
+/** GitHub's id is a number; OIDC's `sub` is a string. Both are stable, so both are accepted. */
+export function userinfoAccountId(body: Readonly<Record<string, unknown>>): string {
   const rawId = body['sub'] ?? body['id'];
-  const providerAccountId =
-    typeof rawId === 'number' ? String(rawId) : typeof rawId === 'string' ? rawId : '';
+  return typeof rawId === 'number' ? String(rawId) : typeof rawId === 'string' ? rawId : '';
+}
+
+/** A profile, and the userinfo body it was read from when it was read from one. */
+export interface OAuthProfileRead {
+  readonly profile: OAuthProfile;
+  /** `null` when the id token answered alone and no userinfo request was made. */
+  readonly userinfo: Record<string, unknown> | null;
+}
+
+async function fromUserInfo(
+  provider: OAuthProviderId,
+  tokens: OAuthTokens,
+  options: OAuthProfileOptions,
+): Promise<OAuthProfileRead> {
+  const config = providerFor(provider);
+  const body = await userinfoBody(provider, tokens, options);
+  const providerAccountId = userinfoAccountId(body);
   if (providerAccountId === '') {
     throw oauthExchangeFailed({
       provider,
@@ -193,13 +216,14 @@ async function fromUserInfo(
     }
   }
 
-  return {
+  const profile: OAuthProfile = {
     provider,
     providerAccountId,
     email,
     emailVerified,
     name: stringOrNull(body['name']) ?? stringOrNull(body['login']),
   };
+  return { profile, userinfo: body };
 }
 
 /**
@@ -212,17 +236,29 @@ export async function oauthProfile(
   tokens: OAuthTokens,
   options: OAuthProfileOptions = {},
 ): Promise<OAuthProfile> {
+  return (await readOAuthProfile(provider, tokens, options)).profile;
+}
+
+/**
+ * `oauthProfile`, keeping the userinfo body it fetched — so `resolveGrants`' `userinfo()` hands
+ * that body back instead of asking the provider a second time in the same login (#670).
+ */
+export async function readOAuthProfile(
+  provider: OAuthProviderId,
+  tokens: OAuthTokens,
+  options: OAuthProfileOptions = {},
+): Promise<OAuthProfileRead> {
   const claims = tokens.claims;
   if (claims === null) return await fromUserInfo(provider, tokens, options);
 
   const email = stringOrNull(claims.email);
   const userInfoUrl = providerFor(provider).userInfoUrl;
   if (email === null && userInfoUrl !== null) {
-    const profile = await fromUserInfo(provider, tokens, options);
+    const read = await fromUserInfo(provider, tokens, options);
     // Two surfaces, one identity — or this is not that identity. Overwriting the subject and
     // keeping the address would link the account on an address belonging to whoever the second
     // call described, so a disagreement ends the handshake instead of being reconciled.
-    if (profile.providerAccountId !== claims.sub) {
+    if (read.profile.providerAccountId !== claims.sub) {
       throw oauthExchangeFailed({
         provider,
         stage: 'userinfo',
@@ -230,14 +266,15 @@ export async function oauthProfile(
         fix: `confirm ${userInfoUrl} is ${provider}'s own userinfo endpoint and not a proxy that rewrites sub`,
       });
     }
-    return profile;
+    return read;
   }
 
-  return {
+  const profile: OAuthProfile = {
     provider,
     providerAccountId: claims.sub,
     email,
     emailVerified: email !== null && idTokenEmailVerified(claims),
     name: stringOrNull(claims.name),
   };
+  return { profile, userinfo: null };
 }

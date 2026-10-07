@@ -6,7 +6,7 @@
 import type { AsyncState, Row } from '@ultimat3/core/page';
 import { pageStore } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
-import { recordKey } from './record-store';
+import { type RecordStore, recordKey } from './record-store';
 
 /**
  * A callable `AsyncState`: `pending` until the record first arrives, `ready` from then on —
@@ -60,20 +60,37 @@ export function useRecord<R extends object = Row>(type: string, key: string): Re
   return Object.assign(read, { release, [Symbol.dispose]: release });
 }
 
-/** A callable `AsyncState` over several records, in the order their keys were given. */
+/** A callable `AsyncState` over several records of one type. */
 export type RecordsAccessor<R extends object = Row> = (() => AsyncState<readonly R[]>) & {
   release(): void;
   [Symbol.dispose](): void;
 };
 
 /**
- * Several records of one type, by key — the same store objects `useRecord` hands out. `pending`
- * until the first of them arrives; then `ready` with those present, in key order: a record the
- * server removed simply drops out, and a list is never shown as its skeleton again.
+ * Which records of a type a whole-type `useRecords` shows, and in what order. Both run on every
+ * change to that type, in the browser, over rows already on the page: pure, and cheap.
+ */
+export interface RecordSelection<R extends object = Row> {
+  /** Keep a record only when this answers `true`. Absent: every record of the type. */
+  readonly where?: (record: R) => boolean;
+  /** Absent: by record key, ascending — creation order for a uuid v7 key. */
+  readonly order?: (a: R, b: R) => number;
+}
+
+/**
+ * Records of one type out of the page store — the same objects `useRecord` hands out.
+ *
+ * - **By key** (`useRecords('posts', keys)`): `pending` until the first of them arrives, then
+ *   `ready` with those present, in key order; a record the server removed drops out.
+ * - **The whole type** (`useRecords('runs', {})`, `useRecords('runs', { where, order })`): every record
+ *   of it the store holds — HTTP answers, live patches, a channel's `records` frames and pending
+ *   optimistic writes alike — `ready` from the first read (an empty store is an empty list; whether
+ *   the page has caught up is the channel's or the query's to say). A record a frame adopts joins
+ *   the list; none is evicted while it is held. The channel-records counterpart of a live window.
  */
 export function useRecords<R extends object = Row>(
   type: string,
-  keys: readonly string[],
+  select: readonly string[] | RecordSelection<R>,
 ): RecordsAccessor<R> {
   const signal = signalFor('useRecords');
   if (isServerRender()) {
@@ -82,8 +99,24 @@ export function useRecords<R extends object = Row>(
       [Symbol.dispose]: releaseNothing,
     });
   }
-  const store = pageStore('useRecord');
+  const store = pageStore('useRecords');
   const [version, setVersion] = signal(0);
+  const bump = (): void => setVersion(version() + 1);
+  return isKeyList(select)
+    ? byKeys<R>(store, type, select, version, bump)
+    : ofType<R>(store, type, select, version, bump);
+}
+
+// `Array.isArray` narrows a `readonly` array union to `any[]`; this keeps the element type.
+const isKeyList = (value: unknown): value is readonly string[] => Array.isArray(value);
+
+function byKeys<R extends object>(
+  store: RecordStore,
+  type: string,
+  keys: readonly string[],
+  version: () => number,
+  bump: () => void,
+): RecordsAccessor<R> {
   const targets = new Set(keys.map((key) => recordKey(type, key)));
   const present = (): R[] => {
     const out: R[] = [];
@@ -101,7 +134,7 @@ export function useRecords<R extends object = Row>(
   const unsubscribe = store.subscribe((changed) => {
     if (![...changed].some((key) => targets.has(key))) return;
     if (present().length > 0) seen = true;
-    setVersion(version() + 1);
+    bump();
   });
   const read = (): AsyncState<readonly R[]> => {
     version();
@@ -117,6 +150,51 @@ export function useRecords<R extends object = Row>(
     store.batch(() => {
       for (const key of keys) store.release(type, key);
     });
+  };
+  return Object.assign(read, { release, [Symbol.dispose]: release });
+}
+
+function ofType<R extends object>(
+  store: RecordStore,
+  type: string,
+  selection: RecordSelection<R>,
+  version: () => number,
+  bump: () => void,
+): RecordsAccessor<R> {
+  const prefix = `${type}:`;
+  const { where, order } = selection;
+  store.retainType(type);
+  // Recomputed once per change to this type, never per read: the same answer back is what tells
+  // a fine-grained renderer nothing moved.
+  let answer: AsyncState<readonly R[]> | null = null;
+  let answered = -1;
+  const unsubscribe = store.subscribe((changed) => {
+    for (const rk of changed) {
+      if (!rk.startsWith(prefix)) continue;
+      bump();
+      return;
+    }
+  });
+  const read = (): AsyncState<readonly R[]> => {
+    const at = version();
+    if (answer !== null && answered === at) return answer;
+    // The store holds JSON rows; the caller names the entity row type it reads them as.
+    const keyed = store.keyed(type) as readonly (readonly [string, R])[];
+    const kept = where === undefined ? [...keyed] : keyed.filter(([, row]) => where(row));
+    const rows =
+      order === undefined
+        ? kept.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, row]) => row)
+        : kept.map(([, row]) => row).sort(order);
+    answer = { status: 'ready', data: rows };
+    answered = at;
+    return answer;
+  };
+  let held = true;
+  const release = (): void => {
+    if (!held) return;
+    held = false;
+    unsubscribe();
+    store.releaseType(type);
   };
   return Object.assign(read, { release, [Symbol.dispose]: release });
 }

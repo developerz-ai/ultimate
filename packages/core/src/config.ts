@@ -13,6 +13,7 @@ import { BASE_FIX, CACHE_TIER_FIX } from './config-fixes';
 import { type DrainConfig, type HealthConfig, readinessModeIssue } from './config-health';
 import type { IslandsConfig, IslandsSectionInput } from './config-islands';
 import { islandsIssues, mergeIslands } from './config-islands';
+import { type JobsConcurrency, jobsConcurrencyIssues } from './config-jobs';
 import { refuseUnknownKeys } from './config-keys';
 import { type MailConfig, type MailSectionInput, mailIssues, mergeMail } from './config-mail';
 import { type Input, lastSaid, layered } from './config-merge';
@@ -154,7 +155,11 @@ export interface JobsConfig {
    * interface buys. There is no config line, and one that cannot be honoured is worse than none.
    */
   readonly queues: readonly string[];
-  readonly concurrency: number;
+  /**
+   * Slots per worker process: one number for every queue it serves, or a table per queue
+   * (`{ banks: 4, 'banks-long': 2 }`, a queue it does not name at `JOBS_CONCURRENCY_DEFAULT`).
+   */
+  readonly concurrency: JobsConcurrency;
   readonly maxAttempts: number;
   readonly backoff: (typeof JOB_BACKOFFS)[number];
   readonly visibilityTimeoutMs: number;
@@ -266,7 +271,7 @@ function validate(config: AppConfig): void {
   // a switch is never read for truthiness: `ssl: 'false'` and `enabled: 'false'` were both ON.
   const perKey: readonly (string | undefined)[] = [
     ...config.roles.map((role) => oneOfIssue('roles', role, ROLES)),
-    countIssue('jobs.concurrency', config.jobs.concurrency, 1),
+    ...jobsConcurrencyIssues(config.jobs.concurrency),
     countIssue('jobs.maxAttempts', config.jobs.maxAttempts, 1),
     countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
     oneOfIssue('jobs.backoff', config.jobs.backoff, JOB_BACKOFFS),

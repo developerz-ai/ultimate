@@ -190,7 +190,11 @@ stops at it: its exports are held by every importer and by a registry that refus
 definition of one name. **A save that reaches one restarts `x dev`, `As of 22.12`** — the pinned
 module itself, or anything it imports: a slice's `service.ts` under its query, an admin page's view
 under `defineAdmin`. `x dev` is a supervisor and a child: the child prints
-`restarting: <saved file> under <pinned module> — …` on stderr, drains, releases the port, the lock
+`restarting: <saved file> under <pinned module> — …` on stderr, **retires its worker first** — it
+stops claiming and waits for every running job to finish, aborting none (`As of 25.0.0`; before, the
+drain cut off a job running past `drain.deadlineMs` with `X_DRAINING` and the next child ran it
+again), printing `restart waits for <n> running job(s) to finish — …` while it waits, `Ctrl-C`
+cutting the wait short at the drain deadline — then drains, releases the port, the lock
 and the embedded Postgres, and exits `75`; the supervisor boots a fresh child on the same port
 (`--port 0` is pinned to one free port before the first boot). Every other save stays the in-process
 reload above, and `Ctrl-C` stops both. `--once` and an embedded `startDev()` are unsupervised: there

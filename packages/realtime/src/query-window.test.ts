@@ -150,7 +150,7 @@ class FakeWs implements WsLike {
 }
 
 const change = (position: number, after: Row): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before: rows[0] as Row,
   after,

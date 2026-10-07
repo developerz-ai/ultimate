@@ -177,6 +177,7 @@ export {
   promptVersions,
   resetPrompts,
 } from './prompt';
+export { promptFences } from './prompt-fence';
 export type {
   AiContentBlock,
   AiMessage,

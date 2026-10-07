@@ -72,6 +72,11 @@ export type UnmeasuredRoute = {
   readonly cause?: string;
   readonly fix?: string;
   /**
+   * Who the measurement render ran as, labelled (`measure-scope.ts`'s `measurementActorLabel`) —
+   * so a refusal OF that actor names it, and the edit that changes it (#675). Never its facts.
+   */
+  readonly actor?: string;
+  /**
    * `false` when no build can weigh the route by construction — a `render: 'ssr'` page with params,
    * which may not declare `prerender()`, so the build holds no value to render it at. Not a defect
    * in the app, so the `budgets` step prints it and raises no finding (`measure-paths.ts`).

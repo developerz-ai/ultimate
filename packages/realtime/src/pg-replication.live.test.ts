@@ -184,7 +184,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     expect(events).toHaveLength(4);
     const [first, second, updated, deleted] = events;
 
-    expect(first?.entity).toBe(TABLE);
+    expect(first?.table).toBe(TABLE);
     expect(first?.op).toBe('insert');
     expect(first?.orgId).toBe('org-1');
     expect(first?.after).toEqual({
@@ -351,7 +351,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     const change = JSON.parse(published[0]?.payload ?? '{}') as ChangeEvent;
     // The tenant is in the subject, so a fanout filters without parsing the row at all.
     expect(published[0]?.subject).toBe(`${CHANGE_SUBJECT_PREFIX}.${TABLE}.org-1`);
-    expect(change.entity).toBe(TABLE);
+    expect(change.table).toBe(TABLE);
     expect(change.op).toBe('insert');
     expect(change.after?.['id']).toBe('w1');
     expect(change.orgId).toBe('org-1');

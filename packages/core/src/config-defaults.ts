@@ -2,6 +2,7 @@
 // Split from `config.ts`, which sits at its 500-line ceiling; literals only, so it reads no key.
 
 import type { AppConfig } from './config';
+import { JOBS_CONCURRENCY_DEFAULT } from './config-jobs';
 import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
@@ -26,7 +27,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
     cache: { defaultTtlMs: 60_000, tiers: ['request-memo', 'lru'] },
     jobs: {
       queues: [`${name}-default`],
-      concurrency: 8,
+      concurrency: JOBS_CONCURRENCY_DEFAULT,
       maxAttempts: 5,
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,

@@ -25,8 +25,31 @@ export const DEFAULT_ISLAND_VIEWPORT: IslandViewport = { width: 1280, height: 80
  */
 export const ISLAND_SHOT_TIME_ZONE = 'UTC';
 
+/**
+ * The rows a `records` stub hands the page store: record type -> record key -> row — core's
+ * `RecordEnvelope['records']`, restated structurally because this file imports nothing.
+ */
+export type IslandStubRecords = Readonly<
+  Record<string, Readonly<Record<string, Readonly<Record<string, unknown>>>>>
+>;
+
+/**
+ * What a stubbed request answers. `json` is a bare body. `records` is what a query declaring an
+ * entity's `rows:` answers on the wire — the envelope `{ data, records, removed? }` behind
+ * `x-ultimate-records: 1` — so the island's page store adopts the rows exactly as it would from
+ * the server; a `json` stub of the same body is read as bare rows and adopts nothing (#683).
+ */
 export type IslandStubResponse =
   | { readonly kind: 'json'; readonly status?: number; readonly body: unknown }
+  | {
+      readonly kind: 'records';
+      readonly status?: number;
+      /** The read's own answer — what the island's `await` resolves to. */
+      readonly data: unknown;
+      readonly records: IslandStubRecords;
+      /** Record keys the store drops, by record type. */
+      readonly removed?: Readonly<Record<string, readonly string[]>>;
+    }
   | { readonly kind: 'pending' }
   | { readonly kind: 'offline' };
 

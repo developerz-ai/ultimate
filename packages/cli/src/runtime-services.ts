@@ -57,7 +57,8 @@ export interface RunningServices {
    */
   readonly realtime: RealtimeConfig;
   /**
-   * `app.config.ts`'s `jobs.queues` / `concurrency` / `visibilityTimeoutMs`, for the `worker` role.
+   * `app.config.ts`'s `jobs.queues` / `concurrency` / `visibilityTimeoutMs`, for the `worker` role —
+   * the queues replaced by the boot env's `WORKER_QUEUES` when it is set (`runtime-jobs.ts`).
    * Optional because a `RunningServices` can be hand-built, and a test runtime with none keeps the
    * worker's own defaults — the answer it always got. `startServices` always sets it.
    */
@@ -340,7 +341,7 @@ export async function startServices(
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
   // container it stands in for.
   const realtime = realtimeConfigOf(config);
-  const workerConfig = workerConfigOf(config);
+  const workerConfig = workerConfigOf(config, env);
   const bus: TransportSelection = selectTransport(env, realtime);
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
   // reader here already uses it, so a queue that asked `process.env` would decide the standby from

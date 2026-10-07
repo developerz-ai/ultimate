@@ -144,7 +144,7 @@ describe('unit · a sealed column reaches no socket and no bus', () => {
     // A second row is inserted: what the replicator hands the fanout is the decoded WAL tuple.
     const tuple = await walTuple('0198c1a0-0000-7000-8000-000000000003', 'Grace');
     const change: ChangeEvent = {
-      entity: 'rs_accounts',
+      table: 'rs_accounts',
       op: 'insert',
       before: null,
       after: entityRow(relation, tuple, 'after') as Row,

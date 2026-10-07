@@ -54,7 +54,7 @@ describe('the in-process replicator', () => {
     await replicator.settled();
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
-      entity: 'replicated_memos',
+      table: 'replicated_memos',
       op: 'insert',
       after: { id: ONE },
     });

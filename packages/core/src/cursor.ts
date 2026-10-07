@@ -36,7 +36,17 @@ export class CursorInvalidError extends UltimateError {
  * — a fixed literal rather than a per-process random one on purpose: a random secret would make
  * a cursor issued by one instance fail on the next, and that failure only shows up under scale.
  */
-const DEV_SECRET = 'ultimate-dev-cursor-secret';
+export const DEV_CURSOR_SECRET = 'ultimate-dev-cursor-secret';
+
+/**
+ * The env key a deployed process signs cursors with. Named once: signing below, the boot refusal
+ * (`dev-secrets.ts`'s `CursorSecretDevError`) and `@ultimat3/cli`'s deploy contract
+ * (`.env.example`, `x env check`, `x doctor`) all read this constant.
+ */
+export const CURSOR_SECRET_KEY = 'ULTIMATE_CURSOR_SECRET';
+
+/** The one fix for `X_CURSOR_SECRET_DEV`, wherever it is reported — the boot and the CLI. */
+export const CURSOR_SECRET_FIX = `export ${CURSOR_SECRET_KEY}="$(openssl rand -hex 32)"`;
 
 /** `configureCursorSigning`'s value, when an app has called it. `undefined` means "read the env". */
 let configured: string | undefined;
@@ -52,7 +62,7 @@ function currentSecret(): string {
   // `||`, never `??`: `ULTIMATE_CURSOR_SECRET=` (a blank compose or chart value) is the EMPTY
   // string, which `??` keeps — an HMAC keyed by '' that anyone can forge, while
   // `usesDevCursorSecret()` answered `false` and the boot check passed. Empty is unset.
-  return configured || Bun.env['ULTIMATE_CURSOR_SECRET'] || DEV_SECRET;
+  return configured || Bun.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET;
 }
 
 /**
@@ -77,9 +87,17 @@ export function resetCursorSigning(): void {
   configured = undefined;
 }
 
-/** True while cursors are signed with the shipped dev key — `x doctor` reports it. */
-export function usesDevCursorSecret(): boolean {
-  return currentSecret() === DEV_SECRET;
+/**
+ * True while cursors are signed with the shipped dev key. Bare, it asks THIS process — exactly what
+ * signing reads. With `env`, it asks that table the way signing would read it (`configured` first,
+ * then the key, empty counting as unset) — `@ultimat3/storage`'s `usesDevStorageSecret({ env })`
+ * twin, which `x env check` asks of a deploy's environment rather than of the CLI's own.
+ */
+export function usesDevCursorSecret(options?: {
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+}): boolean {
+  if (options?.env === undefined) return currentSecret() === DEV_CURSOR_SECRET;
+  return (configured || options.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET) === DEV_CURSOR_SECRET;
 }
 
 /** `base64url(payload).signature`. Opaque by contract: callers must never parse it. */

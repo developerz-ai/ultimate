@@ -163,6 +163,13 @@ export {
   queryEntry,
   refillWindowInLane,
 } from './query-window';
+// ---- channel records with no replicator: an app's committed rows, published by the app ----------
+export {
+  type PublishOptions,
+  type RecordPublisher,
+  type RecordPublisherOptions,
+  recordPublisher,
+} from './record-publisher';
 export {
   CHANGE_SUBJECT_PREFIX,
   changeFeedReplicator,
@@ -174,6 +181,8 @@ export {
 } from './replicator';
 export {
   type ChangeEnvelope,
+  type EnvelopeSource,
+  encodeEnvelope,
   parseChange,
   parseEnvelope,
   SeqGapDetector,

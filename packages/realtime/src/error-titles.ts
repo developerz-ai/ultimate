@@ -41,6 +41,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_SOCKET_ORIGIN_REFUSED',
   'X_OFFLINE_QUEUE_ABANDONED',
   'X_SOCKET_LIMIT',
+  'X_REALTIME_PRODUCER_CONFLICT',
 ] as const;
 
 export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
@@ -78,6 +79,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_SOCKET_ORIGIN_REFUSED: 'the websocket upgrade came from another origin',
   X_OFFLINE_QUEUE_ABANDONED: 'a write was queued after its page changed principal',
   X_SOCKET_LIMIT: 'one principal holds too many sockets on this node',
+  X_REALTIME_PRODUCER_CONFLICT: 'two kinds of producer carry one table on the change bus',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws

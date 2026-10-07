@@ -6,7 +6,7 @@
 import type { AsyncState, Row } from '@ultimat3/core';
 import type { LiveHandle, Unsubscribe } from './client-contract';
 import type { QueryAccessor, QueryRef } from './use-query';
-import type { RecordAccessor } from './use-record';
+import type { RecordAccessor, useRecords } from './use-record';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -29,6 +29,14 @@ export type _QueryAnswersAsyncState = Assert<
 /** …and `useRecord` the same vocabulary, with `undefined` for a record the server removed. */
 export type _RecordAnswersAsyncState = Assert<
   Equals<ReturnType<RecordAccessor<FeedRow>>, AsyncState<FeedRow | undefined>>
+>;
+
+/**
+ * `useRecords` takes its selection EXPLICITLY — a key list, or `{}` / `{ where, order }` for the
+ * whole type. A default turned a call that forgot its keys into "every record of the type".
+ */
+export type _UseRecordsSelectionRequired = Assert<
+  Equals<Parameters<typeof useRecords>['length'], 2>
 >;
 
 /**

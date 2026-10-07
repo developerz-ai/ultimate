@@ -5,14 +5,10 @@
 // why: Bun exposes no path API — the two files this module reads are joined to the app root.
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
-import {
-  checkEnvExample,
-  ENV_EXAMPLE_PATH,
-  ERROR_DOCS_URL,
-  renderEnvExample,
-} from '@ultimat3/core';
+import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL, parseEnvKeys } from '@ultimat3/core';
 import { appConfigExport } from './app-config-load';
 import { APP_CONFIG_FILE } from './app-root';
+import { appEnvExample, FRAMEWORK_SECRETS } from './framework-env';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -53,8 +49,11 @@ export async function loadEnvSchema(root: string): Promise<EnvSchema | undefined
   return isEnvSchema(declared) ? declared : undefined;
 }
 
-/** The bytes `.env.example` must hold. Deterministic, so a rewrite that changes nothing diffs to nothing. */
-export const envExampleFor = (schema: EnvSchema): string => renderEnvExample(schema);
+/**
+ * The bytes `.env.example` must hold: the app's declaration, then the framework's deploy-required
+ * keys (`framework-env.ts`). Deterministic, so a rewrite that changes nothing diffs to nothing.
+ */
+export const envExampleFor = (schema: EnvSchema): string => appEnvExample(schema);
 
 const driftFinding = (cause: string): Finding => ({
   code: 'X_ENV_EXAMPLE_DRIFT',
@@ -91,12 +90,20 @@ export async function envExampleFindings(root: string): Promise<readonly Finding
   }
   const text = await file.text();
   if (text === expected) return [];
-  const report = checkEnvExample(schema, text);
+  const present = new Set(parseEnvKeys(text));
+  const missing = Object.keys(schema).filter((key) => !present.has(key));
+  // The framework's keys are owed by every deployed app, whatever its schema says (#679), and an
+  // example written before they were part of the contract is missing exactly these.
+  const owed = FRAMEWORK_SECRETS.map((secret) => secret.key).filter(
+    (key) => !Object.hasOwn(schema, key) && !present.has(key),
+  );
   return [
     driftFinding(
-      report.missing.length > 0
-        ? `${ENV_EXAMPLE_PATH} does not declare ${report.missing.join(', ')}, declared by ${ENV_SCHEMA_EXPORT} in ${APP_CONFIG_FILE}`
-        : `${ENV_EXAMPLE_PATH} is no longer the projection of ${ENV_SCHEMA_EXPORT} — a description, a default or the required flag has moved`,
+      missing.length > 0
+        ? `${ENV_EXAMPLE_PATH} does not declare ${missing.join(', ')}, declared by ${ENV_SCHEMA_EXPORT} in ${APP_CONFIG_FILE}`
+        : owed.length > 0
+          ? `${ENV_EXAMPLE_PATH} does not declare ${owed.join(', ')}, which the framework refuses to boot without outside development/test`
+          : `${ENV_EXAMPLE_PATH} is no longer the projection of ${ENV_SCHEMA_EXPORT} — a description, a default or the required flag has moved`,
     ),
   ];
 }

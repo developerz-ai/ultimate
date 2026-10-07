@@ -109,16 +109,78 @@ describe('unit · x env check', () => {
   test('a key declared secret is never printed back, in the terminal or in --json', async () => {
     const root = await appRoot('check-mask');
     const dsn = 'postgres://user:hunter2@db.internal/app';
+    const result = await envCommand.run(
+      context(['env', 'check'], root, { DATABASE_URL: dsn, ULTIMATE_ENV: 'development' }),
+    );
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result.data)).not.toContain('hunter2');
+    expect(record(record(result.data)['values'] as JsonValue)['RETRIES']).toBe(3);
+  });
+
+  // One table for the whole report: `checkEnv` read `process.env` while the command was handed
+  // `ctx.env`, so the app's keys and the framework's below could be judged against two processes.
+  test('the declared keys are read from the environment the command was handed', async () => {
+    const root = await appRoot('check-ctx');
     const previous = process.env['DATABASE_URL'];
-    process.env['DATABASE_URL'] = dsn;
+    process.env['DATABASE_URL'] = 'postgres://ambient/app';
     try {
-      const result = await envCommand.run(context(['env', 'check'], root));
-      expect(result.ok).toBe(true);
-      expect(JSON.stringify(result.data)).not.toContain('hunter2');
-      expect(record(record(result.data)['values'] as JsonValue)['RETRIES']).toBe(3);
+      const env = { ULTIMATE_ENV: 'development' };
+      const result = await envCommand.run(context(['env', 'check'], root, env));
+      expect(result.findings?.map((finding) => finding.code)).toEqual(['X_ENV_MISSING']);
     } finally {
       if (previous === undefined) delete process.env['DATABASE_URL'];
       else process.env['DATABASE_URL'] = previous;
     }
+  });
+
+  // #679: the framework's own deploy-required keys, checked where the boot would refuse them —
+  // outside development/test — and silent in development, where the shipped keys are the design.
+  test('a deployed environment without the framework secrets is refused, naming each', async () => {
+    const root = await appRoot('check-framework');
+    const env = { DATABASE_URL: 'postgres://db/app', ULTIMATE_ENV: 'production' };
+    const result = await envCommand.run(context(['env', 'check'], root, env));
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.findings?.map((finding) => finding.code)).toEqual([
+      'X_CURSOR_SECRET_DEV',
+      'X_STORAGE_SECRET_DEV',
+    ]);
+    expect(result.findings?.[0]?.fix).toBe(
+      'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
+    );
+  });
+
+  test('staging owes them too: the boot refuses outside development/test, not only production', async () => {
+    const root = await appRoot('check-staging');
+    const env = {
+      DATABASE_URL: 'postgres://db/app',
+      ULTIMATE_ENV: 'staging',
+      ULTIMATE_CURSOR_SECRET: 'c'.repeat(64),
+      S3_ENDPOINT: 'https://s3.example.com',
+    };
+    const result = await envCommand.run(context(['env', 'check'], root, env));
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  // The boot FAILS CLOSED: no ULTIMATE_ENV and no NODE_ENV is production there, so it is here —
+  // otherwise this answered green for exactly the process the boot refuses (#679 review).
+  test('an environment that names none is checked as the boot reads it: deployed', async () => {
+    const root = await appRoot('check-unnamed');
+    const result = await envCommand.run(
+      context(['env', 'check'], root, { DATABASE_URL: 'postgres://db/app' }),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.findings?.map((finding) => finding.code)).toEqual([
+      'X_CURSOR_SECRET_DEV',
+      'X_STORAGE_SECRET_DEV',
+    ]);
+  });
+
+  test('development owes no framework secret', async () => {
+    const root = await appRoot('check-dev');
+    const env = { DATABASE_URL: 'postgres://db/app', ULTIMATE_ENV: 'development' };
+    const result = await envCommand.run(context(['env', 'check'], root, env));
+    expect(result.ok).toBe(true);
   });
 });

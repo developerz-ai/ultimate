@@ -284,7 +284,7 @@ describe('a change sequence that skipped', () => {
       await app.transport.publish(
         'x.change.posts.o1',
         JSON.stringify({
-          entity: 'posts',
+          table: 'posts',
           op: 'insert',
           before: null,
           after: { id: `p${seq}`, orgId: 'o1' },

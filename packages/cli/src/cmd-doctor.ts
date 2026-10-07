@@ -4,14 +4,8 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
-import {
-  ENV_EXAMPLE_PATH,
-  ERROR_DOCS_URL,
-  tryResolveEnvironment,
-  usesDevCursorSecret,
-} from '@ultimat3/core';
+import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL } from '@ultimat3/core';
 import { checkDb, PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE, postgresClient } from '@ultimat3/db';
-import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -25,6 +19,7 @@ import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
 import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
+import { machineSecretFindings } from './framework-env';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -49,17 +44,13 @@ export interface DoctorProbe {
   readonly port: number;
   /** `APP_URL` as this environment declares it; `undefined` when unset. */
   readonly appUrl: string | undefined;
-  /** True while cursors are signed with the key shipped in the published package. */
-  readonly devCursorSecret: boolean;
   /**
-   * True while the local disk WOULD sign upload grants with the key shipped in the published
-   * package. Same semantics as `devCursorSecret`, environment only — an app that passes an
-   * explicit `signingSecret` in `app.config.ts` never consults the env var, so this can read true
-   * for an app that is fine. The finding is worded as a condition to check, not a certainty.
+   * The framework's own secrets this machine lacks — `framework-env.ts`'s
+   * `machineSecretFindings`, gated by `namedDeployed`: only an environment NAMED staging or
+   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer).
+   * The list's own `needed`/`unsafe` decide; doctor reports.
    */
-  readonly devStorageSecret: boolean;
-  /** True when this process believes it is serving real clients. */
-  readonly production: boolean;
+  readonly frameworkFindings: readonly Finding[];
   exists(relativePath: string): boolean;
   portFree(port: number): Promise<boolean>;
   /**
@@ -231,36 +222,9 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       ),
     );
   }
-  // Production only, and the gate is the point: every development environment signs with the
-  // shipped key on purpose — that is what lets `x dev` page with no configuration — so an
-  // unconditional finding would make `x doctor` red for every developer on day one and teach the
-  // reader to skim past the report. The key is a defect only where cursors reach real clients,
-  // who can read it out of the published package and forge a page position.
-  // Sits here because it costs two env reads and a comparison — cheaper than binding a port.
-  if (probe.production && probe.devCursorSecret) {
-    findings.push(
-      finding(
-        'X_CURSOR_SECRET_DEV',
-        'cursors are signed with the shipped development key, so a client can forge a page position',
-        'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
-      ),
-    );
-  }
-  // The storage twin of the cursor key above, and the more expensive one to get wrong: the
-  // published string mints a signed `PUT` for any key with any `maxBytes` and `contentType`, and
-  // `acceptSignedUpload` trusts the signed constraints over the app's own `uploadPolicy`.
-  // Production only, for the reason the cursor check gives — every dev environment signs with the
-  // shipped key on purpose. `@ultimat3/storage` refuses this at construction; `x doctor` is what
-  // reports it before a deploy reaches the refusal.
-  if (probe.production && probe.devStorageSecret) {
-    findings.push(
-      finding(
-        'X_STORAGE_SECRET_DEV',
-        `${STORAGE_SIGNING_SECRET_KEY} is unset or holds the shipped development key, so a local-disk deploy would accept forged upload grants that override its own uploadPolicy`,
-        'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
-      ),
-    );
-  }
+  // Silent in development and on a shell naming no environment; reported where this machine names
+  // a deploy. One list, one wording (`framework-env.ts`, #679).
+  findings.push(...probe.frameworkFindings);
   findings.push(...(await portFindings(probe)));
   findings.push(...appUrlFindings(probe.appUrl, probe.port));
   // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
@@ -402,16 +366,7 @@ export function probeFor(
     root,
     port,
     appUrl: env['APP_URL'],
-    devCursorSecret: usesDevCursorSecret(),
-    devStorageSecret: usesDevStorageSecret(),
-    // `ULTIMATE_ENV`, through core — the one key that says which deploy this is, with `NODE_ENV`
-    // as its documented fallback. This read `X_ENV ?? NODE_ENV`, a spelling nothing else in the
-    // repo reads, so a deploy declaring production the framework's own way was told it was not
-    // production and skipped both secret findings; and the `??` short-circuited, so any non-empty
-    // `X_ENV` shadowed a real `NODE_ENV=production` too. The non-throwing variant because
-    // `ULTIMATE_ENV` is not in the env schema — nothing validates it at boot, and a diagnostic
-    // that crashes on a typo is the one thing worse than a diagnostic that misses.
-    production: tryResolveEnvironment() === 'production',
+    frameworkFindings: machineSecretFindings(env),
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     database: () => probeDatabase(process.env['DATABASE_URL']),

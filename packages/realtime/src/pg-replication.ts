@@ -414,7 +414,7 @@ export class PgReplicationStream {
     }
     const { before, after, omitted } = replicatedImages(relation, oldTuple, newTuple, unchanged);
     const event: ChangeEvent = {
-      entity: relation.name,
+      table: relation.name,
       op,
       before,
       after,

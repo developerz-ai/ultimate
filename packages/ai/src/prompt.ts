@@ -12,6 +12,7 @@
 import { canonicalJson } from '@ultimat3/core';
 import { AiPromptRenderError, AiPromptVersionError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
+import { type FencedSpan, fenceMap, neutraliseFenced, SLOT } from './prompt-fence';
 import type { JsonSchema } from './tools';
 
 /** Template variables. Values are stringified at render time with no formatting magic. */
@@ -21,7 +22,11 @@ export interface DefinePromptInput<V extends PromptVars> {
   readonly id: string;
   /** Semver-ish, author-assigned. Must change whenever `template` changes. */
   readonly version: string;
-  /** `{{name}}` placeholders. Every key in `V` must appear; unfilled ones throw. */
+  /**
+   * `{{name}}` placeholders. Every key in `V` must appear; unfilled ones throw. A slot inside an
+   * XML-style tag pair (`<post_body>\n{{body}}\n</post_body>`) is fenced DATA: render breaks every
+   * fence closer in the value, so user text cannot end the fence and pose as instructions.
+   */
   readonly template: string;
   /** Optional system prompt. Part of the hash — it changes behaviour. */
   readonly system?: string;
@@ -58,7 +63,10 @@ export interface Prompt<V extends PromptVars = PromptVars> {
   readonly model: ModelId | undefined;
   readonly effort: Effort | undefined;
   readonly thinking: ThinkingMode | undefined;
-  /** Substitute variables. Throws on an unfilled placeholder. */
+  /**
+   * Substitute variables. In a fenced slot every fence closer the template draws is broken, never
+   * deleted (`prompt-fence.ts`). Throws on an unfilled placeholder.
+   */
   render(vars: V): string;
   /** `id@version` — the identity an eval result is filed under. */
   readonly ref: string;
@@ -78,6 +86,8 @@ export function definePrompt<V extends PromptVars>(input: DefinePromptInput<V>):
     });
   }
 
+  // Read once, at declaration: the fences are the template's, and a render is a hot path.
+  const fences = fenceMap(input.template);
   const prompt: Prompt<V> = {
     id: input.id,
     version: input.version,
@@ -90,7 +100,7 @@ export function definePrompt<V extends PromptVars>(input: DefinePromptInput<V>):
     effort: input.effort,
     thinking: input.thinking,
     ref: key,
-    render: (vars) => render(input.template, vars, key),
+    render: (vars) => render(input.template, vars, key, fences),
   };
   registry.set(key, prompt as Prompt);
   return prompt;
@@ -126,11 +136,23 @@ export function resetPrompts(): void {
   registry.clear();
 }
 
-const PLACEHOLDER = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
-
-function render(template: string, vars: PromptVars, ref: string): string {
+function render(
+  template: string,
+  vars: PromptVars,
+  ref: string,
+  fences: ReadonlyMap<number, readonly string[]>,
+): string {
   const missing: string[] = [];
-  const out = template.replace(PLACEHOLDER, (_match, name: string) => {
+  const spans: FencedSpan[] = [];
+  let names: readonly string[] = [];
+  let out = '';
+  let from = 0;
+  // Assembled by hand rather than `replace`: the fence pass below needs where each fenced value
+  // LANDED, because a closer can be built across two values or a value and the template beside it.
+  for (const match of template.matchAll(SLOT)) {
+    out += template.slice(from, match.index);
+    from = match.index + match[0].length;
+    const name = match[1] ?? '';
     // `Object.hasOwn`, never `vars[name] === undefined`: a plain object inherits `constructor`,
     // `toString` and `valueOf`, so `{{constructor}}` in a template rendered JS SOURCE into the
     // prompt instead of raising the unfilled-slot error this file promises — and that source was
@@ -139,16 +161,24 @@ function render(template: string, vars: PromptVars, ref: string): string {
     const value = Object.hasOwn(vars, name) ? vars[name] : undefined;
     if (value === undefined) {
       missing.push(name);
-      return '';
+      continue;
     }
-    return String(value);
-  });
+    const text = String(value);
+    const fenced = fences.get(match.index);
+    if (fenced !== undefined) {
+      spans.push({ start: out.length, end: out.length + text.length });
+      names = fenced;
+    }
+    out += text;
+  }
+  out += template.slice(from);
   if (missing.length > 0) {
     // Loud, like an i18n miss: a silently blank variable is a prompt that reads fine and
     // means something else.
     throw new AiPromptRenderError({ ref, missing });
   }
-  return out;
+  // A fenced slot is data; no closer a value wrote any part of survives.
+  return neutraliseFenced(out, spans, names);
 }
 
 /**

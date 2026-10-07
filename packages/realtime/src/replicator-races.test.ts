@@ -127,7 +127,7 @@ const manual = () => {
 };
 
 const change = (position: number): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'insert',
   before: null,
   after: { id: `p${position}` },

@@ -16,14 +16,14 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
-| `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)) |
+| `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `describe <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
 | `x jobs ls\|show\|retry\|cancel\|rm\|promote\|pause\|resume` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`; `ls --json` pages as `rows`/`nextCursor`/`hasMore`; `drain` is planned (`X_NOT_IMPLEMENTED`) |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
-| `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it |
+| `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`, or with no environment named |
 | `x auth seal-mfa` | one-shot auth maintenance | seals every `x_users.mfa_secret` still in the clear; idempotent, `{ sealed, alreadySealed, skipped }` |
 | `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
 | `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
@@ -35,6 +35,31 @@ Commands and the `x verify` step count, `As of 2026-08`:
 Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
 and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — "not built yet"
 and "not a command" are different facts.
+
+## `x build`: who a weighed page renders as
+
+`x build --target static` renders every budgeted `app/` route it cannot publish only to weigh it,
+then discards the document. That render runs as core's `measurementActor()`: the actor
+`defineMeasurementActor()` declares in `app.config.ts`, else a **service actor holding `*` with no
+`orgId` and no roles**. A page whose policy names a role, or whose `load` reads a tenant-scoped
+entity, is refused under the default, and the `budgets` step reports it as `X_BUDGET_UNMEASURED`
+with the actor, the refusal's code and cause (`X_FORBIDDEN`, `X_UNAUTHENTICATED`,
+`X_TENANCY_ACTOR_ORG_REQUIRED`), and the edit that weighs it:
+
+```ts
+// app.config.ts — the one file every build imports; never used for a published site/ artifact
+import { defineMeasurementActor, userActor } from '@ultimat3/core';
+
+/** The org your dev seed creates. */
+const DEMO_ORG_ID = '00000000-0000-4000-8000-000000000001';
+
+defineMeasurementActor(() => userActor({ id: 'measure', orgId: DEMO_ORG_ID, roles: ['dev'] }));
+```
+
+Pick the org your dev seed creates and the most-privileged role your gated pages require: the
+weigh measures the page a holder of that role is served. Any other refusal (a missing database, a
+`TypeError` in `load`) keeps the generic `fix:` — the `unmeasured` list of
+`x build --target static --json` — with the code already in the cause.
 
 ## Which `x` runs
 
@@ -146,7 +171,7 @@ that name where there is one (`x new` writes all seventeen), the blank template 
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
 | `app-transport.ts` / `browser-transport.ts` | one browser transport, on `boundaries` in every app: a raw `fetch(`, `new WebSocket(` or `new XMLHttpRequest(` in an island's closure is `X_BROWSER_TRANSPORT_BYPASS`; a server barrel there is `X_BROWSER_SERVER_BARREL` |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
-| `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each |
+| `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each. `ROLE=worker` also retires on SIGUSR2 (`serve-retire.ts`, 25.0.0): stop claiming, finish every held job, abort nothing, drain, exit 0 — what the chart's opt-in `roles.worker.retireSeconds` `preStop` sends; a no-op on Windows ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
 | `prerender.ts` | `x build --target static`: which `site/` routes qualify, and where the bytes land |
 | `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT`; opening it starts the `process_*` series, labelled by `startMetricsEndpoint({ role })` |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | what each container role imports: `web`, `sync` and `replicator` every app module; `worker` and `scheduler` the API index plus every module that reaches no component or stylesheet |

@@ -339,6 +339,10 @@ describe('unit · x db reset', () => {
       );
       expect(failure).toBeUltimateError('X_NOT_IMPLEMENTED');
       expect((failure as { fix: string }).fix).toContain('x db migrate');
+      // #674: the usual reason a reset meets an external database is an EXPORTED one, so the fix
+      // names the variable and the command that resets the embedded database without it.
+      expect((failure as { fix: string }).fix).toContain('env -u DATABASE_URL x db reset');
+      expect((failure as { cause: string }).cause).toContain('DATABASE_URL');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

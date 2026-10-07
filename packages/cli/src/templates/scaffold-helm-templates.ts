@@ -168,6 +168,23 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     httpGet: { path: /metrics, port: metrics }
     periodSeconds: 15
     failureThreshold: 4
+  {{- /*
+  The worker's retire, opt-in: roles.worker.retireSeconds > 0. The preStop sends PID 1 SIGUSR2 —
+  the framework's retire: stop claiming, finish every held job however long it takes, abort
+  nothing, then drain and exit 0 — and waits until PID 1 is gone, so the SIGTERM that follows finds
+  nothing left to cut off. bun -e, never kill/sleep: bun is the image's ENTRYPOINT (exec form, so it
+  IS PID 1). The kubelet counts the preStop against the grace period, so retireSeconds is added to
+  it and is the longest a retire may take.
+  */}}
+  {{- if and (eq $role "worker") (gt (int $cfg.retireSeconds) 0) }}
+  lifecycle:
+    preStop:
+      exec:
+        command:
+          - bun
+          - -e
+          - "process.kill(1, 'SIGUSR2'); for (;;) { try { process.kill(1, 0); } catch { break; } await Bun.sleep(1000); }"
+  {{- end }}
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}
   volumeMounts:
@@ -177,14 +194,17 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
 
 {{/*
 A role's terminationGracePeriodSeconds, in the order the kubelet's budget is spent: the preStop
-sleep (web and sync, 1.30+), the readiness grace (web and sync — every other role drains with
-none), the drain budget (app.config.ts drain.deadlineMs, every role) and the teardown margin.
+sleep (web and sync, 1.30+), the worker's opt-in retire (roles.worker.retireSeconds), the
+readiness grace (web and sync — every other role drains with none), the drain budget (app.config.ts drain.deadlineMs, every role) and the teardown margin.
 Defaults: 45s web/sync (40s below 1.30), 35s the rest. x deploy --method helm sets
 drain.deadlineSeconds and drain.readinessGraceSeconds from app.config.ts.
 */}}
 {{- define "${app.kebab}.terminationGracePeriodSeconds" -}}
 {{- $drain := .root.Values.drain -}}
 {{- $total := add (int $drain.deadlineSeconds) (int $drain.teardownMarginSeconds) -}}
+{{- if eq .role "worker" -}}
+{{- $total = add $total (int .cfg.retireSeconds) -}}
+{{- end -}}
 {{- if .cfg.port -}}
 {{- $total = add $total (int $drain.readinessGraceSeconds) -}}
 {{- if semverCompare ">=1.30-0" .root.Capabilities.KubeVersion.Version -}}

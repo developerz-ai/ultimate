@@ -75,7 +75,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
 }
 
 const change = (op: 'insert' | 'delete', row: Row, lsn: number): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op,
   before: op === 'delete' ? row : null,
   after: op === 'delete' ? null : row,

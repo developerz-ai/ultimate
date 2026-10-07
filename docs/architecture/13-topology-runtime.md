@@ -20,7 +20,7 @@ ROLE=replicator myapp
 |---|---|---|---|---|
 | `web` | env → DB pool → cache clients → route table → `Bun.serve` | HTTP on `PORT` | ISR regen consumer (optional), metric flush | SIGTERM drain |
 | `sync` | env → DB pool (read) → NATS subscribe → `Bun.serve` upgrade handler | WS on `PORT` | policy-memo sweep, heartbeat/ping, buffer trim | SIGTERM drain |
-| `worker` | env → DB pool → one pool per `WORKER_QUEUES` entry | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain |
+| `worker` | env → DB pool → one pool per served queue: exactly the `WORKER_QUEUES` entries when set, else `jobs.queues` plus every registered job's queue (`workerQueuesFor`, `packages/cli/src/runtime-jobs.ts`) | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain; or SIGUSR2 — the retire: claim nothing, finish every held job, abort nothing, drain, exit 0 (`packages/cli/src/serve-retire.ts`; none on Windows) |
 | `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` per round is both the renewal and the standby retry | SIGTERM, or a round where the lease is not this holder's |
 | `migrate` | env → DB → advisory lock → apply → post-migrate drift check | none | none | after apply — **exit 0 or non-zero, run-once** |
 | `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM — a lock held elsewhere is a standby (`/readyz` 503, re-asking on a backoff), never an exit |

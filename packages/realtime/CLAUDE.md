@@ -138,13 +138,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A socket the node evicts ITSELF goes through `evict(socket, code, reason)`** (the full
   `teardown`), never `sockets.remove`. **`drain()` waits for the presence leaves it started** —
   `evictInChunks` (`drain-evictions.ts`, `DRAIN_EVICT_CHUNK`, `allSettled`).
-- **The idle sweep is armed by `start()`** (a quarter of `idleTimeoutMs`, floored at 1 s, `.unref()`)
-  and measures on `Clock.monotonic()` (`lastSeenMonotonicMs`). `SocketRegistry.idle()` is a query;
-  the node evicts.
+- **The idle sweep is armed by `start()`** (`idleTimeoutMs / 4`, floored at 1 s, `.unref()`), on
+  `Clock.monotonic()`. `SocketRegistry.idle()` is a query; the node evicts.
 - **`drain()` and `stop()` both call one idempotent `release()`**; `drain()` releases after the
   sockets are gone and before `hub.close()`.
-- **Refusing new sockets and draining are two phases**: `stopAccepting()` is `accept`, `drain()` +
-  `stop()` are `close`. `listenSyncNode` unregisters both on `stop()`.
+- **Refusing and draining are two phases**: `stopAccepting()` is `accept`, `drain()` + `stop()`
+  `close`; `listenSyncNode` unregisters both on `stop()`.
 - **A hub that closed opens nothing**: `close()` sets `#closed` before the walk; `#open` closes a
   late subscription and RAISES `X_TRANSPORT_UNAVAILABLE`. `#release` takes the reserved bridge, never
   a name.
@@ -162,18 +161,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   released on every path that never opens — `onUngranted` is REQUIRED on `UpgradeDeps`, and a
   `server.upgrade` that THROWS releases too. `sync-node-auth.test.ts`'s harness opens inside
   `upgrade()`, as Bun does.
-- **A grant expires; a socket does not**: expired grants are re-decided on an interval through
-  `hub.onActorChange` and `registry.reauthorize`. No `refresh` = close with `1008`; a `refresh` that
-  raises keeps the socket and retries.
-- **Every `socket.send` reads its answer**: a dropped subscribe reply marks the subscription desynced;
-  a dropped presence roster is logged (`sync.presence_roster_dropped`); `drain()` returns
-  `DrainedSocket[]` with `notified` and logs `sync.drain_frames_dropped`.
+- **A grant expires; a socket does not**: expired grants are re-decided on an interval
+  (`hub.onActorChange`, `registry.reauthorize`). No `refresh` = close `1008`; one that raises retries.
+- **Every `socket.send` reads its answer**: a dropped subscribe reply marks it desynced; a dropped
+  roster logs `sync.presence_roster_dropped`; `drain()` returns `DrainedSocket[]` (`notified`).
 - **Inbound frames run in a lane, never the socket**: `subscribe` is `sub:<sid>` or `topic:<name>`,
   everything else unlaned (`frame-lanes.ts`); a lane exists only while work is queued.
 - **A dropped `records` frame is counted AND repaired**: per-node `seq`/`epoch` per channel; a refused
-  frame marks the socket gapped, and the websocket `drain` handler sends `replay-gap`
-  (`channel_replay_gaps_total` beside `channel_frames_dropped_total`). The client re-runs the
-  channel's `catchUp`, holding frames meanwhile.
+  frame marks the socket gapped, and the `drain` handler sends `replay-gap`
+  (`channel_replay_gaps_total`). The client re-runs `catchUp`, holding frames meanwhile.
 - **A channel is a DECLARATION**: `channel(name, { params, policy, catchUp, records?, events? })`.
   Deny by default, and `policy` is REQUIRED (`X_CHANNEL_DECLARATION_INVALID`; a public channel says
   `policy: allow('public')`). Presence rides `events: true` channels.
@@ -182,8 +178,11 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A seat is decided for the actor ON the socket when the guard resolves** (`#settle`); a denied
   re-ask on a suspended seat is refused and latched. The latch is capped at `maxTopicsPerSocket`.
 - **A missed change reopens every records topic** (`ChannelHub.invalidate()`, beside both
-  `registry.invalidate()` sites).
-- **A channel patch id carries the node** (`nodeId`, default a per-hub `uuidV7()`).
+  `registry.invalidate()` sites; `sync-bus-handlers.test.ts`).
+- **A `recordPublisher` change (`source: 'publisher'`) feeds channels ONLY** — no commit position:
+  never `registry.deliver`, its gap stales no window; a new publisher is no gap. One producer KIND
+  per table per node (`ProducerKinds`, `X_REALTIME_PRODUCER_CONFLICT`); the x dev bridge skips a
+  claimed table (`isPublishedTable`). `ChangeEvent.table` is the relation on every producer.
 - **An error never renders a credential**: `parsePgUrl`/`parseNatsUrl` name the variable.
 
 ## Replication
@@ -250,17 +249,16 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `resolveConflict(overlayRow, serverRow)` in `RecordStore.settle`. A server delete is not a conflict.
 - Anything a component reads is a getter or accessor. `MutatorLike.local` uses method syntax.
   `useQuery`'s input is read once, at call time.
-- Every subscription handle (`LiveHandle`, the hook accessors, `Unsubscribe`) is `Disposable`, and
-  `[Symbol.dispose]` is the same function as the release. Type claims go in `type-pins.ts`.
-- **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time. `#epoch` is
-  bumped before the requeue scan and read every pass iteration. `#persist` hands the store
-  SNAPSHOTS by KEY; one tab drains at a time (`navigator.locks`) and resets a stored `inflight`
-  under the lock. A `rescope` abandons the queue, clears the single-flight slot and bumps the
-  outbox's epoch synchronously; `enqueue` decides WHOSE queue before its first await and refuses
-  otherwise (`X_OFFLINE_QUEUE_ABANDONED`), and `useMutation` fences its own await (the POST) on the
-  scope epoch it was called under. A wipe or open the disk refuses is warned
-  `X_LOCAL_STORE_UNAVAILABLE` and never rejects `ready`. At-least-once: an entry leaves the disk
-  when its ack is written.
+- **`useRecords(type, selection)` holds the TYPE** (`retainType`): `ready` at once, recomputed per
+  change to that type, no row of it evicted while held; the last type hold evicts what it spared.
+- Every subscription handle is `Disposable`; `[Symbol.dispose]` IS the release. Type claims go in
+  `type-pins.ts`.
+- **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time; `#epoch` is
+  bumped before the requeue scan, read every pass. `#persist` hands SNAPSHOTS by KEY; one tab drains
+  (`navigator.locks`), resetting a stored `inflight`. A `rescope` abandons the queue and bumps the
+  epoch synchronously; `enqueue` decides WHOSE queue before its first await
+  (`X_OFFLINE_QUEUE_ABANDONED`); `useMutation` fences its POST on its scope epoch. A refused disk is
+  warned `X_LOCAL_STORE_UNAVAILABLE`, never rejecting `ready`. An entry leaves disk at its ack.
 
 ## The client connection
 

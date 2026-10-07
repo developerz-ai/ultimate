@@ -11,11 +11,8 @@
 // `slice(0, NaN)` is `[]`, so a `concurrency: NaN` worker claims nothing and reports healthy.
 // Same shape as `concurrencyLimiter`'s `maxTenants` and `backfill()`'s `batch`, refused the same way.
 
-import { finiteOption } from '@ultimat3/core';
+import { finiteOption, JOBS_CONCURRENCY_DEFAULT } from '@ultimat3/core';
 import { DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
-
-/** Slots a queue gets when `concurrency` names no number for it. */
-const DEFAULT_SLOTS = 5;
 
 /** The subset of `WorkerOptions` this module reads. Structural, so `WorkerOptions` satisfies it. */
 export interface WorkerNumericOptions {
@@ -34,7 +31,10 @@ export interface WorkerTimings {
 }
 
 /**
- * Slots for one queue. A queue NAME is deployment data, so the table is read by OWN keys:
+ * Slots for one queue — `JOBS_CONCURRENCY_DEFAULT` (core's, the same number `app.config.ts`'s
+ * `jobs.concurrency` defaults to) for a queue `concurrency` names no number for. This package kept
+ * its own 5 until 25.0.0, so a table `{ banks: 4 }` left `default` at 5 beside an unset config's 8.
+ * A queue NAME is deployment data, so the table is read by OWN keys:
  * `concurrency['constructor']` answers `Object.prototype.constructor`, and
  * `Math.max(0, <function> - inFlight)` is `NaN`, which the `free === 0` guard does not catch.
  * `bun run proto-index` cannot see this one — the table is a parameter, not a literal in a file.
@@ -43,8 +43,8 @@ const slotTable =
   (declared: number | Readonly<Record<string, number>> | undefined) =>
   (queue: string): number => {
     if (typeof declared === 'number') return declared;
-    if (declared === undefined || !Object.hasOwn(declared, queue)) return DEFAULT_SLOTS;
-    return declared[queue] ?? DEFAULT_SLOTS;
+    if (declared === undefined || !Object.hasOwn(declared, queue)) return JOBS_CONCURRENCY_DEFAULT;
+    return declared[queue] ?? JOBS_CONCURRENCY_DEFAULT;
   };
 
 export function resolveWorkerTimings(options: WorkerNumericOptions): WorkerTimings {
@@ -61,7 +61,11 @@ export function resolveWorkerTimings(options: WorkerNumericOptions): WorkerTimin
   else if (declared !== undefined) {
     // Per queue, by own key: an inherited member is not this table's to answer with either.
     for (const queue of Object.keys(declared)) {
-      finiteOption('jobWorker', `concurrency.${queue}`, declared[queue] ?? DEFAULT_SLOTS);
+      finiteOption(
+        'jobWorker',
+        `concurrency.${queue}`,
+        declared[queue] ?? JOBS_CONCURRENCY_DEFAULT,
+      );
     }
   }
   return {

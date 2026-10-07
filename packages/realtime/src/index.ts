@@ -194,4 +194,10 @@ export {
   useMutationQueue,
 } from './use-mutation';
 export { type QueryAccessor, type QueryOptions, type QueryRef, useQuery } from './use-query';
-export { type RecordAccessor, type RecordsAccessor, useRecord, useRecords } from './use-record';
+export {
+  type RecordAccessor,
+  type RecordSelection,
+  type RecordsAccessor,
+  useRecord,
+  useRecords,
+} from './use-record';

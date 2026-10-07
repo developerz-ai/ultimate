@@ -20,8 +20,13 @@ import type { Rng } from './thundering-herd';
 export type ChangeOp = 'insert' | 'update' | 'delete' | 'truncate';
 
 export interface ChangeEvent<R extends Row = Row> {
-  /** Entity name, not table name — the matcher's dependency sets are declared in entity terms. */
-  readonly entity: string;
+  /**
+   * The RELATION (table) name, on every producer: the WAL decoder reads it off the Relation
+   * message, the in-process bridge maps the row observer's entity name onto it, and a
+   * `recordPublisher` sends `projection.table`. A channel matches `projection.table`, a live shape
+   * is `from('<table>', …)`; the record TYPE (entity name) is derived from it (`recordTypeForTable`).
+   */
+  readonly table: string;
   readonly op: ChangeOp;
   readonly before: R | null;
   readonly after: R | null;
@@ -144,7 +149,7 @@ export class MemoryChangeFeed implements ChangeFeed {
 
   /** Ergonomic emit: assigns the next lsn and txid so tests read as domain events. */
   async push(
-    entity: string,
+    table: string,
     op: ChangeOp,
     rows: {
       before?: Row | null;
@@ -156,7 +161,7 @@ export class MemoryChangeFeed implements ChangeFeed {
   ): Promise<ChangeEvent> {
     this.#position += 1n;
     const event: ChangeEvent = {
-      entity,
+      table,
       op,
       before: rows.before ?? null,
       after: rows.after ?? null,

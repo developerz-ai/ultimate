@@ -69,8 +69,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 623 → 624, measured 624 (2026-10-06, plan 101 sweep 11): `schema/src/unstorable-text.ts`
  * — the one NUL/lone-surrogate predicate `t.json()` and now every string builtin share (a lone
  * surrogate was a jsonb 500 and a silent U+FFFD on text), split out of `validators.ts` at 486 lines.
+ * raised 624 → 625, measured 625 (2026-10-07, plan 101 sweep 12c): `core/src/config-jobs.ts` — the
+ * per-queue `jobs.concurrency` table (#676), validated where every config section is.
  */
-const MIGRATE_CEILING = 624;
+const MIGRATE_CEILING = 625;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -124,8 +126,11 @@ const MIGRATE_CEILING = 624;
  * raised 917 → 918, measured 918 (2026-10-06, plan 101 sweep 11b): `realtime/src/nats-subscriptions.ts`
  * — the kept subscription list a `NatsTransport` re-binds once the library has closed its client for
  * good, which left every realtime role dead until a manual restart.
+ * raised 918 → 920, measured 920 (2026-10-07, plan 101 sweep 12c): the module named on
+ * `MIGRATE_CEILING` for 12c, and `realtime/src/record-publisher.ts` — committed rows published as
+ * channel records with no replicator (#682), which the `x dev` bridge reads to skip a claimed table.
  */
-const SERVING_ROLE_CEILING = 918;
+const SERVING_ROLE_CEILING = 920;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -169,8 +174,10 @@ const SERVING_ROLE_CEILING = 918;
  * `SERVING_ROLE_CEILING` for 11.
  * raised 1029 → 1030, measured 1030 (2026-10-06, plan 101 sweep 11b): `realtime/src/nats-subscriptions.ts`,
  * named on `SERVING_ROLE_CEILING` for 11b.
+ * raised 1030 → 1032, measured 1032 (2026-10-07, plan 101 sweep 12c): the two modules named on
+ * `SERVING_ROLE_CEILING` for 12c.
  */
-const WEB_ROLE_CEILING = 1030;
+const WEB_ROLE_CEILING = 1032;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

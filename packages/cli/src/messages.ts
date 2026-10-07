@@ -86,6 +86,9 @@ const CATALOG = {
   'cli.dev.mail.refused': 'mail=refused({detail})',
   'cli.dev.hmr': 'reloaded {file} in {ms}ms',
   'cli.dev.restart': 'restarting: {reason} — a module that defines a primitive holds the old code',
+  // The restart's wait, said while it waits: a save never cancels a running job (issue #677).
+  'cli.dev.restartWaiting':
+    'restart waits for {count} running job(s) to finish — no new job is claimed; Ctrl-C stops now (a job still running is cut off at the drain deadline and requeued)',
   // A hard kill leaves the lock behind and that is normal, not a fault — worth one line so a
   // reader knows why the boot paused, and never a finding.
   'cli.dev.staleLock': 'cleared a stale dev.lock — the previous x dev did not shut down cleanly',
