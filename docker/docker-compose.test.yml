@@ -176,7 +176,7 @@ services:
   # tmpfs; `-l /dev/null` is the only quiet a nats-server has.
   nats:
     <<: *silent
-    image: nats:2.11-alpine@sha256:e4bf19f15fd3218814a4e3c9e0064e1334bd8aa20d5984b9f1a0afd084f8cc00
+    image: nats:2.15-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
     command: ['-js', '-sd', '/data', '-m', '8222', '-l', '/dev/null']
     tmpfs: [/data]
     ports: ['127.0.0.1:4222:4222']
