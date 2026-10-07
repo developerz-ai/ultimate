@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createContext, createLogger, seal } from '@ultimat3/core';
 import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
-import { createMemoryEventBus } from '@ultimat3/jobs';
+import { memoryEventBus } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { PromptRequest } from './auth';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
@@ -34,7 +34,7 @@ interface Harness {
 
 const harness = (): Harness => {
   const clock = testClock(new Date('2026-10-01T00:00:00.000Z'));
-  const bus = createMemoryEventBus({ clock });
+  const bus = memoryEventBus({ clock });
   let calls = 0;
   return {
     clock,
@@ -266,7 +266,7 @@ describe('unit · eventPrompt gives up on the timeout, the run signal, or a dead
     expect(thrown['retry']).toBe('terminal');
     expect(String(thrown['cause'])).toContain('scrape-prompt:run-1:1 within 10000ms');
     expect(String(thrown['fix'])).toContain('answerPrompt({ runId, index, answer })');
-    expect(String(thrown['fix'])).toContain('createPgEventBus');
+    expect(String(thrown['fix'])).toContain('postgresEventBus');
     // Ten intervals fit the budget; the wait is bounded by the budget, not by a poll count.
     expect(h.keepAlives()).toBe(10);
   });
@@ -324,7 +324,7 @@ describe('unit · the session stays open across the wait', () => {
   test('a wait far longer than the wedge budget is answered, with the browser never killed', async () => {
     const WEDGE_MS = 30_000;
     const clock = testClock(new Date('2026-10-01T00:00:00.000Z'));
-    const memory = createMemoryEventBus({ clock });
+    const memory = memoryEventBus({ clock });
     const startedAt = clock.monotonic();
     let looks = 0;
     let kills = 0;
@@ -416,7 +416,7 @@ describe('unit · eventPrompt needs a STORED bus outside development and test', 
     const refused = await asked({ NODE_ENV: 'production' }, false);
     expect(refused['code']).toBe('X_DRIVER_UNAVAILABLE');
     expect(String(refused['cause'])).toContain('in-memory');
-    expect(String(refused['fix'])).toContain('setEventBus(createPgEventBus({ executor }))');
+    expect(String(refused['fix'])).toContain('setEventBus(postgresEventBus({ executor }))');
   });
 
   test('staging fails the way production fails', async () => {

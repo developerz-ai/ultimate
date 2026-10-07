@@ -1,6 +1,6 @@
 /**
  * contract — `liveFeed` paged over its own HTTP route, end to end against the seeded database:
- * `GET /_x/query/live-feed?orgId=…&_first=2` answers the `Page` envelope, `&_after=<endCursor>`
+ * `GET /_x/query/live-feed?orgId=…&_first=2` answers the `Page` envelope, `&_after=<nextCursor>`
  * continues it, and the terminal page says so. Until 2026-09 the route answered a bare array and
  * nothing else, so a query over a paged source carried its page marker ON A ROW — the shape the
  * envelope exists to make unnecessary.
@@ -18,8 +18,8 @@ import { liveFeed } from './live';
 
 interface FeedPage {
   readonly rows: readonly PostSummary[];
-  readonly endCursor: string | null;
-  readonly hasNextPage: boolean;
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
 }
 
 test('the feed pages over GET /_x/query/live-feed with _first and _after', async ({
@@ -44,14 +44,16 @@ test('the feed pages over GET /_x/query/live-feed with _first and _after', async
   const first = await read('_first=2');
   expect(first.status).toBe(200);
   expect(first.body.rows).toHaveLength(2);
-  expect(first.body.hasNextPage).toBe(true);
-  expect(typeof first.body.endCursor).toBe('string');
+  expect(first.body.hasMore).toBe(true);
+  expect(typeof first.body.nextCursor).toBe('string');
 
   // Page two is disjoint from page one, and terminal.
-  const second = await read(`_first=2&_after=${first.body.endCursor}`);
+  const second = await read(`_first=2&_after=${first.body.nextCursor}`);
   expect(second.status).toBe(200);
   expect(second.body.rows).toHaveLength(1);
-  expect(second.body.hasNextPage).toBe(false);
+  expect(second.body.hasMore).toBe(false);
+  // The last page hands back no cursor (25.0.0): a `while (page.nextCursor)` loop stops here.
+  expect(second.body.nextCursor).toBeNull();
   const seen = new Set([...first.body.rows, ...second.body.rows].map((row) => row.id));
   expect(seen.size).toBe(3);
 

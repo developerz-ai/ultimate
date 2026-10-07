@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
+import { resetLocaleConfig } from '@ultimat3/i18n';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSessionInit } from './browser-launcher-port';
 import { runShot, type ShotServer } from './cmd-shot';
@@ -100,17 +101,24 @@ describe('--locale', () => {
     expect(localizedShotPath('/precios', 'es-co', 'es-co')).toBe('/precios');
   });
 
-  test("reads the app's locales off app.config.ts, and falls back to en with none", async () => {
+  test("reads the app's locales off its catalogs, and falls back to en with none", async () => {
     const root = join(scratch, 'app');
     rmSync(root, { recursive: true, force: true });
+    // By absolute path: a module under /tmp cannot resolve `@ultimat3/i18n`.
+    const i18n = JSON.stringify(Bun.resolveSync('@ultimat3/i18n', import.meta.dir));
     await Bun.write(
-      join(root, 'app.config.ts'),
-      "export const config = { name: 'demo', locales: ['es-co', 'en'], defaultLocale: 'es-co' };\n",
+      join(root, 'packages/i18n/src/index.ts'),
+      `import { defineCatalogs } from ${i18n};\n` +
+        "export const catalogs = defineCatalogs({ default: 'es-co', locales: { en: {}, 'es-co': {} } });\n",
     );
-    expect(await loadShotLocales(root)).toEqual({
-      locales: ['es-co', 'en'],
-      defaultLocale: 'es-co',
-    });
+    try {
+      expect(await loadShotLocales(root)).toEqual({
+        locales: ['es-co', 'en'],
+        defaultLocale: 'es-co',
+      });
+    } finally {
+      resetLocaleConfig();
+    }
     expect(await loadShotLocales(join(scratch, 'nothing-here'))).toEqual(FALLBACK_SHOT_LOCALES);
   });
 

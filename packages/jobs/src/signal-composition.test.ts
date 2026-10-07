@@ -13,12 +13,12 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 interface Watched {
   readonly signal: AbortSignal;
@@ -69,7 +69,7 @@ describe('unit · the step runner never composes onto the run signal permanently
     const runner = createStepRunner({
       runId: 'run-1',
       jobName: 'backfillPrices',
-      store: createMemoryStepStore(),
+      store: memoryStepStore(),
       signal: watched.signal,
       stepTimeoutMs: 60_000,
     });
@@ -92,7 +92,7 @@ describe('unit · the step runner never composes onto the run signal permanently
     const runner = createStepRunner({
       runId: 'run-2',
       jobName: 'backfillPrices',
-      store: createMemoryStepStore(),
+      store: memoryStepStore(),
       signal: watched.signal,
       stepTimeoutMs: 60_000,
     });
@@ -113,7 +113,7 @@ describe('unit · the step runner never composes onto the run signal permanently
     const runner = createStepRunner({
       runId: 'run-3',
       jobName: 'backfillPrices',
-      store: createMemoryStepStore(),
+      store: memoryStepStore(),
       signal: watched.signal,
     });
 
@@ -144,7 +144,7 @@ describe('unit · executeJob never composes onto the caller ctx permanently', ()
       retry: { attempts: 1, jitter: false },
       run: () => Promise.resolve(undefined),
     });
-    const driver: JobDriver = createMemoryDriver();
+    const driver: JobDriver = memoryJobDriver();
     await driver.enqueue({
       name: 'composed',
       queue: 'default',

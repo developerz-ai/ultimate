@@ -1,20 +1,20 @@
-// The budget-store suite over `@ultimat3/ai`'s `MemoryBudgetStore`, and the proof it can fail: a
+// The budget-store suite over `@ultimat3/ai`'s `memoryBudgetStore()`, and the proof it can fail: a
 // store whose `take` reads, awaits, then writes — the overspend `take` exists to close.
 
 import { describe, expect, test } from 'bun:test';
-import { MemoryBudgetStore } from '@ultimat3/ai';
+import { memoryBudgetStore } from '@ultimat3/ai';
 import type { BudgetStoreLike } from './budget-store-conformance';
 import { BUDGET_STORE_CHECKS, budgetStoreConformance } from './budget-store-conformance';
 import { behavesLike } from './shared-examples';
 import { testName } from './test-types';
 
 describe(testName('unit', 'the memory budget store'), () => {
-  behavesLike(budgetStoreConformance, () => new MemoryBudgetStore());
+  behavesLike(budgetStoreConformance, () => memoryBudgetStore());
 });
 
 /** Read, await (a network round trip), write: correct alone, an overspend under concurrency. */
 const readThenWrite = (): BudgetStoreLike => {
-  const inner = new MemoryBudgetStore();
+  const inner = memoryBudgetStore();
   return {
     spent: (key) => inner.spent(key),
     add: (key, tokens) => inner.add(key, tokens),

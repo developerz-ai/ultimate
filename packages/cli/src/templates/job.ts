@@ -129,7 +129,7 @@ const jobTest = (
   name: NameSet,
 ): string => `// ${name.camel} against a real driver: enqueue, drain, assert. Retries and the dead-letter path
 // are the framework's, so what this pins is that THIS job's steps run and are idempotent.
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
@@ -143,7 +143,7 @@ const expectedKey = \`${name.kebab}:\${id}\`;
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
 beforeAll(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 afterAll(resetJobDriver);
 
@@ -186,7 +186,7 @@ const neutralJobTest = (
   name: NameSet,
 ): string => `// ${name.camel} against a real driver: enqueue, drain, assert. Retries and the dead-letter path
 // are the framework's, so what this pins is that THIS job's steps run and are idempotent.
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
@@ -199,7 +199,7 @@ const expectedKey = \`${name.kebab}:\${id}\`;
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
 beforeAll(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 afterAll(resetJobDriver);
 
@@ -243,13 +243,13 @@ const taskTest = (
   jobName: NameSet,
 ): string => `// ${name.camel}: the schedule it declares, the timezone it declares it in, and the job it
 // enqueues. A cron with no explicit IANA zone fires at a different hour twice a year.
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 import { ${name.camel} } from './${name.kebab}';
 
 beforeAll(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 afterAll(resetJobDriver);
 

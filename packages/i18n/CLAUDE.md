@@ -14,6 +14,7 @@ Imported by every package that renders a string.
 | `locales.ts` | supported set, normalize, negotiate, RTL. No catalogs. |
 | `context.ts` | request locale via ALS, the registry + the base layer under it, the ambient `t` and `useI18n`. |
 | `framework.ts` | the framework's own strings, installed as the base layer at module scope. |
+| `app-catalogs.ts` | an app's declared locales, read by importing its catalog module. Tooling only: the `./app-catalogs` entry, never `index.ts` (it is in every island). |
 | `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
 | `catalogs/en.json` | data, not code. |

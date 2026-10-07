@@ -6,9 +6,9 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { createRecordingClient } from '@ultimat3/db';
 import { normalize } from './embeddings';
-import { PgVectorStore } from './pg-vector';
+import { postgresVectorStore } from './pg-vector';
 import type { VectorStore } from './vector';
-import { MemoryVectorStore } from './vector';
+import { memoryVectorStore } from './vector';
 import { narrowScope, UNSCOPED } from './vector-scope';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
@@ -21,12 +21,12 @@ const inNoOrg = <T>(fn: () => Promise<T>): Promise<T> =>
 const stores = (): readonly (readonly [string, (scope?: typeof UNSCOPED) => VectorStore])[] => [
   [
     'memory',
-    (scope) => new MemoryVectorStore({ dimension: 4, ...(scope === undefined ? {} : { scope }) }),
+    (scope) => memoryVectorStore({ dimension: 4, ...(scope === undefined ? {} : { scope }) }),
   ],
   [
     'pg',
     (scope) =>
-      new PgVectorStore({
+      postgresVectorStore({
         name: 'docs',
         dimension: 4,
         client: createRecordingClient(),

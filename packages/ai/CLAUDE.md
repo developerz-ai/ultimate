@@ -15,16 +15,20 @@ rather than imported. Same contract, two wire formats — and the same *decision
 local `=== true`. An in-app agent and an external one must be offered exactly the same tools.
 
 **And the same NAME**: `toLlmTool` passes `action.name` through untouched (the export name
-`@ultimat3/mcp` serves); `llm()` and `agent()` `.tool()` names are verbatim too. Never derive one.
+`@ultimat3/mcp` serves); `llm()` and `agent()` tool names are verbatim too. Never derive one.
+
+**And the same TOOL**: `asProjectableAction` and mcp's `primitiveFromAction` are two copies the
+tier table forces; `scripts/ai-mcp-tool-parity.test.ts` holds them equal — name, description,
+exposure, the whole input schema (an idempotent action's reserved `idempotencyKey` argument,
+`tool-idempotency.ts`), the policy verdict and the replay. A field one adds, the other adds.
 
 ## Owns
 
 | File | Job |
 |---|---|
-| `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts |
-| `model-resolve.ts` | `resolveModel` — the ONE fallback to `DEFAULT_MODEL`, every site's; `describedModel` for a published fact |
-| `model-origin.ts` | which catalogue rows are the package's own (`asBuiltIn` around its registrations) and which the app's |
-| `deprecations.ts` | the once-per-process `ai.deprecation` warn + `ai_deprecated_fallbacks_total` for the built-in default and built-in prices |
+| `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts — and NO row of its own |
+| `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
+| `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`), as an app's `models.ts` would. Not shipped (`!src/**/*-fixture.ts`) |
 | `provider.ts` | `Provider` interface, the request half, the money arithmetic, `AnthropicProvider` |
 | `echo-provider.ts` | `EchoProvider`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
@@ -36,10 +40,9 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
 | `openai-body.ts` | one chat-completions body, and the per-model reasoning mapping |
 | `openai-wire.ts` | its response half: one completion, and `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
-| `openai-models.ts` | the OpenAI-format price rows, registered through the same `registerModel` |
 | `gateway.ts` | routing, retries, cache, budget wiring |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
-| `prompt.ts` | `definePrompt`, content hashing, version registry |
+| `prompt.ts` | `definePrompt`, `promptHash`, version registry |
 | `embeddings.ts` | `Embedder`, `HashEmbedder`, cosine helpers |
 | `remote-embedder.ts` | `RemoteEmbedder` — the production `/v1/embeddings` client |
 | `evals.ts` | `defineEval`, the run, the baseline gate, prompt coverage |
@@ -49,9 +52,10 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `pg-vector.live.test.ts` | the same store against a real pgvector — DDL, fusion, scope, plan |
 | `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
-| `pg-vector.ts` | `PgVectorStore` — the production store |
+| `pg-vector.ts` | `postgresVectorStore()` — the production store |
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
+| `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged as code, name and stack frames — never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
@@ -91,7 +95,7 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   at a later scope gives back what the earlier ones took.
 - **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`):
   every call carries keys, so a write per key grew the default store by one entry per caller.
-  `MemoryBudgetStore` has no window and no eviction (eviction is a ceiling bypass); a counter back
+  `memoryBudgetStore()` has no window and no eviction (eviction is a ceiling bypass); a counter back
   at zero is deleted.
 - **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
   — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an `undefined`/`null`/`''`
@@ -168,21 +172,27 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
   `output_config`. Model IDs are exact aliases, never date-suffixed.
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** No
+  default model, no catalogue row, no id list ships; the registry starts EMPTY and `resetModels()`
+  empties it. A model resolves declaration → prompt → `Gateway.defaultModel` through `resolveModel`
+  / `modelForCall` only; none is `X_AI_MODEL_UNRESOLVED` naming all three (with no gateway and nothing
+  declared, `X_AI_GATEWAY_MISSING` — the third place does not exist yet). `vendor-neutral.test.ts`
+  proves it in a fresh process; no fix line names a vendor id.
 - **`ModelId` is `string`; the catalogue is an open registry** — `modelSpec(id)` refuses an
-  unregistered id (`X_AI_MODEL_UNKNOWN`). The built-ins register through the same `registerModel`.
-  **Re-registering REPLACES the spec and keeps its rung** (negotiated rates). **Registration order is
-  the ladder within a `family`**, read only by `moreCapableThan`; `X_LLM_REFUSED`'s fix names a rung
-  ABOVE or nothing.
-- `AnthropicProvider.models` is its own list; `EchoProvider.models` reads the registry.
-- **No vendor is a default** (M12, removed in 25.0.0). A model resolves declaration → prompt →
-  `Gateway.defaultModel`, through `resolveModel(site, …)` only — a `?? DEFAULT_MODEL` anywhere else
-  bypasses the deprecation. `costOf` (the one price lookup) records a built-in row the app never
-  `registerModel`-ed. Each warns once per site / row (`deprecations.test.ts`); no fix line names a vendor.
+  unregistered id (`X_AI_MODEL_UNKNOWN`, fix `registerModel(…)`) at `costOf`, the budget estimate and
+  the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
+  its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
+  `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+- **Every provider serves the app's list**: `new AnthropicProvider({ models })` and
+  `openAiProvider({ models })` require a non-empty one (`X_AI_REQUEST_INVALID`, a missing config
+  too); `EchoProvider.models` reads the registry. **No provider has a model of its own**: a direct
+  call naming none is `X_AI_MODEL_UNRESOLVED` from all three — the list is what it serves, never a
+  fourth place (`vendor-neutral.test.ts`, one parity case).
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
-  control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row in `MODELS`.
-  `disableThinkingUpTo: 'never'` (Opus 5.5, Fable 5.1) refuses `thinking: 'disabled'` at every effort;
-  `disabledThinking: 'between_tools'` (Sonnet 5.5) is the wire spelling of the same declaration. Every
-  number in a built-in row is the vendor's published one, pinned by `models-catalogue.test.ts`.
+  control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row the app
+  registers. `disableThinkingUpTo: 'never'` refuses `thinking: 'disabled'` at every effort;
+  `disabledThinking: 'between_tools'` is the wire spelling of the same declaration
+  (`model-rules.test.ts`, over the fixture rows).
 - **Media blocks are screened once, by `assertMediaContent`, at the top of BOTH body builders** —
   malformed is `X_AI_REQUEST_INVALID`, untakeable (role, the row's `input`, the wire) is
   `X_AI_CONTENT_UNSUPPORTED`; never dropped, never approximated (`provider-parity-content.test.ts`).
@@ -196,8 +206,6 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
     ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;
   - tool-call deltas merge by `tool_calls[].index`; `isComplete()` accepts `[DONE]` or a finish reason,
     except `[DONE]` with pending tool fragments, which is refused;
-  - only `gpt-5.6-sol` / `-terra` / `-luna` are priced; `registerOpenAiModels()` re-registers after
-    `resetModels()` (every `openai-*.test.ts` calls it in `beforeEach`);
   - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
     `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
@@ -262,8 +270,8 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
   `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
   (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
-- `PgVectorStore` is the only production vector path (pgvector + FTS in the app's Postgres);
-  `MemoryVectorStore` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
+- `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
+  `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
   Postgres without the extension (CI uses `pgvector/pgvector:pg17`).
 - The distance ordering lives in an ascending raw subquery (the only shape hnsw answers), pinned by a
   plan assertion. hnsw scopes after the scan — assert rows, never the node; `analyze` after a backfill.

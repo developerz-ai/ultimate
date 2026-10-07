@@ -24,9 +24,9 @@ Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs
 |---|---|---|---|
 | `localDriver` | `Bun.file`/`Bun.write`, one root dir | dev, tests, single-node | HMAC + dev route |
 | `s3Driver` | `Bun.s3`, plus core's `signAwsRequest` over `fetch` for the requests Bun has no option for | prod: any S3-compatible endpoint — AWS, R2, a self-hosted gateway | provider presign |
-| `memoryDriver` | a `Map` in this process | a TEST's disk — never a deployment's: a restart is every object gone | HMAC, the local disk's own |
+| `memoryStorageDriver` | a `Map` in this process | a TEST's disk — never a deployment's: a restart is every object gone | HMAC, the local disk's own |
 
-`memoryDriver()` is what a suite holds instead of a temp directory or a hand-written fake: it
+`memoryStorageDriver()` is what a suite holds instead of a temp directory or a hand-written fake: it
 answers every method `localDriver` does, refuses what it refuses (an unsafe key, a wrong checksum,
 a body past `maxPutBytes`, `serverSideEncryption`), and signs under the same rule — the published
 development key in `development` and `test` only. `objects()` hands back a COPY of every stored
@@ -34,13 +34,13 @@ object's bytes by key, for the assertion a test makes about the bucket itself.
 
 ```ts
 import { afterEach, beforeEach } from 'bun:test';
-import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 
 // A fresh driver per test: `resetStorage()` forgets the REGISTRY, never a driver's objects, so a
 // driver held across tests carries every earlier test's writes.
-let sessions = memoryDriver();
+let sessions = memoryStorageDriver();
 beforeEach(() => {
-  sessions = memoryDriver();
+  sessions = memoryStorageDriver();
   defineStorage({ disks: { sessions } });
 });
 afterEach(() => resetStorage());
@@ -113,7 +113,7 @@ it.** A POSIX path is a file or a directory: `put('a')` then `put('a/b')` — or
 `copy()` onto either, or `a` beside `a.json/b`, which collide in the sidecar tree — is
 `X_STORAGE_KEY_CONFLICT`, refused before a byte moves, where it used to be a bare `ENOTDIR` /
 `EISDIR`. Its `fix` names the disk as `defineStorage` registered it, not the driver kind.
-`memoryDriver` refuses the same keys with the same `blocking` (a suite on it stands in for
+`memoryStorageDriver` refuses the same keys with the same `blocking` (a suite on it stands in for
 `x dev`'s disk); `s3Driver` holds both. `driver-local-memory-parity.test.ts` holds local and memory
 to one answer, `driver-contract.test.ts` pins the s3 divergence. `delete()` of a key that is only
 another key's directory (`delete('c')` beside `c/d`) is deleting an absent key: not an error, and

@@ -14,14 +14,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { createContext, createLogger, isSealed } from '@ultimat3/core';
 import type { JobDriver, JobRecord, PgExecutor, Worker } from '@ultimat3/jobs';
 import {
-  createPgDriver,
-  createPgEventBus,
   createWorker,
+  postgresEventBus,
+  postgresJobDriver,
   resetJobs,
   SQL_JOBS_TABLE,
 } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { memoryDriver } from '@ultimat3/storage';
+import { memoryStorageDriver } from '@ultimat3/storage';
 import type { PromptRequest } from './auth';
 import type { ScrapeClock } from './clock';
 import { systemScrapeClock } from './clock';
@@ -138,10 +138,10 @@ const answerFromAnotherProcess = async (runId: string): Promise<number> => {
     [
       'bun',
       '-e',
-      `import { createPgEventBus } from '@ultimat3/jobs';
+      `import { postgresEventBus } from '@ultimat3/jobs';
        import { answerPrompt } from './event-prompt';
        const sql = new Bun.SQL(process.env.PROBE_URL, { max: 1, prepare: false });
-       const bus = createPgEventBus({
+       const bus = postgresEventBus({
          executor: { query: async (text, values) => [...(await sql.unsafe(text, [...values]))] },
        });
        await answerPrompt({ runId: process.env.RUN_ID, index: 1, answer: process.env.ANSWER, bus });
@@ -167,9 +167,9 @@ const answerFromAnotherProcess = async (runId: string): Promise<number> => {
 describeJob('job · a scrape session on the pg driver and the stored event bus', () => {
   test('one run per connection: the second is refused; the first is answered from another process', async () => {
     if (executor === undefined) return expect.unreachable('the probe database was not opened');
-    const driver = createPgDriver({ executor });
-    const bus = createPgEventBus({ executor });
-    const storage = memoryDriver();
+    const driver = postgresJobDriver({ executor });
+    const bus = postgresEventBus({ executor });
+    const storage = memoryStorageDriver();
     const waitForAnswer = eventPrompt({ timeout: 30_000, pollMs: 50, bus, keySource: KEYS });
 
     let opens = 0;

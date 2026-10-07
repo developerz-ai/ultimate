@@ -17,7 +17,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { idempotencyKeyFor } from './idempotency-key';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.string });
@@ -105,7 +105,7 @@ describe('the span says who, where and how it ended', () => {
 
   test('a replay says so, and carries the namespaced key a retry is joined by', async () => {
     const target = publishPost();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx: editor, store, idempotencyKey: 'k1' } as const;
     const spans = await traced(async () => {
       await invoke(target, { postId: 'p1' }, options);

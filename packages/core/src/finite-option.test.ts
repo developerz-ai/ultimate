@@ -72,10 +72,8 @@ describe('finiteCount', () => {
 
   test('zero passes by default and is refused when the caller says at least one', () => {
     expect(finiteCount('http', 'maxInflight', 0)).toBe(0);
-    expect(caught(() => finiteCount('createPostgresClient', 'max', 0, 1)).code).toBe('X_INVARIANT');
-    expect(caught(() => finiteCount('createPostgresClient', 'max', 0, 1)).cause).toContain(
-      'at least 1',
-    );
+    expect(caught(() => finiteCount('postgresClient', 'max', 0, 1)).code).toBe('X_INVARIANT');
+    expect(caught(() => finiteCount('postgresClient', 'max', 0, 1)).cause).toContain('at least 1');
   });
 
   test('a negative is refused even at min 0, and a whole number passes through', () => {

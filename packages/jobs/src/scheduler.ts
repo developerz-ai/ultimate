@@ -2,7 +2,7 @@
 // it owes and enqueues their jobs. The `task` primitive it reads lives in `task.ts`.
 //
 // Exactly one node dispatches per tick, enforced by leader election. Multi-node that is an
-// EXPIRING LEASE ROW in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock: an
+// EXPIRING LEASE ROW in `x_scheduler_leader` (`postgresLeaseLeader`), never an advisory lock: an
 // advisory lock is held by the SESSION, not by this process — it outlives every transaction and is
 // released only by an explicit unlock, the pool's reset on release, or the connection dying, and
 // the next round may run on a different connection. So a node can neither renew it nor prove it
@@ -31,7 +31,7 @@ import type { LeaderElection } from './scheduler-leader';
 import { soleLeader } from './scheduler-leader';
 import { defaultCronResolver, latestOccurrence, occurrencesIn } from './scheduler-occurrences';
 import type { SchedulerState } from './scheduler-state';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
 
@@ -90,7 +90,7 @@ export interface Scheduler {
 }
 
 export function createScheduler(options: SchedulerOptions): Scheduler {
-  const schedulerState = options.state ?? createMemorySchedulerState();
+  const schedulerState = options.state ?? memorySchedulerState();
   const resolveCron = options.cron ?? defaultCronResolver;
   const tickIntervalMs = finiteOption(
     'createScheduler',

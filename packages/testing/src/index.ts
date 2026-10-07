@@ -205,7 +205,7 @@ export { createTestNetwork } from './fixture-network';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
 export { createTestStatements } from './fixture-statements';
 export type { SubscribeDriver } from './fixture-subscribe';
-export { createSubscribeDriver } from './fixture-subscribe';
+export { subscribeDriver } from './fixture-subscribe';
 export { fixtureTest as test } from './fixtures';
 export {
   ALL_FIXTURE_NAMES,

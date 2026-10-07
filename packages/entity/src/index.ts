@@ -131,7 +131,6 @@ export type {
   FindByIdOptions,
   FindManyArgs,
   MemoryRepo,
-  Page,
   Repo,
   RepoOptions,
   Transactor,

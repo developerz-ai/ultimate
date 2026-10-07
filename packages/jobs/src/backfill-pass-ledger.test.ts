@@ -21,7 +21,7 @@ import {
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import { createStepRunner, StepSuspension } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 beforeEach(() => {
   resetJobs();
@@ -200,7 +200,7 @@ describe('the x_backfills ledger', () => {
 
   test('a suspended pass is parked, not failed', async () => {
     const ledger = installLedger();
-    const store = createMemoryStepStore();
+    const store = memoryStepStore();
     const table = tableFor(rows, memoryRepo(rows, SEED));
     const parked = backfill<Row>({
       tenant: 'none',

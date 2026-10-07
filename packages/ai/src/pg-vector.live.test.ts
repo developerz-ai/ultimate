@@ -4,11 +4,11 @@
 // — the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient, raw, sql, statementsOf } from '@ultimat3/db';
+import { type PostgresClient, postgresClient, raw, sql, statementsOf } from '@ultimat3/db';
 import { normalize } from './embeddings';
-import { PgVectorStore } from './pg-vector';
+import { type PgVectorStore, postgresVectorStore } from './pg-vector';
 import { searchSql } from './pg-vector-sql';
-import { fuse, MemoryVectorStore, type SearchHit, type VectorRecord } from './vector';
+import { fuse, memoryVectorStore, type SearchHit, type VectorRecord } from './vector';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -63,7 +63,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
   let store: PgVectorStore;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     try {
       await client.execute(raw('create extension if not exists vector'));
       available = true;
@@ -77,7 +77,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       return;
     }
     await client.execute(raw(DROP));
-    store = new PgVectorStore({ name: TABLE, dimension: DIMENSION, client });
+    store = postgresVectorStore({ name: TABLE, dimension: DIMENSION, client });
     for (const statement of statementsOf(store.ddl())) await client.execute(raw(statement));
     await store.scoped({ tenant: 'acme' }).upsert(CORPUS);
     await store.scoped({ tenant: 'globex' }).upsert([
@@ -193,7 +193,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
         { id: 'aligned', text: 'aligned', vector: Float32Array.from([1, 0.05, 0, 0]) },
       ];
       const query = Float32Array.from([2, 0, 0, 0]);
-      const memory = new MemoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'parity' });
+      const memory = memoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'parity' });
       await memory.upsert(corpus);
       await store.scoped({ tenant: 'parity' }).upsert(corpus);
       const [inMemory, inPg] = await Promise.all([
@@ -217,7 +217,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
         text: 'tied ledger entry',
         vector: vec(0, 0, 0, 1),
       }));
-      const memory = new MemoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'ties' });
+      const memory = memoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'ties' });
       const pg = store.scoped({ tenant: 'ties' });
       await memory.upsert(corpus);
       for (const record of corpus) await pg.upsert([record]);

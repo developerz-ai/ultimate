@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { clientTransport, rescope } from '@ultimat3/core';
-import { type LocalStore, MemoryLocalStore } from './local-store-idb';
+import { type LocalStore, memoryLocalStore } from './local-store-idb';
 import type { QueueChange } from './offline-queue';
 import type { OutboxEntry } from './page-outbox';
 import { createOutbox } from './page-outbox';
@@ -38,7 +38,7 @@ function gate(): { readonly entered: Promise<void>; open(): void; wait(): Promis
 
 describe('a principal change while a replay is on the wire', () => {
   test("sends nothing more: the rest of the queue never leaves under the next principal's session", async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     rescope('u1');
     const first = gate();
     const sent: string[] = [];
@@ -70,7 +70,7 @@ describe('a principal change while a replay is on the wire', () => {
   });
 
   test('a write queued right after the change belongs to the NEW principal', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     rescope('u1');
     const sent: string[] = [];
     const outbox = createOutbox({
@@ -94,7 +94,7 @@ describe('a principal change while a replay is on the wire', () => {
 
 describe('a principal change while a write is being queued', () => {
   test('refuses that write by name; the next one goes to the new principal', async () => {
-    const inner = new MemoryLocalStore();
+    const inner = memoryLocalStore();
     let change: () => void = () => undefined;
     // The queue reads its sequence floor before it stores a write: the principal leaves there.
     const local: LocalStore = {
@@ -170,7 +170,7 @@ function document(local: LocalStore, answer: (entry: OutboxEntry) => Promise<unk
 // its idempotency store (a `mutator()` must be `idempotent: true`), so it applies once.
 describe('a 200 that arrives as the document is torn down', () => {
   test('is resent ONCE by the next document, under the same key, and never after its ack is on disk', async () => {
-    const disk = new MemoryLocalStore();
+    const disk = memoryLocalStore();
     const dying = tearable(disk);
     const first = document(dying, async () => {
       // The response is in; the navigation commits before the ack's transaction does.
@@ -200,7 +200,7 @@ describe('a 200 that arrives as the document is torn down', () => {
   });
 
   test('a replay the server is STILL running (409, in flight) stays queued and is asked again', async () => {
-    const disk = new MemoryLocalStore();
+    const disk = memoryLocalStore();
     let settled = false;
     // The real transport over a server's real answer: what the outbox sees is what it revives.
     const next = document(disk, (entry) =>

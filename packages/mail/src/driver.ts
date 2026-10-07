@@ -134,7 +134,7 @@ export interface MemoryMailDriver extends MailDriver {
 }
 
 /**
- * The same `{ clock }` shape `@ultimat3/jobs`' `createMemoryDriver` takes, deliberately: two
+ * The same `{ clock }` shape `@ultimat3/jobs`' `memoryJobDriver` takes, deliberately: two
  * in-memory drivers named the same thing in one test file may not want two spellings of "freeze
  * time". An options object rather than a positional argument so the next seam is additive.
  */
@@ -147,7 +147,7 @@ export interface MemoryMailDriverOptions {
  * `/_x` panel ORDER on, so a suite asserting which message is newest could only race the wall
  * clock — two sends inside one millisecond tie, and nothing could state the intended order.
  */
-export function createMemoryDriver(options: MemoryMailDriverOptions = {}): MemoryMailDriver {
+export function memoryMailDriver(options: MemoryMailDriverOptions = {}): MemoryMailDriver {
   const clock = options.clock ?? systemClock;
   const sent: SentMail[] = [];
   return {
@@ -193,7 +193,7 @@ export const UNCONFIGURED_DRIVER_NAME = 'unconfigured';
  * that does sends nothing silently. The memory driver in that position answered `accepted` for
  * every message — a password reset reported as delivered, with no error anywhere to find it by.
  */
-export function createUnconfiguredDriver(environment: Environment): MailDriver {
+export function unconfiguredMailDriver(environment: Environment): MailDriver {
   return {
     name: UNCONFIGURED_DRIVER_NAME,
     // Rejected rather than thrown: `send()` and `sendMailJob` both await this, and a synchronous
@@ -219,7 +219,7 @@ export function isUnconfiguredDriver(driver: MailDriver): boolean {
  * framework's existing spelling for the same key digested — it was written for exactly this
  * reason and says so — and it correlates just as well, because it is stable per message.
  */
-export function createLogDriver(logger = rootLogger): MailDriver {
+export function logMailDriver(logger = rootLogger): MailDriver {
   return {
     name: 'log',
     send(message: MailMessage): Promise<SendResult> {

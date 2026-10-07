@@ -14,7 +14,7 @@ import {
   resetIdempotency,
   setIdempotencyStore,
 } from './idempotency';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { registerAction, resetRegistry } from './registry';
 
 const anAction = () =>
@@ -51,7 +51,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
   });
 
   test('a shared store satisfies the same declaration', () => {
-    const inner = new MemoryIdempotencyStore();
+    const inner = memoryIdempotencyStore();
     const shared: IdempotencyStore = {
       scope: 'shared',
       keepsRedaction: true,
@@ -76,7 +76,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
 describe('the memory store is bounded and swept', () => {
   test('a record past the window answers as a missing one, so the key is reusable', async () => {
     let now = 1_000;
-    const store = new MemoryIdempotencyStore({ windowMs: 5_000, now: () => now });
+    const store = memoryIdempotencyStore({ windowMs: 5_000, now: () => now });
     const first = await store.reserve('k', 'hash-a');
     expect(first.created).toBe(true);
     await store.settle('k', 'v', first.record.id, false);
@@ -92,7 +92,7 @@ describe('the memory store is bounded and swept', () => {
   });
 
   test('the cap holds under a flood of distinct keys', async () => {
-    const store = new MemoryIdempotencyStore({ maxKeys: 100 });
+    const store = memoryIdempotencyStore({ maxKeys: 100 });
     for (let i = 0; i < 5_000; i += 1) {
       const { record } = await store.reserve(`k${i}`, 'hash');
       await store.settle(`k${i}`, i, record.id, false);
@@ -111,7 +111,7 @@ describe('the memory store is bounded and swept', () => {
     (maxKeys) => {
       let rendered = 'no-error-thrown';
       try {
-        new MemoryIdempotencyStore({ maxKeys });
+        memoryIdempotencyStore({ maxKeys });
       } catch (error) {
         rendered = String(error);
       }
@@ -125,7 +125,7 @@ describe('the memory store is bounded and swept', () => {
     (windowMs) => {
       let rendered = 'no-error-thrown';
       try {
-        new MemoryIdempotencyStore({ windowMs });
+        memoryIdempotencyStore({ windowMs });
       } catch (error) {
         rendered = String(error);
       }
@@ -135,7 +135,7 @@ describe('the memory store is bounded and swept', () => {
   );
 
   test('an in-flight reservation survives the eviction that drops settled ones', async () => {
-    const store = new MemoryIdempotencyStore({ maxKeys: 10 });
+    const store = memoryIdempotencyStore({ maxKeys: 10 });
     // Reserved and never settled: dropping this one is what would let a concurrent duplicate run.
     await store.reserve('in-flight', 'hash');
     for (let i = 0; i < 500; i += 1) {

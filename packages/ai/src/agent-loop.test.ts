@@ -13,12 +13,16 @@ import type { AgentTurn } from './agent';
 import { agent } from './agent';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 import { HIDDEN_TOOL_CAUSE } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -92,7 +96,7 @@ describe('cancellation reaches the loop', () => {
     const controller = new AbortController();
     const effects: string[] = [];
     const { provider, seen } = scripted([{ calls: [{ name: 'sideEffect', input: {} }] }]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -127,7 +131,7 @@ describe('cancellation reaches the loop', () => {
     controller.abort();
     const effects: string[] = [];
     const { provider, seen } = scripted([{ calls: [{ name: 'sideEffect', input: {} }] }]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -155,7 +159,7 @@ describe('cancellation reaches the loop', () => {
     resetAiRuntime();
     const controller = new AbortController();
     const { provider, seen } = scripted([{ calls: [{ name: 'respond', input: { answer: 'x' } }] }]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -194,7 +198,7 @@ describe('the tools of one turn run concurrently', () => {
         ],
       },
     ]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -241,7 +245,7 @@ describe('a run reports its turns while it is still running', () => {
       { calls: [{ name: 'ping', input: {} }] },
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -270,7 +274,7 @@ describe('a run reports its turns while it is still running', () => {
     const { provider, seen } = scripted([
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -300,7 +304,7 @@ describe('the app redactor runs over tool results too', () => {
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
     configureAi({
-      gateway: createGateway({ providers: [provider] }),
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       redact: (text) => text.replaceAll('patient-4411', '[removed]'),
     });
     const support = agent({
@@ -329,7 +333,7 @@ describe('a tool that fails at the database', () => {
       { calls: [{ name: 'lookup', input: {} }] },
       { calls: [{ name: 'respond', input: { answer: 'sorry' } }] },
     ]);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,

@@ -1,8 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { t as schemaT } from '@ultimat3/schema';
+import * as surface from './index';
 import { defineAppMcp, t } from './index';
 
 describe('@ultimat3/mcp public surface', () => {
+  // 25.0.0 (plan 101, M3): one name per thing. `toolFromQuery` was `toolFrom` under a second
+  // name, and `isExposed` was core's `isMcpExposed` behind a wrapper — two spellings each.
+  // `toolFromAction` is the projection's pre-25 name: it takes queries too and pairs with
+  // `toolsFrom`, so it is `toolFrom`, and the old spelling is not kept as an alias.
+  test('no alias of the one projection, and no wrapper over core’s exposure predicate', () => {
+    for (const name of ['toolFromQuery', 'toolFromAction', 'isExposed']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    expect(typeof surface.toolFrom).toBe('function');
+  });
+
   test('re-exports the one `t`, not a copy of it', () => {
     // A spread or a re-implementation would still typecheck but would stop tracking
     // `configureSchemaProvider()`. Identity is the only assertion that catches that.

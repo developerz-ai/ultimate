@@ -6,11 +6,11 @@ import { afterAll, afterEach, describe } from 'bun:test';
 import type { JobDriver } from './driver';
 import { driverAnswerScenarios } from './driver-answers-fixture';
 import { driverLifecycleScenarios } from './driver-lifecycle-fixture';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { resetJobs } from './job';
 import type { OperatorHarness } from './operator-surface-fixture';
-import { pgSchedulerState } from './scheduler-pg';
+import { postgresSchedulerState } from './scheduler-pg';
 import { workerExhaustedScenarios } from './worker-exhausted-fixture';
 
 /** `count` finished rows in one statement, newest last in `g`. */
@@ -26,7 +26,7 @@ const harness: OperatorHarness = {
   async driver(): Promise<JobDriver> {
     const pg = await embeddedPg();
     await pg.reset();
-    return createPgDriver({ executor: pg.executor });
+    return postgresJobDriver({ executor: pg.executor });
   },
   async elapse(_driver, ms): Promise<void> {
     await (await embeddedPg()).age(ms);
@@ -35,7 +35,7 @@ const harness: OperatorHarness = {
     await (await embeddedPg()).executor.query(SEED, [name, queue, state, count]);
   },
   async schedulerState() {
-    return pgSchedulerState((await embeddedPg()).executor);
+    return postgresSchedulerState((await embeddedPg()).executor);
   },
 };
 

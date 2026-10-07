@@ -1,11 +1,11 @@
-// The in-memory `StepStore`: what `createMemoryDriver` and every runner test persist steps into.
+// The in-memory `StepStore`: what `memoryJobDriver` and every runner test persist steps into.
 // Split from `steps.ts` at the file-size ceiling, along the seam the pg driver already draws —
 // `driver-pg.ts` holds the Postgres store, this file the map-backed one, `steps.ts` the runner
 // both are handed to. Same contract, and `steps.test.ts` is where the contract is pinned.
 
 import type { StepRecord, StepStore } from './steps';
 
-export function createMemoryStepStore(): StepStore {
+export function memoryStepStore(): StepStore {
   const byRun = new Map<string, Map<string, StepRecord>>();
   const runOf = (runId: string): Map<string, StepRecord> => {
     let run = byRun.get(runId);

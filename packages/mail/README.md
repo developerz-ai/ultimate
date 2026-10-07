@@ -72,12 +72,12 @@ setMailTransform(async (rendered, meta) =>
 
 | Driver | Use | Behaviour |
 |---|---|---|
-| `createMemoryDriver({ clock? })` | dev, tests | retains messages; `outbox()` / `lastTo()` feed the `/_x` mail panel, ordered by `SentMail.at` — pass a `frozenClock()` to choose it |
-| `createLogDriver()` | workers without credentials | one structured line per message through core's `logger`; bodies never logged |
-| `createUnconfiguredDriver(env)` | a deploy that configured no transport | refuses every send with `X_MAIL_CREDENTIAL_MISSING`; delivers nothing and claims nothing |
-| `createSmtpDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |
-| `createResendDriver({ apiKey, from })` | prod | one `POST /emails`, `Idempotency-Key` on every request |
-| `createSesDriver({ region, credentials, from })` | prod | one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK |
+| `memoryMailDriver({ clock? })` | dev, tests | retains messages; `outbox()` / `lastTo()` feed the `/_x` mail panel, ordered by `SentMail.at` — pass a `frozenClock()` to choose it |
+| `logMailDriver()` | workers without credentials | one structured line per message through core's `logger`; bodies never logged |
+| `unconfiguredMailDriver(env)` | a deploy that configured no transport | refuses every send with `X_MAIL_CREDENTIAL_MISSING`; delivers nothing and claims nothing |
+| `smtpMailDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |
+| `resendMailDriver({ apiKey, from })` | prod | one `POST /emails`, `Idempotency-Key` on every request |
+| `sesMailDriver({ region, credentials, from })` | prod | one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK |
 
 ### Which one a boot installs
 
@@ -86,11 +86,11 @@ the app changes between environments; the credential does.
 
 | env | driver |
 |---|---|
-| *(nothing set)*, `development` / `test` | `createMemoryDriver()` — caught, never sent |
-| *(nothing set)*, `staging` / `production` | `createUnconfiguredDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING` |
-| `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)`, `MAIL_POOL_SIZE` optional |
-| `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` |
-| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `createSesDriver(...)`; `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
+| *(nothing set)*, `development` / `test` | `memoryMailDriver()` — caught, never sent |
+| *(nothing set)*, `staging` / `production` | `unconfiguredMailDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING` |
+| `SMTP_URL` + `MAIL_FROM` | `smtpMailDriver(...)`, `MAIL_POOL_SIZE` optional |
+| `RESEND_API_KEY` + `MAIL_FROM` | `resendMailDriver(...)` |
+| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `sesMailDriver(...)`; `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
 
 **No credential outside development is a refusal, not the embedded default.** The memory driver
 there answered `accepted` for mail that never left the process — password resets, receipts and
@@ -144,12 +144,12 @@ retry after a timeout SES had already accepted is a second email, as over SMTP.
 ### `retainMime`
 
 ```ts
-import { createSesDriver } from '@ultimat3/mail';
+import { sesMailDriver } from '@ultimat3/mail';
 
 declare const env: Record<string, string>;
 declare function saveAuditRow(row: unknown): Promise<void>;
 
-export const driver = createSesDriver({
+export const driver = sesMailDriver({
   region: 'eu-west-1',
   credentials: { accessKeyId: env['SES_ACCESS_KEY_ID'] ?? '', secretAccessKey: env['SES_SECRET_ACCESS_KEY'] ?? '' },
   from: 'Postly <no-reply@postly.test>',
@@ -214,7 +214,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_TEMPLATE_UNKNOWN` | export a `defineMail({ id })` and import it (also raised for an unregistered layout) |
 | `X_MAIL_DUPLICATE` | rename one of two `defineMail({ id })` declarations |
 | `X_MAIL_TEXT_MISSING` | add a text-bearing block to the template |
-| `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(createMemoryDriver())` at boot — a wiring bug |
+| `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(memoryMailDriver())` at boot — a wiring bug |
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | a recipient may hold no control character, its mailbox no `<`/`>` and no non-ASCII byte (`meta.reason`); `Jane Doe <jane@x.test>` is fine |

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { DigestAppend, DigestStore } from './digest';
-import { createMemoryDigestStore } from './digest';
+import { memoryDigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
 import { notifier } from './notifier';
 import type { Recorder, TestParams } from './notify-fixture';
@@ -26,7 +26,7 @@ afterEach(() => {
 
 /** A memory store whose first append matching `fails` rejects, once — a dropped connection. */
 const flaky = (fails: (input: DigestAppend, call: number) => boolean): DigestStore => {
-  const inner = createMemoryDigestStore();
+  const inner = memoryDigestStore();
   let calls = 0;
   let failed = false;
   return {

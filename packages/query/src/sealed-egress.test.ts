@@ -13,9 +13,9 @@ import { createServer, defineHttpConfig } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
-import { toQueryTool } from './mcp-tool';
 import type { AnyQuery } from './query';
 import { query } from './query';
+import { sourceFor } from './read';
 import { from } from './source';
 
 /** Recognisable in any body, header or stored entry. */
@@ -116,8 +116,10 @@ describe('unit · a sealed column leaves through no projection of a query', () =
     clean(await wire(list({ rows: true, single: true })));
   });
 
+  // `@ultimat3/mcp`'s one projection serves a read as `sourceFor(…, { surface: 'mcp' })` then
+  // `execute()` (`projectable.ts`).
   test('the MCP read: what `tools/call` serialises', async () => {
-    const rows = await toQueryTool(list()).read({}, { actor: null });
+    const rows = await (await sourceFor(list(), {}, { surface: 'mcp', actor: null })).execute();
     clean(JSON.stringify(rows));
   });
 

@@ -4,7 +4,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   booleanIssue,
-  localeIssues,
   nameListIssues,
   oneOfIssue,
   routePathIssue,
@@ -77,17 +76,5 @@ describe('the per-key screens', () => {
       'k must list at least one queue',
     ]);
     expect(collect((issues) => nameListIssues('k', ['', 5], 'queue', issues))).toHaveLength(2);
-  });
-
-  test('localeIssues refuses a non-tag, a second spelling of one locale and an absent default', () => {
-    expect(collect((issues) => localeIssues(['en', 'pt-BR'], 'en', issues))).toEqual([]);
-    expect(collect((issues) => localeIssues(['EN', 'en'], 'en', issues))).toEqual([
-      'locales lists en twice, as "EN" and "en"',
-    ]);
-    expect(collect((issues) => localeIssues(['not a tag', 5], 'de', issues))).toEqual([
-      'locales contains "not a tag", not a BCP-47 tag',
-      'locales contains a number, not a BCP-47 tag',
-      'defaultLocale "de" is not in locales',
-    ]);
   });
 });

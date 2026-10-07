@@ -123,7 +123,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/` |
 | [Observability](Observability) | counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
 | [Known gaps](Known-Gaps) | every defect and unfinished seam in the published release, named |
-| [Upgrading](Upgrading) | one section per major with every manual edit, the in-flight 23.0.0 as a checklist, version skew — and that `x upgrade` is planned |
+| [Upgrading](Upgrading) | one section per major with every manual edit, the in-flight major as a checklist under `[Unreleased]`, version skew — and that `x upgrade` is planned |
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
 | [Contributing](Contributing) | package layout, import tiers, conventions, PR expectations |

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type FrozenClock, frozenClock } from '@ultimat3/core';
 import type { SessionStore } from './adapter';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import {
   clearSessionCookie,
   createSession,
@@ -29,7 +29,7 @@ interface TestRuntime extends SessionRuntime {
 }
 
 const runtime = (startMs = 0): TestRuntime => ({
-  store: new MemoryAdapter(),
+  store: memoryAuthAdapter(),
   policy: POLICY,
   clock: frozenClock(startMs),
 });
@@ -172,7 +172,7 @@ describe('the idle window slides, it does not grind', () => {
   };
 
   const slidingRuntime = (clock: FrozenClock) => {
-    const counted = counting(new MemoryAdapter());
+    const counted = counting(memoryAuthAdapter());
     // idleTtlMs 30s / IDLE_SLIDE_DIVISOR 20 = a 1.5s slide. The absolute ceiling is widened so
     // these tests measure the idle window and only the idle window.
     const policy: SessionPolicy = { ...POLICY, absoluteTtlMs: 3_600_000 };

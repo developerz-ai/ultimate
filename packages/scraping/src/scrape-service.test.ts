@@ -8,15 +8,15 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
 import type { JobDriver, JobHandle } from '@ultimat3/jobs';
 import {
-  createMemoryDriver,
-  createMemoryEventBus,
   createWorker,
+  memoryEventBus,
+  memoryJobDriver,
   resetEventBus,
   resetJobs,
   setEventBus,
 } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import type { PromptRequest } from './auth';
 import { noWaitClock, resetScrapeClock, setScrapeClock } from './clock';
 import type { ScrapeDriver, SessionInit } from './driver';
@@ -109,8 +109,8 @@ const enqueue = (handle: JobHandle<Input>, connectionId = 'conn-1') => {
 };
 
 beforeEach(() => {
-  queue = createMemoryDriver();
-  setEventBus(createMemoryEventBus());
+  queue = memoryJobDriver();
+  setEventBus(memoryEventBus());
   // No test below waits on a wall clock, and none sets a clock on its definition — the run takes
   // the process's, which is the seam. Real time, and every sleep one turn of the event loop.
   setScrapeClock(noWaitClock);
@@ -306,7 +306,7 @@ describe('the session disk is bound when it is used', () => {
         },
       },
     });
-    const sessions = memoryDriver();
+    const sessions = memoryStorageDriver();
     defineStorage({ disks: { sessions } });
     await enqueue(handle);
 

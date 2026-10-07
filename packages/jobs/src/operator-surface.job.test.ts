@@ -6,7 +6,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { COUNTER_TIERS } from './introspection';
 import { resetJobs } from './job';
@@ -21,7 +21,7 @@ import {
 import { operatorScopeScenarios } from './operator-surface-scope-fixture';
 import { operatorSettleScenarios } from './operator-surface-settle-fixture';
 import { createScheduler } from './scheduler';
-import { createPgLeaseLeader, pgSchedulerState } from './scheduler-pg';
+import { postgresLeaseLeader, postgresSchedulerState } from './scheduler-pg';
 import { resetTasks, task } from './task';
 
 /** `count` rows in one statement: a thousand round trips is not what this suite is measuring. */
@@ -37,7 +37,7 @@ const harness: OperatorHarness = {
   async driver(): Promise<JobDriver> {
     const pg = await embeddedPg();
     await pg.reset();
-    return createPgDriver({ executor: pg.executor });
+    return postgresJobDriver({ executor: pg.executor });
   },
   async elapse(_driver, ms): Promise<void> {
     await (await embeddedPg()).age(ms);
@@ -46,7 +46,7 @@ const harness: OperatorHarness = {
     await (await embeddedPg()).executor.query(SEED, [name, queue, state, count]);
   },
   async schedulerState() {
-    return pgSchedulerState((await embeddedPg()).executor);
+    return postgresSchedulerState((await embeddedPg()).executor);
   },
 };
 
@@ -157,10 +157,10 @@ describe('the operator surface on the pg driver', () => {
     );
     const scheduler = createScheduler({
       // The queue's own statements are counted too: an idle round must not read the pause table.
-      driver: createPgDriver({ executor: counting }),
+      driver: postgresJobDriver({ executor: counting }),
       clock,
-      state: pgSchedulerState(counting),
-      leader: createPgLeaseLeader({ executor: counting, holder: 'idle-node' }),
+      state: postgresSchedulerState(counting),
+      leader: postgresLeaseLeader({ executor: counting, holder: 'idle-node' }),
       tasks,
     });
     // Arming: one watermark read and one write a task, the lease, and the first counter fold.
@@ -182,7 +182,7 @@ describe('the operator surface on the pg driver', () => {
 
   test('pg: a fire that queues nothing still does not move a watermark it is behind', async () => {
     const driver = await harness.driver();
-    const state = pgSchedulerState((await embeddedPg()).executor);
+    const state = postgresSchedulerState((await embeddedPg()).executor);
     await state.markFired('behind', 5_000_000);
 
     expect(await state.fire(driver, { task: 'behind', occurrenceMs: 4_000_000, jobs: [] })).toBe(

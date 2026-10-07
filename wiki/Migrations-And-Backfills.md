@@ -290,7 +290,7 @@ One projection, four surfaces, so none of them can disagree about how far a pass
 | `x jobs show <id>` | one job's full state — step trace, next retry — plus this run's ledger row under `backfill` when the job is one |
 | `/_x` jobs panel | the same ledger, live |
 
-All four read `inspectBackfills(driver, filter?)` from `backfill-inspect.ts` — there is no second reader. It answers `[]`, never a throw, for a driver whose `JobDriver.backfills` is absent (a driver that ships no ledger, e.g. `driver-redis`/`driver-nats`): the surfaces asking about the *queue* must not fail over a fact nobody asked for, though `x db backfill --list` — the surface that **is** the question — says so in its own summary.
+All four read `inspectBackfills(driver, filter?)` from `backfill-inspect.ts` — there is no second reader. It answers `[]`, never a throw, for a driver whose `JobDriver.backfills` is absent (a driver that ships no ledger, e.g. a hand-rolled one): the surfaces asking about the *queue* must not fail over a fact nobody asked for, though `x db backfill --list` — the surface that **is** the question — says so in its own summary.
 
 ### Declared, and never run — the other half of the ledger
 

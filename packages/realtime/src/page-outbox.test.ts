@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { OUTBOX_DRAIN_MESSAGE, rescope, UltimateError } from '@ultimat3/core';
-import { MemoryLocalStore } from './local-store-idb';
+import { memoryLocalStore } from './local-store-idb';
 import type { OutboxEntry, OutboxOverlays } from './page-outbox';
 import { createOutbox, listenForDrain } from './page-outbox';
 
@@ -25,7 +25,7 @@ function overlays(): OutboxOverlays & { settled: string[]; dropped: string[] } {
   return { settled, dropped, settle: (key) => settled.push(key), drop: (key) => dropped.push(key) };
 }
 
-function setup(principal: string | null | undefined, local = new MemoryLocalStore()) {
+function setup(principal: string | null | undefined, local = memoryLocalStore()) {
   const sent: OutboxEntry[] = [];
   let answer: (entry: OutboxEntry) => Promise<unknown> = async () => ({ ok: true });
   const twins = overlays();
@@ -65,7 +65,7 @@ describe('the page outbox', () => {
   });
 
   test('a queued write survives a reload and replays exactly once', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const first = setup('u1', local);
     first.answerWith(async () => Promise.reject(offline()));
     await first.outbox.enqueue(like(1));
@@ -102,7 +102,7 @@ describe('the page outbox', () => {
   });
 
   test("a principal change wipes the previous principal's queue — never sent as the next", async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     rescope('u1');
     const outbox = createOutbox({ local, send: async () => ({}), overlays: () => undefined });
     await outbox.enqueue(like(1));
@@ -113,7 +113,7 @@ describe('the page outbox', () => {
   });
 
   test('an unscoped page queues in memory only: a reload finds nothing', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const first = setup(undefined, local);
     first.answerWith(async () => Promise.reject(offline()));
     await first.outbox.enqueue(like(1));
@@ -233,7 +233,7 @@ describe('listenForDrain', () => {
 // save won and the other tab's queued write was gone. One record per mutation key now.
 describe('two tabs, one outbox', () => {
   test('both tabs queue offline, and a reload sends both writes, in order', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const tabA = setup('u1', local);
     const tabB = setup('u1', local);
     await tabA.outbox.ready;
@@ -248,7 +248,7 @@ describe('two tabs, one outbox', () => {
   });
 
   test('a tab replays what ANOTHER tab queued since it opened', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const tabA = setup('u1', local);
     const tabB = setup('u1', local);
     await tabA.outbox.ready;
@@ -263,7 +263,7 @@ describe('two tabs, one outbox', () => {
   // A write saved as `inflight` belonged to a page that is gone. It was never resent after a
   // reload, and every later write overtook it.
   test('a write a closed page left inflight is sent first after the reload', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const first = setup('u1', local);
     let hang: (() => void) | undefined;
     first.answerWith(

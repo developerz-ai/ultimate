@@ -16,7 +16,7 @@ import {
 import { getJob, isJobHandle, resetJobs } from './job';
 import { retrySchedule } from './retry';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 import {
   codeOf,
   ctx,
@@ -324,7 +324,7 @@ describe('a delivery that can never be signed is refused before the socket opens
           step: createStepRunner({
             runId: 'run-x',
             jobName: 'partner-hooks-1',
-            store: createMemoryStepStore(),
+            store: memoryStepStore(),
           }).step,
           ctx,
           attempt: 1,

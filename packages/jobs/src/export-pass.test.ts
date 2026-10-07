@@ -15,7 +15,7 @@ import { exportRows } from './export';
 import { exportManifestKey, exportPartKey, memoryExportSink } from './export-sink';
 import { resetJobs } from './job';
 import { createStepRunner, type StepStore } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 const rows = entity('export_pass_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },
@@ -51,7 +51,7 @@ const harness = (
   options: { batch?: number; maxPartBytes?: number; format?: 'ndjson' | 'csv' } = {},
 ): Harness => {
   sequence += 1;
-  const store = createMemoryStepStore();
+  const store = memoryStepStore();
   const stepsAtPut: number[] = [];
   const failOn = new Set<number>();
   let completed = 0;

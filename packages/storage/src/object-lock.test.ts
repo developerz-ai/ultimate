@@ -1,4 +1,4 @@
-// Object Lock on the two disks that EMULATE it — `localDriver` and `memoryDriver` — asked in one
+// Object Lock on the two disks that EMULATE it — `localDriver` and `memoryStorageDriver` — asked in one
 // test per claim so neither can move alone. They keep one version per key, so a lock is kept by
 // refusing the delete or the overwrite that would destroy the bytes until it lapses. The s3 half
 // (headers on the wire, the provider's answer read back) is `driver-s3-lock.test.ts`.
@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { type FrozenClock, frozenClock, isUltimateError } from '@ultimat3/core';
 import type { PutOptions, StorageDriver } from './driver';
 import { localDriver } from './driver-local';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { isLocked, ObjectLockedError } from './object-lock';
 
 const KEY = 'org/o1/ledger.csv';
@@ -38,7 +38,7 @@ beforeEach(async () => {
   clock = frozenClock('2026-10-06T09:00:00.000Z');
   disks = [
     ['local', localDriver({ root, signingSecret: 'test-secret', clock })],
-    ['memory', memoryDriver({ signingSecret: 'test-secret', clock })],
+    ['memory', memoryStorageDriver({ signingSecret: 'test-secret', clock })],
   ];
 });
 

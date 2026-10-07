@@ -12,23 +12,23 @@ import type {
 import {
   configureAuthLimiters,
   defineAuth,
-  MemoryAdapter,
+  memoryAuthAdapter,
   resetAuthLimiters,
 } from '@ultimat3/auth';
 import { createContext } from '@ultimat3/core';
 import type { PostgresRateLimitStore, RateLimitDecision, RateLimitPeek } from '@ultimat3/http';
 import type { EventBus, PurgeReport } from '@ultimat3/jobs';
 import {
-  createMemoryEventBus,
-  createMemoryStepStore,
   createStepRunner,
   getJob,
   getTask,
+  memoryEventBus,
+  memoryStepStore,
   resetJobs,
   resetTasks,
 } from '@ultimat3/jobs';
 import type { InboxPurgeBefore, PgInboxStore } from '@ultimat3/notify';
-import { createMemoryInboxStore, resetNotifyStores, setNotifyStores } from '@ultimat3/notify';
+import { memoryInboxStore, resetNotifyStores, setNotifyStores } from '@ultimat3/notify';
 import type { RetentionStores } from './runtime-purge';
 import { installRetentionSweep, PURGE_JOB_NAME, PURGE_TASK_NAME } from './runtime-purge';
 
@@ -60,7 +60,7 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
 
 /** The boot's event bus, answering a fixed row count: only the sweep is under test. */
 const eventsRemoving = (removed: number): EventBus => ({
-  ...createMemoryEventBus(),
+  ...memoryEventBus(),
   purgeExpired: (): Promise<number> => Promise.resolve(removed),
 });
 
@@ -79,7 +79,7 @@ const installAuthLimiter = (removed: number): void => {
     reset: async (): Promise<void> => undefined,
     purgeExpired: async (): Promise<number> => removed,
   }));
-  defineAuth({ adapter: new MemoryAdapter() });
+  defineAuth({ adapter: memoryAuthAdapter() });
 };
 
 async function runSweep(): Promise<PurgeReport> {
@@ -88,7 +88,7 @@ async function runSweep(): Promise<PurgeReport> {
   const runner = createStepRunner({
     runId: crypto.randomUUID(),
     jobName: handle.name,
-    store: createMemoryStepStore(),
+    store: memoryStepStore(),
   });
   const result = await handle.run({
     input: {},
@@ -194,7 +194,7 @@ describe('installRetentionSweep', () => {
     const seen: InboxPurgeBefore[] = [];
     setNotifyStores({
       inbox: {
-        ...createMemoryInboxStore(),
+        ...memoryInboxStore(),
         purgeBefore: (before: InboxPurgeBefore) => {
           seen.push(before);
           return Promise.resolve(5);
@@ -225,7 +225,7 @@ describe('installRetentionSweep', () => {
     const seen: InboxPurgeBefore[] = [];
     setNotifyStores({
       inbox: {
-        ...createMemoryInboxStore(),
+        ...memoryInboxStore(),
         purgeBefore: (before: InboxPurgeBefore) => {
           seen.push(before);
           return Promise.resolve(0);

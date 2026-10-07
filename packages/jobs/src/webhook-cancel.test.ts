@@ -8,7 +8,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createContext, isUltimateError, UltimateError } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { JobDrainedError } from './errors';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
@@ -62,7 +62,7 @@ async function queued(options: { readonly timeout?: string; readonly fetch: Webh
     event: () => ({ topic: 'orders.paid', body: '{"amount":100}' }),
     fetch: options.fetch,
   });
-  const driver = createMemoryDriver();
+  const driver = memoryJobDriver();
   await driver.enqueue({
     name: handle.name,
     queue: 'default',

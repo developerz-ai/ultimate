@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 // own source off disk rather than trusting an import graph a bundler could have rewritten.
 import { join } from 'node:path';
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { REQUIRED_BUN } from './app-root';
 import type { CommandContext } from './command';
 import { withJobDriver } from './jobs-driver';
@@ -39,7 +39,7 @@ const contextFor = (): CommandContext => ({
 
 describe('unit · withJobDriver', () => {
   test('an ambient driver is reused, so no command boots a second queue over it', async () => {
-    const ambient: JobDriver = createMemoryDriver();
+    const ambient: JobDriver = memoryJobDriver();
     setJobDriver(ambient);
     let seen: JobDriver | undefined;
     try {

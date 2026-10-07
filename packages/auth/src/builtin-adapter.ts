@@ -424,3 +424,14 @@ export class BuiltinAdapter implements AuthAdapter {
     return changed > 0;
   }
 }
+
+/**
+ * The one way to build the Postgres adapter — the twin of `memoryAuthAdapter()`. The class is a
+ * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ */
+export function postgresAuthAdapter(
+  client: DbClient = db(),
+  clock: Clock = systemClock,
+): BuiltinAdapter {
+  return new BuiltinAdapter(client, clock);
+}

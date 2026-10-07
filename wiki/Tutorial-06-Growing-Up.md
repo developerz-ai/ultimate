@@ -81,7 +81,7 @@ Three things turn on at this rung, all by env, none by a code path:
 |---|---|---|
 | cross-node fanout | `NATS_URL` | `selectTransport` builds `NatsTransport` instead of `InProcessTransport` |
 | presence across nodes | `NATS_KV_BUCKET` (default `x_presence`) | presence becomes a JetStream KV bucket; its age limit and the presence TTL are one number |
-| live queries off a real WAL | `REPLICATION_URL` · `REPLICATION_SLOT` · `REPLICATION_PUBLICATION` | `selectChangeFeed` builds `PgLogicalReplicationFeed`, under an advisory lock so exactly one replicator exists |
+| live queries off a real WAL | `REPLICATION_URL` · `REPLICATION_SLOT` · `REPLICATION_PUBLICATION` | `selectChangeFeed` builds `postgresChangeFeed()`, under an advisory lock so exactly one replicator exists |
 
 **Do not enable `replicator` until live queries are in use.** The chart ships it `enabled: false` for that reason.
 
@@ -109,7 +109,7 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:431
 | Concern | Interface | Decided by |
 |---|---|---|
 | rows | `@ultimat3/db` · `DbClient` | `DATABASE_URL` — unset is PGlite, and PGlite is `x dev` only |
-| job queue | `@ultimat3/jobs` · `JobDriver` | `setJobDriver(createPgDriver({ executor }))` — there is no `jobs.driver` config line, and 5.0.0 deleted the one that never worked. Redis and NATS are interface-complete stubs that throw `X_NOT_IMPLEMENTED` |
+| job queue | `@ultimat3/jobs` · `JobDriver` | `setJobDriver(postgresJobDriver({ executor }))` — there is no `jobs.driver` config line, and 5.0.0 deleted the one that never worked. Redis is an interface-complete stub that throws `X_NOT_IMPLEMENTED`; there is no NATS job driver since 25.0.0 |
 | realtime fanout | `@ultimat3/realtime` · `Transport` | `NATS_URL` |
 | change feed | `@ultimat3/realtime` · `ChangeFeed` | `REPLICATION_*` |
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |
@@ -140,7 +140,7 @@ Named rather than left to be discovered:
 | no OTLP **logs** signal, and a rejected export is dropped with a `warn` rather than retried — traces and metrics do export | 3–4 |
 | a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
 | `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
-| Redis and NATS **job** drivers throw `X_NOT_IMPLEMENTED` | any |
+| the Redis **job** driver throws `X_NOT_IMPLEMENTED` (no NATS job driver since 25.0.0) | any |
 | realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | **not shipped**, `As of 2026-08` |
 
 Each sits behind an interface that ships today and fails loudly, rather than pretending to work. The full list, with a workaround per row: [Known gaps](Known-Gaps).

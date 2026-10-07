@@ -51,7 +51,7 @@ export const promptTimedOut = (input: {
   new ScrapeError({
     code: 'X_SCRAPE_PROMPT_UNANSWERED',
     cause: `scrape "${input.scrape}" asked for "${input.label}" and no answer was published to ${input.event} within ${String(input.waitedMs)}ms`,
-    fix: 'call answerPrompt({ runId, index, answer }) with the run id and index the event name in the cause ends with, from a process on the same STORED event bus — setEventBus(createPgEventBus({ executor })) — or raise eventPrompt({ timeout })',
+    fix: 'call answerPrompt({ runId, index, answer }) with the run id and index the event name in the cause ends with, from a process on the same STORED event bus — setEventBus(postgresEventBus({ executor })) — or raise eventPrompt({ timeout })',
     meta: {
       scrape: input.scrape,
       label: input.label,

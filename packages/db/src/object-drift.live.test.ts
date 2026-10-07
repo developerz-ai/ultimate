@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type CatalogDescription, emptyCatalog } from './catalog';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { introspectCatalog } from './introspect-catalog';
 import { unexpectedObjects } from './object-drift';
 import { raw } from './sql';
@@ -61,7 +61,7 @@ describe.skipIf(!runnable)('live · postgres · an unexpected-object fix runs as
   };
 
   beforeAll(async () => {
-    admin = createPostgresClient({ url: url ?? '' });
+    admin = postgresClient({ url: url ?? '' });
     await admin.execute(raw(`drop schema if exists ${S} cascade`));
     await admin.execute(raw('drop function if exists public.od_touch()'));
     await admin.execute(raw(`create schema ${S}`));

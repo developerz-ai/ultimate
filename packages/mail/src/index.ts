@@ -25,25 +25,25 @@ export type {
   SentMail,
 } from './driver';
 export {
-  createLogDriver,
-  createMemoryDriver,
-  createUnconfiguredDriver,
   isMemoryDriver,
   isUnconfiguredDriver,
+  logMailDriver,
   mailDriver,
+  memoryMailDriver,
   messageHeaders,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
+  unconfiguredMailDriver,
 } from './driver';
 export type { MailEnvironment, MailSelection, MailSelectOptions } from './driver-env';
 export { selectMailDriver } from './driver-env';
 export type { MailFetch, ResendDriverOptions } from './driver-resend';
-export { createResendDriver } from './driver-resend';
+export { resendMailDriver } from './driver-resend';
 export type { SesDriverOptions } from './driver-ses';
-export { createSesDriver, sesEndpoint } from './driver-ses';
+export { sesEndpoint, sesMailDriver } from './driver-ses';
 export type { SmtpDriverOptions } from './driver-smtp';
-export { createSmtpDriver } from './driver-smtp';
+export { smtpMailDriver } from './driver-smtp';
 export { assertEnvelopeAddress } from './envelope-address';
 export type {
   AddressRefusal,

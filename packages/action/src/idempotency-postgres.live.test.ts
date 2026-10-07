@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw, sql, withTransaction } from '@ultimat3/db';
+import { postgresClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
 import { postgresUnderTest, RECLAIM_MS, type TxHarness, txHarness } from './idempotency-tx-fixture';
 
@@ -31,10 +31,10 @@ describe.skipIf(!hasPostgres)('live · postgres · idempotency settles in the ha
   let harness: TxHarness;
 
   beforeAll(async () => {
-    admin = createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+    admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
     await admin.execute(raw(`create database ${PROBE_DB}`));
-    client = createPostgresClient({ url: probeUrl(), role: 'web', profile: { max: 4 } });
+    client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 4 } });
     harness = await txHarness(client, await postgresUnderTest(client));
   });
 

@@ -192,7 +192,7 @@ input. The tenant is a fact about the work, so the job declares it.
 expires, so on a bus shared by one `bun test` process an answer one test published resumes the
 next test's wait — call it between tests.
 
-The event bus has ONE clock. `createPgEventBus({ executor })` stamps `publishedAt` and the expiry
+The event bus has ONE clock. `postgresEventBus({ executor })` stamps `publishedAt` and the expiry
 with the database's `now()` — it takes no `clock` — and `bus.now()` answers that same clock. A
 consumer that wants "published after I asked" (`@ultimat3/scraping`'s `eventPrompt`) reads its
 "asked at" from `bus.now()`, never from its own process: a skew between two pods must not decide
@@ -689,7 +689,7 @@ things have to be true in a process:
 under the drain's deadline — and `stop()` hands both back.
 `drainOnShutdown: false` opts out, for a caller that drives its own teardown.
 
-with `store = createPgOutboxStore({ executor, txExecutor })`. `txExecutor` is what makes it
+with `store = postgresOutboxStore({ executor, txExecutor })`. `txExecutor` is what makes it
 transactional: `stage()` runs on the CALLER'S connection, never the pool. With nothing installed,
 `jobsFacade()` answers a fallback whose `currentTx` is `() => undefined` and every enqueue
 publishes straight to the driver — deliberate, so a script and a test enqueue with no wiring, but
@@ -724,7 +724,7 @@ What the lease buys, precisely:
 | a relay that died mid-batch stranding its rows forever | anything a **non-idempotent** handler does on its second run |
 | — | a lapsed visibility lease re-delivering a job that is still running |
 
-The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a published row —
+The memory store (`memoryOutboxStore`, `x dev` and tests) **drops** a published row —
 `retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
 the audit trail this map is not. A relay pass that throws is logged as `jobs.outbox.tick-failed`
 and the loop re-arms: an unobserved rejection would end the process with rows still staged.
@@ -741,17 +741,21 @@ One interface: `enqueue`, `claim` (visibility timeout), `ack(jobId, { workerId, 
 `backfills` and `leases`. Both settles are fenced on the CLAIM — `claimOf(claimed)` is the
 `{ workerId, claim }` a `ClaimedJob` carries — and answer whether they landed. Zero job-code change
 between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driver` config line**:
-`JobsConfig.driver` has no reader and boot always builds `createPgDriver`.
+`JobsConfig.driver` has no reader and boot always builds `postgresJobDriver`.
 
 | Driver | Status | Backing | Use |
 |---|---|---|---|
 | `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, coalesce(tenant_id, ''), idempotency_key)` over live rows (`x_jobs_name_tenant_idempotency_live_idx`), lease-based leader, `x_job_leases` | zero-infra start, most apps |
 | `memory` | complete | in-process maps | `x dev`, tests |
-| `redis` | interface-complete, `X_NOT_IMPLEMENTED` | Streams + consumer groups | planned |
-| `nats` | interface-complete, `X_NOT_IMPLEMENTED` | JetStream work queue | planned |
 
-The pg SQL is exported verbatim (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …) so an agent
-debugging a stuck queue can read and run the exact statement.
+There is **no NATS or Redis jobs driver**: `createNatsDriver` and `createRedisDriver`, all-throw
+stubs, were deleted in 25.0.0. A real `redisJobDriver()` would arrive as a minor.
+
+The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
+so an agent debugging a stuck queue can read and run the exact statement. The barrel exports
+only the statement another package runs: `SQL_JOBS_TABLE` (the install) — 25.0.0 took the rest
+off, `SQL_CLAIM` and `SQL_OUTBOX_RELEASE` included (their array-parameter proofs are this package's
+`driver-pg-array.live.test.ts`).
 
 **A lease that lapses on a row's final attempt is buried by the claim.** `claim` re-takes a
 `running` row whose lease lapsed — the worker died — but one already at `attempt >= maxAttempts`
@@ -809,11 +813,11 @@ update runs two leaders.
 
 ```ts
 import {
-  createPgLeaseLeader,
+  postgresLeaseLeader,
   createScheduler,
   type JobDriver,
   type PgExecutor,
-  pgSchedulerState,
+  postgresSchedulerState,
 } from '@ultimat3/jobs';
 
 declare const driver: JobDriver;
@@ -821,12 +825,12 @@ declare const executor: PgExecutor;   // see "A `PgExecutor`" below
 
 createScheduler({
   driver,
-  state: pgSchedulerState(executor),
-  leader: createPgLeaseLeader({ executor }),
+  state: postgresSchedulerState(executor),
+  leader: postgresLeaseLeader({ executor }),
 });
 ```
 
-`createPgLeaseLeader` and not `createPgLeader`: `pg_try_advisory_lock` is scoped to a Postgres
+`postgresLeaseLeader` and not `postgresLeader`: `pg_try_advisory_lock` is scoped to a Postgres
 *session*, and the executor this package is handed is a **pool** — the lock is released the moment
 that connection goes back to it, so every node reads itself as leader. The lease is a row with an
 expiry and needs no connection affinity. `acquire()` is also the renewal, called every round, which
@@ -866,10 +870,10 @@ hourly task fire 24 catch-ups a second apart.
 client, which already speaks `(text, values)` and decodes `jsonb`:
 
 ```ts
-import { createPostgresClient } from '@ultimat3/db';
+import { postgresClient } from '@ultimat3/db';
 import type { PgExecutor } from '@ultimat3/jobs';
 
-const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+const client = postgresClient({ url: 'postgres://localhost:5432/app_test' });
 export const executor: PgExecutor = {
   query: <R>(text: string, values: readonly unknown[]) => client.query<R>({ text, values }),
 };
@@ -897,11 +901,11 @@ A queue with nothing to do costs almost nothing, and a job starts when it is com
 `startQueueWake({ listener, executor })` holds ONE `LISTEN` session per worker pod and turns "another process committed" into the signal the idle loops already hear. The boot starts it for the `worker` role.
 
 ```ts
-import { createPostgresClient } from '@ultimat3/db';
+import { postgresClient } from '@ultimat3/db';
 import type { PgExecutor } from '@ultimat3/jobs';
 import { startQueueWake } from '@ultimat3/jobs';
 
-const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+const client = postgresClient({ url: 'postgres://localhost:5432/app_test' });
 const executor: PgExecutor = {
   query: <R>(text: string, values: readonly unknown[]) => client.query<R>({ text, values }),
 };
@@ -1246,7 +1250,7 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_JOB_NOT_PROMOTABLE` | `promote` reached a job not waiting on its run time |
 | `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. The cause names which cursor (`after` / `before`). Fix: `x jobs ls --limit 200 --json` |
 | `X_JOB_ON_SETTLED_FAILED` | a declared `onSettled` threw on every one of its tries; logged and reported, never thrown |
-| `X_NOT_IMPLEMENTED` | redis / nats driver |
+| `X_NOT_IMPLEMENTED` | introspection or the operator surface on a driver with no `introspect` (a hand-rolled one) |
 
 ### Error classes
 

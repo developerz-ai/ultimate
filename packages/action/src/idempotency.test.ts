@@ -4,7 +4,7 @@ import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { MemoryIdempotencyStore, memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.uuid });
@@ -37,7 +37,7 @@ function defineCounter() {
 describe('idempotency', () => {
   test('a replayed key returns the first response and does not re-run', async () => {
     const { target, runs } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx, store, idempotencyKey: 'key-1' } as const;
 
     const first = await invoke(target, { postId: POST_ID }, options);
@@ -49,7 +49,7 @@ describe('idempotency', () => {
 
   test('the same key with a different payload is X_IDEMPOTENCY_CONFLICT', async () => {
     const { target } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     await invoke(target, { postId: POST_ID }, { ctx, store, idempotencyKey: 'key-1' });
 
     const other = '00000000-0000-4000-8000-0000000000bb';
@@ -67,7 +67,7 @@ describe('idempotency', () => {
 
   test('a concurrent duplicate is refused rather than run twice', async () => {
     const { target, runs } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx, store, idempotencyKey: 'key-1' } as const;
 
     const [a, b] = await Promise.allSettled([
@@ -92,7 +92,7 @@ describe('idempotency', () => {
   // payload got X_IDEMPOTENCY_CONFLICT — one caller could deny another every key they guessed.
   test("another actor's identical key is another record, not a replay of the first", async () => {
     const { target, runs } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
 
     const first = await invoke(target, { postId: POST_ID }, { ctx, store, idempotencyKey: 'k1' });
     const second = await invoke(
@@ -107,7 +107,7 @@ describe('idempotency', () => {
 
   test("another actor's differing payload cannot deny a key it does not own", async () => {
     const { target } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     await invoke(target, { postId: POST_ID }, { ctx, store, idempotencyKey: 'k1' });
 
     const other = '00000000-0000-4000-8000-0000000000bb';
@@ -123,7 +123,7 @@ describe('idempotency', () => {
   // header reached the store as a live key shared by every caller who sent one.
   test('a blank key is refused before the handler, not silently shared', async () => {
     const { target, runs } = defineCounter();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const failure = await invoke(
       target,
       { postId: POST_ID },
@@ -143,7 +143,7 @@ describe('idempotency', () => {
  */
 describe('a settlement is fenced on the reservation still being in flight', () => {
   test('a late settle cannot overwrite a record another settlement already wrote', async () => {
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
     await store.settle('k', { runs: 1 }, reservation.record.id, false);
     await store.settle('k', { runs: 2 }, reservation.record.id, false);
@@ -152,7 +152,7 @@ describe('a settlement is fenced on the reservation still being in flight', () =
   });
 
   test('a late failure cannot turn a settled record into a failed one', async () => {
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
     await store.settle('k', { runs: 1 }, reservation.record.id, false);
     await store.fail(
@@ -167,7 +167,7 @@ describe('a settlement is fenced on the reservation still being in flight', () =
   });
 
   test('the first settlement of an in-flight reservation still lands', async () => {
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const reservation = await store.reserve('k', 'hash');
     await store.settle('k', { runs: 1 }, reservation.record.id, false);
 
@@ -190,7 +190,7 @@ describe('a settlement is fenced on the reservation that produced it', () => {
     second: string;
   }> => {
     let clock = 1_000;
-    const store = new MemoryIdempotencyStore({ windowMs: 50, now: () => clock });
+    const store = memoryIdempotencyStore({ windowMs: 50, now: () => clock });
     const first = await store.reserve('k', 'hash');
     clock += 100;
     const second = await store.reserve('k', 'hash');
@@ -258,7 +258,7 @@ describe('a replayed output is parsed, on every store', () => {
   }).named('stampPost');
 
   for (const [name, store] of [
-    ['memory', () => new MemoryIdempotencyStore()],
+    ['memory', () => memoryIdempotencyStore()],
     ['wire (postgres)', () => new WireStore()],
   ] as const) {
     test(`${name}: the retry answers the same Date the first call did`, async () => {

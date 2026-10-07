@@ -40,7 +40,7 @@ export interface DrainConfig {
    * The drain budget: how long a SIGTERM'd process has to finish what it holds — in-flight requests,
    * a running job — after the grace, before the lifecycle abandons the rest. Applied to EVERY role,
    * so this is the knob that gives a long job room to finish on a deploy. Default 25000. A whole
-   * number, 1–3600000. `http.drainTimeoutMs`, when an app declares it, still wins on the web role.
+   * number, 1–3600000. The ONE drain budget, the web role's included.
    */
   readonly deadlineMs: number;
 }

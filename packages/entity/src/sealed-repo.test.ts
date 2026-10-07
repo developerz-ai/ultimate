@@ -58,7 +58,7 @@ describe('unit · the sealing seam', () => {
       findById: async () => null,
       findMany: async (args: unknown) => {
         seen.push(args);
-        return { rows: [], nextCursor: null };
+        return { rows: [], nextCursor: null, hasMore: false };
       },
       insert: keep,
       insertAll: async (rows: readonly unknown[]) => {

@@ -10,7 +10,7 @@ import {
   disableUser,
   enableUser,
   issueApiKey,
-  MemoryAdapter,
+  memoryAuthAdapter,
 } from '@ultimat3/auth';
 import { frozenClock } from '@ultimat3/core';
 import { textResult } from './registry';
@@ -34,7 +34,7 @@ const server = createMcpServer({
 });
 
 const setup = async () => {
-  const adapter = new MemoryAdapter(clock);
+  const adapter = memoryAuthAdapter(clock);
   const auth = defineAuth({ adapter, clock });
   const owner = await adapter.createUser({
     id: 'ada',

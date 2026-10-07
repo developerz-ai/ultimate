@@ -7,7 +7,7 @@
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { appTables, diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -82,10 +82,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
 
   beforeAll(async () => {
     // Its own schema, so `introspect()` sees this table and nothing else the server is holding.
-    admin = createPostgresClient({ url: url ?? '' });
+    admin = postgresClient({ url: url ?? '' });
     await admin.execute(raw(`drop schema if exists "${SCHEMA}" cascade`));
     await admin.execute(raw(`create schema "${SCHEMA}"`));
-    client = createPostgresClient({ url: scopedUrl(url ?? '') });
+    client = postgresClient({ url: scopedUrl(url ?? '') });
     declared = snapshotOf([entity]);
     for (const statement of statementsOf(
       generateMigration({ entities: [entity], name: 'init', now: at }).up,

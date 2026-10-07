@@ -69,7 +69,7 @@ export interface PostgresClient extends ReservableClient, ListeningClient {
 }
 
 /** Lazily connects: the pool opens on the first statement, never at import. */
-export function createPostgresClient(options: PostgresClientOptions = {}): PostgresClient {
+export function postgresClient(options: PostgresClientOptions = {}): PostgresClient {
   const role = options.role ?? resolveRole();
   const profile: PoolProfile = assertPoolProfile({
     ...poolProfileFor(role),
@@ -247,7 +247,7 @@ export function setDbClient(client: DbClient | undefined): void {
  *
  * The role default is layered under `DATABASE_POOL_MAX`, because this is the one place the process
  * builds its own client and therefore the only place an operator's value can reach one:
- * `createPostgresClient` has always taken a `profile` override and nothing in a running app passed
+ * `postgresClient` has always taken a `profile` override and nothing in a running app passed
  * it, so `POOL_PROFILES` was the last word in a deployed image. `default-client.ts` owns what gets
  * built — one pool, or a primary and a replica when `DATABASE_REPLICA_URL` names one.
  */

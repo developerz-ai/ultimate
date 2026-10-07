@@ -169,7 +169,7 @@ export const putTooLarge = (
       (disk === 's3'
         ? `s3Driver({ bucket, maxPutBytes: ${bytes} })`
         : disk === 'memory'
-          ? `memoryDriver({ maxPutBytes: ${bytes} })`
+          ? `memoryStorageDriver({ maxPutBytes: ${bytes} })`
           : `localDriver({ root, maxPutBytes: ${bytes} })`),
     meta: { disk, key, bytes, maxBytes },
   });
@@ -193,7 +193,7 @@ export const getTooLarge = (
       (disk === 's3'
         ? `s3Driver({ bucket, maxGetBytes: ${bytes} })`
         : disk === 'memory'
-          ? `memoryDriver({ maxGetBytes: ${bytes} })`
+          ? `memoryStorageDriver({ maxGetBytes: ${bytes} })`
           : `localDriver({ root, maxGetBytes: ${bytes} })`),
     meta: { disk, key, bytes, maxBytes },
   });

@@ -8,11 +8,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { finiteDurationMs } from './clock';
-import { createMemoryEventBus } from './events';
+import { memoryEventBus } from './events';
 import { job, resetJobs } from './job';
 import { backoffDelayMs } from './retry';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -98,7 +98,7 @@ describe('the scheduling decisions built on it', () => {
     const runner = createStepRunner({
       runId: 'run-nan',
       jobName: 'digest',
-      store: createMemoryStepStore(),
+      store: memoryStepStore(),
     });
 
     const thrown = await rejection(() => runner.step.sleep('wait', Number.NaN));
@@ -116,7 +116,7 @@ describe('the scheduling decisions built on it', () => {
     const runner = createStepRunner({
       runId: 'run-ok',
       jobName: 'digest',
-      store: createMemoryStepStore(),
+      store: memoryStepStore(),
     });
 
     const thrown = await rejection(() => runner.step.sleep('wait', '3d'));
@@ -176,7 +176,7 @@ describe('the scheduling decisions built on it', () => {
   });
 
   test('an event ttl is refused before an event that never expires is stored', async () => {
-    const bus = createMemoryEventBus();
+    const bus = memoryEventBus();
     const thrown = await rejection(() =>
       bus.publish('invoice.paid', {}, { ttl: Number.POSITIVE_INFINITY }),
     );

@@ -11,6 +11,10 @@ import { EchoProvider } from './echo-provider';
 import { fixLineCases, fixLineEval } from './fix-line.evals-fixture';
 import { fixLinePrompt } from './fix-line-fixture';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 /** What the model answered when this baseline was recorded, keyed by case name. */
 const RECORDED: Readonly<Record<string, string>> = {
@@ -31,6 +35,7 @@ const REGRESSED: Readonly<Record<string, string>> = {
 /** Answers keyed by the rendered prompt — the fixture set, so the eval is a test, not a sample. */
 const gatewayServing = (answers: Readonly<Record<string, string>>) =>
   createGateway({
+    defaultModel: FIXTURE_MODEL,
     providers: [
       new EchoProvider({
         replies: Object.fromEntries(

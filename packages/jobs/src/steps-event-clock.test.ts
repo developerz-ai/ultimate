@@ -5,10 +5,10 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { createMemoryEventBus } from './events';
+import { memoryEventBus } from './events';
 import type { EventLookup, StepStore } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 const T0 = 1_790_000_000_000;
 const SKEW_MS = 5_000;
@@ -27,14 +27,14 @@ function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
 let store: StepStore;
 
 beforeEach(() => {
-  store = createMemoryStepStore();
+  store = memoryStepStore();
 });
 
 describe('a wait is stamped by the bus that stamps the answer', () => {
   test('a runner 5 s AHEAD of the bus still matches an event published 6 ms after it asked', async () => {
     const database = fakeClock(T0);
     const worker = fakeClock(T0 + SKEW_MS);
-    const events = createMemoryEventBus({ clock: database });
+    const events = memoryEventBus({ clock: database });
     const attempt = (): Promise<unknown> =>
       createStepRunner({
         runId: 'run-skew',
@@ -57,7 +57,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
   test('a runner 5 s BEHIND does not take an answer published before it asked', async () => {
     const database = fakeClock(T0);
     const worker = fakeClock(T0 - SKEW_MS);
-    const events = createMemoryEventBus({ clock: database });
+    const events = memoryEventBus({ clock: database });
     database.advance(-1_000);
     await events.publish('otp.entered', { code: 'stale' });
     database.advance(1_000);
@@ -77,7 +77,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
   test('the bus is asked ONCE per wait: a re-poll keeps the stamp it persisted', async () => {
     const database = fakeClock(T0);
     const worker = fakeClock(T0 + SKEW_MS);
-    const bus = createMemoryEventBus({ clock: database });
+    const bus = memoryEventBus({ clock: database });
     let asked = 0;
     const events: EventLookup = {
       find: bus.find,
@@ -108,7 +108,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
   test("a runner 5 s AHEAD does not give up early: the timeout is the bus's to call", async () => {
     const database = fakeClock(T0);
     const worker = fakeClock(T0 + SKEW_MS);
-    const bus = createMemoryEventBus({ clock: database });
+    const bus = memoryEventBus({ clock: database });
     let asked = 0;
     const events: EventLookup = {
       find: bus.find,
@@ -142,7 +142,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
   test('once the BUS is past the deadline the wait times out', async () => {
     const database = fakeClock(T0);
     const worker = fakeClock(T0 + SKEW_MS);
-    const events = createMemoryEventBus({ clock: database });
+    const events = memoryEventBus({ clock: database });
     const attempt = (): Promise<unknown> =>
       createStepRunner({ runId: 'run-late', jobName: 'awaitOtp', store, clock: worker, events })
         .step.waitForEvent('otp', 'otp.entered', { timeout: '10s' })

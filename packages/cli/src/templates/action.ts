@@ -154,7 +154,7 @@ const input = { id, orgId${isMutator ? ", title: 'a title'" : ''} };
 
 // Named here because every projection needs a stable name and this file does not boot the app.
 // At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
-// object, so \`${name.camel}.tool()\` works there with nothing to remember.
+// object, so each projection of it works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
 ${
   outsider
@@ -276,7 +276,7 @@ const input = { id, orgId${shape.isMutator ? ", title: 'a title'" : ''} };
 ${shape.isMutator ? `\n// The client store's table: the entity's own, so the twin and the server row share one key.\nconst TABLE = '${feature.table}';\n` : ''}
 // Named here because every projection needs a stable name and this file does not boot the app.
 // At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
-// object, so \`${name.camel}.tool()\` works there with nothing to remember.
+// object, so each projection of it works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
 
 // Holds the grant in the org the input names: past the policy, so what answers is the handler.

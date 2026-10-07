@@ -7,8 +7,11 @@ import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { EchoProvider } from './echo-provider';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import { createGateway } from './gateway';
-import { ANTHROPIC_MODEL_IDS } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const echo = new EchoProvider();
 
@@ -16,7 +19,7 @@ describe('routing and retries', () => {
   test('a retryable failure falls through to a healthy provider', async () => {
     const flaky: Provider = {
       name: 'flaky',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       async generate(): Promise<GenerateResult> {
         throw Object.assign(new Error('rate limited'), { status: 429 });
       },
@@ -26,6 +29,7 @@ describe('routing and retries', () => {
       },
     };
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [flaky, echo],
       retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -41,7 +45,7 @@ describe('routing and retries', () => {
     let attempts = 0;
     const broken: Provider = {
       name: 'broken',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       async generate(): Promise<GenerateResult> {
         attempts += 1;
         throw Object.assign(new Error('bad request'), { status: 400 });
@@ -52,6 +56,7 @@ describe('routing and retries', () => {
       },
     };
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [broken],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -70,7 +75,7 @@ describe('routing and retries', () => {
     let fellOver = false;
     const flaky: Provider = {
       name: 'flaky',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: () => Promise.reject(new Error('unused')),
       // biome-ignore lint/correctness/useYield: the failure happens before the first chunk
       async *stream(): AsyncIterable<StreamChunk> {
@@ -80,7 +85,7 @@ describe('routing and retries', () => {
     };
     const healthy: Provider = {
       name: 'healthy',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: (request) => echo.generate(request),
       async *stream(request): AsyncIterable<StreamChunk> {
         fellOver = true;
@@ -88,6 +93,7 @@ describe('routing and retries', () => {
       },
     };
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [flaky, healthy],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -106,7 +112,7 @@ describe('routing and retries', () => {
     expect(fellOver).toBe(false);
   });
 
-  // A `Provider` is an APP's object — `createGateway({ providers })` takes whatever it is handed —
+  // A `Provider` is an APP's object — `createGateway({ defaultModel: FIXTURE_MODEL,  providers })` takes whatever it is handed —
   // so the value it rejects with is one the framework did not build. Both reads in the retry loop
   // run on it: `isRetryable` indexes it, and the failure line renders it. A throw from either
   // replaces `X_AI_PROVIDER_UNAVAILABLE` with a bare TypeError raised inside the catch block.
@@ -129,7 +135,7 @@ describe('routing and retries', () => {
     for (const value of hostile) {
       const rude: Provider = {
         name: 'rude',
-        models: ANTHROPIC_MODEL_IDS,
+        models: FIXTURE_ANTHROPIC_IDS,
         generate: () => Promise.reject(value),
         // biome-ignore lint/correctness/useYield: interface requires a generator shape
         async *stream(): AsyncIterable<StreamChunk> {
@@ -137,6 +143,7 @@ describe('routing and retries', () => {
         },
       };
       const gateway = createGateway({
+        defaultModel: FIXTURE_MODEL,
         providers: [rude],
         retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
         sleep: async () => undefined,
@@ -158,7 +165,7 @@ describe('routing and retries', () => {
     let calls = 0;
     const counting: Provider = {
       name: 'counting',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       async generate(request: GenerateRequest) {
         calls += 1;
         return echo.generate(request);
@@ -167,6 +174,7 @@ describe('routing and retries', () => {
     };
     const store = new Map<string, string>();
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [counting],
       cache: { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) },
     });
@@ -180,7 +188,7 @@ describe('routing and retries', () => {
     let calls = 0;
     const refusing: Provider = {
       name: 'refusing',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       async generate(request: GenerateRequest) {
         calls += 1;
         return { ...(await echo.generate(request)), stopReason: 'refusal' as const };
@@ -189,6 +197,7 @@ describe('routing and retries', () => {
     };
     const store = new Map<string, string>();
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [refusing],
       cache: { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) },
     });
@@ -210,7 +219,7 @@ describe('routing and retries', () => {
 describe('a local refusal reaches the caller with its own code', () => {
   const localRefusal = (): Provider => ({
     name: 'keyless',
-    models: ANTHROPIC_MODEL_IDS,
+    models: FIXTURE_ANTHROPIC_IDS,
     generate: () =>
       Promise.reject(new AiKeyMissingError({ provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' })),
     // biome-ignore lint/correctness/useYield: the refusal happens before the first chunk
@@ -221,6 +230,7 @@ describe('a local refusal reaches the caller with its own code', () => {
 
   test('generate answers X_AI_KEY_MISSING, the same code stream answers', async () => {
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [localRefusal()],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -256,7 +266,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     let attempts = 0;
     const counting: Provider = {
       name: 'keyless',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: () => {
         attempts += 1;
         return Promise.reject(
@@ -272,6 +282,7 @@ describe('a local refusal reaches the caller with its own code', () => {
       },
     };
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [counting],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -293,7 +304,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     let served = false;
     const down: Provider = {
       name: 'down',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: () =>
         Promise.reject(
           new AiTransportError({ provider: 'down', status: 503, detail: 'overloaded' }),
@@ -305,7 +316,7 @@ describe('a local refusal reaches the caller with its own code', () => {
     };
     const healthy: Provider = {
       name: 'healthy',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: (request) => {
         served = true;
         return echo.generate(request);
@@ -313,6 +324,7 @@ describe('a local refusal reaches the caller with its own code', () => {
       stream: (request) => echo.stream(request),
     };
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [down, healthy],
       retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,
@@ -343,7 +355,7 @@ describe('the gateway screens its own bounds', () => {
     let calls = 0;
     const provider: Provider = {
       name: 'counting',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate(request): Promise<GenerateResult> {
         calls += 1;
         return echo.generate(request);
@@ -357,6 +369,7 @@ describe('the gateway screens its own bounds', () => {
     for (const attempts of [...NOT_A_BOUND, 0]) {
       const error = refusal(() =>
         createGateway({
+          defaultModel: FIXTURE_MODEL,
           providers: [echo],
           retry: { attempts, baseDelayMs: 0, maxDelayMs: 0 },
         }),
@@ -369,7 +382,7 @@ describe('the gateway screens its own bounds', () => {
 
   test('a completion ceiling that is not a count never reaches a provider', async () => {
     const { provider, calls } = counting();
-    const gateway = createGateway({ providers: [provider] });
+    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] });
     for (const maxTokens of [...NOT_A_BOUND, 0]) {
       const error = await asyncRefusal(() =>
         gateway.generate({ messages: [{ role: 'user', content: 'ping' }], maxTokens }),
@@ -391,6 +404,7 @@ describe('the gateway screens its own bounds', () => {
   test('an honest gateway still answers — the non-vacuity half', async () => {
     const { provider, calls } = counting();
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [provider],
       retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
     });

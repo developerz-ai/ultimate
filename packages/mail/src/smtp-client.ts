@@ -161,7 +161,7 @@ class Conversation {
             stage,
             detail: `the server sent nothing for ${timeoutMs}ms, so the read deadline expired`,
             retryable: true,
-            fix: 'pass timeoutMs: 60_000 to createSmtpDriver() in app.config.ts',
+            fix: 'pass timeoutMs: 60_000 to smtpMailDriver() in app.config.ts',
           }),
         );
       }, timeoutMs);
@@ -176,7 +176,7 @@ class Conversation {
             'the server closed the connection mid-conversation, which is usually it ' +
             'rate-limiting the sessions it keeps open at once',
           retryable: true,
-          fix: 'pass poolSize: 1 to createSmtpDriver() in app.config.ts',
+          fix: 'pass poolSize: 1 to smtpMailDriver() in app.config.ts',
         });
       }
       return chunk;
@@ -230,7 +230,7 @@ export async function smtpDeliver(
       stage: 'starttls',
       detail:
         'the server does not advertise STARTTLS and the connection is not already TLS; ' +
-        'allowInsecure: true on createSmtpDriver() would send this in the clear instead',
+        'allowInsecure: true on smtpMailDriver() would send this in the clear instead',
       retryable: false,
       fix: FIXES['starttls'] ?? 'set SMTP_URL in .env to smtps://host:465',
     });

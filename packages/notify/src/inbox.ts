@@ -69,8 +69,8 @@ const compareText = (a: string, b: string): number => {
  * The tail key both stores order on: `(notifier, key)`, which is unique within a recipient because
  * `add` is idempotent on `(recipient, notifier, key)` and the Postgres table declares that UNIQUE.
  *
- * `id` cannot be it, and that is the whole reason this exists. `createPgInboxStore` mints a UUIDv7
- * and Postgres orders `uuid` by its 16 BYTES; `createMemoryInboxStore` derives its id from
+ * `id` cannot be it, and that is the whole reason this exists. `postgresInboxStore` mints a UUIDv7
+ * and Postgres orders `uuid` by its 16 BYTES; `memoryInboxStore` derives its id from
  * `JSON.stringify([recipient, notifier, key])` and orders it by code point. Two total orders that
  * agree on nothing — so two notifications written in one millisecond came back in one order in dev
  * and the other in production, and a bounded page dropped one and repeated the other on exactly the
@@ -88,7 +88,7 @@ const idOf = (write: { recipient: string; notifier: string; key: string }): stri
  * memory ledger — a ledger that forgets a row starts sending duplicates, where an inbox that
  * forgets one just loses a message nobody was going to read after the restart anyway.
  */
-export function createMemoryInboxStore(): MemoryInboxStore {
+export function memoryInboxStore(): MemoryInboxStore {
   const rows = new Map<string, InboxRow>();
 
   // `(createdAt desc, notifier, key)` — the same TOTAL order `SQL_NOTIFY_INBOX_PAGE` takes, and
@@ -122,18 +122,13 @@ export function createMemoryInboxStore(): MemoryInboxStore {
       return Promise.resolve(row);
     },
     // `async` and not `Promise.resolve`, so a refused `limit` REJECTS here exactly as it does in
-    // `createPgInboxStore`: two drivers behind one interface must not answer one question two ways,
+    // `postgresInboxStore`: two drivers behind one interface must not answer one question two ways,
     // and a sync throw against a rejected promise is a difference a caller can see.
     async list(query) {
       // `slice(0, NaN)` is `[]` — an empty inbox reported as the whole of it — and
       // `slice(0, Infinity)` is every row the recipient ever received, which is the unbounded read
       // `limit`'s own doc forbids. `??` reaches neither: `NaN` is not nullish.
-      const limit = finiteCount(
-        'createMemoryInboxStore',
-        'limit',
-        query.limit ?? DEFAULT_INBOX_PAGE,
-        0,
-      );
+      const limit = finiteCount('memoryInboxStore', 'limit', query.limit ?? DEFAULT_INBOX_PAGE, 0);
       return own(query.recipient)
         .filter((row) => query.unreadOnly !== true || row.readAt === null)
         .slice(0, limit);

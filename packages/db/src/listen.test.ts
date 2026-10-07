@@ -3,7 +3,7 @@
 // The real round trips are `pglite-embedded.test.ts` (embedded) and `listen.live.test.ts` (server).
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import { DbError } from './errors';
 import { fakeDriver } from './fake-pglite-fixture';
 import { assertListenChannel, canListen } from './listen';
@@ -66,7 +66,7 @@ const caught = async (work: Promise<unknown>): Promise<DbError> => {
 describe('unit · the LISTEN seam', () => {
   test('a channel that is not a plain identifier is refused before any driver sees it', async () => {
     const fake = installListeningSql();
-    const client = createPostgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
+    const client = postgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
     for (const channel of ['', 'X_Jobs', 'x-jobs', 'x jobs', '"x"; drop table x', 'a'.repeat(64)]) {
       const error = await caught(client.listen(channel, () => undefined));
       // The caller's argument, spliced unquoted into `LISTEN`: never "the database is down".
@@ -80,7 +80,7 @@ describe('unit · the LISTEN seam', () => {
 
   test('the pooled client hands the driver the channel and both callbacks, and unlistens once', async () => {
     const fake = installListeningSql();
-    const client = createPostgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
+    const client = postgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
     const got: string[] = [];
     let listening = 0;
     const subscription = await client.listen(
@@ -106,7 +106,7 @@ describe('unit · the LISTEN seam', () => {
 
   test('a driver failure is typed, and names the statement — never the bare driver error', async () => {
     installListeningSql(new Error('connect ECONNREFUSED'));
-    const client = createPostgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
+    const client = postgresClient({ url: 'postgres://app@127.0.0.1:5432/t' });
     const error = await caught(client.listen('x_jobs_wake', () => undefined));
     expect(error.code).toBe('X_DB_UNAVAILABLE');
     expect(error.cause).toContain('LISTEN x_jobs_wake');
@@ -115,10 +115,7 @@ describe('unit · the LISTEN seam', () => {
   test('a driver with no listen() is a typed refusal on both clients', async () => {
     host.Bun.SQL = class {};
     const pooled = await caught(
-      createPostgresClient({ url: 'postgres://app@127.0.0.1:5432/t' }).listen(
-        'x_a',
-        () => undefined,
-      ),
+      postgresClient({ url: 'postgres://app@127.0.0.1:5432/t' }).listen('x_a', () => undefined),
     );
     expect(pooled.cause).toContain('no listen()');
     expect(pooled.fix).toContain('bun upgrade');

@@ -6,7 +6,7 @@
 import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
-import { httpCountInvalid, trustProxyUnset } from './errors';
+import { drainTimeoutDeleted, httpCountInvalid, trustProxyUnset } from './errors';
 import { assertHealthDetailPeers, DEFAULT_HEALTH_DETAIL_PEERS } from './health-disclosure';
 import {
   DEFAULT_LOCALE_CONFIG,
@@ -74,18 +74,6 @@ export interface HttpConfig {
    * retries multiply the load.
    */
   readonly maxInflight: number;
-  /**
-   * How long SIGTERM waits for in-flight requests before hard-stopping, or `null` when this app
-   * has not said and core's own deadline stands.
-   *
-   * `null` and not a 15s default, because the two are different claims and only one of them may
-   * reach `configureLifecycle`. `createServer` applied the resolved number unconditionally, so an
-   * app that had already written `configureLifecycle({ deadlineMs: 600_000 })` — the edit
-   * `X_SHUTDOWN_TIMEOUT`'s own `fix:` line prints — had it silently reverted by the next line of
-   * boot, in every process that serves web. Declaring this key IS declaring the drain budget for
-   * the whole process; leaving it out is declining to.
-   */
-  readonly drainTimeoutMs: number | null;
   readonly locale: LocaleConfig;
   readonly tz: TimeZoneConfig;
   readonly cors: CorsConfig;
@@ -109,7 +97,6 @@ export interface HttpConfigInput {
   readonly bodyLimitBytes?: number;
   readonly requestTimeoutMs?: number;
   readonly maxInflight?: number;
-  readonly drainTimeoutMs?: number;
   readonly locale?: Partial<LocaleConfig>;
   readonly tz?: Partial<TimeZoneConfig>;
   readonly cors?: Partial<CorsConfig>;
@@ -235,7 +222,22 @@ const resolveTrustedProxyHops = (trustProxy: boolean, declared: number | undefin
   );
 };
 
+/**
+ * Keys this config once carried and no longer reads. A typed caller is stopped by
+ * `HttpConfigInput` itself; this is for the one that is not — plain JS, a spread of a parsed
+ * object, a cast — so a deleted knob is an instruction rather than a number ignored in silence.
+ */
+export const refuseDeletedHttpKeys = (input: object): void => {
+  // Core's rule for a removed key (`core/src/config-removed.ts`): `undefined` is a layer not
+  // saying, so a spread carrying the key unset passes on both surfaces; any other value is written.
+  const written: unknown = Object.hasOwn(input, 'drainTimeoutMs')
+    ? (input as Record<string, unknown>)['drainTimeoutMs']
+    : undefined;
+  if (written !== undefined) throw drainTimeoutDeleted();
+};
+
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
+  refuseDeletedHttpKeys(input);
   // `ULTIMATE_ENV` is the framework's one environment key and `NODE_ENV` is only its fallback, so
   // reading `NODE_ENV` alone made a deployment that declared production the documented way serve
   // the dev overlay and a report-only CSP. Non-throwing and `?? DEFAULT_ENVIRONMENT`, the same
@@ -304,16 +306,6 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
       'a whole number of requests, where 0 means never shed',
       'maxInflight: 1_000',
     ),
-    drainTimeoutMs:
-      input.drainTimeoutMs === undefined || input.drainTimeoutMs === null
-        ? null
-        : assertFiniteCount(
-            'drainTimeoutMs',
-            input.drainTimeoutMs,
-            Number.MAX_SAFE_INTEGER,
-            'a whole number of milliseconds, or null for the lifecycle default',
-            'drainTimeoutMs: 15_000',
-          ),
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
     cors,

@@ -2,16 +2,12 @@
 // second hand-maintained list. Render it from the declarations, and report drift when the file on
 // disk has fallen behind. Loading `.env` itself is Bun's job — see `envFileCandidates()`.
 
-import type { EnvSchema, EnvVarDecl } from './env';
-import { type CodedErrorInit, UltimateError } from './errors';
+//
+// It REPORTS and never throws. `assertEnvExample` and its `EnvExampleDriftError` were deleted in
+// 25.0.0: a second, weaker gate nothing called. `X_ENV_EXAMPLE_DRIFT` is `x verify`'s `manifest`
+// step's finding (`@ultimat3/cli`'s `app-env.ts`), byte-for-byte against `renderEnvExample`.
 
-export class EnvExampleDriftError extends UltimateError {
-  static readonly code = 'X_ENV_EXAMPLE_DRIFT';
-  override readonly name = 'EnvExampleDriftError';
-  constructor(init: CodedErrorInit) {
-    super({ ...init, code: EnvExampleDriftError.code });
-  }
-}
+import type { EnvSchema, EnvVarDecl } from './env';
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -99,11 +95,10 @@ export interface EnvExampleReport {
   /**
    * In the file, not in the schema — never fatal, because apps set keys nothing declares.
    *
-   * NOT reported on its own, and the comment here said it was. `ok` is `missing.length === 0`, so
-   * an example carrying only extra keys returns `ok: true` and `assertEnvExample` never builds an
-   * error: the list reaches a surface only as `meta` on a drift some MISSING key already raised.
-   * A caller that wants it reads `checkEnvExample(...).extra` itself, which is why this stays
-   * public. `env-example.test.ts` pins both halves.
+   * NOT reported on its own. `ok` is `missing.length === 0`, so an example carrying only extra
+   * keys returns `ok: true`; the framework's reporter (`@ultimat3/cli`'s `app-env.ts`) builds its
+   * finding from `missing` only. A caller that wants it reads `checkEnvExample(...).extra` itself,
+   * which is why this stays public. `env-example.test.ts` pins it.
    */
   readonly extra: readonly string[];
 }
@@ -114,25 +109,4 @@ export function checkEnvExample(schema: EnvSchema, text: string): EnvExampleRepo
   const missing = declared.filter((key) => !present.has(key));
   const extra = [...present].filter((key) => !declared.includes(key));
   return { ok: missing.length === 0, missing, extra };
-}
-
-/**
- * Throws `X_ENV_EXAMPLE_DRIFT` when the committed example has fallen behind the schema — the
- * failure an agent hits *before* a teammate hits `X_ENV_MISSING` on a variable nobody told them
- * about.
- *
- * @deprecated A second, weaker `.env.example` gate that nothing calls: it checks keys only. The
- * gate is `x verify`'s `manifest` step (`x verify --only manifest`), which compares the file
- * byte-for-byte against `renderEnvExample` via `envExampleFindings` in `@ultimat3/cli`'s
- * `app-env.ts`, and whose fix is `x env example`. Deleted in 25.0.0; call `checkEnvExample` for
- * the report as data.
- */
-export function assertEnvExample(schema: EnvSchema, text: string, path = ENV_EXAMPLE_PATH): void {
-  const report = checkEnvExample(schema, text);
-  if (report.ok) return;
-  throw new EnvExampleDriftError({
-    cause: `${path} does not declare ${report.missing.join(', ')}, declared by defineEnv()`,
-    fix: `Bun.write('${path}', renderEnvExample(schema)) — regenerate it from the declarations`,
-    meta: { path, missing: report.missing, extra: report.extra },
-  });
 }

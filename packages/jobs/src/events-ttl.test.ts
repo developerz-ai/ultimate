@@ -7,8 +7,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
-import { createMemoryEventBus } from './events';
-import { createPgEventBus } from './events-pg';
+import { memoryEventBus } from './events';
+import { postgresEventBus } from './events-pg';
 
 const executor: PgExecutor = {
   query<R>(): Promise<readonly R[]> {
@@ -39,7 +39,7 @@ const thrownBy = (build: () => unknown): unknown => {
 
 describe('a ttl that is not a duration is refused under the name the caller used', () => {
   test('the memory bus names ttl for a publish-call ttl, never defaultTtl', async () => {
-    const bus = createMemoryEventBus();
+    const bus = memoryEventBus();
     const thrown = await rejection(() => bus.publish('invoice.paid', {}, { ttl: Number.NaN }));
 
     expect(thrown).toBeInstanceOf(UltimateError);
@@ -51,7 +51,7 @@ describe('a ttl that is not a duration is refused under the name the caller used
   });
 
   test('the pg bus names ttl too — one wire format, one refusal', async () => {
-    const bus = createPgEventBus({ executor });
+    const bus = postgresEventBus({ executor });
     const thrown = await rejection(() => bus.publish('invoice.paid', {}, { ttl: Number.NaN }));
 
     expect(thrown).toBeInstanceOf(UltimateError);
@@ -63,8 +63,8 @@ describe('a ttl that is not a duration is refused under the name the caller used
     // At CONSTRUCTION, not on the first publish that happens to omit a ttl: the bus is built at
     // boot and a bad default that only fires later is a bad default that fires in production.
     for (const defaultTtl of [Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(fixOf(thrownBy(() => createMemoryEventBus({ defaultTtl })))).toContain('defaultTtl');
-      expect(fixOf(thrownBy(() => createPgEventBus({ executor, defaultTtl })))).toContain(
+      expect(fixOf(thrownBy(() => memoryEventBus({ defaultTtl })))).toContain('defaultTtl');
+      expect(fixOf(thrownBy(() => postgresEventBus({ executor, defaultTtl })))).toContain(
         'defaultTtl',
       );
     }
@@ -72,7 +72,7 @@ describe('a ttl that is not a duration is refused under the name the caller used
 
   test('an ordinary publish is unchanged, on both — the guard refuses durations, not events', async () => {
     // Non-vacuity. `'7d'`, an explicit ms number and the default all still reach `expiresAt`.
-    const memory = createMemoryEventBus({ defaultTtl: '1h' });
+    const memory = memoryEventBus({ defaultTtl: '1h' });
     const withTtl = await memory.publish('invoice.paid', { id: 1 }, { ttl: '30s' });
     const withDefault = await memory.publish('invoice.paid', { id: 2 });
     expect(withTtl.expiresAt - withTtl.publishedAt).toBe(30_000);
@@ -86,7 +86,7 @@ describe('a ttl that is not a duration is refused under the name the caller used
         return Promise.resolve([] as readonly R[]);
       },
     };
-    const pg = createPgEventBus({ executor: recording, defaultTtl: 1_000 });
+    const pg = postgresEventBus({ executor: recording, defaultTtl: 1_000 });
     await pg.publish('invoice.paid', { id: 3 });
     await pg.publish('invoice.paid', { id: 4 }, { ttl: '30s' });
     expect(sent.map((params) => params[4])).toEqual([1_000, 30_000]);

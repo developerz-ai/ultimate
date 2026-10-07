@@ -57,9 +57,9 @@ export type {
 export {
   BACKFILL_STATUSES,
   backfillChecksum,
-  createMemoryBackfillLedger,
   decideBackfill,
   isBackfillStatus,
+  memoryBackfillLedger,
 } from './backfill-ledger';
 export type {
   BackfillPendingReport,
@@ -121,61 +121,13 @@ export {
   setJobDriver,
 } from './driver';
 export type { MemoryDriverOptions, MemoryJobDriver } from './driver-memory';
-export { createMemoryDriver } from './driver-memory';
-export type { NatsDriverOptions } from './driver-nats';
-export { createNatsDriver } from './driver-nats';
+export { memoryJobDriver } from './driver-memory';
 export type { PgDriverOptions } from './driver-pg';
-export { createPgDriver, createPgLeader } from './driver-pg';
-export {
-  SQL_COUNTER_DROP,
-  SQL_COUNTER_FOLD,
-  SQL_COUNTER_TOTALS,
-  SQL_COUNTERS,
-  SQL_JOB_PROGRESS,
-  SQL_JOB_PROMOTE,
-  SQL_JOB_REMOVE,
-  SQL_JOB_REMOVE_MANY,
-  SQL_JOB_REQUEUE_MANY,
-  SQL_PAUSE,
-  SQL_PAUSED,
-  SQL_RESUME,
-  SQL_SCHEDULER_FIRE,
-  SQL_WORKER_ANNOUNCE,
-  SQL_WORKER_FORGET,
-  SQL_WORKERS,
-} from './driver-pg-operator-sql';
-export {
-  SQL_ACK,
-  SQL_ADVISORY_UNLOCK,
-  SQL_BACKFILL_FINISH,
-  SQL_BACKFILL_LIST,
-  SQL_BACKFILL_PROGRESS,
-  SQL_BACKFILL_START,
-  SQL_CANCEL,
-  SQL_CLAIM,
-  SQL_ENQUEUE,
-  SQL_HEARTBEAT,
-  SQL_JOBS_TABLE,
-  SQL_LEADER_ACQUIRE,
-  SQL_LEADER_RELEASE,
-  SQL_LEASE_ACQUIRE,
-  SQL_LEASE_HOLDERS,
-  SQL_LEASE_RELEASE,
-  SQL_LEASE_RENEW,
-  SQL_NACK,
-  SQL_OUTBOX_CLAIM,
-  SQL_OUTBOX_MARK_PUBLISHED,
-  SQL_OUTBOX_RELEASE,
-  SQL_OUTBOX_STAGE,
-  SQL_SCHEDULER_STATE_GET,
-  SQL_SCHEDULER_STATE_MARK,
-  SQL_STATS,
-  SQL_STEP_GET,
-  SQL_STEP_PUT,
-  SQL_TRY_ADVISORY_LOCK,
-} from './driver-pg-sql';
-export type { RedisDriverOptions } from './driver-redis';
-export { createRedisDriver } from './driver-redis';
+export { postgresJobDriver, postgresLeader } from './driver-pg';
+// Only the statement another workspace runs: the install (`cli/src/framework-schema.ts`, action,
+// notify). The rest are this package's internals, read where they are defined, and tested there
+// too — the array-parameter proofs are `driver-pg-array.live.test.ts` (25.0.0).
+export { SQL_JOBS_TABLE } from './driver-pg-sql';
 export { signalEnqueued, signalStaged } from './enqueue-signal';
 export type { JobErrorCode } from './errors';
 export {
@@ -216,16 +168,16 @@ export {
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
-  createMemoryEventBus,
   EVENTS_PURGE_TARGET,
   eventBus,
   eventsPurgeTarget,
+  memoryEventBus,
   publishEvent,
   resetEventBus,
   setEventBus,
 } from './events';
 export type { PgEventBusOptions } from './events-pg';
-export { createPgEventBus } from './events-pg';
+export { postgresEventBus } from './events-pg';
 export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
 export { executeJob } from './execute';
 export type { ExportDefinition, ExportReport } from './export';
@@ -296,7 +248,7 @@ export type {
 } from './job';
 export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
-export { createMemoryLeaseStore, jobLeaseKey } from './leases';
+export { jobLeaseKey, memoryLeaseStore } from './leases';
 export type {
   Lease,
   LimitConfig,
@@ -324,9 +276,9 @@ export type {
 } from './outbox';
 export {
   createJobsFacade,
-  createMemoryOutboxStore,
   enqueueInTx,
   jobsFacade,
+  memoryOutboxStore,
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
@@ -334,7 +286,7 @@ export {
 // could drift are two answers to "how long is a claim mine for", and the shorter one duplicates.
 export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
-export { createPgOutboxStore } from './outbox-pg';
+export { postgresOutboxStore } from './outbox-pg';
 export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { createOutboxRelay } from './outbox-relay';
 export type { ProgressFn } from './progress';
@@ -369,14 +321,14 @@ export { soleLeader } from './scheduler-leader';
 export { nextTaskRun } from './scheduler-occurrences';
 export type { PgLeaseLeaderOptions } from './scheduler-pg';
 export {
-  createPgLeaseLeader,
   currentLeader,
   DEFAULT_LEADER_TTL_MS,
   LEASE_RENEWALS_PER_TTL,
-  pgSchedulerState,
+  postgresLeaseLeader,
+  postgresSchedulerState,
 } from './scheduler-pg';
 export type { ScheduledFire, SchedulerState } from './scheduler-state';
-export { createMemorySchedulerState, fireThroughDriver } from './scheduler-state';
+export { fireThroughDriver, memorySchedulerState } from './scheduler-state';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
 export { ON_SETTLED_ATTEMPTS } from './settled';
 export type {
@@ -398,7 +350,7 @@ export {
   STEP_STATUSES,
   StepSuspension,
 } from './steps';
-export { createMemoryStepStore } from './steps-memory';
+export { memoryStepStore } from './steps-memory';
 export type {
   CatchUpPolicy,
   TaskDefinition,

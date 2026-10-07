@@ -2,8 +2,8 @@
 // so it reports the same changes whether rows live in memory or in Postgres.
 //
 // It exists because a change feed needs a source and only one of the two has one. Production
-// decodes the write-ahead log (`@ultimat3/realtime`'s `PgLogicalReplicationFeed`); PGlite has no
-// walsender and the memory driver has no log at all, so `InMemoryChangeFeed` — which that package
+// decodes the write-ahead log (`@ultimat3/realtime`'s `postgresChangeFeed()`); PGlite has no
+// walsender and the memory driver has no log at all, so `memoryChangeFeed()` — which that package
 // calls "the blessed development and test feed" — had nothing upstream of it. That is what left
 // `@ultimat3/testing`'s `subscribe` fixture with no driver: a live query with no changes flowing
 // into it is a snapshot, and a snapshot is not what those tests assert.

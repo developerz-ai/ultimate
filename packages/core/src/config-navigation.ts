@@ -6,7 +6,6 @@
 // were: shape, merge and screen are one subject.
 
 import { describeValue } from './error-render';
-import { ConfigInvalidError } from './errors';
 
 /**
  * The surfaces that render documents a browser navigates between. `api` answers JSON and `shared`
@@ -73,7 +72,7 @@ export interface NavigationSectionInput {
 }
 
 /**
- * Whole-value keys: the last layer that listed surfaces wins, as `locales` does — and so does the
+ * Whole-value keys: the last layer that listed surfaces wins, as `roles` does — and so does the
  * last one that set `speculation.prefetch` or listed `speculation.exclude`, each on its own.
  */
 export function mergeNavigation(layers: readonly NavigationSectionInput[]): NavigationSection {
@@ -136,29 +135,6 @@ function speculationIssues(speculation: unknown, issues: string[]): void {
       );
     }
   }
-}
-
-/**
- * `navigation.speculation` as some reader OUTSIDE `defineConfig` found it (`@ultimat3/cli` imports
- * the app's config module structurally): the defaults for what it does not say, and the SAME
- * refusal `defineConfig` gives for what it says wrongly. One validator — a second reader that
- * coerced `'eager'` to `'moderate'` or dropped a bad pattern would serve rules the app never wrote.
- */
-export function resolveSpeculation(said: unknown): SpeculationConfig {
-  if (said === undefined) return DEFAULT_SPECULATION;
-  const { speculation } = mergeNavigation([
-    { navigation: { speculation: said as SpeculationInput } },
-  ]).navigation;
-  const issues: string[] = [];
-  speculationIssues(speculation, issues);
-  if (issues.length > 0) {
-    throw new ConfigInvalidError({
-      cause: issues.join('; '),
-      fix: 'Correct navigation.speculation in app.config.ts: prefetch is "moderate", "conservative" or false, and exclude is a list of path patterns starting with "/"',
-      meta: { issues },
-    });
-  }
-  return speculation;
 }
 
 /** Appends every refusal the section earns to `issues`, `config.ts`' one list. */

@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { withStatementAttribution } from './attribution';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import { DbError } from './errors';
 import { expectedQueryLoop } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
@@ -80,7 +80,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql({ rows: [{ id: 1 }, { id: 2 }] });
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     await client.query(sql`select id from members where org = ${'o_1'}`);
     using connection = await client.reserve();
@@ -100,7 +100,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql({ statementError: new DriverFailure('deadlock detected') });
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     const caught = await rejection(connection.query(sql`select 1`));
 
@@ -125,7 +125,7 @@ describe('the statement observer', () => {
       },
     });
 
-    const caught = await rejection(createPostgresClient({ url: TEST_URL }).query(sql`select 1`));
+    const caught = await rejection(postgresClient({ url: TEST_URL }).query(sql`select 1`));
 
     expect(caught).not.toBeInstanceOf(DbError);
     expect(caught).toBe(thrown);
@@ -135,7 +135,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     (await client.reserve()).release();
     await client.close();
@@ -149,7 +149,7 @@ describe('the statement observer', () => {
     setStatementObserver(undefined);
     installFakeSql();
 
-    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+    await postgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     expect(observer.seen).toEqual([]);
   });
@@ -158,7 +158,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     await withStatementAttribution('members', 'findById', () => client.query(sql`select 1`));
     await client.query(sql`select 2`);
@@ -173,7 +173,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql({ statementError: new DriverFailure('deadlock detected') });
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     const caught = await rejection(
       withStatementAttribution('members', 'findById', () => connection.query(sql`select 1`)),
@@ -190,7 +190,7 @@ describe('the statement observer', () => {
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     await withStatementAttribution('members', 'findMany', () =>
       expectedQueryLoop('one lookup per id', () => client.query(sql`select 1`)),

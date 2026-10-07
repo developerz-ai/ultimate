@@ -3,7 +3,7 @@
 // server says the text does what the snapshot claims.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import { raw, sql } from './sql';
@@ -60,7 +60,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a default and nullability mov
     );
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await client.execute(raw(`drop table if exists "${TABLE}"`));
     await apply(generateMigration({ entities: [status({})], name: 'init' }).up);
   });

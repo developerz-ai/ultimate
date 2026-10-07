@@ -4,7 +4,7 @@
 // the statement; it cannot say the statement means what the comment above it claims.
 
 import { describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import { raw } from './sql';
@@ -64,7 +64,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a generated column through th
   };
 
   test('is created computed, re-expressed in place, and keeps its index across the change', async () => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     try {
       await client.execute(raw('drop table if exists "gen_docs" cascade'));
       // 1. `create table` — the clause order the generator writes has to be one Postgres accepts,
@@ -112,7 +112,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a generated column through th
   });
 
   test('is added to a POPULATED table computed and not null, in one statement', async () => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     try {
       await client.execute(raw('drop table if exists "gen_docs" cascade'));
       const before: EntityDescriptionLike = {

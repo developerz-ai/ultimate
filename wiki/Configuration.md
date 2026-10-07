@@ -17,10 +17,6 @@ export const env = defineEnv({
 
 export const config = defineConfig({
   name: 'postly',
-  locales: ['en'],
-  defaultLocale: 'en',
-  defaultTimeZone: 'UTC',
-  defaultCurrency: 'USD',
   // No connection string and no pool size: both are env (`DATABASE_URL`, `DATABASE_POOL_MAX`),
   // read where the client is built, so the same image deploys to every environment.
   database: { ssl: true },
@@ -36,18 +32,17 @@ export const config = defineConfig({
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly fourteen keys `As of 2026-08-22`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 ## Top level
 
 | field | type | default | notes |
 |---|---|---|---|
 | `name` | `string` | required | `^[a-z][a-z0-9-]{1,63}$`. Names the dev DB, the image, the queue prefix |
-| `locales` | `string[]` | `['en']` | BCP-47. Every locale needs a complete catalog or `X_CATALOG_MISSING_KEYS` |
-| `defaultLocale` | `string` | `'en'` | must appear in `locales` |
-| `defaultTimeZone` | IANA zone | `'UTC'` | display default only. A signed-in member's own zone wins: set `tz` on the actor your `authenticate` hook returns (`userActor({ id, locale, tz })`), and `resolveTimeZone`'s default order (`user → cookie → query → header`) puts it first. Until 21.0.0 nothing filled that rung, so this line was false |
-| `defaultCurrency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
-| `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | what a visitor with no stored choice gets. The boot inlines the no-flash theme script into every document with this as its fallback and admits it to the CSP — `As of 20.2.0`; before that the key was read by nothing. `theme.tokens` is the semantic token map; raw hex is a lint error in components |
+| ~~`locales`~~ · ~~`defaultLocale`~~ | — | — | **Deleted in 25.0.0** — a second declaration of the app's locales. The one source is `defineCatalogs({ default: 'en', locales: { en, es } })` from `@ultimat3/i18n`: the keys are the locales, `default` the fallback. A config still writing either is refused at boot, `X_CONFIG_INVALID` naming the key and the replacement |
+| ~~`defaultTimeZone`~~ | — | — | **Deleted in 25.0.0** — read by nothing but its own validator, and an ambient zone is what the framework forbids. Pass the zone at the call: `formatDate(at, { locale, zone })`, `task({ tz })`, the actor's `tz` (`userActor({ id, locale, tz })`). Refused at boot like the two above |
+| ~~`defaultCurrency`~~ | — | — | **Deleted in 25.0.0** — read by nothing; every `Money` carries its own `currency`. An app that wants a default declares its own constant. Refused at boot like the three above |
+| `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | what a visitor with no stored choice gets. The boot inlines the no-flash theme script into every document with this as its fallback and admits it to the CSP — `As of 20.2.0`; before that the key was read by nothing. ~~`theme.tokens`~~ was **deleted in 25.0.0** (read by nothing; the theme is `export const brand = defineTheme(…)` from `@ultimat3/ui` in `apps/web/shared/theme.ts`) and is refused at boot |
 | `roles` | `Role[]` | every `ROLE` | which runtime roles this app runs. Empty is `X_CONFIG_INVALID` |
 
 There is no `url` field. The canonical origin is an env key the app reads at its point of use (`APP_URL`), so the same image deploys to every environment.
@@ -129,7 +124,7 @@ There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 
 
 | field | type | default | notes |
 |---|---|---|---|
-| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)) |
+| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)). Since 25.0.0 a config still writing it is refused at boot, `X_CONFIG_INVALID` naming that call |
 | `jobs.queues` | `string[]` | `['<name>-default']` | derived from `name`, not the literal `['default']`. A `worker` runs one pool per queue in `WORKER_QUEUES`. Empty is `X_CONFIG_INVALID` |
 | `jobs.concurrency` | `number` | `8` | per pool, per process. Below 1 is `X_CONFIG_INVALID` |
 | `jobs.maxAttempts` | `number` | `5` | per-job `retry` overrides it |
@@ -295,7 +290,7 @@ pwa: {
 |---|---|---|---|
 | `pwa.enabled` | `boolean` | `false` | **read** — `true` makes `x dev`, the container and `x build --target static` emit `manifest.webmanifest`, `sw.js`, `x-sw-register.js` and the `<head>` that names all three, and requires `pwa.name`, `pwa.colors` and `pwa.offline.fallback` beside it. It generated no service worker until 2026-08-27 ([#390](https://github.com/developerz-ai/ultimate/issues/390)) |
 | `pwa.name` | `string` | `''` | The install title a browser shows a person. **Required when `pwa.enabled` is `true`** — `app.name` is a slug (`^[a-z][a-z0-9-]{1,63}$`), so it is the wrong answer rather than a rough one |
-| `pwa.colors` | `{ light, dark }` of `{ themeColor, backgroundColor }` | `undefined` | `theme_color` and `background_color`, per colour scheme. **Required when `pwa.enabled` is `true`**: a browser paints the install splash and the address bar from these before a stylesheet has loaded, so there is nothing to derive them from and no defensible default. One of the two places a raw colour is legal in an app, alongside `theme.tokens` |
+| `pwa.colors` | `{ light, dark }` of `{ themeColor, backgroundColor }` | `undefined` | `theme_color` and `background_color`, per colour scheme. **Required when `pwa.enabled` is `true`**: a browser paints the install splash and the address bar from these before a stylesheet has loaded, so there is nothing to derive them from and no defensible default. The one place in `app.config.ts` a raw colour is legal (`theme.tokens`, the other, was deleted in 25.0.0) |
 | `pwa.offline.fallback` | `string \| null` | `null` | **read** — the absolute route path of the document an offline navigation gets when the cache has no answer. **Required when `pwa.enabled` is `true`**, and it must start with `/`: a relative path resolves against whatever document registered the worker, so `offline` under `/posts/1` is `/posts/offline` — a 404 cached as the answer to every offline navigation |
 | `pwa.offline.image` | `string \| null` | `null` | **read** — the URL of the placeholder served for an image request neither the network nor the cache can answer. It must be a path on this origin (`/…`, never `https://…`, `//host` or `/\host` — the build refuses with `X_PWA_NO_OFFLINE_FALLBACK`). The build precaches it beside the offline document and on the same terms: its existence is not checked (a URL that does not exist costs that one precache entry, and the request gets the worker's 503), revisioned by the build id unless it is a content-hashed `/assets/…` URL |
 | `pwa.offline.font` | `string \| null` | `null` | **read** — the same, for a font request |
@@ -368,7 +363,7 @@ configureHttp({
 | `bodyLimitBytes` | `1_048_576` | enforced **while** the body streams, so a `transfer-encoding: chunked` payload is cancelled the instant the running total passes it |
 | `requestTimeoutMs` | `30_000` | `0` disables. At most `2_147_483_647` (the longest a timer holds, ~24.8 days) — more is `X_CONFIG_INVALID`, where it used to arm a 1 ms timer and 504 every request. A caller may only **shorten** it, with `x-request-timeout-ms`; an ask above that ceiling is ignored. The framework's own typed clients send what is LEFT of the current request's budget |
 | `maxInflight` | `1_000` | `0` disables. Past it a request is shed `X_OVERLOADED` **before** any work — no route match, no auth, no body |
-| `drainTimeoutMs` | `null` | `null` means "this app has not said" and core's own deadline stands. Declaring it IS declaring the process-wide drain budget, so it overrides `configureLifecycle({ deadlineMs })` |
+| ~~`drainTimeoutMs`~~ | — | **Deleted in 25.0.0.** A second drain budget for the `web` role alone; `drain.deadlineMs` is the one budget for every role. Passing the key to `configureHttp` or `defineHttpConfig` is `X_CONFIG_INVALID` naming `drain.deadlineMs` |
 | `cors` | `origins: []`, `credentials: true` | `origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID` at boot — no browser accepts the pair |
 | `csrf` | `mode: 'origin'` | `'origin' \| 'off'`. `mode: 'token'` is deliberately not shipped. `'origin'` judges every unsafe request that carries browser evidence (`Origin` or `sec-fetch-site`), signed in or not — a forged sign-in is a forged write. Exempt: an `Authorization` header, and an anonymous request carrying neither header (a webhook, a server-to-server call) |
 | `trustClientCertHeader` | `false` | read Envoy's `x-forwarded-client-cert` into `ctx.peer`. Its own declaration: `TRUSTED_PROXY_HOPS` says the proxy appends to `x-forwarded-for`, not that it strips a certificate header the client sent. Read at the same hop index, so it does nothing while no proxy is trusted |
@@ -511,33 +506,33 @@ spelled this way. A value that is not a positive finite number is `X_CONFIG_INVA
 is refused rather than read as "immediately", because a sweep at age 0 is an inbox that silently
 receives nothing.
 
-**The sweep only runs against the Postgres inbox.** `createPgInboxStore` carries `purgeBefore`; the
+**The sweep only runs against the Postgres inbox.** `postgresInboxStore` carries `purgeBefore`; the
 memory inbox does not, and a boot that installed the memory one — or no inbox at all — sweeps
 nothing and logs nothing. Installing the store is `setNotifyStores`, your app's boot line; the
 framework applies the DDL either way.
 
 **`x_notify_deliveries` has no config key**, deliberately. Its window is
-`createPgDeliveryLedger({ executor, windowMs })`, stated beside the statement that reads it, and it
+`postgresDeliveryLedger({ executor, windowMs })`, stated beside the statement that reads it, and it
 must **never be shorter than your idempotency window**: a job replayed inside the idempotency window
 against a claim that has already been purged claims cleanly and sends the notification a second
 time. Pass `idempotency.windowMs` and the two cannot disagree.
 
 **`x_notify_digests` has no config key either.** A digest window is deleted by its own flush; the
-sweep takes only a window CLOSED longer than `createPgDigestStore({ executor, retentionMs })` ago —
+sweep takes only a window CLOSED longer than `postgresDigestStore({ executor, retentionMs })` ago —
 a week by default, longer than any flush's retries — which is a window whose flush dead-lettered on
 a slot that never digests again. Up to 50 batches of 1,000 rows per hourly pass.
 
 ## `ai`
 
-Two fields, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
+One live field, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
 
 | field | type | default | notes |
 |---|---|---|---|
 | `ai.mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per action `mcp.expose` |
-| `ai.mcp.path` | `string` | `'/mcp'` | where the HTTP transport mounts — endpoint #0's path when `apps/<app>/mcp.ts` exports several ([MCP and AI](MCP-And-AI)); the others mount at their own `defineAppMcp({ path })`. Never bound in `ROLE=web` |
-| ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only and the model is `request.model ?? DEFAULT_MODEL`, a compile-time constant. The one thing the key existed to prevent is what it delivered. Migration: delete the key and pass `model` on the request, reading your own env key if you want one |
+| ~~`ai.mcp.path`~~ | — | — | **Deleted in 25.0.0**, refused with `X_CONFIG_INVALID`. Endpoint #0 mounted here while every other endpoint mounted at its own `defineAppMcp({ path })`, so the two could disagree. Now every endpoint, #0 included, mounts at its own `defineAppMcp({ path })` (default `/mcp`). Migration: delete the key; if it wasn't `/mcp`, move it to the first `defineAppMcp({ path })` in `apps/<app>/mcp.ts` |
+| ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only and the model is `request.model ?? DEFAULT_MODEL (itself deleted in 25.0.0: apps name their own models)`, a compile-time constant. The one thing the key existed to prevent is what it delivered. Migration: delete the key and pass `model` on the request, reading your own env key if you want one |
 
-`ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.
+`ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: `defineCatalogs({ default, locales })` is the whole surface.
 
 ## `drain`
 
@@ -563,7 +558,7 @@ The platform's own kill timer must outlast the sum, or SIGKILL truncates the dra
 | Helm | `x deploy --method helm` passes `drain.deadlineSeconds` and `drain.readinessGraceSeconds` from this section; the chart derives each role's `terminationGracePeriodSeconds` | preStop (web/sync, 1.30+) + grace (web/sync) + deadline + 10 s margin |
 | Compose | you: `stop_grace_period` in `docker-compose.prod.yml` | ≥ grace + deadline + 10 s (`40s` ships, for the defaults) |
 
-`http.drainTimeoutMs`, when an app declares it in `configureHttp`, still sets the budget on the `web` role — it is applied after this section, when the server is created. `x deploy --method helm` imports the app to read it and sizes the chart from the **larger** of the two, so a web pod is never killed inside its own HTTP drain. Its removal is queued for 25.0.0.
+**`drain.deadlineMs` is the only drain budget, on every role, `web` included.** `http.drainTimeoutMs` re-set it on the `web` role after this section was applied; 25.0.0 deleted it, and a `configureHttp({ drainTimeoutMs })` is refused `X_CONFIG_INVALID` with the `drain: { deadlineMs }` edit.
 
 ## Runtime overrides — `apps/<app>/runtime.ts`
 
@@ -696,7 +691,7 @@ await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.examp
 
 **`x verify` holds the committed file to it**, on the `manifest` step: `.env.example` must be byte-for-byte the projection of `envSchema` in `app.config.ts`, so a moved description, default or required flag fails the gate as well as a missing key. A miss is `X_ENV_EXAMPLE_DRIFT`, missing keys named first; the fix is `x env example`. An app that exports no `envSchema` has nothing to project and the check is silent.
 
-`assertEnvExample(schema, text)` is the older, weaker check — key presence only, and nothing calls it. It is deprecated and removed in 25.0.0; the gate above is the one check.
+`assertEnvExample(schema, text)`, the older, weaker check (key presence only, called by nothing), was **deleted in 25.0.0** with `EnvExampleDriftError`; the gate above is the one check, and `checkEnvExample(schema, text)` returns the same report as data.
 
 Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local` unless the mode is `test`. Mode is `production` or `test` verbatim, otherwise `development` — there is no `.env.staging`.
 

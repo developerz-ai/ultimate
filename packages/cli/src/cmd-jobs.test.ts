@@ -1,10 +1,10 @@
 // The command surface of `x jobs`: the spec, the `--to` validation, and what `run()` actually
-// renders. Driven through an ambient `createMemoryDriver()` so `withJobDriver` reuses it instead of
+// renders. Driven through an ambient `memoryJobDriver()` so `withJobDriver` reuses it instead of
 // booting a queue — a real driver, real claim/ack semantics, no database and no app to load.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
 import {
   buildDrainTarget,
   DRAIN_TARGETS,
@@ -47,7 +47,7 @@ describe('unit · x jobs spec', () => {
 
 describe('unit · x jobs ls rendering', () => {
   test('the row count, the table and the depth summary all come from the catalog', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await enqueue(driver, 'send-email');
 
     const result = await runJobs(driver, { subcommand: 'ls' });
@@ -59,7 +59,7 @@ describe('unit · x jobs ls rendering', () => {
   });
 
   test('dead letters render through msg(), including the missing-error fallback', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
     await driver.claim({
       queues: ['default'],
@@ -80,7 +80,7 @@ describe('unit · x jobs ls rendering', () => {
   });
 
   test('a pass in flight is reported with how far it has got, and finished ones are not', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.backfills?.start({
       runId: 'run_live',
       name: 'reindex-posts',
@@ -111,7 +111,7 @@ describe('unit · x jobs ls rendering', () => {
   });
 
   test('a pass that has not reached its first batch says so instead of printing null', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.backfills?.start({
       runId: 'run_new',
       name: 'reindex-posts',
@@ -126,7 +126,7 @@ describe('unit · x jobs ls rendering', () => {
   });
 
   test('no backfill in flight renders no section at all', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await enqueue(driver, 'send-email');
 
     const result = await runJobs(driver, { subcommand: 'ls' });
@@ -136,7 +136,7 @@ describe('unit · x jobs ls rendering', () => {
   });
 
   test('a bad --limit fails the command through X_CLI_BAD_FLAG', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await expect(runJobs(driver, { subcommand: 'ls', flags: { limit: '0' } })).rejects.toThrow(
       BadFlagError,
     );
@@ -145,7 +145,7 @@ describe('unit · x jobs ls rendering', () => {
 
 describe('unit · x jobs show and retry rendering', () => {
   test('show renders the trace and its state', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
 
     const result = await runJobs(driver, { subcommand: 'show', positionals: [id] });
@@ -159,7 +159,7 @@ describe('unit · x jobs show and retry rendering', () => {
   // `MissingPositionalError`, and the CODE cannot say so — both classes raise X_CLI_BAD_FLAG. The
   // cause is where `--id on "x jobs"` used to send a reader to a flag `x jobs` does not declare.
   test('a missing id names the positional, and the fix is a command that lists ids', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     for (const subcommand of ['show', 'retry']) {
       const thrown: unknown = await runJobs(driver, { subcommand }).then(
         () => undefined,
@@ -180,7 +180,7 @@ describe('unit · x jobs show and retry rendering', () => {
   // door, before a statement is sent — for every subcommand that takes one.
   test('an id that is not a job id is X_JOB_UNKNOWN, and no driver is asked', async () => {
     for (const subcommand of ['show', 'retry', 'cancel', 'rm', 'promote']) {
-      const driver = createMemoryDriver();
+      const driver = memoryJobDriver();
       const asked: string[] = [];
       const introspect = driver.introspect;
       const watched: JobDriver = {
@@ -212,7 +212,7 @@ describe('unit · x jobs show and retry rendering', () => {
   });
 
   test('retry re-queues and reports the new state', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
     // Retry accepts a FINISHED job only (`X_JOB_NOT_REQUEUEABLE` otherwise), so dead-letter it first.
     await driver.claim({
@@ -231,7 +231,7 @@ describe('unit · x jobs show and retry rendering', () => {
 
 describe('unit · x jobs cancel', () => {
   test('a job past cancelling is refused, never silently reported as cancelled', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
     await driver.claim({
       queues: ['default'],
@@ -250,7 +250,7 @@ describe('unit · x jobs cancel', () => {
   });
 
   test('a live job is cancelled and the trace is rendered by the same projection show uses', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
 
     const result = await runJobs(driver, {
@@ -265,7 +265,7 @@ describe('unit · x jobs cancel', () => {
   });
 
   test('a missing id names the positional, for cancel as for show and retry', async () => {
-    await expect(runJobs(createMemoryDriver(), { subcommand: 'cancel' })).rejects.toThrow(
+    await expect(runJobs(memoryJobDriver(), { subcommand: 'cancel' })).rejects.toThrow(
       MissingPositionalError,
     );
   });
@@ -275,10 +275,10 @@ describe('unit · x jobs drain rendering', () => {
   /** The command path can no longer reach an in-process target, so the outcome is produced with
    *  two real drivers and handed to the same renderer `runDrain` uses. */
   const rendered = async (source: JobDriver, dryRun = false): Promise<CommandResult> =>
-    drainResult(await drainJobs(source, createMemoryDriver(), dryRun));
+    drainResult(await drainJobs(source, memoryJobDriver(), dryRun));
 
   test('a complete drain is ok and reports the moved count', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await enqueue(driver, 'send-email');
 
     const result = await rendered(driver);
@@ -291,7 +291,7 @@ describe('unit · x jobs drain rendering', () => {
   });
 
   test('a partial drain fails the command and lists what was left behind', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await enqueue(driver, 'later-job', Date.now() + 60_000);
 
     const result = await rendered(driver);
@@ -307,7 +307,7 @@ describe('unit · x jobs drain rendering', () => {
   });
 
   test('--dry-run reports the candidates and moves nothing', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
 
     const result = await rendered(driver, true);
@@ -320,13 +320,14 @@ describe('unit · x jobs drain rendering', () => {
   });
 });
 
-// `redis` and `nats` throw `X_NOT_IMPLEMENTED` on every method, so a drain onto either LEASED the
+// The `redis` target was an `X_NOT_IMPLEMENTED` stub on every method, so a drain onto it LEASED the
 // whole batch off the production queue for `DRAIN_LEASE_MS` (5 min), failed every enqueue and
 // nacked it back — five minutes in which no source worker could claim a job, for a command that
-// could never move one. `drain` is a planned subcommand until a durable second driver ships.
+// could never move one. `drain` is a planned subcommand until a durable second driver ships, and
+// 25.0.0 deleted the stub: `--to redis` is now a value nothing accepts, and still the planned answer.
 describe('unit · x jobs drain is planned', () => {
   test('drain --to redis refuses before leasing', async () => {
-    const memory = createMemoryDriver();
+    const memory = memoryJobDriver();
     const id = await enqueue(memory, 'send-email');
     let claims = 0;
     const counted: JobDriver = {
@@ -357,8 +358,8 @@ describe('unit · x jobs drain is planned', () => {
   });
 
   test('every spelling of drain gets the same planned answer, --to memory and --dry-run included', async () => {
-    for (const flags of [{ to: 'memory' }, { to: 'nats', 'dry-run': true }, {}]) {
-      const thrown: unknown = await runJobs(createMemoryDriver(), {
+    for (const flags of [{ to: 'memory' }, { to: 'redis', 'dry-run': true }, {}]) {
+      const thrown: unknown = await runJobs(memoryJobDriver(), {
         subcommand: 'drain',
         flags,
       }).then(
@@ -390,7 +391,7 @@ describe('unit · x jobs drain is planned', () => {
   });
 
   test("its fix is the planned table's, a command this build ships", async () => {
-    const thrown: unknown = await runJobs(createMemoryDriver(), { subcommand: 'drain' }).then(
+    const thrown: unknown = await runJobs(memoryJobDriver(), { subcommand: 'drain' }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -404,7 +405,7 @@ describe('unit · x jobs drain target', () => {
     expect(() => buildDrainTarget(undefined, {})).toThrow(BadFlagError);
   });
 
-  // The bug: `--to memory` enqueued onto `createMemoryDriver()` — a Map inside THIS process — and
+  // The bug: `--to memory` enqueued onto `memoryJobDriver()` — a Map inside THIS process — and
   // then acked every durable row off the source. Reproduced: source ready 1 -> 0, target ready 1
   // in a driver nothing can reach, `ok: true`, and the copy gone at exit. Held at the target
   // builder, which is what a re-enabled drain reads `--to` through.
@@ -423,15 +424,31 @@ describe('unit · x jobs drain target', () => {
     expect((thrown as { fix?: string }).fix).not.toContain('x jobs drain');
   });
 
-  test('memory is not one of the values the flag accepts', () => {
-    expect(DRAIN_TARGETS).toEqual(['redis', 'nats']);
+  test('no target ships: the flag accepts no value, memory included', () => {
+    expect(DRAIN_TARGETS).toEqual([]);
     expect(() => buildDrainTarget('memory', {})).toThrow(BadFlagError);
   });
 
-  test('redis and nats each need their own URL in the environment', () => {
-    expect(() => buildDrainTarget('redis', {})).toThrow(BadFlagError);
-    expect(() => buildDrainTarget('nats', {})).toThrow(BadFlagError);
-    expect(buildDrainTarget('redis', { REDIS_URL: 'redis://localhost:6379' }).name).toBe('redis');
-    expect(buildDrainTarget('nats', { NATS_URL: 'nats://localhost:4222' }).name).toBe('nats');
+  // 25.0.0 deleted the Redis jobs stub (every method threw `X_NOT_IMPLEMENTED`): `--to redis` is
+  // refused at the flag, its URL in the environment or not, and the refusal says nothing ships.
+  test('redis is refused as an unknown target, whatever the environment holds', () => {
+    for (const env of [{}, { REDIS_URL: 'redis://localhost:6379' }]) {
+      const thrown: unknown = (() => {
+        try {
+          return buildDrainTarget('redis', env);
+        } catch (error) {
+          return error;
+        }
+      })();
+      expect(thrown).toBeInstanceOf(BadFlagError);
+      expect((thrown as { cause?: string }).cause).toContain('no durable drain target ships');
+    }
+  });
+
+  // 25.0.0 deleted the NATS jobs stub: `--to nats` is a value the flag no longer accepts.
+  test('nats is refused as an unknown target', () => {
+    expect(() => buildDrainTarget('nats', { NATS_URL: 'nats://localhost:4222' })).toThrow(
+      BadFlagError,
+    );
   });
 });

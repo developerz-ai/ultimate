@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { type AuthRateLimitPolicy, ORG_ATTEMPT_FACTOR } from './rate-limit';
 
 /**
@@ -18,7 +18,7 @@ import { type AuthRateLimitPolicy, ORG_ATTEMPT_FACTOR } from './rate-limit';
 describe('the tenant bucket', () => {
   const tenantAuth = (overrides: Partial<AuthRateLimitPolicy> = {}): Auth =>
     defineAuth({
-      adapter: new MemoryAdapter(),
+      adapter: memoryAuthAdapter(),
       clock: frozenClock(1_700_000_000_000),
       password: { minLength: 12, params: FAST_PARAMS },
       rateLimit: { maxAttempts: 50, orgMaxAttempts: 3, ...overrides },
@@ -105,7 +105,7 @@ describe('the tenant bucket', () => {
   });
 
   test('the tenant allowance defaults to a multiple of the individual one, never to it', () => {
-    const auth = defineAuth({ adapter: new MemoryAdapter(), rateLimit: { maxAttempts: 5 } });
+    const auth = defineAuth({ adapter: memoryAuthAdapter(), rateLimit: { maxAttempts: 5 } });
     // Five attempts shared by a whole tenant is a denial of service against that tenant.
     expect(auth.orgRateLimit.maxAttempts).toBe(5 * ORG_ATTEMPT_FACTOR);
     expect(auth.rateLimit.maxAttempts).toBe(5);
@@ -132,7 +132,7 @@ describe('a success does not clear the address that produced the failures', () =
   const IP = '203.0.113.7';
   const sprayAuth = (): Auth =>
     defineAuth({
-      adapter: new MemoryAdapter(),
+      adapter: memoryAuthAdapter(),
       clock: frozenClock(1_700_000_000_000),
       password: { minLength: 12, params: FAST_PARAMS },
       // A high org cap so the tenant bucket cannot be what refuses; this is about the IP one.
@@ -225,7 +225,7 @@ describe('a success does not clear the address that produced the failures', () =
  */
 describe('a concurrent burst spends the allowance before the KDF, not after it', () => {
   const burstAuth = (): { auth: Auth; lookups: () => number } => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     let lookups = 0;
     const find = adapter.findUserByEmail.bind(adapter);
     // The lookup sits between the reservation and the KDF: a call here is an attempt admitted.

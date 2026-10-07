@@ -12,9 +12,9 @@ import {
   type SqlFragment,
 } from '@ultimat3/db';
 import type { AuthAdapter, CreateUserInput } from './adapter';
-import { BuiltinAdapter } from './builtin-adapter';
+import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { AUTH_TABLES } from './tables';
 
 const PGLITE_BOOT_MS = 30_000;
@@ -60,13 +60,13 @@ const refusal = async (attempt: Promise<unknown>): Promise<string> => {
 };
 
 const ADAPTERS: readonly (readonly [string, () => Promise<AuthAdapter>])[] = [
-  ['MemoryAdapter', async () => new MemoryAdapter(clock)],
+  ['MemoryAdapter', async () => memoryAuthAdapter(clock)],
   [
     'BuiltinAdapter on PGlite',
     async () => {
       await client.execute(raw('delete from x_verifications'));
       await client.execute(raw('delete from x_users'));
-      return new BuiltinAdapter(client, clock);
+      return postgresAuthAdapter(client, clock);
     },
   ],
 ];
@@ -165,11 +165,11 @@ describe('BuiltinAdapter reads the violation off the driver error, wrapped or no
     ['x_users_external_id_key', 'external_id'],
     ['x_users_pkey', 'id'],
   ])('%s as Bun.SQL throws it, bare and inside db’s DbError', async (constraint, column) => {
-    const bare = new BuiltinAdapter(failingWith(() => bunSqlError('23505', constraint)));
+    const bare = postgresAuthAdapter(failingWith(() => bunSqlError('23505', constraint)));
     expect(await refusal(bare.createUser(user(ADA, 'ada@example.com')))).toBe(
       `X_AUTH_WRITE_FAILED createUser ${column}`,
     );
-    const wrapped = new BuiltinAdapter(
+    const wrapped = postgresAuthAdapter(
       failingWith((fragment) => driverError(fragment.text, bunSqlError('23505', constraint))),
     );
     expect(await refusal(wrapped.updateUser(ADA, { externalId: 'okta|abc' }))).toBe(
@@ -179,13 +179,13 @@ describe('BuiltinAdapter reads the violation off the driver error, wrapped or no
 
   test('a constraint x_users does not declare is not renamed to one it does', async () => {
     const failure = driverError('insert', bunSqlError('23505', 'app_users_handle_key'));
-    const adapter = new BuiltinAdapter(failingWith(() => failure));
+    const adapter = postgresAuthAdapter(failingWith(() => failure));
     await expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
   });
 
   test('another SQLSTATE travels on untouched', async () => {
     const failure = driverError('insert', bunSqlError('23503', 'x_users_email_key'));
-    const adapter = new BuiltinAdapter(failingWith(() => failure));
+    const adapter = postgresAuthAdapter(failingWith(() => failure));
     await expect(adapter.createUser(user(ADA, 'ada@example.com'))).rejects.toBe(failure);
     await expect(adapter.updateUser(ADA, { externalId: 'okta|abc' })).rejects.toBe(failure);
   });

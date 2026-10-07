@@ -12,11 +12,15 @@ import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
 import { configureAi } from './runtime';
 import type { ProjectableAction } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -118,7 +122,7 @@ describe('every tool_use the transcript replays is answered', () => {
       },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -154,7 +158,7 @@ describe('every tool_use the transcript replays is answered', () => {
       { calls: [{ name: 'respond', input: { answer: 42 } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -198,7 +202,7 @@ describe('every tool_use the transcript replays is answered', () => {
       },
       stream: (request) => new EchoProvider().stream(request),
     };
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,

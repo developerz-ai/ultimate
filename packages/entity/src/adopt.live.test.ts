@@ -6,7 +6,7 @@
 // Skips unless `TEST_DATABASE_URL` is set, as the live suite does.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient, raw, setDbClient } from '@ultimat3/db';
+import { type PostgresClient, postgresClient, raw, setDbClient } from '@ultimat3/db';
 import type { PlainDate } from '@ultimat3/time';
 import { plainDate } from '@ultimat3/time';
 import { money, text, timestamp, uuid } from './columns';
@@ -49,7 +49,7 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     await client.execute(raw(LEGACY));

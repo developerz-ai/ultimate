@@ -87,7 +87,7 @@ export interface MemoryDigestStore extends DigestStore {
  * event the earlier window held. A closed window is now sealed under its `endsAt`, and a later
  * append opens the next one beside it.
  */
-export function createMemoryDigestStore(): MemoryDigestStore {
+export function memoryDigestStore(): MemoryDigestStore {
   const slots = new Map<string, OpenBucket[]>();
   return {
     get open(): number {

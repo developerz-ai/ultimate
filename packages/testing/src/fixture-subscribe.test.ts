@@ -11,7 +11,7 @@ import { type Actor, createContext, runWithContext, userActor } from '@ultimat3/
 import { database, defaultDriver, entity, setRowObserver, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions, defineRoles } from '@ultimat3/policy';
 import { from, query, registerQueries, resetRegistry, t } from '@ultimat3/query';
-import { createSubscribeDriver, type SubscribeDriver } from './fixture-subscribe';
+import { type SubscribeDriver, subscribeDriver } from './fixture-subscribe';
 import { testName } from './test-types';
 
 const ACME = '00000000-0000-4000-8000-0000000000a1';
@@ -90,7 +90,7 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     defaultDriver().reset?.();
     resetRegistry();
     registerQueries({ liveNotes });
-    driver = await createSubscribeDriver();
+    driver = await subscribeDriver();
     await seed();
   });
 
@@ -98,7 +98,7 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     await driver.stop();
     resetRegistry();
     // The observer is process-global and `driver.stop()` restores what it replaced; this is the
-    // belt for a test that threw between `createSubscribeDriver` and here.
+    // belt for a test that threw between `subscribeDriver` and here.
     setRowObserver(null);
   });
 
@@ -287,7 +287,7 @@ describe(testName('unit', 'the subscribe fixture with nothing to serve'), () => 
     'an empty query registry is a refusal, not a working socket serving nothing',
     async () => {
       resetRegistry();
-      await expect(createSubscribeDriver()).rejects.toBeUltimateError('X_TEST_LIVE_NODE_EMPTY');
+      await expect(subscribeDriver()).rejects.toBeUltimateError('X_TEST_LIVE_NODE_EMPTY');
     },
   );
 });

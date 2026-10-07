@@ -176,9 +176,10 @@ function readAccessor<R extends object>(
       append && after !== null ? { first: options.first, after } : { first: options.first };
     // The page's cursor travels WITH its rows and is taken only where the rows are: a `more()`
     // a refetch superseded wrote its cursor here, before the generation check discarded its rows.
+    // `nextCursor` is `null` exactly when `hasMore` is false (core's `Page`), so it IS the answer.
     return method.page(input, controls, { onEnvelope }).then((page) => ({
       ...answered(page.rows as readonly Row[]),
-      next: page.hasNextPage ? page.endCursor : null,
+      next: page.nextCursor,
     }));
   };
 

@@ -30,8 +30,9 @@ afterEach(() => {
 unitTest('liveRunEvents is a live query an agent may read, and never write through', () => {
   expect(events.kind).toBe('query');
   expect(events.isLive).toBe(true);
-  expect(events.tool().policy).toBe(events.policy);
-  expect(events.tool().mutates).toBe(false);
+  // Offered to an agent through `@ultimat3/mcp`'s `toolFrom`, which projects a query as a
+  // read (`mutates: false`) under this same policy; the query itself declares only the exposure.
+  expect(events.mcp?.expose).toBe(true);
 });
 
 unitTest('a run’s events come back in seq order', async () => {

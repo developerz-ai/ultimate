@@ -21,7 +21,7 @@ import { clearRegistry, entity, memoryRepo, text, uuid } from '@ultimat3/entity'
 import { t } from '@ultimat3/schema';
 import { backfill } from './backfill';
 import type { ClaimedJob, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -93,7 +93,7 @@ const overHttp = (actingOrgId: string, rowOrgId: string): Promise<string> =>
  * `X_TENANCY_ACTOR_ORG_REQUIRED`. A case that means to prove the stripping passes one WITH an org.
  */
 const overJob = async (handle: AnyJobHandle, input: unknown, worker?: Ctx): Promise<string> => {
-  const driver: JobDriver = createMemoryDriver();
+  const driver: JobDriver = memoryJobDriver();
   await driver.enqueue({
     name: handle.name,
     queue: handle.queue,

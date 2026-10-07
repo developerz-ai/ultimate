@@ -168,3 +168,13 @@ describe('mergeHttpConfig layering', () => {
     expect(mergeHttpConfig(undefined, { port: 3000 })).toEqual({ port: 3000 });
   });
 });
+
+describe('configureHttp refuses the deleted drain knob at the declaration', () => {
+  // Refused where the app wrote it, not only at boot: `configureHttp` runs at module scope, so
+  // the stack points at the line to delete rather than at the boot that merged it.
+  test('drainTimeoutMs is X_CONFIG_INVALID naming drain.deadlineMs, and nothing is recorded', () => {
+    const legacy: unknown = { drainTimeoutMs: 180_000 };
+    expect(() => configureHttp(legacy as AppHttpConfig)).toThrow(/drain\.deadlineMs/);
+    expect(configuredHttp()).toBeUndefined();
+  });
+});

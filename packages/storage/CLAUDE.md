@@ -45,7 +45,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `driver-local-sidecar.ts` | the sidecar shape and its one parser |
 | `signing-secret.ts` | `DEV_SIGNING_SECRET`, `usesDevStorageSecret`, `resolveSigningSecret` |
 | `driver-memory-conflict.ts` | `claim()`'s conflict rule over keys |
-| `driver-memory.ts` | `memoryDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`signing-secret.ts`), the one rule both share |
+| `driver-memory.ts` | `memoryStorageDriver()` — a test's disk over a `Map`: `localDriver`'s contract and refusals, `objects()` for an assertion about the bucket. `driver-memory.test.ts` runs each claim on BOTH disks. Signs through `resolveSigningSecret` (`signing-secret.ts`), the one rule both share |
 | `driver-s3.ts` | the s3 disk: Bun where it can, the signed wire where it cannot |
 | `driver-s3-client.ts` | `S3*Like` + `buildClient`, lazy (import never opens a socket) |
 | `driver-s3-signed.ts` | signed requests: Bun's addressing restated, `requireEnv`, `fetch`, refusal as `S3Error` fields |

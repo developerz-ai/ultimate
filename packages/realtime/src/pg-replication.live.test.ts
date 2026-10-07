@@ -23,7 +23,7 @@ import {
   text,
 } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { postgresChangeFeed } from './changefeed';
 import { selectChangeFeed } from './changefeed-env';
 import { InProcessTransport } from './fanout';
 import { PgConnection } from './pg-connection';
@@ -158,7 +158,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
 
   test('decodes a real WAL stream into ordered ChangeEvents', async () => {
     const events: ChangeEvent[] = [];
-    const feed = new PgLogicalReplicationFeed({
+    const feed = postgresChangeFeed({
       url: url ?? '',
       slot: SLOT,
       publication: PUBLICATION,
@@ -246,7 +246,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     const first: ChangeEvent[] = [];
     // Its own slot, created by this `start`: what a resume drops must be what *this* feed already
     // delivered, not whatever the previous case left unconfirmed on a shared one.
-    const one = new PgLogicalReplicationFeed({
+    const one = postgresChangeFeed({
       url: url ?? '',
       slot: RESUME_SLOT,
       publication: PUBLICATION,
@@ -263,7 +263,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     await sql.query(`INSERT INTO ${TABLE} (id, title) VALUES ('r3', 'c')`);
 
     const second: ChangeEvent[] = [];
-    const two = new PgLogicalReplicationFeed({
+    const two = postgresChangeFeed({
       url: url ?? '',
       slot: RESUME_SLOT,
       publication: PUBLICATION,
@@ -286,7 +286,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
    */
   test('a transaction opened by the write-origin message names every change in it', async () => {
     const events: ChangeEvent[] = [];
-    const feed = new PgLogicalReplicationFeed({
+    const feed = postgresChangeFeed({
       url: url ?? '',
       slot: WRITE_SLOT,
       publication: PUBLICATION,
@@ -364,7 +364,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
    */
   test('a large column an update did not touch survives it', async () => {
     const events: ChangeEvent[] = [];
-    const feed = new PgLogicalReplicationFeed({
+    const feed = postgresChangeFeed({
       url: url ?? '',
       slot: TOAST_SLOT,
       publication: PUBLICATION,

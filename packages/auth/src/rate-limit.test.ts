@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Clock, frozenClock, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import type { PasswordParams } from './password';
 import {
   type AuthLimiter,
@@ -22,7 +22,7 @@ const PASSWORD = 'correct-horse-battery-staple-42';
 
 const newAuth = (): Auth =>
   defineAuth({
-    adapter: new MemoryAdapter(),
+    adapter: memoryAuthAdapter(),
     clock: frozenClock(1_700_000_000_000),
     password: { minLength: 12, params: FAST_PARAMS },
     rateLimit: { maxAttempts: 5, windowMs: 900_000, lockoutMs: 900_000 },
@@ -229,7 +229,7 @@ describe('auth rate limiting', () => {
 
     test('two replicas behind one limiter lock at the configured count, not twice it', async () => {
       const clock = frozenClock(1_700_000_000_000);
-      const adapter = new MemoryAdapter();
+      const adapter = memoryAuthAdapter();
       const limiter = shared(clock);
       const replica = (): Auth =>
         defineAuth({
@@ -259,7 +259,7 @@ describe('auth rate limiting', () => {
     test('a shared declaration with a per-process limiter refuses at defineAuth', () => {
       expect(() =>
         defineAuth({
-          adapter: new MemoryAdapter(),
+          adapter: memoryAuthAdapter(),
           clock: frozenClock(0),
           rateLimit: { scope: 'shared' },
         }),
@@ -280,7 +280,7 @@ describe('auth rate limiting', () => {
       const generous = shared(clock, { maxAttempts: 50 });
       expect(() =>
         defineAuth({
-          adapter: new MemoryAdapter(),
+          adapter: memoryAuthAdapter(),
           clock,
           limiter: generous,
           rateLimit: { maxAttempts: 5, scope: 'shared' },
@@ -293,7 +293,7 @@ describe('auth rate limiting', () => {
       const declared = { maxAttempts: 3, windowMs: 60_000, lockoutMs: 120_000 };
       expect(() =>
         defineAuth({
-          adapter: new MemoryAdapter(),
+          adapter: memoryAuthAdapter(),
           clock,
           limiter: shared(clock, declared),
           rateLimit: { ...declared, scope: 'shared' },
@@ -303,7 +303,7 @@ describe('auth rate limiting', () => {
       for (const drift of [{ windowMs: 60_001 }, { lockoutMs: 1 }, { maxAttempts: 4 }]) {
         expect(() =>
           defineAuth({
-            adapter: new MemoryAdapter(),
+            adapter: memoryAuthAdapter(),
             clock,
             limiter: shared(clock, { ...declared, ...drift }),
             rateLimit: { ...declared, scope: 'shared' },
@@ -318,7 +318,7 @@ describe('auth rate limiting', () => {
       const clock = frozenClock(0);
       expect(() =>
         defineAuth({
-          adapter: new MemoryAdapter(),
+          adapter: memoryAuthAdapter(),
           clock,
           limiter: shared(clock, { maxKeys: 7 }),
           rateLimit: { scope: 'shared', maxKeys: 90_000 },

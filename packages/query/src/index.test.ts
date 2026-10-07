@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { allow } from '@ultimat3/policy';
 import { t as schemaT } from '@ultimat3/schema';
 import * as surface from './index';
 import { t } from './index';
@@ -20,6 +21,32 @@ describe('@ultimat3/query public surface', () => {
     expect(surface).not.toHaveProperty('toToolName');
     const derivers = Object.keys(surface).filter((key) => /tool_?name/i.test(key));
     expect(derivers).toEqual([]);
+  });
+
+  test('the deprecation helpers are core’s alone — 25.0.0 dropped the re-exports', () => {
+    // `@ultimat3/core` is their one home (`HELPER_HOMES`); a re-export here is a second import
+    // path to the same function, which is how an app ends up with two spellings in one file.
+    for (const name of ['renderDeprecation', 'recordDeprecatedCall']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+  });
+
+  // O-tool, 25.0.0: an MCP tool has ONE projection, `@ultimat3/mcp`'s `toolFrom` — the one
+  // `tools/list` serves. `.tool()` was a second one built here; tier 3 cannot import the tier-4
+  // projection, so the twin could not be made to return it. It is gone, and this keeps it gone.
+  test('no MCP tool projection lives here — `@ultimat3/mcp` owns the one', () => {
+    for (const name of ['toQueryTool', 'toQueryTools', 'isExposed']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    const read = surface
+      .query({
+        input: schemaT.object({}),
+        policy: allow('public'),
+        mcp: { expose: true },
+        sql: () => surface.from<{ id: string }>('posts', []),
+      })
+      .named('postList');
+    expect(read).not.toHaveProperty('tool');
   });
 
   test('re-exports the one `t`, not a copy of it', () => {

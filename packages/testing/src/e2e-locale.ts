@@ -1,30 +1,21 @@
-// The locale an e2e run's browser asks for: the app's own `defaultLocale`, read off `app.config.ts`
-// the way the CLI reads its other boot facts. `@ultimat3/testing` sits below `@ultimat3/cli`, so the
-// file name and the export name are restated here rather than imported from it.
-
-import { join } from 'node:path'; // why: Bun ships no path join.
-
-/** The app root's config module and the export holding the config — `x new` writes both. */
-const APP_CONFIG_FILE = 'app.config.ts';
-const APP_CONFIG_EXPORT = 'config';
+// The locale an e2e run's browser asks for: the default the app's `defineCatalogs()` declared —
+// the one place an app names its locales since 25.0.0 (`app.config.ts`'s `defaultLocale` and
+// `locales` keys were deleted). Read through `@ultimat3/i18n/app-catalogs`, the one reader the CLI
+// shares; what is this file's own is the answer to a module that will not load.
 
 /**
- * The app's `defaultLocale`, or `undefined` when it cannot be read — and then nothing is pinned.
- * Never a guessed `en`: pinning the wrong language would make every run photograph and assert on a
- * page no visitor at the unprefixed URL sees, which is worse than the runner's own Chrome locale.
- * The import runs the config module, which may validate an environment this process lacks.
+ * The app's default locale, or `undefined` when it cannot be read — and then nothing is pinned.
+ * Never a guessed `en`: `loadAppCatalogs` answers only when a `defineCatalogs()` was declared.
+ * Pinning the wrong language would make every run photograph and assert on a page no visitor at
+ * the unprefixed URL sees. The import runs the app's module, which may validate an environment
+ * this process lacks — so a module that throws is "nothing pinned", never a failed run.
  */
 export async function e2eDefaultLocale(root: string): Promise<string | undefined> {
-  const path = join(root, APP_CONFIG_FILE);
-  if (!(await Bun.file(path).exists())) return undefined;
-  let module: Record<string, unknown>;
+  // Dynamic, like every non-core dependency of this package: only the e2e preload pays for it.
+  const { loadAppCatalogs } = await import('@ultimat3/i18n/app-catalogs');
   try {
-    module = (await import(path)) as Record<string, unknown>;
+    return (await loadAppCatalogs(root))?.defaultLocale;
   } catch {
     return undefined;
   }
-  const config = Object.hasOwn(module, APP_CONFIG_EXPORT) ? module[APP_CONFIG_EXPORT] : undefined;
-  if (typeof config !== 'object' || config === null) return undefined;
-  const locale = (config as Record<string, unknown>)['defaultLocale'];
-  return typeof locale === 'string' && locale !== '' ? locale : undefined;
 }

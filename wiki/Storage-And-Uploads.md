@@ -24,9 +24,9 @@ Swapping `local` for `s3` changes no call site, and `x dev` needs no S3 server.
 
 | Driver | Backing | For |
 |---|---|---|
-| `localDriver` | `Bun.file` under one root; writes are staged and renamed in an order whose every crash point reads as absent, whole or untyped — never a wrong content type | dev, tests, a single node. A key cannot be a path prefix of another (`a` and `a/b`): the second is `X_STORAGE_KEY_CONFLICT`. `s3Driver` and `memoryDriver` hold both |
+| `localDriver` | `Bun.file` under one root; writes are staged and renamed in an order whose every crash point reads as absent, whole or untyped — never a wrong content type | dev, tests, a single node. A key cannot be a path prefix of another (`a` and `a/b`): the second is `X_STORAGE_KEY_CONFLICT`. `s3Driver` and `memoryStorageDriver` hold both |
 | `s3Driver` | `Bun.s3` | any S3-compatible endpoint — AWS, R2, a self-hosted gateway. The difference is `endpoint`, `region` and `forcePathStyle`. Credentials are env var **names**, never literals |
-| `memoryDriver` | a `Map` in this process | a test's disk: `defineStorage({ disks: { uploads: memoryDriver() } })`. Every method `localDriver` answers, the same refusals, the same signing rule; `objects()` is a copy of the stored bytes by key. Never a deployment's disk — a restart is every object gone |
+| `memoryStorageDriver` | a `Map` in this process | a test's disk: `defineStorage({ disks: { uploads: memoryStorageDriver() } })`. Every method `localDriver` answers, the same refusals, the same signing rule; `objects()` is a copy of the stored bytes by key. Never a deployment's disk — a restart is every object gone |
 
 **A declaration holds a disk by THUNK, never by value.** `disk('sessions')` resolves through
 `defineStorage()`, which boot runs after an app's modules were evaluated — so a `scrape()` or any

@@ -74,8 +74,7 @@ export function configureLifecycle(options: LifecycleOptions): void {
   // PROPAGATES a NaN into `setTimeout(fn, NaN)`, i.e. 0 — measured, one in-flight operation dropped
   // and a 300ms close hook ABANDONED 111ms into a 25s budget, while `X_SHUTDOWN_TIMEOUT` rendered
   // `NaNms` and told the operator to RAISE a budget that was never a number. `min: 0` because 0 is
-  // a real budget — drain now, no grace — and `@ultimat3/http`'s `drainTimeoutMs` accepts 0 and
-  // hands it straight here, so a floor of 1 would refuse at boot what that package declares.
+  // a real budget — drain now, no grace — and `drain.deadlineMs` reaches here unchanged.
   if (options.deadlineMs !== undefined) {
     deadlineMs = finiteCount('configureLifecycle', 'deadlineMs', options.deadlineMs, 0);
   }

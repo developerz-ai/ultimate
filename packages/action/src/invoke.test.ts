@@ -14,7 +14,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action, describeAction, isAction } from './action';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 import type { Surface } from './policy-gate';
 import { listActions, registerActions, resetRegistry } from './registry';
@@ -141,7 +141,7 @@ describe('the invocation core', () => {
       idempotent: true,
       handle: ({ input }) => ({ id: input.postId, published: true, passwordHash: 'secret' }),
     }).named('publishPost');
-    const options = { ctx: editor, store: new MemoryIdempotencyStore(), idempotencyKey: 'k1' };
+    const options = { ctx: editor, store: memoryIdempotencyStore(), idempotencyKey: 'k1' };
 
     const first = await invoke(target, { postId: POST_ID }, options);
     const replay = await invoke(target, { postId: POST_ID }, options);
@@ -367,7 +367,7 @@ describe('cache invalidation after the handler settles', () => {
         return { id: input.postId, published: true };
       },
     }).named('publishPost');
-    const options = { ctx: editor, store: new MemoryIdempotencyStore(), idempotencyKey: 'k1' };
+    const options = { ctx: editor, store: memoryIdempotencyStore(), idempotencyKey: 'k1' };
 
     await invoke(target, { postId: POST_ID }, options);
     expect(busts.value).toBe(1);

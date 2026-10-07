@@ -1,13 +1,14 @@
 # @ultimat3/action ⚡
 
-One declaration → six artifacts.
+One declaration → six artifacts. Five are projected here; the MCP tool is `@ultimat3/mcp`'s
+(tier 4), from the same declaration.
 
 | # | Artifact | Reach it with | Guarantees |
 |---|---|---|---|
 | 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(publishPost)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
 | 2 | OpenAPI 3.1 operation + document | `publishPost.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
 | 3 | Typed RPC client | `publishPost.client({ baseUrl })` / `rpc<Api['actions']>()` | server typo = compile error in Solid |
-| 4 | MCP tool | `publishPost.tool()` | *identical* policy evaluation to the route |
+| 4 | MCP tool | `toolFrom(publishPost)` from `@ultimat3/mcp` — what `tools/list` serves | *identical* policy evaluation to the route: it calls this package's `invoke` with `surface: 'mcp'` |
 | 5 | Job handle | `publishPost.job()` | enqueue durable work, no rewrite |
 | 6 | Contract tests | `publishPost.contract()` | garbage rejected, anonymous denied, spec present |
 
@@ -22,16 +23,17 @@ publishPost.output                             // the declared output schema
 publishPost.policy                             // the one policy object
 publishPost.mcp                                // { expose, description }, as declared
 await publishPost.as(actor, { postId })        // run as someone, one execution path
-publishPost.tool()                             // MCP descriptor
 publishPost.openapi()                          // OpenAPI operation
 publishPost.client({ baseUrl })                // typed RPC method
 publishPost.job()                              // durable-work handle
 publishPost.contract()                         // the three generated assertions
 ```
 
-`publishPost.tool().policy === publishPost.policy` — the same object, so an MCP call
-cannot reach a different authz path. `.as()` keeps the surrounding context whole and
-swaps only the actor: impersonation, not a second context.
+There is no `.tool()` (`As of 25.0.0`): it was a second MCP projection built a tier below the
+one `@ultimat3/mcp` serves, and the two disagreed. The tool an agent is shown is
+`toolFrom(publishPost)`, and its every call lands in this package's `invoke` — the one
+policy object, so an MCP call cannot reach a different authz path. `.as()` keeps the
+surrounding context whole and swaps only the actor: impersonation, not a second context.
 
 ## Declare
 
@@ -154,13 +156,14 @@ declare const orderId: string;
 await api.charge({ orderId }, { idempotencyKey: `charge:${orderId}`, retry: { attempts: 3 } });
 ```
 
-`createClientFlight` is **`@ultimat3/core`'s**, re-exported here: it is the same object
-`@ultimat3/query` re-exports, because both packages are tier 3 and neither may import the other.
-It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
-this package exactly as before.
+`createClientFlight` is **`@ultimat3/core`'s**, and imported from there — `import {
+createClientFlight } from '@ultimat3/core'`. It shipped as a byte-identical copy here and in
+`@ultimat3/query` (both tier 3, neither may import the other); the copies are gone, and since 25.0.0
+so are the re-exports: one value, one import path (`X_HELPER_COPY`, `bun run flight-copies`). The
+types `ClientFlight` and `ClientRetry` stay re-exported, because `rpc`'s options name them.
 
 Importing `rpc` alone from this package is **19,671 B** minified for the browser; adding
-`createClientFlight` is **25,954 B** (`As of 2026-10-01`; `CLAUDE.md` carries the before/after and
+`createClientFlight` (measured through this barrel, before 25.0.0 moved the import to core) is **25,954 B** (`As of 2026-10-01`; `CLAUDE.md` carries the before/after and
 what the delta is). `ClientFlight` is a TYPE inside `client.ts` and never a value, which is what
 keeps the second number off the first caller's bill.
 
@@ -252,14 +255,14 @@ Under the default style:
 | `likePost` | `POST /api/posts/like` | `likePost` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
-**One name, four surfaces** — `.tool().name`, `openapi.json`'s `x-ultimate.mcpTool`,
+**One name, three surfaces** — `openapi.json`'s `x-ultimate.mcpTool`,
 `describeAction().mcp.tool` (what `x actions describe --json`, `x actions list --json`, the
 `actions.describe` dev MCP tool and the `/_x` Routes panel show) and the catalog `@ultimat3/mcp`
-serves. It was two until 2026-08: a `toToolName()` here snake_cased the first three to
+serves. It was two until 2026-08: a `toToolName()` here snake_cased the published ones to
 `publish_post` while the server answered only `publishPost`, so an agent that read the published
 contract called a tool that does not exist. `toToolName` is **deleted**, not deprecated — a second
-derivation is a second name. `mcp-tool.test.ts`'s "one name per action, on every surface" is what
-keeps it that way.
+derivation is a second name. `mcp-surface.test.ts` here and `@ultimat3/mcp`'s
+`cross-surface.test.ts` are what keep it that way.
 
 `x.manifest.json` is **not** one of the four: `ActionFact.mcp` is `{ expose, description? }`, so
 the manifest never carried a tool name and was never wrong about one.
@@ -308,8 +311,8 @@ no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FORE
 
 ## mutator = action + local twin
 
-`mutator()` is built **on top of** `action()`. A mutator IS an action, so it gets all
-six projections; it adds `local(tx, input)` for the optimistic write and a `conflict`
+`mutator()` is built **on top of** `action()`. A mutator IS an action, so it gets every
+projection an action has; it adds `local(tx, input)` for the optimistic write and a `conflict`
 strategy for the rebase.
 
 ```ts
@@ -622,7 +625,7 @@ A `query` has none and never will: a read has nothing to be idempotent about.
 ## `deprecated:` — a compat window, not a version
 
 ```ts
-import type { Deprecation } from '@ultimat3/action';
+import type { Deprecation } from '@ultimat3/core';
 
 // The `deprecated:` key of an `action()`.
 const deprecated: Deprecation = {
@@ -639,9 +642,8 @@ operation, and a `deprecated_calls_total{primitive,name}` counter — which is t
 answer "is anyone still calling it?" before deleting it. A date that cannot be rendered is
 `X_ACTION_DEPRECATION_INVALID` at projection, not on the first request.
 
-`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s, re-exported
-from this package's index for existing callers (the re-exports leave in 25.0.0); this package
-imports them from core directly, as `@ultimat3/query` does.
+`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s and are
+imported from there — this package does not re-export them (`As of 25.0.0`).
 
 **Versioning itself is deliberately absent, and will stay absent.** Running `v1` and `v2` of one
 action side by side is two deployments behind one ingress — axiom 7's answer, costing this package
@@ -656,7 +658,7 @@ price change are not the same event, and the framework is not the thing that kno
 them your business has to keep.
 
 ```ts
-import { setAuditSink } from '@ultimat3/action';
+import { setAuditSink } from '@ultimat3/core';
 
 setAuditSink({
   async write(record) { await record.ctx.db.auditRows.insert(myRow(record)); },
@@ -668,8 +670,7 @@ What the framework supplies is what it genuinely knows:
 | Field | |
 |---|---|
 | `at` | when the attempt began, from `ctx.now()` — an instant, never a rendering |
-| `name` / `primitive` / `mutator` | the registered name; `'action'` (or `'query'` for an audited read); and whether `mutator()` built it |
-| `action` | **deprecated** — the same value as `name`, written beside it until 25.0.0 removes it. Read `name` |
+| `name` / `primitive` / `mutator` | the registered name; `'action'` (or `'query'` for an audited read); and whether `mutator()` built it. `name` and `primitive` are required, and the `action` alias of `name` is gone (`As of 25.0.0`) — `postgresAuditSink` still files `name` in the `x_audit.action` column |
 | `surface` | `server` \| `http` \| `mcp` \| `job` (and `live` on a read) — the same price change over MCP is not the same event |
 | `ctx` | the whole context: actor, `requestId`, `traceId`, locale, and the services a sink needs to write a row |
 | `input` | the **parsed** input, or `undefined` when the parse is what failed — never the raw payload |
@@ -678,8 +679,8 @@ What the framework supplies is what it genuinely knows:
 | `failure` | the `X_*` code and the thrown value, on every outcome but `allowed` |
 
 **One contract, one sink, shared with reads.** `AuditRecord`, `AuditSink` and the installed slot
-are `@ultimat3/core`'s; this package re-exports the same objects, so `setAuditSink` from either
-installs the sink `query({ audit: true })` writes to as well (`@ultimat3/query`'s README). A sink
+are `@ultimat3/core`'s, and so is the one way to install it: `setAuditSink` from `@ultimat3/core`
+(this package re-exports the two types, never the slot — `As of 25.0.0`) installs the sink `query({ audit: true })` writes to as well (`@ultimat3/query`'s README). A sink
 tells the two apart by `record.primitive`.
 
 What it does **not** supply: an audit entity, a retention policy, a hash chain, a subject index,
@@ -700,7 +701,8 @@ is `setAuditSink(memoryAuditSink())`, and nothing at that call site says the res
 
 ```ts
 // apps/web/server.ts — the app owns the connection, so the app installs the sink
-import { postgresAuditSink, setAuditSink } from '@ultimat3/action';
+import { postgresAuditSink } from '@ultimat3/action';
+import { setAuditSink } from '@ultimat3/core';
 import { db } from '@ultimat3/db';
 
 const client = db();
@@ -781,7 +783,7 @@ setAuditSink({
     const prev = await chainHead(ctx);                  // hash-chained: the app's choice
     await ctx.db.auditRows.insert({
       orgId: orgOf(ctx.actor),                          // tenancy: derived from the actor
-      subjectId: subjectOf(record.action, record.input),// queryable by subject: the app's index
+      subjectId: subjectOf(record.name, record.input),  // queryable by subject: the app's index
       actorId: impersonatorOf(ctx.actor) ?? ctx.actor.id,
       at: record.at, outcome: record.outcome, code: record.failure?.code ?? null,
       prevHash: prev, hash: await sha256(prev, record),

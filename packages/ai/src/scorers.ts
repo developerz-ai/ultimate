@@ -132,7 +132,7 @@ export function llmJudge(input: {
         maxTokens: finiteCount('llmJudge', 'maxTokens', input.maxTokens ?? 256, 1),
         ...(input.judge.system !== undefined ? { system: input.judge.system } : {}),
         ...(input.judge.model !== undefined ? { model: input.judge.model } : {}),
-        // The judge prompt's hash is this scorer's NAME, and `contentHash` covers `effort` and
+        // The judge prompt's hash is this scorer's NAME, and `promptHash` covers `effort` and
         // `thinking` — so dropping either measures with a judge the name does not describe.
         ...(input.judge.effort !== undefined ? { effort: input.judge.effort } : {}),
         ...(input.judge.thinking !== undefined ? { thinking: input.judge.thinking } : {}),

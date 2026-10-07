@@ -5,9 +5,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { InboxStore } from './inbox';
-import { createMemoryInboxStore } from './inbox';
+import { memoryInboxStore } from './inbox';
 import {
-  createPgInboxStore,
+  postgresInboxStore,
   SQL_NOTIFY_INBOX_ADD,
   SQL_NOTIFY_INBOX_MARK_READ,
   SQL_NOTIFY_INBOX_MARK_SEEN,
@@ -33,7 +33,7 @@ const recording = (rows: readonly unknown[], calls: Call[]): PgExecutor => ({
 describe('unit · postgres inbox', () => {
   test('add is keyed on (recipient, notifier, key), and the id is injectable', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({
+    const store = postgresInboxStore({
       executor: recording(
         [
           {
@@ -71,7 +71,7 @@ describe('unit · postgres inbox', () => {
 
   test('list maps the row shape back, and an unread-only page says so in a parameter', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({
+    const store = postgresInboxStore({
       executor: recording(
         [
           {
@@ -99,9 +99,9 @@ describe('unit · postgres inbox', () => {
   });
 
   test('an unread count with no row back is zero, never undefined', async () => {
-    const empty = createPgInboxStore({ executor: recording([], []) });
+    const empty = postgresInboxStore({ executor: recording([], []) });
     expect(await empty.unreadCount('ana')).toBe(0);
-    const counted = createPgInboxStore({ executor: recording([{ unread: 7 }], []) });
+    const counted = postgresInboxStore({ executor: recording([{ unread: 7 }], []) });
     expect(await counted.unreadCount('ana')).toBe(7);
   });
 
@@ -124,7 +124,7 @@ describe('unit · postgres inbox', () => {
 
   test('every write is scoped by recipient, so a stranger id reaches no row', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([], calls) });
+    const store = postgresInboxStore({ executor: recording([], calls) });
     // A well-formed id belonging to somebody else — `markRead` screens malformed ones out before
     // the statement runs, and this test is about the recipient scope, not that screen.
     await store.markRead({
@@ -147,11 +147,11 @@ describe('unit · postgres inbox', () => {
  * ever received, out of the call whose own doc says an inbox is a page.
  */
 describe('unit · both inbox drivers answer one question one way', () => {
-  const pg = (): InboxStore => createPgInboxStore({ executor: recording([], []) });
+  const pg = (): InboxStore => postgresInboxStore({ executor: recording([], []) });
 
   for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
     test(`limit: ${String(limit)} is refused by BOTH drivers`, async () => {
-      await expect(createMemoryInboxStore().list({ recipient: 'ana', limit })).rejects.toThrow(
+      await expect(memoryInboxStore().list({ recipient: 'ana', limit })).rejects.toThrow(
         /X_INVARIANT/,
       );
       await expect(pg().list({ recipient: 'ana', limit })).rejects.toThrow(/X_INVARIANT/);
@@ -160,10 +160,10 @@ describe('unit · both inbox drivers answer one question one way', () => {
 
   test('limit: 0 is an empty page from both, and the statement still carries the bound', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([], calls) });
+    const store = postgresInboxStore({ executor: recording([], calls) });
     expect(await store.list({ recipient: 'ana', limit: 0 })).toEqual([]);
     expect(calls[0]?.params[2]).toBe(0);
-    expect(await createMemoryInboxStore().list({ recipient: 'ana', limit: 0 })).toEqual([]);
+    expect(await memoryInboxStore().list({ recipient: 'ana', limit: 0 })).toEqual([]);
   });
 });
 
@@ -187,7 +187,7 @@ describe('unit · inbox retention', () => {
   // a log exactly like a sweep that is not wired at all.
   test('the statement returns the rows it deleted, so the count is not always zero', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({
+    const store = postgresInboxStore({
       executor: recording([{ id: 'a' }, { id: 'b' }], calls),
     });
     const deleted = await store.purgeBefore({ read: AT });
@@ -197,7 +197,7 @@ describe('unit · inbox retention', () => {
 
   test('an absent window binds null, so its half of the statement is inert', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([], calls) });
+    const store = postgresInboxStore({ executor: recording([], calls) });
     await store.purgeBefore({ unread: AT });
     expect(calls[0]?.params).toEqual([null, AT]);
   });
@@ -206,7 +206,7 @@ describe('unit · inbox retention', () => {
   // that matches nothing still costs the scan, so this path must not reach the database at all.
   test('neither window set issues no statement', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([], calls) });
+    const store = postgresInboxStore({ executor: recording([], calls) });
     expect(await store.purgeBefore({})).toBe(0);
     expect(calls).toHaveLength(0);
   });
@@ -223,7 +223,7 @@ describe('unit · a mark-read batch holding an id that is not a uuid', () => {
 
   test('binds only the well-formed ids and still marks the good ones', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([{ id: ID }], calls) });
+    const store = postgresInboxStore({ executor: recording([{ id: ID }], calls) });
 
     const marked = await store.markRead({ recipient: 'ana', ids: ['../../etc', ID], at: AT });
 
@@ -234,7 +234,7 @@ describe('unit · a mark-read batch holding an id that is not a uuid', () => {
 
   test('a batch with no well-formed id answers 0 and never reaches the database', async () => {
     const calls: Call[] = [];
-    const store = createPgInboxStore({ executor: recording([{ id: ID }], calls) });
+    const store = postgresInboxStore({ executor: recording([{ id: ID }], calls) });
 
     const marked = await store.markRead({ recipient: 'ana', ids: ['x', ''], at: AT });
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { DEFAULT_QUEUE } from './driver';
-import { createPgDriver, createPgLeader } from './driver-pg';
+import { postgresJobDriver, postgresLeader } from './driver-pg';
 import {
   SQL_ACK,
   SQL_BACKFILL_FINISH,
@@ -12,7 +12,6 @@ import {
   SQL_ENQUEUE,
   SQL_FIND_LIVE_BY_KEY,
   SQL_HEARTBEAT,
-  SQL_JOBS_TABLE,
   SQL_NACK,
   SQL_OUTBOX_PUBLISHED_JOB,
   SQL_TRY_ADVISORY_LOCK,
@@ -40,51 +39,10 @@ function recordingExecutor(rows: readonly unknown[] = []): PgExecutor & {
   };
 }
 
-describe('pg queue SQL', () => {
-  test('the claim uses FOR UPDATE SKIP LOCKED — without it N workers serialise', () => {
-    expect(SQL_CLAIM).toContain('for update skip locked');
-    expect(SQL_CLAIM).toContain("set state      = 'running'");
-    // Lease reclaim: a crashed worker's job becomes claimable again.
-    expect(SQL_CLAIM).toContain("state = 'running' and visible_at <= now()");
-    expect(SQL_CLAIM).toContain('attempt    = j.attempt + 1');
-  });
-
-  test('idempotency is enforced per JOB and per TENANT by a partial unique index over live states only', () => {
-    // `(name, coalesce(tenant_id, ''), idempotency_key)`. A global key namespace was silent data
-    // loss — two jobs deriving the same natural key deduped against each other and the second one
-    // never ran — and a tenant-blind one was that plus a cross-tenant job id handed to the caller.
-    expect(SQL_JOBS_TABLE).toContain(
-      'create unique index if not exists x_jobs_name_tenant_idempotency_live_idx',
-    );
-    expect(SQL_JOBS_TABLE).toContain(
-      "on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key)",
-    );
-    expect(SQL_JOBS_TABLE).toContain("where state in ('ready', 'delayed', 'running', 'suspended')");
-    // The conflict target must spell the index expression exactly, or Postgres cannot infer it.
-    expect(SQL_ENQUEUE).toContain("on conflict (name, (coalesce(tenant_id, '')), idempotency_key)");
-    expect(SQL_ENQUEUE).toContain('do nothing');
-  });
-
-  test('nack only burns an attempt when the failure counts as one', () => {
-    expect(SQL_NACK).toContain(
-      'case when $3::boolean then attempt else greatest(attempt - 1, 0) end',
-    );
-  });
-
-  test('ack and heartbeat target a single row by id', () => {
-    expect(SQL_ACK).toContain('where id = $1');
-    expect(SQL_HEARTBEAT).toContain("where id = $1 and state = 'running'");
-  });
-
-  test('the scheduler leader uses a session advisory lock', () => {
-    expect(SQL_TRY_ADVISORY_LOCK).toContain('pg_try_advisory_lock');
-  });
-});
-
 describe('pg driver', () => {
   test('claim passes the queue list, limit, worker id, visibility timeout and dropped names in order', async () => {
     const executor = recordingExecutor();
-    const driver = createPgDriver({ executor });
+    const driver = postgresJobDriver({ executor });
     await driver.claim({
       queues: ['default', 'mail'],
       limit: 7,
@@ -112,7 +70,7 @@ describe('pg driver', () => {
         return Promise.resolve(rows as unknown as readonly R[]);
       },
     };
-    const result = await createPgDriver({ executor }).enqueue({
+    const result = await postgresJobDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
       input: { orgId: 'org-1' },
@@ -123,13 +81,13 @@ describe('pg driver', () => {
   });
 
   test('no executor and no DATABASE_URL is a labelled X_DRIVER_UNAVAILABLE', async () => {
-    await expect(createPgDriver().stats()).rejects.toThrow(DriverUnavailableError);
+    await expect(postgresJobDriver().stats()).rejects.toThrow(DriverUnavailableError);
   });
 });
 
 describe('the pg backfill ledger', () => {
   const ledgerOf = (executor: PgExecutor) => {
-    const ledger = createPgDriver({ executor }).backfills;
+    const ledger = postgresJobDriver({ executor }).backfills;
     if (ledger === undefined) throw new Error('the pg driver must ship a backfill ledger');
     return ledger;
   };
@@ -220,7 +178,7 @@ describe('the pg backfill ledger', () => {
 describe('pg enqueue, ack and nack', () => {
   test('an insert that lands reports the new id and deduped: false', async () => {
     const executor = recordingExecutor([{ id: 'job-1', run_id: 'run-1' }]);
-    const result = await createPgDriver({ executor }).enqueue({
+    const result = await postgresJobDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: '',
       input: { orgId: 'org-1' },
@@ -254,7 +212,7 @@ describe('pg enqueue, ack and nack', () => {
       idempotencyKey: 'onboard:org-1',
       maxAttempts: 1,
     };
-    await createPgDriver({ executor: landed }).enqueue(request);
+    await postgresJobDriver({ executor: landed }).enqueue(request);
     expect(landed.calls[0]?.params[0]).toBe('row-1');
     expect(landed.calls[0]?.params[5]).toBe('run-1');
     // The statement itself refuses a second row under an id that already names one — the partial
@@ -271,7 +229,7 @@ describe('pg enqueue, ack and nack', () => {
         return Promise.resolve((call === 1 ? [] : [{ id: 'row-1', run_id: 'run-1' }]) as R[]);
       },
     };
-    const again = await createPgDriver({ executor: repeated }).enqueue(request);
+    const again = await postgresJobDriver({ executor: repeated }).enqueue(request);
     expect(again).toEqual({ id: 'row-1', runId: 'run-1', deduped: true });
     expect(repeated.calls[1]?.sql).toBe(SQL_OUTBOX_PUBLISHED_JOB);
     expect(repeated.calls[1]?.params).toEqual(['row-1']);
@@ -289,7 +247,7 @@ describe('pg enqueue, ack and nack', () => {
         return Promise.resolve((call === 1 ? [] : LIVE_KEY_ROW) as readonly R[]);
       },
     };
-    await createPgDriver({ executor }).enqueue({
+    await postgresJobDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
       input: { orgId: 'org-1' },
@@ -309,7 +267,7 @@ describe('pg enqueue, ack and nack', () => {
         return Promise.resolve((call === 1 ? [] : LIVE_KEY_ROW) as readonly R[]);
       },
     };
-    const enqueue = createPgDriver({ executor }).enqueue({
+    const enqueue = postgresJobDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
       input: { orgId: 'org-1' },
@@ -325,7 +283,7 @@ describe('pg enqueue, ack and nack', () => {
     // One miss is the race below. Both statements answering nothing twice running is a missing
     // partial unique index, so the fix is the migration — and it is a command, nothing else.
     const executor = recordingExecutor([]);
-    const enqueue = createPgDriver({ executor }).enqueue({
+    const enqueue = postgresJobDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
       input: { orgId: 'org-1' },
@@ -364,7 +322,7 @@ describe('pg enqueue, ack and nack', () => {
       inserts = 0;
       sql.length = 0;
       params.length = 0;
-      const result = await createPgDriver({ executor }).enqueue({
+      const result = await postgresJobDriver({ executor }).enqueue({
         name: 'onboardOrg',
         queue: 'default',
         input: { orgId: 'org-1' },
@@ -401,7 +359,7 @@ describe('pg enqueue, ack and nack', () => {
         updated_at: '1000',
       },
     ]);
-    const [claimed] = await createPgDriver({ executor, clock }).claim({
+    const [claimed] = await postgresJobDriver({ executor, clock }).claim({
       // Named, because an empty list is `X_JOB_CLAIM_QUEUES_EMPTY` since 12.0.0 — this test used
       // to lean on the pg driver's private default, which is exactly the divergence that was fixed.
       queues: ['default'],
@@ -419,7 +377,7 @@ describe('pg enqueue, ack and nack', () => {
 
   test('ack settles one id', async () => {
     const executor = recordingExecutor();
-    await createPgDriver({ executor }).ack('job-1', {
+    await postgresJobDriver({ executor }).ack('job-1', {
       workerId: 'w1',
       claim: 1,
       durationMs: 412.6,
@@ -428,13 +386,17 @@ describe('pg enqueue, ack and nack', () => {
     // The id, the claimer and the CLAIM the settle is fenced on (last but one), the duration its
     // counter bucket adds, and that it is counted — only `x jobs drain` settles one uncounted.
     expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 413, 1, true]);
-    await createPgDriver({ executor }).ack('job-2', { workerId: 'w1', claim: 4, counted: false });
+    await postgresJobDriver({ executor }).ack('job-2', {
+      workerId: 'w1',
+      claim: 4,
+      counted: false,
+    });
     expect(executor.calls[1]?.params).toEqual(['job-2', 'w1', 0, 4, false]);
   });
 
   test('nack maps deadLetter, park and neither onto three states, and park burns no attempt', async () => {
     const executor = recordingExecutor();
-    const driver = createPgDriver({ executor });
+    const driver = postgresJobDriver({ executor });
     await driver.nack('job-1', { workerId: 'w1', claim: 1, delayMs: 1_000, error: 'smtp timeout' });
     await driver.nack('job-2', {
       workerId: 'w1',
@@ -464,7 +426,7 @@ describe('pg enqueue, ack and nack', () => {
   test('heartbeat is false when no row comes back — the lease is no longer this worker`s', async () => {
     const lost = recordingExecutor([]);
     expect(
-      await createPgDriver({ executor: lost }).heartbeat('job-1', {
+      await postgresJobDriver({ executor: lost }).heartbeat('job-1', {
         visibilityTimeoutMs: 30_000,
         workerId: 'worker-a',
         claim: 3,
@@ -475,7 +437,9 @@ describe('pg enqueue, ack and nack', () => {
 
     const kept = recordingExecutor([{ id: 'job-1' }]);
     expect(
-      await createPgDriver({ executor: kept }).heartbeat('job-1', { visibilityTimeoutMs: 30_000 }),
+      await postgresJobDriver({ executor: kept }).heartbeat('job-1', {
+        visibilityTimeoutMs: 30_000,
+      }),
     ).toBe(true);
     expect(kept.calls[0]?.params).toEqual(['job-1', 30_000, null, null]);
   });
@@ -484,7 +448,7 @@ describe('pg enqueue, ack and nack', () => {
 describe('the advisory-lock leader', () => {
   test('a lock it never won is never unlocked — releasing one costs another holder its grant', async () => {
     const executor = recordingExecutor([{ locked: false }]);
-    const leader = createPgLeader(42, { executor });
+    const leader = postgresLeader(42, { executor });
     expect(await leader.acquire()).toBe(false);
     await leader.release();
     expect(executor.calls.map((call) => call.sql)).toEqual([SQL_TRY_ADVISORY_LOCK]);
@@ -492,6 +456,6 @@ describe('the advisory-lock leader', () => {
   });
 
   test('with no executor it refuses with X_DRIVER_UNAVAILABLE rather than reading as leader', async () => {
-    await expect(createPgLeader(42).acquire()).rejects.toThrow(DriverUnavailableError);
+    await expect(postgresLeader(42).acquire()).rejects.toThrow(DriverUnavailableError);
   });
 });

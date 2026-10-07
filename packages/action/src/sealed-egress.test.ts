@@ -13,10 +13,9 @@ import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action } from './action';
 import { toRoute } from './http';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 import { toJobHandle } from './job-handle';
-import { toMcpTool } from './mcp-tool';
 
 const CANARY = 'PLAINTEXT-CANARY-7f3a';
 const LOOKUP_CANARY = 'LOOKUP-CANARY-91be';
@@ -121,9 +120,11 @@ describe('unit · a sealed column leaves through no projection of an action', ()
     clean(JSON.stringify(await toJobHandle(loose).invoke({ name: 'Ada' }, ctx())));
   });
 
+  // `surface: 'mcp'` is the call `@ultimat3/mcp`'s one projection makes (`projectable.ts`).
   test('the MCP tool: what `tools/call` serialises', async () => {
-    clean(JSON.stringify(await toMcpTool(one).invoke({ name: 'Ada' }, { ctx: ctx() })));
-    clean(JSON.stringify(await toMcpTool(loose).invoke({ name: 'Ada' }, { ctx: ctx() })));
+    for (const target of [one, loose]) {
+      clean(JSON.stringify(await invoke(target, { name: 'Ada' }, { ctx: ctx(), surface: 'mcp' })));
+    }
   });
 
   test('an idempotent replay: the stored answer, and the answer served from it', async () => {
@@ -134,7 +135,7 @@ describe('unit · a sealed column leaves through no projection of an action', ()
       idempotent: true,
       handle: load,
     }).named('sealedReplay');
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx: ctx(), store, idempotencyKey: 'key-1' };
     const first = await invoke(replayable, { name: 'Ada' }, options);
     let replayed = false;

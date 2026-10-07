@@ -17,6 +17,7 @@ export type {
   BudgetReport,
   BudgetStore,
   BudgetTake,
+  MemoryBudgetStore,
   SpendEstimate,
 } from './budget';
 export {
@@ -24,7 +25,7 @@ export {
   budgetKeysFor,
   currentBudget,
   estimateSpend,
-  MemoryBudgetStore,
+  memoryBudgetStore,
   withBudget,
 } from './budget';
 export type {
@@ -124,6 +125,7 @@ export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
 export type { ModelSource } from './model-resolve';
+export { AiModelUnresolvedError } from './model-resolve';
 export type {
   ContentKind,
   DeclaredReasoning,
@@ -134,9 +136,7 @@ export type {
   ThinkingMode,
 } from './models';
 export {
-  ANTHROPIC_MODEL_IDS,
   assertModel,
-  DEFAULT_MODEL,
   EFFORTS,
   isModelRegistered,
   modelIds,
@@ -146,11 +146,10 @@ export {
   registerModel,
   resetModels,
 } from './models';
-export { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 export type { OpenAiProviderInput } from './openai-provider';
 export { openAiProvider } from './openai-provider';
-export type { PgVectorStoreInput } from './pg-vector';
-export { PgVectorStore } from './pg-vector';
+export type { PgVectorStore, PgVectorStoreInput } from './pg-vector';
+export { postgresVectorStore } from './pg-vector';
 export type {
   PgHybridArgs,
   PgSearchArgs,
@@ -165,10 +164,10 @@ export {
 } from './pg-vector-sql';
 export type { DefinePromptInput, Prompt, PromptVars } from './prompt';
 export {
-  contentHash,
   definePrompt,
   describePrompts,
   getPrompt,
+  promptHash,
   promptVersions,
   resetPrompts,
 } from './prompt';
@@ -238,6 +237,7 @@ export type {
 export { asProjectableAction, runLlmToolCall, toLlmTool, toLlmTools } from './tools';
 export type {
   HybridSearchInput,
+  MemoryVectorStore,
   MemoryVectorStoreInput,
   MetadataFilter,
   SearchHit,
@@ -245,7 +245,7 @@ export type {
   VectorRecord,
   VectorStore,
 } from './vector';
-export { fuse, MemoryVectorStore } from './vector';
+export { fuse, memoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
 export { NO_TENANT, tenantOf, UNSCOPED, VectorUnscopedError } from './vector-scope';
 export type { StreamState } from './wire';

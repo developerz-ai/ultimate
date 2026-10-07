@@ -1,5 +1,5 @@
-// The discovery behind the mount: `apps/<app>/mcp.ts` exports `mcp`, `app.config.ts` says whether
-// and where, and the boot gets either one route or one instruction. One fixture directory PER
+// The discovery behind the mount: `apps/<app>/mcp.ts` exports `mcp` and says where, `app.config.ts`
+// says whether, and the boot gets either one route or one instruction. One fixture directory PER
 // CASE, because `import()` caches by path and a rewritten `mcp.ts` would answer with its first body.
 import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
@@ -24,18 +24,20 @@ const configWith = (mcp: string): string =>
   `export const config = { name: 'demo', ai: { mcp: ${mcp} } };\n`;
 
 /** The shape `defineAppMcp` returns, with a route that answers by its own hand. */
-const MCP_WITH_ROUTE = `export const mcp = {
+const mcpWithRoute = (path: string): string => `export const mcp = {
   server: {},
   tools: [],
   route: {
     method: 'POST',
-    path: '/mcp',
+    path: '${path}',
     rateLimitClass: () => 'read',
     limits: { read: 1, write: 1, list: 1 },
     handle: async (request) => new Response('mcp:' + request.method),
   },
 };
 `;
+
+const MCP_WITH_ROUTE = mcpWithRoute('/mcp');
 
 const MCP_WITHOUT_ROUTE = 'export const mcp = { server: {}, tools: [], route: undefined };\n';
 
@@ -44,10 +46,10 @@ afterAll(async () => {
 });
 
 describe('appMcpMount', () => {
-  test('mounts POST <config.ai.mcp.path> onto the exported route, self-authenticated', async () => {
+  test("mounts POST <the route's own path> onto the exported route, self-authenticated", async () => {
     const root = await fixture('mounted', {
-      'app.config.ts': configWith("{ expose: true, path: '/agent' }"),
-      'apps/web/mcp.ts': MCP_WITH_ROUTE,
+      'app.config.ts': configWith('{ expose: true }'),
+      'apps/web/mcp.ts': mcpWithRoute('/agent'),
     });
     const mount = await appMcpMount(root);
     expect(mount.warning).toBeUndefined();
@@ -66,7 +68,7 @@ describe('appMcpMount', () => {
 
   test('hands the route the PUBLIC origin, and serves the oauth metadata when declared', async () => {
     const root = await fixture('oauth', {
-      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'app.config.ts': configWith('{ expose: true }'),
       'apps/web/mcp.ts': `export const mcp = {
   server: {},
   tools: [],
@@ -108,7 +110,7 @@ describe('appMcpMount', () => {
 
   test('expose true and no mcp.ts is one instruction, naming the file to write', async () => {
     const root = await fixture('missing', {
-      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'app.config.ts': configWith('{ expose: true }'),
     });
     const mount = await appMcpMount(root);
     expect(mount.routes).toEqual([]);
@@ -121,7 +123,7 @@ describe('appMcpMount', () => {
 
   test('an mcp.ts built without resolveToken has no route, and the instruction says so', async () => {
     const root = await fixture('no-route', {
-      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'app.config.ts': configWith('{ expose: true }'),
       'apps/web/mcp.ts': MCP_WITHOUT_ROUTE,
     });
     const mount = await appMcpMount(root);
@@ -133,7 +135,7 @@ describe('appMcpMount', () => {
 
   test('expose false mounts nothing and warns about nothing, whatever the file says', async () => {
     const root = await fixture('off', {
-      'app.config.ts': configWith("{ expose: false, path: '/mcp' }"),
+      'app.config.ts': configWith('{ expose: false }'),
       'apps/web/mcp.ts': MCP_WITH_ROUTE,
     });
     expect(await appMcpMount(root)).toEqual({
@@ -156,7 +158,7 @@ describe('appMcpMount', () => {
 
   test('an mcp.ts that exports no `mcp` is the missing case, and the instruction names that file', async () => {
     const root = await fixture('other-export', {
-      'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+      'app.config.ts': configWith('{ expose: true }'),
       'apps/web/mcp.ts': 'export const tools = [];\n',
     });
     const mount = await appMcpMount(root);
@@ -165,12 +167,23 @@ describe('appMcpMount', () => {
     expect(mount.warning?.cause).toContain('apps/web/mcp.ts');
   });
 
-  test('a config that declares no path mounts at /mcp, the default', async () => {
-    const root = await fixture('default-path', {
-      'app.config.ts': configWith('{ expose: true }'),
+  // 25.0.0: the path is `defineAppMcp`'s alone. A config still naming one is refused at the
+  // loader, never quietly obeyed over the endpoint's own — nor quietly ignored.
+  test('a config still writing ai.mcp.path is refused, naming defineAppMcp({ path })', async () => {
+    const root = await fixture('stale-path', {
+      'app.config.ts': configWith("{ expose: true, path: '/agent' }"),
       'apps/web/mcp.ts': MCP_WITH_ROUTE,
     });
-    expect((await appMcpMount(root)).path).toBe('/mcp');
+    try {
+      await appMcpMount(root);
+    } catch (thrown) {
+      const error = thrown as { code: string; cause: string; fix: string };
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain('ai.mcp.path was removed in 25.0.0');
+      expect(error.fix).toContain('defineAppMcp({ path');
+      return;
+    }
+    expect.unreachable('a config writing ai.mcp.path was mounted');
   });
 });
 
@@ -178,7 +191,7 @@ describe('mountAppMcp', () => {
   test('answers the same mount the pure half does, mounted or warned', async () => {
     const mounted = await mountAppMcp(
       await fixture('mount-mounted', {
-        'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+        'app.config.ts': configWith('{ expose: true }'),
         'apps/web/mcp.ts': MCP_WITH_ROUTE,
       }),
     );
@@ -187,7 +200,7 @@ describe('mountAppMcp', () => {
     expect(mounted.routes).toHaveLength(1);
     const warned = await mountAppMcp(
       await fixture('mount-warned', {
-        'app.config.ts': configWith("{ expose: true, path: '/mcp' }"),
+        'app.config.ts': configWith('{ expose: true }'),
       }),
     );
     expect(warned.routes).toEqual([]);

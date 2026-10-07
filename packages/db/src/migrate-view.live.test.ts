@@ -13,7 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import { LEDGER_TABLE, type Migration, migrate } from './migrate';
@@ -106,7 +106,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
   };
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await teardown();
     const create = generateMigration({ entities: [docs('integer')], name: 'init', now: at }).up;
     for (const statement of statementsOf(create)) await client.execute(raw(statement));

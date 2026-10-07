@@ -8,7 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { loadCatalog } from '@ultimat3/i18n';
+import { loadCatalog, resetLocaleConfig } from '@ultimat3/i18n';
 import { generate } from './cmd-generate';
 import { localiseCatalogs } from './generate-catalog-locales';
 import type { GeneratedFile } from './templates';
@@ -52,13 +52,20 @@ describe('unit · catalogs a generator writes for a non-default locale', () => {
   test('the declared default is the one left bare, whichever it is', async () => {
     await writeCatalog('en', {});
     await writeCatalog('es', {});
+    // The catalogs' own declaration (by absolute path: /tmp cannot resolve `@ultimat3/i18n`).
+    const i18n = JSON.stringify(Bun.resolveSync('@ultimat3/i18n', import.meta.dir));
     await Bun.write(
-      join(root, 'app.config.ts'),
-      "export const config = { name: 'shop', locales: ['es', 'en'], defaultLocale: 'es' };\n",
+      join(root, 'packages/i18n/src/index.ts'),
+      `import { defineCatalogs } from ${i18n};\n` +
+        "export const catalogs = defineCatalogs({ default: 'es', locales: { en: {}, es: {} } });\n",
     );
-    const files = await localiseCatalogs(root, resource(['en', 'es']));
-    expect(catalogIn(files, 'es')['app.coupon.empty']).toBe('No coupons yet.');
-    expect(catalogIn(files, 'en')['app.coupon.empty']).toBe('⟦No coupons yet.⟧');
+    try {
+      const files = await localiseCatalogs(root, resource(['en', 'es']));
+      expect(catalogIn(files, 'es')['app.coupon.empty']).toBe('No coupons yet.');
+      expect(catalogIn(files, 'en')['app.coupon.empty']).toBe('⟦No coupons yet.⟧');
+    } finally {
+      resetLocaleConfig();
+    }
   });
 
   test('a locale with no catalog yet is refused with the command that adds one', async () => {

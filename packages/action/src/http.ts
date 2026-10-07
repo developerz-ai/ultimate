@@ -162,6 +162,9 @@ function projectRoute(
     // stage deciding first would decide from `row: null` — a denial for the row's own
     // author, from an authz system that never saw the row.
     enforcedBy: 'handler',
+    // Which primitive this is, for `@ultimat3/http`'s bucket check: a `rateLimit.buckets.<name>`
+    // named after an action limits nothing since 25.0.0, and is refused rather than ignored.
+    primitive: 'action',
     // `input` stays ABSENT, deliberately, exactly as `@ultimat3/query`'s `toQueryRoute` leaves it.
     // Setting it hands the action's schema to the pipeline's `body` stage, which throws
     // `bodyInvalid` — so this route answered `422 X_BODY_INVALID` for every malformed body while
@@ -261,7 +264,7 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       invalidates: tagKeys(def.cache?.invalidates ?? []),
       // The tool name an agent would call, or `null` when there is no tool. `!== false` here
       // advertised one for every action, so an agent reading the spec asked for a tool the MCP
-      // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives. The NAME was
+      // catalog never listed — `isMcpExposed` is the same answer `@ultimat3/mcp` gives. The NAME was
       // the second half of the same defect: `toToolName` published `publish_post` while
       // `@ultimat3/mcp` served `publishPost`, so a spec-reading agent called a tool that does not
       // exist. Verbatim, and never derived — this is a published contract, not a label.

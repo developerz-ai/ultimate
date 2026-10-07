@@ -43,7 +43,7 @@ import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 const DRIVER_NAME = 'memory';
 
 /** `localDriver`'s options, minus the directory there is none of. */
-export type MemoryDriverOptions = Omit<LocalDriverOptions, 'root'>;
+export type MemoryStorageDriverOptions = Omit<LocalDriverOptions, 'root'>;
 
 export interface MemoryStorageDriver extends StorageDriver {
   /**
@@ -73,7 +73,7 @@ const snapshot = (object: StorageObject): StorageObject => ({
   ...(object.metadata === undefined ? {} : { metadata: { ...object.metadata } }),
 });
 
-export function memoryDriver(options: MemoryDriverOptions = {}): MemoryStorageDriver {
+export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): MemoryStorageDriver {
   const maxPutBytes = finiteCount(
     'the memory disk driver',
     'maxPutBytes',

@@ -7,10 +7,10 @@ import { createContext, UltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
-  createMemoryDriver,
   createWorker,
   getJob,
   type JobDriver,
+  memoryJobDriver,
   resetJobDriver,
   setJobDriver,
 } from '@ultimat3/jobs';
@@ -107,7 +107,7 @@ const insert = async (title: string, state = 'idle'): Promise<string> =>
   String((await db.items.insert({ title, state })).id);
 
 beforeAll(() => {
-  jobs = createMemoryDriver();
+  jobs = memoryJobDriver();
   setJobDriver(jobs);
 });
 

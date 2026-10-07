@@ -28,11 +28,11 @@ export type {
   DigestStore,
   MemoryDigestStore,
 } from './digest';
-export { createMemoryDigestStore } from './digest';
+export { memoryDigestStore } from './digest';
 export type { PgDigestStore, PgDigestStoreOptions } from './digest-pg';
 export {
-  createPgDigestStore,
   DEFAULT_DIGEST_RETENTION_MS,
+  postgresDigestStore,
   SQL_NOTIFY_DIGESTS_TABLE,
 } from './digest-pg';
 export type { NotifyErrorCode } from './errors';
@@ -49,12 +49,10 @@ export {
 // @ultimat3/jobs: a second way to execute a fan-out would bypass the job the factory built, and
 // with it the retry policy, the cancellation and the manifest row.
 export type { InboxQuery, InboxRow, InboxStore, InboxWrite, MemoryInboxStore } from './inbox';
-export { createMemoryInboxStore, DEFAULT_INBOX_PAGE } from './inbox';
+export { DEFAULT_INBOX_PAGE, memoryInboxStore } from './inbox';
 export type { InboxPurgeBefore, PgInboxStore, PgInboxStoreOptions } from './inbox-pg';
 export {
-  createPgInboxStore,
-  SQL_NOTIFY_INBOX_MARK_READ,
-  SQL_NOTIFY_INBOX_PAGE,
+  postgresInboxStore,
   SQL_NOTIFY_INBOX_TABLE,
 } from './inbox-pg';
 export type {
@@ -66,14 +64,13 @@ export type {
   MemoryLedgerOptions,
 } from './ledger';
 export {
-  createMemoryDeliveryLedger,
   DELIVERY_STATUSES,
   isDeliveryStatus,
+  memoryDeliveryLedger,
 } from './ledger';
 export type { PgDeliveryLedger, PgDeliveryLedgerOptions } from './ledger-pg';
 export {
-  createPgDeliveryLedger,
-  SQL_NOTIFY_CLAIM,
+  postgresDeliveryLedger,
   SQL_NOTIFY_DELIVERIES_TABLE,
 } from './ledger-pg';
 export type { NotifyEvent, Recipient } from './notification';
@@ -93,7 +90,7 @@ export type {
 } from './plan';
 export { toDurationMs } from './plan';
 export type { MemoryPreferenceStore, PreferenceQuery, PreferenceStore } from './preferences';
-export { allowAllPreferences, createMemoryPreferenceStore } from './preferences';
+export { allowAllPreferences, memoryPreferenceStore } from './preferences';
 export { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 export type { InstalledNotifyStores, NotifyStores } from './stores';
 export {

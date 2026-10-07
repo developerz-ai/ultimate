@@ -6,7 +6,7 @@
  */
 
 import type { Actor, PgExecutor } from '@ultimat3/core';
-import { normalizeAuditRecord, uuid } from '@ultimat3/core';
+import { uuid } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { auditableInput } from './audit-input';
 
@@ -126,9 +126,7 @@ export interface PostgresAuditSink extends AuditSink {
 export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAuditSink {
   const exec = options.executor;
   return {
-    async write(written: AuditRecord): Promise<void> {
-      // A 24.x record may carry `action` alone; `primitive` is a NOT NULL column.
-      const record = normalizeAuditRecord(written);
+    async write(record: AuditRecord): Promise<void> {
       const actor = record.ctx.actor;
       const at = record.at instanceof Date && !Number.isNaN(record.at.getTime()) ? record.at : null;
       const onBehalfOf = onBehalfOfOf(actor);
@@ -136,7 +134,8 @@ export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAu
       await exec.query(SQL_AUDIT_INSERT, [
         uuid(),
         at === null ? null : at.toISOString(),
-        // `name`, into the column the seam named before reads were audited; M9 renames neither.
+        // `name`, into the column the seam named before reads were audited: renaming it is a data
+        // migration for every installed table, and the value it holds is the same.
         record.name,
         record.mutator,
         record.surface,

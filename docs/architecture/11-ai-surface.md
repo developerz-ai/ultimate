@@ -95,7 +95,7 @@ Each outcome is declared in exactly one place:
 | 2 — scope | `scopes:` on `defineAppMcp` — scope name → the tool names that capability covers, never on the primitive |
 | 3 — policy | the primitive's own `policy`, unchanged |
 
-A projection invents no scope of its own: `toolFromAction` never sets one, because a scope is a capability of the connection's token, not something a projection can infer from the action. `defineAppMcp`'s `scopes:` map is refused at boot when it names a tool the server does not project (`X_MCP_SCOPE_UNKNOWN`) or claims one tool from two scopes (`X_MCP_SCOPE_CONFLICT`).
+A projection invents no scope of its own: `toolFrom` never sets one, because a scope is a capability of the connection's token, not something a projection can infer from the action. `defineAppMcp`'s `scopes:` map is refused at boot when it names a tool the server does not project (`X_MCP_SCOPE_UNKNOWN`) or claims one tool from two scopes (`X_MCP_SCOPE_CONFLICT`).
 
 **Hide, then answer ToolNotFound — never Forbidden.** A `Forbidden` on a hidden tool is an enumeration oracle: an agent (or an attacker driving one) walks a name list and reads the org's feature set, entity names, and internal operations off the difference between "not found" and "forbidden". The visibility decision is computed from the caller, never from the arguments, so it is stable per connection and cannot be probed by varying them.
 
@@ -218,7 +218,7 @@ accounting un-bypassable: a stray `fetch` is the only way around it, and there i
 
 | Step | Detail |
 |---|---|
-| resolve the model | `resolveModel('gateway', request.model, defaultModel)` ([`model-resolve.ts`](../../packages/ai/src/model-resolve.ts)) — the first one declared. Neither declared: the built-in `DEFAULT_MODEL` (`claude-opus-5`), **deprecated** `As of 2026-10` — counted on `ai_deprecated_fallbacks_total`, logged `ai.deprecation` once per site, removed in 25.0.0 ([`deprecations.ts`](../../packages/ai/src/deprecations.ts)). Declare the model, or configure the gateway's `defaultModel` |
+| resolve the model | `resolveModel('gateway', request.model, defaultModel)` ([`model-resolve.ts`](../../packages/ai/src/model-resolve.ts)) — the first one declared. Neither declared: `X_AI_MODEL_UNRESOLVED`, naming the declaration, the prompt and `createGateway({ defaultModel })` — the framework has no model of its own (25.0.0). An id the app never `registerModel`-ed is `X_AI_MODEL_UNKNOWN` at the estimate, before the reservation |
 | read the cache | `cacheKeyFor(resolved)` — core's `fingerprint` over model, system, messages, `maxTokens`, `effort`, `thinking`, each tool **whole** (name, description, `input_schema`), stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another, and one over tool names alone served an answer shaped for an old `output` schema — every `llm()` tool is `respond` |
 | a hit costs nothing, so it is **not debited** | |
 | `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached — on the ambient ledger, or `callLedger({})` when no scope is open (a raw call has no caller to key) |
@@ -277,7 +277,7 @@ Four mechanisms, each closing a hole the previous one left:
 | Mechanism | The hole it closes |
 |---|---|
 | **`reserve()` debits, then checks** | check-then-record let three concurrent calls under one ledger all read `spent() === 0`, all pass, and all three record against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed by `Promise.all`. The in-memory `request` counters of the whole chain are checked and debited with no `await` between them, which one event loop makes atomic; a refusal at a later scope gives back what the earlier ones took. `record()` reconciles the estimate against the provider's real counts; `release()` gives it back when the call never happened |
-| **`BudgetStore.take(key, tokens, limit)` is the store's atomic step, and it is required** | the `actor` / `org` counters live in the store, and every request roots its own ledger, so nothing in-process orders two requests of one org: a `spent()` then an `add()` let all of them pass (measured: eight concurrent scoped calls against a ceiling one fitted all reached the provider). `take` adds only if the total stays within the limit, in one step on the store's side — synchronous for `MemoryBudgetStore`, a Redis `EVAL` or a SQL `update … where spent + $n <= $limit` for a shared one. There is no default built on `spent` + `add`, because that pair is the race |
+| **`BudgetStore.take(key, tokens, limit)` is the store's atomic step, and it is required** | the `actor` / `org` counters live in the store, and every request roots its own ledger, so nothing in-process orders two requests of one org: a `spent()` then an `add()` let all of them pass (measured: eight concurrent scoped calls against a ceiling one fitted all reached the provider). `take` adds only if the total stays within the limit, in one step on the store's side — synchronous for `memoryBudgetStore()`, a Redis `EVAL` or a SQL `update … where spent + $n <= $limit` for a shared one. There is no default built on `spent` + `add`, because that pair is the race |
 | **the keys are the CALLER's** | `llm()`, `agent()` and `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))` — the gateway's own `budget`, keyed `actor:<kind>:<id>` and `org:<orgId>`. A ledger with no key skips that scope, so before this the gateway's `actor` / `org` ceilings bound only a hand-written `gateway.scope()`. A `hive()` roots the same way (through `installedGateway()`, so a hive of plain actions needs no gateway), and its members derive from it: they run under the gateway budget, the caller's keys and the hive's own `tokensPerRun` |
 | **`derive()` tightens and never widens** | a per-call budget declared on an `llm()` or `agent()` must not be able to widen the actor or org ceiling it runs inside. Each limit becomes the tighter of parent and child; `costPerCall` compares in one currency, and a mismatch is a config bug that throws |
 
@@ -289,7 +289,7 @@ Two more details that are not obvious from the shapes:
   the call was made on. A child shares its parent's store and identity keys, so debiting through the
   parent as well would bill the actor and the org twice for one call.
 
-The default `MemoryBudgetStore` is per process and resets on every deploy, which is why
+The default `memoryBudgetStore()` is per process and resets on every deploy, which is why
 `org: 20_000_000` at six replicas is six ledgers of twenty million — a shared store, with an atomic
 `take`, is what makes `actor` and `org` fleet-wide. The store is written only for a scope whose ceiling is
 declared — every call carries its caller's keys, so writing per key would grow the default store by

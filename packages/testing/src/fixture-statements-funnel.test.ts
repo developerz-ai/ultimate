@@ -1,13 +1,13 @@
 // The half a synthetic event cannot prove: that the throw actually reaches the caller. Statements
 // go through `@ultimat3/db`'s real pooled funnel here — a fake `Bun.SQL` under a real
-// `createPostgresClient` — so the loop's fifth `await client.query(...)` is what rejects, which is
+// `postgresClient` — so the loop's fifth `await client.query(...)` is what rejects, which is
 // the whole promise of strict mode. The other half is the fix line: with a schema in the registry,
 // the failure names the `preload()` that ends the loop rather than the generic `in` form.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import {
-  createPostgresClient,
   expectedQueryLoop,
+  postgresClient,
   setStatementObserver,
   sql,
   withStatementAttribution,
@@ -54,7 +54,7 @@ const rejection = async (
 
 /** One point lookup, sent `N` times — the loop every one of these tests is about. */
 async function loop(times: number, statements: TestStatements): Promise<void> {
-  const client = createPostgresClient({ url: TEST_URL });
+  const client = postgresClient({ url: TEST_URL });
   for (let sent = 0; sent < times; sent += 1) {
     await client.query(sql`select "id" from "n1s_members" where "id" = ${sent}`);
   }
@@ -65,7 +65,7 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
   test('the first statements resolve and the one past the threshold rejects', async () => {
     const pool = installFakeSql();
     using statements = await createTestStatements();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
     const one = (): Promise<unknown> =>
       client.query(sql`select "id" from "n1s_members" where "id" = ${1}`);
 

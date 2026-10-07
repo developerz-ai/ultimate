@@ -5,7 +5,7 @@
 
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthTokens } from './oauth-exchange';
 import type { OAuthProfile } from './oauth-profile';
 
@@ -15,7 +15,7 @@ export const credentials = { clientId: 'client-id', clientSecret: 'client-secret
 
 /** One adapter and the `Auth` over it, minted per `beforeEach` — never shared between tests. */
 export const freshAuth = (): { adapter: MemoryAdapter; auth: Auth } => {
-  const adapter = new MemoryAdapter();
+  const adapter = memoryAuthAdapter();
   return {
     adapter,
     auth: defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github', 'google'] }),

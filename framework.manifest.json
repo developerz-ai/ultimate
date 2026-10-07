@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2fcb8e44443a1d618ec5de96121aa67efb4f9038eb85eb34a1c297b9df45f68c",
+  "buildId": "122bf20a6055e2c6e28711ea544e76085fe3266c46b205f4aa7cafe82e5dc319",
   "tiers": {
     "0": [
       "core",
@@ -431,6 +431,11 @@
     },
     {
       "code": "X_AI_MODEL_UNKNOWN",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AI_MODEL_UNRESOLVED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
@@ -903,6 +908,21 @@
       "code": "X_COOKIE_INVALID",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_CORE_THROWER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers-callers.ts"
+    },
+    {
+      "code": "X_CORE_THROWER_UNCALLED",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers-callers.ts"
+    },
+    {
+      "code": "X_CORE_THROWERS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/declaration-readers-callers.ts"
     },
     {
       "code": "X_CORPUS_UNSCANNED",
@@ -1563,6 +1583,11 @@
       "code": "X_EXPORT_ROW_INVALID",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_FACTORY_NAME_SPELLING",
+      "owner": "scripts",
+      "at": "scripts/factory-names.ts"
     },
     {
       "code": "X_FEATURE_UNKNOWN",
@@ -3828,6 +3853,16 @@
       "code": "X_SPAWN_UNTIMED",
       "owner": "scripts",
       "at": "scripts/spawn-timeout.ts"
+    },
+    {
+      "code": "X_SQL_EXPORT_UNREAD",
+      "owner": "scripts",
+      "at": "scripts/sql-export-readers.ts"
+    },
+    {
+      "code": "X_SQL_EXPORT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/sql-export-readers.ts"
     },
     {
       "code": "X_SQL_LITERAL_COPY",

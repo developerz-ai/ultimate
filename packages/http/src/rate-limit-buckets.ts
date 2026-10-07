@@ -5,7 +5,11 @@
 
 import type { HttpConfig } from './config';
 import type { Bucket, RateLimiter } from './rate-limit';
-import { rateLimitBucketConflict, rateLimitBucketUnbound } from './rate-limit-errors';
+import {
+  rateLimitBucketConflict,
+  rateLimitBucketForPrimitive,
+  rateLimitBucketUnbound,
+} from './rate-limit-errors';
 import type { Route } from './router';
 
 const same = (a: Bucket, b: Bucket): boolean =>
@@ -23,7 +27,27 @@ const same = (a: Bucket, b: Bucket): boolean =>
  * Idempotent, so both construction paths (`createServer`, and `createPipeline` under it) can apply
  * it: a second pass compares each bucket against the copy the first pass registered.
  */
+/**
+ * A configured bucket keyed by a mounted primitive's NAME, which since 25.0.0 limits nothing.
+ * `default`, the tenant bucket and any name a route really selects are live, so they pass.
+ */
+const assertNoPrimitiveBuckets = (config: HttpConfig, routes: readonly Route[]): void => {
+  const selected = new Set<string>(['default']);
+  if (config.rateLimit.tenantBucket !== null) selected.add(config.rateLimit.tenantBucket);
+  for (const route of routes) {
+    if (route.meta.rateLimit !== undefined) selected.add(route.meta.rateLimit);
+  }
+  for (const route of routes) {
+    const primitive = route.meta.primitive;
+    const name = route.meta.name;
+    if (primitive === undefined || selected.has(name)) continue;
+    if (!Object.hasOwn(config.rateLimit.buckets, name)) continue;
+    throw rateLimitBucketForPrimitive({ bucket: name, primitive });
+  }
+};
+
 export const withRouteBuckets = (config: HttpConfig, routes: readonly Route[]): HttpConfig => {
+  assertNoPrimitiveBuckets(config, routes);
   const declared = new Map<string, { readonly bucket: Bucket; readonly route: string }>();
   for (const route of routes) {
     const bucket = route.meta.rateLimitBucket;

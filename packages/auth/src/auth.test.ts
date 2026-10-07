@@ -9,7 +9,7 @@ import { frozenClock } from '@ultimat3/core';
 import type { AuthAdapter } from './adapter';
 import { type Auth, authenticate, defineAuth, login, logout, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { hashPassword } from './password';
 
 /** Same adapter, except `findUserById` answers "gone" — simulates a user row disappearing
@@ -31,7 +31,7 @@ const NORMALISED_EMAIL = 'ada@example.test';
 // `adapter: AuthAdapter`, annotated rather than inferred from the default: without it the
 // parameter reads as the concrete `MemoryAdapter`, and no helper that takes an adapter — the
 // `withUserGone` proxy above, any app's real adapter — can be handed to it.
-const newAuth = (adapter: AuthAdapter = new MemoryAdapter(), startMs = 1_700_000_000_000): Auth =>
+const newAuth = (adapter: AuthAdapter = memoryAuthAdapter(), startMs = 1_700_000_000_000): Auth =>
   defineAuth({
     adapter,
     clock: frozenClock(startMs),
@@ -105,7 +105,7 @@ describe('login', () => {
    */
   test('a user with no second factor still signs in, so enrolment stays reachable', async () => {
     const auth = defineAuth({
-      adapter: new MemoryAdapter(),
+      adapter: memoryAuthAdapter(),
       clock: frozenClock(1_700_000_000_000),
       password: { minLength: 12, params: FAST_PARAMS },
       mfa: { issuer: 'Postly' },
@@ -121,7 +121,7 @@ describe('login', () => {
   });
 
   test('a hash written under weaker parameters is upgraded in place on a successful login', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     const auth = newAuth(adapter);
     const legacyHash = await hashPassword(PASSWORD, { ...FAST_PARAMS, memoryCost: 1024 });
     const user = await adapter.createUser({
@@ -181,7 +181,7 @@ describe('authenticate', () => {
   });
 
   test('a session for a since-deleted user is deleted and rejected', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     const auth = newAuth(adapter);
     await register(auth, { email: EMAIL, password: PASSWORD });
     const logged = await login(auth, { email: EMAIL, password: PASSWORD });

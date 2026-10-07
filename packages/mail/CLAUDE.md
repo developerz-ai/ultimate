@@ -14,9 +14,9 @@
 | `driver.ts` | `MailDriver` + memory/log/unconfigured + `resultFor` + the `setMailDriver` seam |
 | `driver-env.ts` | `selectMailDriver`: which transport an environment installs, and nothing else |
 | `header-safety.ts` | `assertHeaderSafe`: the CR/LF gate on a `MailMessage`, so every driver refuses the same one |
-| `driver-smtp.ts` | `createSmtpDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
-| `driver-resend.ts` | `createResendDriver`: one `POST /emails`, status → retryable |
-| `driver-ses.ts` | `createSesDriver`: one SES v2 `SendEmail`, raw MIME, signed by core's `signAwsRequest` |
+| `driver-smtp.ts` | `smtpMailDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
+| `driver-resend.ts` | `resendMailDriver`: one `POST /emails`, status → retryable |
+| `driver-ses.ts` | `sesMailDriver`: one SES v2 `SendEmail`, raw MIME, signed by core's `signAwsRequest` |
 | `ses-failure.ts` | SES error TYPE → retry verdict + `fix:`; the status is the fallback |
 | `retain-mime.ts` | `retainMime`: the exact MIME a transport handed its provider, capped, + the `onRetained` sink |
 | `delivery-event.ts` | `DeliveryEvent` / `DeliveryOutcome`, the capped body read, the ISO instant |
@@ -72,7 +72,7 @@
   one `prefers-color-scheme` block keyed on short `data-x` role codes.
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
 - **`timeoutMs` is refused at CONSTRUCTION, where `poolSize` already is, and its floor is 1**
-  (`As of 2026-08-26`). `finiteCount('createSmtpDriver'|'createResendDriver', 'timeoutMs', …, 1)`.
+  (`As of 2026-08-26`). `finiteCount('smtpMailDriver'|'resendMailDriver', 'timeoutMs', …, 1)`.
   Zero is not "no deadline" in either driver: the value goes straight to `AbortSignal.timeout` and
   to `setTimeout(fn, timeoutMs)`, both of which fire on the next tick, so `0` and `NaN` are the same
   failure — `setTimeout(fn, NaN)` IS `setTimeout(fn, 0)`. Resend's was the worse half: the signal is
@@ -81,10 +81,10 @@
   endpoint, and the queue retried a config error to the dead-letter table. `bun run finite-bounds`
   is the ratchet; the repair is recognised by the shape of the call.
 
-- **Every "now" in this package comes from a `Clock`, `createMemoryDriver` included** (`As of
+- **Every "now" in this package comes from a `Clock`, `memoryMailDriver` included** (`As of
   2026-08-22`). It stamped `at: new Date()`, and `SentMail.at` is what `outbox()`, `lastTo()` and
   the `/_x` panel ORDER on — so the one fact a test most needs to state was the one it could only
-  observe, and two sends inside one millisecond tied. `createMemoryDriver({ clock })`, the same
+  observe, and two sends inside one millisecond tied. `memoryMailDriver({ clock })`, the same
   options shape `@ultimat3/jobs`' identically-named driver takes; omitted, it is `systemClock`.
 - New block kind: `MailBlock` + `blocks` + `htmlOf` + `textOf`, same commit.
 - A transport failure is `sendFailed({ stage, status, retryable, fix })` — never a bare throw, and
@@ -109,7 +109,7 @@
 - **No credential is answered by the ENVIRONMENT, and outside development it REFUSES** (`As of
   2026-08`). It answered the memory driver everywhere, including production — so a deploy that
   configured no transport reported `accepted` for mail that never left the process, with no error
-  anywhere. `createUnconfiguredDriver` rejects every send with `X_MAIL_CREDENTIAL_MISSING` instead.
+  anywhere. `unconfiguredMailDriver` rejects every send with `X_MAIL_CREDENTIAL_MISSING` instead.
   Three parts of that are decisions, not details. It is a **driver and not a boot refusal**, so an
   app that sends no mail still deploys and one that does fails on the path that needed the
   capability. `staging` refuses too, because staging exists to fail the way production fails —

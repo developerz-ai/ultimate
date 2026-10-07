@@ -9,7 +9,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no path joiner, and the migrations are found relative to this file.
 import { join } from 'node:path';
-import { createPostgresClient, type DbClient } from './client';
+import { type DbClient, postgresClient } from './client';
 import { introspectCatalog } from './introspect-catalog';
 import { type Migration, migrate } from './migrate';
 import { createPgliteClient } from './pglite';
@@ -97,7 +97,7 @@ describe('load(dump) equals replay(migrations) · the reference app', () => {
 
   describe.skipIf(!hasPostgres)('on Postgres', () => {
     const database = `x_schema_load_${process.pid}`;
-    const admin = createPostgresClient({ url: url ?? '' });
+    const admin = postgresClient({ url: url ?? '' });
 
     afterAll(async () => {
       await admin.execute(raw(`drop database if exists ${database} with (force)`));
@@ -111,7 +111,7 @@ describe('load(dump) equals replay(migrations) · the reference app', () => {
         await admin.execute(raw(`create database ${database} template template0`));
         const target = new URL(url ?? '');
         target.pathname = `/${database}`;
-        const client = createPostgresClient({ url: target.toString() });
+        const client = postgresClient({ url: target.toString() });
         try {
           const { replayed, loaded } = await replayThenLoad(client);
           expect(appTables(replayed)).toEqual(await committedTables());

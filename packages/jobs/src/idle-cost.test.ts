@@ -8,17 +8,17 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext, frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { signalStaged } from './enqueue-signal';
 import { createIdleBackoff, IDLE_POLL_CEILING_MS } from './idle-backoff';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
-import { createMemoryOutboxStore } from './outbox';
+import { memoryOutboxStore } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 import { createScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { SchedulerState } from './scheduler-state';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
 import { createWorker } from './worker';
 
@@ -75,11 +75,11 @@ describe('an idle scheduler', () => {
     const count = (): void => {
       statements += 1;
     };
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const operator = driver.introspect;
     if (operator === undefined) return expect.unreachable('the memory driver ships an operator');
     const counting: JobDriver = { ...driver, introspect: counted(operator, count) };
-    const state: SchedulerState = counted(createMemorySchedulerState(), count);
+    const state: SchedulerState = counted(memorySchedulerState(), count);
     const scheduler = createScheduler({
       driver: counting,
       clock,
@@ -104,8 +104,8 @@ describe('an idle scheduler', () => {
   test('a restarted scheduler reads each watermark once, then resolves no cron and asks no store', async () => {
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
     const tasks = nightlyTasks();
-    const shared = createMemorySchedulerState();
-    const driver = createMemoryDriver({ clock });
+    const shared = memorySchedulerState();
+    const driver = memoryJobDriver({ clock });
     // The pod this one replaces armed every task.
     await createScheduler({
       driver,
@@ -151,7 +151,7 @@ describe('an idle scheduler', () => {
 
   test('an occurrence another node already fired is read again, never retried every round', async () => {
     const clock = frozenClock('2026-10-01T02:59:59.000Z');
-    const base = createMemorySchedulerState();
+    const base = memorySchedulerState();
     let fires = 0;
     let reads = 0;
     const state: SchedulerState = {
@@ -168,7 +168,7 @@ describe('an idle scheduler', () => {
       },
     };
     const scheduler = createScheduler({
-      driver: createMemoryDriver({ clock }),
+      driver: memoryJobDriver({ clock }),
       clock,
       state,
       leader: lease(() => undefined),
@@ -191,7 +191,7 @@ describe('an idle scheduler', () => {
 
   test('still fires on time: a watermark held in memory is not a missed occurrence', async () => {
     const clock = frozenClock('2026-10-01T02:59:30.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({
       driver,
       clock,
@@ -215,7 +215,7 @@ describe('an idle scheduler', () => {
 
   test('a task registered after the scheduler started is armed and fires at its own time', async () => {
     const clock = frozenClock('2026-10-01T02:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({ driver, clock, leader: lease(() => undefined) });
     await scheduler.tick();
     clock.advance(30 * 60_000);
@@ -248,7 +248,7 @@ describe('an idle scheduler', () => {
       renewEveryMs: 0,
     };
     const scheduler = createScheduler({
-      driver: createMemoryDriver({ clock }),
+      driver: memoryJobDriver({ clock }),
       clock,
       leader,
       tasks: nightlyTasks().slice(0, 3),
@@ -266,7 +266,7 @@ describe('an idle scheduler', () => {
 describe('an idle worker', () => {
   test('converges to one claim every two seconds, however many queues it serves', async () => {
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     let claims = 0;
     const counting: JobDriver = {
       ...driver,
@@ -302,7 +302,7 @@ describe('an idle worker', () => {
 
   test('work found resets the wait, and the pass after it claims per queue again', async () => {
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const asked: number[] = [];
     const counting: JobDriver = {
       ...driver,
@@ -342,7 +342,7 @@ describe('an idle worker', () => {
   });
 
   test('a job enqueued in this process starts at once, not at the end of the backed-off wait', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     let ran = (): void => undefined;
     const started = new Promise<void>((resolve) => {
@@ -379,9 +379,9 @@ describe('an idle worker', () => {
 
 describe('an idle outbox relay', () => {
   const relayOver = (onClaim: () => void) => {
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     return createOutboxRelay({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       store: {
         ...store,
         claim: (limit) => {

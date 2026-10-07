@@ -4,6 +4,7 @@
 // it. Both driver factories return through this, which is why the typed handle and a hand-held
 // `postgresRepo()` cannot disagree. An entity with no sealed column gets its repository back as is.
 
+import { pageOf } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
 import { namedColumns } from './plan';
 import type { FindManyArgs, Repo, UpsertArgs } from './repo';
@@ -177,7 +178,7 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
     async findMany(args) {
       const keys = sealKeysOnce();
       const page = await repo.findMany(await readArgs(entity, fields, args, keys));
-      return { rows: await openRows(fields, page.rows, keys), nextCursor: page.nextCursor };
+      return pageOf(await openRows(fields, page.rows, keys), page.nextCursor);
     },
     async insert(values, options) {
       const keys = sealKeysOnce();

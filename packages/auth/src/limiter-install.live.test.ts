@@ -21,7 +21,7 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { defineAuth, login, register } from './auth';
 import { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import type { AuthRateLimitPolicy } from './rate-limit';
 import { postgresAuthLimiter, SQL_AUTH_LIMIT_TABLES } from './rate-limit-postgres';
 
@@ -62,7 +62,7 @@ const executorOn = (client: Bun.SQL): PgExecutor => ({
 /** One replica: its own adapter, its own `defineAuth`, and NOTHING said about a limiter. */
 async function pod(): Promise<Auth> {
   const auth = defineAuth({
-    adapter: new MemoryAdapter(),
+    adapter: memoryAuthAdapter(),
     clock,
     rateLimit,
     password: { params },
@@ -155,7 +155,7 @@ describeLive('live · postgres · the installed auth limiter', () => {
 
   test('a pod that DOES declare scope: shared now boots, which it could not before', async () => {
     const auth = defineAuth({
-      adapter: new MemoryAdapter(),
+      adapter: memoryAuthAdapter(),
       clock,
       rateLimit: { ...rateLimit, scope: 'shared' },
       password: { params },

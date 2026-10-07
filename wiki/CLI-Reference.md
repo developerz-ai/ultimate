@@ -271,7 +271,7 @@ of the default set — `x dev` with no `--role` still runs `web,sync,worker,sche
 replicator takes a slot on a shared database. With `DATABASE_URL` unset the embedded PGlite still
 serves no logical replication, so the role is refused, but `X_CLI_BAD_FLAG` now names the fix: set
 `DATABASE_URL` to a Postgres with `wal_level=logical`. With `DATABASE_URL` set, the role starts for
-real: advisory lock → `PgLogicalReplicationFeed` → `createReplicator` → publish to the transport.
+real: advisory lock → `postgresChangeFeed()` → `createReplicator` → publish to the transport.
 Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x g
@@ -1093,7 +1093,7 @@ x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|r
 | `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
-| `drain --to redis\|nats` | **planned**, `As of 2026-10`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. Both `--to` values are `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` on every method, so a drain leased the whole pending batch off the production queue for five minutes, failed every enqueue and nacked it back — nothing moved, and no worker could claim those jobs meanwhile. The subcommand, `--to` and `--dry-run` still parse, so every spelling reaches the planned answer. It returns when a durable second driver ships; `--to memory` stays refused by name then (`X_CLI_BAD_FLAG`) — it built a `Map` inside the command's own process and acked the durable rows into it |
+| `drain --to <driver>` | **planned**, `As of 2026-10`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. No `--to` value ships: its two, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` on every method, deleted in 25.0.0, so a drain leased the whole pending batch off the production queue for five minutes, failed every enqueue and nacked it back — nothing moved, and no worker could claim those jobs meanwhile. The subcommand, `--to` and `--dry-run` still parse, so every spelling reaches the planned answer. It returns when a durable second driver ships; `--to memory` stays refused by name then (`X_CLI_BAD_FLAG`) — it built a `Map` inside the command's own process and acked the durable rows into it |
 
 `show`, `retry`, `cancel`, `rm` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `ls` only.
 

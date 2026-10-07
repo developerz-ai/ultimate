@@ -2,7 +2,7 @@
 // nobody else reads. Split out of `seed.ts` because that file is a 400-row fixture graph, and a
 // decorator over the storage seam has no business sharing a file with data.
 
-import type { Driver, EntityCore, Page, Repo, Seed } from '@ultimat3/entity';
+import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { memoryDriver } from '@ultimat3/entity';
 
 /** Property access on a parsed row without `any`: `$parse` fills every declared column. */
@@ -28,7 +28,12 @@ const idsIn = async <Row>(entity: EntityCore<Row>, repo: Repo<Row>): Promise<rea
   const ids: string[] = [];
   let cursor: string | null = null;
   do {
-    const page: Page<Row> = await repo.findMany({ cursor, includeDeleted: true, limit: READ_PAGE });
+    // Annotated because `cursor` feeds back into the call; the page type is the repo's own.
+    const page: Awaited<ReturnType<Repo<Row>['findMany']>> = await repo.findMany({
+      cursor,
+      includeDeleted: true,
+      limit: READ_PAGE,
+    });
     for (const row of page.rows) {
       const id = idOf(entity, row);
       if (id !== undefined) ids.push(id);

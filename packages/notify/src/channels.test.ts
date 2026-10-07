@@ -8,7 +8,7 @@ import { t } from '@ultimat3/schema';
 import { inAppChannel } from './channel-in-app';
 import type { NotifyMail } from './channel-mail';
 import { mailChannel } from './channel-mail';
-import { createMemoryInboxStore } from './inbox';
+import { memoryInboxStore } from './inbox';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver } from './notify-fixture';
@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe('unit · shipped channels', () => {
   test('the in-app channel writes one inbox row per recipient, and a replay writes none', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     setNotifyStores({ inbox });
     const handle = notifier<TestParams>({
       name: 'post.liked',

@@ -1,16 +1,16 @@
-// One declaration, six readers, one answer: the pin that makes "one predicate" checkable.
+// One declaration, every reader, one answer: the pin that makes "one predicate" checkable.
 // `mcp: { expose }` is read across `action`, `query`, `mcp` and `ai` — three tiers that cannot
 // import each other, so no one of them can prove the others agree. `@ultimat3/cli` is tier 5 and
 // may import all of them, which is why the pin lives here. It is now the LAST cross-package pin in
 // this package: the tier-0 four went with the declared `core -> schema` edge (2026-08-27).
 
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { action, describeAction, toMcpTools, toOpenApiOperation } from '@ultimat3/action';
+import { action, describeAction, toOpenApiOperation } from '@ultimat3/action';
 import { toLlmTools } from '@ultimat3/ai';
 import { isMcpExposed } from '@ultimat3/core';
-import { asProjectable, isExposed as isMcpToolExposed, toolsFrom } from '@ultimat3/mcp';
+import { asProjectable, toolsFrom } from '@ultimat3/mcp';
 import { can, clearPermissions } from '@ultimat3/policy';
-import { from, query, toQueryTools } from '@ultimat3/query';
+import { from, query } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 
 // Every `can()` here names a permission no `definePermissions()` declares, which is legal only
@@ -55,14 +55,14 @@ describe('one predicate decides mcp exposure', () => {
       const target = actionDeclaring(mcp);
       expect(isMcpExposed(mcp)).toBe(exposed);
 
-      // @ultimat3/action — the tool, the manifest fact, the OpenAPI operation.
-      expect(toMcpTools([target]).length > 0).toBe(exposed);
+      // @ultimat3/action — the manifest fact, the OpenAPI operation. (No tool: 25.0.0 left the MCP
+      // projection to `@ultimat3/mcp` alone.)
       expect(describeAction(target).mcp.expose).toBe(exposed);
       expect(toOpenApiOperation(target)['x-ultimate']['mcpTool'] !== null).toBe(exposed);
 
       // @ultimat3/mcp — the projection an app's own MCP surface serves.
       const primitive = asProjectable(target);
-      expect(isMcpToolExposed(primitive)).toBe(exposed);
+      expect(isMcpExposed(primitive.mcp)).toBe(exposed);
       expect(toolsFrom([primitive]).length > 0).toBe(exposed);
 
       // @ultimat3/ai — the same catalog in the Anthropic tool wire format.
@@ -75,17 +75,16 @@ describe('one predicate decides mcp exposure', () => {
 
     test(`a query declaring ${label} is exposed=${exposed} on every surface`, () => {
       const target = queryDeclaring(mcp);
-      expect(toQueryTools([target]).length > 0).toBe(exposed);
       const primitive = asProjectable(target);
-      expect(isMcpToolExposed(primitive)).toBe(exposed);
+      expect(isMcpExposed(primitive.mcp)).toBe(exposed);
       expect(toolsFrom([primitive]).length > 0).toBe(exposed);
     });
   }
 
   test('an action and a query saying the same thing get the same answer', () => {
     for (const { mcp, exposed } of DECLARATIONS) {
-      expect(toMcpTools([actionDeclaring(mcp)]).length > 0).toBe(exposed);
-      expect(toQueryTools([queryDeclaring(mcp)]).length > 0).toBe(exposed);
+      expect(toolsFrom([asProjectable(actionDeclaring(mcp))]).length > 0).toBe(exposed);
+      expect(toolsFrom([asProjectable(queryDeclaring(mcp))]).length > 0).toBe(exposed);
     }
   });
 });

@@ -68,7 +68,7 @@ Tier 1. Tagged caching + THE invalidation graph.
   deletions. `isolateTierFailures`/`resetTierFailures` stay off `index.ts`.
 - Clocks are injected (`LruOptions.clock`, `CacheStackOptions.clock`); read them through `nowMs()`.
 - **`ttlMs` is positive and finite, and `assertTtl` (`tiers.ts`) is the one place that says so** —
-  every tier calls it before writing, the request memo and `createMemorySemanticCache.remember`
+  every tier calls it before writing, the request memo and `memorySemanticCache.remember`
   included (scope `'semantic'`, `jitterFraction: 0`). `X_CACHE_TTL_INVALID`, never a resolution.
 - **`assertTtl` also SPREADS the lease it validated.** `rng` is injected (`LruOptions.rng`,
   `RedisTierOptions.rng`) — never `Math.random()` at a call site; `rng: () => 0` is the full lease.

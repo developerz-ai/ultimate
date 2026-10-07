@@ -16,12 +16,20 @@ import { allow } from '@ultimat3/policy';
 import type { AiFetch } from './fetch-seam';
 import { createGateway } from './gateway';
 import { llm } from './llm';
-import { DEFAULT_MODEL, modelSpec, registerModel, resetModels } from './models';
-import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
+import {
+  FIXTURE_MODEL,
+  FIXTURE_OPENAI_IDS,
+  registerFixtureModels,
+  useFixtureModels,
+} from './model-fixture';
+import { modelSpec, registerModel, resetModels } from './models';
 import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import { costOf, type GenerateRequest, STREAM_ONLY_MAX_TOKENS, type StreamChunk } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const KEY = 'sk-live-do-not-log-me';
 const MODEL = 'gpt-5.6-sol';
@@ -77,7 +85,7 @@ function provider(reply: (call: Call, index: number) => Response, calls: Call[] 
     calls,
     provider: openAiProvider({
       apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...OPENAI_MODEL_IDS],
+      models: [...FIXTURE_OPENAI_IDS],
       fetch: fakeFetch(calls, reply),
     }),
   };
@@ -93,7 +101,7 @@ beforeEach(() => {
   // `resetModels()` first, so a model one test registers is not still in the catalogue for the
   // next one; then this provider's specs, which that reset clears along with everything else.
   resetModels();
-  registerOpenAiModels();
+  registerFixtureModels();
   resetAiRuntime();
 });
 
@@ -320,11 +328,9 @@ describe('streaming', () => {
     expect(result.text).toBe('ok');
   });
 
-  // The transport decision has to be taken against THIS provider's model. `modelOf` says so and
-  // says why — "never the framework's `DEFAULT_MODEL`, which names a Claude id no OpenAI-format
-  // endpoint serves" — but the `requiresStreaming` call above it passed the raw request, so a
-  // request that names no model was sized against `claude-opus-5`'s ceiling.
-  test('a request naming no model is sized against this endpoint, not against a Claude id', async () => {
+  // The transport decision has to be taken against the REQUEST's model: `requiresStreaming` once
+  // received the raw request, and a request was sized against `claude-opus-5`'s ceiling.
+  test("a request is sized against its own model's ceiling, not against a Claude id", async () => {
     // A company gateway's own model, with a ceiling below the streaming threshold — which is the
     // only shape that can tell the two answers apart, since every built-in tops out at 128k.
     const SMALL = 'internal-small-8k';
@@ -339,7 +345,7 @@ describe('streaming', () => {
       reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
     });
     expect(modelSpec(SMALL).maxOutput).toBeLessThan(STREAM_ONLY_MAX_TOKENS);
-    expect(modelSpec(DEFAULT_MODEL).maxOutput).toBeGreaterThan(STREAM_ONLY_MAX_TOKENS);
+    expect(modelSpec(FIXTURE_MODEL).maxOutput).toBeGreaterThan(STREAM_ONLY_MAX_TOKENS);
 
     const calls: Call[] = [];
     const openai = openAiProvider({
@@ -348,9 +354,10 @@ describe('streaming', () => {
       fetch: fakeFetch(calls, () => jsonResponse(completion({ content: 'ok' }))),
     });
 
-    // No `model` on the request, so `modelOf` falls back to this provider's first — whose ceiling
-    // clamps the completion to 8k and keeps it on the ordinary transport.
+    // The request's own model is the one sized: its ceiling clamps the completion to 8k and keeps
+    // it on the ordinary transport. (Naming none is `X_AI_MODEL_UNRESOLVED`: vendor-neutral.test.ts.)
     const result = await openai.generate({
+      model: SMALL,
       messages: [{ role: 'user', content: 'ship it' }],
       maxTokens: 64_000,
     });

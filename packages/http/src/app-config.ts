@@ -4,7 +4,7 @@
 // hold this package's types, so an `http` block on `AppConfig` would be a second declaration of
 // `HttpConfigInput` in a package that can never check it against this one.
 
-import type { HttpConfigInput } from './config';
+import { type HttpConfigInput, refuseDeletedHttpKeys } from './config';
 import type { RateLimitConfig } from './rate-limit';
 
 /**
@@ -47,6 +47,8 @@ export type AppHttpConfig = Omit<HttpConfigInput, BootOwnedHttpKey | 'rateLimit'
 let declared: AppHttpConfig | undefined;
 
 export const configureHttp = (config: AppHttpConfig): void => {
+  // At the declaration, so the stack names the app's own line — not the boot that merged it.
+  refuseDeletedHttpKeys(config);
   declared = config;
 };
 

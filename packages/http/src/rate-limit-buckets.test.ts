@@ -220,3 +220,98 @@ describe('withRouteBuckets', () => {
     expect((await call()).status).toBe(429);
   });
 });
+
+describe('a bucket named after an action or query is refused, never ignored (25.0.0)', () => {
+  // Since 25.0.0 an action/query route carries no `meta.rateLimit`: the primitive spends its own
+  // declared limit on every surface. A `rateLimit.buckets.<actionName>` the stage used to spend for
+  // that route now limits nothing, so it is refused at construction rather than kept in silence.
+  const primitive = (name: string, kind: 'action' | 'query'): Route => ({
+    method: kind === 'action' ? 'POST' : 'GET',
+    path: `/api/${name}`,
+    handler: ok,
+    meta: {
+      name,
+      auth: 'required',
+      enforcedBy: 'handler',
+      primitive: kind,
+      tags: [kind === 'query' ? 'query' : 'posts'],
+    },
+  });
+  const BUCKET: Bucket = { capacity: 3, refillPerSecond: 0.05 };
+  const configWith = (buckets: Record<string, Bucket>) =>
+    defineHttpConfig({
+      rateLimit: { scope: 'process', buckets: { ...PROCESS_LIMITS.buckets, ...buckets } },
+    });
+  const refusal = (run: () => unknown): HttpError => {
+    try {
+      run();
+    } catch (error) {
+      return error as HttpError;
+    }
+    return expect.unreachable('a bucket named after a mounted primitive must be refused');
+  };
+
+  test('a bucket named after a mounted action is X_CONFIG_INVALID with the declaration to write', () => {
+    const error = refusal(() =>
+      withRouteBuckets(configWith({ publishPost: BUCKET }), [primitive('publishPost', 'action')]),
+    );
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain('rateLimit.buckets.publishPost');
+    expect(error.fix).toStartWith('action({ …, rateLimit: { limit, windowMs } })   # ');
+    expect(error.fix).toContain(
+      'rateLimit.buckets.publishPost no longer limits an action since 25.0.0',
+    );
+  });
+
+  test('and after a mounted query, with the query() declaration', () => {
+    const error = refusal(() =>
+      withRouteBuckets(configWith({ listPosts: BUCKET }), [primitive('listPosts', 'query')]),
+    );
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.fix).toStartWith('query({ …, rateLimit: { limit, windowMs } })   # ');
+  });
+
+  test('refused through createServer too, before a socket exists', () => {
+    expect(() =>
+      createServer({
+        routes: [primitive('publishPost', 'action')],
+        config: configWith({ publishPost: BUCKET }),
+      }),
+    ).toThrow(/X_CONFIG_INVALID/);
+  });
+
+  test('default, the tenant bucket and a bucket a plain route really selects still pass', () => {
+    const config = defineHttpConfig({
+      rateLimit: {
+        scope: 'process',
+        tenantBucket: 'tenant',
+        buckets: { ...PROCESS_LIMITS.buckets, tenant: BUCKET, contactSales: TIGHT },
+      },
+    });
+    const plain: Route = {
+      ...route('contactSales'),
+      meta: { ...route('contactSales').meta, rateLimit: 'contactSales' },
+    };
+    const routes = [
+      primitive('default', 'action'),
+      primitive('tenant', 'query'),
+      primitive('contactSales', 'action'),
+      plain,
+    ];
+    expect(() => withRouteBuckets(config, routes)).not.toThrow();
+  });
+
+  test('a plain route that says enforcedBy: handler is not a primitive — only the marker is', () => {
+    const plain: Route = {
+      ...route('healthCheck'),
+      meta: { ...route('healthCheck').meta, enforcedBy: 'handler' },
+    };
+    expect(() => withRouteBuckets(configWith({ healthCheck: BUCKET }), [plain])).not.toThrow();
+  });
+
+  test('a bucket named after a PLAIN route is not this refusal — no primitive owns that name', () => {
+    expect(() =>
+      withRouteBuckets(configWith({ healthCheck: BUCKET }), [route('healthCheck')]),
+    ).not.toThrow();
+  });
+});

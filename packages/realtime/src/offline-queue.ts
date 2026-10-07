@@ -69,6 +69,11 @@ export class MemoryQueueStore implements QueueStore {
   }
 }
 
+/** The one way to build the in-process queue store; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function memoryQueueStore(): MemoryQueueStore {
+  return new MemoryQueueStore();
+}
+
 export interface DrainReport {
   readonly sent: number;
   readonly collapsed: number;

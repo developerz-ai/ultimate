@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 93
-current_focus: "sweep 11 (wave 3 reported R1/R2/R4, R3 running; fixing the proven findings)"
+percent: 95
+current_focus: "sweep 12a (25.0.0 breaking deletions M1–M12; M13 dropped: its only consumer goes with M12)"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -136,14 +136,14 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 11-audit-coverage.md
     tier: 0
     sweep: "11"
-    status: in_progress
-    percent: 40
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#692", "#694", "#695"]
   - file: 12-major-25.md
     tier: 0
     sweep: "12a"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 85
     evidence: []
   - file: 12-major-25.md
     tier: 0

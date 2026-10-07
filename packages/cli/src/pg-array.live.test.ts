@@ -1,19 +1,19 @@
-// The three shipped statements that bind an array, run against a real Postgres through the boot's
-// own executor. Issue #384: `Bun.SQL` joins a JS array's elements with commas, so every one of them
-// answered `malformed array literal` (22P02) — including `SQL_CLAIM`, which is the entire loop of
-// every `ROLE=worker` container the framework produces.
+// The shipped inbox write that binds an array, run against a real Postgres through the boot's own
+// executor. Issue #384: `Bun.SQL` joins a JS array's elements with commas, so every statement that
+// bound one answered `malformed array literal` (22P02) — the worker's claim, the relay's release,
+// and an in-app notification being read.
 //
-// THIS FILE IS IN `@ultimat3/cli` BECAUSE NOTHING ELSE CAN SEE ALL THREE. `@ultimat3/db` is tier 1
-// and may not import `jobs` (3) or `notify` (4); `jobs` and `notify` speak only the duck-typed
-// `PgExecutor` and cannot build a db-backed one. `pgExecutorFor` over a real `PostgresClient` is
-// the executor every booted role actually gets (`runtime-queue.ts`), so this is the composition under
-// test rather than a stand-in for it.
+// THE NOTIFY CASE IS HERE BECAUSE `@ultimat3/notify` CANNOT SEE THE EXECUTOR. It depends on no
+// driver (`packages/notify/package.json`), so it cannot build the `PostgresClient`-backed executor
+// every booted role gets; `pgExecutorFor` (`runtime-queue.ts`) can, and that composition is what is
+// under test. It goes through `postgresInboxStore().markRead()`, the public path, so the statement
+// stays unexported (`sql-export-readers`: a test outside a package reads its `*_TABLE` only). The
+// jobs statements are tested in their own package: `jobs/src/driver-pg-array.live.test.ts`.
 //
-// WHY THE GAP LASTED: `grep -rln '\.claim(' --include=*.live.test.ts packages/` answered ONE file
-// before this one, and it was written the same day. Every other test of these statements runs
-// against a recording executor and asserts their SQL as TEXT, which cannot see whether a parameter
-// parses. PGlite — what `x dev` runs — encodes an array correctly, so the framework's own dev loop
-// was blind by construction and only a container ever met the failure.
+// WHY THE GAP LASTED: every other test of these statements runs against a recording executor and
+// asserts their SQL as TEXT, which cannot see whether a parameter parses. PGlite — what `x dev`
+// runs — encodes an array correctly, so the framework's own dev loop was blind by construction and
+// only a container ever met the failure.
 //
 // Skips unless `TEST_DATABASE_URL` is set. Locally:
 //
@@ -25,146 +25,64 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, statementsOf } from '@ultimat3/db';
-import { SQL_CLAIM, SQL_JOBS_TABLE, SQL_OUTBOX_RELEASE } from '@ultimat3/jobs';
-import { SQL_NOTIFY_INBOX_MARK_READ, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
+import { postgresClient, statementsOf } from '@ultimat3/db';
+import { postgresInboxStore, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
 import { pgExecutorFor } from './runtime-queue';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
 
-// EVERY value this file writes or matches on is minted per run. `TEST_DATABASE_URL` may name a
-// database that already holds jobs — CI's does — and a claim over the literal `default` and `mail`
-// queues would claim somebody else's row, leave it claimed, and make `toEqual([ID])` fail on a
-// statement that worked. A run-scoped queue name is the isolation; the ids are minted for the same
-// reason a fixed one collides with an interrupted run's leftovers.
+// Every value this file writes or matches on is minted per run: `TEST_DATABASE_URL` may name a
+// database that already holds inbox rows — CI's does — and a fixed recipient would read them.
 const RUN = crypto.randomUUID().slice(0, 8);
-const QUEUES = [`q-${RUN}-a`, `q-${RUN}-b`] as const;
-const UNCLAIMED_QUEUE = `q-${RUN}-c`;
-const ID = crypto.randomUUID();
-const MISS_ID = crypto.randomUUID();
-const DROPPED_JOB = `probe-dropped-${RUN}`;
-const KEPT_JOB = `probe-kept-${RUN}`;
+const RECIPIENT = `ada-${RUN}`;
+const NOT_A_ROW = crypto.randomUUID();
 
 let client: PostgresClient | undefined;
 let executor: PgExecutor | undefined;
 
 beforeAll(async () => {
   if (url === undefined) return;
-  client = createPostgresClient({ url, role: 'worker' });
+  client = postgresClient({ url, role: 'worker' });
   executor = pgExecutorFor(client);
   // `statementsOf` and not `split(';')`: the DDL carries comments and the package's own splitter is
   // the one answer to where a statement ends.
-  for (const ddl of [SQL_JOBS_TABLE, SQL_NOTIFY_INBOX_TABLE]) {
-    for (const statement of statementsOf(ddl)) await executor.query(statement, []);
+  for (const statement of statementsOf(SQL_NOTIFY_INBOX_TABLE)) {
+    await executor.query(statement, []);
   }
 });
 
 afterAll(async () => {
+  await executor?.query('delete from x_notify_inbox where recipient = $1', [RECIPIENT]);
   await client?.close();
 });
 
-describeLive('live · postgres · the shipped statements that bind an array', () => {
-  // The worker's whole loop. Nothing asserted about the ROWS — an empty queue returns none, and the
-  // claim is what the test is about: this statement raised 22P02 on every call, so a worker against
-  // a real Postgres never claimed anything and every job sat in the queue forever.
-  test('SQL_CLAIM executes — the loop every ROLE=worker container runs', async () => {
-    expect(SQL_CLAIM).toContain('any($1::text[])');
-    expect(SQL_CLAIM).toContain('any($5::text[])');
-    const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000, []]);
-    expect(rows).toEqual([]);
-  });
+describeLive('live · postgres · the inbox write that binds an array', () => {
+  // `markRead` binds its ids as `any($2::uuid[])`. Executing is not enough — an encoder that turned
+  // the array into a wildcard, or into nothing, would execute too — so the marked COUNT and the
+  // unread count after it are the assertion, with an id that names no row in the same array.
+  test('markRead marks exactly the rows its array names — an in-app notification being read', async () => {
+    if (executor === undefined) return expect.unreachable('beforeAll built no executor');
+    const store = postgresInboxStore({ executor });
+    const at = new Date('2026-10-06T12:00:00Z');
+    const read = await store.add({
+      recipient: RECIPIENT,
+      notifier: 'post.commented',
+      key: `read-${RUN}`,
+      params: {},
+      createdAt: at,
+    });
+    await store.add({
+      recipient: RECIPIENT,
+      notifier: 'post.commented',
+      key: `unread-${RUN}`,
+      params: {},
+      createdAt: at,
+    });
 
-  test('SQL_OUTBOX_RELEASE executes — the relay giving a batch back', async () => {
-    expect(SQL_OUTBOX_RELEASE).toContain('any($1::uuid[])');
-    await executor?.query(SQL_OUTBOX_RELEASE, [[ID], 'relay-1']);
-  });
+    const marked = await store.markRead({ recipient: RECIPIENT, ids: [read.id, NOT_A_ROW], at });
 
-  test('SQL_NOTIFY_INBOX_MARK_READ executes — an in-app notification being read', async () => {
-    expect(SQL_NOTIFY_INBOX_MARK_READ).toContain('any($2::uuid[])');
-    await executor?.query(SQL_NOTIFY_INBOX_MARK_READ, ['ada', [ID], new Date()]);
-  });
-
-  // A claim that executes is not yet a claim that MATCHES. `any` over a mis-encoded array could
-  // match nothing and still not throw, which would leave the three tests above green over a worker
-  // that claims no job — the same shape of green this whole issue is about.
-  test('the claim really matches on the queue names it was given', async () => {
-    const rows = await executor?.query<{ id: string; queue: string }>(
-      // `$2` and not `$1` again: one placeholder in both a uuid and a text column deduces two
-      // types and Postgres refuses the statement (42P08) before any array is bound.
-      `insert into x_jobs (id, name, queue, input, idempotency_key, run_id)
-       values ($1, 'probe', $3, '{}'::jsonb, $2, $1) returning id, queue`,
-      [ID, ID, QUEUES[1]],
-    );
-    expect(rows?.[0]?.queue).toBe(QUEUES[1]);
-    try {
-      const claimed = await executor?.query<{ id: string }>(SQL_CLAIM, [
-        [...QUEUES],
-        5,
-        `w-match-${RUN}`,
-        30_000,
-        [],
-      ]);
-      expect(claimed?.map((row) => row.id)).toEqual([ID]);
-    } finally {
-      await executor?.query('delete from x_jobs where id = $1', [ID]);
-    }
-  });
-
-  // The negative control on the same statement: a queue the array does NOT name must not be
-  // claimed, or the test above is satisfied by an encoder that turns every array into a wildcard.
-  test('a queue the array does not name is not claimed', async () => {
-    await executor?.query(
-      `insert into x_jobs (id, name, queue, input, idempotency_key, run_id)
-       values ($1, 'probe', $3, '{}'::jsonb, $2, $1)`,
-      [MISS_ID, MISS_ID, UNCLAIMED_QUEUE],
-    );
-    try {
-      const claimed = await executor?.query(SQL_CLAIM, [
-        [...QUEUES],
-        5,
-        `w-miss-${RUN}`,
-        30_000,
-        [],
-      ]);
-      expect(claimed).toEqual([]);
-    } finally {
-      await executor?.query('delete from x_jobs where id = $1', [MISS_ID]);
-    }
-  });
-
-  // The statement's SECOND array, `$5`: the job names a burial drops (`retry.deadLetter: false`).
-  // Two rows whose lease lapsed on their final attempt, one named in the array and one not — an
-  // encoder that bound it as a wildcard, or as nothing, gets one of the two states wrong.
-  test('the names array decides how an exhausted row is buried: failed when named, dead when not', async () => {
-    const lapsed = (id: string, name: string): Promise<unknown> | undefined =>
-      executor?.query(
-        `insert into x_jobs
-           (id, name, queue, input, idempotency_key, run_id, state, attempt, max_attempts,
-            claimed_by, visible_at)
-         values ($1, $3, $4, '{}'::jsonb, $2, $1, 'running', 1, 1, 'gone',
-                 now() - interval '1 minute')`,
-        [id, id, name, QUEUES[0]],
-      );
-    await lapsed(ID, DROPPED_JOB);
-    await lapsed(MISS_ID, KEPT_JOB);
-    try {
-      const rows = await executor?.query<{ id: string; state: string }>(SQL_CLAIM, [
-        [...QUEUES],
-        5,
-        `w-bury-${RUN}`,
-        30_000,
-        [DROPPED_JOB, 'never-queued'],
-      ]);
-      const states = new Map(rows?.map((row) => [row.id, row.state]));
-      expect(states.get(ID)).toBe('failed');
-      expect(states.get(MISS_ID)).toBe('dead');
-    } finally {
-      await executor?.query('delete from x_jobs where id = any($1::uuid[])', [[ID, MISS_ID]]);
-      // The burial counts itself in the same statement: those two rows are this run's as well.
-      await executor?.query('delete from x_job_counters where job = any($1::text[])', [
-        [DROPPED_JOB, KEPT_JOB],
-      ]);
-    }
+    expect(marked).toBe(1);
+    expect(await store.unreadCount(RECIPIENT)).toBe(1);
   });
 });

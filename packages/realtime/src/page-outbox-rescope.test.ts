@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rescope } from '@ultimat3/core';
-import { type LocalStore, MemoryLocalStore } from './local-store-idb';
+import { type LocalStore, memoryLocalStore } from './local-store-idb';
 import type { OutboxEntry } from './page-outbox';
 import { createOutbox } from './page-outbox';
 
@@ -52,7 +52,7 @@ const turns = async (): Promise<void> => {
 
 describe('a write issued under one principal', () => {
   test('parked in the flush while the principal changes is REFUSED — never queued as the next', async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     rescope('u1');
     const flush = gate();
     const sent: string[] = [];
@@ -84,7 +84,7 @@ describe('a write issued under one principal', () => {
   });
 
   test('made while the NEXT queue is still opening, and overtaken by a third principal, is refused too', async () => {
-    const inner = new MemoryLocalStore();
+    const inner = memoryLocalStore();
     const opening = gate();
     let hold = false;
     const local: LocalStore = {
@@ -126,7 +126,7 @@ describe('a write issued under one principal', () => {
 
 describe('the single-flight slot across a principal change', () => {
   test("the next principal's trigger gets a pass of its OWN: its queue drains, its report names its keys", async () => {
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     // u2 already has a write on disk from an earlier session in this browser.
     await local.writeQueue('p:u2', {
       puts: [
@@ -178,7 +178,7 @@ describe('the single-flight slot across a principal change', () => {
 
 describe('a disk that refuses', () => {
   test('a wipe that fails does not poison the tab: the next principal queues and replays', async () => {
-    const inner = new MemoryLocalStore();
+    const inner = memoryLocalStore();
     const warned: unknown[] = [];
     const local: LocalStore = {
       kind: inner.kind,
@@ -217,7 +217,7 @@ describe('a disk that refuses', () => {
   });
 
   test('a queue that cannot be OPENED falls back to memory, warned once by code', async () => {
-    const inner = new MemoryLocalStore();
+    const inner = memoryLocalStore();
     const warned: unknown[] = [];
     const local: LocalStore = {
       kind: inner.kind,

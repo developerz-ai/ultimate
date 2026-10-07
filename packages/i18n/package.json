@@ -18,7 +18,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./app-catalogs": "./src/app-catalogs.ts"
   },
   "files": [
     "src",

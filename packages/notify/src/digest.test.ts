@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { createMemoryDigestStore } from './digest';
+import { memoryDigestStore } from './digest';
 import type { NotifyEvent } from './notification';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('unit · digest window', () => {
   test('two events inside one window become ONE delivery carrying both', async () => {
-    setNotifyStores({ digest: createMemoryDigestStore() });
+    setNotifyStores({ digest: memoryDigestStore() });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.commented',
@@ -63,7 +63,7 @@ describe('unit · digest window', () => {
   test('a window whose time has passed is RE-OPENED rather than appended to', async () => {
     // Its owner is gone — a crashed flush — so an append would sit there until an unrelated third
     // event arrived. Re-opening costs one extra delivery instead of losing one.
-    const store = createMemoryDigestStore();
+    const store = memoryDigestStore();
     const slot = { recipient: 'ana', notifier: 'n', channel: 'email', group: 'g' };
     const event: NotifyEvent = { notifier: 'n', key: 'k1', params: {}, at: new Date(0) };
     const first = await store.append({

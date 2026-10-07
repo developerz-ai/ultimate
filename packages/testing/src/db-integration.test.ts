@@ -12,12 +12,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   checkDb,
   createBranch,
-  createPostgresClient,
   dropBranch,
   ensureReadOnlyRole,
   introspect,
   listBranches,
   type PostgresClient,
+  postgresClient,
   READONLY_ROLE,
   readOnlyQuery,
   sql,
@@ -41,8 +41,8 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     if (worker.kind !== 'postgres') {
       throw new Error(`expected a live postgres worker database, got "${worker.kind}"`);
     }
-    client = createPostgresClient({ url: worker.url });
-    adminClient = createPostgresClient({ url: adminUrl });
+    client = postgresClient({ url: worker.url });
+    adminClient = postgresClient({ url: adminUrl });
 
     await client.execute(sql`
       create table widgets (
@@ -67,7 +67,7 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     await worker.drop();
   });
 
-  test('createPostgresClient runs real statements over a real socket', async () => {
+  test('postgresClient runs real statements over a real socket', async () => {
     await client.execute(sql`insert into widgets (name) values (${'left-hinge'})`);
     const row = await client.one<{ name: string }>(
       sql`select name from widgets where name = ${'left-hinge'}`,
@@ -206,7 +206,7 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
   });
 
   test('a genuinely unreachable server reports X_DB_UNAVAILABLE, not a hang', async () => {
-    const unreachable = createPostgresClient({ url: 'postgres://nobody@127.0.0.1:1/nowhere' });
+    const unreachable = postgresClient({ url: 'postgres://nobody@127.0.0.1:1/nowhere' });
     try {
       await expect(unreachable.query(sql`select 1`)).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
     } finally {
@@ -260,7 +260,7 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
       const listed = await listBranches({ client: adminClient });
       expect(listed.some((entry) => entry.name === branchName)).toBe(true);
 
-      const branchClient = createPostgresClient({ url: urlFor(worker.url, branchName) });
+      const branchClient = postgresClient({ url: urlFor(worker.url, branchName) });
       try {
         // The branch is a copy-on-write clone made *after* the insert/update above, so the
         // renamed row must already be there — proving this is real data, not a fresh schema.

@@ -22,7 +22,7 @@ export async function walkForward(
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const served: AdminPage<AdminRow> = await fetchPage(resource, { sort, cursor });
     seen.push(...served.rows.map((row) => readOut(row, field)));
-    if (!served.hasMore || served.nextCursor === null) return seen;
+    if (!served.hasMore) return seen;
     cursor = served.nextCursor;
   }
   return seen;
@@ -38,7 +38,7 @@ export async function walkBackward(
 ): Promise<readonly string[]> {
   let cursor: string | null = null;
   let last = await fetchPage(resource, { sort, cursor });
-  for (let page = 0; page < MAX_PAGES && last.hasMore && last.nextCursor !== null; page += 1) {
+  for (let page = 0; page < MAX_PAGES && last.hasMore; page += 1) {
     cursor = last.nextCursor;
     last = await fetchPage(resource, { sort, cursor });
   }

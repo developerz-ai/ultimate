@@ -3,9 +3,10 @@
 // that passes here means something about Postgres.
 //
 // Split from `repo.ts` when that file passed the 500-line ceiling. What stays there is the
-// CONTRACT — `Repo`, `Page`, `FindManyArgs`, `Transactor` — which `postgresRepo` implements too
-// and which nothing about storing rows in a `Map` belongs in.
+// CONTRACT — `Repo`, `FindManyArgs`, `Transactor` (the page is core's `Page`) — which `postgresRepo`
+// implements too and which nothing about storing rows in a `Map` belongs in.
 
+import { pageOf } from '@ultimat3/core';
 import { aggregateColumnOf } from './aggregate';
 import { foldAggregate } from './aggregate-fold';
 import { appendOnlyRepo } from './append-only';
@@ -220,11 +221,10 @@ export const memoryRepo = <Row>(
       const page = found.slice(start, start + plan.limit);
       const last = page.at(-1);
       const more = start + page.length < found.length;
-      return {
-        rows: page,
-        nextCursor:
-          more && last !== undefined ? cursorFor(entity, plan, last, storeKey(last)) : null,
-      };
+      return pageOf(
+        page,
+        more && last !== undefined ? cursorFor(entity, plan, last, storeKey(last)) : null,
+      );
     },
 
     async insert(values, options) {

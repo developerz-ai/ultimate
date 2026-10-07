@@ -7,8 +7,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import type { PgExecutor } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw, sql } from '@ultimat3/db';
-import { createPgDriver } from './driver-pg';
+import { postgresClient, raw, sql } from '@ultimat3/db';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import { setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
@@ -53,15 +53,15 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
   const cleanups: (() => Promise<void>)[] = [];
 
   beforeAll(async () => {
-    admin = createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+    admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
     await admin.execute(raw(`create database ${PROBE_DB}`));
-    workerPod = createPostgresClient({
+    workerPod = postgresClient({
       url: probeUrl(),
       role: 'worker',
       applicationName: LISTENER_APP,
     });
-    webPod = createPostgresClient({ url: probeUrl(), role: 'web', profile: { max: 2 } });
+    webPod = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 2 } });
     for (const statement of SQL_JOBS_TABLE.split(';')) {
       if (statement.trim().length > 0) await workerPod.execute(raw(statement));
     }
@@ -91,7 +91,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
       },
     });
     const worker = createWorker({
-      driver: createPgDriver({ executor: executorFor(workerPod) }),
+      driver: postgresJobDriver({ executor: executorFor(workerPod) }),
       pollIntervalMs: 25,
       idlePollMaxMs: 60_000,
       heartbeatIntervalMs: 3_600_000,
@@ -100,7 +100,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
     });
     worker.start();
     cleanups.push(() => worker.stop());
-    const web = createPgDriver({ executor: executorFor(webPod) });
+    const web = postgresJobDriver({ executor: executorFor(webPod) });
     const enqueueFromWeb = async (item: string): Promise<number> => {
       await until(async () => (await worker.stats()).pollDelayMs >= 800);
       const before = performance.now();

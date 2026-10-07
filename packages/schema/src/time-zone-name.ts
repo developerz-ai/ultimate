@@ -1,7 +1,7 @@
 // Single responsibility: is a string an IANA zone NAME? TIER 0'S ONE STATEMENT of the rule
 // `@ultimat3/time` enforces everywhere above it — a zone is `Area/Location`, and `UTC` is the one
-// exception. `@ultimat3/core` imported its own copy of this predicate until 2026-08-27 and now
-// re-exports this one, over the declared `core -> schema` edge.
+// exception. `@ultimat3/core` carried its own copy until 2026-08-27, then a re-export for the
+// `defaultTimeZone` validator, deleted with that key in 25.0.0.
 //
 // `@ultimat3/time`'s `canonicalTimeZone` is NOT a fourth copy and is deliberately left alone: it
 // answers a different question (the canonical SPELLING, memoised over ~445 listed zones plus a
@@ -14,9 +14,8 @@
  * Unobservable on ICU 78 — `+01:00` resolves to itself, so the slash rule below already refuses it,
  * and deleting this line changes no answer this package can currently produce. It stays because it
  * guards the runtime that folds an offset into `Etc/GMT-1`, which WOULD carry a slash, and because
- * `packages/core/src/time-zone-name.ts` and `packages/time/src/zone-canonical.ts` both carry the
- * same line: three statements of one rule may not differ, least of all in the half that is hard to
- * test.
+ * `packages/time/src/zone-canonical.ts` carries the same line: two statements of one rule may not
+ * differ, least of all in the half that is hard to test.
  */
 const NUMERIC_OFFSET = /^[+-]/;
 

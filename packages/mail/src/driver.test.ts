@@ -6,18 +6,18 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createLogger, frozenClock } from '@ultimat3/core';
 import {
-  createLogDriver,
-  createMemoryDriver,
-  createUnconfiguredDriver,
   isMemoryDriver,
   isUnconfiguredDriver,
+  logMailDriver,
   type MailDriver,
   type MailMessage,
   mailDriver,
+  memoryMailDriver,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
   UNCONFIGURED_DRIVER_NAME,
+  unconfiguredMailDriver,
 } from './driver';
 import { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 
@@ -59,7 +59,7 @@ describe('the ambient driver slot', () => {
   });
 
   test('tryMailDriver hands back the very object setMailDriver was given', () => {
-    const memory = createMemoryDriver();
+    const memory = memoryMailDriver();
     setMailDriver(memory);
     // Identity, not shape: a host reads `outbox()` off this and must see the same array `send()`
     // pushed into.
@@ -70,8 +70,8 @@ describe('the ambient driver slot', () => {
   });
 
   test('the last setMailDriver wins — one driver per process', () => {
-    const first = createMemoryDriver();
-    const second = createLogDriver(createLogger({ writer: () => undefined }));
+    const first = memoryMailDriver();
+    const second = logMailDriver(createLogger({ writer: () => undefined }));
     setMailDriver(first);
     setMailDriver(second);
     expect(tryMailDriver()).toBe(second);
@@ -85,7 +85,7 @@ describe('the log driver', () => {
       lines,
       // The REAL logger with an injected writer, not a stand-in for it: redaction, level filtering
       // and field merging are core's, and a hand-written `info()` would prove none of them ran.
-      driver: createLogDriver(createLogger({ level: 'info', writer: (line) => lines.push(line) })),
+      driver: logMailDriver(createLogger({ level: 'info', writer: (line) => lines.push(line) })),
     };
   };
 
@@ -153,7 +153,7 @@ describe('the log driver', () => {
 
 describe('the memory driver', () => {
   test('clear() empties the retained list, the outbox and lastTo together', async () => {
-    const memory = createMemoryDriver();
+    const memory = memoryMailDriver();
     await memory.send(message);
     await memory.send({ ...message, mailId: 'reset', subject: 'Reset' });
     expect(memory.sent).toHaveLength(2);
@@ -172,7 +172,7 @@ describe('the memory driver', () => {
   });
 
   test('outbox is newest first, which sent is not', async () => {
-    const memory = createMemoryDriver();
+    const memory = memoryMailDriver();
     await memory.send({ ...message, mailId: 'first' });
     await memory.send({ ...message, mailId: 'second' });
     expect(memory.sent.map((entry) => entry.message.mailId)).toEqual(['first', 'second']);
@@ -187,7 +187,7 @@ describe('the memory driver', () => {
    */
   test('at comes from the injected clock, not from the wall clock', async () => {
     const clock = frozenClock('2026-08-22T09:00:00.000Z');
-    const memory = createMemoryDriver({ clock });
+    const memory = memoryMailDriver({ clock });
     await memory.send({ ...message, mailId: 'first' });
     clock.advance(60_000);
     await memory.send({ ...message, mailId: 'second' });
@@ -199,7 +199,7 @@ describe('the memory driver', () => {
 
   test('omitting the clock still stamps a real instant', async () => {
     const before = Date.now();
-    const memory = createMemoryDriver();
+    const memory = memoryMailDriver();
     await memory.send(message);
     expect(memory.sent[0]?.at.getTime()).toBeGreaterThanOrEqual(before);
   });
@@ -207,7 +207,7 @@ describe('the memory driver', () => {
 
 describe('the unconfigured driver', () => {
   test('rejects rather than throwing, so an awaiting caller keeps its error path', async () => {
-    const driver = createUnconfiguredDriver('production');
+    const driver = unconfiguredMailDriver('production');
     expect(driver.name).toBe(UNCONFIGURED_DRIVER_NAME);
     // Calling it must not throw synchronously — the method is typed as returning a promise.
     let sending: Promise<unknown> | undefined;
@@ -224,9 +224,9 @@ describe('the unconfigured driver', () => {
   });
 
   test('isUnconfiguredDriver answers true for it alone', () => {
-    expect(isUnconfiguredDriver(createUnconfiguredDriver('staging'))).toBe(true);
-    expect(isUnconfiguredDriver(createMemoryDriver())).toBe(false);
-    expect(isUnconfiguredDriver(createLogDriver(createLogger({ writer: () => undefined })))).toBe(
+    expect(isUnconfiguredDriver(unconfiguredMailDriver('staging'))).toBe(true);
+    expect(isUnconfiguredDriver(memoryMailDriver())).toBe(false);
+    expect(isUnconfiguredDriver(logMailDriver(createLogger({ writer: () => undefined })))).toBe(
       false,
     );
     // Keyed on the name, so a driver that borrows it reads as unconfigured — which is the point:

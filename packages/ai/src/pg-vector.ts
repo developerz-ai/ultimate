@@ -179,6 +179,14 @@ export class PgVectorStore implements VectorStore {
   }
 }
 
+/**
+ * The one way to build the pgvector-backed store — the twin of `memoryVectorStore()`. The class is
+ * a type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ */
+export function postgresVectorStore(input: PgVectorStoreInput): PgVectorStore {
+  return new PgVectorStore(input);
+}
+
 function toHit(row: HitRow): SearchHit {
   return {
     id: row.id,

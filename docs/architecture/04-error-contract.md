@@ -240,8 +240,8 @@ For deliberately unimplemented paths, the throw is still typed and still actiona
 ```ts
 throw new UltimateError({
   code: 'X_NOT_IMPLEMENTED',
-  cause: 'jobs driver "nats" has no claim implementation yet',
-  fix: 'call setJobDriver(createPgDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it',
+  cause: 'jobs driver "redis" has no claim implementation yet',
+  fix: 'call setJobDriver(postgresJobDriver()) at boot instead of this driver; nothing needs moving first, because enqueue here refuses too, so no job was ever written to it',
 });
 ```
 
@@ -250,8 +250,8 @@ key that selects a driver — `setJobDriver` is the seam, and the fix has to nam
 actually replaces the stub. It names no drain: every `x jobs drain --to` target either is one of
 these stubs or is refused (`memory` acked a durable queue into a `Map` that died at exit), and
 `enqueue` on a stub refuses, so nothing was ever queued onto it — the "then move what is already
-queued" clause this line carried until 2026-09-06 was a second unrunnable instruction. This is
-`packages/jobs/src/driver-nats.ts`'s own line, quoted rather
+queued" clause this line carried until 2026-09-06 was a second unrunnable instruction. This was
+the Redis job-driver stub's own line until 25.0.0 deleted it, quoted rather
 than invented: a worked example in the page that DEFINES the rule may not be the one place it is
 broken.
 

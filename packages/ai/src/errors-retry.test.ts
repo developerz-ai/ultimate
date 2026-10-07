@@ -14,8 +14,11 @@ import {
 } from './errors';
 import { AI_ERROR_RETRY } from './errors-retry';
 import { createGateway } from './gateway';
-import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 /**
  * Sampled at MODULE SCOPE, before any hook: "does importing this package classify its codes" is a
@@ -83,7 +86,7 @@ describe('the same code is terminal where the throw site knows better', () => {
   test('the gateway raises the retryable one when a provider served it and failed', async () => {
     const down: Provider = {
       name: 'down',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate: (): Promise<GenerateResult> =>
         Promise.reject(new AiTransportError({ provider: 'down', status: 503, detail: 'oh' })),
       // biome-ignore lint/correctness/useYield: unused by this test
@@ -98,7 +101,7 @@ describe('the same code is terminal where the throw site knows better', () => {
     });
     let thrown: unknown;
     try {
-      await gateway.generate({ model: DEFAULT_MODEL, messages: [], maxTokens: 8 });
+      await gateway.generate({ model: FIXTURE_MODEL, messages: [], maxTokens: 8 });
     } catch (error) {
       thrown = error;
     }

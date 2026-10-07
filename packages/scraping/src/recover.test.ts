@@ -26,7 +26,7 @@ describe('unit · the recovery seam', () => {
   });
 
   test("recover: 'agent' THROWS X_NOT_IMPLEMENTED — it never silently declines", async () => {
-    // The honest stub, in `packages/jobs/src/driver-redis.ts`'s shape. A recovery that answered
+    // The honest stub: one labelled `X_NOT_IMPLEMENTED`. A recovery that answered
     // `false` here would be indistinguishable from one that was never configured, and the gap
     // would be discovered from a failing run months later rather than from the first call.
     expect(await codeOf(runRecovery('agent', attempt()))).toBe('X_NOT_IMPLEMENTED');

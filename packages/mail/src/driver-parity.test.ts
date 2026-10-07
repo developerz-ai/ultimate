@@ -14,9 +14,9 @@ import { resetJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import type { MailDriver } from './driver';
-import { createMemoryDriver, resetMailDriver, setMailDriver } from './driver';
-import { createResendDriver, type MailFetch } from './driver-resend';
-import { createSmtpDriver } from './driver-smtp';
+import { memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
+import { type MailFetch, resendMailDriver } from './driver-resend';
+import { smtpMailDriver } from './driver-smtp';
 import { mailIdempotencyKey } from './idempotency';
 import { defineMail, renderMessage, send } from './mail';
 import type { SmtpConnector, SmtpStream } from './smtp-client';
@@ -108,7 +108,7 @@ function smtpProbe(): SmtpProbe {
   return {
     sessions,
     bodies,
-    driver: createSmtpDriver({ url: 'smtps://fake.test:465', from: FROM, connect }),
+    driver: smtpMailDriver({ url: 'smtps://fake.test:465', from: FROM, connect }),
   };
 }
 
@@ -140,7 +140,7 @@ function resendProbe(): ResendProbe {
   };
   return {
     requests,
-    driver: createResendDriver({ apiKey: 'resend_sk_parity', from: FROM, fetch }),
+    driver: resendMailDriver({ apiKey: 'resend_sk_parity', from: FROM, fetch }),
   };
 }
 
@@ -173,7 +173,7 @@ test('a line break in the subject is refused by every driver, and none of them d
   const poison = 'Ada\r\nBcc: evil@example.test';
 
   const verdicts = [
-    await outcome(createMemoryDriver(), poison),
+    await outcome(memoryMailDriver(), poison),
     await outcome(smtp.driver, poison),
     await outcome(resend.driver, poison),
   ];
@@ -198,7 +198,7 @@ test('the same send without the break reaches both wires with the same subject',
   const resend = resendProbe();
 
   const verdicts = [
-    await outcome(createMemoryDriver(), 'Ada'),
+    await outcome(memoryMailDriver(), 'Ada'),
     await outcome(smtp.driver, 'Ada'),
     await outcome(resend.driver, 'Ada'),
   ];

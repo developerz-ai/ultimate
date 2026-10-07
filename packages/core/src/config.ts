@@ -2,7 +2,6 @@
 // defaults, validated eagerly, and composable so a big app can split it across `config/*.ts`
 // without inventing a second config mechanism.
 
-import { CURRENCY_CODE_PATTERN } from '@ultimat3/schema';
 // Same rule for the same reason: `app.config.ts` CONSUMES the cache tier names, it does not own
 // them. Declaring them here is what let `cache.tiers` and the ladder `@ultimat3/cache` orders by
 // drift into two vocabularies with no map between them (issue #293).
@@ -10,7 +9,7 @@ import { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 import type { AiConfig, AiConfigInput } from './config-ai';
 import { countIssue } from './config-count';
 import { configDefaults } from './config-defaults';
-import { BASE_FIX, CACHE_TIER_FIX, TIMEZONE_FIX } from './config-fixes';
+import { BASE_FIX, CACHE_TIER_FIX } from './config-fixes';
 import { type DrainConfig, type HealthConfig, readinessModeIssue } from './config-health';
 import type { IslandsConfig, IslandsSectionInput } from './config-islands';
 import { islandsIssues, mergeIslands } from './config-islands';
@@ -20,9 +19,9 @@ import type { NavigationConfig, NavigationSectionInput } from './config-navigati
 import { mergeNavigation, navigationIssues } from './config-navigation';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
 import { PWA_FIX, pwaIssues } from './config-pwa';
+import { removedKeyFix, removedKeyIssue, removedKeysIn } from './config-removed';
 import {
   booleanIssue,
-  localeIssues,
   nameListIssues,
   oneOfIssue,
   routePathIssue,
@@ -34,7 +33,6 @@ import { drainIssues } from './drain-deadline';
 import { describeValue } from './error-render';
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
-import { isIanaZoneName } from './time-zone-name';
 
 export const THEME_MODES = ['light', 'dark', 'system'] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
@@ -45,10 +43,12 @@ export type ThemeMode = (typeof THEME_MODES)[number];
 export const REALTIME_TRANSPORTS = ['memory', 'nats'] as const;
 export type RealtimeTransport = (typeof REALTIME_TRANSPORTS)[number];
 
+/**
+ * No `tokens` (deleted in 25.0.0): read by nothing once the theme seam landed — the app's theme is
+ * `export const brand = defineTheme(…)` from `@ultimat3/ui`. A second theming path nothing read.
+ */
 export interface ThemeConfig {
   readonly defaultMode: ThemeMode;
-  /** Semantic design tokens. Raw hex is a lint error in components, never here. */
-  readonly tokens: Readonly<Record<string, string>>;
 }
 
 /**
@@ -143,14 +143,14 @@ const JOB_BACKOFFS = ['exponential', 'fixed'] as const;
 export interface JobsConfig {
   /**
    * No `driver`. It accepted `'postgres' | 'redis' | 'nats'`, was read by NOTHING, and boot always
-   * built `createPgDriver` — so `jobs: { driver: 'redis' }` did not throw, did not warn, and
-   * silently gave you Postgres. Deleted 2026-08-20, and it is the worse shape of the same defect
-   * `realtime.heartbeatMs` was: a knob that fails SILENTLY in the dangerous direction.
+   * built the Postgres driver — so `jobs: { driver: 'redis' }` did not throw, did not warn, and
+   * silently gave you Postgres. Deleted 2026-08-20 (5.0.0); since 25.0.0 a config still writing it
+   * is REFUSED by name (`config-removed.ts`) rather than carried through the spread.
    *
-   * The seam that works is `setJobDriver(driver)` — `setJobDriver(createPgDriver({ executor }))`,
-   * or `setJobDriver(createMemoryDriver())` in a test. Swap the driver, zero job-code change, which
-   * is the whole of what the `JobDriver` interface buys. There is no config line, and one that
-   * cannot be honoured is worse than none.
+   * The seam that works is `setJobDriver(driver)` —
+   * `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a
+   * test. Swap the driver, zero job-code change, which is the whole of what the `JobDriver`
+   * interface buys. There is no config line, and one that cannot be honoured is worse than none.
    */
   readonly queues: readonly string[];
   readonly concurrency: number;
@@ -181,12 +181,15 @@ export interface RealtimeConfig {
   readonly maxSocketsPerActor?: number | undefined;
 }
 
+/**
+ * No `locales` / `defaultLocale`, `defaultTimeZone` or `defaultCurrency` (deleted in 25.0.0, and
+ * REFUSED by name when written — `config-removed.ts`). The locales were a second declaration of
+ * `defineCatalogs({ default })`; the zone and the currency were read by nothing, and an ambient
+ * default for either is the defect the framework forbids (every format call takes its zone, every
+ * `Money` its currency).
+ */
 export interface AppConfig {
   readonly name: string;
-  readonly locales: readonly string[];
-  readonly defaultLocale: string;
-  readonly defaultTimeZone: string;
-  readonly defaultCurrency: string;
   readonly theme: ThemeConfig;
   readonly auth: AuthConfig;
   readonly pwa: PwaConfig;
@@ -223,10 +226,6 @@ export interface AppConfigInput
     IslandsSectionInput,
     MailSectionInput {
   readonly name: string;
-  readonly locales?: readonly string[] | undefined;
-  readonly defaultLocale?: string | undefined;
-  readonly defaultTimeZone?: string | undefined;
-  readonly defaultCurrency?: string | undefined;
   readonly theme?: Input<ThemeConfig> | undefined;
   readonly auth?: Input<AuthConfig> | undefined;
   readonly pwa?: PwaConfigInput | undefined;
@@ -246,21 +245,10 @@ export type AppConfigOverlay = Omit<AppConfigInput, 'name'> & { readonly name?: 
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
 
-/**
- * Built from `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the framework's ONE declaration of what
- * an ISO 4217 code looks like — the same source `isCurrencyCode`, the published OpenAPI `pattern`
- * and `@ultimat3/entity`'s Postgres CHECK all derive from. It was a character-for-character copy
- * here until the `core -> schema` edge was declared (`scripts/lib/tiers.ts`), held equal only by a
- * pin test in `@ultimat3/cli`.
- */
-const CURRENCY_RE = new RegExp(CURRENCY_CODE_PATTERN);
-
 function validate(config: AppConfig): void {
   const issues: string[] = [];
-  // Zero or one entry: the zone's own remedy, carried only when the zone is what failed.
-  const zoneFix: string[] = [];
-  // Same shape, and it exists for the upgrade: an 8.0.0 app carrying `['memo', 'shared']` in an
-  // untyped config file reaches here rather than the compiler, and needs the new spelling.
+  // Zero or one entry, and it exists for the upgrade: an 8.0.0 app carrying `['memo', 'shared']`
+  // in an untyped config file reaches here rather than the compiler, and needs the new spelling.
   const tierFix: string[] = [];
   // Same shape again: carried only when an installable app is missing what an install needs.
   const pwaFix: string[] = [];
@@ -270,19 +258,6 @@ function validate(config: AppConfig): void {
     issues.push(`name must be a string like "my-app", not ${describeValue(config.name)}`);
   } else if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
-  }
-  localeIssues(config.locales, config.defaultLocale, issues);
-  // `@ultimat3/time`'s rule, restated because tier 0 cannot import tier 1 — see
-  // `time-zone-name.ts`. One validator means a zone `app.config.ts` accepts is a zone every
-  // `format` call, `task()` and `toZoned` below it can then do arithmetic in.
-  if (!isIanaZoneName(config.defaultTimeZone)) {
-    issues.push(
-      `defaultTimeZone "${config.defaultTimeZone}" is not an IANA Area/Location zone name`,
-    );
-    zoneFix.push(TIMEZONE_FIX);
-  }
-  if (!CURRENCY_RE.test(config.defaultCurrency)) {
-    issues.push(`defaultCurrency "${config.defaultCurrency}" is not a 3-letter ISO 4217 code`);
   }
   if (config.roles.length === 0) issues.push('roles must list at least one runtime role');
   // ONE check per key, each against the key's own domain. A number is never a bare `< 1` — every
@@ -303,7 +278,6 @@ function validate(config: AppConfig): void {
       ? undefined
       : routePathIssue('auth.signInPath', config.auth.signInPath),
     booleanIssue('ai.mcp.expose', config.ai.mcp.expose),
-    routePathIssue('ai.mcp.path', config.ai.mcp.path),
     booleanIssue('realtime.enabled', config.realtime.enabled),
     oneOfIssue('realtime.transport', config.realtime.transport, REALTIME_TRANSPORTS),
     ...(['maxSubscriptionsPerActor', 'maxSocketsPerActor'] as const).map((key) =>
@@ -360,7 +334,7 @@ function validate(config: AppConfig): void {
       cause: issues.join('; '),
       // The generic instruction goes LAST so the fix line still ends in a command that can be
       // pasted — a trailing `.` after `x verify` is a command nobody can run.
-      fix: [...zoneFix, ...tierFix, ...pwaFix, BASE_FIX].join('. '),
+      fix: [...tierFix, ...pwaFix, BASE_FIX].join('. '),
       meta: { issues },
     });
   }
@@ -375,22 +349,6 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
   const base = configDefaults(name);
   return {
     name,
-    locales: lastSaid(
-      base.locales,
-      layers.map((layer) => layer.locales),
-    ),
-    defaultLocale: lastSaid(
-      base.defaultLocale,
-      layers.map((layer) => layer.defaultLocale),
-    ),
-    defaultTimeZone: lastSaid(
-      base.defaultTimeZone,
-      layers.map((layer) => layer.defaultTimeZone),
-    ),
-    defaultCurrency: lastSaid(
-      base.defaultCurrency,
-      layers.map((layer) => layer.defaultCurrency),
-    ),
     theme: layered(
       base.theme,
       layers.map((layer) => layer.theme),
@@ -458,6 +416,23 @@ function merge(name: string, layers: readonly AppConfigOverlay[]): AppConfig {
 }
 
 /**
+ * FIRST, before shape: a removed key is an instruction the app is still giving, and the answer is
+ * the line to delete and what replaces it — never silence, and never a shape complaint about a
+ * section (`theme.tokens: null`) that no longer has the key at all. Every layer is asked, so a
+ * stale `config/theme.ts` overlay is caught as surely as the base.
+ */
+function refuseRemovedKeys(layers: readonly unknown[]): void {
+  const removed = [...new Set(layers.flatMap((layer) => removedKeysIn(layer)))];
+  if (removed.length === 0) return;
+  const issues = removed.map(removedKeyIssue);
+  throw new ConfigInvalidError({
+    cause: issues.join('; '),
+    fix: [...removed.map(removedKeyFix), BASE_FIX].join('. '),
+    meta: { issues, removed },
+  });
+}
+
+/**
  * The single config entry point. Later overlays win, so `config/jobs.ts` can own jobs without
  * touching `app.config.ts`.
  */
@@ -466,6 +441,7 @@ export function defineConfig(
   ...overlays: readonly AppConfigOverlay[]
 ): AppConfig {
   const layers: readonly AppConfigOverlay[] = [input, ...overlays];
+  refuseRemovedKeys(layers);
   // Structure FIRST, per layer and before the merge: a section written as `null` or a list
   // written as a string is what `Object.entries` and `.length` raised a native `TypeError` on.
   const issues: string[] = [];

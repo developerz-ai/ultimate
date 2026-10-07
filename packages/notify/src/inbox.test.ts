@@ -2,7 +2,7 @@
 // write that converges — because the job that produced it is at-least-once.
 
 import { describe, expect, test } from 'bun:test';
-import { createMemoryInboxStore } from './inbox';
+import { memoryInboxStore } from './inbox';
 
 const AT = new Date('2026-08-24T09:00:00Z');
 const LATER = new Date('2026-08-24T10:00:00Z');
@@ -15,7 +15,7 @@ const write = {
 
 describe('unit · in-app inbox', () => {
   test('a replayed add returns the FIRST row rather than moving its timestamps', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     const first = await inbox.add({ ...write, createdAt: AT });
     await inbox.markRead({ recipient: 'ana', ids: [first.id], at: AT });
     const again = await inbox.add({ ...write, createdAt: LATER });
@@ -27,7 +27,7 @@ describe('unit · in-app inbox', () => {
   });
 
   test('the unread count is derived from the rows, so the badge and the list cannot disagree', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     const one = await inbox.add({ ...write, createdAt: AT });
     await inbox.add({ ...write, key: 'like:p2', createdAt: LATER });
     expect(await inbox.unreadCount('ana')).toBe(2);
@@ -40,14 +40,14 @@ describe('unit · in-app inbox', () => {
   });
 
   test('marking read is scoped by recipient, so a stranger id is simply absent', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     const mine = await inbox.add({ ...write, createdAt: AT });
     expect(await inbox.markRead({ recipient: 'ben', ids: [mine.id], at: LATER })).toBe(0);
     expect(await inbox.unreadCount('ana')).toBe(1);
   });
 
   test('seen and read are two facts: showing the badge does not dismiss the message', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, createdAt: AT });
     expect(await inbox.markSeen({ recipient: 'ana', at: AT })).toBe(1);
     // Seen, and still unread — collapsing the two would empty the list the moment it rendered.
@@ -58,7 +58,7 @@ describe('unit · in-app inbox', () => {
   });
 
   test('clear() empties the store, so one suite cannot leak into the next', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, createdAt: AT });
     inbox.clear();
     expect(inbox.size).toBe(0);
@@ -66,7 +66,7 @@ describe('unit · in-app inbox', () => {
   });
 
   test('the page is newest first and bounded', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, key: 'a', createdAt: AT });
     await inbox.add({ ...write, key: 'b', createdAt: LATER });
     expect((await inbox.list({ recipient: 'ana', limit: 1 })).map((r) => r.key)).toEqual(['b']);
@@ -81,14 +81,14 @@ describe('unit · in-app inbox', () => {
 describe('unit · in-memory inbox, a page size that is not one', () => {
   for (const limit of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
     test(`limit: ${String(limit)} is refused, never answered as a page`, async () => {
-      const inbox = createMemoryInboxStore();
+      const inbox = memoryInboxStore();
       await inbox.add({ ...write, key: 'a', createdAt: AT });
       await expect(inbox.list({ recipient: 'ana', limit })).rejects.toThrow(/X_INVARIANT/);
     });
   }
 
   test('limit: 0 is an empty page, which is a bound and not a mistake', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, key: 'a', createdAt: AT });
     expect(await inbox.list({ recipient: 'ana', limit: 0 })).toEqual([]);
   });
@@ -101,12 +101,12 @@ describe('unit · in-memory inbox, a page size that is not one', () => {
  * back either way round, and the two drivers behind one interface then answer one question two ways.
  *
  * `id` was the tail until 2026-09-06 and was never a shared one: this store derives it from
- * `JSON.stringify([recipient, notifier, key])` and compares by code point, while `createPgInboxStore`
+ * `JSON.stringify([recipient, notifier, key])` and compares by code point, while `postgresInboxStore`
  * mints a UUIDv7 that Postgres orders by its 16 bytes.
  */
 describe('unit · two notifications in the same millisecond', () => {
   test('the memory page breaks the tie on (notifier, key), exactly as the statement does', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     // Inserted newest-key-first, so an implementation that keeps insertion order fails this.
     await inbox.add({ ...write, key: 'like:zz', createdAt: AT });
     await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
@@ -119,7 +119,7 @@ describe('unit · two notifications in the same millisecond', () => {
   // The notifier outranks the key, which is what `order by … notifier, key` says and what an
   // implementation sorting on the key alone gets wrong.
   test('the notifier is the first tie-break and the key the second', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, notifier: 'zeta', key: 'aa', createdAt: AT });
     await inbox.add({ ...write, notifier: 'alpha', key: 'zz', createdAt: AT });
 
@@ -132,7 +132,7 @@ describe('unit · two notifications in the same millisecond', () => {
   // `é` sorts after `z` by code point and BEFORE it under an ICU or `en_US.UTF-8` collation, so a
   // store comparing by locale would answer the other way round and the two drivers would split.
   test('the comparison is by code point, so a Unicode key cannot split the two stores', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     for (const key of ['zz', 'école', 'Zürich', 'aa']) {
       await inbox.add({ ...write, key, createdAt: AT });
     }
@@ -143,7 +143,7 @@ describe('unit · two notifications in the same millisecond', () => {
   });
 
   test('a newer row still outranks an older one whatever its id', async () => {
-    const inbox = createMemoryInboxStore();
+    const inbox = memoryInboxStore();
     await inbox.add({ ...write, key: 'like:aa', createdAt: AT });
     await inbox.add({ ...write, key: 'like:zz', createdAt: LATER });
 

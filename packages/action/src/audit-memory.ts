@@ -4,7 +4,6 @@
  * declaring what a record IS is not also the file deciding how many are kept.
  */
 
-import { normalizeAuditRecord } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 
 /**
@@ -12,8 +11,8 @@ import type { AuditRecord, AuditSink } from './audit';
  * input — so its cost is the request's, not a row's: at 50 audited writes a second an unbounded
  * array is 4.3M immortal records a day and the pod dies holding the trail it was retaining. This
  * sink was the one memory implementation in the framework with no cap, beside five that have one
- * (`memoryRateLimitStore`, `MemoryIdempotencyStore`, `createLimiter`, `createTotpReplayGuard`,
- * `createMemoryEventBus`).
+ * (`memoryRateLimitStore`, `memoryIdempotencyStore`, `createLimiter`, `createTotpReplayGuard`,
+ * `memoryEventBus`).
  */
 export const DEFAULT_MAX_AUDIT_RECORDS = 1_000;
 
@@ -47,7 +46,7 @@ export interface MemoryAuditSink extends AuditSink {
 }
 
 /**
- * The OLDEST goes, which is the same direction `createMemoryEventBus` evicts in and the opposite
+ * The OLDEST goes, which is the same direction `memoryEventBus` evicts in and the opposite
  * of refusing new writes: a sink that stopped recording at the cap would answer "nothing has
  * happened since" for a process that has been serving all day, and the most recent attempts are
  * the ones anyone reading `x dev` is looking at.
@@ -63,9 +62,7 @@ export function memoryAuditSink(options: MemoryAuditSinkOptions = {}): MemoryAud
 
   return {
     write(record: AuditRecord): void {
-      // Normalized on the way in, so a reader of `records()` sees `name` and `primitive` on a
-      // record a 24.x caller built with `action` alone — the same reading the durable sink makes.
-      log.push(normalizeAuditRecord(record));
+      log.push(record);
       // `shift` in a loop, not a slice: the cap is only ever exceeded by one per write, so this
       // runs at most once — and it releases the evicted record's `Ctx` rather than copying the
       // array, which would hold both windows alive for the length of the copy.

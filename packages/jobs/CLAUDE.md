@@ -67,7 +67,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - Drivers implement the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`. New
   capabilities go behind the interface. `inspect.ts` returns plain JSON for CLI, `/_x` and MCP.
 - Step results are persisted BEFORE the step returns. All time is epoch ms (`nowMs()`, `clock.ts`).
-- **`createPgLeader` is correct only on a DEDICATED connection**; boot uses `createPgLeaseLeader`.
+- **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
 ## Rules — numbers and limits
 
@@ -196,7 +196,7 @@ Long form: `docs/history/jobs.md`, "the cross-process wake".
 - **`idle-cost.test.ts` / `queue-wake.test.ts` count statements per idle minute** — scheduler 6,
   worker and relay 30 with no wake, 12 with. Raising one is a regression.
 - **The memory driver stores a payload's JSON form**, as pg binds it (`driver-settle-parity.test.ts`).
-- **The event bus has ONE clock**: `createPgEventBus` takes no `clock`; `EventLookup.now()` is
+- **The event bus has ONE clock**: `postgresEventBus` takes no `clock`; `EventLookup.now()` is
   REQUIRED, stamps a NEW wait, and calls the TIMEOUT (asked once the runner thinks time is up).
   `purgeExpired()` is awaited and counted; `eventsPurgeTarget(bus)` is its `PurgeTarget`.
 
@@ -254,22 +254,21 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension` and the timed-out marker |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
 | `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks |
-| `outbox-pg.ts` | `createPgOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
+| `outbox-pg.ts` | `postgresOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
 | `concurrency.ts` | `job.concurrency` as declared, resolved once: `KeyedConcurrency`, `WhenBusy`, the declaration and key refusals |
 | `errors-concurrency.ts` | every concurrency refusal's class; codes stay in `errors.ts` |
 | `worker-key-busy.ts` | one run refused by its key: settled `failed`, body never run |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
-| `scheduler-pg.ts` | `pgSchedulerState` (the durable watermark, the atomic fire) + `createPgLeaseLeader` |
-| `events-pg.ts` | `createPgEventBus` — `step.waitForEvent` across processes |
+| `scheduler-pg.ts` | `postgresSchedulerState` (the durable watermark, the atomic fire) + `postgresLeaseLeader` |
+| `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
-| `driver-pg.ts` | default driver, and `createPgLeader` |
+| `driver-pg.ts` | default driver, and `postgresLeader` |
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point. Its comments carry no `;` and no `'` |
 | `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, and `JOB_ROW_COLUMNS`; re-exported from `driver-pg-sql.ts` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled` |
-| `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | the dead-letter decision, and this package's option names over core's `backoffDelay` — no curve of its own |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `execute.ts` / `run-deadline.ts` | `executeJob` — one claimed job run and settled; the run's deadline: cancel, then fail |

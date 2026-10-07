@@ -92,6 +92,11 @@ describe('the route a query projects', () => {
     expect(evaluations.count).toBe(0);
   });
 
+  // The marker `@ultimat3/http`'s bucket check reads: a bucket named after this query is refused.
+  test('marks the route as a query', () => {
+    expect(toQueryRoute(feed({ count: 0 })).meta.primitive).toBe('query');
+  });
+
   test('declares no input schema, because the pipeline would validate it against a body', () => {
     // A GET has no body, so `meta.input` would fail every read on an absent one before the
     // handler ran. The schema is applied by `runQuery` instead — which the coercion test proves.
@@ -292,8 +297,8 @@ describe('the typed client against the route', () => {
 describe('a paged read over the route', () => {
   interface PageBody {
     readonly rows: readonly Post[];
-    readonly endCursor: string | null;
-    readonly hasNextPage: boolean;
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
   }
 
   test('with no page control the answer is the bare array it always was', async () => {
@@ -307,32 +312,28 @@ describe('a paged read over the route', () => {
     expect(one.status).toBe(200);
     const first = (await one.json()) as PageBody;
     expect(first.rows).toEqual([{ id: 'a', orgId: ORG, rank: 1 }]);
-    expect(first.hasNextPage).toBe(true);
-    expect(typeof first.endCursor).toBe('string');
+    expect(first.hasMore).toBe(true);
+    expect(typeof first.nextCursor).toBe('string');
 
-    const two = await read(server, `?orgId=${ORG}&_first=1&_after=${first.endCursor}`);
+    const two = await read(server, `?orgId=${ORG}&_first=1&_after=${first.nextCursor}`);
     const second = (await two.json()) as PageBody;
     expect(second.rows).toEqual([{ id: 'c', orgId: ORG, rank: 3 }]);
-    expect(second.hasNextPage).toBe(false);
+    expect(second.hasMore).toBe(false);
   });
 
-  test('the envelope also answers `nextCursor` and `hasMore` — aliases, same values', async () => {
+  test('the envelope is `{ rows, nextCursor, hasMore }` — the alias pair left in 25.0.0', async () => {
     const server = serve(feed({ count: 0 }), reader('u1'));
-    const body = (await (await read(server, `?orgId=${ORG}&_first=1`)).json()) as PageBody & {
-      readonly nextCursor: string | null;
-      readonly hasMore: boolean;
-    };
+    const body = (await (await read(server, `?orgId=${ORG}&_first=1`)).json()) as PageBody;
+    expect(Object.keys(body).sort()).toEqual(['hasMore', 'nextCursor', 'rows']);
     expect(body.nextCursor).toBeString();
-    expect(body.nextCursor).toBe(body.endCursor);
     expect(body.hasMore).toBe(true);
-    expect(body.hasMore).toBe(body.hasNextPage);
   });
 
   test('the wire cursor is the very string a direct `.page()` call signs', async () => {
     const target = feed({ count: 0 });
     const direct = await target.page({ orgId: ORG }, { first: 1, actor: reader('u1') });
     const response = await read(serve(target, reader('u1')), `?orgId=${ORG}&_first=1`);
-    expect(((await response.json()) as PageBody).endCursor).toBe(direct.endCursor);
+    expect(((await response.json()) as PageBody).nextCursor).toBe(direct.nextCursor);
   });
 
   test('a page control never reaches the schema — an input named `first` still coerces', async () => {
@@ -347,7 +348,7 @@ describe('a paged read over the route', () => {
     expect(response.status).toBe(200);
     const page = (await response.json()) as PageBody;
     expect(page.rows).toHaveLength(1);
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 
   test('the widest `_first` the wire accepts cannot widen a declared limit', async () => {
@@ -357,7 +358,7 @@ describe('a paged read over the route', () => {
     );
     const page = (await response.json()) as PageBody;
     expect(page.rows.map((row) => row.id)).toEqual(['a']);
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 
   test('a cursor that is not this read’s is X_CURSOR_INVALID, a 400', async () => {
@@ -398,10 +399,10 @@ describe('a paged read over the route', () => {
 
     const first = await client.page({ orgId: ORG }, { first: 1 });
     expect(first.rows).toEqual([{ id: 'a', orgId: ORG, rank: 1 }]);
-    expect(first.hasNextPage).toBe(true);
-    const second = await client.page({ orgId: ORG }, { first: 1, after: first.endCursor ?? '' });
+    expect(first.hasMore).toBe(true);
+    const second = await client.page({ orgId: ORG }, { first: 1, after: first.nextCursor ?? '' });
     expect(second.rows).toEqual([{ id: 'c', orgId: ORG, rank: 3 }]);
-    expect(second.hasNextPage).toBe(false);
+    expect(second.hasMore).toBe(false);
   });
 });
 

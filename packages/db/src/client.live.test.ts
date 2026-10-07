@@ -4,7 +4,7 @@
 // can tell them apart. Skips unless `TEST_DATABASE_URL` is set, like `migrate.live.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { DbError } from './errors';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
@@ -16,7 +16,7 @@ describe.skipIf(!hasPostgres)('live · postgres · pool settings on the wire', (
   const clients: PostgresClient[] = [];
 
   const freshClient = (profile: Partial<PostgresClient['profile']> = {}): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '', role: 'web', profile });
+    const client = postgresClient({ url: url ?? '', role: 'web', profile });
     clients.push(client);
     return client;
   };
@@ -37,7 +37,7 @@ describe.skipIf(!hasPostgres)('live · postgres · pool settings on the wire', (
   });
 
   test('application_name arrives whole, so pg_stat_activity names the process', async () => {
-    const client = createPostgresClient({
+    const client = postgresClient({
       url: url ?? '',
       role: 'web',
       applicationName: 'ultimate-web',

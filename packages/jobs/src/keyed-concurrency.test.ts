@@ -8,7 +8,7 @@ import type { KeyedConcurrency } from './concurrency';
 import { MAX_CONCURRENCY_KEY_LENGTH } from './concurrency';
 import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { inspectJob, inspectManifest } from './inspect';
 import { job, resetJobs } from './job';
 import type { AccountInput, KeyedHarness } from './keyed-concurrency-fixture';
@@ -21,7 +21,7 @@ import {
   TTL_MS,
   workerOn,
 } from './keyed-concurrency-fixture';
-import { createMemoryLeaseStore, jobLeaseKey } from './leases';
+import { jobLeaseKey, memoryLeaseStore } from './leases';
 import { isFinalAttempt } from './retry';
 import { createScheduler } from './scheduler';
 import { resetTasks, task } from './task';
@@ -31,7 +31,7 @@ const clock = frozenClock('2026-10-01T00:00:00.000Z');
 
 const harness: KeyedHarness = {
   clock,
-  driver: () => Promise.resolve(createMemoryDriver({ clock })),
+  driver: () => Promise.resolve(memoryJobDriver({ clock })),
   elapse: (_driver, ms) => {
     clock.advance(ms);
     return Promise.resolve();
@@ -120,7 +120,7 @@ describe('a concurrency key at enqueue', () => {
     ['', 'empty string'],
     ['k'.repeat(MAX_CONCURRENCY_KEY_LENGTH + 1), 'longer than a lease row can be keyed by'],
   ])('refuses %p before anything is queued', async (key, why) => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     setJobDriver(driver);
     const probe = accountJob({ concurrency: { key: () => key, limit: 1 } });
 
@@ -137,7 +137,7 @@ describe('a concurrency key at enqueue', () => {
   });
 
   test('a good key enqueues, and a plain cap asks no key at all', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     setJobDriver(driver);
     await accountJob({ concurrency: { key: ({ account }) => account, limit: 1 } }).handle.enqueue({
       account: 'acct-1',
@@ -149,7 +149,7 @@ describe('a concurrency key at enqueue', () => {
 
 describe('a concurrency key at a scheduled enqueue', () => {
   test('the scheduler refuses an empty key too — it is the one enqueue that skips the facade', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const probe = accountJob({ concurrency: { key: () => '', limit: 1 } });
     task({
       name: 'keyed-nightly',
@@ -178,7 +178,7 @@ describe('a concurrency key at a scheduled enqueue', () => {
 
 describe('a key the worker cannot derive at claim', () => {
   test('fails that attempt without running the body, and never the claim round', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     let broken = true;
     const probe = accountJob({
       retry: { attempts: 2, jitter: false, delay: 1_000 },
@@ -222,7 +222,7 @@ describe('a key the worker cannot derive at claim', () => {
 
 describe('finalAttempt', () => {
   test('is true exactly once — on the attempt the runner dead-letters', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const probe = accountJob({
       retry: { attempts: 3, jitter: false, delay: 1_000, backoff: 'fixed' },
       body: () => Promise.reject(new TypeError('always fails')),
@@ -255,7 +255,7 @@ describe('a driver that cannot hold a keyed cap', () => {
     createWorker({ driver, context: () => ({}) as never, drainOnShutdown: false }).start();
 
   test('with no lease store, the worker refuses to start', () => {
-    const { leases: _leases, ...leaseless } = createMemoryDriver({ clock });
+    const { leases: _leases, ...leaseless } = memoryJobDriver({ clock });
     const probe = accountJob({ concurrency: { key: ({ account }) => account, limit: 1 } });
 
     const refusal = refusalOf(startOn({ ...leaseless, name: 'leaseless' }));
@@ -277,7 +277,7 @@ describe('the lease a keyed cap is held under', () => {
   });
 
   test('is forgotten by the memory store once nothing holds it', async () => {
-    const leases = createMemoryLeaseStore({ clock });
+    const leases = memoryLeaseStore({ clock });
     const released = await leases.acquire('job-key:sync:acct-1', 1, TTL_MS, 'w:1');
     await leases.acquire('job-key:sync:acct-2', 1, TTL_MS, 'w:2');
     expect(await leases.held('job-key:sync:never-held')).toBe(0);
@@ -294,7 +294,7 @@ describe('the lease a keyed cap is held under', () => {
 
 describe('a run reports the key it counts under', () => {
   test('inspectJob names the key of a keyed run, and null for every run that has none', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     let broken = false;
     const keyedProbe = accountJob({
       concurrency: {

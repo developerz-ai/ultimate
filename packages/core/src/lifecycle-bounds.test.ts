@@ -58,10 +58,7 @@ describe('configureLifecycle deadlineMs', () => {
   /**
    * The floor is 0, not 1, and this is the test that says so. `0` is a real budget — "drain now,
    * no grace", which `settleWithin` handles deliberately (a resolved promise settles on a
-   * microtask and its timer on a macrotask, so a synchronous hook still gets its turn) — and
-   * `@ultimat3/http`'s `drainTimeoutMs` screens with `min: 0` and hands its value straight to this
-   * function (`packages/http/src/server.ts:101`). A floor of 1 here would refuse a declaration
-   * that package accepts, at boot, in every process that serves web.
+   * microtask and its timer on a macrotask, so a synchronous hook still gets its turn).
    */
   test('zero is a budget, not a mistake — the floor mutation test', () => {
     configureLifecycle({ deadlineMs: 0 });

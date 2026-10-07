@@ -8,7 +8,7 @@ import type { Ctx } from '@ultimat3/core';
 import { collectMetrics, createContext, frozenClock, resetMetrics } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -66,7 +66,7 @@ async function parkOne(heartbeat: () => Promise<void>): Promise<Parked> {
       await parked;
     },
   });
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const driver: JobDriver = {
     ...base,
     heartbeat: async () => {

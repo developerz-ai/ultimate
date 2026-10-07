@@ -115,8 +115,8 @@ export interface PwaScreenshot {
 /**
  * The install chrome's two colours for one scheme, as CSS colour strings.
  *
- * ONE OF THE TWO PLACES A RAW COLOUR IS LEGAL, alongside `ThemeConfig.tokens` one section up, and
- * for a stronger reason than that one has: a browser paints the install splash and the address bar
+ * THE ONE PLACE IN `app.config.ts` A RAW COLOUR IS LEGAL (`theme.tokens`, the other, was deleted in
+ * 25.0.0 — the theme is `defineTheme` in `@ultimat3/ui`), because a browser paints the install splash and the address bar
  * from these before a single stylesheet has loaded, so there is no token to resolve them against
  * and no component anywhere in the loop.
  */

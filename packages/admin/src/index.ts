@@ -83,7 +83,6 @@ export {
 export {
   type PostgresAuditLogOptions,
   postgresAuditLog,
-  SQL_ADMIN_AUDIT_INSERT,
 } from './audit-pg';
 export { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
 export {

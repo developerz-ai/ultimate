@@ -96,7 +96,7 @@ function notifyTargets(retention: InboxRetention): readonly PurgeTarget[] {
     },
     {
       name: 'x_notify_digests',
-      // The job's clock, and the store's own window (`createPgDigestStore({ retentionMs })`, a week
+      // The job's clock, and the store's own window (`postgresDigestStore({ retentionMs })`, a week
       // by default) — a closed window only its dead-lettered flush would ever have drained.
       purgeExpired: (nowMs: number): Promise<number> => purgeNotifyDigests(nowMs),
     },

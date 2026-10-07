@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_STEP_PUT } from './driver-pg-sql';
 
 const STEP = {
@@ -24,7 +24,7 @@ function storeAnswering(rows: readonly unknown[]) {
       return Promise.resolve(rows as readonly R[]);
     },
   };
-  return { steps: createPgDriver({ executor }).steps, calls };
+  return { steps: postgresJobDriver({ executor }).steps, calls };
 }
 
 describe('the pg step store fences a write on its claim', () => {

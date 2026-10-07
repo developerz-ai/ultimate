@@ -23,31 +23,11 @@ import './registry';
  * itself: it shipped as a byte-identical copy here and in `@ultimat3/action`, and
  * two tier-3 packages may not import each other, so the one copy lives at tier 0.
  *
- * Re-exported rather than re-declared, so every name is importable from this package exactly as
- * before. `isSuperseded` is core's too: reading a fenced answer is the point of installing a
- * flight, and it should not cost a second import.
+ * `ClientFlight` and `ClientRetry` are re-exported as TYPES because this barrel's options name
+ * them; every value (`createClientFlight`, `isSuperseded`, …) is imported from `@ultimat3/core`,
+ * its one home — a re-export is a second import path (`X_HELPER_COPY`, `bun run flight-copies`).
  */
-export type {
-  ClientFlight,
-  ClientFlightOptions,
-  ClientRetry,
-  // The compat window a retirement gets — `@ultimat3/core`'s, re-exported here until 25.0.0.
-  // Versioning is two deployments, not a router feature.
-  Deprecation,
-  DeprecationField,
-  DeprecationRender,
-  FlightKeyOptions,
-  FlightPlan,
-  WireAnswer,
-} from '@ultimat3/core';
-export {
-  createClientFlight,
-  DEFAULT_CLIENT_RETRY,
-  isSuperseded,
-  isTransientFailure,
-  recordDeprecatedCall,
-  renderDeprecation,
-} from '@ultimat3/core';
+export type { ClientFlight, ClientRetry } from '@ultimat3/core';
 /** Re-exported so a `query` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -112,8 +92,6 @@ export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } fro
 export { planResume, seekOf, spendQueryLimit, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
-export type { QueryToolAnswer, QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
-export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
 /**
  * Path derivation only. There is no `toToolName`: an MCP tool is served under the export name
  * verbatim, and an exported derivation would be a second way to spell one tool.

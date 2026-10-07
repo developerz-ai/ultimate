@@ -90,7 +90,7 @@ describe('manifestJson', () => {
     ]);
   });
 
-  // `KEY_ORDER` is hand-maintained and `contentHash` hashes the WHOLE body, so a 14th top-level
+  // `KEY_ORDER` is hand-maintained and `fingerprint` hashes the WHOLE body, so a 14th top-level
   // field would be built into the hash and then dropped from the file — after which `assertNoDrift`
   // convicts the file as HAND_EDITED, a correct refusal with the wrong diagnosis. The same
   // treatment `ARRAY_SECTIONS` already has, and for the same reason: `satisfies` catches a key that

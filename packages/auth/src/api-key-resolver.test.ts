@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { apiKeyResolver } from './api-key-resolver';
 import { type ApiKeyVerifyStore, issueApiKey, revokeApiKey } from './api-keys';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const clock = frozenClock('2026-10-01T09:00:00.000Z');
@@ -28,7 +28,7 @@ const issueInto = async (
 
 describe('apiKeyResolver', () => {
   test('an issued key resolves to the agent actor for its org, carrying exactly its scopes', async () => {
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     const issued = await issueInto(store);
 
     const caller = await apiKeyResolver(() => store, { clock })(issued.plaintext);
@@ -44,7 +44,7 @@ describe('apiKeyResolver', () => {
   });
 
   test('every wrong key is the same null: malformed, unknown, wrong secret, revoked, expired', async () => {
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     const resolve = apiKeyResolver(() => store, { clock });
     const issued = await issueInto(store);
     const expired = await issueInto(store, { expiresAt: new Date(clock.now().getTime() - 1) });
@@ -79,7 +79,7 @@ describe('apiKeyResolver', () => {
     let store: ApiKeyVerifyStore | undefined;
     // Declared first, as a module evaluated before boot declares its mount.
     const resolve = apiKeyResolver(() => store ?? expect.unreachable('asked before boot'));
-    store = new MemoryAdapter(clock);
+    store = memoryAuthAdapter(clock);
     const issued = await issueInto(store);
     expect((await resolve(issued.plaintext))?.actor.id).toBeDefined();
   });
@@ -87,7 +87,7 @@ describe('apiKeyResolver', () => {
   // What a bearer mount and an MCP endpoint both do with this `null` is answer 401 — so this is
   // the one place a disabled owner's key is refused for both.
   test('a key whose owner was disabled is the same null on the next request', async () => {
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     const owner = await store.createUser({
       id: 'ada',
       email: 'ada@corp.test',
@@ -110,7 +110,7 @@ describe('apiKeyResolver', () => {
   });
 
   test('grantsOf reaches the actor: a role-based owner keeps what the role grants', async () => {
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     await store.createUser({
       id: 'ada',
       email: 'ada@corp.test',

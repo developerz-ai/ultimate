@@ -4,9 +4,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createMemoryOutboxStore } from './outbox';
+import { memoryOutboxStore } from './outbox';
 import { DEFAULT_OUTBOX_CLAIM_LEASE_MS, resolveClaimLeaseMs } from './outbox-lease';
-import { createPgOutboxStore } from './outbox-pg';
+import { postgresOutboxStore } from './outbox-pg';
 
 const executor: PgExecutor = {
   query<R>(): Promise<readonly R[]> {
@@ -41,13 +41,13 @@ describe('resolveClaimLeaseMs', () => {
 
 describe('both stores consume the one normalisation', () => {
   test('the memory store refuses a bad lease at construction', () => {
-    expect(() => createMemoryOutboxStore({ claimLeaseMs: 0 })).toThrow(/claimLeaseMs/);
+    expect(() => memoryOutboxStore({ claimLeaseMs: 0 })).toThrow(/claimLeaseMs/);
   });
 
   test('the pg store refuses a bad lease at construction, not at the first claim', () => {
     // At the first claim it would be a relay tick failing in a log line nobody reads.
     expect(() =>
-      createPgOutboxStore({
+      postgresOutboxStore({
         executor,
         txExecutor: () => executor,
         claimLeaseMs: Number.POSITIVE_INFINITY,

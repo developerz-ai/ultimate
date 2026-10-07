@@ -17,7 +17,7 @@ import type {
   NackOptions,
   SettleBy,
 } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -108,7 +108,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
     const NUM_JOBS = 10;
     const VISIBILITY_MS = 10_000;
     const clock = frozenClock(0);
-    const chaos = chaosDriver(createMemoryDriver({ clock }));
+    const chaos = chaosDriver(memoryJobDriver({ clock }));
     const resumeGate = gate();
 
     const executing = new Set<string>();

@@ -87,12 +87,12 @@ describe('defineConfig · the pwa block an install can be built from', () => {
     expect(cause).toContain(`pwa.colors.${scheme}.${key} must be a CSS colour`);
   });
 
-  // The pwa remedy must not ride on somebody else's finding: an app with a bad locale and a
+  // The pwa remedy must not ride on somebody else's finding: an app with a bad role and a
   // perfectly good pwa block would otherwise be told to rewrite its install colours.
   test('an unrelated finding does not attract the install fix', () => {
     try {
-      defineConfig({ name: 'myapp', locales: ['not a tag'], defaultLocale: 'not a tag' });
-      expect.unreachable('a bad locale was accepted');
+      defineConfig({ name: 'myapp', roles: ['websrv' as never] });
+      expect.unreachable('a bad role was accepted');
     } catch (error) {
       if (!isUltimateError(error)) throw error;
       expect((error as UltimateError).fix).not.toContain('themeColor');

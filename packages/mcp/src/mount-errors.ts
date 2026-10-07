@@ -23,7 +23,7 @@ export class McpPathDuplicateError extends UltimateError {
     super({
       code: 'X_MCP_PATH_DUPLICATE',
       cause: `${input.file} exports mcp endpoints #${first} and #${second}, and both claim ${input.method} ${input.path}`,
-      fix: `give endpoint #${second} in ${input.file} its own path — defineAppMcp({ path: '/mcp/<population>', ... }); endpoint #0 mounts at ai.mcp.path and every other at its own defineAppMcp path`,
+      fix: `give endpoint #${second} in ${input.file} its own path — defineAppMcp({ path: '/mcp/<population>', ... }); every endpoint mounts at its own defineAppMcp path (default /mcp)`,
     });
     this.path = input.path;
     this.endpoints = input.endpoints;

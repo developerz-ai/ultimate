@@ -45,7 +45,7 @@ const stubPage = (url: string): PageLike => ({
 describe(testName('unit', 'the declared-but-driverless fixtures'), () => {
   bunTest('every declared name has a driver requirement written down', () => {
     // `subscribe` left this list on 2026-08-20: the driver it was waiting for is
-    // `createSubscribeDriver()`, and the framework can build one. What is left all needs something
+    // `subscribeDriver()`, and the framework can build one. What is left all needs something
     // the framework genuinely cannot bundle — a browser, or a second build.
     expect([...DRIVER_FIXTURE_NAMES]).toEqual(['budget', 'deploy', 'page', 'signIn']);
     for (const name of DRIVER_FIXTURE_NAMES) {

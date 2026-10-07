@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, createContext, UltimateError, userActor } from '@ultimat3/core';
+import {
+  configureCursorSigning,
+  createContext,
+  encodeCursor,
+  UltimateError,
+  userActor,
+} from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import { serializeSortValue } from './cursor-value';
 import { paginate } from './pagination';
-import { describeQuery, isQuery } from './query';
+import { describeQuery, isQuery, queryHash } from './query';
 import { runQuery } from './read';
 import { registerQuery, resetRegistry } from './registry';
 import type { SearchChain } from './search';
@@ -157,7 +164,7 @@ describe('search()', () => {
     const page = await paginate(searchPosts, { q: 'cats' }, { first: 10, ctx });
     expect(page.rows.map((row) => row.id)).toEqual(['a', 'b', 'c']);
     // Nothing was cut, so there is no next page to advertise and no cursor a second call throws on.
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 
   test('a window the read OVERFLOWS is refused — the rest would be on no page at all', async () => {
@@ -194,10 +201,10 @@ describe('search()', () => {
     registerQuery('searchPosts', searchPosts);
     const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, ctx });
     expect(page.rows).toHaveLength(3);
-    // The pair that invited a call this read refuses. `hasNextPage` can only be false on a search
-    // page now, so a cursor client stops here instead of being handed a cursor page two throws on.
-    expect(page.hasNextPage).toBe(false);
-    expect(page.endCursor).not.toBeNull();
+    // The pair that invited a call this read refuses. `hasMore` can only be false on a search
+    // page now, so a cursor client stops here — and, since 25.0.0, is handed no cursor at all.
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
   });
 
   test('a cursor handed back is still refused — one page, and no second', async () => {
@@ -208,11 +215,15 @@ describe('search()', () => {
     });
     registerQuery('searchPosts', searchPosts);
     const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, ctx });
-    const second = paginate(
-      searchPosts,
-      { q: 'cats', limit: 3 },
-      { first: 3, after: page.endCursor ?? '', ctx },
-    );
+    // Since 25.0.0 the last page carries no cursor, so a client cannot be HANDED one: this is the
+    // cursor a client that kept one from an earlier build (or forged one for this read) sends.
+    expect(page.nextCursor).toBeNull();
+    const kept = encodeCursor({
+      scope: queryHash('searchPosts', { q: 'cats', limit: 3 }),
+      key: [serializeSortValue('c')],
+      id: 'c',
+    });
+    const second = paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 3, after: kept, ctx });
     await expect(second).rejects.toBeInstanceOf(UltimateError);
     // The CURSOR is what is refused, and the assertion says so: this window fits, so a bare
     // `rejects` here would pass just as happily on the overflow refusal beside it and stop pinning
@@ -235,7 +246,7 @@ describe('search()', () => {
     registerQuery('searchPosts', searchPosts);
     const page = await paginate(searchPosts, { q: 'cats' }, { first: 2, ctx });
     expect(page.rows.map((row) => row.id)).toEqual(['a', 'b']);
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 
   test(".page() serves the chain's own order — the top row is never sorted off page one", async () => {
@@ -253,7 +264,7 @@ describe('search()', () => {
     // The rows `runQuery` answers, in that order — not a different two in a different order.
     expect(page.rows.map((row) => row.id)).toEqual(['z', 'm']);
     expect(page.rows.map((row) => row.id)).toEqual(served.map((row) => row.id));
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 
   test('.page() serves every row when the chain returns fewer than the window', async () => {
@@ -265,6 +276,6 @@ describe('search()', () => {
     registerQuery('searchPosts', searchPosts);
     const page = await paginate(searchPosts, { q: 'cats', limit: 3 }, { first: 5, ctx });
     expect(page.rows.map((row) => row.id)).toEqual(['z', 'm', 'a']);
-    expect(page.hasNextPage).toBe(false);
+    expect(page.hasMore).toBe(false);
   });
 });

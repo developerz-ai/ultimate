@@ -85,7 +85,7 @@ export class ConcurrencyUnenforceableError extends UltimateError {
     super({
       code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
       cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
-      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or call setJobDriver(createPgDriver()) at boot — the pg driver is the one with a lease store`,
+      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or call setJobDriver(postgresJobDriver()) at boot — the pg driver is the one with a lease store`,
     });
   }
 }

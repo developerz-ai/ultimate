@@ -55,3 +55,8 @@ export class InMemoryAdvisoryLock implements AdvisoryLock {
     return () => undefined;
   }
 }
+
+/** The one way to build the in-process lock — the twin of `postgresAdvisoryLock()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function memoryAdvisoryLock(key: string): InMemoryAdvisoryLock {
+  return new InMemoryAdvisoryLock(key);
+}

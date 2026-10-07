@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { contentHash, definePrompt, describePrompts, getPrompt, resetPrompts } from './prompt';
+import { definePrompt, describePrompts, getPrompt, promptHash, resetPrompts } from './prompt';
 
 afterEach(() => {
   resetPrompts();
@@ -13,27 +13,27 @@ const base = {
 
 describe('prompts are content-hashed artifacts', () => {
   test('the hash changes when the template changes', () => {
-    const before = contentHash(base);
-    const after = contentHash({ ...base, template: `${base.template}\nBe concise.` });
+    const before = promptHash(base);
+    const after = promptHash({ ...base, template: `${base.template}\nBe concise.` });
     expect(after).not.toBe(before);
     // ...and is stable for identical input, or two runs of the same eval are incomparable.
-    expect(contentHash(base)).toBe(before);
+    expect(promptHash(base)).toBe(before);
   });
 
   test('the hash covers every field that changes model behaviour', () => {
-    const original = contentHash(base);
-    expect(contentHash({ ...base, system: 'You are terse.' })).not.toBe(original);
-    expect(contentHash({ ...base, effort: 'low' })).not.toBe(original);
-    expect(contentHash({ ...base, model: 'claude-haiku-4-5' })).not.toBe(original);
-    expect(contentHash({ ...base, output: { type: 'object' } })).not.toBe(original);
+    const original = promptHash(base);
+    expect(promptHash({ ...base, system: 'You are terse.' })).not.toBe(original);
+    expect(promptHash({ ...base, effort: 'low' })).not.toBe(original);
+    expect(promptHash({ ...base, model: 'claude-haiku-4-5' })).not.toBe(original);
+    expect(promptHash({ ...base, output: { type: 'object' } })).not.toBe(original);
   });
 
   test('schema key order does not change the hash', () => {
-    const a = contentHash({
+    const a = promptHash({
       ...base,
       output: { type: 'object', description: 'x', properties: { a: { type: 'string' } } },
     });
-    const b = contentHash({
+    const b = promptHash({
       ...base,
       output: { properties: { a: { type: 'string' } }, description: 'x', type: 'object' },
     });
@@ -72,7 +72,7 @@ describe('unit · a prompt output schema is declared, not transmitted', () => {
   const shape = { type: 'object', properties: { verdict: { type: 'string' } } } as const;
 
   test('declaring one moves the hash, so editing it needs a version bump', () => {
-    expect(contentHash({ ...base, output: shape })).not.toBe(contentHash(base));
+    expect(promptHash({ ...base, output: shape })).not.toBe(promptHash(base));
   });
 
   test('describePrompts publishes it verbatim', () => {
@@ -149,19 +149,19 @@ describe('unit · the prompt hash is injective over its schemas', () => {
   });
 
   test('a default of -0 does not hash as a default of 0', () => {
-    expect(contentHash(withDefault(-0))).not.toBe(contentHash(withDefault(0)));
+    expect(promptHash(withDefault(-0))).not.toBe(promptHash(withDefault(0)));
   });
 
   test('a non-finite default is not folded onto null', () => {
-    const nan = contentHash(withDefault(Number.NaN));
-    const nul = contentHash(withDefault(null));
-    const infinity = contentHash(withDefault(Number.POSITIVE_INFINITY));
+    const nan = promptHash(withDefault(Number.NaN));
+    const nul = promptHash(withDefault(null));
+    const infinity = promptHash(withDefault(Number.POSITIVE_INFINITY));
     expect(new Set([nan, nul, infinity]).size).toBe(3);
   });
 
   test('an ordinary JSON schema hashes exactly as it always did — no baseline is invalidated', () => {
     expect(
-      contentHash({ ...base, input: { type: 'object', properties: { a: { type: 'string' } } } }),
+      promptHash({ ...base, input: { type: 'object', properties: { a: { type: 'string' } } } }),
     ).toBe('e0b11b6f5a8975c86d712d194d8d79fa');
   });
 });

@@ -10,13 +10,7 @@ import {
   tryResolveEnvironment,
   usesDevCursorSecret,
 } from '@ultimat3/core';
-import {
-  checkDb,
-  createPostgresClient,
-  PGLITE_FIX,
-  PGLITE_MISSING,
-  PGLITE_PACKAGE,
-} from '@ultimat3/db';
+import { checkDb, PGLITE_FIX, PGLITE_MISSING, PGLITE_PACKAGE, postgresClient } from '@ultimat3/db';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
@@ -377,7 +371,7 @@ const installedAbove = (dir: string, specifier: string): boolean => {
  */
 async function probeDatabase(url: string | undefined): Promise<Finding | null> {
   if (externalUrl(url) === undefined) return null;
-  const client = createPostgresClient({ url, applicationName: 'x-doctor' });
+  const client = postgresClient({ url, applicationName: 'x-doctor' });
   try {
     const report = await checkDb(client);
     if (report.ok) return null;

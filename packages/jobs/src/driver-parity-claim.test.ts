@@ -8,8 +8,8 @@ import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT, LIVE_STATES } from './driver';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_CANCEL, SQL_CLAIM, SQL_FIND_LIVE_BY_KEY, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 import { isFinalAttempt } from './retry';
 
@@ -75,7 +75,7 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
   test('the pg driver hands back the claims and REPORTS the burials, told apart by state', async () => {
     const rows = [claimRow('a', 'running'), claimRow('b', 'dead'), claimRow('c', 'running')];
     const calls: (readonly JobRecord[])[] = [];
-    const claimed = await createPgDriver({ executor: executorAnswering(rows) }).claim({
+    const claimed = await postgresJobDriver({ executor: executorAnswering(rows) }).claim({
       queues: ['default'],
       limit: 5,
       visibilityTimeoutMs: TTL_MS,
@@ -98,15 +98,15 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
       reported += 1;
     };
     const base = { queues: ['default'], limit: 5, visibilityTimeoutMs: TTL_MS, workerId: 'w1' };
-    const clean = createPgDriver({ executor: executorAnswering([claimRow('a', 'running')]) });
+    const clean = postgresJobDriver({ executor: executorAnswering([claimRow('a', 'running')]) });
     expect(await clean.claim({ ...base, onExhausted })).toHaveLength(1);
     expect(reported).toBe(0);
     // Nobody listening: the dead row is still not handed out as work.
-    const burying = createPgDriver({ executor: executorAnswering([claimRow('b', 'dead')]) });
+    const burying = postgresJobDriver({ executor: executorAnswering([claimRow('b', 'dead')]) });
     expect(await burying.claim(base)).toEqual([]);
 
     const clock = frozenClock(1_700_000_000_000);
-    const memory = createMemoryDriver({ clock });
+    const memory = memoryJobDriver({ clock });
     const { id } = await memory.enqueue({
       name: 'sync',
       queue: 'default',
@@ -123,7 +123,7 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
 
   test('a paused queue is neither claimed nor buried: the pick skips it before either arm', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const memory = createMemoryDriver({ clock });
+    const memory = memoryJobDriver({ clock });
     const { id } = await memory.enqueue({
       name: 'sync',
       queue: 'default',

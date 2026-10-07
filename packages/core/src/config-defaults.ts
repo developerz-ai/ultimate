@@ -11,11 +11,7 @@ type Sectioned = 'name' | 'site' | 'seo' | 'navigation' | 'islands' | 'mail';
 
 export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
   return {
-    locales: ['en'],
-    defaultLocale: 'en',
-    defaultTimeZone: 'UTC',
-    defaultCurrency: 'USD',
-    theme: { defaultMode: 'system', tokens: {} },
+    theme: { defaultMode: 'system' },
     auth: { signInPath: null },
     pwa: {
       enabled: false,
@@ -48,7 +44,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
       maxSocketsPerActor: undefined,
     },
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
-    ai: { mcp: { expose: true, path: '/mcp' } },
+    ai: { mcp: { expose: true } },
     // Read from the process env when the config is DEFINED — the same env the drain will run in.
     drain: { readinessGraceMs: defaultReadinessGraceMs(), deadlineMs: DRAIN_DEADLINE_DEFAULT_MS },
     health: { readiness: 'dependencies' },

@@ -1,4 +1,4 @@
-// `memoryDriver()` beside `localDriver()`: the disk a TEST holds answers every question the dev
+// `memoryStorageDriver()` beside `localDriver()`: the disk a TEST holds answers every question the dev
 // disk answers, the same way — so a suite that swaps a temp directory for a heap map is asserting
 // the same contract, and a hand-written `StorageDriver` in a test file is never needed again.
 
@@ -11,7 +11,7 @@ import { frozenClock, isUltimateError, NotImplementedError } from '@ultimat3/cor
 import type { StorageDriver } from './driver';
 import { sha256Base64 } from './driver';
 import { localDriver } from './driver-local';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { defineStorage, disk, resetStorage } from './storage';
 
 const clock = frozenClock('2026-10-01T09:00:00.000Z');
@@ -33,7 +33,7 @@ beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-memory-parity-`);
   pair = [
     ['local', localDriver({ root, signingSecret: 'test-secret', clock })],
-    ['memory', memoryDriver({ signingSecret: 'test-secret', clock })],
+    ['memory', memoryStorageDriver({ signingSecret: 'test-secret', clock })],
   ];
 });
 
@@ -100,7 +100,7 @@ describe('the memory disk answers as the local disk does', () => {
   });
 
   test('a key that escapes, a wrong checksum and an oversized body are refused by code', async () => {
-    const small = memoryDriver({ maxPutBytes: 4 });
+    const small = memoryStorageDriver({ maxPutBytes: 4 });
     expect(await codeOf(() => small.put('big.bin', bytes('12345')))).toBe('X_STORAGE_TOO_LARGE');
     for (const [name, driver] of pair) {
       expect([name, await codeOf(() => driver.put('../escape.txt', bytes('x')))]).toEqual([
@@ -162,7 +162,7 @@ describe('the memory disk answers as the local disk does', () => {
   });
 
   test('a URL the disk signed is one it verifies, under the name it was registered as', async () => {
-    const memory = memoryDriver({ signingSecret: 'test-secret', clock });
+    const memory = memoryStorageDriver({ signingSecret: 'test-secret', clock });
     defineStorage({ disks: { sessions: memory } });
     const url = await disk('sessions').signedUrl('org/o1/a.txt', { method: 'PUT', maxBytes: 10 });
     expect(url).toContain('/sessions/');
@@ -173,7 +173,7 @@ describe('the memory disk answers as the local disk does', () => {
   });
 
   test('what was written is readable back as stored bytes, for an assertion about the bucket', async () => {
-    const memory = memoryDriver();
+    const memory = memoryStorageDriver();
     await memory.put('scrape-session/a.json', bytes('{"sealed":"x1.abc"}'));
     // A copy: mutating what a test read must not rewrite the object.
     const stored = memory.objects().get('scrape-session/a.json');
@@ -186,7 +186,7 @@ describe('the memory disk answers as the local disk does', () => {
     const production = { NODE_ENV: 'production' };
     const refused = (() => {
       try {
-        memoryDriver({ env: production });
+        memoryStorageDriver({ env: production });
       } catch (thrown) {
         return isUltimateError(thrown) ? thrown.code : 'uncoded';
       }

@@ -3,14 +3,14 @@
 // that must send ONE payload, and `if`/`unless` that must be read after the wait rather than before.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createMemoryStepStore, resetJobs } from '@ultimat3/jobs';
+import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { createMemoryDigestStore } from './digest';
-import { createMemoryDeliveryLedger } from './ledger';
+import { memoryDigestStore } from './digest';
+import { memoryDeliveryLedger } from './ledger';
 import { notifier } from './notifier';
 import type { TestParams } from './notify-fixture';
 import { driver, recorder } from './notify-fixture';
-import { createMemoryPreferenceStore } from './preferences';
+import { memoryPreferenceStore } from './preferences';
 import { resetNotifyStores, setNotifyStores } from './stores';
 
 const POST = '00000000-0000-7000-8000-00000000beef';
@@ -31,7 +31,7 @@ describe('unit · fan-out', () => {
     // The step store is what an ordinary retry replays from. Throwing it away is the case that
     // matters: the process died, another node claimed the run, and the ONLY thing left saying the
     // email already went out is the ledger.
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     setNotifyStores({ ledger });
     const log = recorder();
     const handle = notifier<TestParams>({
@@ -46,7 +46,7 @@ describe('unit · fan-out', () => {
     expect(first.delivered).toBe(2);
     expect(log.sent.map((entry) => entry.to.join())).toEqual(['ana', 'ben']);
 
-    const replay = await driver({ store: createMemoryStepStore() }).finish(handle, {
+    const replay = await driver({ store: memoryStepStore() }).finish(handle, {
       params,
       recipients: audience,
     });
@@ -56,7 +56,7 @@ describe('unit · fan-out', () => {
   });
 
   test('an opt-out silences ONE channel and leaves the others firing', async () => {
-    const preferences = createMemoryPreferenceStore();
+    const preferences = memoryPreferenceStore();
     preferences.deny({ recipient: 'ana', notifier: 'post.commented', channel: 'email' });
     setNotifyStores({ preferences });
     const log = recorder();
@@ -208,7 +208,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a throwing channel settles `failed`, so the job retry decides and the ledger does not', async () => {
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     setNotifyStores({ ledger });
     const log = recorder();
     // A foreign error handed to the code under test is legitimate INPUT, not a test verdict.
@@ -284,7 +284,7 @@ describe('unit · fan-out', () => {
   });
 
   test('a repeated recipient id lands in its digest window once', async () => {
-    setNotifyStores({ digest: createMemoryDigestStore() });
+    setNotifyStores({ digest: memoryDigestStore() });
     const log = recorder();
     const handle = notifier<TestParams>({
       name: 'post.repeated-digest',

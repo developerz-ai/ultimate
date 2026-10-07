@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ReplicationFailedError } from './errors';
-import { PgAdvisoryLock } from './pg-advisory-lock';
+import { type PgAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
 import { ByteReader } from './pg-bytes';
 import {
   authOk,
@@ -43,17 +43,17 @@ const scriptLockReply = (stream: FakeStream, value: 't' | 'f'): void => {
 };
 
 const lockOver = (stream: FakeStream, key: string = KEY): PgAdvisoryLock =>
-  new PgAdvisoryLock({ url: FAKE_URL, key, stream: () => Promise.resolve(stream) });
+  postgresAdvisoryLock({ url: FAKE_URL, key, stream: () => Promise.resolve(stream) });
 
 describe('constructor — key validation', () => {
   test.each([
     ['a key carrying a quote and embedded SQL', "x:replicator:'; DROP TABLE"],
     ['an empty key', ''],
   ])('%s throws X_REPLICATION_FAILED, before any connection opens', (_label, key) => {
-    expect(() => new PgAdvisoryLock({ url: FAKE_URL, key })).toThrow(ReplicationFailedError);
+    expect(() => postgresAdvisoryLock({ url: FAKE_URL, key })).toThrow(ReplicationFailedError);
     let error: unknown;
     try {
-      new PgAdvisoryLock({ url: FAKE_URL, key });
+      postgresAdvisoryLock({ url: FAKE_URL, key });
     } catch (caught) {
       error = caught;
     }
@@ -134,7 +134,7 @@ describe('tryAcquire is memoised while it is in flight', () => {
     scriptLockReply(second, 't');
     const streams = [first, second];
     let opened = 0;
-    const lock = new PgAdvisoryLock({
+    const lock = postgresAdvisoryLock({
       url: FAKE_URL,
       key: KEY,
       stream: () => {
@@ -185,7 +185,7 @@ describe('tryAcquire is memoised while it is in flight', () => {
     scriptLockReply(second, 't');
     const streams = [failing, second];
     let opened = 0;
-    const lock = new PgAdvisoryLock({
+    const lock = postgresAdvisoryLock({
       url: FAKE_URL,
       key: KEY,
       stream: () => {
@@ -237,7 +237,7 @@ describe('acquire, release, acquire', () => {
     scriptLockReply(second, 't');
     const streams = [first, second];
     let calls = 0;
-    const lock = new PgAdvisoryLock({
+    const lock = postgresAdvisoryLock({
       url: FAKE_URL,
       key: KEY,
       stream: () => {
@@ -269,7 +269,7 @@ describe('release over a session that already died', () => {
     scriptLockReply(second, 'f');
     const streams = [first, second];
     let dials = 0;
-    const lock = new PgAdvisoryLock({
+    const lock = postgresAdvisoryLock({
       url: FAKE_URL,
       key: KEY,
       stream: () => {

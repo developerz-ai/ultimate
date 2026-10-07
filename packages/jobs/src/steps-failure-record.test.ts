@@ -4,13 +4,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { StepRecord, StepStore } from './steps';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 class CardDeclined extends Error {}
 
 /** A store that takes everything but a `failed` record — the pool dying under the bookkeeping. */
 function storeRefusingFailures(): StepStore & { readonly refused: StepRecord[] } {
-  const inner = createMemoryStepStore();
+  const inner = memoryStepStore();
   const refused: StepRecord[] = [];
   return {
     ...inner,

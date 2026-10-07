@@ -1,4 +1,4 @@
-// The ledger projection behind `x db backfill --list`, driven through `createMemoryDriver()` —
+// The ledger projection behind `x db backfill --list`, driven through `memoryJobDriver()` —
 // a real `BackfillLedger` with real start/progress/finish semantics, so a row here got its
 // `cursor` and `durationMs` the way a pg ledger would. No `ParsedArgs`, no app, no queue boot.
 
@@ -8,13 +8,7 @@ import { setDbClient } from '@ultimat3/db';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import {
-  backfill,
-  createMemoryDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { backfill, memoryJobDriver, resetJobDriver, resetJobs, setJobDriver } from '@ultimat3/jobs';
 import {
   pendingReport,
   readAppliedMigrations,
@@ -95,7 +89,7 @@ afterEach(() => {
 
 describe('unit · declared minus completed, joined to the ledger', () => {
   test('a sweep that was merged and never enqueued is pending — the whole point', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     declareSweep('normalize-titles');
 
     const report = await pendingReport(driver, 'production');
@@ -106,7 +100,7 @@ describe('unit · declared minus completed, joined to the ledger', () => {
   });
 
   test('a completed pass drops out of the diff, and the ledger row is what says so', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const handle = declareSweep('normalize-titles');
     await seed(driver, {
       runId: 'run_1',
@@ -126,7 +120,7 @@ describe('unit · declared minus completed, joined to the ledger', () => {
 
 describe('unit · runBackfills', () => {
   test('a dry run writes NOTHING — --write is never implied', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('normalize-titles');
 
@@ -154,7 +148,7 @@ describe('unit · runBackfills', () => {
   });
 
   test('--write enqueues, and a second --write dedupes onto the live pass', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('normalize-titles');
     const args = {
@@ -182,7 +176,7 @@ describe('unit · runBackfills', () => {
   test('one blocked sweep does not stop the ones after it', async () => {
     // The reason `--all` isolates per name: a wedged cleanup that threw out of the loop would
     // block every later one forever.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('a-blocked', { requires: '20260101000000_init' });
     declareSweep('b-runs');
@@ -206,7 +200,7 @@ describe('unit · runBackfills', () => {
     // Pinned because the selection used to be `report.pending.includes(row)` — an object-identity
     // test that held only because the diff filters the array it returns. One `map` inside
     // `pendingBackfills` and `--all` would have found nothing, exited 0, and said so.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('failed-once');
     declareSweep('still-running');
@@ -228,7 +222,7 @@ describe('unit · runBackfills', () => {
   });
 
   test('a completed name is refused without --force and runs again with it', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('normalize-titles');
     await seed(driver, { runId: 'run_1', name: 'normalize-titles', rows: 4, finish: 'completed' });
@@ -249,7 +243,7 @@ describe('unit · runBackfills', () => {
   });
 
   test('a sweep this environment may not run is excluded from --all, never enqueued', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('prod-only', { environments: ['production'] });
 
@@ -289,7 +283,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
     });
 
   test('a declared count() is what the dry run reports', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('counted', { count: () => 42 });
 
@@ -302,7 +296,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
     // A tenanted sweep counts within one org and the CLI's context carries no actor, so the throw
     // is expected. Reporting `0` there would be the dry run lying, which is the failure `count()`
     // exists to close.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('uncountable', {
       count: () => {
@@ -317,7 +311,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
   });
 
   test('a declaration with no count() reports null, and the table renders it as a value', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('uncounted');
 
@@ -327,7 +321,7 @@ describe('unit · remaining — the one number a dry run reports', () => {
   });
 
   test('remaining survives the enqueue, so --write reports what the dry run reported', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     declareSweep('counted-write', { count: () => 7 });
 

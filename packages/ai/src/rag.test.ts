@@ -10,7 +10,7 @@ import type { Embedder } from './embeddings';
 import { HashEmbedder } from './embeddings';
 import { estimateTextTokens } from './provider';
 import { assembleContext, chunk, indexDocument, retrieve } from './rag';
-import { MemoryVectorStore } from './vector';
+import { memoryVectorStore } from './vector';
 
 const SIZE = 128;
 const OVERLAP = 32;
@@ -141,7 +141,7 @@ describe('a chunk, a retrieval and an assembly all refuse a bound that is not on
   });
 
   test('retrieve() names its own k, not the k * 3 the store is asked for', async () => {
-    const store = new MemoryVectorStore({ dimension: 256 });
+    const store = memoryVectorStore({ dimension: 256 });
     const embedder = new HashEmbedder();
     const error = await asyncRefusal(() =>
       retrieve({ store, embedder, query: 'drift', k: Number.NaN }),
@@ -166,7 +166,7 @@ describe('indexDocument against an embedder that under-answers', () => {
   };
 
   test('refuses with X_AI_EMBEDDER_INVALID instead of storing an undefined vector', async () => {
-    const store = new MemoryVectorStore({ dimension: 4 });
+    const store = memoryVectorStore({ dimension: 4 });
     const document = { id: 'doc', text: unbrokenParagraph(400), size: SIZE, overlap: OVERLAP };
 
     const error = await asyncRefusal(() => indexDocument({ store, embedder: short, document }));
@@ -181,7 +181,7 @@ describe('indexDocument against an embedder that under-answers', () => {
 // and left the tail — text the document no longer contains, still retrieved and still cited.
 describe('re-indexing a shorter document', () => {
   test('leaves none of the old tail retrievable', async () => {
-    const store = new MemoryVectorStore({ dimension: 64 });
+    const store = memoryVectorStore({ dimension: 64 });
     const embedder = new HashEmbedder({ dimension: 64 });
     const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');
     const first = await indexDocument({
@@ -196,7 +196,7 @@ describe('re-indexing a shorter document', () => {
   });
 
   test('another document with the same prefix is untouched', async () => {
-    const store = new MemoryVectorStore({ dimension: 64 });
+    const store = memoryVectorStore({ dimension: 64 });
     const embedder = new HashEmbedder({ dimension: 64 });
     await indexDocument({ store, embedder, document: { id: 'other', text: 'zebra stays.' } });
     await indexDocument({ store, embedder, document: { id: 'doc', text: 'alpha one.' } });
@@ -230,7 +230,7 @@ describe('the source stamp is the chunker’s, whatever the caller passes', () =
   });
 
   test('re-indexing shorter still prunes the tail when the caller passed a source', async () => {
-    const store = new MemoryVectorStore({ dimension: 64 });
+    const store = memoryVectorStore({ dimension: 64 });
     const embedder = new HashEmbedder({ dimension: 64 });
     const metadata = { source: 'upload' };
     const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');

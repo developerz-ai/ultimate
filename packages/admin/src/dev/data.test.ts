@@ -239,8 +239,8 @@ describe('hooks', () => {
 
 describe('the backfill ledger source', () => {
   test('the WHOLE ledger comes back, completed passes included', async () => {
-    const { createMemoryDriver, resetJobDriver, setJobDriver } = await import('@ultimat3/jobs');
-    const driver = createMemoryDriver();
+    const { memoryJobDriver, resetJobDriver, setJobDriver } = await import('@ultimat3/jobs');
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     try {
       const ledger = driver.backfills;

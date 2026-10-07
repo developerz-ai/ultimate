@@ -20,11 +20,11 @@ import {
 import type { OutboxRelay } from '@ultimat3/jobs';
 import {
   createOutboxRelay,
-  createPgLeaseLeader,
   createScheduler,
   createWorker,
   jobDriver,
-  pgSchedulerState,
+  postgresLeaseLeader,
+  postgresSchedulerState,
 } from '@ultimat3/jobs';
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { errorPageHook } from './error-pages';
@@ -351,11 +351,11 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     const wake = selected.includes('worker') ? startWorkerWake(options.runtime.db) : null;
     if (wake !== null) started.push(() => wake.stop());
 
-    // `state` and `leader`, not the defaults. `createMemorySchedulerState` forgets every watermark
+    // `state` and `leader`, not the defaults. `memorySchedulerState` forgets every watermark
     // on restart, so a rolling deploy re-fires or skips whatever was due across it, and
     // `soleLeader()` makes every replica the leader — three `scheduler` pods, three of every task.
     //
-    // `createPgLeaseLeader` and NOT `createPgLeader`: the latter's `pg_try_advisory_lock` is
+    // `postgresLeaseLeader` and NOT `postgresLeader`: the latter's `pg_try_advisory_lock` is
     // SESSION-scoped, and the session ends the moment the connection goes back to the pool, so
     // every node reads itself as leader anyway. An expiring row is correct on the executor this
     // package is actually handed.
@@ -363,8 +363,8 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     const scheduler = selected.includes('scheduler')
       ? createScheduler({
           driver: options.runtime.jobs,
-          state: pgSchedulerState(executor),
-          leader: createPgLeaseLeader({ executor }),
+          state: postgresSchedulerState(executor),
+          leader: postgresLeaseLeader({ executor }),
         })
       : null;
     scheduler?.start();

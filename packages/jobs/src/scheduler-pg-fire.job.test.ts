@@ -4,10 +4,10 @@
 // Opt-in (`.job.`): the embedded Postgres costs seconds to boot.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
-import { pgSchedulerState } from './scheduler-pg';
+import { postgresSchedulerState } from './scheduler-pg';
 
 const T0 = Date.UTC(2026, 6, 26, 3, 0, 0);
 
@@ -33,8 +33,8 @@ const job = (name: string) => ({
 
 describe('a pg fire reports each job by the row it inserted', () => {
   test('two jobs sharing an idempotency key get their own ids and run ids', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
-    const state = pgSchedulerState(pg.executor);
+    const driver = postgresJobDriver({ executor: pg.executor });
+    const state = postgresSchedulerState(pg.executor);
 
     const results = await state.fire(driver, {
       task: 'nightly',

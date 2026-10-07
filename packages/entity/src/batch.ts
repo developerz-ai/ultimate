@@ -6,11 +6,11 @@
 // exactly what they mean in `page()`. What this file owns is the loop, the refusals that belong on
 // the chain rather than one batch later, and what closing means.
 
+import type { Page } from '@ultimat3/core';
 import { assertSeekable } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import { MAX_PAGE_SIZE, totalOrder } from './plan';
-import type { Page } from './repo';
 import type { SortKey } from './tenancy';
 
 /**

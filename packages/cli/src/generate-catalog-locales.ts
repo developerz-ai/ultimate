@@ -5,7 +5,7 @@
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { type Catalog, loadCatalog } from '@ultimat3/i18n';
-import { loadAppConfig } from './app-config-load';
+import { loadAppCatalogs } from '@ultimat3/i18n/app-catalogs';
 import { BadFlagError } from './errors';
 import { resolveDefaultLocale, seedCatalog, serializeCatalog } from './i18n-audit';
 import { catalogLocales } from './i18n-index';
@@ -22,13 +22,13 @@ const localeOf = (file: GeneratedFile): string | undefined => {
 };
 
 /**
- * `app.config.ts`'s `defaultLocale`, or `undefined` when there is no config or it will not load —
- * `x g` is not the command that refuses an app over its config: the manifest load after the write
- * reports that, with its own fix.
+ * The catalogs' declared default (`defineCatalogs({ default })`), or `undefined` when the app has no
+ * catalog module or it will not load — `x g` is not the command that refuses an app over it: the
+ * manifest load after the write reports that, with its own fix.
  */
 async function declaredDefault(root: string): Promise<string | undefined> {
   try {
-    return (await loadAppConfig(root))?.defaultLocale;
+    return (await loadAppCatalogs(root))?.defaultLocale;
   } catch {
     return undefined;
   }

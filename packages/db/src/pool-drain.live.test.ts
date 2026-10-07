@@ -4,7 +4,7 @@
 // an outstanding reserved connection. Skips unless `TEST_DATABASE_URL` is set.
 
 import { describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { DbError } from './errors';
 import { sql } from './sql';
 
@@ -13,7 +13,7 @@ const hasPostgres = typeof url === 'string' && url.length > 0;
 
 describe.skipIf(!hasPostgres)('live · postgres · a drain that cannot finish still ends', () => {
   const client = (drainTimeoutMs: number): PostgresClient =>
-    createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 2, drainTimeoutMs } });
+    postgresClient({ url: url ?? '', role: 'web', profile: { max: 2, drainTimeoutMs } });
 
   test('close() gives up on a reserve nobody released, and says so', async () => {
     // The shape `releaseQueue` hit in `dev-runtime.live.test.ts`: a shutdown runs while a

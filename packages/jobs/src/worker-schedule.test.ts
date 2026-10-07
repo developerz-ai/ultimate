@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { IntervalScheduler } from './renewal-timer';
 import { createWorker } from './worker';
 
@@ -18,7 +18,7 @@ describe('unit · the worker renews on the scheduler it is handed', () => {
       };
     };
     const worker = createWorker({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       workerId: 'scheduled-worker',
       heartbeatIntervalMs: 7_000,
       drainOnShutdown: false,

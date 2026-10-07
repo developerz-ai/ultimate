@@ -12,9 +12,13 @@ import { agent } from './agent';
 import { describeAgents, resetAgents } from './agent-facts';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -39,7 +43,9 @@ beforeEach(() => {
   resetAiRuntime();
   resetAgents();
   resetRegistry();
-  configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+  configureAi({
+    gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] }),
+  });
 });
 
 describe('describeAgents', () => {
@@ -65,8 +71,8 @@ describe('describeAgents', () => {
         prompt: prompt.ref,
         promptId: prompt.id,
         promptHash: prompt.hash,
-        model: 'claude-opus-5',
-        modelFrom: 'built-in-default',
+        model: FIXTURE_MODEL,
+        modelFrom: 'gateway',
         maxTurns: 3,
         maxToolResultChars: 500,
         // Sorted, so a manifest diff is about the catalogue and not about declaration order.
@@ -110,6 +116,25 @@ describe('describeAgents', () => {
       { name: 'defaultedAgent', model: 'claude-sonnet-5', modelFrom: 'gateway' },
       { name: 'pinnedAgent', model: 'claude-haiku-4-5', modelFrom: 'declaration' },
     ]);
+  });
+
+  // M12: no fourth place. A declaration naming no model, under a gateway with no `defaultModel`,
+  // is described as naming none — never as a vendor id the framework picked for it.
+  test('an agent nothing names a model for is published with model null, not a vendor default', () => {
+    configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+    registerAction(
+      'unchosenAgent',
+      agent({
+        input: Input,
+        output: Output,
+        prompt: promptFor(),
+        vars: ({ input }) => ({ orderId: input.orderId }),
+        tools: [],
+        policy: allow(),
+      }),
+    );
+    const [row] = describeAgents();
+    expect([row?.model, row?.modelFrom]).toEqual([null, null]);
   });
 
   test('the defaults an agent inherits are published as the numbers, never as absence', () => {

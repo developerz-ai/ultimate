@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
-import { BuiltinAdapter } from './builtin-adapter';
+import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
 
 const ID = '00000000-0000-7000-8000-000000000101';
@@ -45,7 +45,7 @@ let adapter: BuiltinAdapter;
 
 const setup = (): void => {
   client = createRecordingClient();
-  adapter = new BuiltinAdapter(client);
+  adapter = postgresAuthAdapter(client);
 };
 
 const lastText = (): string => client.texts.at(-1) ?? '';
@@ -307,7 +307,7 @@ describe('BuiltinAdapter — verification tokens', () => {
   test('takeVerification consumes one row, and only the one whose hash was presented', async () => {
     setup();
     const redeemedAt = new Date('2031-03-04T05:06:07.000Z');
-    await new BuiltinAdapter(client, frozenClock(redeemedAt)).takeVerification(
+    await postgresAuthAdapter(client, frozenClock(redeemedAt)).takeVerification(
       'password-reset',
       'ada@example.test',
       'the-hash',

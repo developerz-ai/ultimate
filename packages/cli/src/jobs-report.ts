@@ -1,5 +1,5 @@
 // Pure, driver-injected job operations behind `x jobs`: flag parsing, plus ls / show / retry. No
-// CLI parsing, no process I/O, no rendering — a test drives every path with `createMemoryDriver()`
+// CLI parsing, no process I/O, no rendering — a test drives every path with `memoryJobDriver()`
 // alone. Drain is `jobs-drain.ts`, the `--json` shapes `jobs-json.ts`, the table `jobs-table.ts`.
 
 import type {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import {
   clearHandshakeCookie,
@@ -215,7 +215,7 @@ describe('the two legs of a login', () => {
    */
   test('a github login finishes across two requests carrying only the cookie', async () => {
     const auth: Auth = defineAuth({
-      adapter: new MemoryAdapter(),
+      adapter: memoryAuthAdapter(),
       clock,
       providers: ['github', 'google'],
     });
@@ -257,7 +257,7 @@ describe('the two legs of a login', () => {
   });
 
   test('a callback whose cookie belongs to another browser never reaches the network', async () => {
-    const auth: Auth = defineAuth({ adapter: new MemoryAdapter(), clock, providers: ['github'] });
+    const auth: Auth = defineAuth({ adapter: memoryAuthAdapter(), clock, providers: ['github'] });
     const victim = start();
     const attacker = start();
     const request = callbackRequest(handshakeCookie(victim, options));

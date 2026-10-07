@@ -277,9 +277,7 @@ describe('the read client on the page store', () => {
     const fetch: FetchLike = async (url) =>
       Response.json(
         {
-          data: url.includes('_first=')
-            ? { rows: [row], endCursor: null, hasNextPage: false }
-            : [row],
+          data: url.includes('_first=') ? { rows: [row], nextCursor: null, hasMore: false } : [row],
           records: { post: { [ORG_ID]: row } },
         },
         { headers: { [RECORDS_HEADER]: '1' } },

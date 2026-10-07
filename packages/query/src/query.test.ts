@@ -89,7 +89,7 @@ describe('query', () => {
     const registered = registerQuery('orgFeed', declared);
     expect(registered).toBe(declared);
     expect(declared.name).toBe('orgFeed');
-    expect(declared.tool().query).toBe('orgFeed');
+    expect(declared.describe().name).toBe('orgFeed');
   });
 
   test('naming an already-named query twins it instead of renaming in place', () => {

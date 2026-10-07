@@ -115,6 +115,11 @@ export class MemoryLocalStore implements LocalStore {
   }
 }
 
+/** The one way to build the in-process store (tests, a browser with no IndexedDB); the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function memoryLocalStore(): MemoryLocalStore {
+  return new MemoryLocalStore();
+}
+
 class IdbLocalStore implements LocalStore {
   readonly kind = 'indexeddb';
   constructor(private readonly db: IdbDatabaseLike) {}

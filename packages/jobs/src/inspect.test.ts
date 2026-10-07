@@ -8,7 +8,7 @@ import { assert, NotImplementedError, type UltimateError } from '@ultimat3/core'
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import {
   inspectDeadLetters,
   inspectJob,
@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe('inspectQueues', () => {
   test('sums per-queue stats into totals, and oldestReadyMs is the MAX across queues, not the sum', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     // Every field below is a distinct value across the two queues and across fields within one
     // queue, so a swapped field (e.g. summing `ready` into the `delayed` slot) fails the exact
     // totals assertion instead of coincidentally matching — the source-level equivalent of a
@@ -98,7 +98,7 @@ describe('inspectQueues', () => {
   });
 
   test('a single queue: totals equal that queue, oldestReadyMs equals its own value', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const patched: JobDriver = {
       ...driver,
       stats: () =>
@@ -130,7 +130,7 @@ describe('inspectQueues', () => {
   });
 
   test('no queues at all: every total and oldestReadyMs is zero, not undefined or NaN', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const patched: JobDriver = { ...driver, stats: () => Promise.resolve([]) };
 
     const report = await inspectQueues(patched);
@@ -150,13 +150,13 @@ describe('inspectQueues', () => {
 
 /** Drops `introspect` from a real memory driver — the type keeps it optional for exactly this. */
 function driverWithoutIntrospect(): JobDriver {
-  const full = createMemoryDriver();
+  const full = memoryJobDriver();
   const { introspect: _introspect, ...rest } = full;
   return rest;
 }
 
 const INTROSPECT_FIX =
-  'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect — then: x jobs ls --json';
+  'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect — then: x jobs ls --json';
 
 async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
   let thrown: unknown;
@@ -220,7 +220,7 @@ async function enqueueAndClaim(
 
 describe('inspectJob', () => {
   test('reads the record, its steps, and the retry schedule of the matching registered job', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const handle: JobHandle<OrgInput> = job<OrgInput>({
       tenant: 'none',
       name: 'sendDigest',
@@ -269,7 +269,7 @@ describe('inspectJob', () => {
   });
 
   test('a record whose name matches no registered job gets an empty retry schedule, not a throw', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     // Enqueued directly, never through job(): nothing in the registry is named this.
     const { id } = await enqueueAndClaim(driver, { name: 'an-unregistered-job-name' });
 
@@ -281,13 +281,13 @@ describe('inspectJob', () => {
   });
 
   test('an id with no record returns undefined, not a throw', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const trace = await inspectJob(driver, 'no-such-job-id');
     expect(trace).toBeUndefined();
   });
 
   test('lastError and tenantId fall back to null when the record has neither', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'plain-job' });
     const trace = await inspectJob(driver, id);
     expect(trace?.lastError).toBeNull();
@@ -297,7 +297,7 @@ describe('inspectJob', () => {
 
 describe('inspectJobList', () => {
   test('is a thin passthrough to driver.introspect.list(filter)', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue({
       name: 'jobA',
       queue: 'default',
@@ -329,7 +329,7 @@ describe('inspectJobList', () => {
 
 describe('inspectDeadLetters', () => {
   test('maps driver rows to DeadLetterEntry and synthesizes the retry command', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'flaky-job' });
     await driver.nack(id, {
       workerId: 'worker-1',
@@ -354,7 +354,7 @@ describe('inspectDeadLetters', () => {
   });
 
   test('limit is forwarded to the driver', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     for (const name of ['a', 'b', 'c']) {
       const { id } = await enqueueAndClaim(driver, { name });
       await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
@@ -367,7 +367,7 @@ describe('inspectDeadLetters', () => {
 
 describe('retryFromStep', () => {
   test('forwards { fromStep } only when a stepName is given, then re-reads the job', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id, runId } = await enqueueAndClaim(driver, { name: 'resumable-job' });
     // Dead-lettered first: `x jobs retry` refuses a RUNNING job (`X_JOB_NOT_REQUEUEABLE`).
     await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
@@ -385,7 +385,7 @@ describe('retryFromStep', () => {
     assert(
       introspect !== undefined,
       'the memory driver came back without introspect, so there is nothing to spy on',
-      "restore createMemoryDriver()'s introspect implementation",
+      "restore memoryJobDriver()'s introspect implementation",
     );
     const spied: JobDriver = {
       ...driver,
@@ -414,7 +414,7 @@ describe('retryFromStep', () => {
   });
 
   test('the returned trace reflects the requeue — state back to ready, attempt reset', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueueAndClaim(driver, { name: 'resumable-job-2' });
     await driver.nack(id, { workerId: 'worker-1', claim: 1, delayMs: 0, deadLetter: true });
 

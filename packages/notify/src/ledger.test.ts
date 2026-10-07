@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { DeliveryClaim } from './ledger';
-import { createMemoryDeliveryLedger, isDeliveryStatus } from './ledger';
+import { isDeliveryStatus, memoryDeliveryLedger } from './ledger';
 
 const AT = new Date('2026-08-24T09:00:00Z');
 const claim: DeliveryClaim = {
@@ -15,7 +15,7 @@ const claim: DeliveryClaim = {
 
 describe('unit · delivery ledger', () => {
   test('a settled `sent` delivery is never claimable again', async () => {
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     expect(await ledger.claim(claim, AT)).toBe(true);
     await ledger.settle(claim, 'sent', AT);
     expect(await ledger.claim(claim, AT)).toBe(false);
@@ -24,7 +24,7 @@ describe('unit · delivery ledger', () => {
   test('a delivery left mid-flight IS re-claimable, and the attempt count says so', async () => {
     // At-least-once is the honest guarantee: a process killed between the provider's 200 and the
     // settle leaves this row `sending`, and refusing it would be a notification nobody ever gets.
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     expect(await ledger.claim(claim, AT)).toBe(true);
     expect(await ledger.claim(claim, AT)).toBe(true);
     expect((await ledger.find(claim))?.attempts).toBe(2);
@@ -32,14 +32,14 @@ describe('unit · delivery ledger', () => {
   });
 
   test('a failed delivery is re-claimable, so the job retry decides — not the ledger', async () => {
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     await ledger.claim(claim, AT);
     await ledger.settle(claim, 'failed', AT);
     expect(await ledger.claim(claim, AT)).toBe(true);
   });
 
   test('the four columns are one key, and none of them collides with a separator', async () => {
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     // `notifier:key` joined with a colon would read these two as the same delivery, and the loser
     // would be a notification that silently never arrives.
     await ledger.claim({ notifier: 'a:b', key: 'c', recipient: 'ana', channel: 'email' }, AT);
@@ -54,7 +54,7 @@ describe('unit · delivery ledger', () => {
   });
 
   test('a bulk claim is one row for the audience, distinct from every per-recipient one', async () => {
-    const ledger = createMemoryDeliveryLedger();
+    const ledger = memoryDeliveryLedger();
     const bulk = { ...claim, recipient: null, channel: 'slack' };
     expect(await ledger.claim(bulk, AT)).toBe(true);
     await ledger.settle(bulk, 'sent', AT);
@@ -63,7 +63,7 @@ describe('unit · delivery ledger', () => {
   });
 
   test('the cap evicts oldest-first and PUBLISHES the drop, because a dropped row stops deduping', async () => {
-    const ledger = createMemoryDeliveryLedger({ max: 2 });
+    const ledger = memoryDeliveryLedger({ max: 2 });
     for (const recipient of ['ana', 'ben', 'cyd']) {
       await ledger.claim({ ...claim, recipient }, AT);
     }
@@ -72,7 +72,7 @@ describe('unit · delivery ledger', () => {
   });
 
   test('clear() empties the ledger AND its drop count, so one suite cannot pin the next', async () => {
-    const ledger = createMemoryDeliveryLedger({ max: 1 });
+    const ledger = memoryDeliveryLedger({ max: 1 });
     await ledger.claim(claim, AT);
     await ledger.claim({ ...claim, recipient: 'ben' }, AT);
     expect(ledger.dropped).toBe(1);
@@ -97,12 +97,12 @@ describe('unit · delivery ledger', () => {
 describe('unit · delivery ledger, a cap that is not a cap', () => {
   for (const max of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1, 0]) {
     test(`max: ${String(max)} is refused where it is written, never silently unbounded`, () => {
-      expect(() => createMemoryDeliveryLedger({ max })).toThrow(/X_INVARIANT/);
+      expect(() => memoryDeliveryLedger({ max })).toThrow(/X_INVARIANT/);
     });
   }
 
   test('a real cap still evicts, so the refusal did not replace the behaviour', async () => {
-    const ledger = createMemoryDeliveryLedger({ max: 1 });
+    const ledger = memoryDeliveryLedger({ max: 1 });
     await ledger.claim(claim, AT);
     await ledger.claim({ ...claim, recipient: 'bo' }, AT);
     expect(ledger.size).toBe(1);

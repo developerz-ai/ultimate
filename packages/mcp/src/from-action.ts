@@ -14,14 +14,17 @@
 // other tools that same token capability covers, never guessed from the action.
 //
 // `toWireSchema` from `@ultimat3/schema`, reached through `projectable.ts`, owns the schema half
-// of what THIS server publishes; this file owns the execution half. `@ultimat3/action`'s
-// `.tool()` publishes through the same function, so the two cannot describe one declaration
-// differently — `packages/mcp/src/cross-surface.test.ts` holds them to it.
+// of what THIS server publishes; this file owns the execution half. It is the ONE tool projection:
+// `@ultimat3/action`'s `.tool()` and `@ultimat3/query`'s were a second, built a tier below, and
+// disagreed with what `tools/list` served — deleted in 25.0.0 (O-tool), because tier 3 cannot
+// import this one to return it. `cross-surface.test.ts` pins `toolFrom` to the served entry.
 
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
 import type { McpListParams } from './list-params';
+import type { ListedPrimitive } from './projectable';
+import { asProjectable } from './projectable';
 import type {
   AnyMcpTool,
   McpCaller,
@@ -49,8 +52,6 @@ export interface McpExposure {
    */
   readonly description?: string;
   readonly visibleTo?: readonly McpRole[];
-  /** Override the projected tool name. Defaults to the primitive's own name. */
-  readonly name?: string;
   /** Display name for a client's UI. Contract text, like `description`. Absent: none published. */
   readonly title?: string;
   /**
@@ -98,20 +99,27 @@ export interface ProjectablePrimitive {
 }
 
 /**
- * True when the primitive opted into MCP. Opt-in, never opt-out: silence exposes nothing.
- * `isMcpExposed` from `@ultimat3/core` is the one predicate — the manifest fact, the OpenAPI
- * hint and both tool projections all ask it, so none of them can answer differently.
+ * True when the primitive opted into MCP — `@ultimat3/core`'s `isMcpExposed`, the one predicate
+ * the manifest fact and the OpenAPI hint ask too. Private: the exported wrapper was a second name
+ * for core's function (plan 101, M3), and an app asks core's directly.
  */
-export function isExposed(primitive: ProjectablePrimitive): boolean {
+function exposed(primitive: ProjectablePrimitive): boolean {
   return isMcpExposed(primitive.mcp);
 }
 
 /**
- * Project one primitive. Throws nothing, and does not re-check exposure: the two list
- * projections below decide what an un-exposed primitive means — skip it, or refuse it.
+ * Project one primitive — an `action()`, a `query()`, or a hand-built `ProjectablePrimitive` —
+ * into the tool this server serves. THE projection: `toolListEntry(toolFrom(publishPost))`
+ * is, field for field, the entry `tools/list` answers for it. Does not re-check exposure: the two
+ * list projections below decide what an un-exposed primitive means — skip it, or refuse it. A
+ * real action or query that was never registered throws `X_ACTION_UNREGISTERED` /
+ * `X_QUERY_UNREGISTERED`, rather than projecting a tool called `''`.
  */
-export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
-  const name = primitive.mcp?.name ?? primitive.name;
+export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
+  const primitive = asProjectable(listed);
+  // The primitive's own name and nothing else: `McpExposure.name` was a second naming field no
+  // declaration could set, deleted in 25.0.0 (plan 101, M4).
+  const name = primitive.name;
   const description =
     primitive.mcp?.description ?? primitive.description ?? `Run the "${primitive.name}" action.`;
   const mutates = primitive.mutates ?? true;
@@ -185,9 +193,6 @@ function definedOnly(annotations: McpToolAnnotations | undefined): McpToolAnnota
   };
 }
 
-/** Alias that reads correctly at a query call site — same projection, same guarantees. */
-export const toolFromQuery = toolFromAction;
-
 /**
  * Project every exposed primitive, SKIPPING the rest. Stable name order.
  *
@@ -197,8 +202,8 @@ export const toolFromQuery = toolFromAction;
  */
 export function toolsFrom(primitives: readonly ProjectablePrimitive[]): readonly AnyMcpTool[] {
   return primitives
-    .filter(isExposed)
-    .map(toolFromAction)
+    .filter(exposed)
+    .map(toolFrom)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
@@ -211,9 +216,9 @@ export function toolsFrom(primitives: readonly ProjectablePrimitive[]): readonly
  * throwing so one edit closes all of them.
  */
 export function toolsListed(primitives: readonly ProjectablePrimitive[]): readonly AnyMcpTool[] {
-  const undeclared = primitives.filter((primitive) => !isExposed(primitive));
+  const undeclared = primitives.filter((primitive) => !exposed(primitive));
   if (undeclared.length > 0) {
-    // The primitive's own name, not `mcp.name`: it is what the author greps for.
+    // The primitive's own name — the tool's, and what the author greps for.
     throw new McpToolUndeclaredError({ names: undeclared.map((primitive) => primitive.name) });
   }
   return toolsFrom(primitives);

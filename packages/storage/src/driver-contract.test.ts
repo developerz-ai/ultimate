@@ -14,7 +14,7 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { sweepOrphans } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, codeOf, FakeS3Client, textOf } from './driver-s3-fixture';
 
@@ -33,7 +33,7 @@ beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-contract-`);
   fake = new FakeS3Client();
   local = localDriver({ root, signingSecret: 'test-secret', clock });
-  memory = memoryDriver({ signingSecret: 'test-secret', clock });
+  memory = memoryStorageDriver({ signingSecret: 'test-secret', clock });
   s3 = s3Driver({ bucket: 'b', client: fake });
 });
 
@@ -158,7 +158,7 @@ describe('stat answers what a read would, without the bytes', () => {
 describe('get() buffers, so it has a ceiling on every disk', () => {
   const build = (options: { maxGetBytes?: number; maxPutBytes?: number }): StorageDriver[] => [
     localDriver({ root, signingSecret: 'test-secret', clock, ...options }),
-    memoryDriver({ signingSecret: 'test-secret', clock, ...options }),
+    memoryStorageDriver({ signingSecret: 'test-secret', clock, ...options }),
     s3Driver({ bucket: 'b', client: fake, ...options }),
   ];
 
@@ -189,7 +189,7 @@ describe('get() buffers, so it has a ceiling on every disk', () => {
   test.each([Number.NaN, 0, -1, 1.5])('maxGetBytes %p is refused where it is declared', (bad) => {
     for (const make of [
       () => localDriver({ root, signingSecret: 's', maxGetBytes: bad }),
-      () => memoryDriver({ signingSecret: 's', maxGetBytes: bad }),
+      () => memoryStorageDriver({ signingSecret: 's', maxGetBytes: bad }),
       () => s3Driver({ bucket: 'b', client: fake, maxGetBytes: bad }),
     ]) {
       let caught: unknown;
@@ -237,7 +237,7 @@ describe('a signed URL belongs to the disk that minted it', () => {
   test('a URL from one registered disk does not verify on its sibling', async () => {
     for (const make of [
       () => localDriver({ root, signingSecret: 'shared-secret', clock }),
-      () => memoryDriver({ signingSecret: 'shared-secret', clock }),
+      () => memoryStorageDriver({ signingSecret: 'shared-secret', clock }),
     ]) {
       const uploads = make();
       const vault = make();

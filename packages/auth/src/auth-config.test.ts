@@ -6,11 +6,11 @@ import { describe, expect, test } from 'bun:test';
 import { type AuthConfigInput, defineAuth } from './auth';
 import { caught } from './auth-fixture';
 import type { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 
 describe('defineAuth', () => {
   test('fills every unset policy from its default and freezes the result', () => {
-    const auth = defineAuth({ adapter: new MemoryAdapter() });
+    const auth = defineAuth({ adapter: memoryAuthAdapter() });
     expect(auth.mfa).toEqual({ issuer: 'Ultimate', required: false });
     // `[]`, not the live registry: an app that names no providers serves no OAuth routes. It used
     // to inherit every id `registerOAuthProvider` had written, so `defineAuth({ providers })`'s
@@ -21,7 +21,7 @@ describe('defineAuth', () => {
   });
 
   test('an explicit mfa issuer overrides the default without dropping the other field', () => {
-    const auth = defineAuth({ adapter: new MemoryAdapter(), mfa: { issuer: 'Postly' } });
+    const auth = defineAuth({ adapter: memoryAuthAdapter(), mfa: { issuer: 'Postly' } });
     expect(auth.mfa).toEqual({ issuer: 'Postly', required: false });
   });
 
@@ -37,7 +37,7 @@ describe('defineAuth', () => {
     // config the compile error cannot reach — the half the runtime refusal exists for.
     const declared = { required: true } as unknown as AuthConfigInput['mfa'];
     const error = await caught(async () =>
-      defineAuth({ adapter: new MemoryAdapter(), mfa: declared }),
+      defineAuth({ adapter: memoryAuthAdapter(), mfa: declared }),
     );
     expect(error?.code).toBe('X_CONFIG_INVALID');
     // NAMES THE KEY, because the field exists — `README.md` says so, and an upgrader arriving
@@ -71,20 +71,20 @@ describe('defineAuth refuses a policy number that is not a number', () => {
   for (const value of NOT_A_DURATION) {
     test(`session.absoluteTtlMs: ${String(value)} never mints an unexpiring session`, () => {
       expect(() =>
-        defineAuth({ adapter: new MemoryAdapter(), session: { absoluteTtlMs: value } }),
+        defineAuth({ adapter: memoryAuthAdapter(), session: { absoluteTtlMs: value } }),
       ).toThrow(/X_CONFIG_INVALID/);
     });
   }
 
   test('idleTtlMs, idleSlideMs and minLength are each named in their own refusal', () => {
     expect(() =>
-      defineAuth({ adapter: new MemoryAdapter(), session: { idleTtlMs: Number.NaN } }),
+      defineAuth({ adapter: memoryAuthAdapter(), session: { idleTtlMs: Number.NaN } }),
     ).toThrow(/session\.idleTtlMs/);
     expect(() =>
-      defineAuth({ adapter: new MemoryAdapter(), session: { idleSlideMs: Number.NaN } }),
+      defineAuth({ adapter: memoryAuthAdapter(), session: { idleSlideMs: Number.NaN } }),
     ).toThrow(/session\.idleSlideMs/);
     expect(() =>
-      defineAuth({ adapter: new MemoryAdapter(), password: { minLength: Number.NaN } }),
+      defineAuth({ adapter: memoryAuthAdapter(), password: { minLength: Number.NaN } }),
     ).toThrow(/password\.minLength/);
   });
 
@@ -92,7 +92,7 @@ describe('defineAuth refuses a policy number that is not a number', () => {
     let caught: unknown;
     try {
       defineAuth({
-        adapter: new MemoryAdapter(),
+        adapter: memoryAuthAdapter(),
         rateLimit: { maxAttempts: Number.NaN, scope: 'process' },
       });
     } catch (thrown) {
@@ -105,17 +105,17 @@ describe('defineAuth refuses a policy number that is not a number', () => {
   test('the argon2 cost parameters are screened too — argon2 throws deep, this names the key', () => {
     expect(() =>
       defineAuth({
-        adapter: new MemoryAdapter(),
+        adapter: memoryAuthAdapter(),
         password: { params: { algorithm: 'argon2id', memoryCost: Number.NaN, timeCost: 2 } },
       }),
     ).toThrow(/password\.params\.memoryCost/);
   });
 
   test('every default still builds, and so does an app that tightens them', () => {
-    expect(() => defineAuth({ adapter: new MemoryAdapter() })).not.toThrow();
+    expect(() => defineAuth({ adapter: memoryAuthAdapter() })).not.toThrow();
     expect(() =>
       defineAuth({
-        adapter: new MemoryAdapter(),
+        adapter: memoryAuthAdapter(),
         session: { absoluteTtlMs: 3_600_000, idleTtlMs: 900_000, idleSlideMs: 0 },
         password: { minLength: 16 },
         rateLimit: { maxAttempts: 3, windowMs: 60_000, lockoutMs: 60_000, scope: 'process' },

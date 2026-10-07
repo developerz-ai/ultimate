@@ -15,7 +15,7 @@
 //
 //   1. `x_outbox` exists — it ships in `SQL_JOBS_TABLE` now, so applying the queue DDL is enough.
 //   2. `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` ran at boot, with a store
-//      from `createPgOutboxStore` and a REAL `currentTx` accessor.
+//      from `postgresOutboxStore` and a REAL `currentTx` accessor.
 //   3. `createOutboxRelay({ store, driver }).start()` is running somewhere.
 //
 // With none of them, `jobsFacade()` answers the fallback below, whose `currentTx` is
@@ -123,7 +123,7 @@ export interface MemoryOutboxStore extends OutboxStore {
  * transaction" guarantee needs no cooperation from the DB layer and rollback is a delete.
  * The pg store swaps this for a real `x_outbox` table written by the same connection.
  */
-export function createMemoryOutboxStore(options: MemoryOutboxOptions = {}): MemoryOutboxStore {
+export function memoryOutboxStore(options: MemoryOutboxOptions = {}): MemoryOutboxStore {
   const staged = new WeakMap<object, OutboxRecord[]>();
   const committed = new Map<string, OutboxRecord>();
   /** Each claimed row's lease: when it was taken and by whom. Absent is `claimed_at is null`. */
@@ -389,14 +389,14 @@ export function jobsFacade(): JobsFacade {
           throw new DriverUnavailableError({
             driver: 'none',
             cause: 'no queue driver is installed in this process',
-            fix: 'call setJobDriver(createMemoryDriver()) before enqueuing, or setJobDriver(createPgDriver()) for a real queue',
+            fix: 'call setJobDriver(memoryJobDriver()) before enqueuing, or setJobDriver(postgresJobDriver()) for a real queue',
           });
         }
         return installed;
       },
       // Unreachable while `currentTx` is `() => undefined`; present because `OutboxDeps`
       // requires a store, and a real one is cheaper than an assertion that cannot fire.
-      store: createMemoryOutboxStore(),
+      store: memoryOutboxStore(),
     },
     () => undefined,
   );

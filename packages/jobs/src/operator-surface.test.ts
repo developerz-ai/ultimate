@@ -6,16 +6,16 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, logger, redactKeys } from '@ultimat3/core';
 import { counterBucketStart, createMemoryCounters } from './counters';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { inspectJob } from './inspect';
 import { promoteJob } from './inspect-operator';
 import { COUNTER_TIERS, PROGRESS_INTERVAL_MS } from './introspection';
 import { resetJobs } from './job';
 import type { OperatorHarness } from './operator-surface-fixture';
 import {
-  createMemorySchedulerState,
   enqueueItem,
   itemJob,
+  memorySchedulerState,
   operatorOf,
   operatorSurfaceScenarios,
   workerOn,
@@ -30,7 +30,7 @@ const clock = frozenClock('2026-10-01T00:00:30.000Z');
 
 const harness: OperatorHarness = {
   clock,
-  driver: () => Promise.resolve(createMemoryDriver({ clock })),
+  driver: () => Promise.resolve(memoryJobDriver({ clock })),
   elapse: (_driver, ms) => {
     clock.advance(ms);
     return Promise.resolve();
@@ -57,7 +57,7 @@ const harness: OperatorHarness = {
       clock.advance(1);
     }
   },
-  schedulerState: () => Promise.resolve(createMemorySchedulerState()),
+  schedulerState: () => Promise.resolve(memorySchedulerState()),
 };
 
 afterEach(() => {
@@ -108,7 +108,7 @@ describe('counter buckets age into wider ones', () => {
   });
 
   test('the scheduler leader folds them, at most once every ten minutes', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const operator = operatorOf(driver);
     let folds = 0;
     const counting: JobDriver = {
@@ -188,7 +188,7 @@ describe('progress', () => {
   });
 
   test('a body`s last report is on the row when the run has settled', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const handle = itemJob({
       run: ({ progress }) => {
         progress(1, 3);
@@ -209,7 +209,7 @@ describe('progress', () => {
 describe('the trace an operator opens', () => {
   test('carries the payload with declared secrets redacted, and the failure`s stack', async () => {
     redactKeys(['operatorSurfaceApiToken']);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const handle = itemJob({ run: () => Promise.reject(new TypeError('selector moved')) });
     const { id } = await driver.enqueue({
       name: handle.name,
@@ -232,7 +232,7 @@ describe('the trace an operator opens', () => {
   });
 
   test('promoteJob names the state of a job that is not waiting on its run time', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const handle = itemJob({ run: () => Promise.resolve() });
     const id = await enqueueItem(driver, handle);
     const refusal = await promoteJob(driver, id).catch((error: unknown) => error);
@@ -246,7 +246,7 @@ describe('the trace an operator opens', () => {
 
 describe('a paused task', () => {
   test('is not dispatched, and on resume its own catch-up policy decides what it missed', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const operator = operatorOf(driver);
     const handle = itemJob({ run: () => Promise.resolve() });
     const hourly = task({

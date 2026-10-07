@@ -24,7 +24,7 @@ import { fireThroughDriver } from './scheduler-state';
  * whose watermark dies with its process has none of them — it takes the arming branch on every
  * boot and drops every occurrence between the two processes with nothing logged.
  */
-export function pgSchedulerState(executor: PgExecutor): SchedulerState {
+export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
   const state: SchedulerState = {
     async lastFiredAt(taskName) {
       const rows = await executor.query<{ last_fired_at: number | string | null }>(
@@ -109,9 +109,9 @@ export const LEASE_RENEWALS_PER_TTL = 3;
 
 /**
  * Leader election as an expiring row, which is what makes it correct on the executor this package
- * is actually handed: a POOL. `createPgLeader`'s `pg_try_advisory_lock` is session-scoped, and a
+ * is actually handed: a POOL. `postgresLeader`'s `pg_try_advisory_lock` is session-scoped, and a
  * session on a pool ends the moment the connection goes back — so every node reads itself as
- * leader and a rolling update double-fires every task. `@ultimat3/realtime`'s `PgAdvisoryLock`
+ * leader and a rolling update double-fires every task. `@ultimat3/realtime`'s `postgresAdvisoryLock()`
  * solves the same problem by owning its connection; this package holds no wire protocol, so it
  * solves it with a row instead.
  *
@@ -120,7 +120,7 @@ export const LEASE_RENEWALS_PER_TTL = 3;
  * with nothing to clean up, which is the one property the advisory lock had and a plain
  * `insert ... on conflict do nothing` would not.
  */
-export function createPgLeaseLeader(options: PgLeaseLeaderOptions): LeaderElection {
+export function postgresLeaseLeader(options: PgLeaseLeaderOptions): LeaderElection {
   const lockKey = options.lockKey ?? 'scheduler';
   const holder = options.holder ?? `scheduler-${uuid()}`;
   const ttlMs = finiteOption(

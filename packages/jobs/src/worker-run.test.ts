@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { HeldLease } from './leases';
 import type { IntervalScheduler } from './renewal-timer';
@@ -86,7 +86,7 @@ describe('a run hands back everything it took', () => {
 
     await expect(
       runClaimedJob({
-        driver: createMemoryDriver(),
+        driver: memoryJobDriver(),
         claimed: claimedOf('job-1'),
         context,
         fleetSlots: slotsThatThrowOnRenewal(),
@@ -116,7 +116,7 @@ async function claimedOnMemory() {
     retry: { attempts: 3, jitter: false },
     run: () => Promise.resolve(),
   });
-  const driver = createMemoryDriver();
+  const driver = memoryJobDriver();
   await driver.enqueue({
     name: 'wiredJob',
     queue: 'default',

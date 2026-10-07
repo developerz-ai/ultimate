@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { StepDuplicateError } from './errors';
-import { createMemoryEventBus } from './events';
+import { memoryEventBus } from './events';
 import type { StepStore } from './steps';
 import { createStepRunner, isStepSuspension, MAX_TRACE_NAMES } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;
@@ -21,7 +21,7 @@ const T0 = 1_760_000_000_000;
 let store: StepStore;
 
 beforeEach(() => {
-  store = createMemoryStepStore();
+  store = memoryStepStore();
 });
 
 describe('step.run replay', () => {
@@ -182,7 +182,7 @@ describe('step.sleep', () => {
 describe('step.waitForEvent', () => {
   test('suspends until a correlated event is published, then returns its payload', async () => {
     const clock = fakeClock(T0);
-    const events = createMemoryEventBus({ clock });
+    const events = memoryEventBus({ clock });
 
     const attempt = (): Promise<unknown> => {
       const runner = createStepRunner({
@@ -213,7 +213,7 @@ describe('step.waitForEvent', () => {
 
   test('an optional wait resolves undefined once its timeout passes', async () => {
     const clock = fakeClock(T0);
-    const events = createMemoryEventBus({ clock });
+    const events = memoryEventBus({ clock });
     const attempt = (): Promise<unknown> => {
       const runner = createStepRunner({ runId: 'run-8', jobName: 'j', store, clock, events });
       return runner.step.waitForEvent('maybe', 'never.happens', { timeout: '1m' });
@@ -390,7 +390,7 @@ describe('the attempt trace is bounded, and duplicate detection is not', () => {
  */
 describe('a replay is the same value on every store', () => {
   const wire = (): StepStore => {
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     return {
       ...inner,
       put: (record) =>
@@ -399,7 +399,7 @@ describe('a replay is the same value on every store', () => {
   };
 
   for (const [label, make] of [
-    ['memory', createMemoryStepStore],
+    ['memory', memoryStepStore],
     ['wire (postgres)', wire],
   ] as const) {
     test(`${label}: a Date output replays as what the store persisted, identically`, async () => {
@@ -415,7 +415,7 @@ describe('a replay is the same value on every store', () => {
     test(`${label}: a timed-out wait replays as undefined, never null`, async () => {
       const on = make();
       const clock = fakeClock(T0);
-      const events = createMemoryEventBus({ clock });
+      const events = memoryEventBus({ clock });
       const attempt = (): Promise<unknown> =>
         createStepRunner({
           runId: 'run-t',

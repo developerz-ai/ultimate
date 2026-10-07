@@ -13,9 +13,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import {
-  createMemoryDriver,
   type JobDriver,
   job,
+  memoryJobDriver,
   resetJobDriver,
   resetJobs,
   resetTasks,
@@ -129,7 +129,7 @@ function registerNightlyPing(): void {
  */
 let driver: JobDriver;
 beforeEach(() => {
-  driver = createMemoryDriver();
+  driver = memoryJobDriver();
   setJobDriver(driver);
 });
 
@@ -234,7 +234,7 @@ describe('unit · x tasks list', () => {
 
   test('an app that declares no task opens no queue at all', async () => {
     // A queue that answers would be a queue that was asked: this one refuses to be read.
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const introspect = base.introspect;
     if (introspect === undefined) expect.unreachable('the memory driver introspects');
     setJobDriver({
@@ -252,7 +252,7 @@ describe('unit · x tasks list', () => {
 
   test('a driver with no introspection lists every task as never fired', async () => {
     registerNightlyPing();
-    const { introspect: _none, ...bare } = createMemoryDriver();
+    const { introspect: _none, ...bare } = memoryJobDriver();
     setJobDriver(bare);
     const result = await tasksCommand.run(contextFor(appRoot(), { subcommand: 'list' }));
     expect(result.data).toEqual([expect.objectContaining({ name: 'nightlyPing', lastMs: null })]);

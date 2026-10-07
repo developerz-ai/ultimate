@@ -148,6 +148,12 @@ describe('an action whose policy has a public branch', () => {
     expect(await response.json()).toEqual({ id: POST_ID, published: true });
   });
 
+  // The marker `@ultimat3/http`'s bucket check reads: a `rateLimit.buckets.<name>` named after this
+  // action limits nothing since 25.0.0 and is refused, so the route has to say it is an action.
+  test('marks the route as an action', () => {
+    expect(toRoute(openOrEditor()).meta.primitive).toBe('action');
+  });
+
   test('projects auth: public, so the stage stands down and `invoke` decides', () => {
     expect(toRoute(openOrEditor()).meta.auth).toBe('public');
   });

@@ -11,10 +11,10 @@ import type { BackfillInput } from './backfill';
 import { backfill } from './backfill';
 import type { BackfillLedger } from './backfill-ledger';
 import { setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { StepRecord, StepStore } from './steps';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 /**
  * What a failing `handle` raises. Deliberately NOT an `UltimateError`: a backfill handler is app
@@ -135,7 +135,7 @@ export const harness = (
   } = {},
 ): Harness => {
   const watch = newWatch();
-  const store = options.store ?? createMemoryStepStore();
+  const store = options.store ?? memoryStepStore();
   const seen: string[][] = [];
   const table = tableFor(rows, countingRepo(memoryRepo(rows, SEED), watch));
   const state: Harness = {
@@ -183,15 +183,15 @@ export const harness = (
  * pass and its checkpoints are pinned without one.
  */
 export const installLedger = (): BackfillLedger => {
-  const driver = createMemoryDriver();
+  const driver = memoryJobDriver();
   setJobDriver(driver);
   const ledger = driver.backfills;
   // Never a bare `Error`: `backfills` is optional on `JobDriver`, so this is a claim about the
   // memory driver, and the fix names the file that would have to change for it to stop holding.
   assert(
     ledger !== undefined,
-    'createMemoryDriver() shipped no backfill ledger, and every test that installs one needs it',
-    'restore driver-memory.ts: createMemoryBackfillLedger(clock) on JobDriver.backfills',
+    'memoryJobDriver() shipped no backfill ledger, and every test that installs one needs it',
+    'restore driver-memory.ts: memoryBackfillLedger(clock) on JobDriver.backfills',
   );
   return ledger;
 };

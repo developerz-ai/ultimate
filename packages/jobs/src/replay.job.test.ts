@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -40,7 +40,7 @@ describe('a completed step survives a real retry', () => {
     const chargeCalls: number[] = [];
     const notifyCalls: number[] = [];
     const clock = frozenClock(0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
 
     const handle = job<{ n: number }>({
       tenant: 'none',
@@ -112,7 +112,7 @@ describe('a suspended step resumes without re-running what already ran', () => {
     const stepOneCalls: number[] = [];
     const stepTwoCalls: number[] = [];
     const clock = frozenClock(0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
 
     const handle = job<{ n: number }>({
       tenant: 'none',

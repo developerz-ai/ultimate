@@ -67,9 +67,9 @@ Nothing downstream can tell the difference, and nothing downstream needs to:
 | `getAction(name) === theExport` | `nameAction` stamps the name **in place** ([`:298`](../../packages/action/src/action.ts)), so the registry holds the app's own object, not a copy |
 | the gate agrees | **no `x verify` step matches source text for `action(` / `entity(` / `mutator(`.** Every primitive fact reaches the gate through `loadApp` ([`packages/cli/src/app-load.ts`](../../packages/cli/src/app-load.ts)), which imports modules and reads the runtime registries. The only text scanning in the CLI is for `X_*` codes ([`ts-scan.ts`](../../packages/cli/src/ts-scan.ts)) |
 
-So the manifest, all five projections (`.tool()` `.openapi()` `.client()` `.job()` `.contract()`),
-admin CRUD and the MCP tool list work on a factory-produced primitive exactly as on a hand-written
-one. That is the same rule the framework already applies to itself — `llm()` returns an action,
+So the manifest, all five projections (`@ultimat3/mcp`'s `toolFrom()`, and `.openapi()` `.client()`
+`.job()` `.contract()` on the action), admin CRUD and the MCP tool list work on a factory-produced
+primitive exactly as on a hand-written one. That is the same rule the framework already applies to itself — `llm()` returns an action,
 `backfill()` returns a job — so there is no second extension mechanism to learn.
 
 **There is no plugin API, and none is planned.** [`00-thesis.md`](./00-thesis.md#explicit-exclusions)

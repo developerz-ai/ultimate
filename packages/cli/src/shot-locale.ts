@@ -3,7 +3,7 @@
 // on the language of the machine's Chrome. A non-default locale is also a URL prefix (`/en/…`),
 // because on a `site/` route the unprefixed path is always the default locale whatever the header.
 
-import { loadAppConfig } from './app-config-load';
+import { loadAppCatalogs } from '@ultimat3/i18n/app-catalogs';
 import { BadFlagError } from './errors';
 
 export interface ShotLocales {
@@ -14,11 +14,9 @@ export interface ShotLocales {
 /** An app that declares nothing is `en` only — the framework's own default. */
 export const FALLBACK_SHOT_LOCALES: ShotLocales = { locales: ['en'], defaultLocale: 'en' };
 
-/** `app.config.ts`'s `locales` and `defaultLocale`, off the one loader (`app-config-load.ts`). */
+/** The app's catalogs' locales and default (`defineCatalogs`, read by `@ultimat3/i18n/app-catalogs`). */
 export async function loadShotLocales(root: string): Promise<ShotLocales> {
-  const config = await loadAppConfig(root);
-  if (config === undefined) return FALLBACK_SHOT_LOCALES;
-  return { locales: config.locales, defaultLocale: config.defaultLocale };
+  return (await loadAppCatalogs(root)) ?? FALLBACK_SHOT_LOCALES;
 }
 
 /** `--locale <l>`, refused by name when the app does not declare it — a typo costs no browser. */

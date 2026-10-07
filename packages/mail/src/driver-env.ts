@@ -5,10 +5,10 @@
 // deploys to every environment.
 
 import { ConfigInvalidError, isLocal, resolveEnvironment } from '@ultimat3/core';
-import { createMemoryDriver, createUnconfiguredDriver, type MailDriver } from './driver';
-import { createResendDriver } from './driver-resend';
-import { createSesDriver } from './driver-ses';
-import { createSmtpDriver } from './driver-smtp';
+import { type MailDriver, memoryMailDriver, unconfiguredMailDriver } from './driver';
+import { resendMailDriver } from './driver-resend';
+import { sesMailDriver } from './driver-ses';
+import { smtpMailDriver } from './driver-smtp';
 import { type RetainMimeOptions, resolveRetainMime } from './retain-mime';
 
 /**
@@ -130,7 +130,7 @@ export function selectMailDriver(
   if (smtpUrl !== undefined) {
     const poolSize = poolSizeFrom(env);
     return {
-      driver: createSmtpDriver({
+      driver: smtpMailDriver({
         url: smtpUrl,
         from: requireFrom(env, 'SMTP_URL'),
         ...(poolSize === undefined ? {} : { poolSize }),
@@ -144,7 +144,7 @@ export function selectMailDriver(
   if (resendKey !== undefined) {
     if (options.retainMime !== undefined) throw retainOnResend();
     return {
-      driver: createResendDriver({ apiKey: resendKey, from: requireFrom(env, 'RESEND_API_KEY') }),
+      driver: resendMailDriver({ apiKey: resendKey, from: requireFrom(env, 'RESEND_API_KEY') }),
       detail: 'RESEND_API_KEY',
     };
   }
@@ -156,24 +156,24 @@ export function selectMailDriver(
 
   if (isLocal({ env })) {
     return {
-      driver: createMemoryDriver(),
+      driver: memoryMailDriver(),
       detail: 'caught in memory — set SMTP_URL, RESEND_API_KEY or SES_REGION to deliver',
     };
   }
 
   const environment = resolveEnvironment({ env });
   return {
-    driver: createUnconfiguredDriver(environment),
+    driver: unconfiguredMailDriver(environment),
     detail: `no transport configured for ${environment} — set SMTP_URL, RESEND_API_KEY or SES_REGION`,
   };
 }
 
-/** The credential pair is required by `createSesDriver`, which names whichever half is missing. */
+/** The credential pair is required by `sesMailDriver`, which names whichever half is missing. */
 function sesFrom(env: MailEnvironment, region: string, options: MailSelectOptions): MailDriver {
   const sessionToken = nonEmpty(env['SES_SESSION_TOKEN']);
   const endpoint = nonEmpty(env['SES_ENDPOINT']);
   const configurationSet = nonEmpty(env['SES_CONFIGURATION_SET']);
-  return createSesDriver({
+  return sesMailDriver({
     region,
     credentials: {
       accessKeyId: nonEmpty(env['SES_ACCESS_KEY_ID']) ?? '',

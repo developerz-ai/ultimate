@@ -95,7 +95,7 @@ describe('unit · what x g emits', () => {
     expect(source).toContain('.openapi().operationId');
     // No MCP tool until an author writes its description: a placeholder is what an agent would read.
     expect(source).toContain('target.mcp?.expose ?? false');
-    for (const reached of ['toMcpTool(', 'toOpenApiOperation(', 'contractTestsFor(']) {
+    for (const reached of ['toolFrom(', 'toOpenApiOperation(', 'contractTestsFor(']) {
       expect(source.includes(reached)).toBe(false);
     }
   });

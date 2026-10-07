@@ -11,16 +11,16 @@
 import { expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StepRunner, StepStore } from '@ultimat3/jobs';
-import { createMemoryStepStore, createStepRunner } from '@ultimat3/jobs';
+import { createStepRunner, memoryStepStore } from '@ultimat3/jobs';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
 import {
-  createMemoryDriver,
   driverUnavailable,
+  memoryMailDriver,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
 } from '@ultimat3/mail';
-import { defineStorage, disk, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { jobTest } from '@ultimat3/testing';
 import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
 
@@ -112,7 +112,7 @@ interface BlippingMail {
 }
 
 const mailFailingOn = (nth: number): BlippingMail => {
-  const memory = createMemoryDriver();
+  const memory = memoryMailDriver();
   const previous = tryMailDriver();
   let sends = 0;
   const driver: MailDriver = {
@@ -159,7 +159,7 @@ test('the fanout runs as the org its payload names, never as no tenant', () => {
 
 test('the send loop is one step per recipient, named for the recipient', async () => {
   const mail = mailFailingOn(NEVER);
-  const runner = runnerOn(createMemoryStepStore());
+  const runner = runnerOn(memoryStepStore());
 
   try {
     await attempt(runner, noReads(), 1);
@@ -180,7 +180,7 @@ test('the send loop is one step per recipient, named for the recipient', async (
 });
 
 test('a blip on the third recipient re-sends the third, not the first two', async () => {
-  const store = createMemoryStepStore();
+  const store = memoryStepStore();
   const reads = noReads();
   const mail = mailFailingOn(3);
 
@@ -228,7 +228,7 @@ jobTest(
     const target = { orgId: tenancy.orgId, exportId: '00000000-0000-4000-8000-00000000e001' };
     // The app's disk, as boot would build it — in memory, and released before the next test.
     resetStorage();
-    defineStorage({ disks: { local: memoryDriver() }, default: 'local' });
+    defineStorage({ disks: { local: memoryStorageDriver() }, default: 'local' });
     using _storage = { [Symbol.dispose]: resetStorage };
 
     const trace = await runJobs(exportPosts, target, { actor: actorFor(ada) });

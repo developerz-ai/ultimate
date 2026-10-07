@@ -20,7 +20,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, entityForTable, text } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { postgresChangeFeed } from './changefeed';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
@@ -153,7 +153,7 @@ describe.skipIf(!ready)('live · replication over TLS, libpq sslmode', () => {
     // records long, so a message spans more than one decrypted chunk.
     test('decodes changes, including a row larger than one TLS record', async () => {
       const events: ChangeEvent[] = [];
-      const feed = new PgLogicalReplicationFeed({
+      const feed = postgresChangeFeed({
         url: urlWith('sslmode=require'),
         slot: SLOT,
         publication: PUBLICATION,

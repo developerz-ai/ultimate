@@ -2,8 +2,8 @@
 import { describe, expect, test } from 'bun:test';
 import { defineConfig } from './config';
 import type { NavigationSurface } from './config-navigation';
-import { resolveSpeculation } from './config-navigation';
 import { ConfigInvalidError, isUltimateError } from './errors';
+import * as core from './index';
 
 const causeOf = (run: () => unknown): string => {
   try {
@@ -119,7 +119,13 @@ describe('navigation.speculation', () => {
   });
 });
 
-describe('resolveSpeculation — the validator a reader outside defineConfig shares', () => {
+// `resolveSpeculation`, the same validator for a reader outside `defineConfig`, was deleted in
+// 25.0.0 with that reader (every CLI read goes through the one loader, which calls `defineConfig`).
+// Its cases stay, asked through the one door that is left.
+const speculating = (said: unknown) => () =>
+  defineConfig({ name: 'app', navigation: { speculation: said as never } });
+
+describe('navigation.speculation — refused, never coerced', () => {
   test.each([
     ['an eagerness not offered', { prefetch: 'eager' }, 'navigation.speculation.prefetch must be'],
     ['a non-string pattern', { exclude: ['/a/*', 7] }, 'navigation.speculation.exclude contains'],
@@ -131,16 +137,21 @@ describe('resolveSpeculation — the validator a reader outside defineConfig sha
     ['a non-list exclude', { exclude: '/a/*' }, 'navigation.speculation.exclude must be a list'],
     ['a non-object', 'off', 'navigation.speculation must be an object'],
   ])('%s is refused with X_CONFIG_INVALID, never coerced', (_name, said, cause) => {
-    expect(causeOf(() => resolveSpeculation(said))).toContain(cause);
-    expect(() => resolveSpeculation(said)).toThrow(ConfigInvalidError);
+    expect(causeOf(speculating(said))).toContain(cause);
+    expect(speculating(said)).toThrow(ConfigInvalidError);
   });
 
   test('nothing said is the default; a partial object is filled, not refused', () => {
-    expect(resolveSpeculation(undefined)).toEqual({ prefetch: 'moderate', exclude: [] });
-    expect(resolveSpeculation({ prefetch: false })).toEqual({ prefetch: false, exclude: [] });
-    expect(resolveSpeculation({ prefetch: 'conservative', exclude: ['/a/*'] })).toEqual({
+    const resolved = (said: unknown) => speculating(said)().navigation.speculation;
+    expect(resolved(undefined)).toEqual({ prefetch: 'moderate', exclude: [] });
+    expect(resolved({ prefetch: false })).toEqual({ prefetch: false, exclude: [] });
+    expect(resolved({ prefetch: 'conservative', exclude: ['/a/*'] })).toEqual({
       prefetch: 'conservative',
       exclude: ['/a/*'],
     });
   });
+});
+
+test('resolveSpeculation is gone from the public API', () => {
+  expect(Object.hasOwn(core, 'resolveSpeculation')).toBe(false);
 });

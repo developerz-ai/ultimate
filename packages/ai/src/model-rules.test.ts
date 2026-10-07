@@ -1,23 +1,22 @@
 /**
- * The built-in Anthropic rows, each number against the page it was read from (As of 2026-10-06):
- * platform.claude.com/docs/en/models/overview, …/about-claude/pricing,
- * …/build-with-claude/{thinking,effort,prompt-caching}. A row that drifts from the vendor's page
- * prices, reserves and refuses wrong with no error anywhere, so the rows are pinned here whole.
+ * The registry's rules over the rows an app registers (here, `model-fixture.ts`'s): each
+ * reasoning shape is enforced locally, `costOf` uses a row's own cache rates, a refusal's
+ * suggestion is a rung the same declaration can run on and never crosses a family, and a row
+ * prices in one currency. Mechanism only — no number here is a vendor's claim.
  */
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { AiRequestInvalidError } from './errors';
-import {
-  ANTHROPIC_MODEL_IDS,
-  DEFAULT_MODEL,
-  modelSpec,
-  moreCapableThan,
-  reasoningBody,
-  registerModel,
-  resetModels,
-} from './models';
-import { registerOpenAiModels } from './openai-models';
-import { AnthropicProvider, costOf, type TokenUsage } from './provider';
+import { FIXTURE_ANTHROPIC_IDS, registerFixtureModels } from './model-fixture';
+import { modelSpec, moreCapableThan, reasoningBody, registerModel, resetModels } from './models';
+import { costOf, type TokenUsage } from './provider';
+
+// Reset first: the registry is process state, and a row with no family another file left behind
+// sits on the unfamilied ladder this file asserts.
+beforeEach(() => {
+  resetModels();
+  registerFixtureModels();
+});
 
 afterEach(() => {
   resetModels();
@@ -25,61 +24,9 @@ afterEach(() => {
 
 const usd = (minor: number) => ({ minor, currency: 'USD' });
 
-/** id → [context, max output, $in/MTok minor, $out/MTok minor, cache minimum]. */
-const PUBLISHED: Readonly<Record<string, readonly [number, number, number, number, number]>> = {
-  'claude-fable-5-1': [1_000_000, 128_000, 1_000, 5_000, 512],
-  'claude-opus-5-5': [1_000_000, 128_000, 400, 2_000, 512],
-  'claude-opus-5': [1_000_000, 128_000, 500, 2_500, 512],
-  'claude-sonnet-5-5': [1_000_000, 128_000, 200, 1_000, 512],
-  // $2/$10 became Sonnet 5's STANDARD price; the $3/$15 step-up on 2026-09-01 was cancelled.
-  'claude-sonnet-5': [1_000_000, 128_000, 200, 1_000, 1_024],
-  'claude-haiku-4-5': [200_000, 64_000, 100, 500, 4_096],
-};
-
-describe('the built-in Anthropic rows match the published specs', () => {
-  test('the provider serves exactly the published rows, most capable first', () => {
-    expect([...ANTHROPIC_MODEL_IDS]).toEqual([
-      'claude-fable-5-1',
-      'claude-opus-5-5',
-      'claude-opus-5',
-      'claude-sonnet-5-5',
-      'claude-sonnet-5',
-      'claude-haiku-4-5',
-    ]);
-    expect(new AnthropicProvider().models).toEqual(ANTHROPIC_MODEL_IDS);
-  });
-
-  test('context, output ceiling, list prices and cache minimum, row by row', () => {
-    for (const [id, [context, output, input, out, cache]] of Object.entries(PUBLISHED)) {
-      const spec = modelSpec(id);
-      expect([id, spec.contextWindow, spec.maxOutput, spec.cacheMinimumTokens]).toEqual([
-        id,
-        context,
-        output,
-        cache,
-      ]);
-      expect([id, spec.inputPerMillion, spec.outputPerMillion]).toEqual([id, usd(input), usd(out)]);
-      expect(spec.family).toBe('anthropic');
-    }
-  });
-
-  // A behaviour change, decided for a major: the default stays where 24.x shipped it.
-  test('the default model is unchanged by the new rows', () => {
-    expect(DEFAULT_MODEL).toBe('claude-opus-5');
-  });
-
-  // The refusal fix line points UP; a newer model above the default is now a real answer for it.
-  test('a refusal on the default model is pointed at the newer Opus, and the top has no answer', () => {
-    expect(moreCapableThan('claude-opus-5')).toBe('claude-opus-5-5');
-    expect(moreCapableThan('claude-opus-5-5')).toBe('claude-fable-5-1');
-    expect(moreCapableThan('claude-fable-5-1')).toBeUndefined();
-  });
-});
-
-describe('the thinking rule each new model enforces', () => {
-  // "Claude Fable 5.1 … Claude Opus 5.5 … reject thinking: {type: "disabled"}. Thinking can't be
-  // turned off on these models" — a 400 at EVERY effort, so it is refused here at every effort.
-  test('Opus 5.5 and Fable 5.1 refuse thinking: disabled at every effort, naming the knob', () => {
+describe('the thinking rule each reasoning shape enforces', () => {
+  // `disableThinkingUpTo: 'never'` — a 400 at EVERY effort, so it is refused here at every effort.
+  test('an always-on row refuses thinking: disabled at every effort, naming the knob', () => {
     for (const model of ['claude-opus-5-5', 'claude-fable-5-1']) {
       for (const effort of [undefined, 'low', 'high', 'max'] as const) {
         try {
@@ -94,7 +41,7 @@ describe('the thinking rule each new model enforces', () => {
     }
   });
 
-  test('Opus 5.5 and Fable 5.1 still take every effort rung and an explicit adaptive block', () => {
+  test('an always-on row still takes every effort rung and an explicit adaptive block', () => {
     for (const model of ['claude-opus-5-5', 'claude-fable-5-1']) {
       expect(reasoningBody(model, 'max', 'adaptive')).toEqual({
         output_config: { effort: 'max' },
@@ -106,9 +53,9 @@ describe('the thinking rule each new model enforces', () => {
     }
   });
 
-  // Sonnet 5.5 400s on `disabled` and spells "no up-front thinking" `between_tools`, legal only at
-  // `high` or below — the framework's `thinking: 'disabled'` is that request on this model.
-  test("Sonnet 5.5 sends between_tools for thinking: 'disabled', and only at high or below", () => {
+  // `disabledThinking: 'between_tools'` capped at `high`: the framework's one `thinking: 'disabled'`
+  // is that request on such a row.
+  test("a between_tools row sends between_tools for thinking: 'disabled', and only at high or below", () => {
     expect(reasoningBody('claude-sonnet-5-5', 'high', 'disabled')).toEqual({
       output_config: { effort: 'high' },
       thinking: { type: 'between_tools' },
@@ -121,7 +68,7 @@ describe('the thinking rule each new model enforces', () => {
     );
   });
 
-  test('the older rows keep their own rules', () => {
+  test('a capped row and an uncapped row keep their own rules', () => {
     expect(reasoningBody('claude-opus-5', 'high', 'disabled')['thinking']).toEqual({
       type: 'disabled',
     });
@@ -133,10 +80,10 @@ describe('the thinking rule each new model enforces', () => {
 });
 
 /**
- * `costOf` per row, against sums worked by hand from the pricing page's per-MTok columns (base
- * input, 5m cache write, cache hits, output). One million of each, so each term is the list price.
+ * `costOf` per row, against sums worked by hand from each row's per-MTok fields (input, 5m cache
+ * write, cache hit, output). One million of each, so each term is the row's own price.
  */
-describe("costOf prices cache reads and writes at each row's published rate", () => {
+describe("costOf prices cache reads and writes at each row's own rate", () => {
   const MTOK: TokenUsage = {
     inputTokens: 1_000_000,
     outputTokens: 1_000_000,
@@ -151,7 +98,7 @@ describe("costOf prices cache reads and writes at each row's published rate", ()
     [field]: tokens,
   });
 
-  test('every Anthropic row: input + 5m write + cache hit + output', () => {
+  test('every fixture row: input + 5m write + cache hit + output', () => {
     const expected: Readonly<Record<string, number>> = {
       'claude-fable-5-1': 1_000 + 1_250 + 25 + 5_000, // $10 + $12.50 + $0.25 + $50
       'claude-opus-5-5': 400 + 500 + 20 + 2_000, // $4 + $5 + $0.20 + $20
@@ -165,15 +112,14 @@ describe("costOf prices cache reads and writes at each row's published rate", ()
     }
   });
 
-  // The bug this closes: a flat 0.1x read charged Opus 5.5 twice and Fable 5.1 four times over.
+  // The bug this closes: a flat 0.1x read charged a 0.05x row twice and a 0.025x row four times over.
   test('the two discounted cache-hit rates, and rounding UP on a single token', () => {
     expect(costOf('claude-opus-5-5', ONLY('cacheReadTokens'))).toEqual(usd(20));
     expect(costOf('claude-fable-5-1', ONLY('cacheReadTokens'))).toEqual(usd(25));
     expect(costOf('claude-fable-5-1', ONLY('cacheReadTokens', 1))).toEqual(usd(1));
   });
 
-  test('the OpenAI-format rows read cached input at their own published rate', () => {
-    registerOpenAiModels();
+  test('the OpenAI-format rows read cached input at their own rate', () => {
     expect(costOf('gpt-5.6-sol', ONLY('cacheReadTokens'))).toEqual(usd(50));
     expect(costOf('gpt-5.6-terra', ONLY('cacheReadTokens'))).toEqual(usd(20));
     expect(costOf('gpt-5.6-luna', ONLY('cacheReadTokens'))).toEqual(usd(2));
@@ -195,7 +141,7 @@ describe("costOf prices cache reads and writes at each row's published rate", ()
 });
 
 describe("a refusal's suggestion is a rung the same declaration can run on", () => {
-  test('with no declaration it is the next rung up, as before', () => {
+  test('with no declaration it is the next rung up', () => {
     expect(moreCapableThan('claude-opus-5', {})).toBe('claude-opus-5-5');
   });
 
@@ -245,5 +191,40 @@ describe('every price on a row is in one currency', () => {
         expect(fix).toContain('"USD"');
       }
     }
+  });
+});
+
+/**
+ * An app registering two vendors' rows puts one's top rung right after the other's cheapest. A
+ * flat walk would hand `X_LLM_REFUSED`'s fix line the cheaper vendor's model to paste — so the
+ * walk stops at the family boundary.
+ */
+describe('the ladder does not cross vendors', () => {
+  test('the top of one family has no rung above it, whatever was registered before it', () => {
+    expect(moreCapableThan('gpt-5.6-sol')).toBeUndefined();
+    expect(moreCapableThan(FIXTURE_ANTHROPIC_IDS[0])).toBeUndefined();
+  });
+
+  test('within a family the walk still goes up', () => {
+    expect(moreCapableThan('gpt-5.6-luna')).toBe('gpt-5.6-terra');
+    expect(moreCapableThan('gpt-5.6-terra')).toBe('gpt-5.6-sol');
+    expect(moreCapableThan('claude-haiku-4-5')).toBe('claude-sonnet-5');
+  });
+
+  test('a model registered with no family compares only with the other unfamilied ones', () => {
+    const bare = {
+      contextWindow: 1,
+      maxOutput: 1,
+      inputPerMillion: { minor: 1, currency: 'USD' },
+      outputPerMillion: { minor: 1, currency: 'USD' },
+      cacheMinimumTokens: 0,
+      reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+    } as const;
+    registerModel({ id: 'llama-internal-70b', ...bare });
+    registerModel({ id: 'llama-internal-8b', ...bare });
+
+    expect(moreCapableThan('llama-internal-8b')).toBe('llama-internal-70b');
+    // Never the vendor rung above it in registration order.
+    expect(moreCapableThan('llama-internal-70b')).toBeUndefined();
   });
 });

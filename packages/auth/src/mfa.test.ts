@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { defineAuth } from './auth';
 import { AuthError, mfaRequired } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import {
   base32Decode,
   base32Encode,
@@ -17,7 +17,7 @@ import {
   verifyTotp,
 } from './mfa';
 
-const authWith = (issuer: string) => defineAuth({ adapter: new MemoryAdapter(), mfa: { issuer } });
+const authWith = (issuer: string) => defineAuth({ adapter: memoryAuthAdapter(), mfa: { issuer } });
 
 // The secret every authenticator-app tutorial uses; keeps the vectors reproducible.
 const SECRET = 'JBSWY3DPEHPK3PXP';

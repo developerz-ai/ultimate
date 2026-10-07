@@ -32,8 +32,8 @@ export interface ApiKeyResolverOptions extends ApiKeyActorOptions {
  * `defineAppMcp()` — one resolver for both.
  *
  * `store` is a THUNK, read when a token is presented and never captured: a mount is declared when
- * its module is evaluated, and `new BuiltinAdapter()` takes the process's database client, which
- * boot installs later. `() => new MemoryAdapter()` would be a new, empty store per request — hold
+ * its module is evaluated, and `postgresAuthAdapter()` takes the process's database client, which
+ * boot installs later. `() => memoryAuthAdapter()` would be a new, empty store per request — hold
  * the instance and return it.
  */
 export function apiKeyResolver(

@@ -5,9 +5,9 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { registerFixtureModels } from './model-fixture';
 import { modelSpec, registerModel } from './models';
 import { chatCompletionBody } from './openai-body';
-import { registerOpenAiModels } from './openai-models';
 import type { GenerateRequest } from './provider';
 import type { LlmTool } from './tools';
 
@@ -30,7 +30,7 @@ const respond: LlmTool = {
 
 beforeEach(() => {
   // `resetModels()` in another suite clears the whole registry, this provider's specs included.
-  registerOpenAiModels();
+  registerFixtureModels();
   registerModel({
     id: PLAIN,
     contextWindow: 128_000,

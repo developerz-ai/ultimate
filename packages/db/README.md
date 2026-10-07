@@ -423,9 +423,9 @@ A pooled statement cannot hold a subscription: the next one runs on another conn
 clients hold ONE session beside the pool for it.
 
 ```ts
-import { createPostgresClient } from '@ultimat3/db';
+import { postgresClient } from '@ultimat3/db';
 
-const client = createPostgresClient({ url: 'postgres://localhost:5432/app_test' });
+const client = postgresClient({ url: 'postgres://localhost:5432/app_test' });
 const subscription = await client.listen(
   'x_jobs_wake',
   (payload) => console.log('notified', payload),

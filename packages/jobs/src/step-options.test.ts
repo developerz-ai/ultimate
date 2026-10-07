@@ -10,7 +10,7 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobExecution } from './execute';
 import { executeJob } from './execute';
 import type { AnyJobHandle, JobDefinition } from './job';
@@ -46,7 +46,7 @@ async function claimOne(
     retry: { attempts: 3, jitter: false },
     ...definition,
   });
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const nacks: NackOptions[] = [];
   const driver: JobDriver = {
     ...base,

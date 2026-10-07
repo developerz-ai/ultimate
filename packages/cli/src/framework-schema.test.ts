@@ -39,7 +39,7 @@ describe('unit · framework schema', () => {
     // dead-lettered notification rather than as a missing schema.
     expect(frameworkTableNames()).toContain('x_notify_deliveries');
     expect(frameworkTableNames()).toContain('x_notify_inbox');
-    // `createPgDigestStore`'s windows: without it the first digest append is `42P01` in a worker.
+    // `postgresDigestStore`'s windows: without it the first digest append is `42P01` in a worker.
     expect(frameworkTableNames()).toContain('x_notify_digests');
   });
 

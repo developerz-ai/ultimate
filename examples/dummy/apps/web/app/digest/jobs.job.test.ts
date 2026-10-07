@@ -14,16 +14,16 @@ import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
 import { applyFlagSnapshot } from '@ultimat3/flags';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
 import {
-  createMemoryStepStore,
-  createMemoryDriver as createQueue,
+  memoryJobDriver as createQueue,
   createStepRunner,
   jobDriver,
+  memoryStepStore,
   resetJobDriver,
   setJobDriver,
 } from '@ultimat3/jobs';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
 import {
-  createMemoryDriver as createOutbox,
+  memoryMailDriver as createOutbox,
   driverUnavailable,
   resetMailDriver,
   setMailDriver,
@@ -186,7 +186,7 @@ test('the fan-out belongs to no org and the delivery belongs to exactly one', ()
 test('one window read and one member read, however many readers the group holds', async () => {
   const reads = noReads();
   const mail = mailFailingOn(NEVER);
-  const runner = runnerOn(createMemoryStepStore(), 'deliverDigest');
+  const runner = runnerOn(memoryStepStore(), 'deliverDigest');
 
   try {
     expect(await deliver(runner, reads, [summary('raii'), summary('batching')])).toEqual({
@@ -214,7 +214,7 @@ test('one window read and one member read, however many readers the group holds'
 });
 
 test('a blip on the third member re-sends the third, not the first two', async () => {
-  const store = createMemoryStepStore();
+  const store = memoryStepStore();
   const reads = noReads();
   const mail = mailFailingOn(3);
   const posts = [summary('raii')];
@@ -248,7 +248,7 @@ test('a blip on the third member re-sends the third, not the first two', async (
 test('the window opens at the PREVIOUS slot, which is 23 hours on a spring-forward day', async () => {
   const reads = noReads();
   const mail = mailFailingOn(NEVER);
-  const runner = runnerOn(createMemoryStepStore(), 'deliverDigest');
+  const runner = runnerOn(memoryStepStore(), 'deliverDigest');
   /** 09:00 CEST on 2026-03-29 — the morning after Madrid's clocks went forward. */
   const springForward = Date.parse('2026-03-29T07:00:00.000Z');
 
@@ -282,7 +282,7 @@ test('the fan-out enqueues the same slots on a late attempt as on the first', as
     setJobDriver(queue);
     await sendDigest.run({
       input: { runDate: '2026-08-12' },
-      step: runnerOn(createMemoryStepStore(), 'sendDigest').step,
+      step: runnerOn(memoryStepStore(), 'sendDigest').step,
       ctx: contextFor(noReads(), [], now),
       attempt: 1,
       finalAttempt: false,
@@ -315,7 +315,7 @@ test('the fan-out enqueues the same slots on a late attempt as on the first', as
 test('an empty window costs one statement and mails nobody', async () => {
   const reads = noReads();
   const mail = mailFailingOn(NEVER);
-  const runner = runnerOn(createMemoryStepStore(), 'deliverDigest');
+  const runner = runnerOn(memoryStepStore(), 'deliverDigest');
 
   try {
     expect(await deliver(runner, reads, [])).toEqual({ sent: 0 });
@@ -336,7 +336,7 @@ test('the ops kill switch stops the fan-out from scheduling anything', async () 
   const queue: JobDriver = createQueue();
   const previous = jobDriver();
   setJobDriver(queue);
-  const runner = runnerOn(createMemoryStepStore(), 'sendDigest');
+  const runner = runnerOn(memoryStepStore(), 'sendDigest');
 
   applyFlagSnapshot({ [digestEnabled.key]: { default: false } });
   try {
@@ -378,7 +378,7 @@ test('the fan-out enqueues one delivery per (org, zone), each in its own step', 
   const queue: JobDriver = createQueue();
   const previous = jobDriver();
   setJobDriver(queue);
-  const runner = runnerOn(createMemoryStepStore(), 'sendDigest');
+  const runner = runnerOn(memoryStepStore(), 'sendDigest');
 
   try {
     expect(

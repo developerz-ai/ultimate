@@ -13,13 +13,21 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { secret } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
-import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
+import {
+  FIXTURE_ANTHROPIC_IDS,
+  FIXTURE_OPENAI_IDS,
+  registerFixtureModels,
+  useFixtureModels,
+} from './model-fixture';
 import { openAiProvider } from './openai-provider';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
 import { AnthropicProvider, parseMessage } from './provider';
 import { RemoteEmbedder } from './remote-embedder';
 import type { SseFrame } from './sse';
 import { MessageStream } from './wire';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const KEY = 'sk-live-do-not-log-me';
 const OPENAI_MODEL = 'gpt-5.6-sol';
@@ -52,7 +60,7 @@ function fakeFetch(reply: () => Response): AiFetch {
 
 beforeEach(() => {
   // `resetModels()` in another suite clears the whole registry, this format's specs included.
-  registerOpenAiModels();
+  registerFixtureModels();
 });
 
 describe('an in-band error is never an empty successful answer', () => {
@@ -242,12 +250,13 @@ describe('the credential never reaches an error', () => {
       });
 
     const anthropic = new AnthropicProvider({
+      models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: fakeFetch(() => echoed(`x-api-key: ${KEY}`)),
     });
     const openai = openAiProvider({
       apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...OPENAI_MODEL_IDS],
+      models: [...FIXTURE_OPENAI_IDS],
       fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
     });
     const embedder = new RemoteEmbedder({
@@ -260,7 +269,11 @@ describe('the credential never reaches an error', () => {
     const failures = await Promise.all(
       [
         embedder.embed(['hi']),
-        anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 }),
+        anthropic.generate({
+          model: ANTHROPIC_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 16,
+        }),
         openai.generate({
           model: OPENAI_MODEL,
           messages: [{ role: 'user', content: 'hi' }],
@@ -299,10 +312,14 @@ describe("the caller's abort signal reaches the socket", () => {
     };
 
     const signal = new AbortController().signal;
-    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: recording() });
+    const anthropic = new AnthropicProvider({
+      models: FIXTURE_ANTHROPIC_IDS,
+      apiKey: KEY,
+      fetch: recording(),
+    });
     const openai = openAiProvider({
       apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...OPENAI_MODEL_IDS],
+      models: [...FIXTURE_OPENAI_IDS],
       fetch: recording(),
     });
     const drain = async (chunks: AsyncIterable<unknown>): Promise<void> => {
@@ -313,10 +330,20 @@ describe("the caller's abort signal reaches the socket", () => {
 
     const calls: readonly (() => Promise<unknown>)[] = [
       () =>
-        anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16, signal }),
+        anthropic.generate({
+          model: ANTHROPIC_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 16,
+          signal,
+        }),
       () =>
         drain(
-          anthropic.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16, signal }),
+          anthropic.stream({
+            model: ANTHROPIC_MODEL,
+            messages: [{ role: 'user', content: 'hi' }],
+            maxTokens: 16,
+            signal,
+          }),
         ),
       () =>
         openai.generate({
@@ -347,9 +374,17 @@ describe("the caller's abort signal reaches the socket", () => {
       init = given;
       return new Response('{}', { status: 503 });
     };
-    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: impl });
+    const anthropic = new AnthropicProvider({
+      models: FIXTURE_ANTHROPIC_IDS,
+      apiKey: KEY,
+      fetch: impl,
+    });
     await anthropic
-      .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 })
+      .generate({
+        model: ANTHROPIC_MODEL,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 16,
+      })
       .catch(() => undefined);
     expect(init !== undefined && 'signal' in init).toBe(false);
   });
@@ -370,14 +405,23 @@ describe('a failure body is read only as far as the detail needs', () => {
         }),
         { status: 503 },
       );
-    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: fakeFetch(endless) });
+    const anthropic = new AnthropicProvider({
+      models: FIXTURE_ANTHROPIC_IDS,
+      apiKey: KEY,
+      fetch: fakeFetch(endless),
+    });
     const openai = openAiProvider({
       apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...OPENAI_MODEL_IDS],
+      models: [...FIXTURE_OPENAI_IDS],
       fetch: fakeFetch(endless),
     });
     for (const call of [
-      () => anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 }),
+      () =>
+        anthropic.generate({
+          model: ANTHROPIC_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 16,
+        }),
       () =>
         openai.generate({
           model: OPENAI_MODEL,

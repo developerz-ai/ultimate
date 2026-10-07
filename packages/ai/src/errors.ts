@@ -29,6 +29,7 @@ export const AI_ERROR_CODES = [
   'X_AI_EMBEDDER_INVALID',
   'X_VECTOR_UNSCOPED',
   'X_AI_CONTENT_UNSUPPORTED',
+  'X_AI_MODEL_UNRESOLVED',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -59,6 +60,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_EMBEDDER_INVALID: 'an Embedder returned fewer vectors than texts it was given',
   X_VECTOR_UNSCOPED: 'a vector store was read with no tenant bound inside an org request',
   X_AI_CONTENT_UNSUPPORTED: 'an image or document block the role, model or wire format cannot take',
+  X_AI_MODEL_UNRESOLVED: 'a model call named no model',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and
@@ -134,25 +136,25 @@ export class AiGatewayMissingError extends UltimateError {
       code: 'X_AI_GATEWAY_MISSING',
       // The provider is the app's choice, so no vendor is the default (M12): the fix is the shape
       // and the cause names what `provider` is — one of the peers, or the app's own.
-      cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured (provider: new AnthropicProvider() for the Anthropic Messages format, openAiProvider({ baseUrl, models }) for the OpenAI chat-completions format on any compatible server, or your own Provider)`,
+      cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured (provider: new AnthropicProvider({ models }) for the Anthropic Messages format, openAiProvider({ baseUrl, models }) for the OpenAI chat-completions format on any compatible server, or your own Provider)`,
       fix: 'configureAi({ gateway: createGateway({ providers: [provider] }) }) at boot',
     });
   }
 }
 
 /**
- * A model id nothing put in the catalogue. This is what replaced the closed `ModelId` union: the
- * union made a company's own model id inexpressible, so the only way past `tsc` was to claim a
- * Claude id — and then `costOf` priced an internal model at Anthropic list rates and the budget
- * ledger reserved against a number belonging to a model nobody ran. A wrong id is still refused;
- * it is refused HERE, at the first read of the spec, instead of by making a right one impossible.
+ * A model id the app never registered. The framework registers none, so every id a call names —
+ * any vendor's — is one the app's own `registerModel` wrote: priced, reserved and recorded by the
+ * app's numbers, never by a list this package shipped. Refused HERE, at the first read of the spec
+ * (`costOf`, the budget's estimate, the request builders), before anything is sent or charged.
  */
 export class AiModelUnknownError extends UltimateError {
   constructor(input: { model: string; registered: readonly string[] }) {
     super({
       code: 'X_AI_MODEL_UNKNOWN',
       cause:
-        `model "${input.model}" has no registered spec, so nothing can price it ` +
+        `model "${input.model}" has no registered spec, so nothing can price or budget it — ` +
+        `the framework registers no model of its own ` +
         `(registered: ${input.registered.length > 0 ? input.registered.join(', ') : 'none'})`,
       // The `errors` gate blanks every interpolation, so the literal half alone has to name the
       // call. Which ids ARE registered is a fact of the failure, and cause is where facts live.
@@ -265,8 +267,8 @@ export class LlmRefusedError extends UltimateError {
     prompt: string;
     model: string;
     /**
-     * A blessed model MORE capable than the one that refused, or `undefined` when the refusal
-     * came from the most capable one this build knows. Retrying a refusal on a weaker model is
+     * A model the APP registered, in the same family, MORE capable than the one that refused —
+     * or `undefined` when the app registered none above it. Retrying a refusal on a weaker model is
      * the one retry that cannot help, so the fix line drops the suggestion rather than inventing
      * a downgrade.
      */
@@ -282,7 +284,7 @@ export class LlmRefusedError extends UltimateError {
         `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
       fix:
         input.alternative === undefined
-          ? `edit the template in definePrompt('${input.prompt}') and bump its version — no blessed model is more capable than '${input.model}'`
+          ? `edit the template in definePrompt('${input.prompt}') and bump its version — no model your app registered in its family is more capable than '${input.model}'`
           : `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
       meta: { model: input.model, category: input.category },
     });

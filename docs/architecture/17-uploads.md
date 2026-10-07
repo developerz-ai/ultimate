@@ -70,8 +70,8 @@ header — which is the thing the sniff exists to distrust.
 ## Why there is no `uploadAction()`
 
 A model call gets one — `llm()` in [`../../packages/ai/src/llm.ts`](../../packages/ai/src/llm.ts)
-*returns* an `action`, which is how it inherits `.tool()`, `.openapi()`, `.client()` and a
-manifest entry without re-declaring any of them. The same shape is unavailable here, and the
+*returns* an `action`, which is how it inherits its MCP tool (`toolFrom`), `.openapi()`,
+`.client()` and a manifest entry without re-declaring any of them. The same shape is unavailable here, and the
 reason is the tier table, not taste:
 
 | Package | Tier | May import `action` (tier 3)? |

@@ -31,7 +31,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three artifact targets ship — `x build --target docker`, `x build --target binary`, `x build --target static`, plus `prebuilt`, the image build's own step — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
-| Not shipped, `As of 2026-09-23` | the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not shipped, `As of 2026-09-23` | the plugin API, multi-region replication, and the Redis **job** driver — all behind the interfaces that ship today (there is no NATS job driver since 25.0.0). The Redis driver throws `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 

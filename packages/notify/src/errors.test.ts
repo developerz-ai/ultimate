@@ -56,10 +56,10 @@ describe('unit · @ultimat3/notify errors', () => {
 
   test('the store refusal names the install call for the store that is actually missing', () => {
     expect(new NotifyStoreMissingError({ notifier: 'n', store: 'inbox' }).fix).toContain(
-      'createMemoryInboxStore()',
+      'memoryInboxStore()',
     );
     expect(new NotifyStoreMissingError({ notifier: 'n', store: 'digest' }).fix).toContain(
-      'createMemoryDigestStore()',
+      'memoryDigestStore()',
     );
   });
 

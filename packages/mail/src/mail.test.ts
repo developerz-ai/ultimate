@@ -3,8 +3,8 @@ import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import {
   createJobsFacade,
-  createMemoryDriver as createMemoryJobDriver,
-  createMemoryOutboxStore,
+  memoryJobDriver,
+  memoryOutboxStore,
   resetJobDriver,
   resetJobsFacade,
   setJobDriver,
@@ -13,8 +13,8 @@ import {
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import {
-  createMemoryDriver,
   type MemoryMailDriver,
+  memoryMailDriver,
   messageHeaders,
   resetMailDriver,
   setMailDriver,
@@ -81,7 +81,7 @@ let memory: MemoryMailDriver;
 
 beforeEach(() => {
   resetMailDriver();
-  memory = createMemoryDriver();
+  memory = memoryMailDriver();
   setMailDriver(memory);
   // `send` enqueues whenever a job driver is ambient, and the driver is process-global. These
   // tests assert on the inline path, so they state that precondition instead of inheriting
@@ -264,7 +264,7 @@ describe('the queue path', () => {
   });
 
   test('a configured job driver means the message is enqueued, not delivered', async () => {
-    setJobDriver(createMemoryJobDriver());
+    setJobDriver(memoryJobDriver());
     const result = await send(basicMail, { name: 'Ada' }, { to: 'ada@example.test', locale: 'en' });
 
     expect(result.queued).toBe(true);
@@ -277,7 +277,7 @@ describe('the queue path', () => {
   });
 
   test('the queued result reports every envelope recipient, cc and bcc included', async () => {
-    setJobDriver(createMemoryJobDriver());
+    setJobDriver(memoryJobDriver());
     const result = await send(
       basicMail,
       { name: 'Ada' },
@@ -293,7 +293,7 @@ describe('the queue path', () => {
   });
 
   test('two identical sends dedupe onto one queue row', async () => {
-    setJobDriver(createMemoryJobDriver());
+    setJobDriver(memoryJobDriver());
     const options: SendOptions = { to: 'ada@example.test', locale: 'en' };
     const first = await send(basicMail, { name: 'Ada' }, options);
     const second = await send(basicMail, { name: 'Ada' }, options);
@@ -309,9 +309,9 @@ describe('the queue path', () => {
   // rolled back after sending still mailed. Through the facade, an ambient transaction STAGES the
   // row — nothing reaches the queue until that transaction commits.
   test('inside a transaction the send is staged on it, not published to the queue', async () => {
-    const queue = createMemoryJobDriver();
+    const queue = memoryJobDriver();
     setJobDriver(queue);
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     const tx = { id: 'request-tx' } as unknown as Tx;
     setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
     try {
@@ -331,7 +331,7 @@ describe('the queue path', () => {
   });
 
   test('sync: true delivers inline even with a queue configured', async () => {
-    setJobDriver(createMemoryJobDriver());
+    setJobDriver(memoryJobDriver());
     const result = await send(
       basicMail,
       { name: 'Ada' },

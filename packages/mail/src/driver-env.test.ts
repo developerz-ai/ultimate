@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import type { MailDriver, MailMessage, MemoryMailDriver } from './driver';
-import { createMemoryDriver, isMemoryDriver } from './driver';
+import { isMemoryDriver, memoryMailDriver } from './driver';
 import { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
 import { driverUnavailable } from './errors';
 import { RETAIN_MIME_CEILING_BYTES } from './retain-mime';
@@ -221,14 +221,14 @@ describe('isMemoryDriver', () => {
   test.each(['sent', 'outbox', 'lastTo', 'clear'] as const)(
     'a memory driver missing only %s is refused',
     (missing) => {
-      const members: MemoryMembers = { ...createMemoryDriver() };
+      const members: MemoryMembers = { ...memoryMailDriver() };
       delete members[missing];
       expect(isMemoryDriver(memoryLike(members))).toBe(false);
     },
   );
 
   test('the real one is', () => {
-    expect(isMemoryDriver(createMemoryDriver())).toBe(true);
+    expect(isMemoryDriver(memoryMailDriver())).toBe(true);
   });
 });
 

@@ -18,7 +18,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createContext, normalizeAuditRecord, secret, userActor } from '@ultimat3/core';
+import { createContext, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink } from './audit-memory';
 import { postgresAuditSink } from './audit-postgres';
@@ -80,8 +80,8 @@ function keptByMemory(record: AuditRecord): Kept {
   const kept = sink.records()[0];
   if (kept === undefined) expect.unreachable();
   return {
-    action: normalizeAuditRecord(kept).name,
-    primitive: normalizeAuditRecord(kept).primitive,
+    action: kept.name,
+    primitive: kept.primitive,
     outcome: kept.outcome,
     surface: kept.surface,
     mutator: kept.mutator,
@@ -141,7 +141,6 @@ const AT = new Date(1_700_000_000_000);
 const recordFor = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   at: AT,
   name: 'publishPost',
-  action: 'publishPost',
   primitive: 'action',
   mutator: true,
   surface: 'http',
@@ -183,7 +182,6 @@ const CASES: readonly (readonly [string, AuditRecord])[] = [
     'an audited READ, from the query primitive',
     recordFor({
       name: 'postList',
-      action: 'postList',
       primitive: 'query',
       mutator: false,
       input: { limit: 5, apiKey: 'sk_live_read' },
@@ -213,7 +211,6 @@ describe('an audited read is redacted on the durable side exactly as a write is'
   test('a credential-named input key never reaches the table, whichever primitive wrote it', async () => {
     const read = recordFor({
       name: 'postList',
-      action: 'postList',
       primitive: 'query',
       mutator: false,
       input: { limit: 5, apiKey: 'sk_live_read' },

@@ -6,8 +6,8 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { DeliveryClaim } from './ledger';
 import {
-  createPgDeliveryLedger,
   DEFAULT_DELIVERY_WINDOW_MS,
+  postgresDeliveryLedger,
   SQL_NOTIFY_CLAIM,
   SQL_NOTIFY_DELIVERIES_PURGE,
   SQL_NOTIFY_DELIVERIES_TABLE,
@@ -37,12 +37,12 @@ const executorOf = (answers: readonly (readonly unknown[])[], calls: Call[]): Pg
 describe('unit · postgres delivery ledger', () => {
   test('a returned row means this caller owns the delivery; no row means it already went out', async () => {
     const calls: Call[] = [];
-    const owned = createPgDeliveryLedger({ executor: executorOf([[{ attempts: 1 }]], calls) });
+    const owned = postgresDeliveryLedger({ executor: executorOf([[{ attempts: 1 }]], calls) });
     expect(await owned.claim(claim, AT)).toBe(true);
     expect(calls[0]?.sql).toBe(SQL_NOTIFY_CLAIM);
     expect(calls[0]?.params).toEqual(['post.liked', 'like:p1', 'ana', 'email', AT]);
 
-    const taken = createPgDeliveryLedger({ executor: executorOf([[]], []) });
+    const taken = postgresDeliveryLedger({ executor: executorOf([[]], []) });
     expect(await taken.claim(claim, AT)).toBe(false);
   });
 
@@ -66,7 +66,7 @@ describe('unit · postgres delivery ledger', () => {
 
   test('settle names the status and the clock, positionally, on every path', async () => {
     const calls: Call[] = [];
-    const ledger = createPgDeliveryLedger({ executor: executorOf([[]], calls) });
+    const ledger = postgresDeliveryLedger({ executor: executorOf([[]], calls) });
     await ledger.settle(claim, 'sent', AT);
     expect(calls[0]?.sql).toBe(SQL_NOTIFY_SETTLE);
     expect(calls[0]?.params).toEqual(['post.liked', 'like:p1', 'ana', 'email', 'sent', AT]);
@@ -75,12 +75,12 @@ describe('unit · postgres delivery ledger', () => {
   });
 
   test('a delivery nothing has ever claimed answers undefined rather than a row', async () => {
-    const ledger = createPgDeliveryLedger({ executor: executorOf([[]], []) });
+    const ledger = postgresDeliveryLedger({ executor: executorOf([[]], []) });
     expect(await ledger.find(claim)).toBeUndefined();
   });
 
   test('a status column this build does not know reads as `failed`, never as `sent`', async () => {
-    const ledger = createPgDeliveryLedger({
+    const ledger = postgresDeliveryLedger({
       executor: executorOf(
         [[{ ...claim, status: 'queued-for-later', attempts: 3, at: AT.toISOString() }]],
         [],
@@ -99,7 +99,7 @@ describe('unit · delivery retention', () => {
   // row, because `at` is written by whichever process took the delivery.
   test('the cutoff is the caller clock minus the ledger own window', async () => {
     const calls: Call[] = [];
-    const ledger = createPgDeliveryLedger({
+    const ledger = postgresDeliveryLedger({
       executor: executorOf([[]], calls),
       windowMs: 60_000,
     });
@@ -109,7 +109,7 @@ describe('unit · delivery retention', () => {
   });
 
   test('the window defaults to 24h and is readable, so a caller can copy it', () => {
-    const ledger = createPgDeliveryLedger({ executor: executorOf([[]], []) });
+    const ledger = postgresDeliveryLedger({ executor: executorOf([[]], []) });
     expect(DEFAULT_DELIVERY_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
     expect(ledger.windowMs).toBe(DEFAULT_DELIVERY_WINDOW_MS);
   });
@@ -119,14 +119,14 @@ describe('unit · delivery retention', () => {
   // Without it `rows.length` is zero on every sweep while the delete succeeds.
   test('the count is read off returned rows, not off an unreturning delete', async () => {
     const calls: Call[] = [];
-    const ledger = createPgDeliveryLedger({ executor: executorOf([[{ key: 'a' }]], calls) });
+    const ledger = postgresDeliveryLedger({ executor: executorOf([[{ key: 'a' }]], calls) });
     expect(await ledger.purgeExpired(AT.getTime())).toBe(1);
     expect(calls[0]?.sql).toContain('returning');
   });
 
   test('a window that is not a positive finite number is refused at construction', () => {
     for (const windowMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5]) {
-      expect(() => createPgDeliveryLedger({ executor: executorOf([[]], []), windowMs })).toThrow();
+      expect(() => postgresDeliveryLedger({ executor: executorOf([[]], []), windowMs })).toThrow();
     }
   });
 });

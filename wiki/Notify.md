@@ -37,10 +37,10 @@ await commentPosted.enqueue({ params: { postId, orgId, author } });
 
 | Store | Default | Postgres |
 |---|---|---|
-| `ledger` — the delivery claim | in-memory (one process is genuinely deduped) | `createPgDeliveryLedger({ executor, windowMs })` — `windowMs` never shorter than your idempotency window |
+| `ledger` — the delivery claim | in-memory (one process is genuinely deduped) | `postgresDeliveryLedger({ executor, windowMs })` — `windowMs` never shorter than your idempotency window |
 | `preferences` — the gate | allow all | yours: **the gate ships, what it reads never does** — your taxonomy, your quiet hours |
-| `inbox` | none — `X_NOTIFY_STORE_MISSING` | `createPgInboxStore({ executor })` |
-| `digest` | none — `X_NOTIFY_STORE_MISSING` | `createPgDigestStore({ executor })` — one window per slot across replicas; `createMemoryDigestStore()` for one process |
+| `inbox` | none — `X_NOTIFY_STORE_MISSING` | `postgresInboxStore({ executor })` |
+| `digest` | none — `X_NOTIFY_STORE_MISSING` | `postgresDigestStore({ executor })` — one window per slot across replicas; `memoryDigestStore()` for one process |
 
 The hourly `x.purge` job sweeps the Postgres ledger, inbox and digest windows (a closed window a week old, by default) — and, in the same pass, `x_job_events`, the stored bus `step.waitForEvent` reads. The inbox is swept only when your
 `app.config.ts` sets `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` — when an unread

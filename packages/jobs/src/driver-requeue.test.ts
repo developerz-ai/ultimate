@@ -8,8 +8,8 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_JOB_REQUEUE } from './driver-pg-jobs-sql';
 
 /** One attempt; `nack(…, { deadLetter: true })` puts it where `x jobs retry` exists for. */
@@ -33,7 +33,7 @@ const codeOf = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 describe('memory: requeue takes a finished job and nothing else', () => {
   test('a RUNNING job is refused, and keeps its claim', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
     expect(await codeOf(driver.introspect?.requeue(id) ?? Promise.resolve())).toBe(
@@ -45,7 +45,7 @@ describe('memory: requeue takes a finished job and nothing else', () => {
   });
 
   test('a done job whose key a live job now holds is X_JOB_DUPLICATE, never a second live row', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
     await driver.ack(id, { workerId: 'w1', claim: 1 });
@@ -57,7 +57,7 @@ describe('memory: requeue takes a finished job and nothing else', () => {
   });
 
   test('a dead job comes back ready at attempt 0, unclaimed', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
     await driver.nack(id, { workerId: 'w1', claim: 1, delayMs: 0, deadLetter: true });
@@ -71,7 +71,7 @@ describe('memory: requeue takes a finished job and nothing else', () => {
 describe('memory: fromStep drops that step AND every step after it', () => {
   test('earlier steps stay memoized, the target and later ones are gone', async () => {
     const clock = frozenClock('2026-01-01T00:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const { id, runId } = await enqueue(driver, 'sync:1');
     await claimOne(driver);
     const steps = driver.steps;
@@ -93,7 +93,7 @@ describe('memory: fromStep drops that step AND every step after it', () => {
   // A step sharing the target's millisecond is not provably later, and re-running an EARLIER one —
   // the charge before the receipt — is the worse mistake, so a tie is kept.
   test('a step that started in the same millisecond as the target is kept', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id, runId } = await enqueue(driver, 'sync:2');
     await claimOne(driver);
     for (const name of ['charge', 'receipt']) {
@@ -150,7 +150,7 @@ describe('pg: the same two refusals, before the statement', () => {
     return { executor, sql };
   }
 
-  const pg = (executor: PgExecutor) => createPgDriver({ executor });
+  const pg = (executor: PgExecutor) => postgresJobDriver({ executor });
 
   test('a running row is refused and no update is sent', async () => {
     const { executor, sql } = executorAnswering('running');

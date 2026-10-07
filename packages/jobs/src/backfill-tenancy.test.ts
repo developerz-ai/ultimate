@@ -16,7 +16,7 @@ import type { BackfillInput } from './backfill';
 import { backfill } from './backfill';
 import type { ClaimedJob, JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { resetJobs } from './job';
@@ -122,7 +122,7 @@ const declare = (name: string, tenant: (() => string) | 'none') => {
 beforeEach(() => {
   resetJobs();
   table = tableFor(posts, memoryRepo(posts, SEED));
-  driver = createMemoryDriver();
+  driver = memoryJobDriver();
   setJobDriver(driver);
 });
 

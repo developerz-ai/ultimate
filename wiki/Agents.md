@@ -1,6 +1,6 @@
 # Agents
 
-`agent()` is an **action factory**, not a ninth primitive. A tool-using run is one server-authoritative operation with an input schema, an output schema and a policy — the definition of an `action` — so `agent()` returns one, and inherits `.tool()`, `.openapi()`, `.client()`, `.job()`, `.contract()` and its manifest row without a line of agent-specific code.
+`agent()` is an **action factory**, not a ninth primitive. A tool-using run is one server-authoritative operation with an input schema, an output schema and a policy — the definition of an `action` — so `agent()` returns one, and inherits `.openapi()`, `.client()`, `.job()`, `.contract()`, its MCP tool (`toolFrom`) and its manifest row without a line of agent-specific code.
 
 `As of 2026-08`. Source: [`packages/ai/src/agent.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/agent.ts). The gateway, prompts, evals and the MCP surface are [MCP and AI](MCP-And-AI); the primitive vocabulary is [The eight primitives](The-Eight-Primitives).
 
@@ -38,18 +38,18 @@ configureAi({
 
 | Provider | Speaks |
 |---|---|
-| `new AnthropicProvider({ apiKey?, baseUrl? })` | the Anthropic Messages format |
+| `new AnthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format |
 | `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format, on any compatible server |
 | your own `Provider` | anything — `{ name, models, generate, stream }` |
 
 An agent's model resolves from, first match wins: its `model`, its prompt's `model`, then `createGateway({ defaultModel })` (`resolveModel`, `packages/ai/src/model-resolve.ts`). The gateway routes it to the first provider whose `models` lists it.
 
-**Deprecated, removed in 25.0.0** — the vendor data the package still ships. Each use logs `ai.deprecation` once per site or row and counts `ai_deprecated_fallbacks_total{kind, subject}`:
+The framework ships no default model and no catalogue row (25.0.0): every id is one the app `registerModel`-ed.
 
-| Leaning on | `kind` | Do instead |
+| Missing | Refusal | Fix |
 |---|---|---|
-| the built-in `DEFAULT_MODEL` (`claude-opus-5`), when none of the three names a model | `default-model` | `model:` on the declaration, or `createGateway({ defaultModel })` |
-| a built-in catalogue row the app never registered, to price a call | `built-in-price` | `registerModel({ id, … })` at boot with your own prices — a restated built-in id is yours from then on |
+| none of the three names a model | `X_AI_MODEL_UNRESOLVED`, naming all three | `model:` on the declaration or in `definePrompt`, or `createGateway({ defaultModel })` |
+| the id was never registered | `X_AI_MODEL_UNKNOWN`, before any provider call or budget reservation | `registerModel({ id, … })` at boot, in the app's `models.ts` |
 
 ## Quick answers
 
@@ -121,7 +121,7 @@ export const supportAgent = agent({
 | `vars` | yes | — | the one declared place a run loads data, and the one place a redactor sees it. A `Secret` here is `X_AI_PROMPT_SECRET` |
 | `tools` | yes | — | real `action()`s. Each must be `mcp: { expose: true }` |
 | `policy` | yes | — | the action's own policy, evaluated on every surface identically |
-| `model` | no | the prompt's `model`, else the gateway's `defaultModel`, else the deprecated built-in `DEFAULT_MODEL` | a model id the app registered — [Register your models](#register-your-models-pick-your-provider) |
+| `model` | no | the prompt's `model`, else the gateway's `defaultModel`; none is `X_AI_MODEL_UNRESOLVED` | a model id the app registered — [Register your models](#register-your-models-pick-your-provider) |
 | `maxTurns` | no | **8** | reaching it is `X_AGENT_MAX_TURNS`, never a partial answer |
 | `maxTokens` | no | **4,096** | completion ceiling **per turn**. The model never sees it |
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
@@ -234,7 +234,7 @@ A budget **refuses**; it never truncates. A shortened prompt yields a confidentl
 | `derive()` takes the **tighter** of each limit and never the looser | a per-call budget on an inner `agent()` must not be able to widen the actor or org ceiling it runs inside |
 | `reserveNow()` walks the **whole** parent chain | each ledger keeps its own counter, and the tightest limit is not always the one with the most spent against it |
 
-`take` is required of every `BudgetStore`, and a store shared across **processes** must make it atomic on its own side — a Redis `EVAL`, a SQL `update … where spent + $n <= $limit`. The default `MemoryBudgetStore` is per process and resets on every deploy: `org: 20_000_000` at six replicas is six ledgers of twenty million.
+`take` is required of every `BudgetStore`, and a store shared across **processes** must make it atomic on its own side — a Redis `EVAL`, a SQL `update … where spent + $n <= $limit`. The default `memoryBudgetStore()` is per process and resets on every deploy: `org: 20_000_000` at six replicas is six ledgers of twenty million.
 
 ## Cancellation
 
@@ -426,7 +426,7 @@ export const triageEveryOrder = backfill({
 | per model call | `budget.costPerCall` on the `agent()` |
 | per agent run | `budget.tokensPerRun` on the `agent()` |
 | per page | `budget.tokensPerRun` on the `hive()` — every member's every turn |
-| per actor, per org, **fleet-wide** | `createGateway({ budget: { actor, org }, budgetStore })`. The default `MemoryBudgetStore` is per process; a shared store is what makes these mean anything above one replica |
+| per actor, per org, **fleet-wide** | `createGateway({ budget: { actor, org }, budgetStore })`. The default `memoryBudgetStore()` is per process; a shared store is what makes these mean anything above one replica |
 | rows per second | `backfill`'s `rate` and `batch`. This pass shares its pool with the requests the app is still serving |
 | which deploys sweep at all | `backfill`'s `environments`. A mismatch is `X_BACKFILL_ENVIRONMENT`, refused inside the pass as well as by the CLI |
 
@@ -445,7 +445,7 @@ describeAgents();
 //    mcp: true }]
 ```
 
-An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt`, `gateway`, or `built-in-default` (the deprecated `DEFAULT_MODEL`); `gateway` and `built-in-default` are as of the gateway installed when the row is read. Reading a row records no deprecation.
+An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt` or `gateway`; both are `null` when none names one yet (a call in that state is refused). `gateway` and `null` are as of the gateway installed when the row is read. Reading a row never throws.
 
 Names are read when you ask, not when the agent was declared: `registerAction` stamps them at boot, long after `agent()` ran at module scope. An agent nothing registered has **no row**, and that is not a silent drop — an action with no name reaches no route, no tool catalogue and no queue, so there is no capability for a row to describe. Register it: `registerAction('supportAgent', support)`.
 

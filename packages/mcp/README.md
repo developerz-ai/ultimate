@@ -128,7 +128,7 @@ export const mcp = defineAppMcp({
 has no `routes:` key and never had one; this page said `routes: [mcp.route]` while nothing read it,
 and `POST /mcp` answered `X_ROUTE_NOT_FOUND` in every app ever scaffolded. Now: `apps/<app>/mcp.ts`
 exports `mcp` (the value `defineAppMcp` returns), and both boots — `x dev` and `runRole` — mount
-`POST config.ai.mcp.path` → `mcp.route.handle(request)` when `config.ai.mcp.expose` is `true`,
+`POST <defineAppMcp path>` (default `/mcp`) → `mcp.route.handle(request)` when `config.ai.mcp.expose` is `true`,
 which is the **default**, and say `app mcp mounted` in the boot log (`x dev` prints `mcp POST /mcp`
 in its summary). The http pipeline does not pre-judge the route (`auth: 'public'`,
 `enforcedBy: 'handler'`): `mcp.route.handle` reads `Authorization: Bearer` through `resolveToken`
@@ -138,9 +138,8 @@ to mount — no file exports `mcp`, or the export was built without `resolveToke
 and says nothing.
 
 **Several endpoints, one per population (Unreleased).** `mcp` may be a non-empty array of
-`defineAppMcp` values: endpoint #0 mounts at `config.ai.mcp.path` and owns the root well-known
-document; every other mounts at its own `defineAppMcp({ path })` and serves only its path-inserted
-metadata document. Each is its own server — catalog, instructions, groups, scopes, prompts. Two on
+`defineAppMcp` values: every endpoint mounts at its own `defineAppMcp({ path })`; endpoint #0 owns
+the root well-known document, and every other serves only its path-inserted metadata document. Each is its own server — catalog, instructions, groups, scopes, prompts. Two on
 one route throws `X_MCP_PATH_DUPLICATE` at boot. `McpPrompt.visibleTo` hides a prompt from
 `prompts/list` and `prompts/get` with the tool/resource `McpVisibility` semantics.
 
@@ -172,13 +171,19 @@ An action that was never handed to `defineApi` has no export name, and is
 
 **The tool name is the export name, verbatim** — `publishPost`, never `publish_post`. This server
 answers `tools/call` for that name and no other, so every surface that PUBLISHES a name has to
-publish the same one: `action.tool()`, `query.tool()`, `x-ultimate.mcpTool` in `openapi.json`, and
-`ActionDescriptor.mcp.tool`. The projection reads `primitive.mcp?.name ?? primitive.name`, so the
-export name is the **default** and `mcp.name` is an explicit override — unreachable from `action()`
-or `query()`, whose declarations carry no `name` field, and available only to a hand-authored
-`ProjectablePrimitive` passed to `defineAppMcp`'s `tools:`. The three action publishers snake_cased
-the name `As of 2026-08`, so an agent reading the spec called a tool the catalog never contained and
-got ToolNotFound.
+publish the same one: `x-ultimate.mcpTool` in `openapi.json` and `ActionDescriptor.mcp.tool`. The
+projection reads `primitive.name` and nothing else — a hand-built `ProjectablePrimitive` names its
+tool with its own `name`; the `mcp.name` override, which no `action()` or `query()` could set, is
+gone (`As of 25.0.0`). The action publishers snake_cased the name `As of 2026-08`, so an agent
+reading the spec called a tool the catalog never contained and got ToolNotFound.
+
+**One projection: `toolFrom`** (`As of 25.0.0`). It takes a real action or query (or a
+`ProjectablePrimitive`) and answers the tool this server serves —
+`toolListEntry(toolFrom(publishPost))` is, field for field, its `tools/list` entry. Reach for
+it where `publishPost.tool()` / `liveFeed.tool()` were: those were a second projection, built a tier
+below this one, and they disagreed with the served tool (description fallback, the `idempotencyKey`
+argument, annotations). `toolFromQuery` was this function under another name and is gone; ask
+`isMcpExposed(primitive.mcp)` from `@ultimat3/core` where `isExposed` was.
 `src/cross-surface.test.ts` is what makes a fourth spelling a failing test rather than a note.
 
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an

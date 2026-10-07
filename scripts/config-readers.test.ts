@@ -57,8 +57,8 @@ describe('unit · every AppConfig leaf key is derived, never listed', () => {
     expect(configLeaves(declaration)).toEqual(['name', 'roles', 'ai.mcp.expose']);
   });
 
-  test('and the real declaration yields twenty-seven, ai.mcp.path among them', () => {
-    expect(input.leaves).toContain('ai.mcp.path');
+  test('and the real declaration yields the live leaves, ai.mcp.expose among them', () => {
+    expect(input.leaves).toContain('ai.mcp.expose');
     expect(input.leaves).toContain('jobs.visibilityTimeoutMs');
     // A key of the section declared in the OTHER file of `CONFIG_FILES`, so a walk that reads only
     // the first one is red here rather than five keys shorter in silence.
@@ -186,7 +186,7 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
   test('a section whose package is named differently resolves through SECTION_PACKAGE', () => {
     expect(owningPackage('database.driver')).toBe('db');
     expect(owningPackage('theme.tokens')).toBe('ui');
-    expect(owningPackage('ai.mcp.path')).toBe('mcp');
+    expect(owningPackage('ai.mcp.expose')).toBe('mcp');
     expect(owningPackage('name')).toBeUndefined();
   });
 
@@ -240,17 +240,18 @@ describe('unit · the ratchet', () => {
    * which inlines the no-flash script with it as the fallback) and was unpinned. Then three became
    * two: 22.0.0 WIRED `realtime.urlEnv` (`@ultimat3/realtime`'s `selectTransport`).
    */
-  test('unpinned, this tree reports exactly the two keys nothing in packages/*/src reads', () => {
+  // 25.0.0 deleted the last two (`defaultTimeZone`, `defaultCurrency`: owner decision O-6, no
+  // ambient default), so every key `AppConfig` declares now has a reader.
+  test('unpinned, this tree reports no key nothing in packages/*/src reads', () => {
     const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
       (gap) => gap.kind === 'unread',
     );
-    expect(gaps.map((gap) => gap.leaf).sort()).toEqual(['defaultCurrency', 'defaultTimeZone']);
-    expect(gaps.every((gap) => gap.kind === 'unread')).toBe(true);
+    expect(gaps.map((gap) => gap.leaf)).toEqual([]);
   });
 
   test('and pinned, the tree is green — so the pins are exactly the reds, with nothing spare', async () => {
     expect(await configReaderGaps(repoRoot())).toEqual([]);
-    expect(Object.keys(CONFIG_READER_PINS).sort()).toEqual(['defaultCurrency', 'defaultTimeZone']);
+    expect(Object.keys(CONFIG_READER_PINS)).toEqual([]);
   });
 
   test('the ambiguity pins are exactly this tree reds, with nothing spare', () => {
@@ -305,7 +306,18 @@ describe('unit · the ratchet', () => {
   test('--unpin performs the edit the stale finding names, and refuses one that is not stale', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-config-pins-'));
     const path = join(dir, CONFIG_PINS_FILE);
-    await Bun.write(path, await Bun.file(join(repoRoot(), CONFIG_PINS_FILE)).text());
+    // The real file, with two multi-line rows seeded back into its (now empty) table: the shape
+    // the entry-delete regex must survive, which the live table no longer holds.
+    const real = await Bun.file(join(repoRoot(), CONFIG_PINS_FILE)).text();
+    // Biome writes the empty table as `= {};`, so the seed reopens it.
+    const seeded = real.replace(
+      'export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {};\n',
+      'export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {\n' +
+        "  defaultCurrency:\n    'a reason that wraps ' +\n    'over two lines',\n" +
+        "  defaultTimeZone:\n    'the neighbour, which must survive',\n};\n",
+    );
+    expect(seeded).not.toBe(real);
+    await Bun.write(path, seeded);
 
     expect(
       await applyConfigReaderUnpin(

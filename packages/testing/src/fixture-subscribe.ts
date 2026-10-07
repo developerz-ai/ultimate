@@ -58,7 +58,7 @@ export interface SubscribeDriver {
  * once would each see the other's writes. `bun test` builds a fixture on first use and disposes it
  * with the test, which is exactly the lifetime this needs.
  */
-export async function createSubscribeDriver(): Promise<SubscribeDriver> {
+export async function subscribeDriver(): Promise<SubscribeDriver> {
   const realtime = await import('@ultimat3/realtime');
   const node = await createLiveNode();
   const replicator = await startLiveReplicator({ registry: node.registry });

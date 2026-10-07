@@ -5,10 +5,10 @@ authorizes on a session row, a user row or an api key — http, actions, jobs an
 `ctx.actor` and hand it to `@ultimat3/policy`. One authz system, never two.
 
 ```ts
-import { BuiltinAdapter, defineAuth, login, oauthLogin } from '@ultimat3/auth';
+import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 
 export const auth = defineAuth({
-  adapter: new BuiltinAdapter(),          // or MemoryAdapter, or your Better Auth binding
+  adapter: postgresAuthAdapter(),          // or memoryAuthAdapter(), or your Better Auth binding
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
   mfa: { issuer: 'Acme' },                // the authenticator app's name; `required` only as `false`
@@ -438,14 +438,14 @@ import {
   consumeVerification,
   issueVerification,
   type MailSender,
-  MemoryAdapter,
+  memoryAuthAdapter,
   type VerificationRuntime,
 } from '@ultimat3/auth';
 import { systemClock } from '@ultimat3/core';
 
 declare const mail: MailSender;   // the app wires @ultimat3/mail's `send` here
 
-const runtime: VerificationRuntime = { store: new MemoryAdapter(), clock: systemClock, mail };
+const runtime: VerificationRuntime = { store: memoryAuthAdapter(), clock: systemClock, mail };
 
 const issued = await issueVerification(runtime, {
   purpose: 'password-reset',
@@ -511,8 +511,8 @@ an adapter implementation, not a dependency of this package.
 
 | Driver | Use |
 |---|---|
-| `BuiltinAdapter` | Postgres via `@ultimat3/db`. `new BuiltinAdapter(client?, clock?)` — the process client and `systemClock` by default; the clock stamps `x_verifications.consumed_at` |
-| `MemoryAdapter` | `x new` before a database exists, and every test in this package. `new MemoryAdapter(clock)` — `systemClock` by default — stamps every instant it writes |
+| `postgresAuthAdapter(client?, clock?)` | Postgres via `@ultimat3/db` (the `BuiltinAdapter` type) — the process client and `systemClock` by default; the clock stamps `x_verifications.consumed_at` |
+| `memoryAuthAdapter(clock?)` | `x new` before a database exists, and every test in this package (the `MemoryAdapter` type). Its clock — `systemClock` by default — stamps every instant it writes |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
 **An adapter stores and matches the address it is handed — it never folds case.** `x_users.email`
@@ -785,13 +785,13 @@ for both doors.
 
 ```ts
 import type { ApiKeyVerifyStore } from '@ultimat3/auth';
-import { apiKeyResolver, BuiltinAdapter } from '@ultimat3/auth';
+import { apiKeyResolver, postgresAuthAdapter } from '@ultimat3/auth';
 
 let keys: ApiKeyVerifyStore | undefined;
 
 /** `resolveToken: resolveKey` — on the mount, and on `defineAppMcp()`. */
 export const resolveKey = apiKeyResolver(() => {
-  keys ??= new BuiltinAdapter();
+  keys ??= postgresAuthAdapter();
   return keys;
 });
 ```
@@ -803,8 +803,8 @@ export const resolveKey = apiKeyResolver(() => {
 | a store that FAILS | the throw, untouched — a database that is down is not a wrong key |
 
 The store is a THUNK, read when a token is presented: a mount is declared when its module is
-evaluated, and `new BuiltinAdapter()` takes the process's database client, which boot installs
-later. In a test the store is `new MemoryAdapter()` — every `AuthAdapter` is an
+evaluated, and `postgresAuthAdapter()` takes the process's database client, which boot installs
+later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is an
 `ApiKeyVerifyStore` (an `ApiKeyStore` that can also `findUserById`).
 
 ## Errors

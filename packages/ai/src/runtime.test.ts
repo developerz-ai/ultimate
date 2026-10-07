@@ -4,7 +4,7 @@
 // actor: one key per actor is one instance per actor, in a process that never restarts.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createMemorySemanticCache } from '@ultimat3/cache';
+import { memorySemanticCache } from '@ultimat3/cache';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
@@ -24,7 +24,7 @@ beforeEach(() => {
     gateway: createGateway({ providers: [new EchoProvider()] }),
     semanticCache: (scope) => {
       built.push(scope);
-      return createMemorySemanticCache();
+      return memorySemanticCache();
     },
   });
 });
@@ -67,7 +67,7 @@ describe('semanticCacheFor', () => {
       gateway: createGateway({ providers: [new EchoProvider()] }),
       semanticCache: (scope) => {
         built.push(scope);
-        return createMemorySemanticCache();
+        return memorySemanticCache();
       },
     });
     semanticCacheFor('org-a');

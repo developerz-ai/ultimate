@@ -12,8 +12,8 @@ import { registerDependent, unregisterDependent } from '@ultimat3/cache';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
 import {
-  createMemoryDriver,
   job,
+  memoryJobDriver,
   resetJobDriver,
   resetJobs,
   resetTasks,
@@ -37,7 +37,7 @@ let driver: JobDriver;
 beforeAll(() => {
   resetJobs();
   resetTasks();
-  driver = createMemoryDriver();
+  driver = memoryJobDriver();
   setJobDriver(driver);
 });
 

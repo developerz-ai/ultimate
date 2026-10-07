@@ -9,8 +9,8 @@
  * The codec is `@ultimat3/core`'s. This file only decides what a cursor is bound
  * to — `queryHash(name, input)` — so one read's cursor cannot page another.
  */
-import type { CursorPayload } from '@ultimat3/core';
-import { assert, decodeCursor, encodeCursor } from '@ultimat3/core';
+import type { CursorPayload, Page } from '@ultimat3/core';
+import { assert, decodeCursor, encodeCursor, pageOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { kindsOf } from './column-kinds';
 import { reviveSortKey, serializeSortValue } from './cursor-value';
@@ -25,30 +25,12 @@ import type { SqlSource } from './source';
 import { isAfterKey } from './source';
 
 /**
- * One page. `nextCursor` / `hasMore` are the preferred names; `endCursor` / `hasNextPage` are the
- * same two values under the names every client before 22.12 reads — aliases, both always present,
- * never able to disagree because `pageOf` is the one place that writes them.
+ * One page is `@ultimat3/core`'s `Page` — the framework's ONE page shape (O-12, 25.0.0), the same
+ * type `@ultimat3/entity`'s `findMany` answers, re-exported so a `query` file needs one import.
+ * `nextCursor` is `null` exactly when `hasMore` is false: before 25.0.0 this page kept a cursor on
+ * its LAST page, so a `while (page.nextCursor)` loop fetched an empty page past the end.
  */
-export interface Page<TRow> {
-  readonly rows: readonly TRow[];
-  /** The signed cursor that continues this listing; `null` on an empty page. */
-  readonly nextCursor: string | null;
-  /** Whether another page follows. */
-  readonly hasMore: boolean;
-  /** Alias of `nextCursor`. */
-  readonly endCursor: string | null;
-  /** Alias of `hasMore`. */
-  readonly hasNextPage: boolean;
-}
-
-/** Builds a `Page` from its two facts — the only constructor, so the aliases cannot drift. */
-export function pageOf<TRow>(
-  rows: readonly TRow[],
-  nextCursor: string | null,
-  hasMore: boolean,
-): Page<TRow> {
-  return { rows, nextCursor, hasMore, endCursor: nextCursor, hasNextPage: hasMore };
-}
+export type { Page } from '@ultimat3/core';
 
 export interface PaginateArgs extends SourceOptions {
   readonly first: number;
@@ -94,11 +76,11 @@ async function pageFrom<TRow extends object>(
   const after = resumed?.seek ?? null;
   const left = rowsLeft(shape.limit, resumed);
   // The whole of a declared limit is already served: there is no row to ask the source for.
-  if (left === 0) return pageOf<TRow>([], null, false);
+  if (left === 0) return pageOf<TRow>([], null);
 
   // `MAX_PAGE_SIZE` lives in `page-controls.ts`: the route checks the same bound at the wire, as
   // a 400, before this `assert` — which is a 500 — can see the number.
-  // Fetch one extra row: its presence *is* `hasNextPage`, with no count query. Never past what a
+  // Fetch one extra row: its presence *is* `hasMore`, with no count query. Never past what a
   // declared `.limit()` has left — `first` used to REPLACE that limit, so `?_first=10000` walked a
   // "top 3" to the end of the table.
   const window = Math.min(left, first + 1);
@@ -109,10 +91,15 @@ async function pageFrom<TRow extends object>(
   // The source came from this query's own `sql()`, so its rows are TRow.
   const rows = scoped.slice(0, first) as unknown as readonly TRow[];
   const last = rows[rows.length - 1];
+  // Read on EVERY page with a row, the last included: a read with no id is refused as unpageable
+  // on page one, never only once its listing grows past one page.
   const seek = last === undefined ? null : seekKeyOf(last, shape);
 
+  // A cursor is minted only when another page follows (the extra row arrived): the position of the
+  // last row of the LAST page is not a next page, and handing it back made a
+  // `while (page.nextCursor)` loop fetch an empty page past the end.
   const nextCursor =
-    seek === null
+    seek === null || scoped.length <= first
       ? null
       : encodeCursor({
           scope: hash,
@@ -126,7 +113,7 @@ async function pageFrom<TRow extends object>(
           ],
           id: String(seek.id),
         });
-  return pageOf(rows, nextCursor, scoped.length > first);
+  return pageOf(rows, nextCursor);
 }
 
 /** A decoded cursor: where the page resumes, and how many rows of a declared limit are spent. */

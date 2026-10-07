@@ -75,13 +75,13 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     // size and `now - at > windowMs` is false for every record — a table with no cap, holding keys
     // that never expire, out of a `Math.max` that reads like a guard.
     this.windowMs = finiteCount(
-      'MemoryIdempotencyStore',
+      'memoryIdempotencyStore',
       'windowMs',
       options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS,
       1,
     );
     this.#maxKeys = finiteCount(
-      'MemoryIdempotencyStore',
+      'memoryIdempotencyStore',
       'maxKeys',
       options.maxKeys ?? DEFAULT_MAX_IDEMPOTENCY_KEYS,
       1,
@@ -133,7 +133,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     if (record.status !== 'in-flight' || flight === undefined) return false;
     if (!flight.bound || flight.settling) return false;
     const reclaimAfterMs = finiteCount(
-      'MemoryIdempotencyStore',
+      'memoryIdempotencyStore',
       'reclaimAfterMs',
       this.#reclaimAfterMs(),
     );
@@ -242,4 +242,14 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     // bounded by in-flight concurrency, not by the write rate — and every one of those records
     // becomes sweepable the moment it ages past the window.
   }
+}
+
+/**
+ * The one way to build the memory store — the twin of `postgresIdempotencyStore()`. The class
+ * stays a type in the barrel (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ */
+export function memoryIdempotencyStore(
+  options: MemoryIdempotencyStoreOptions = {},
+): MemoryIdempotencyStore {
+  return new MemoryIdempotencyStore(options);
 }

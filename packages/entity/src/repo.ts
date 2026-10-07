@@ -7,6 +7,7 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
+import type { Page } from '@ultimat3/core';
 import type { AggregateFn } from './aggregate';
 import type { Predicate, SortKey } from './tenancy';
 import type { IdOf, RowPatch, RowWrite } from './types';
@@ -72,12 +73,6 @@ export interface FindManyArgs extends FindByIdOptions {
   readonly select?: readonly string[];
 }
 
-export interface Page<T> {
-  readonly rows: readonly T[];
-  /** Pass back as `cursor`. `null` means this was the last page. */
-  readonly nextCursor: string | null;
-}
-
 /**
  * `T` defaults to `unknown` so a row-agnostic consumer (the generated admin, the manifest
  * emitter) can name the shape without knowing the entity.
@@ -93,6 +88,10 @@ export interface Page<T> {
  */
 export interface Repo<T = unknown> {
   findById(id: IdOf<T>, options?: FindByIdOptions): Promise<T | null>;
+  /**
+   * One page: `@ultimat3/core`'s `Page`, the framework's one page shape. Pass `nextCursor` back as
+   * `cursor`; it is `null` exactly when `hasMore` is false — this was the last page.
+   */
   findMany(args?: FindManyArgs): Promise<Page<T>>;
   insert(values: RowWrite<T>, options?: RepoOptions): Promise<T>;
   /**

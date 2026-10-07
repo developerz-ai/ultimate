@@ -3,7 +3,7 @@
 // creates and drops. `pgstattuple` is the stand-in — in every Postgres' contrib, in no PGlite.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type Migration, raw } from '@ultimat3/db';
+import { type Migration, postgresClient, raw } from '@ultimat3/db';
 import { chooseReplayEngine } from './db-replay-engine';
 import { replaySchema } from './db-schema-dump';
 
@@ -20,7 +20,7 @@ const MIGRATIONS: readonly Migration[] = [
 ];
 
 describe.skipIf(!hasPostgres)('replaySchema · a real Postgres', () => {
-  const admin = createPostgresClient({ url: url ?? '' });
+  const admin = postgresClient({ url: url ?? '' });
 
   afterAll(async () => {
     await admin.close();

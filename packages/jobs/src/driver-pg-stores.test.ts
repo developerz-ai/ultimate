@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import type { JobRow } from './driver-pg-rows';
 import {
   SQL_CANCEL,
@@ -49,7 +49,7 @@ function executorFor(answers: Readonly<Record<string, readonly unknown[]>> = {})
   };
 }
 
-const driverWith = (executor: PgExecutor) => createPgDriver({ executor });
+const driverWith = (executor: PgExecutor) => postgresJobDriver({ executor });
 
 /**
  * A driver that decodes `timestamptz` as TEXT — which is what a client without a type map does,

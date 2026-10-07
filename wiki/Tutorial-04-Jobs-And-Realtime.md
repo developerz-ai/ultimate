@@ -137,9 +137,9 @@ A dead job is never filtered out of view.
 | `ls` | queue depth, matching rows, and the dead-letter list |
 | `show <id>` | state, attempt, every step's result, remaining retry delays |
 | `retry <id> --from-step <name>` | drops that step so it re-executes; everything before it replays from storage |
-| `drain --to redis\|nats` | moves `ready`/`delayed`/`suspended` jobs to another **durable** driver; enqueues on the target **before** acking the source. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it acked durable rows into a `Map` that died with the command |
+| `drain --to <driver>` | **planned** — no target ships. Would move `ready`/`delayed`/`suspended` jobs to another **durable** driver; enqueues on the target **before** acking the source. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it acked durable rows into a `Map` that died with the command |
 
-The Redis and NATS **job** drivers have **not shipped**, `As of 2026-09` — each throws `X_NOT_IMPLEMENTED` behind an interface that already ships, rather than pretending to work. So `drain --to` has no target that completes today: it fails on the first enqueue, having moved nothing. Postgres is the shipped driver, and it is the one `x dev` boots.
+There is no Redis or NATS **job** driver, `As of 2026-10` — 25.0.0 deleted both all-throw stubs. So `drain` has no target: it exits `X_NOT_IMPLEMENTED` before the queue boots, having moved nothing. Postgres is the shipped driver, and it is the one `x dev` boots.
 
 ## A live query
 
@@ -196,7 +196,7 @@ expect(text.slice(text.lastIndexOf('order by'))).toContain('id');
 
 Not a subscribe-time gate that then trusts the stream. The same `policy` object is re-evaluated for each delivered patch — which is why policy predicates are **synchronous**: an `await` there would be a database round trip per row per connected client.
 
-`.tool().mutates` is `false` and `.tool().policy === todoList.policy`. A read hands rows to an agent, so MCP exposure on a query is opt-in — silence exposes nothing.
+`toolFrom(todoList)` from `@ultimat3/mcp` is a read tool (`annotations.readOnlyHint: true`) that reads through `todoList`'s own policy. A read hands rows to an agent, so MCP exposure on a query is opt-in — silence exposes nothing.
 
 Five projections from the one declaration: HTTP `GET /_x/query/todo-list?limit=50`, a typed client hook, the live subscription, a cache entry keyed by tenant and policy scope, and the MCP read tool. Full table: [Queries and live queries](Queries-And-Live-Queries).
 

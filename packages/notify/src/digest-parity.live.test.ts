@@ -1,12 +1,12 @@
-// One suite, two digest stores: every window rule `createMemoryDigestStore` answers, the Postgres
+// One suite, two digest stores: every window rule `memoryDigestStore` answers, the Postgres
 // store answers the same way against a real server — plus the two things only a database can
 // prove: a window outlives the store that opened it, and two concurrent openers make ONE window.
 // The Postgres half needs `TEST_DATABASE_URL`; it makes its own database and drops it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createMemoryDigestStore, type DigestSlot, type DigestStore } from './digest';
-import { createPgDigestStore, SQL_NOTIFY_DIGESTS_TABLE } from './digest-pg';
+import { type DigestSlot, type DigestStore, memoryDigestStore } from './digest';
+import { postgresDigestStore, SQL_NOTIFY_DIGESTS_TABLE } from './digest-pg';
 import type { NotifyEvent } from './notification';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -79,12 +79,12 @@ afterAll(async () => {
 }, 60_000);
 
 const STORES: readonly (readonly [string, () => Promise<DigestStore>])[] = [
-  ['memory', () => Promise.resolve(createMemoryDigestStore())],
+  ['memory', () => Promise.resolve(memoryDigestStore())],
   [
     'postgres',
     async () => {
       await sql?.unsafe('truncate x_notify_digests', []);
-      return createPgDigestStore({ executor: executor() });
+      return postgresDigestStore({ executor: executor() });
     },
   ],
 ];
@@ -161,8 +161,8 @@ for (const [name, fresh] of STORES) {
 describe.skipIf(url === undefined)('postgres digest store, what a heap cannot do', () => {
   test('a window outlives the store that opened it', async () => {
     await sql?.unsafe('truncate x_notify_digests', []);
-    await append(createPgDigestStore({ executor: executor() }), 'e1', 0);
-    const restarted = createPgDigestStore({ executor: executor() });
+    await append(postgresDigestStore({ executor: executor() }), 'e1', 0);
+    const restarted = postgresDigestStore({ executor: executor() });
     expect(await append(restarted, 'e2', 10)).toEqual({ opened: false, endsAt: 100 });
     expect(keys(await restarted.drain(slot, 100))).toEqual(['e1', 'e2']);
   });
@@ -171,11 +171,11 @@ describe.skipIf(url === undefined)('postgres digest store, what a heap cannot do
     await sql?.unsafe('truncate x_notify_digests', []);
     const buckets = await Promise.all(
       ['a', 'b', 'c', 'd'].map((key) =>
-        append(createPgDigestStore({ executor: executor() }), key, 0),
+        append(postgresDigestStore({ executor: executor() }), key, 0),
       ),
     );
     expect(buckets.filter((bucket) => bucket.opened)).toHaveLength(1);
-    const drained = await createPgDigestStore({ executor: executor() }).drain(slot, 100);
+    const drained = await postgresDigestStore({ executor: executor() }).drain(slot, 100);
     expect([...keys(drained)].sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 
@@ -191,11 +191,11 @@ describe.skipIf(url === undefined)('postgres digest store, what a heap cannot do
         query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
           [...(await held.unsafe(text, values.map(bound)))] as R[],
       };
-      expect(await append(createPgDigestStore({ executor: inTx }), 'e1', 0)).toEqual({
+      expect(await append(postgresDigestStore({ executor: inTx }), 'e1', 0)).toEqual({
         opened: true,
         endsAt: 100,
       });
-      const racing = append(createPgDigestStore({ executor: executor() }), 'e1', 0);
+      const racing = append(postgresDigestStore({ executor: executor() }), 'e1', 0);
       await waitForLockWait();
       await held.unsafe('commit', []);
       expect(await racing).toEqual({ opened: true, endsAt: 100 });
@@ -204,7 +204,7 @@ describe.skipIf(url === undefined)('postgres digest store, what a heap cannot do
     }
     const rows = await sql.unsafe('select appended_by from x_notify_digests', []);
     expect([...rows]).toEqual([{ appended_by: ['run-e1'] }]);
-    expect(keys(await createPgDigestStore({ executor: executor() }).drain(slot, 100))).toEqual([
+    expect(keys(await postgresDigestStore({ executor: executor() }).drain(slot, 100))).toEqual([
       'e1',
     ]);
   });

@@ -91,7 +91,7 @@ interface FakeRuntime {
 }
 
 /**
- * A caught outbox with the fixture's own ids and timestamps. Not `createMemoryDriver()` fed through
+ * A caught outbox with the fixture's own ids and timestamps. Not `memoryMailDriver()` fed through
  * `send()`: that mints a `mem_<nanoid>` and a `new Date()`, and the projection those two fields land
  * in is exactly what the case below asserts. Every member `MemoryMailDriver` declares is real,
  * because `isMemoryDriver` checks all of them — a look-alike carrying `name` and `outbox()` alone

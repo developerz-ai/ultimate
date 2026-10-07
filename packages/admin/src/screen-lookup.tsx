@@ -147,7 +147,7 @@ export function lookupScreen(app: AdminApp, resource: AdminResource): AdminScree
           </ul>
         )}
         <Pagination
-          nextCursor={page.hasMore ? (page.nextCursor ?? undefined) : undefined}
+          nextCursor={page.hasMore ? page.nextCursor : undefined}
           prevCursor={page.prevCursor ?? undefined}
           hrefFor={(cursor) => state(cursor)}
         />

@@ -12,7 +12,7 @@ import { allow } from '@ultimat3/policy';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { llm } from './llm';
-import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
@@ -43,7 +43,7 @@ export function stub(...answers: readonly unknown[]): {
   const echo = new EchoProvider();
   const provider: Provider = {
     name: 'stub',
-    models: ANTHROPIC_MODEL_IDS,
+    models: FIXTURE_ANTHROPIC_IDS,
     generate(request) {
       const answer = answers[Math.min(seen.length, answers.length - 1)];
       seen.push(request);
@@ -55,7 +55,7 @@ export function stub(...answers: readonly unknown[]): {
 }
 
 function reply(request: GenerateRequest, answer: unknown): GenerateResult {
-  const model = request.model ?? DEFAULT_MODEL;
+  const model = request.model ?? FIXTURE_MODEL;
   const prose = typeof answer === 'string';
   return {
     model,
@@ -71,7 +71,7 @@ function reply(request: GenerateRequest, answer: unknown): GenerateResult {
 }
 
 export function install(provider: Provider): void {
-  configureAi({ gateway: createGateway({ providers: [provider] }) });
+  configureAi({ gateway: createGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }) });
 }
 
 let seq = 0;

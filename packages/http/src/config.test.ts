@@ -3,7 +3,8 @@
 // every app that never set the field. `stripBasePath` is here too, because a mount point that
 // matches off a segment boundary hands one route's traffic to another.
 import { describe, expect, test } from 'bun:test';
-import { defineHttpConfig, stripBasePath } from './config';
+import { UltimateError } from '@ultimat3/core';
+import { defineHttpConfig, type HttpConfigInput, stripBasePath } from './config';
 import { DEFAULT_CORS } from './cors';
 import { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
 import { DEFAULT_RATE_LIMIT } from './rate-limit';
@@ -50,7 +51,6 @@ describe('defineHttpConfig', () => {
       dev: false,
       trustProxy: false,
       bodyLimitBytes: 2_048,
-      drainTimeoutMs: 5_000,
     });
 
     expect(config.port).toBe(4321);
@@ -61,10 +61,9 @@ describe('defineHttpConfig', () => {
     expect(config.dev).toBe(false);
     expect(config.trustProxy).toBe(false);
     expect(config.bodyLimitBytes).toBe(2_048);
-    expect(config.drainTimeoutMs).toBe(5_000);
   });
 
-  test('defaults not overridden by env: basePath, buildIdHeader, trustProxy, bodyLimitBytes, drainTimeoutMs', () => {
+  test('defaults not overridden by env: basePath, buildIdHeader, trustProxy, bodyLimitBytes', () => {
     const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
 
     expect(config.basePath).toBe('/');
@@ -74,8 +73,6 @@ describe('defineHttpConfig', () => {
     expect(config.trustProxy).toBe(false);
     expect(config.trustedProxyHops).toBe(0);
     expect(config.bodyLimitBytes).toBe(1_048_576);
-    // `null`, never a number: only an app that declared one may move core's drain deadline.
-    expect(config.drainTimeoutMs).toBeNull();
   });
 
   test('locale merges input over DEFAULT_LOCALE_CONFIG', () => {
@@ -287,9 +284,6 @@ describe('defineHttpConfig refuses a limit that is not a number', () => {
       /requestTimeoutMs/,
     );
     expect(() => defineHttpConfig({ ...SCOPED, maxInflight: Number.NaN })).toThrow(/maxInflight/);
-    expect(() => defineHttpConfig({ ...SCOPED, drainTimeoutMs: Number.NaN })).toThrow(
-      /drainTimeoutMs/,
-    );
     expect(() =>
       defineHttpConfig({ ...SCOPED, trustProxy: true, trustedProxyHops: Number.NaN }),
     ).toThrow(/trustedProxyHops/);
@@ -306,12 +300,6 @@ describe('defineHttpConfig refuses a limit that is not a number', () => {
     // decisions the code reads, not accidents, so the screen must not take them away.
     expect(defineHttpConfig({ ...SCOPED, requestTimeoutMs: 0 }).requestTimeoutMs).toBe(0);
     expect(defineHttpConfig({ ...SCOPED, maxInflight: 0 }).maxInflight).toBe(0);
-    // `drainTimeoutMs` is the one knob here whose "unstated" is itself a value the code reads:
-    // `createServer` calls `configureLifecycle` only when it is NOT null, so a resolved default
-    // would silently revert an app's own `configureLifecycle({ deadlineMs })`. Omission is how a
-    // TypeScript app declines — `HttpConfigInput.drainTimeoutMs` is `number | undefined` — so the
-    // screen must not turn declining into a number.
-    expect(defineHttpConfig({ ...SCOPED }).drainTimeoutMs).toBeNull();
     expect(defineHttpConfig({ ...SCOPED, bodyLimitBytes: 0 }).bodyLimitBytes).toBe(0);
   });
 
@@ -399,5 +387,45 @@ describe('a declaration is not overruled by the environment', () => {
       expect(defineHttpConfig(base).hostname).toBe('0.0.0.0');
       expect(defineHttpConfig({ ...base, hostname: '127.0.0.1' }).hostname).toBe('127.0.0.1');
     });
+  });
+});
+
+describe('the drain budget has one key, and it is drain.deadlineMs', () => {
+  // `http.drainTimeoutMs` was a second knob for the budget `drain.deadlineMs` owns (25.0.0): on
+  // the web role it won, applied after `lifecycleForRole`, so one app had two answers to "how
+  // long does SIGTERM wait" and the role decided which was true.
+  test('the resolved config carries no drain key of its own', () => {
+    expect(
+      Object.keys(defineHttpConfig({ ...SCOPED })).filter((key) => /drain/i.test(key)),
+    ).toEqual([]);
+  });
+
+  test('a config still passing drainTimeoutMs is refused, naming drain.deadlineMs', () => {
+    // Untyped on purpose: the field is gone from `HttpConfigInput`, so only a JS caller, a spread
+    // of an `unknown` or a cast can still hand it over — and that caller must hear about it.
+    const legacy: unknown = { ...SCOPED, drainTimeoutMs: 5_000 };
+    let thrown: unknown;
+    try {
+      defineHttpConfig(legacy as HttpConfigInput);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UltimateError);
+    const error = thrown as UltimateError;
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain('http.drainTimeoutMs');
+    expect(error.fix).toContain('drain.deadlineMs');
+  });
+
+  // Core's rule for a removed key (`core/src/config-removed.ts`), so the two surfaces agree on
+  // what "written" means: `undefined` is a layer not saying, any other value — `null` too — says.
+  test('an undefined drainTimeoutMs is a layer not saying, exactly as core reads a removed key', () => {
+    const spread: unknown = { ...SCOPED, drainTimeoutMs: undefined };
+    expect(() => defineHttpConfig(spread as HttpConfigInput)).not.toThrow();
+  });
+
+  test('a null drainTimeoutMs is still the deleted key written', () => {
+    const legacy: unknown = { ...SCOPED, drainTimeoutMs: null };
+    expect(() => defineHttpConfig(legacy as HttpConfigInput)).toThrow(/drain\.deadlineMs/);
   });
 });

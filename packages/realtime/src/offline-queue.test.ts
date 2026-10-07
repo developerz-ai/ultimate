@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  MemoryQueueStore,
+  type MemoryQueueStore,
   type MutationStatus,
+  memoryQueueStore,
   OfflineQueue,
   type QueuedMutation,
   type QueueStore,
 } from './offline-queue';
 
 async function seeded(): Promise<{ queue: OfflineQueue; store: MemoryQueueStore }> {
-  const store = new MemoryQueueStore();
+  const store = memoryQueueStore();
   const queue = await OfflineQueue.open(store);
   await queue.enqueue({ key: 'like:p1', name: 'likePost', input: { postId: 'p1' } });
   await queue.enqueue({ key: 'like:p2', name: 'likePost', input: { postId: 'p2' } });
@@ -252,7 +253,7 @@ describe('a connection lost while a drain pass is parked', () => {
 // the one a reload can never recover from, because `#sendable` skips it.
 describe('what a durable store is handed', () => {
   test('is a snapshot of the queue as it was, not the array the next pass mutates', async () => {
-    const store = new MemoryQueueStore();
+    const store = memoryQueueStore();
     const slow = deferred();
     // The one write that is held open — `enqueue`'s, made with the entry still `pending`. What it
     // reads when it finally resumes is what lands on disk.

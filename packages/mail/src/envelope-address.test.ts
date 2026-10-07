@@ -10,7 +10,7 @@ import { resetJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import { resetMailDriver, setMailDriver } from './driver';
-import { createSmtpDriver } from './driver-smtp';
+import { smtpMailDriver } from './driver-smtp';
 import { assertEnvelopeAddress, envelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
 import { type SmtpSessionOptions, type SmtpStream, smtpDeliver } from './smtp-client';
@@ -89,7 +89,7 @@ beforeEach(() => {
 test('an inline send cannot smuggle a second RCPT TO through bcc', async () => {
   const stream = new AgreeableStream();
   setMailDriver(
-    createSmtpDriver({
+    smtpMailDriver({
       url: 'smtps://mail.example.test:465',
       from: 'Postly <no-reply@postly.test>',
       timeoutMs: 500,

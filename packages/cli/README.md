@@ -136,7 +136,7 @@ that name where there is one (`x new` writes all seventeen), the blank template 
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |
-| `app-mcp.ts` | the app's own MCP endpoint: `apps/<app>/mcp.ts` exports `mcp`, and both boots mount `POST config.ai.mcp.path` through this one call |
+| `app-mcp.ts` | the app's own MCP endpoint: `apps/<app>/mcp.ts` exports `mcp`, and both boots mount `POST` at each endpoint's own `defineAppMcp({ path })` through this one call |
 | `app-runtime.ts` | the app's `RuntimeOverrides`: `apps/<app>/runtime.ts` exports `runtime`, read by `x dev` and by `runRole` when its caller passed none |
 | `local-cli.ts` | which `x` runs: a global CLI inside an app hands over to the app's own, because a second module instance is an empty registry |
 | `measurement-actor.ts` | the actor a weigh-and-discard render runs as — every permission, never served |

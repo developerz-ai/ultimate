@@ -219,7 +219,7 @@ export const answer = (input: { runId: string; index: number; answer: string }) 
 | `onSettled` | the job's own hook (`@ultimat3/jobs`), with what a scrape adds: `completed` hands over the `ScrapeReport`; `dead-lettered` / `dropped` / `refused` carry `code` and the last attempt's `usage` (`undefined` for `refused` — the body never ran). After the row is settled, under the job's tenant, **at most once** across a crash, and a hook that throws changes nothing |
 | `run({ progress, finalAttempt })` | the job's own, passed through |
 | `prompt` | `eventPrompt({ timeout, pollMs?, bus?, keySource?, env? })` polls the event bus in process — never `step.waitForEvent`, which would close the browser. An in-memory bus (`stored: false`) is refused outside development and test (`X_DRIVER_UNAVAILABLE`): the answer comes from another process. Event `promptEventName(runId, index)`; answered by `answerPrompt({ runId, index, answer })`, sealed for that one name. Timeout is `X_SCRAPE_PROMPT_UNANSWERED` |
-| the bus | the **stored** one (`createPgEventBus`) wherever the worker and the answering process differ. Every `x` boot installs it |
+| the bus | the **stored** one (`postgresEventBus`) wherever the worker and the answering process differ. Every `x` boot installs it |
 
 `PromptRequest` carries the run's `input` and `runId` — what ties a prompt to the app's own row
 for the run — and `index`, `clock`, `signal` and `keepAlive()` beside `label`, `scrape` and `url`:

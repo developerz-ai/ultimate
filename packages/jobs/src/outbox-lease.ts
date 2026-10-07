@@ -23,7 +23,7 @@ export function resolveClaimLeaseMs(value: number | undefined): number {
   assert(
     Number.isInteger(value) && value > 0,
     `outbox claimLeaseMs is ${String(value)}, which is not a positive whole number of milliseconds`,
-    'pass a positive whole claimLeaseMs: 30_000 — createPgOutboxStore({ executor, txExecutor, claimLeaseMs: 30_000 }) — or omit the field for the 30s default',
+    'pass a positive whole claimLeaseMs: 30_000 — postgresOutboxStore({ executor, txExecutor, claimLeaseMs: 30_000 }) — or omit the field for the 30s default',
   );
   return value;
 }

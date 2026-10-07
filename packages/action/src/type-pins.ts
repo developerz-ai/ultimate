@@ -3,7 +3,7 @@
 // type-level claim written in one can never fail. This module emits nothing and exports nothing
 // anybody imports — a regression here is a build error, the only enforcement that counts.
 
-import type { Row } from '@ultimat3/core';
+import type { AuditRecord, Row } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, AnyAction } from './action';
 import type { ClientMethod } from './client';
@@ -88,3 +88,39 @@ export type _APreRedactionStoreIsNotAStore = Assert<
 export type _SettleRequiresTheRedactedFlag = Assert<
   Equals<Parameters<IdempotencyStore['settle']>['length'], 4>
 >;
+
+/**
+ * 25.0.0 (plan 101, M9): `name` and `primitive` are REQUIRED on an audit record and the `action`
+ * alias is gone. Pinned as keys rather than with a literal record, because a literal would need a
+ * `Ctx` this module has no business building: a field that turned optional again, or an alias
+ * that came back, flips one of these to `false`.
+ */
+type RequiredKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? never : K }[keyof T];
+
+export type _AuditRecordRequiresNameAndPrimitive = Assert<
+  Equals<Extract<RequiredKeys<AuditRecord>, 'name' | 'primitive'>, 'name' | 'primitive'>
+>;
+
+export type _AuditRecordHasNoActionAlias = Assert<
+  Equals<Extract<keyof AuditRecord, 'action'>, never>
+>;
+
+/**
+ * 25.0.0 (plan 101, M5): the deprecation TYPES are `@ultimat3/core`'s alone, as the helpers are.
+ * A runtime test cannot see a type re-export, so each is an expected error: a re-export coming
+ * back makes the directive unused, which `tsc` refuses.
+ */
+// @ts-expect-error — `Deprecation` is imported from `@ultimat3/core`, never from this barrel.
+export type _NoDeprecationReexport = import('./index').Deprecation;
+// @ts-expect-error — `DeprecationField` is imported from `@ultimat3/core`.
+export type _NoDeprecationFieldReexport = import('./index').DeprecationField;
+// @ts-expect-error — `DeprecationRender` is imported from `@ultimat3/core`.
+export type _NoDeprecationRenderReexport = import('./index').DeprecationRender;
+
+/**
+ * O-tool, 25.0.0: an action projects no MCP tool of its own — `@ultimat3/mcp`'s `toolFrom`
+ * is the one projection, and a tier-3 `.tool()` could only ever be a second one. A `tool` member
+ * coming back on either view flips these to `false`.
+ */
+export type _AnActionHasNoToolTwin = Assert<Equals<Extract<keyof AnyAction, 'tool'>, never>>;
+export type _ATypedActionHasNoToolTwin = Assert<Equals<Extract<keyof PublishPost, 'tool'>, never>>;

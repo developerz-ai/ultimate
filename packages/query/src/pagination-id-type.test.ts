@@ -38,8 +38,8 @@ const walk = async (read: ReturnType<typeof ranked>): Promise<readonly number[]>
       { first: 1, ctx, ...(after === undefined ? {} : { after }) },
     );
     seen.push(...answer.rows.map((row) => row.id));
-    if (!answer.hasNextPage || answer.endCursor === null) break;
-    after = answer.endCursor;
+    if (!answer.hasMore || answer.nextCursor === null) break;
+    after = answer.nextCursor;
   }
   return seen;
 };
@@ -86,8 +86,8 @@ describe('integer ids tied on the sort key', () => {
         { first: 1, ctx, ...(after === undefined ? {} : { after }) },
       );
       seen.push(...answer.rows.map((row) => row.id));
-      if (!answer.hasNextPage || answer.endCursor === null) break;
-      after = answer.endCursor;
+      if (!answer.hasMore || answer.nextCursor === null) break;
+      after = answer.nextCursor;
     }
     expect(seen).toEqual([5n, 7n, 10n]);
   });

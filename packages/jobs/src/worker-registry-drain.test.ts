@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, configureLifecycle, createContext, drain, resetLifecycle } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { WorkerAnnouncement } from './introspection';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
@@ -42,7 +42,7 @@ async function until(condition: () => boolean, budgetMs = 3_000): Promise<void> 
 
 describe('the registry row in the teardown', () => {
   test('a forgetWorker that never answers is abandoned at the drain deadline, and the driver still closes', async () => {
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     let closed = 0;
     const introspect = base.introspect;
     if (introspect === undefined) return expect.unreachable('the memory driver has a registry');
@@ -70,7 +70,7 @@ describe('the registry row in the teardown', () => {
 
 describe('the in-flight list of one job held twice', () => {
   test('the id stays listed until the SECOND run ends', async () => {
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const introspect = base.introspect;
     if (introspect === undefined) return expect.unreachable('the memory driver has a registry');
     const announced: (readonly string[])[] = [];

@@ -26,7 +26,13 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 sweep 10d the tier 5 ones: admin scopes, a scaffold that boots as a binary on every OS, and the AI
 package's first step to apps bringing their own models and providers. Sweep 11 is an audit of
 every file earlier waves had not reached: 36 proven defects fixed, and the guards that let some
-of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth's 14.
+of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth's 14. Sweep 12a is
+the major's cut: one spelling per factory, one MCP projection, one page shape, no model chosen for
+an app, and every key and re-export a deprecation promised to remove, removed. Every breaking entry
+under Changed has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `24.x → 25.0.0` section, in
+the same order. No legacy path, no codemod, no shim: a break is a build error or an `X_*` error
+that names the rewrite.
 
 ### Added
 
@@ -60,17 +66,17 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 - http, mcp: `resolveToken(token, facts)` and the bearer mount's resolver receive frozen
   `RequestFacts` (the trusted-hop address, user agent, `Origin`, path), so one resolver can bind a
   token to a network or refuse by origin on both mounts.
-- mail: `createSesDriver` — SES v2 `SendEmail` with the raw MIME, SigV4-signed by core, SES error
+- mail: `sesMailDriver` — SES v2 `SendEmail` with the raw MIME, SigV4-signed by core, SES error
   types mapped onto `X_MAIL_SEND_FAILED` retry classes, selected by `SES_REGION`. `retainMime` on
   SMTP and SES keeps the exact sent bytes (256 KiB default cap, digest-only above it).
 - mail: `createSesEventReceiver` and `createResendEventReceiver` (`@ultimat3/mail/events`) normalise
   SNS (signature v1/v2, a required topic allow-list, a pinned certificate host) and Svix-signed Resend
   webhooks into one `DeliveryEvent`. Codes `X_MAIL_EVENT_UNVERIFIED` (401), `X_MAIL_EVENT_INVALID`
   (400), `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503).
-- ai: `claude-fable-5-1`, `claude-opus-5-5` and `claude-sonnet-5-5` rows with their thinking rules
-  (`disableThinkingUpTo: 'never'`, `disabledThinking: 'between_tools'`); image and document
-  `AiContentBlock`s on both providers, base64 capped at 10 MiB / 32 MiB (`X_AI_CONTENT_UNSUPPORTED`,
-  422).
+- ai: `ModelReasoning` states a row's thinking rules (`disableThinkingUpTo: 'never'`,
+  `disabledThinking: 'between_tools'`) for a model the app registers — the framework ships no row
+  (#24 under Changed); image and document `AiContentBlock`s on both providers, base64 capped at
+  10 MiB / 32 MiB (`X_AI_CONTENT_UNSUPPORTED`, 422).
 - entity, db: `entity({ appendOnly: true })`. The repository refuses `update`, `delete`,
   `updateWhere`, `deleteWhere` and an updating `upsertAll` (`X_ENTITY_APPEND_ONLY`, 409); `x db gen`
   emits a `BEFORE UPDATE OR DELETE` trigger, so raw SQL is refused too (SQLSTATE `23001`); a missing
@@ -85,12 +91,9 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   including `surface: 'mcp'`. The rows are never recorded. New codes `X_QUERY_AUDIT_SINK_MISSING` and
   `X_QUERY_AUDIT_SINK_FAILED` (an allowed read whose record is refused withholds its rows).
 - core: `AuditRecord`, `AuditSink`, `setAuditSink`, `getAuditSink`, `resetAuditSink` and
-  `AUDIT_RECORD_FIELDS` live in `@ultimat3/core`; `@ultimat3/action` re-exports the same objects.
-  `AuditRecord` gains optional `name` and `primitive`, and every sink reads a record through
-  `normalizeAuditRecord` (`name ?? action`, `primitive ?? 'action'`), so a record built with only
-  `action` still compiles and is stored as an action's. `x_audit` gains a `primitive` column (added
-  with `add column if not exists`, default `'action'`). **Deprecated:** `AuditRecord.action` (same
-  value as `name`), removed in 25.0.0, when `name` and `primitive` become required.
+  `AUDIT_RECORD_FIELDS` live in `@ultimat3/core`; `@ultimat3/action` re-exports the types only (#5
+  under Changed). `AuditRecord` names the primitive by `name` and `primitive` (#4 under Changed). `x_audit` gains a
+  `primitive` column (added with `add column if not exists`, default `'action'`).
 - core: `serializeSetCookie(name, value, options?)` is the one place a `Set-Cookie` value is built.
   - It defaults to `Path=/; HttpOnly; Secure; SameSite=Lax`, round-trips with `readCookie`, and
     writes `Expires` in UTC.
@@ -154,6 +157,10 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   `promoteStagedMasterKey`, `SecretsKeyAclError` (`X_SECRETS_KEY_ACL_FAILED`).
 - guards: `bun run posix-relative` (`X_RELATIVE_PATH_NOT_POSIX`) — a host `relative()` answer that
   reaches an import specifier, fix line or key goes through `toPosix`.
+- i18n: `@ultimat3/i18n/app-catalogs`, the one server-side reader of an app's declared locales.
+  `loadAppCatalogs(root)` imports `APP_CATALOGS_PATH` (`packages/i18n/src/index.ts`) and answers
+  `{ locales, defaultLocale }`, or `undefined` when that module declares no `defineCatalogs()`.
+  Server-only, so a subpath of its own: the barrel ships in every island.
 
 ### Security
 
@@ -251,6 +258,194 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 
 ### Changed
 
+Every package.
+
+- **BREAKING — (#1) Bun 1.4.2 is the floor.** `engines.bun` is `>=1.4.2` in every package, and `x` /
+  `x doctor` refuse Bun 1.4.0 and 1.4.1 with `X_BUN_VERSION`. CI, the release job, the framework
+  image and a scaffolded app's image all run exactly 1.4.2; `scripts/bun-pin.test.ts` refuses any
+  pin that names another patch. `bun upgrade`, and move an app's own image to a 1.4.2 base.
+
+Tier 0 — core.
+
+- **BREAKING — (#2) seven deleted `app.config.ts` keys are refused by name.** `locales`,
+  `defaultLocale`, `defaultTimeZone`, `defaultCurrency` and `theme.tokens` are gone from
+  `AppConfig` and `AppConfigInput`, and `jobs.driver` (deleted in 5.0.0, ignored in silence since)
+  joins them: a layer that still writes one is `X_CONFIG_INVALID` naming the key and its
+  replacement; a typed config is a compile error first. The locales are `defineCatalogs({ default,
+  locales })` in `packages/i18n/src/index.ts`, which `x i18n`, `x shot`, the PWA manifest and the
+  e2e default locale now read. There is no zone or currency default: pass the zone at each call
+  (`formatDate(at, { locale, zone })`, `task({ tz })`) and the currency in each `Money`. The theme
+  is `export const brand = defineTheme(…)` in `apps/web/shared/theme.ts`; the job driver is
+  `setJobDriver(postgresJobDriver({ executor }))`. `ai.mcp.path` is the seventh: `McpConfig` is
+  `{ expose }`, and every MCP endpoint, #0 included, mounts at its own `defineAppMcp({ path })`
+  (default `/mcp`) in `apps/<app>/mcp.ts` — in 24.x #0 mounted at `ai.mcp.path` while its RFC 9728
+  metadata and its 401 named the `defineAppMcp` path. Moving a non-default path there is the edit.
+- **BREAKING — (#3) `assertEnvExample`, `EnvExampleDriftError` and `resolveSpeculation` are removed.**
+  The `.env.example` check is `checkEnvExample` (findings, no throw), and the gate runs it as
+  `x verify --only manifest`. Speculation rules are `defineConfig({ navigation: { speculation } })`.
+- **BREAKING — (#4) `AuditRecord.name` and `.primitive` are required, and `.action` is gone.** So is
+  `normalizeAuditRecord` / `NormalizedAuditRecord`: read `record.name` and `record.primitive`. A
+  sink or test that builds a record writes both. The durable sink still files `name` in the
+  `x_audit.action` column; no DDL changed.
+- **BREAKING — (#5) the deprecation helpers are imported from `@ultimat3/core` only.**
+  `@ultimat3/action` and `@ultimat3/query` no longer re-export `Deprecation`, `DeprecationField`,
+  `DeprecationRender`, `recordDeprecatedCall` or `renderDeprecation`. The same holds for
+  `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isSuperseded`, `isTransientFailure` and
+  `getAuditSink` / `setAuditSink` / `resetAuditSink`: values from `@ultimat3/core` only, and
+  `action` / `query` re-export their types alone. TS2305 at each import; change the module
+  specifier.
+
+Tier 1 and up — one spelling per factory.
+
+- **BREAKING — (#6) every memory and Postgres factory is `memoryX` / `postgresX`.** 24.x shipped
+  `createMemory*`, `createPg*`, `pgSchedulerState` and `createPostgresClient` beside `memory*` /
+  `postgres*`. In `db`: `createPostgresClient` → `postgresClient`. In `cache`:
+  `createMemorySemanticCache` → `memorySemanticCache`. In `jobs`: `createMemoryDriver` →
+  `memoryJobDriver`, `createPgDriver` → `postgresJobDriver`, `createPgLeader` → `postgresLeader`,
+  `createPgLeaseLeader` → `postgresLeaseLeader`, `pgSchedulerState` → `postgresSchedulerState`,
+  `createPgEventBus` / `createPgOutboxStore` → `postgresEventBus` / `postgresOutboxStore`, and
+  `createMemory{EventBus,OutboxStore,StepStore,LeaseStore,SchedulerState,BackfillLedger}` →
+  `memory…`. In `mail`: `createMemoryDriver` → `memoryMailDriver`. In `notify`:
+  `createMemory{DeliveryLedger,DigestStore,InboxStore,PreferenceStore}` and
+  `createPg{DeliveryLedger,DigestStore,InboxStore}` → `memory…` / `postgres…`. A class exported
+  as a value becomes a factory, and the class stays a type only: `new MemoryIdempotencyStore(…)` →
+  `memoryIdempotencyStore(…)` (`action`); `PgVectorStore` / `MemoryVectorStore` /
+  `MemoryBudgetStore` → `postgresVectorStore()` / `memoryVectorStore()` / `memoryBudgetStore()`
+  (`ai`); `BuiltinAdapter` / `MemoryAdapter` → `postgresAuthAdapter()` / `memoryAuthAdapter()`
+  (`auth`); `MemoryLocalStore` / `MemoryQueueStore` → `memoryLocalStore()` / `memoryQueueStore()`
+  (`realtime`); `InMemoryAdvisoryLock` / `PgAdvisoryLock` / `InMemoryChangeFeed` /
+  `PgLogicalReplicationFeed` → `memoryAdvisoryLock()` / `postgresAdvisoryLock()` /
+  `memoryChangeFeed()` / `postgresChangeFeed()` (`@ultimat3/realtime/server`, which no longer
+  exports `PgOutputDecoder`). A driver is named for what it is: `createSmtpDriver` /
+  `createResendDriver` / `createLogDriver` / `createUnconfiguredDriver` → `smtpMailDriver` /
+  `resendMailDriver` / `logMailDriver` / `unconfiguredMailDriver` (`mail`; SES, new in this
+  release, ships as `sesMailDriver`); `createSubscribeDriver` → `subscribeDriver` (`testing`);
+  `memoryDriver` / `MemoryDriverOptions` → `memoryStorageDriver` / `MemoryStorageDriverOptions`
+  (`storage`). Arguments and return types are unchanged; other option types keep their names.
+  TS2305 / TS2724 at a removed name; TS1485 / TS1362 where a class now exported as a type is
+  imported or `new`-ed as a value. The repository's guard is `bun run factory-names`
+  (`X_FACTORY_NAME_SPELLING`): it refuses a `create(Memory|Pg|Postgres)X` or `pgX` export, a
+  PascalCase `(In)Memory|Pg|Postgres` value export, a `create<Vendor>Driver`, and one factory name
+  exported by two packages.
+
+Tier 2 — entity, http.
+
+- **BREAKING — (#7) `@ultimat3/entity` no longer exports `Page`.** `findMany` and `.page()` answer
+  `@ultimat3/core`'s `Page` (re-exported as a type by `@ultimat3/query`), so a `findMany` page now
+  carries `hasMore` too. Import `Page` from core, or drop the annotation. A hand-written `Repo`
+  builds its page with `pageOf(rows, nextCursor)`; a `{ rows, nextCursor }` literal is TS2741 /
+  TS2322.
+- **BREAKING — (#8) `http.drainTimeoutMs` is removed.** `drain: { deadlineMs }` in `app.config.ts` is
+  the one drain budget, on every role. `configureHttp({ drainTimeoutMs })` or
+  `defineHttpConfig({ drainTimeoutMs })` is `X_CONFIG_INVALID` naming `drain.deadlineMs` — checked
+  by key, so a spread or plain JS caller is refused too; a typed caller is a compile error first.
+- **BREAKING — (#9) `bearerMount` claims `<prefix>/*rest`.** It returns one catch-all route per
+  method, so an app wildcard at that same path is `X_ROUTE_CONFLICT` at registration. The 405 with
+  `Allow` under a mount is gone. Move the app's wildcard off the mount prefix.
+
+Tier 3 — action, query, jobs, realtime.
+
+- **BREAKING — (#10) one MCP projection: `toolFrom`.** `.tool()` is gone from actions and
+  queries, and so are `toMcpTool`, `toMcpTools`, `McpToolDescriptor`, `McpInvokeOptions`
+  (`@ultimat3/action`), `toQueryTool`, `toQueryTools`, `QueryToolDescriptor`,
+  `QueryToolReadOptions`, `QueryToolAnswer` (`@ultimat3/query`), `isExposed` (all three) and
+  `toolFromQuery` (`@ultimat3/mcp`). `@ultimat3/mcp`'s `toolFromAction` is renamed `toolFrom`,
+  with no alias (it pairs with `toolsFrom`). `toolFrom(x)` takes an action or a query;
+  `toolListEntry(tool)` is its `tools/list` entry. A tool call is `invoke(x, input, { ctx,
+  surface: 'mcp' })`; a query read is `(await sourceFor(q, input, { surface: 'mcp' })).execute()`.
+  `isExposed(x)` is `isMcpExposed(x.mcp)` from `@ultimat3/core`.
+- **BREAKING — (#11) a query page is `{ rows, nextCursor, hasMore }`.** `endCursor` and `hasNextPage`
+  are gone from `Page`, from the `?_first=` HTTP envelope and from `openapi.json`. Read
+  `page.nextCursor` / `page.hasMore`, and pass `nextCursor` back as `after`. A committed
+  `openapi.json` is stale until `x manifest`. `Page` is a union: `nextCursor` is `null` exactly
+  when `hasMore` is false — so the last page carries no cursor, where 24.x's query page carried
+  one on every non-empty page — and `if (page.hasMore)` narrows `nextCursor` to `string`. Its one
+  constructor is `pageOf(rows, nextCursor)` in `@ultimat3/core`.
+- **BREAKING — (#12) an action's rate limit is the action's own.** Action and query routes no longer
+  carry `meta.rateLimit`; a route that declares a limit sets `RouteMeta.rateLimitedBy: 'handler'`
+  and is not also capped by the `default` bucket. `http.rateLimit.buckets.<actionName>` no longer
+  limits an action, and is refused at server construction with `X_CONFIG_INVALID` (a bucket keyed
+  by a mounted action's or query's name; `default`, the tenant bucket and any bucket a route
+  selects still pass): move it to `action({ rateLimit: { limit, windowMs } })`.
+  In-process (`server`) calls spend nothing.
+- **BREAKING — (#13) an `IdempotencyStore` keeps redaction.** It declares `keepsRedaction: true`, and
+  `settle` takes a required 4th argument, `redacted`, which it keeps and returns as
+  `IdempotencyRecord.redacted`. A store written before this fails to compile instead of replaying
+  `[redacted]` as an answer (#591).
+- **BREAKING — (#14) `SQL_*` statements no package outside their own reads are off the barrels.**
+  `@ultimat3/action` keeps `SQL_AUDIT_TABLE` and `SQL_IDEMPOTENCY_TABLE` and drops
+  `SQL_AUDIT_INSERT` and `SQL_IDEMPOTENCY_{FAIL,GET,PURGE,RELEASE,RESERVE,SETTLE}`.
+  `@ultimat3/jobs` keeps `SQL_JOBS_TABLE` and drops the other 43, `SQL_CLAIM` and
+  `SQL_OUTBOX_RELEASE` included. `@ultimat3/notify` drops `SQL_NOTIFY_CLAIM`,
+  `SQL_NOTIFY_INBOX_PAGE` and `SQL_NOTIFY_INBOX_MARK_READ`; `@ultimat3/admin`
+  drops `SQL_ADMIN_AUDIT_INSERT`. A statement's text is the store's own: call the store, or copy
+  the statement into the app. The repository's guard is `bun run sql-export-readers`
+  (`X_SQL_EXPORT_UNREAD`).
+- **BREAKING — (#15) the NATS and Redis job driver stubs are deleted.** `createNatsDriver`,
+  `NatsDriverOptions`, `createRedisDriver` and `RedisDriverOptions` are gone; every method threw
+  `X_NOT_IMPLEMENTED`. Postgres is the durable driver. `x jobs drain` stays planned
+  (`X_NOT_IMPLEMENTED`), and its `--to` accepts no value.
+- **BREAKING — (#16) `WebhookLedger` requires `isDisabled(endpointId)`.** `webhook()` asks it before
+  every socket, so a disabled endpoint receives nothing. A custom ledger adds the method.
+- **BREAKING — (#17) `ChangeEvent.write` is required** (`string | null`). A custom change feed that
+  left it out passes `write: null` (#507).
+
+Tier 4 — mcp, manifest, notify, ai, ui.
+
+- **BREAKING — (#18) `McpExposure.name` is removed.** A tool is named by its primitive, nothing else.
+  A hand-built primitive handed to `toolFrom` with `mcp: { name: 'alias' }` takes the alias
+  as its own `name`.
+- **BREAKING — (#19) a `defineAppMcp({ scopes })` map names every projected tool.** One it leaves out
+  fails the boot with `X_MCP_SCOPE_UNCOVERED`, including tools added through `include: 'exposed'`
+  and hand-written ones such as `whoami`. List each under a scope.
+- **BREAKING — (#20) `contentHash` is removed from `@ultimat3/manifest`.** It was `fingerprint`
+  under a second name: `fingerprint(body)` from `@ultimat3/core` answers the same 16 hex characters.
+- **BREAKING — (#21) `DigestAppend` requires `appender`** (the fan-out passes `runId:recipient`). A
+  custom `DigestStore` keys its replay on it.
+- **BREAKING — (#22) no model is chosen for an app.** `DEFAULT_MODEL` is removed: a call resolves its
+  model from the declaration's `model`, its prompt's, or `createGateway({ defaultModel })`, and a
+  call that names none is the new `X_AI_MODEL_UNRESOLVED` naming the three. `EchoProvider` has no
+  model of its own either: pass `model`. `describeAgents()` answers `model: null, modelFrom: null`
+  where nothing names one (`'built-in-default'` is gone). The deprecation log `ai.deprecation` and
+  the counter `ai_deprecated_fallbacks_total` go with it. A provider called directly
+  (`AnthropicProvider`, `openAiProvider`) has no default model either: it runs `request.model`, and
+  a request without one is `X_AI_MODEL_UNRESOLVED` — one resolver, `resolveModel` in
+  `packages/ai/src/model-resolve.ts`, on every site.
+- **BREAKING — (#23) a provider serves the models the app lists.** `AnthropicProvider` requires
+  `models` (`new AnthropicProvider({ models: [id] })`, an empty list `X_AI_REQUEST_INVALID`), and
+  `ANTHROPIC_MODEL_IDS` and `OPENAI_MODEL_IDS` are removed: `openAiProvider({ models })` takes the
+  app's ids.
+- **BREAKING — (#24) the framework registers no model.** Every built-in catalogue row is
+  removed, with `registerOpenAiModels()`; the registry starts empty. A model the app names and never
+  `registerModel`-ed is `X_AI_MODEL_UNKNOWN` before any provider call, so register each one at boot
+  with its own limits and prices — `examples/dummy/apps/web/app/models.ts` is the pattern; a test
+  registers its own rows in `beforeEach`.
+- **BREAKING — (#25) a `Menu` trigger's `aria-controls` is `string | undefined`.** A closed menu's
+  trigger carries none. A reader typed `string` is TS2322; widen it.
+
+Tier 5 — testing, scraping, cli.
+
+- **BREAKING — (#26) `FakeElement.listeners` is private.** Read a handler with
+  `element.listenerFor(name)`, or dispatch through the mount: `island.fire('button', 'click')`.
+- **BREAKING — (#27) an offline scraping test declares `robots: { ignore: '…' }`.** Under `bun test`
+  the sealed network refuses the `robots.txt` read, and with `fakeBrowser` or `fixtureBrowser` that
+  is now a refused scrape (`X_SCRAPE_ROBOTS_DISALLOWED`) instead of a silent allow.
+- **BREAKING — (#28) `nearest` is removed from `@ultimat3/cli`.** It was `nearestName` under a second
+  name: import `nearestName` from `@ultimat3/core`.
+- **BREAKING — (#29) `x shot --cdp-url` fails the open when the provider refuses the browser-target
+  attach** (`X_CDP_CALL_FAILED`). It used to proceed without the popup host fence. Point
+  `--cdp-url` at a browser that allows the attach, or drop the flag to launch a local one.
+- **BREAKING — (#30) a page, layout or route that imports a slice's `repo` fails the `boundaries`
+  step** (`X_BOUNDARY_ROUTE_TO_DB`). Move the read into a query and call that.
+
+Tier 4 again — ai, after the cut.
+
+- **BREAKING — (#31) ai's `contentHash` is renamed `promptHash`.** One name, one function:
+  `contentHash` is `@ultimat3/render/server`'s byte hash. Same argument, same answer, no alias.
+  TS2305 at each import from `@ultimat3/ai`.
+
+Not breaking.
+
 - `registry-audit`: the fix for a package behind on npm depends on whether its release tag is on the
   remote (tag, push, `gh release create --verify-tag`), and dispatches the workflow only when it is.
 - Repo tooling hardened by sweep 11c's audit:
@@ -278,11 +473,6 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 - Five new doc guards: wiki code fences compile (on a ratchet), wiki anchors resolve, Known-Gaps
   links resolve to their backlog rows, the `docs/ops` uids match the images, and the boundary-rule
   table matches `BOUNDARY_CODES`.
-- **Deprecated (ai):** resolving a model through the built-in `DEFAULT_MODEL`, or pricing one through
-  a built-in catalogue row the app never registered, logs `ai.deprecation` once per site or row and
-  counts `ai_deprecated_fallbacks_total`. Apps bring their own models and providers: set a
-  declaration's `model` or `createGateway({ defaultModel })`, and `registerModel` what you use. Both
-  are removed in 25.0.0. No fix line names a vendor as the default any more.
 - admin: the `/admin` home counts a resource only when it declares `count: true`; it used to run a
   full `count()` per listable resource on every visit.
 - `x i18n add` and `x i18n sync <locale>` mark every copied value `⟦…⟧`, so `x i18n check` reports
@@ -292,18 +482,13 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   `USER 1000:1000`, and the Helm chart's `runAsUser`/`runAsGroup`/`fsGroup` match: it used to run as
   65532, a user the alpine image does not have. The dashboard example reads through the `postList`
   query.
-- boundaries: a `page`/`layout`/`route` importing a slice's `repo` is `X_BOUNDARY_ROUTE_TO_DB`.
 - CI: the `windows` job is required.
-- ai: `costOf` charges each model's published cache-read and 5-minute cache-write rates
-  (`ModelSpec.cacheReadPerMillion` / `cacheWritePerMillion`; a custom row keeps the 0.1x / 1.25x
-  defaults). Opus 5.5 cache reads were overcharged 2x and Fable 5.1's 4x. `claude-sonnet-5` is
-  repriced to its standard $2/$10 per MTok (was $3/$15), so recorded costs and budget reservations
-  on it drop by a third.
+- ai: `costOf` charges a row's own cache-read and 5-minute cache-write rates when it states them
+  (`ModelSpec.cacheReadPerMillion` / `cacheWritePerMillion`); a row that states neither is charged
+  0.1x / 1.25x its input rate.
 - auth: the session and OAuth handshake cookies are built by `serializeSetCookie`. Attributes are
   now written `Max-Age=…; Path=/` (the same cookie to a browser, RFC 6265 §5.2), and a cookie name
   that is not an RFC 6265 token is `X_COOKIE_INVALID` instead of a cookie the browser drops.
-- **Breaking for a custom change feed:** `ChangeEvent.write` is required (`string | null`); a producer
-  that left it out must pass `write: null` (#507).
 - realtime: the page runtime (store, socket host, channel book, query client, transport) ships once per
   page — in the page boot, or one `/islands/page-runtime.<id>.js` chunk on a page without one — and
   islands carry thin hooks: `/posts/:id` serves 21.6 kB less, the like island 85.6 → 41.7 kB (#505).
@@ -317,9 +502,6 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   same in PowerShell, cmd and bash. Existing apps: delete the three bash files, copy the two `.ts`
   files from a fresh `x new`, and set `package.json` `setup` / `check` to `bun bin/setup.ts` /
   `bun bin/check.ts` and `dev` to `x dev`. `x new` also writes a root `.gitattributes`.
-- core: `renderDeprecation`, `recordDeprecatedCall` and the `Deprecation*` types live in
-  `@ultimat3/core`; `@ultimat3/action` and `@ultimat3/query` re-export the same names (removal in
-  25.0.0). `assertEnvExample` is deprecated: the `.env.example` gate is `x verify`'s `manifest` step.
 - 20 test-only modules in 10 packages are renamed `*-fixture.ts` and no longer ship in tarballs;
   `package-shape` refuses a `src/` module only tests import under any other name
   (`X_PACKAGE_TEST_ONLY_SHIPPED`).
@@ -367,16 +549,6 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   listed as `(action)`; only `destructive: false` is a read, as projected actions and app tools
   already default. Set `destructive: false` on a hand-registered read tool to keep it in the read
   bucket.
-- `mcp`: **an app whose `scopes:` map leaves any projected tool out now fails to boot** with
-  `X_MCP_SCOPE_UNCOVERED`. This includes tools added through `include: 'exposed'` and hand-written
-  tools such as `whoami`. List each one under a scope.
-- `http`: `bearerMount` also returns one `<prefix>/*rest` catch-all route per method. An app
-  wildcard at that same path now conflicts (`X_ROUTE_CONFLICT`). The 405 with `Allow` under a
-  mount is gone.
-- `action`, `query`: action and query routes no longer carry `meta.rateLimit`; a route that
-  declares a limit sets `RouteMeta.rateLimitedBy: 'handler'` and is not also capped by the
-  `default` bucket. `http.rateLimit.buckets.<actionName>` no longer has any effect on an action.
-  In-process (`server`) calls spend nothing.
 - `http`: one installed rate-limit store, which actions and queries spend from: a stack of frames,
   each adopter releasing only its own. `createServer` adopts the store it is handed and releases it
   on `stop()` or on any boot refusal. `X_RATE_LIMIT_NOT_SHARED` now also covers that store. New
@@ -387,16 +559,6 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 - `realtime`: a refusal's ack carries `retryAfterSeconds`, and the client re-subscribes after it.
   `LiveQueryDefinition.spend` is new (`{ actor, clientAddress, nowMs }`); the sync node takes an
   optional `clientAddressOf`.
-- `scraping`: an offline test (`fakeBrowser`, `fixtureBrowser`) must declare
-  `robots: { ignore: '…' }`. Under `bun test`, the sealed network's refusal of the robots read is
-  now a refused scrape instead of a silent allow.
-- **BREAKING** `jobs`: `WebhookLedger` requires `isDisabled(endpointId)`. `webhook()` asks it before
-  every socket, so a disabled endpoint receives nothing. A custom ledger adds the method.
-- **BREAKING** `notify`: `DigestAppend` requires `appender` (the fan-out passes `runId:recipient`).
-  A custom `DigestStore` keys its replay on it.
-- **BREAKING** `action`: an `IdempotencyStore` declares `keepsRedaction: true`, and `settle` takes a
-  required 4th argument, `redacted`, which it keeps and returns as `IdempotencyRecord.redacted`. A
-  store written before this fails to compile instead of replaying `[redacted]` as an answer (#591).
 - `core`: `isRedactedKey` also names `credentials`, `jwt`, `bearer`, `cookie(s)`, `sessionId` /
   `sessionKey`, `privateKeyPem` / `Der` / `Jwk`, `cvv` / `cvc` and a whole-word `pin` (`cardPin`,
   `pinCode`). Log lines, error reports and audit rows redact them too; `spinner`, `isPinned`,
@@ -409,9 +571,6 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 - `realtime`: `X_REPLICATOR_SLOT_HELD` is thrown only under `x dev`. A container replicator that
   loses the lock stays up unready and takes over when it frees.
 
-- **BREAKING** every package: `engines.bun` is `>=1.4.2`, and `x` / `x doctor` refuse Bun 1.4.0 and 1.4.1
-  with `X_BUN_VERSION`. CI, the release job, the framework image and a scaffolded app's image all run
-  exactly 1.4.2; `scripts/bun-pin.test.ts` refuses any pin that names another patch.
 - `core`, `http`, `action`, `realtime`: Bun 1.4.2 honours a `sideEffects` array (1.4.0 read any array as
   `false`), so the arrays now say only what a browser needs. `@ultimat3/http` declares one
   (`["./src/error-titles.ts"]`), which keeps 11.5 kB of server code out of every island that calls an
@@ -436,18 +595,26 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 
 ### Fixed
 
+- ai: an in-app agent's tool for an `idempotent: true` action carries the reserved
+  `idempotencyKey` argument, as the MCP tool does, and the key reaches `invoke`
+  (`packages/ai/src/tool-idempotency.ts`). 24.x dropped it, so an action an external agent could
+  retry safely was one an in-app agent could not. An input field of that name is
+  `X_MCP_IDEMPOTENCY_KEY_SHADOWED` on both surfaces.
+- query: paging to the end no longer fetches an extra empty page. The last page's `nextCursor` is
+  `null` (#11 under Changed), so a `while (page.nextCursor)` loop stops where `hasMore` does.
+- mcp: endpoint #0 is served at the path its RFC 9728 metadata and its 401 name — its own
+  `defineAppMcp({ path })` — not at `ai.mcp.path` (#2 under Changed).
 - **realtime (availability):** a `NatsTransport` whose client the library closed for good (its
   reconnect budget spent, about 1–2.5 minutes of outage) left every realtime role down until a
   manual restart. It now re-dials in the background on its backoff and re-binds every live
   subscription; the `NatsClient` port gains an optional `onClosed`.
 - **cli (security):** `x shot` (and MCP `ui.interact`) enforces its host allow list on popups
   (`target=_blank`, `window.open`) by pausing requests at the browser target, as scraping does.
-  **Behaviour change:** with `--cdp-url`, a provider that refuses the browser-target attach now
-  fails the open (`X_CDP_CALL_FAILED`), where it used to proceed without the popup fence.
+  With `--cdp-url` this can refuse an open (#29 under Changed).
 - **ui:** `<Form>` focuses the first invalid field once per failed submit; touching or editing
   afterwards no longer pulls focus back. A successful submit keeps the fields edited while it was in
   flight dirty. `Dropzone` without `multiple` accepts one dropped file. A closed `Menu`'s trigger
-  gets `'aria-controls': undefined` (its type widens to `string | undefined`).
+  gets no `aria-controls` (#25 under Changed).
 - scraping: `click`/`type`/`fill`/`select`/`focus`/`waitFor` scroll the element into view before the
   actionability check, so an element below the fold is no longer "covered" (new `QueryOptions`,
   `ScrapeTarget.query(selector, { reveal })`); `restore()` keeps a `localStorage` key `__proto__`.
@@ -458,8 +625,8 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
 - testing: island mounts restore the real globals in any dispose order (a non-LIFO dispose left a
   fake `document` for every later file in the worker); a mount that never settles is cleaned up;
   scratch directories carry their pid and a run sweeps those of killed runs. The micro-DOM keeps
-  every listener per event type and skips one removed mid-dispatch, as browsers do
-  (`FakeElement.listeners` is no longer public; read through `listenerFor(name)` or `fire`).
+  every listener per event type and skips one removed mid-dispatch, as browsers do (#26 under
+  Changed).
 - cli: `x dev` re-reads an edited `*.island.states.ts`.
 - docs: `realtime.enabled` defaults to `true` (since 22.0.0); the wiki said `false`. The defaults
   `wiki/Configuration.md` states are now checked against `configDefaults()`.
@@ -535,8 +702,8 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   `terminationGracePeriodSeconds` is derived from the `drain.*` values, which `x deploy --method helm`
   sets from `app.config.ts`. `x new` writes the same chart.
 - A compose start-first rerun finishes a half-done deploy instead of adding replicas, and a failed
-  cleanup is named in `X_DEPLOY_FAILED`. Helm grace periods are sized from the larger of
-  `drain.deadlineMs` and `configureHttp({ drainTimeoutMs })`.
+  cleanup is named in `X_DEPLOY_FAILED`. Helm grace periods are sized from `drain.deadlineMs`, the
+  one drain budget (#8 under Changed).
 - `migrate()` / `ROLE=migrate` accept a rollback onto a newer build's ledger: nothing applied, the
   newer rows logged and returned in `ahead`. Rolling back the image no longer fails the pre-upgrade
   Job.
@@ -667,7 +834,7 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth'
   instead of returning `[]` for `NaN`, three for `2.5`, or never returning for `Infinity` (C3).
   `addBusinessDays` / `nextBusinessDay` refuse a calendar with no business day
   (`X_SCHEDULE_INVALID`, with its own fix) instead of returning a weekend day or holiday (C4).
-- `ai`: `MemoryVectorStore` ranks by true cosine as pgvector does, so magnitude no longer decides
+- `ai`: `memoryVectorStore()` ranks by true cosine as pgvector does, so magnitude no longer decides
   dev order; `cosine()` returns real cosine and `NaN` (ranked last) for a zero-norm vector (C5). An
   unscoped `hybrid` fuses on `(tenant, id)`, so two tenants' same-id rows stay apart (C6). Both
   stores break ties by `id` in search, text search and hybrid ranks.

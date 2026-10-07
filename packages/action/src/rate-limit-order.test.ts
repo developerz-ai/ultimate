@@ -11,7 +11,7 @@ import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { IdempotencyStore } from './idempotency';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { withCallerAddress } from './rate-limit-gate';
 
 beforeEach(() => resetRateLimitStore());
@@ -97,7 +97,7 @@ describe('an idempotent key spends once, for the run that happens', () => {
       await outcome(target({ id: 'a' }, { ctx: caller, surface: 'http', idempotencyKey: 'k1' })),
     ).toBe('ok');
     // A stale in-flight record: the peek sees it (a "replay"), the reservation reclaims it.
-    const inner = new MemoryIdempotencyStore();
+    const inner = memoryIdempotencyStore();
     const released: string[] = [];
     const reclaiming: IdempotencyStore = {
       scope: inner.scope,

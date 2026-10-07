@@ -7,7 +7,7 @@ import { rescope } from '@ultimat3/core';
 import { CLIENT_PERSIST_META, CLIENT_SCOPE_META, pageClient } from '@ultimat3/core/page';
 import { bootPage } from './boot';
 import { resetPage } from './hooks-fixture';
-import { type LocalStore, MemoryLocalStore } from './local-store-idb';
+import { type LocalStore, MemoryLocalStore, memoryLocalStore } from './local-store-idb';
 import { peekOutbox } from './outbox-slot';
 import { installPageRuntime } from './page-runtime';
 import { installedPage, pageRealtime } from './page-store';
@@ -66,7 +66,7 @@ const drain = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 
 describe('the boot installs the page runtime exactly once', () => {
   test('synchronously, before its first await: an island released by its load finds the store', () => {
-    seatDisk(new MemoryLocalStore());
+    seatDisk(memoryLocalStore());
     void bootPage({ principal: 'u1' });
     // No await between the call and this line: `awaitPageRuntime` resolves on the script's `load`.
     const page = installedPage('useRecord');
@@ -88,7 +88,7 @@ describe('the boot installs the page runtime exactly once', () => {
   });
 
   test("the runtime chunk installed first: the boot adopts that page's store, never replaces it", async () => {
-    seatDisk(new MemoryLocalStore());
+    seatDisk(memoryLocalStore());
     // An island on a page whose boot came late installed the runtime from its chunk.
     const chunk = installPageRuntime();
     const { store, services } = chunk;
@@ -189,7 +189,7 @@ const queued = (key: string) => ({
 
 describe('a principal change while the boot is opening the disk', () => {
   test("keeps the NEW principal's queue and wipes the one that left", async () => {
-    const disk = new MemoryLocalStore();
+    const disk = memoryLocalStore();
     await disk.writeQueue('p:u1', queued('u1-like'));
     await disk.writeQueue('p:u2', queued('u2-like'));
     // The page's one store, still opening: the boot parks on it before it wipes anything.
@@ -212,7 +212,7 @@ describe('a principal change while the boot is opening the disk', () => {
   });
 
   test('a boot handed its scope explicitly still keeps exactly that one', async () => {
-    const disk = new MemoryLocalStore();
+    const disk = memoryLocalStore();
     await disk.writeQueue('p:u1', queued('u1-like'));
     await disk.writeQueue('p:u2', queued('u2-like'));
     Object.defineProperty(globalThis, DISK, { value: Promise.resolve(disk), configurable: true });

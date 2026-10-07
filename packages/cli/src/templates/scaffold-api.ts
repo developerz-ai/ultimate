@@ -41,9 +41,8 @@ contractTest('health is an action exposed over MCP', () => {
   expect(target.mcp?.expose).toBe(true);
 });
 
-contractTest('health projects one MCP tool and one OpenAPI operation', () => {
-  // Same policy object on both surfaces — a public action says so once, not once per surface.
-  expect(target.tool().policy).toBe(target.policy);
+contractTest('health projects one OpenAPI operation under its export name', () => {
+  // The MCP tool is \`@ultimat3/mcp\`'s \`toolFrom\`, served from the \`mcp\` block above.
   expect(target.openapi().operationId).toBe('health');
 });
 `;

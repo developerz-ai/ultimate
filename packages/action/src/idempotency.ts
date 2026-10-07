@@ -11,7 +11,7 @@ import {
   IdempotencyReplayedFailureError,
   IdempotentReplayRedactedError,
 } from './errors';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { restingAnswer } from './idempotency-redact';
 
 /**
@@ -157,7 +157,7 @@ export interface IdempotencyConfig {
 export const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyConfig = Object.freeze({ scope: 'process' });
 
 let config: IdempotencyConfig = DEFAULT_IDEMPOTENCY_CONFIG;
-let defaultStore: IdempotencyStore = new MemoryIdempotencyStore();
+let defaultStore: IdempotencyStore = memoryIdempotencyStore();
 
 /** Declared at boot, before `registerActions()`. Nothing infers a replica count. */
 export function configureIdempotency(next: IdempotencyConfig): void {
@@ -179,7 +179,7 @@ export function getIdempotencyStore(): IdempotencyStore {
 /** Test-only. A process configures its idempotency once at boot and never reconfigures it. */
 export function resetIdempotency(): void {
   config = DEFAULT_IDEMPOTENCY_CONFIG;
-  defaultStore = new MemoryIdempotencyStore();
+  defaultStore = memoryIdempotencyStore();
 }
 
 /**

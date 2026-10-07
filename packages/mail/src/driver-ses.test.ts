@@ -7,7 +7,7 @@ import { frozenClock, isUltimateError, signAwsRequest, type UltimateError } from
 import { nextRetryForError } from '@ultimat3/jobs';
 import type { MailMessage } from './driver';
 import type { MailFetch } from './driver-resend';
-import { createSesDriver, type SesDriverOptions } from './driver-ses';
+import { type SesDriverOptions, sesMailDriver } from './driver-ses';
 import type { RetainedMimeEntry } from './retain-mime';
 
 const NOW = '2026-10-06T12:00:00.000Z';
@@ -45,7 +45,7 @@ function stub(answer: () => Response): { fetch: MailFetch; seen: Seen[] } {
 }
 
 function driverWith(fetch: MailFetch, extra: Partial<SesDriverOptions> = {}) {
-  return createSesDriver({
+  return sesMailDriver({
     region: 'eu-west-1',
     credentials: CREDENTIALS,
     from: FROM,
@@ -70,7 +70,7 @@ function thrown(run: () => unknown): UltimateError {
   } catch (error) {
     if (isUltimateError(error)) return error;
   }
-  return expect.unreachable('expected createSesDriver to refuse with an UltimateError');
+  return expect.unreachable('expected sesMailDriver to refuse with an UltimateError');
 }
 
 const rawOf = (body: string): string => {
@@ -80,7 +80,7 @@ const rawOf = (body: string): string => {
   );
 };
 
-describe('createSesDriver — the request', () => {
+describe('sesMailDriver — the request', () => {
   test('POSTs SendEmail with the raw MIME, the envelope and a SigV4 signature over those bytes', async () => {
     const { fetch, seen } = stub(() => Response.json({ MessageId: '0102018f-ses-id' }));
     const driver = driverWith(fetch, { configurationSet: 'transactional' });
@@ -178,7 +178,7 @@ const FAILURES: readonly (readonly [number, 'header' | 'body', string, boolean, 
   [503, 'body', 'ServiceUnavailable', true, 'API_SendEmail'],
 ];
 
-describe('createSesDriver — SES errors onto X_MAIL_SEND_FAILED', () => {
+describe('sesMailDriver — SES errors onto X_MAIL_SEND_FAILED', () => {
   test.each(FAILURES)('%p %s %s → retryable %p', async (status, where, type, retryable, fix) => {
     const { fetch } = stub(() =>
       where === 'header'
@@ -236,7 +236,7 @@ describe('createSesDriver — SES errors onto X_MAIL_SEND_FAILED', () => {
   });
 });
 
-describe('createSesDriver — construction', () => {
+describe('sesMailDriver — construction', () => {
   const ok = stub(() => Response.json({})).fetch;
 
   test.each([['us-east-1; DROP'], [''], ['US-EAST-1'], ['email.us-east-1']])(
@@ -272,7 +272,7 @@ describe('createSesDriver — construction', () => {
   });
 });
 
-describe('createSesDriver — retainMime', () => {
+describe('sesMailDriver — retainMime', () => {
   test('keeps exactly the bytes SES was handed, and hands them to onRetained with the SES id', async () => {
     const { fetch, seen } = stub(() => Response.json({ MessageId: 'ses-42' }));
     const entries: RetainedMimeEntry[] = [];
@@ -335,7 +335,7 @@ describe('createSesDriver — retainMime', () => {
   );
 });
 
-describe('createSesDriver — prototype keys in an SES error type', () => {
+describe('sesMailDriver — prototype keys in an SES error type', () => {
   test.each([
     ['__proto__', 400, false],
     ['constructor', 400, false],
@@ -355,7 +355,7 @@ describe('createSesDriver — prototype keys in an SES error type', () => {
   });
 });
 
-describe('createSesDriver — a sink that never settles', () => {
+describe('sesMailDriver — a sink that never settles', () => {
   test('the send still settles: onRetained is called, never awaited', async () => {
     const { fetch } = stub(() => Response.json({ MessageId: 'ses-46' }));
     let called = 0;

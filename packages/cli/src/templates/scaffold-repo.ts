@@ -205,10 +205,8 @@ ${envDeclaration()}
 
 export const config = defineConfig({
   name: '${app.kebab}',
-  locales: ['en'],
-  defaultLocale: 'en',
-  defaultTimeZone: 'UTC',
-  defaultCurrency: 'USD',
+  // Locales are declared by the catalogs (\`defineCatalogs\` in \`packages/i18n/src/index.ts\`); no
+  // zone or currency default exists — every format call names its zone, every \`Money\` its currency.
   // Env KEYS, never the value: the same image deploys to every environment. The database is
   // configured entirely from the environment — \`DATABASE_URL\` and \`DATABASE_POOL_MAX\`.
   // The tiers ARE the cache selection: add 'redis' to build the shared rung, which reads
@@ -225,7 +223,7 @@ export const config = defineConfig({
     enabled: true,
     // The document an offline navigation gets when the cache has no answer, and the path
     // \`apps/web/site/offline/page.tsx\` serves. Required once \`enabled\` is true: an installable
-    // app that shows the browser's error page offline is the failure the block exists to prevent.
+    // app that shows the browser error page offline is the failure the block exists to prevent.
     offline: { fallback: '/offline' },
     name: '${titleCase(app.raw)}',
     colors: {
@@ -237,7 +235,7 @@ export const config = defineConfig({
   // it, and a choice stored by the theme toggle wins over it on every later visit; 'system' follows
   // the OS.
   theme: { defaultMode: 'dark' },
-  ai: { mcp: { expose: true, path: '/mcp' } },
+  ai: { mcp: { expose: true } },
 });
 
 /**

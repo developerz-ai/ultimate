@@ -3,14 +3,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { MAX_BULK_ROWS } from './introspection';
 import { operatorOf } from './operator-surface-fixture';
 
 describe('unit · the memory operator', () => {
   test('promoteMany bounds the rows still waiting, never the rows already due', async () => {
     const clock = frozenClock('2026-10-01T00:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const enqueue = (key: string, runAt: number) =>
       driver.enqueue({
         name: 'promote.bound',

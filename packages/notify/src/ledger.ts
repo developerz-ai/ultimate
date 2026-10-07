@@ -82,19 +82,17 @@ export interface MemoryDeliveryLedger extends DeliveryLedger {
 
 /**
  * The default, and honest about what it is: one process, no durability. Installed by a test and by
- * `x dev`; a deployment with more than one replica needs `createPgDeliveryLedger`, because a claim
+ * `x dev`; a deployment with more than one replica needs `postgresDeliveryLedger`, because a claim
  * this replica took is invisible to the one that replays the job.
  */
-export function createMemoryDeliveryLedger(
-  options: MemoryLedgerOptions = {},
-): MemoryDeliveryLedger {
+export function memoryDeliveryLedger(options: MemoryLedgerOptions = {}): MemoryDeliveryLedger {
   // `while (rows.size > max)` is the eviction, so a `max` that is not a number is not a large cap
   // — it is no cap, and this ledger grows into the heap of a process that was told it was bounded.
   // `??` guards nullish and `NaN` is not, so `Number(process.env.…)` on an unset variable arrives
   // here intact. A floor of 1 because a ledger that keeps zero rows cannot refuse a replay, which
   // is its one job, and it fails at it silently.
   const max = finiteCount(
-    'createMemoryDeliveryLedger',
+    'memoryDeliveryLedger',
     'max',
     options.max ?? DEFAULT_MAX_DELIVERY_RECORDS,
     1,

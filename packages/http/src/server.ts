@@ -144,7 +144,7 @@ export interface ServerHandle {
   url(): string;
   describe(): readonly RouteDescription[];
   start(): ServerHandle;
-  /** Runs core's three-phase drain. The deadline is `config.drainTimeoutMs`. */
+  /** Runs core's three-phase drain, on the deadline `drain.deadlineMs` set (`lifecycleForRole`). */
   stop(): Promise<void>;
   /**
    * Runs one request through the entire lifecycle with no socket. This is the
@@ -199,13 +199,10 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
         }),
   });
 
-  // The one HTTP-owned knob feeds core's deadline, so there is a single drain budget — and only
-  // when this app DECLARED it. Unconditional, with `defineHttpConfig` defaulting the number, this
-  // line reverted `configureLifecycle({ deadlineMs: 600_000 })` — the edit `X_SHUTDOWN_TIMEOUT`'s
-  // own `fix:` prints — back to 15s on every boot that serves web, silently. "Nobody said" and
-  // "the app said 15 seconds" are different claims and `null` is what keeps them apart.
-  if (config.drainTimeoutMs !== null) configureLifecycle({ deadlineMs: config.drainTimeoutMs });
-  // Same rule: only a declared grace is applied. Core waits it out between the readiness flip and
+  // No deadline is set here. `drain.deadlineMs` is the one budget, applied per role by
+  // `lifecycleForRole` before any server exists; `http.drainTimeoutMs` re-set it on the web role
+  // only, after that, and was deleted in 25.0.0 for being a second answer (axiom 1).
+  // Only a declared grace is applied. Core waits it out between the readiness flip and
   // the `accept` hook below, so endpoints stop routing here before the socket closes.
   const readinessGraceMs = options.drain?.readinessGraceMs;
   if (readinessGraceMs !== undefined) configureLifecycle({ readinessGraceMs });

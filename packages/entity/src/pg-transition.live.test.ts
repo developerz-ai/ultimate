@@ -6,9 +6,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, UltimateError, userActor } from '@ultimat3/core';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   setDbClient,
   statementsOf,
@@ -69,7 +69,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a state machine transition', 
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     const migration = generateMigration({

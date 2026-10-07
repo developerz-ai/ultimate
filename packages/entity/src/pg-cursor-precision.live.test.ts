@@ -5,10 +5,11 @@
 // come back.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { Page } from '@ultimat3/core';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   setDbClient,
   statementsOf,
@@ -17,7 +18,6 @@ import { timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import type { Page } from './repo';
 
 const adminUrl = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof adminUrl === 'string' && adminUrl.length > 0;
@@ -51,7 +51,7 @@ describe.skipIf(!hasPostgres)('live · postgres · cursor precision', () => {
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     const migration = generateMigration({

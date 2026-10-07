@@ -6,7 +6,7 @@
 // server can, so this file is live-only.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { identifier, raw, sql } from './sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -21,7 +21,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a warm statement across a mig
   beforeAll(async () => {
     // ONE connection, so the statement warmed below is the one re-run: with a pool of several the
     // second send could land on a cold connection and pass for the wrong reason.
-    client = createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+    client = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await client.execute(raw(`drop table if exists "${TABLE}"`));
     await client.execute(raw(`create table "${TABLE}" (id integer primary key, name text)`));
   });
@@ -60,7 +60,7 @@ describe.skipIf(!hasPostgres)('live · postgres · parameters on unnamed stateme
   let client: PostgresClient;
 
   beforeAll(() => {
-    client = createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+    client = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
   });
 
   afterAll(async () => {

@@ -81,7 +81,7 @@ export type {
   SemanticHit,
   SemanticRememberOptions,
 } from './semantic';
-export { cosineSimilarity, createMemorySemanticCache } from './semantic';
+export { cosineSimilarity, memorySemanticCache } from './semantic';
 export type { FlightJoin, SingleFlight } from './single-flight';
 export { createSingleFlight } from './single-flight';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';

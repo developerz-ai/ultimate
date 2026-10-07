@@ -118,7 +118,7 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     tables: Object.freeze(['x_notify_inbox']),
     ddl: Object.freeze([SQL_NOTIFY_INBOX_TABLE]),
   }),
-  // `createPgDigestStore`'s windows. Installed whether or not the app picks that store, for the
+  // `postgresDigestStore`'s windows. Installed whether or not the app picks that store, for the
   // reason every notify row is: `setNotifyStores` is the app's boot line and runs after this one.
   Object.freeze({
     pkg: '@ultimat3/notify',

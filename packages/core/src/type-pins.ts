@@ -6,7 +6,14 @@
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { CacheTierName } from './cache-vocabulary';
-import type { AppConfigInput, CacheConfig, DatabaseConfig, RealtimeConfig } from './config';
+import type {
+  AppConfig,
+  AppConfigInput,
+  CacheConfig,
+  DatabaseConfig,
+  RealtimeConfig,
+  ThemeConfig,
+} from './config';
 import type { CtxPatch } from './context';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
@@ -100,6 +107,29 @@ type _DatabaseInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['database']>, DeadDatabaseField> extends never
     ? true
     : false
+>;
+
+/**
+ * The five keys deleted in 25.0.0 stay deleted — on the config an app reads AND the input it
+ * writes. `defineConfig` refuses each by name at run time (`config-removed.ts`); this is the build
+ * error, so re-declaring one fails `tsc -b` before any test runs. `locales` / `defaultLocale` were
+ * a second declaration of `defineCatalogs({ default })`; `defaultTimeZone` / `defaultCurrency`
+ * and `theme.tokens` were read by nothing.
+ */
+type RemovedTopLevelKey = 'locales' | 'defaultLocale' | 'defaultTimeZone' | 'defaultCurrency';
+
+type _AppConfigCarriesNoRemovedKey = Assert<
+  Extract<keyof AppConfig, RemovedTopLevelKey> extends never ? true : false
+>;
+
+type _AppConfigInputCarriesNoRemovedKey = Assert<
+  Extract<keyof AppConfigInput, RemovedTopLevelKey> extends never ? true : false
+>;
+
+type _ThemeConfigIsDefaultModeAlone = Assert<Exact<keyof ThemeConfig, 'defaultMode'>>;
+
+type _ThemeInputCarriesNoTokens = Assert<
+  'tokens' extends keyof NonNullable<AppConfigInput['theme']> ? false : true
 >;
 
 /**

@@ -18,7 +18,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AckOptions, JobDriver, NackOptions, QueueStats } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -75,7 +75,7 @@ async function waitUntil(done: () => boolean): Promise<void> {
 }
 
 function recorded(): Recorded {
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const acks: AckOptions[] = [];
   const landed: { workerId: string; ok: boolean }[] = [];
   const nacks: NackOptions[] = [];

@@ -14,7 +14,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createLimiter } from './limits';
 import { createWorker } from './worker';
@@ -49,7 +49,7 @@ interface CountingDriver {
 function countingDriver(stats: () => Promise<readonly QueueStats[]>): CountingDriver {
   let statsCalls = 0;
   let claimCalls = 0;
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   return {
     driver: {
       ...base,
@@ -139,7 +139,7 @@ describe('a job the worker shed is still backlog', () => {
   };
 
   test('the depth gauge counts it, and it is not filed as a suspension', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     // The global slot is taken by the test itself, so every claimed job is shed and no job body
     // runs: the assertion is about the rows the tick leaves behind, and nothing else.
     const limiter = createLimiter({ global: 1 });
@@ -174,7 +174,7 @@ describe('a job the worker shed is still backlog', () => {
   });
 
   test('it carries no lastError, because nothing about it failed', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const limiter = createLimiter({ global: 1 });
     limiter.tryAcquire({ queue: 'default' });
     shedJob('shedQuiet');
@@ -228,7 +228,7 @@ describe('the worker counts what it finished', () => {
         return Promise.resolve();
       },
     });
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue({
       name: 'countedJob',
       queue: 'default',

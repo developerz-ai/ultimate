@@ -84,6 +84,13 @@ export interface RouteMeta {
    * Set, it wins: `rateLimit`/`rateLimitBucket` name a bucket the STAGE spends, and are not read.
    */
   readonly rateLimitedBy?: 'handler';
+  /**
+   * The primitive this route projects, written by `@ultimat3/action`'s `toRoute` and
+   * `@ultimat3/query`'s `toQueryRoute`; absent on a plain route. Read by the bucket check
+   * (`rate-limit-buckets.ts`): since 25.0.0 a `rateLimit.buckets.<name>` named after a primitive
+   * limits nothing and is refused, and only an explicit marker can say which routes those are.
+   */
+  readonly primitive?: 'action' | 'query';
   readonly tags?: readonly string[];
   readonly description?: string;
   /**

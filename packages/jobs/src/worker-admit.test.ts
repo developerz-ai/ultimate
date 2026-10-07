@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { createLimiter } from './limits';
 import { createAdmission } from './worker-admit';
 import type { FleetSlots, SlotGrant } from './worker-fleet-slots';
@@ -16,7 +16,7 @@ class StoreDown extends Error {}
 
 /** Two jobs on a memory queue, both claimed, whose FIRST nack rejects and every later one lands. */
 async function claimedPair() {
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   let failNext = true;
   const driver: JobDriver = {
     ...base,

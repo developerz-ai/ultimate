@@ -23,11 +23,15 @@ import {
   stub,
   USAGE,
 } from './llm-fixture';
-import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { costOf } from './provider';
 import { resetAiRuntime } from './runtime';
+import { asProjectableAction, toLlmTool } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 beforeEach(() => {
   resetAiRuntime();
@@ -49,7 +53,8 @@ describe('llm() is an action factory, not a ninth primitive', () => {
     // Verbatim, because `llm()` returns an action and an action's tool name is its export name
     // — the one `@ultimat3/mcp` serves and the only one `tools/call` answers to. It read
     // `summarize_post` until 2026-08, which named a tool no MCP catalog has ever contained.
-    expect(summarize.tool().name).toBe('summarizePost');
+    // The model-tool projection (`@ultimat3/mcp`'s `toolFrom` is the MCP one, a tier away).
+    expect(toLlmTool(asProjectableAction(summarize)).name).toBe('summarizePost');
     expect(summarize.openapi().operationId).toBe('summarizePost');
     expect(summarize.contract().length).toBeGreaterThan(0);
     expect(summarize.job().name).toBe('action:summarizePost');
@@ -88,7 +93,6 @@ describe('llm() is an action factory, not a ninth primitive', () => {
       policy,
     }).named('policyLlm');
     expect(summarize.policy).toBe(policy);
-    expect(summarize.tool().policy).toBe(policy);
   });
 
   test('a denial happens before the model is reached', async () => {
@@ -202,17 +206,17 @@ describe('a response that is not an answer', () => {
     const seen: GenerateRequest[] = [];
     const provider: Provider = {
       name: 'stopping',
-      models: ANTHROPIC_MODEL_IDS,
+      models: FIXTURE_ANTHROPIC_IDS,
       generate(request) {
         seen.push(request);
         return Promise.resolve({
-          model: request.model ?? DEFAULT_MODEL,
+          model: request.model ?? FIXTURE_MODEL,
           text: '',
           toolCalls: [],
           stopReason,
           stopDetails: details,
           usage: USAGE,
-          cost: costOf(request.model ?? DEFAULT_MODEL, USAGE),
+          cost: costOf(request.model ?? FIXTURE_MODEL, USAGE),
         });
       },
       stream: () => new EchoProvider().stream({ messages: [], maxTokens: 1 }),

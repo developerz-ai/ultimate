@@ -7,7 +7,7 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from './driver';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { resetJobs } from './job';
 import type { KeyedHarness } from './keyed-concurrency-fixture';
@@ -24,7 +24,7 @@ const harness: KeyedHarness = {
   async driver(): Promise<JobDriver> {
     const pg = await embeddedPg();
     await pg.reset();
-    return createPgDriver({ executor: pg.executor });
+    return postgresJobDriver({ executor: pg.executor });
   },
   async elapse(_driver, ms): Promise<void> {
     await (await embeddedPg()).age(ms);

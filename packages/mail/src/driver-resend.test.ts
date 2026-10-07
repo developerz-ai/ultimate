@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { MailMessage } from './driver';
-import { createResendDriver, type MailFetch, RESEND_BASE_URL } from './driver-resend';
+import { type MailFetch, RESEND_BASE_URL, resendMailDriver } from './driver-resend';
 import { mailIdempotencyKey } from './idempotency';
 
 const API_KEY = 'resend_sk_test_do_not_leak_9f8e7d6c5b4a';
@@ -86,7 +86,7 @@ function errorResponse(status: number, body: unknown): Response {
 
 test('happy path: posts to /emails with the right headers and body', async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_9f8e7d6c5b4a' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
   const message = messageFixture({ cc: ['grace@example.test'], bcc: ['ops@example.test'] });
 
   const result = await driver.send(message);
@@ -116,7 +116,7 @@ test('happy path: posts to /emails with the right headers and body', async () =>
 
 test("Idempotency-Key carries the caller's key when the message names one", async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_idem_1' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   await driver.send(messageFixture({ idempotencyKey: 'welcome-ada-2026' }));
 
@@ -127,7 +127,7 @@ test("Idempotency-Key carries the caller's key when the message names one", asyn
 
 test('Idempotency-Key is content-derived when the message names none', async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_idem_2' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
   const message = messageFixture();
 
   const first = await driver.send(message);
@@ -145,7 +145,7 @@ test('Idempotency-Key is content-derived when the message names none', async () 
 
 test('includes cc, bcc and reply_to in the body only when the message sets them', async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_cc_1' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   await driver.send(
     messageFixture({
@@ -162,7 +162,7 @@ test('includes cc, bcc and reply_to in the body only when the message sets them'
 
 test('omits cc, bcc and reply_to keys entirely when unset — never sends them as null', async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_cc_2' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   await driver.send(messageFixture());
 
@@ -175,7 +175,7 @@ test('429 is retryable', async () => {
   const { fetch } = fetchStub(
     errorResponse(429, { message: 'Too many requests', name: 'rate_limit_exceeded' }),
   );
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -188,7 +188,7 @@ test('422 (unverified domain) is not retryable', async () => {
   const { fetch } = fetchStub(
     errorResponse(422, { message: 'Domain not verified', name: 'validation_error' }),
   );
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -199,7 +199,7 @@ test('422 (unverified domain) is not retryable', async () => {
 
 test('500 is retryable', async () => {
   const { fetch } = fetchStub(errorResponse(500, { message: 'internal error' }));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -217,7 +217,7 @@ test('every status maps to the same retryable verdict the private table gave', a
 
   for (const status of [...retryable, ...terminal]) {
     const { fetch } = fetchStub(errorResponse(status, { message: 'nope' }));
-    const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+    const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
     const error = await caught(driver.send(messageFixture()));
     expect({ status, retryable: metaOf(error)?.['retryable'] }).toEqual({
       status,
@@ -230,7 +230,7 @@ test('401 is not retryable and the fix names RESEND_API_KEY', async () => {
   const { fetch } = fetchStub(
     errorResponse(401, { message: 'Invalid API key', name: 'authentication_error' }),
   );
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -245,7 +245,7 @@ test("the provider's message reaches the cause and the API key never leaks", asy
       name: 'validation_error',
     }),
   );
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -260,7 +260,7 @@ test('a fetch that rejects (DNS/TLS/reset) is retryable with no status', async (
   const failingFetch: MailFetch = async () => {
     throw new TypeError('fetch failed: getaddrinfo ENOTFOUND api.resend.com');
   };
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch: failingFetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch: failingFetch });
 
   const error = await caught(driver.send(messageFixture()));
 
@@ -271,7 +271,7 @@ test('a fetch that rejects (DNS/TLS/reset) is retryable with no status', async (
 
 test('a 2xx response with no readable id is still a success, using a local id', async () => {
   const { fetch } = fetchStub(Response.json({}));
-  const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
 
   const result = await driver.send(messageFixture());
 
@@ -281,23 +281,23 @@ test('a 2xx response with no readable id is still a success, using a local id', 
 });
 
 test('an empty apiKey throws X_ENV_MISSING at construction', () => {
-  const error = thrown(() => createResendDriver({ apiKey: '', from: FROM }));
+  const error = thrown(() => resendMailDriver({ apiKey: '', from: FROM }));
   expect(codeOf(error)).toBe('X_ENV_MISSING');
 });
 
 test('a whitespace-only apiKey also throws X_ENV_MISSING at construction', () => {
-  const error = thrown(() => createResendDriver({ apiKey: '   ', from: FROM }));
+  const error = thrown(() => resendMailDriver({ apiKey: '   ', from: FROM }));
   expect(codeOf(error)).toBe('X_ENV_MISSING');
 });
 
 test('an empty from address throws X_CONFIG_INVALID at construction', () => {
-  const error = thrown(() => createResendDriver({ apiKey: API_KEY, from: '' }));
+  const error = thrown(() => resendMailDriver({ apiKey: API_KEY, from: '' }));
   expect(codeOf(error)).toBe('X_CONFIG_INVALID');
 });
 
 test('a custom baseUrl is honoured', async () => {
   const { fetch, seen } = fetchStub(Response.json({ id: 'em_custom_base' }));
-  const driver = createResendDriver({
+  const driver = resendMailDriver({
     apiKey: API_KEY,
     from: FROM,
     baseUrl: 'https://relay.internal.test/resend',
@@ -330,7 +330,7 @@ const hostileRejection = (): unknown =>
   );
 
 test('a hostile rejection is still X_MAIL_SEND_FAILED, and still retryable', async () => {
-  const driver = createResendDriver({
+  const driver = resendMailDriver({
     apiKey: API_KEY,
     from: FROM,
     fetch: () => Promise.reject(hostileRejection()),
@@ -342,7 +342,7 @@ test('a hostile rejection is still X_MAIL_SEND_FAILED, and still retryable', asy
 });
 
 test('a rejection that is not an object at all is never interpolated into the cause', async () => {
-  const driver = createResendDriver({
+  const driver = resendMailDriver({
     apiKey: API_KEY,
     from: FROM,
     // `${symbol}` and `String(symbol)` both throw — the guard against the obvious repair.
@@ -359,7 +359,7 @@ test('a rejection that is not an object at all is never interpolated into the ca
 // dead-letter table, once per attempt, for a value no network could change.
 test('a non-finite timeout is refused when the driver is built, not on the first send', () => {
   const error = thrown(() =>
-    createResendDriver({ apiKey: API_KEY, from: FROM, timeoutMs: Number.NaN }),
+    resendMailDriver({ apiKey: API_KEY, from: FROM, timeoutMs: Number.NaN }),
   );
   expect(causeOf(error)).toContain('timeoutMs');
 });
@@ -367,12 +367,12 @@ test('a non-finite timeout is refused when the driver is built, not on the first
 // Zero is not "no deadline" here — the value goes straight to `AbortSignal.timeout`, which aborts
 // on the next tick, so every send would fail before a byte left the host.
 test('a zero timeout is refused rather than aborting every send immediately', () => {
-  const error = thrown(() => createResendDriver({ apiKey: API_KEY, from: FROM, timeoutMs: 0 }));
+  const error = thrown(() => resendMailDriver({ apiKey: API_KEY, from: FROM, timeoutMs: 0 }));
   expect(causeOf(error)).toContain('timeoutMs');
 });
 
 test('a real timeout still builds a driver that sends', async () => {
-  const driver = createResendDriver({
+  const driver = resendMailDriver({
     apiKey: API_KEY,
     from: FROM,
     timeoutMs: 1_000,

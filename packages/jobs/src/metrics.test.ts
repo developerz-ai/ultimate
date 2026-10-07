@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { collectMetrics, createContext, resetMetrics } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -27,7 +27,7 @@ describe('the alertable queue gauges', () => {
   test('the worker publishes oldest-ready and dead-count alongside depth', async () => {
     const at = 1_000_000;
     const clock = { now: () => new Date(at), monotonic: () => at };
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     await driver.enqueue({
       name: 'stuck',
       queue: 'payments',
@@ -58,7 +58,7 @@ describe('the alertable queue gauges', () => {
   test('seconds, not milliseconds — every Prometheus duration is seconds', async () => {
     const at = 2_000_000;
     const clock = { now: () => new Date(at), monotonic: () => at };
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     await driver.enqueue({
       name: 'fresh',
       queue: 'default',

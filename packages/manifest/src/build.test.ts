@@ -4,6 +4,7 @@ import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { diffManifest } from './diff';
 import { manifestJson, verifyBuildId } from './emit';
+import * as surface from './index';
 import type { ActionFact, JsonValue, Manifest } from './schema';
 import { isCompatible, isManifest, MANIFEST_VERSION } from './schema';
 
@@ -127,6 +128,12 @@ describe('the manifest is deterministic', () => {
 
   // Every buildId ever stamped into an app's `x.manifest.json` was SHA-256/16 over canonicalJson;
   // that is core's `fingerprint`, so the copy was deleted rather than the value changed.
+  // 25.0.0 (plan 101, M3): `contentHash` was `fingerprint` under a second name, exported from here
+  // while core's is the one every other caller reaches for.
+  test('the barrel carries no `contentHash` alias of core’s `fingerprint`', () => {
+    expect(surface).not.toHaveProperty('contentHash');
+  });
+
   test("buildId is core's fingerprint of the body, so no stamped manifest moves", () => {
     const { buildId, ...body } = buildManifest(sources);
     expect(buildId).toBe(fingerprint(body));

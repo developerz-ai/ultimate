@@ -14,7 +14,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:tes
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { resetLifecycle } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw } from '@ultimat3/db';
+import { postgresClient, raw } from '@ultimat3/db';
 import { applyFrameworkSchema } from './framework-schema';
 import { applyLockedSchema, verifySchema } from './framework-schema-apply';
 import { serveApp } from './serve';
@@ -44,7 +44,7 @@ let client: PostgresClient | undefined;
 beforeEach(async () => {
   await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
   await on(url ?? '', `create database ${PROBE_DB}`);
-  client = createPostgresClient({ url: probeUrl() });
+  client = postgresClient({ url: probeUrl() });
 }, TIMEOUT_MS);
 
 afterEach(async () => {
@@ -120,7 +120,7 @@ describeLive('live · the framework schema beside an open transaction', () => {
   test(
     'two migrators racing a fresh database both succeed — the lock serialises the create tables',
     async () => {
-      const second = createPostgresClient({ url: probeUrl() });
+      const second = postgresClient({ url: probeUrl() });
       try {
         const results = await Promise.allSettled([
           applyLockedSchema(client as PostgresClient),

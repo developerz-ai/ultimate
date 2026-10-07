@@ -6,7 +6,7 @@
 import { frozenClock } from '@ultimat3/core';
 import { entity, entityForTable, money, text } from '@ultimat3/entity';
 import type { ChangeEvent } from './changefeed';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { type PgLogicalReplicationFeed, postgresChangeFeed } from './changefeed';
 import { ByteReader, ByteWriter, pgTimestampToEpochMs } from './pg-bytes';
 import { errorResponse } from './pg-connection-fixture';
 import type { PgStream } from './pg-wire';
@@ -341,7 +341,7 @@ export const feedOver = (
   dial: () => Promise<PgStream>,
   options: FeedOptions = {},
 ): PgLogicalReplicationFeed =>
-  new PgLogicalReplicationFeed({
+  postgresChangeFeed({
     url: 'postgres://replicator:secret@db.test:5432/app',
     slot: 'ultimate_slot',
     publication: 'ultimate_pub',

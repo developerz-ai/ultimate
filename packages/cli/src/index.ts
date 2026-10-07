@@ -123,7 +123,7 @@ export { parseMigrationSql, readMigrations } from './migrations';
 export type { CommandResult, Finding, JsonValue } from './output';
 export { exitCodeFor, findingFrom, render, renderFinding, renderHuman } from './output';
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
-export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
+export { flagBool, flagList, flagString, GLOBAL_FLAGS, parseArgs } from './parse';
 export type { PrerenderedPage, PrerenderReport } from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export type { PwaArtifacts } from './pwa-artifacts';

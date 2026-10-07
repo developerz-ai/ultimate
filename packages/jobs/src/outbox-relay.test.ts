@@ -14,9 +14,9 @@ import {
 } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { MemoryOutboxStore, OutboxRecord } from './outbox';
-import { createMemoryOutboxStore } from './outbox';
+import { memoryOutboxStore } from './outbox';
 import type { OutboxRelay } from './outbox-relay';
 import { createOutboxRelay } from './outbox-relay';
 
@@ -53,8 +53,8 @@ interface Rig {
  * whether a later commit is picked up after the drain said the process was closing.
  */
 async function rig(options: { park: boolean }): Promise<Rig> {
-  const store = createMemoryOutboxStore();
-  const base = createMemoryDriver();
+  const store = memoryOutboxStore();
+  const base = memoryJobDriver();
   const accepted: string[] = [];
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => {
@@ -124,8 +124,8 @@ describe('the relay takes part in the drain instead of running through it', () =
 
   test('drainOnShutdown: false registers none, for a caller that drives its own teardown', async () => {
     const relay = createOutboxRelay({
-      store: createMemoryOutboxStore(),
-      driver: createMemoryDriver(),
+      store: memoryOutboxStore(),
+      driver: memoryJobDriver(),
       drainOnShutdown: false,
     });
     relay.start();

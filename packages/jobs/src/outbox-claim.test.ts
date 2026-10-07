@@ -12,8 +12,8 @@ import { frozenClock } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_MARK_PUBLISHED, SQL_OUTBOX_RELEASE } from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
-import { createMemoryOutboxStore } from './outbox';
-import { createPgOutboxStore } from './outbox-pg';
+import { memoryOutboxStore } from './outbox';
+import { postgresOutboxStore } from './outbox-pg';
 
 const tx = (id: string): Tx => ({ id, onRollback: () => undefined }) as unknown as Tx;
 
@@ -32,7 +32,7 @@ const row = (id: string, stagedAt: number): OutboxRecord => ({
 const LEASE_MS = 30_000;
 
 async function committed(clock: ReturnType<typeof frozenClock>, ids: readonly string[]) {
-  const store = createMemoryOutboxStore({ clock, claimLeaseMs: LEASE_MS });
+  const store = memoryOutboxStore({ clock, claimLeaseMs: LEASE_MS });
   const open = tx('tx-1');
   let stagedAt = 0;
   for (const id of ids) {
@@ -153,7 +153,7 @@ describe('a lapsed claimant may not touch the rows a newer one holds', () => {
 describe('the claim order is TOTAL, so two relays compose the same batch', () => {
   test('rows sharing a staged_at claim in id order, every time', async () => {
     const clock = frozenClock(0);
-    const store = createMemoryOutboxStore({ clock, claimLeaseMs: LEASE_MS });
+    const store = memoryOutboxStore({ clock, claimLeaseMs: LEASE_MS });
     const open = tx('tx-1');
     // One transaction: `stagedAt` is stamped once per enqueue from the same clock reading, so
     // every row in it ties. Staged out of id order, which is what makes the tie observable.
@@ -213,7 +213,7 @@ describe('the pg statement answers the same question', () => {
         return Promise.resolve([] as readonly R[]);
       },
     };
-    const store = createPgOutboxStore({
+    const store = postgresOutboxStore({
       executor,
       txExecutor: () => executor,
       claimLeaseMs: LEASE_MS,
@@ -241,7 +241,7 @@ describe('the pg statement answers the same question', () => {
         return Promise.resolve([] as readonly R[]);
       },
     };
-    const store = createPgOutboxStore({ executor, txExecutor: () => executor });
+    const store = postgresOutboxStore({ executor, txExecutor: () => executor });
 
     await store.release?.([]);
 

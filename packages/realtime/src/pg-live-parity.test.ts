@@ -8,8 +8,8 @@
 import { expect, test } from 'bun:test';
 import { arrayOf, entity, entityForTable, text, timestamp } from '@ultimat3/entity';
 import { match, type QueryShape } from '@ultimat3/query';
-import { InMemoryAdvisoryLock } from './advisory-lock';
-import { InMemoryChangeFeed } from './changefeed';
+import { memoryAdvisoryLock } from './advisory-lock';
+import { memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import { entityRow } from './pg-entity-row';
@@ -171,11 +171,11 @@ test('an edit keeps its place after the row crosses the replicator bus as text',
   const wire: string[] = [];
   const transport = new InProcessTransport();
   await transport.subscribe('x.change.>', (payload) => void wire.push(payload));
-  const feed = new InMemoryChangeFeed();
+  const feed = memoryChangeFeed();
   const replicator = createReplicator({
     feed,
     transport,
-    lock: new InMemoryAdvisoryLock('x:replicator:parity'),
+    lock: memoryAdvisoryLock('x:replicator:parity'),
   });
   await replicator.start();
   await feed.push('feed_posts', 'update', {

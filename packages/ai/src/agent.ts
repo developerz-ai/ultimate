@@ -6,8 +6,8 @@
  * ninth kind, and the list is what a reader counts instead of a sentence in one of them that
  * cannot see the rest. A tool-using run is
  * still one server-authoritative operation with an input schema, an output schema and a policy —
- * so this returns an `action`, and inherits `.tool()`, `.openapi()`, `.client()`, `.job()`,
- * `.contract()` and its manifest row without a line here.
+ * so this returns an `action`, and inherits `.openapi()`, `.client()`, `.job()`, `.contract()`,
+ * its MCP tool (`@ultimat3/mcp`'s `toolFrom`) and its manifest row without a line here.
  *
  * It exists because the alternative is a hand-rolled loop outside the framework, and a hand-rolled
  * loop is where the dangerous mistake lives: taking the ACTOR from the model's output. Here the
@@ -41,7 +41,7 @@ import {
 } from './errors';
 import type { LlmBudget } from './llm';
 import { answerAttributes } from './llm';
-import { describedModel, type ModelSource, resolveModel } from './model-resolve';
+import { describedModel, type ModelSource, modelForCall } from './model-resolve';
 import type { ModelId } from './models';
 import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
@@ -204,12 +204,14 @@ export function agent<
   return built;
 }
 
+// `null`, not `undefined`, for a row naming no model yet: the row is a published fact, and an
+// absent key reads as a reader that forgot to ask.
 const modelFact = (described: {
-  readonly model: string;
-  readonly from: ModelSource;
+  readonly model: string | undefined;
+  readonly from: ModelSource | undefined;
 }): Pick<AgentFact, 'model' | 'modelFrom'> => ({
-  model: described.model,
-  modelFrom: described.from,
+  model: described.model ?? null,
+  modelFrom: described.from ?? null,
 });
 
 function factsOf<
@@ -224,7 +226,7 @@ function factsOf<
     promptHash: def.prompt.hash,
     // The run's own precedence, so the row names the model a call would use NOW: read when the
     // facts are, at describe time, like every name in the row. `modelFrom` says which place
-    // answered — `gateway` and `built-in-default` depend on the gateway installed at that moment.
+    // answered — `gateway` (or `null`, none yet) depends on the gateway installed at that moment.
     ...modelFact(describedModel(def.model, def.prompt.model, installedGateway()?.defaultModel)),
     maxTurns: def.maxTurns ?? DEFAULT_MAX_TURNS,
     maxToolResultChars: def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
@@ -261,7 +263,10 @@ async function run<
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
   const name = prompt.ref;
-  const model = resolveModel('agent', def.model, prompt.model, installedGateway()?.defaultModel);
+  // Screened first: a bad declaration is refused whether or not a gateway exists.
+  const limits = limitsOf(def);
+  // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
+  const model = modelForCall('agent', name, def.model, prompt.model);
   const vars = await def.vars({ input: args.input, ctx: args.ctx });
   assertNoSecrets(name, vars);
   const redact = aiRedactor();
@@ -281,8 +286,6 @@ async function run<
       'llm.redacted': rendered !== rawPrompt || system !== prompt.system,
     });
 
-    // Screened first, as before: a bad declaration is refused whether or not a gateway exists.
-    const limits = limitsOf(def);
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
     // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.

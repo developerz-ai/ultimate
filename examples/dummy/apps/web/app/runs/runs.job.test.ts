@@ -9,7 +9,7 @@ import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import { answerPrompt, noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
 import type { MemoryStorageDriver } from '@ultimat3/storage';
-import { defineStorage, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, expect, type JobRunTrace, jobTest } from '@ultimat3/testing';
 import { PROMPT_LABEL, syncConnection } from './jobs';
 import * as repo from './repo';
@@ -36,7 +36,7 @@ const until = async <T>(ready: () => Promise<T | null>): Promise<T> => {
 let sessions: MemoryStorageDriver;
 
 beforeEach(() => {
-  sessions = memoryDriver();
+  sessions = memoryStorageDriver();
   defineStorage({ disks: { sessions } });
   // No wall-clock wait in this file: a poll is one turn of the event loop.
   setScrapeClock(noWaitClock);

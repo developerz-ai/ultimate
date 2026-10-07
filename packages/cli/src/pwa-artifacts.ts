@@ -21,6 +21,7 @@ import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import { escapeHtml, localeSegment } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
+import { loadAppCatalogs } from '@ultimat3/i18n/app-catalogs';
 import {
   appleTouchLinks,
   generateWebManifest,
@@ -108,7 +109,7 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
     name: pwa.name,
     colors: pwa.colors,
     block: { ...pwa },
-    locales: appLocales({ locales: config.locales, defaultLocale: config.defaultLocale }),
+    locales: appLocales({ ...(await loadAppCatalogs(root)) }),
     offline: pwa.offline,
     backgroundSync: pwa.backgroundSync,
     push: pwa.push,

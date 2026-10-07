@@ -249,7 +249,7 @@ function rowsOf(result: PgliteResult): number {
     : result.rows.length;
 }
 
-/** Lazily boots: constructing a client opens nothing, exactly like `createPostgresClient`. */
+/** Lazily boots: constructing a client opens nothing, exactly like `postgresClient`. */
 export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   // One in-flight boot, shared. PGlite takes seconds to start, so two concurrent first queries
   // would otherwise build two instances over the same data directory and orphan one of them.

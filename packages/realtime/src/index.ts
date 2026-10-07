@@ -111,7 +111,8 @@ export { type LiveState, type Registration, RowWindows, unnamedType } from './li
 // ---- offline: the durable store, the persisted records, the one outbox (plan 101 slice 12) ------
 export {
   type LocalStore,
-  MemoryLocalStore,
+  type MemoryLocalStore,
+  memoryLocalStore,
   openLocalStore,
   pageLocalStore,
   scopeKey,
@@ -119,9 +120,10 @@ export {
 // ---- the offline outbox (wired over HTTP in plan 101 slice 12) ----------------------------------
 export {
   type DrainReport,
-  MemoryQueueStore,
+  type MemoryQueueStore,
   type MutationSender,
   type MutationStatus,
+  memoryQueueStore,
   OfflineQueue,
   type QueuedMutation,
   type QueueState,

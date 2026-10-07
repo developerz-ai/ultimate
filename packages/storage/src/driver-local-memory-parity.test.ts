@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { type FrozenClock, frozenClock, isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { bytesOf, catchError, textOf } from './driver-s3-fixture';
 
 const conflictOf = (caught: unknown): string =>
@@ -27,7 +27,7 @@ beforeEach(async () => {
   clock = frozenClock('2026-10-01T09:00:00.000Z');
   pair = [
     ['local', localDriver({ root, signingSecret: 'test-secret', clock })],
-    ['memory', memoryDriver({ signingSecret: 'test-secret', clock })],
+    ['memory', memoryStorageDriver({ signingSecret: 'test-secret', clock })],
   ];
 });
 

@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -37,7 +37,7 @@ afterEach(() => {
 describe('two enqueues racing on one idempotency key', () => {
   test('collapse to one row, and a real worker runs the handler exactly once', async () => {
     const runs: number[] = [];
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'provisionOrg',
@@ -82,7 +82,7 @@ describe('two enqueues racing on one idempotency key', () => {
 
   test('three workers contending for the same duplicated row still run it once', async () => {
     const runs: string[] = [];
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'provisionOrgContended',
@@ -127,7 +127,7 @@ describe('two enqueues racing on one idempotency key', () => {
 describe('the dedupe window is "currently live", not "ever existed"', () => {
   test('a duplicate key enqueued after completion is a new, distinct run', async () => {
     const runs: string[] = [];
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'sendReceipt',

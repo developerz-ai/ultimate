@@ -1,7 +1,8 @@
 /**
  * The `action` primitive: one server-authoritative mutation, declared once.
- * Every projection in this package (route, OpenAPI, client, MCP tool, job
- * handle, contract tests) reads this declaration — none of them re-declare it.
+ * Every projection in this package (route, OpenAPI, client, job handle, contract
+ * tests) reads this declaration — none of them re-declare it. The MCP tool is
+ * `@ultimat3/mcp`'s projection (`toolFrom`), one tier up, of the same declaration.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
@@ -21,7 +22,6 @@ import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
-import type { McpToolDescriptor } from './mcp-tool';
 import {
   type ActionPolicy,
   policyCapability,
@@ -271,7 +271,6 @@ export interface AnyAction {
   named(name: string): AnyAction;
   /** Run as this actor. Same `invoke` core, only the context's actor changes. */
   as(actor: Actor | null, input: unknown, options?: InvokeOptions): Promise<unknown>;
-  tool(): McpToolDescriptor;
   openapi(): OpenApiOperation;
   /**
    * The durable-work shape, erased. `listActions()` and `getAction(name)` hand back this view
@@ -315,7 +314,7 @@ export interface Action<
 /** The fluent half of an action: lifted declaration plus one method per projection. */
 export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> = Pick<
   Action<TInput, TOutput>,
-  'input' | 'output' | 'policy' | 'mcp' | 'as' | 'tool' | 'openapi' | 'client' | 'job' | 'contract'
+  'input' | 'output' | 'policy' | 'mcp' | 'as' | 'openapi' | 'client' | 'job' | 'contract'
 >;
 
 export function action<
@@ -340,7 +339,7 @@ export function isAction(value: unknown): value is AnyAction {
 /**
  * Stamp the export name onto the action the app declared, rather than handing back a
  * differently-named copy of it. `import { publishPost } from './actions'` is then the
- * action that projects — `publishPost.tool()` after boot, with nothing to remember.
+ * action that projects — `publishPost.openapi()` after boot, with nothing to remember.
  * Naming twice is the one case that still needs a twin: one object, one name, forever.
  */
 export function nameAction<A extends AnyAction>(target: A, name: string): A {

@@ -8,10 +8,10 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver, NackOptions } from './driver';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_ACK, SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
-import { createMemoryLeaseStore } from './leases';
+import { memoryLeaseStore } from './leases';
 
 /**
  * The pg driver compiles its SQL against this seam, so the statement it issues is readable — and
@@ -40,7 +40,7 @@ const claimOne = (driver: JobDriver): Promise<unknown> =>
 
 describe('attempt never goes below zero', () => {
   test('a suspension that does not burn an attempt cannot drive the count negative', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'sleeper',
       queue: 'default',
@@ -86,7 +86,7 @@ describe('a settled job holds no lease', () => {
    * exact state the claim scan's lease-expiry branch exists to distinguish.
    */
   test('ack clears the lease the claim stamped, as SQL_ACK does', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'settler',
       queue: 'default',
@@ -112,7 +112,7 @@ describe('a settled job holds no lease', () => {
   });
 
   test('nack does too, so a re-queued row names no worker', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'settler',
       queue: 'default',
@@ -136,7 +136,7 @@ describe('a settled job holds no lease', () => {
 describe('introspect.list answers newest first', () => {
   test('the memory driver orders by createdAt descending, as the pg statement does', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     for (const key of ['oldest', 'middle', 'newest']) {
       await driver.enqueue({
         name: 'listed',
@@ -158,13 +158,13 @@ describe('introspect.list answers newest first', () => {
     ]);
 
     const executor = recordingExecutor();
-    await createPgDriver({ executor }).introspect?.list();
+    await postgresJobDriver({ executor }).introspect?.list();
     expect(executor.sql.join('\n')).toContain('order by created_at desc');
   });
 
   test('a limit keeps the newest rows, not the oldest', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     for (const key of ['a', 'b', 'c']) {
       await driver.enqueue({
         name: 'listed',
@@ -187,7 +187,7 @@ describe('introspect.list answers newest first', () => {
 describe('a lapsed fleet slot is lost, not renewed', () => {
   test('the memory store refuses its own holder past the TTL, and the pg statement fences on it', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const store = createMemoryLeaseStore({ clock });
+    const store = memoryLeaseStore({ clock });
     const lease = await store.acquire('job:sweep', 1, 30_000, 'w1');
     if (lease === undefined) expect.unreachable('the first slot under a limit of 1 must be free');
 
@@ -221,7 +221,7 @@ describe('stats puts a job in exactly one bucket', () => {
   /** Enqueue one job, claim it, and settle it the way `step.sleep` or a retry settles one. */
   const settledOnce = async (key: string, options: Omit<NackOptions, 'workerId' | 'claim'>) => {
     const clock = frozenClock(1_700_000_000_000);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const { id } = await driver.enqueue({
       name: 'sleeper',
       queue: 'default',
@@ -240,7 +240,7 @@ describe('stats puts a job in exactly one bucket', () => {
   // backlog. Due is due: `ready`, aged by `run_at`, in both.
   test('a delayed job that has come due is ready, aged by run_at, in both', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     await driver.enqueue({
       name: 'later',
       queue: 'default',
@@ -323,7 +323,7 @@ describe('stats puts a job in exactly one bucket', () => {
     // The pg half. The state is a PARAMETER of `SQL_NACK`, so the statement cannot carry the
     // mapping and the driver has to be asked for it.
     const executor = recordingExecutor();
-    const pg = createPgDriver({ executor });
+    const pg = postgresJobDriver({ executor });
     await pg.nack('shed', { workerId: 'w1', claim: 1, delayMs: 0, countsAsAttempt: false });
     await pg.nack('sleep', {
       workerId: 'w1',
@@ -352,12 +352,12 @@ describe('an empty queue list is not a question', () => {
   const empty = { queues: [], limit: 1, visibilityTimeoutMs: 30_000, workerId: 'w1' };
 
   test('the memory driver refuses it', async () => {
-    await expect(createMemoryDriver().claim(empty)).rejects.toThrow(/X_JOB_CLAIM_QUEUES_EMPTY/);
+    await expect(memoryJobDriver().claim(empty)).rejects.toThrow(/X_JOB_CLAIM_QUEUES_EMPTY/);
   });
 
   test('the pg driver refuses it, before it issues a statement', async () => {
     const executor = recordingExecutor();
-    await expect(createPgDriver({ executor }).claim(empty)).rejects.toThrow(
+    await expect(postgresJobDriver({ executor }).claim(empty)).rejects.toThrow(
       /X_JOB_CLAIM_QUEUES_EMPTY/,
     );
     // Refused in the driver, not by the database: a statement over `any('{}')` matches no row and
@@ -366,10 +366,10 @@ describe('an empty queue list is not a question', () => {
   });
 
   test('one named queue still claims, in both', async () => {
-    const memory = createMemoryDriver();
+    const memory = memoryJobDriver();
     await expect(claimOne(memory)).resolves.toEqual([]);
     const executor = recordingExecutor();
-    await createPgDriver({ executor }).claim({
+    await postgresJobDriver({ executor }).claim({
       queues: ['default'],
       limit: 1,
       visibilityTimeoutMs: 30_000,
@@ -396,7 +396,7 @@ describe('a row limit is a count of rows, in both', () => {
 
   const threeRows = async (): Promise<JobDriver> => {
     const clock = frozenClock(1_700_000_000_000);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     for (const key of ['a', 'b', 'c']) {
       await driver.enqueue({
         name: 'listed',
@@ -424,7 +424,7 @@ describe('a row limit is a count of rows, in both', () => {
   test('the pg driver refuses the same values BEFORE it issues a statement', async () => {
     for (const limit of NOT_A_ROW_COUNT) {
       const executor = recordingExecutor();
-      await expect(createPgDriver({ executor }).introspect?.list({ limit })).rejects.toThrow(
+      await expect(postgresJobDriver({ executor }).introspect?.list({ limit })).rejects.toThrow(
         /X_INVARIANT/,
       );
       // Refused in the driver: `LIMIT must not be negative` is a round trip that reads as an
@@ -432,7 +432,7 @@ describe('a row limit is a count of rows, in both', () => {
       expect(executor.sql).toEqual([]);
     }
     const executor = recordingExecutor();
-    await expect(createPgDriver({ executor }).introspect?.deadLetters(2.5)).rejects.toThrow(
+    await expect(postgresJobDriver({ executor }).introspect?.deadLetters(2.5)).rejects.toThrow(
       /X_INVARIANT/,
     );
     expect(executor.sql).toEqual([]);
@@ -450,15 +450,17 @@ describe('a row limit is a count of rows, in both', () => {
       workerId: 'w1',
     });
     for (const limit of NOT_A_ROW_COUNT) {
-      await expect(createMemoryDriver().claim(bad(limit))).rejects.toThrow(/X_INVARIANT/);
+      await expect(memoryJobDriver().claim(bad(limit))).rejects.toThrow(/X_INVARIANT/);
       const executor = recordingExecutor();
-      await expect(createPgDriver({ executor }).claim(bad(limit))).rejects.toThrow(/X_INVARIANT/);
+      await expect(postgresJobDriver({ executor }).claim(bad(limit))).rejects.toThrow(
+        /X_INVARIANT/,
+      );
       expect(executor.sql).toEqual([]);
     }
     // A lease window is a DURATION, not a count, so it is screened for finiteness alone — but it
     // is screened: `visibleAt = at + NaN` is the defect that makes at-least-once never.
     await expect(
-      createMemoryDriver().claim({
+      memoryJobDriver().claim({
         queues: ['default'],
         limit: 1,
         visibilityTimeoutMs: Number.NaN,
@@ -480,7 +482,7 @@ describe('a row limit is a count of rows, in both', () => {
     ).resolves.toEqual([]);
 
     const executor = recordingExecutor();
-    await createPgDriver({ executor }).introspect?.list({ limit: 25 });
+    await postgresJobDriver({ executor }).introspect?.list({ limit: 25 });
     expect(executor.params[0]?.[3]).toBe(25);
   });
 });

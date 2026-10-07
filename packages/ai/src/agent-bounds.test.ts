@@ -14,10 +14,14 @@ import { agent } from './agent';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -154,7 +158,7 @@ describe('agent() screens its loop bounds at declaration', () => {
 
   test('an honest declaration still loops — the non-vacuity half', async () => {
     const { provider, seen } = answering();
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,

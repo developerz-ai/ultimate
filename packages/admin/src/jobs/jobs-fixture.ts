@@ -5,12 +5,12 @@
 import { expect } from 'bun:test';
 import { createContext, runWithContext } from '@ultimat3/core';
 import {
-  createMemoryDriver,
   type JobDriver,
   type JobIntrospection,
   type JobState,
   job,
   type MemoryJobDriver,
+  memoryJobDriver,
   setJobDriver,
   t,
   task,
@@ -88,7 +88,7 @@ async function claimOne(driver: JobDriver, id: string, workerId: string): Promis
 
 /** One job in every state the queue has, each tenant `org-a` except the `ready` one. */
 export async function seedQueue(): Promise<Seeded> {
-  const driver = createMemoryDriver();
+  const driver = memoryJobDriver();
   setJobDriver(driver);
   const operator = driver.introspect;
   if (operator === undefined) return expect.unreachable('the memory driver ships introspection');

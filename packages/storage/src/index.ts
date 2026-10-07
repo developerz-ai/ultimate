@@ -55,8 +55,8 @@ export {
 } from './driver';
 export type { LocalDriverOptions } from './driver-local';
 export { localDriver } from './driver-local';
-export type { MemoryDriverOptions, MemoryStorageDriver } from './driver-memory';
-export { memoryDriver } from './driver-memory';
+export type { MemoryStorageDriver, MemoryStorageDriverOptions } from './driver-memory';
+export { memoryStorageDriver } from './driver-memory';
 export type { S3DriverOptions } from './driver-s3';
 export { s3Driver } from './driver-s3';
 export type {

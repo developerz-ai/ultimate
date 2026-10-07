@@ -13,16 +13,8 @@ import { defineConfig, defineMeasurementActor } from '@ultimat3/core';
 
 export const config = defineConfig({
   name: 'postly',
-
-  /** Two locales, both complete. `x verify` fails on a key present in one and missing in the other. */
-  locales: ['en', 'es'],
-  defaultLocale: 'en',
-
-  /** Display default only — a signed-in member's own `tz` column always wins. */
-  defaultTimeZone: 'UTC',
-
-  /** Prices are stored per currency; nothing is converted at runtime. */
-  defaultCurrency: 'USD',
+  // No locales here: they are the catalogs' (`defineCatalogs` in `packages/i18n/src/index.ts`). No
+  // zone or currency default either — every format call names its zone, every `Money` its currency.
 
   // The pool is sized by `DATABASE_POOL_MAX`, not here — `config.database.poolSize` was read by
   // nothing and was deleted `As of 2026-08`. The sizing argument still holds and still applies:
@@ -68,7 +60,7 @@ export const config = defineConfig({
     },
   },
 
-  ai: { mcp: { expose: true, path: '/mcp' } },
+  ai: { mcp: { expose: true } },
 
   // The authed app moves between its pages without a full load: the router fetches the next
   // server-rendered document and swaps it in, keeping the socket and the page store alive. `site/`

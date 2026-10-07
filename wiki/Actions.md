@@ -51,13 +51,12 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 
 ## The fluent surface
 
-Every projection is a method on the action — `publishPost.tool()`, never `toMcpTool(publishPost)`. Exactly four declared fields are lifted onto it as readable properties: `input`, `output`, `policy`, `mcp`. The rest of the declaration is structured metadata, reachable through `describe()` and nowhere else. An action has no `.def`.
+Every projection this package owns is a method on the action — `publishPost.openapi()`, never `toOpenApiOperation(publishPost)`. The MCP tool is the exception by tier: `@ultimat3/mcp`'s one projection, `toolFrom(publishPost)` (`As of 25.0.0` there is no `.tool()`). Exactly four declared fields are lifted onto it as readable properties: `input`, `output`, `policy`, `mcp`. The rest of the declaration is structured metadata, reachable through `describe()` and nowhere else. An action has no `.def`.
 
 | Member | Is | Rule |
 |---|---|---|
 | `publishPost(input, options?)` | the mutation | parse `input` → load `row` → evaluate `policy` → `handle` → parse `output` |
 | `.as(actor, input, options?)` | the same mutation, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
-| `.tool()` | the MCP tool descriptor | `publishPost.tool().policy === publishPost.policy` — one authz object, never a copy. Its `inputSchema`/`outputSchema` are what `tools/list` serves (`@ultimat3/schema`'s `toWireSchema`/`toWireOutputSchema`); `outputSchema` is absent when `output` has no object root |
 | `.openapi()` | the OpenAPI 3.1 operation | byte-stable; `x verify` diffs it for contract drift |
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
@@ -77,7 +76,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | `publishPost.openapi()`, emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember. `x new` writes it as `apps/web/shared/browser-client.ts` (`browserClient`, beside `browserQueries`); it typechecks at any app size (pinned at 300 actions in 100 modules) |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
-| 5 | **MCP tool** | `mcp` + `input` + `policy` | `publishPost.tool()` — one tool named `publishPost` per exposed action, JSON Schema from `input`, authz unchanged |
+| 5 | **MCP tool** | `mcp` + `input` + `policy` | `toolFrom(publishPost)` from `@ultimat3/mcp` — one tool named `publishPost` per exposed action, exactly the `tools/list` entry, JSON Schema from `input`, every call through this action's `invoke` (authz unchanged) |
 | 6 | **Test** | `input` + `policy` | `publishPost.contract()` — schema round-trip plus a denial test per policy branch, generated green, not as a `TODO` |
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).

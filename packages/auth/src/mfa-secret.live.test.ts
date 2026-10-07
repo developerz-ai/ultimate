@@ -6,10 +6,10 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, isSealed } from '@ultimat3/core';
-import { createPostgresClient, raw, sql } from '@ultimat3/db';
+import { postgresClient, raw, sql } from '@ultimat3/db';
 import { defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { BuiltinAdapter } from './builtin-adapter';
+import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 import { generateRecoveryCodes, totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { countUnsealedMfaSecrets, saveTotpSecret, sealMfaSecrets } from './mfa-secret';
@@ -22,7 +22,7 @@ const SECRET = 'JBSWY3DPEHPK3PXP';
 const DOMAIN = 'mfa-secret-live.test';
 const clock = frozenClock(1_700_000_000_000);
 
-let client: ReturnType<typeof createPostgresClient>;
+let client: ReturnType<typeof postgresClient>;
 let adapter: BuiltinAdapter;
 
 const wipe = async (): Promise<void> => {
@@ -31,13 +31,13 @@ const wipe = async (): Promise<void> => {
 
 beforeAll(async () => {
   if (url === undefined) return;
-  client = createPostgresClient({ url, applicationName: 'auth-mfa-secret-live' });
+  client = postgresClient({ url, applicationName: 'auth-mfa-secret-live' });
   for (const entry of AUTH_TABLES) {
     for (const statement of entry.split(';')) {
       if (statement.trim() !== '') await client.execute(raw(statement));
     }
   }
-  adapter = new BuiltinAdapter(client, clock);
+  adapter = postgresAuthAdapter(client, clock);
 });
 
 afterAll(async () => {

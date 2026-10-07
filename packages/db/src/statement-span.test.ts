@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import { configureTelemetry, memoryExporter, resetTelemetry, withSpan } from '@ultimat3/core';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import { setStatementObserver } from './observe';
 import { createPgliteClient, type PgliteDriver } from './pglite';
 import { sql } from './sql';
@@ -102,7 +102,7 @@ describe('unit · the funnels open exactly one per statement', () => {
     setStatementObserver({ onStatement: () => undefined });
     installFakeSql();
 
-    await createPostgresClient({ url: TEST_URL }).query(sql`select id from members`);
+    await postgresClient({ url: TEST_URL }).query(sql`select id from members`);
 
     expect(exporter.spans.map((span) => span.name)).toEqual(['db.select']);
     expect(exporter.spans[0]?.attributes['db.statement']).toBe('select id from members');
@@ -124,7 +124,7 @@ describe('unit · the funnels open exactly one per statement', () => {
     const exporter = traced();
     installFakeSql();
 
-    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+    await postgresClient({ url: TEST_URL }).query(sql`select 1`);
     await createPgliteClient({ driver: fakeDriver() }).query(sql`select 1`);
 
     expect(exporter.spans).toEqual([]);

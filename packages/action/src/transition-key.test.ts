@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { t } from '@ultimat3/schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import { type TransitionTarget, transition } from './transition';
 
 const STATES = ['pending', 'paid'] as const;
@@ -80,7 +80,8 @@ describe('transition(): the id schema is the key the output declares', () => {
 
   test('the published input carries the key’s own shape, on every projection', () => {
     const byText = over(t.object({ id: t.string.max(40), status: t.enum(STATES) }), 'moveDocText');
-    const properties = byText.tool().inputSchema['properties'] as Record<string, unknown>;
+    // `toWireSchema` is what `@ultimat3/mcp`'s `tools/list` publishes for `input`.
+    const properties = toWireSchema(byText.input)['properties'] as Record<string, unknown>;
     expect(properties['id']).toEqual({ type: 'string', minLength: 1, maxLength: 40 });
   });
 });

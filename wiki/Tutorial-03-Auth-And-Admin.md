@@ -85,10 +85,10 @@ Read the `reason` column, not the verdict:
 
 ```ts
 // apps/web/shared/auth.ts
-import { BuiltinAdapter, defineAuth } from '@ultimat3/auth';
+import { defineAuth, postgresAuthAdapter } from '@ultimat3/auth';
 
 export const auth = defineAuth({
-  adapter: new BuiltinAdapter(),      // Postgres via @ultimat3/db; MemoryAdapter for tests
+  adapter: postgresAuthAdapter(),      // Postgres via @ultimat3/db; memoryAuthAdapter() for tests
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
 });
@@ -312,7 +312,7 @@ Full surface: [Admin dashboard](Admin-Dashboard).
 
 ## Agents inherit the human, exactly
 
-An action carrying `mcp: { expose: true }` becomes an MCP tool whose authorization **is** the action's `policy` object — `createTodo.tool().policy === createTodo.policy` is `true`. The actor is the signed-in user's session, so an agent can never exceed the human it acts for. No trusted-tool mode, no second permission table, no "API permissions" screen to get wrong.
+An action carrying `mcp: { expose: true }` becomes an MCP tool whose authorization **is** the action's `policy` object — `@ultimat3/mcp`'s projection calls the action's own `invoke`, so the policy evaluated is the very object `createTodo.policy` holds. The actor is the signed-in user's session, so an agent can never exceed the human it acts for. No trusted-tool mode, no second permission table, no "API permissions" screen to get wrong.
 
 A tool a caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden.
 

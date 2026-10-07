@@ -218,7 +218,7 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 | Consumer | Mechanism | Held for | On loss |
 |---|---|---|---|
 | `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 30s; the per-round `acquire()` renews it | stop ticking; the next round's `acquire()` is the retry |
-| `replicator` | `PgAdvisoryLock` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | stand by, unready: a container stays up with `/readyz` 503 and re-asks on the replicator's jittered backoff (the chart's `strategy: Recreate` lets the holder go first on a rollout); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. A second replicator would double-deliver |
+| `replicator` | `postgresAdvisoryLock()` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | stand by, unready: a container stays up with `/readyz` 503 and re-asks on the replicator's jittered backoff (the chart's `strategy: Recreate` lets the holder go first on a rollout); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. A second replicator would double-deliver |
 | `migrate` | `pg_try_advisory_lock(4919202607)`, polled 500ms apart for up to 60s, on a reserved connection from a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero — bounded on purpose, because blocking `pg_advisory_lock` has no timeout and hangs the deploy instead of failing it |
 | ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
 | jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
@@ -227,7 +227,7 @@ The scheduler is the one that cannot use an advisory lock, and it is the executo
 `@ultimat3/jobs` is handed a **pool**, and a session-scoped grant is owned by the backend rather than
 by the process: it outlives every transaction, and whether it survives the connection's return is
 the pool's reset policy, not the caller's. Neither ending elects anybody. It shipped as
-`pg_try_advisory_lock` and a rolling update double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
+`pg_try_advisory_lock` and a rolling update double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `postgresAdvisoryLock()`
 owns its connection — because that package holds a wire protocol and jobs does not.
 
 A crashed leader's lease is reclaimed by expiry, with nothing to clean up. That is the one property

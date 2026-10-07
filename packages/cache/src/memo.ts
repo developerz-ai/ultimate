@@ -68,7 +68,7 @@ export function createMemoTier(): CacheTier {
      *
      * Only a lease the caller SUPPLIED is checked: there is no default to fall back to, because a
      * memo entry that outlives its request is not a thing that can happen. `jitterFraction: 0` for
-     * `createMemorySemanticCache`'s reason — spreading a lease is a herd defence for a SHARED
+     * `memorySemanticCache`'s reason — spreading a lease is a herd defence for a SHARED
      * store, and this one dies with the request that made it.
      */
     async set<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {

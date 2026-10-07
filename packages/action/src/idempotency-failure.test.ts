@@ -12,7 +12,7 @@ import { action } from './action';
 import type { IdempotencyFailure, IdempotencyStore } from './idempotency';
 import { withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
 const Input = t.object({ amount: t.number });
@@ -45,7 +45,7 @@ function chargeCard() {
 describe('a post-commit throw does not release the reservation', () => {
   test('the retry replays the failure instead of charging a second time', async () => {
     const { target, charges } = chargeCard();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx: charger, store, idempotencyKey: 'key-1' } as const;
 
     const first = await invoke(target, { amount: 10 }, options).catch((error: unknown) => error);
@@ -62,7 +62,7 @@ describe('a post-commit throw does not release the reservation', () => {
 
   test('the record is settled as failed, never dropped', async () => {
     const { target } = chargeCard();
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     await invoke(target, { amount: 10 }, { ctx: charger, store, idempotencyKey: 'key-1' }).catch(
       () => undefined,
     );
@@ -74,7 +74,7 @@ describe('a post-commit throw does not release the reservation', () => {
   });
 
   test('a handler that throws a plain Error is replayed under the framework code', async () => {
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     let runs = 0;
     const run = (): Promise<never> => {
       runs += 1;
@@ -91,7 +91,7 @@ describe('a post-commit throw does not release the reservation', () => {
   test('a settle that refuses leaves the record in flight, so the retry is a 409', async () => {
     // The other post-commit path: the handler committed and the store could not record it.
     // Releasing here would re-run the handler; refusing the retry is the only safe answer.
-    const inner = new MemoryIdempotencyStore();
+    const inner = memoryIdempotencyStore();
     const store: IdempotencyStore = {
       scope: 'process',
       keepsRedaction: true,
@@ -114,7 +114,7 @@ describe('a post-commit throw does not release the reservation', () => {
 
   test('a store with no `fail` slot refuses the retry rather than re-running it', async () => {
     // The fail-closed fallback for an external store written against the old interface.
-    const inner = new MemoryIdempotencyStore();
+    const inner = memoryIdempotencyStore();
     const store: IdempotencyStore = {
       scope: 'process',
       keepsRedaction: true,

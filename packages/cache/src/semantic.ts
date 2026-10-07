@@ -78,7 +78,7 @@ interface SemanticRecord {
   readonly tags: readonly CacheTag[];
 }
 
-export function createMemorySemanticCache(options: SemanticCacheOptions = {}): SemanticCache {
+export function memorySemanticCache(options: SemanticCacheOptions = {}): SemanticCache {
   // Screened at construction, both of them: this tier's two knobs are the ones whose failure is
   // silent — a floor of NaN matches everything, a ceiling of NaN evicts nothing.
   const threshold = assertFiniteSimilarityFloor('semantic', 'threshold', options.threshold ?? 0.92);

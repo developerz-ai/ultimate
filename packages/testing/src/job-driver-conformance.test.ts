@@ -3,19 +3,19 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { ClaimOptions, JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
 import { JOB_DRIVER_CHECKS } from './job-driver-checks';
 import { jobDriverConformance } from './job-driver-conformance';
 import { behavesLike } from './shared-examples';
 import { testName } from './test-types';
 
 describe(testName('unit', 'the memory job driver'), () => {
-  behavesLike(jobDriverConformance, () => createMemoryDriver());
+  behavesLike(jobDriverConformance, () => memoryJobDriver());
 });
 
 /** The memory driver with one claim option stripped before it arrives. */
 const ignoring = (option: keyof ClaimOptions): JobDriver => {
-  const inner = createMemoryDriver();
+  const inner = memoryJobDriver();
   return {
     ...inner,
     claim: (options) => inner.claim({ ...options, [option]: undefined }),
@@ -32,13 +32,13 @@ describe(testName('unit', 'a driver that ignores the burial contract fails confo
   test('a claim that never reports what it buried', async () => {
     const burial = check('a lease lapsed on the final attempt');
     await expect(burial.run(ignoring('onExhausted'))).rejects.toThrow();
-    await burial.run(createMemoryDriver());
+    await burial.run(memoryJobDriver());
   });
 
   test('a claim that buries every exhausted row dead, dropExhausted or not', async () => {
     const drop = check('dropExhausted');
     await expect(drop.run(ignoring('dropExhausted'))).rejects.toThrow();
-    await drop.run(createMemoryDriver());
+    await drop.run(memoryJobDriver());
   });
 
   test('every check has a name of its own', () => {

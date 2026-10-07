@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, useContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
-import { t, toWireSchema } from '@ultimat3/schema';
+import { t } from '@ultimat3/schema';
 import type { FetchLike } from './client';
 import { query } from './query';
+import { sourceFor } from './read';
 import { from } from './source';
 
 interface Post {
@@ -46,7 +47,6 @@ describe('the fluent surface', () => {
     const { target } = defineFeed();
     expect('def' in target).toBe(false);
     expect(target.input).toBe(Input);
-    expect(target.policy).toBe(target.tool().policy);
     expect(target.isLive).toBe(true);
     expect(target.mcp).toEqual({ expose: true, description: 'The org feed' });
   });
@@ -107,26 +107,19 @@ describe('the fluent surface', () => {
     expect(live.sqlText).toContain('order by "createdAt" asc');
   });
 
-  test('.tool() projects the one declaration and reads through the one path', async () => {
+  // The MCP surface without a `.tool()`: `@ultimat3/mcp`'s one projection serves a read as
+  // `sourceFor(…, { surface: 'mcp' })` then `execute()`, the same front half `.as()` runs.
+  test('the MCP surface reads through the one path and its one policy', async () => {
     const { target } = defineFeed();
-    const tool = target.tool();
 
-    // The same policy object on both surfaces — an MCP call cannot reach a second authz path.
-    expect(tool.policy).toBe(target.policy);
-    // One name: what the descriptor advertises is what `tools/call` accepts.
-    expect(tool.name).toBe('orgFeed');
-    expect(tool.query).toBe('orgFeed');
-    expect(tool.description).toBe('The org feed');
-    expect(tool.mutates).toBe(false);
-    // The served shape: what `@ultimat3/mcp`'s `tools/list` publishes for this read.
-    expect(tool.inputSchema).toEqual(toWireSchema(Input));
-
-    const rows = await tool.read({ orgId: ORG }, { ctx: member });
+    const rows = await (
+      await sourceFor(target, { orgId: ORG }, { ctx: member, surface: 'mcp' })
+    ).execute();
     expect(rows).toEqual([posts[0] as object]);
 
-    const denial = await tool
-      .read({ orgId: ORG }, { actor: null })
-      .catch((error: unknown) => error);
+    const denial = await sourceFor(target, { orgId: ORG }, { actor: null, surface: 'mcp' }).catch(
+      (error: unknown) => error,
+    );
     expect((denial as { code?: string }).code).toBe('X_UNAUTHENTICATED');
   });
 
@@ -182,7 +175,7 @@ describe('the fluent surface', () => {
     const twin = target.named('archiveFeed');
 
     expect(twin.policy).toBe(target.policy);
-    expect(twin.tool().query).toBe('archiveFeed');
+    expect(twin.describe().name).toBe('archiveFeed');
     expect((await twin.as(readerActor, { orgId: ORG })).map((row) => row.id)).toEqual(['a']);
   });
 });

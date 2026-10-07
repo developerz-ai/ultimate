@@ -34,7 +34,6 @@ describe('the fluent surface', () => {
     const { target } = definePublish();
     expect(target.input).toBe(Input);
     expect(target.output).toBe(Output);
-    expect(target.policy).toBe(target.tool().policy);
     expect(target.mcp).toEqual({ expose: true, description: 'Publish a draft post' });
   });
 
@@ -74,13 +73,8 @@ describe('the fluent surface', () => {
     expect(seen.actor).toBe('u1');
   });
 
-  test('.tool() and .openapi() project the one declaration', () => {
+  test('.openapi() projects the one declaration', () => {
     const { target } = definePublish();
-    const tool = target.tool();
-    // The same policy object on both surfaces — an MCP call cannot reach a second authz path.
-    expect(tool.policy).toBe(target.policy);
-    expect(tool.name).toBe('publishPost');
-    expect(tool.description).toBe('Publish a draft post');
     expect(target.openapi().operationId).toBe('publishPost');
     expect(target.openapi().summary).toBe('Publish a draft post');
   });
@@ -136,7 +130,7 @@ describe('the fluent surface', () => {
     });
     const named = orphan.named('publishPost');
     expect(named.policy).toBe(orphan.policy);
-    expect(named.tool().action).toBe('publishPost');
+    expect(named.openapi().operationId).toBe('publishPost');
     expect(await named.as(editorActor, { postId: POST_ID })).toEqual({
       id: POST_ID,
       published: true,

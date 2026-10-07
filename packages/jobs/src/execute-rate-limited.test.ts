@@ -9,7 +9,7 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -42,7 +42,7 @@ async function runOnce(attempts: number, attempt: number, thrown: unknown) {
     retry: { attempts, backoff: 'fixed', delay: 1_000, jitter: false, maxDelay: 60_000 },
     run: () => Promise.reject(thrown),
   });
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const nacks: NackOptions[] = [];
   const driver: JobDriver = {
     ...base,

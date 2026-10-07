@@ -9,14 +9,14 @@ import { noopPurgeDriver } from '@ultimat3/cache';
 import { type RealtimeConfig, resetLifecycle } from '@ultimat3/core';
 import { resetHttpConfig } from '@ultimat3/http';
 import {
-  createMemoryDriver,
-  createMemoryEventBus,
-  createMemoryOutboxStore,
+  memoryEventBus,
+  memoryJobDriver,
+  memoryOutboxStore,
   resetJobs,
   resetJobsFacade,
   resetTasks,
 } from '@ultimat3/jobs';
-import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
+import { memoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import { resolveServices } from './runtime-bindings';
@@ -37,12 +37,12 @@ export function fixtureRuntime(root: string, realtime = REALTIME_ON): RunningSer
   return {
     services,
     db: { async ping() {}, async close() {} } as unknown as RunningServices['db'],
-    jobs: createMemoryDriver(),
+    jobs: memoryJobDriver(),
     // A real store, not a stub: the `worker` role starts the outbox relay against it, and a relay
     // whose `claim()` rejects on the first 200ms tick is an unhandled rejection in whichever test
     // happens to still be running.
-    outbox: createMemoryOutboxStore(),
-    events: createMemoryEventBus(),
+    outbox: memoryOutboxStore(),
+    events: memoryEventBus(),
     transport,
     realtime,
     transportDetail: 'in-process fanout',
@@ -50,7 +50,7 @@ export function fixtureRuntime(root: string, realtime = REALTIME_ON): RunningSer
     // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${root}/storage` }) } }),
-    mail: createMemoryMailDriver(),
+    mail: memoryMailDriver(),
     mailDetail: 'embedded',
     purge: noopPurgeDriver(),
     purgeDetail: 'none',

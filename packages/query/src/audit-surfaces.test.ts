@@ -105,19 +105,6 @@ describe('unit · every surface records once, under its own name', () => {
     ]);
   });
 
-  test('the MCP descriptor: surface mcp, one record', async () => {
-    const sink = collecting();
-    setAuditSink(sink);
-
-    await postList()
-      .tool()
-      .read({ limit: 2 }, { ctx: createContext({ actor: reader }) });
-
-    expect(sink.records.map((record) => [record.surface, record.outcome])).toEqual([
-      ['mcp', 'allowed'],
-    ]);
-  });
-
   test("@ultimat3/mcp's served tool — sourceFor, then execute() — is one mcp record", async () => {
     const sink = collecting();
     setAuditSink(sink);

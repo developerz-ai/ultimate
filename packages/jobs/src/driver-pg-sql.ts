@@ -216,7 +216,7 @@ select queue,
 
 /**
  * Session-scoped, so a crashed node's lock releases itself — and released just as surely when a
- * POOLED connection goes back to the pool, which is why `createPgLeader` is not what a scheduler
+ * POOLED connection goes back to the pool, which is why `postgresLeader` is not what a scheduler
  * running on a shared executor should use. See `SQL_LEADER_ACQUIRE` below.
  */
 export const SQL_TRY_ADVISORY_LOCK = 'select pg_try_advisory_lock($1) as locked';

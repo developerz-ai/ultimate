@@ -51,6 +51,27 @@ interface BucketNumbers {
 const numbers = (bucket: BucketNumbers): string => `${bucket.capacity} / ${bucket.refillPerSecond}`;
 
 /**
+ * `rateLimit.buckets.<name>` where `<name>` is a mounted action's or query's own name. Since
+ * 25.0.0 a primitive's route carries no `meta.rateLimit` — the primitive spends its own declared
+ * limit on every surface — so that bucket limits nothing. Refused rather than kept: a number an
+ * operator reads in `configureHttp()` and nothing enforces is the failure every 12a deletion turns
+ * into a code. `X_CONFIG_INVALID`, borrowed, because it is a config key the framework cannot honour.
+ */
+export const rateLimitBucketForPrimitive = (input: {
+  bucket: string;
+  primitive: 'action' | 'query';
+}): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause: `rateLimit.buckets.${input.bucket} is named after the mounted ${input.primitive} "${input.bucket}", and since 25.0.0 an ${input.primitive}'s route spends no named bucket — the ${input.primitive} spends its own declared rateLimit on every surface — so this bucket would limit nothing`,
+    fix:
+      input.primitive === 'query'
+        ? `query({ …, rateLimit: { limit, windowMs } })   # rateLimit.buckets.${input.bucket} no longer limits a query since 25.0.0 — delete it from configureHttp() and declare the limit on the query`
+        : `action({ …, rateLimit: { limit, windowMs } })   # rateLimit.buckets.${input.bucket} no longer limits an action since 25.0.0 — delete it from configureHttp() and declare the limit on the action`,
+    meta: { option: `rateLimit.buckets.${input.bucket}`, primitive: input.primitive },
+  });
+
+/**
  * Two declarations of one bucket, at `createServer`/`createPipeline`. Neither wins: an app that
  * configures `rateLimit.buckets.<name>` and a route that declares its own numbers under that name
  * disagree about what is enforced, and whichever a merge picked would leave the other a number

@@ -6,13 +6,12 @@
 import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';
 import { assertMediaContent, blockText, mediaTokenEstimate } from './content-blocks';
-import { recordBuiltInPrice } from './deprecations';
 import { detailOf, withoutKey } from './error-body';
-import { AiKeyMissingError, AiTransportError } from './errors';
+import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
 import { resolveModel } from './model-resolve';
 import type { Effort, ModelId, ThinkingMode } from './models';
-import { ANTHROPIC_MODEL_IDS, modelSpec, reasoningBody } from './models';
+import { modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
@@ -162,9 +161,9 @@ export interface Provider {
  * away is money the framework silently absorbs, and under-reporting spend defeats a budget.
  */
 export function costOf(model: ModelId, usage: TokenUsage): Money {
+  // The one price lookup: a model the app never `registerModel`-ed is `X_AI_MODEL_UNKNOWN` here,
+  // so no call is priced — and no budget reserved — against a number nobody chose.
   const spec = modelSpec(model);
-  // The one price lookup, so the one place a built-in row's price is noticed (removed in 25.0.0).
-  recordBuiltInPrice(spec);
   const input = spec.inputPerMillion.minor;
   // In TWENTIETHS of a minor unit, so the standard multipliers stay integral on any whole price:
   // a cache read is 0.1x input (2/20) and a 5-minute write 1.25x (25/20) unless the row states
@@ -192,6 +191,12 @@ export function totalTokens(usage: TokenUsage): number {
 // ── Anthropic ────────────────────────────────────────────────────────────────
 
 export interface AnthropicProviderInput {
+  /**
+   * The ids this endpoint serves — REQUIRED, the app's list, never a built-in one: the gateway
+   * routes by membership, and each id is one the app `registerModel`-ed. The first answers a
+   * direct call that names no model, as `openAiProvider({ models })`'s does.
+   */
+  readonly models: readonly ModelId[];
   /** Reads `ANTHROPIC_API_KEY` when omitted. Absent at call time is a labelled throw. */
   readonly apiKey?: string;
   readonly baseUrl?: string;
@@ -224,12 +229,32 @@ export function requiresStreaming(request: GenerateRequest): boolean {
  */
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
-  /** Its own list, never the registry's: an app's internal model must not be routed here. */
-  readonly models: readonly ModelId[] = ANTHROPIC_MODEL_IDS;
+  /** The app's list, never the registry's: a model served elsewhere must not be routed here. */
+  readonly models: readonly ModelId[];
   private readonly config: AnthropicProviderInput;
 
-  constructor(config: AnthropicProviderInput = {}) {
+  // `| undefined`: plain JS (or a cast) reaches here with no argument, and that is the same boot
+  // mistake as an empty list — it gets the coded refusal, never a TypeError on `.models`.
+  constructor(config: AnthropicProviderInput | undefined) {
+    if (config === undefined || (config.models ?? []).length === 0) {
+      // A provider serving nothing can never be routed to — the same boot mistake, refused the
+      // same way, as an empty `openAiProvider({ models })`.
+      throw new AiRequestInvalidError({
+        detail:
+          'AnthropicProvider was given an empty models list, so the gateway can never route to it',
+        fix: "new AnthropicProvider({ models: ['<id>'] })   # the ids this endpoint serves, each one your app registerModel-ed",
+      });
+    }
+    this.models = config.models;
     this.config = config;
+  }
+
+  /**
+   * The model this request is for. The gateway resolves one before it routes; a direct call names
+   * one or is refused — this provider's own list is never a fourth place a model comes from.
+   */
+  private modelOf(request: GenerateRequest): ModelId {
+    return resolveModel('provider', request.model);
   }
 
   /**
@@ -240,10 +265,11 @@ export class AnthropicProvider implements Provider {
    * the same caller either way.
    */
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    if (requiresStreaming(request)) return this.assemble(request);
+    const model = this.modelOf(request);
+    if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const response = await this.send({ ...this.body(request), stream: false }, request.signal);
     const raw = (await response.json()) as Record<string, unknown>;
-    return parseMessage(resolveModel('provider', request.model), raw);
+    return parseMessage(model, raw);
   }
 
   /** Drive `stream()` to its `done` chunk. It throws on a cut stream, so a partial never lands. */
@@ -263,7 +289,7 @@ export class AnthropicProvider implements Provider {
    * result, so a consumer that only wants the answer can ignore every chunk before it.
    */
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const model = resolveModel('provider', request.model);
+    const model = this.modelOf(request);
     const response = await this.send({ ...this.body(request), stream: true }, request.signal);
     if (response.body === null) {
       throw new AiTransportError({
@@ -294,7 +320,7 @@ export class AnthropicProvider implements Provider {
 
   /** The request body. Pure and side-effect free so a test can assert it directly. */
   body(request: GenerateRequest): Record<string, unknown> {
-    const model = resolveModel('provider', request.model);
+    const model = this.modelOf(request);
     // The blocks pass through untouched below — they ARE this wire's shapes — so this is the screen.
     assertMediaContent(request.messages, { provider: this.name, model });
     const body: Record<string, unknown> = {

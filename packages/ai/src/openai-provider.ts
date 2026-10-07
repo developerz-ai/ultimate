@@ -12,11 +12,9 @@ import { isSecret, revealSecret } from '@ultimat3/core';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
+import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import { chatCompletionBody } from './openai-body';
-// Imported for its registration side effect: a provider that cannot price what it serves throws
-// X_AI_MODEL_UNKNOWN at the first call, and the specs belong with the format that names them.
-import './openai-models';
 import type { ChatAnswer } from './openai-wire';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
 import type {
@@ -76,7 +74,7 @@ export interface OpenAiProviderInput {
  *
  * ```ts
  * // OpenAI
- * openAiProvider({ apiKey: openAiKey, models: [...OPENAI_MODEL_IDS] })
+ * openAiProvider({ apiKey: openAiKey, models: [appModel] })   // ids your app registerModel-ed
  * // a company gateway, vLLM, Ollama — same class, one different field
  * openAiProvider({ apiKey: gatewayKey, baseUrl: 'https://llm.acme.internal/v1', models: ['acme-70b'] })
  * ```
@@ -88,23 +86,22 @@ export function openAiProvider(input: OpenAiProviderInput): Provider {
 class OpenAiProvider implements Provider {
   readonly name: string;
   readonly models: readonly ModelId[];
-  private readonly defaultModel: ModelId;
   private readonly config: OpenAiProviderInput;
 
-  constructor(config: OpenAiProviderInput) {
-    const [first] = config.models;
-    if (first === undefined) {
+  // `| undefined` for the reason `AnthropicProvider`'s is: no argument at all, from plain JS or a
+  // cast, is the empty-list boot mistake and gets its coded refusal, never a TypeError.
+  constructor(config: OpenAiProviderInput | undefined) {
+    if (config === undefined || (config.models ?? []).length === 0) {
       // A provider serving nothing can never be routed to, so it is a boot mistake that would
       // otherwise surface as "no provider serves <model>" — a true statement about the wrong thing.
       throw new AiRequestInvalidError({
         detail:
           'openAiProvider was given an empty models list, so the gateway can never route to it',
-        fix: 'pass models: [...OPENAI_MODEL_IDS] to openAiProvider, or the ids your endpoint serves',
+        fix: "openAiProvider({ …, models: ['<id>'] })   # the ids your endpoint serves, each one your app registerModel-ed",
       });
     }
     this.name = config.name ?? 'openai';
     this.models = config.models;
-    this.defaultModel = first;
     this.config = config;
   }
 
@@ -114,12 +111,9 @@ class OpenAiProvider implements Provider {
    * open socket past the HTTP timeout and fails after the completion was generated and billed.
    */
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    // Resolved BEFORE the transport question is asked. `requiresStreaming` clamps `maxTokens` to
-    // the model's `maxOutput`, and its own fallback for an absent model is the framework's
-    // `DEFAULT_MODEL` — a Claude id no OpenAI-format endpoint serves. Sized against that, a
-    // request naming no model was measured against somebody else's ceiling, seventy lines above
-    // `modelOf`'s comment saying this provider never does that.
-    const model = this.modelOf(request);
+    // Resolved BEFORE the socket: a direct call naming no model is refused here, never answered on
+    // this provider's first listed model — the app's three places are the only ones.
+    const model = resolveModel('provider', request.model);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
     const response = await this.send(
       chatCompletionBody({ request, model, stream: false, provider: this.name }),
@@ -131,7 +125,7 @@ class OpenAiProvider implements Provider {
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    const model = this.modelOf(request);
+    const model = resolveModel('provider', request.model);
     const response = await this.send(
       chatCompletionBody({ request, model, stream: true, provider: this.name }),
       true,
@@ -182,15 +176,6 @@ class OpenAiProvider implements Provider {
       usage,
       cost: costOf(model, usage),
     };
-  }
-
-  /**
-   * The model this request is for. The gateway resolves one before it routes, so the fallback is
-   * only ever reached by a direct call — and it is this provider's first model, never the
-   * framework's `DEFAULT_MODEL`, which names a Claude id no OpenAI-format endpoint serves.
-   */
-  private modelOf(request: GenerateRequest): ModelId {
-    return request.model ?? this.defaultModel;
   }
 
   /**

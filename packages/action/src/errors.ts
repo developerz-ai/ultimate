@@ -371,7 +371,7 @@ export class AuditSinkMissingError extends UltimateError {
     super({
       code: 'X_AUDIT_SINK_MISSING',
       cause: `action "${action}" declares \`audit: true\` and no audit sink is installed`,
-      fix: "call setAuditSink(yourSink) from '@ultimat3/action' at boot, before registerActions()",
+      fix: "call setAuditSink(yourSink) from '@ultimat3/core' at boot, before registerActions()",
     });
   }
 }

@@ -82,11 +82,11 @@ describe('cursor pagination', () => {
     expect(() => decodeCursor(cursor, 'feed:abc')).toThrow();
   });
 
-  test('pages walk forward without offset and report hasNextPage', async () => {
+  test('pages walk forward without offset and report hasMore', async () => {
     const feed = registerQuery('orgFeed', defineFeed());
     const first = await paginate(feed, { orgId: ORG }, { first: 2, ctx });
     expect(first.rows.map((row) => row.id)).toEqual(['a', 'b']);
-    expect(first.hasNextPage).toBe(true);
+    expect(first.hasMore).toBe(true);
 
     const second = await paginate(
       feed,
@@ -94,27 +94,27 @@ describe('cursor pagination', () => {
       {
         first: 2,
         ctx,
-        ...(first.endCursor === null ? {} : { after: first.endCursor }),
+        ...(first.nextCursor === null ? {} : { after: first.nextCursor }),
       },
     );
     expect(second.rows.map((row) => row.id)).toEqual(['c', 'd']);
-    expect(second.hasNextPage).toBe(false);
+    expect(second.hasMore).toBe(false);
   });
 
-  test('every page carries `nextCursor` and `hasMore`, the same values under the preferred names', async () => {
+  // O-12, 25.0.0: ONE page shape. `nextCursor`/`hasMore` were the same two values under a second
+  // pair of names; a client reading both had two ways to ask one question.
+  test('a page is `{ rows, nextCursor, hasMore }` and nothing else — no alias pair', async () => {
     const feed = registerQuery('orgFeed', defineFeed());
     const first = await paginate(feed, { orgId: ORG }, { first: 2, ctx });
+    expect(Object.keys(first).sort()).toEqual(['hasMore', 'nextCursor', 'rows']);
     expect(first.nextCursor).toBeString();
-    expect(first.nextCursor).toBe(first.endCursor);
-    expect(first.hasMore).toBe(true);
     const last = await paginate(
       feed,
       { orgId: ORG },
       { first: 2, ctx, after: first.nextCursor ?? '' },
     );
+    expect(Object.keys(last).sort()).toEqual(['hasMore', 'nextCursor', 'rows']);
     expect(last.hasMore).toBe(false);
-    expect(last.hasMore).toBe(last.hasNextPage);
-    expect(last.nextCursor).toBe(last.endCursor);
   });
 
   test('a cursor from another query cannot page this one', async () => {
@@ -161,9 +161,9 @@ describe('cursor pagination under concurrent writes', () => {
   };
 
   /** A page with no cursor fails the test here rather than seeking from an empty position. */
-  const cursorOf = (page: { readonly endCursor: string | null }): string => {
-    expect(page.endCursor).not.toBeNull();
-    return page.endCursor ?? '';
+  const cursorOf = (page: { readonly nextCursor: string | null }): string => {
+    expect(page.nextCursor).not.toBeNull();
+    return page.nextCursor ?? '';
   };
 
   const feedOver = (name: string, source: (org: string) => SqlSource<Post>) =>
@@ -305,12 +305,12 @@ describe('a paged read is ordered totally', () => {
     const second = await paginate(
       feed,
       { orgId: ORG },
-      { first: 2, ctx, after: first.endCursor ?? '' },
+      { first: 2, ctx, after: first.nextCursor ?? '' },
     );
 
     const seen = [...first.rows, ...second.rows].map((row) => row.id);
     expect(seen).toEqual(['a', 'b', 'c', 'd']);
-    expect(second.hasNextPage).toBe(false);
+    expect(second.hasMore).toBe(false);
   });
 });
 
@@ -394,8 +394,8 @@ describe('the fallback slices in the order its cut assumes', () => {
         { first: 2, ctx, ...(after === undefined ? {} : { after }) },
       );
       seen.push(...result.rows.map((row) => row.id));
-      if (!result.hasNextPage) break;
-      after = result.endCursor ?? undefined;
+      if (!result.hasMore) break;
+      after = result.nextCursor ?? undefined;
     }
     // Under the old cut, page one served `a, d`, the cursor named `(20, d)` and `b` and `c`
     // matched nothing after it — two rows silently absent from the whole listing.
@@ -410,9 +410,9 @@ describe('the fallback slices in the order its cut assumes', () => {
     const second = await paginate(
       target,
       { orgId: ORG },
-      { first: 2, ctx, after: first.endCursor ?? '' },
+      { first: 2, ctx, after: first.nextCursor ?? '' },
     );
     expect(second.rows.map((row) => row.id)).toEqual(['c', 'd']);
-    expect(second.hasNextPage).toBe(false);
+    expect(second.hasMore).toBe(false);
   });
 });

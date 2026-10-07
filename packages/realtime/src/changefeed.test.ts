@@ -3,7 +3,7 @@
 // push down with it and nothing else — the rule `window-lock.ts` states for the same shape.
 
 import { describe, expect, test } from 'bun:test';
-import { formatLsn, InMemoryChangeFeed, parseLsn } from './changefeed';
+import { formatLsn, memoryChangeFeed, parseLsn } from './changefeed';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 
@@ -39,7 +39,7 @@ describe('InMemoryChangeFeed', () => {
     const closed = new InProcessTransport();
     await closed.close();
     const seen: string[] = [];
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     await feed.start({
       onChange: async (event) => {
         seen.push(event.lsn);
@@ -59,7 +59,7 @@ describe('InMemoryChangeFeed', () => {
   });
 
   test('stop() reports the teardown, never a handler failure it already handed to a caller', async () => {
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     await feed.start({
       onChange: () => {
         throw new RangeError('handler exploded');
@@ -75,7 +75,7 @@ describe('InMemoryChangeFeed', () => {
   test('two pushes in flight at once are delivered in order, one at a time', async () => {
     const gate = deferred();
     const order: string[] = [];
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     await feed.start({
       onChange: async (event) => {
         order.push(`in:${event.lsn}`);
@@ -103,7 +103,7 @@ describe('InMemoryChangeFeed', () => {
   });
 
   test('a throw in one delivery does not rewind the lsn a later one recorded', async () => {
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     let fail = true;
     await feed.start({
       onChange: () => {

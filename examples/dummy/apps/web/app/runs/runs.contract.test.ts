@@ -11,7 +11,7 @@ import { driver } from '@postly/db';
 import { derivePath } from '@ultimat3/action';
 import { apiMountRoutes } from '@ultimat3/cli';
 import { createServer, defineHttpConfig, mountedPath } from '@ultimat3/http';
-import { createMemoryDriver, jobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
 import { connectSite, issueRunKey, revokeRunKey } from './actions';
@@ -25,7 +25,7 @@ const otherAdmin = testActor('other-admin', { orgId: OTHER_ORG, permissions: gra
 const previous = jobDriver();
 
 beforeEach(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 
 afterEach(() => {

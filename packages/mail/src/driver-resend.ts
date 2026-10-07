@@ -127,7 +127,7 @@ function bodyFor(message: MailMessage, from: string): ResendRequestBody {
   };
 }
 
-export function createResendDriver(options: ResendDriverOptions): MailDriver {
+export function resendMailDriver(options: ResendDriverOptions): MailDriver {
   const apiKey = requireApiKey(options.apiKey);
   const from = requireFrom(options.from);
   const baseUrl = options.baseUrl ?? RESEND_BASE_URL;
@@ -137,7 +137,7 @@ export function createResendDriver(options: ResendDriverOptions): MailDriver {
   // the queue retried it to the dead-letter table for a value no network could change. `0` is not
   // "no deadline" either: the signal aborts on the next tick, before a byte leaves the host.
   const timeoutMs = finiteCount(
-    'createResendDriver',
+    'resendMailDriver',
     'timeoutMs',
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     1,

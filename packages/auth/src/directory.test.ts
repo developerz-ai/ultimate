@@ -8,12 +8,12 @@ import { frozenClock } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
 import { describeUser, findUserByExternalId, listOrgUsers } from './directory';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 
 const START = 1_700_000_000_000;
 
 const seed = async (): Promise<{ auth: Auth; adapter: MemoryAdapter }> => {
-  const adapter = new MemoryAdapter();
+  const adapter = memoryAuthAdapter();
   const auth = defineAuth({ adapter, clock: frozenClock(START) });
   const rows: readonly [string, string, string | null, readonly string[]][] = [
     ['zoe', 'zoe@corp.test', 'org-1', ['admin']],

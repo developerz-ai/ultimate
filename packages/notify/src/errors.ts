@@ -122,7 +122,7 @@ export class NotifyFanoutTooWideError extends UltimateError {
  * A channel or a window asked for a store nothing installed.
  *
  * The delivery ledger is deliberately NOT one of these: it has a correct-for-one-process default
- * (`createMemoryDeliveryLedger`), the way every other driver seam in this framework does. An inbox
+ * (`memoryDeliveryLedger`), the way every other driver seam in this framework does. An inbox
  * and a digest window have no such default — there is nowhere to put the row — so they refuse.
  */
 export class NotifyStoreMissingError extends UltimateError {
@@ -131,8 +131,8 @@ export class NotifyStoreMissingError extends UltimateError {
       input.store === 'inbox' ? 'a channel that writes the in-app inbox' : 'a digest window';
     const install =
       input.store === 'inbox'
-        ? 'createMemoryInboxStore() }) at boot, or createPgInboxStore({ executor }) to share it across replicas'
-        : 'createMemoryDigestStore() }) at boot';
+        ? 'memoryInboxStore() }) at boot, or postgresInboxStore({ executor }) to share it across replicas'
+        : 'memoryDigestStore() }) at boot';
     super({
       code: 'X_NOTIFY_STORE_MISSING',
       cause: `notifier "${input.notifier}" delivers through ${what} and no ${input.store} store is installed, so the rows have nowhere to go`,

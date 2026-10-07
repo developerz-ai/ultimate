@@ -22,9 +22,9 @@ export interface TestMail extends Disposable {
 const idOf = (mail: MailRef): string => (typeof mail === 'string' ? mail : mail.id);
 
 export async function createTestMail(): Promise<TestMail> {
-  const { createMemoryDriver, driverUnavailable, resetMailDriver, setMailDriver, tryMailDriver } =
+  const { memoryMailDriver, driverUnavailable, resetMailDriver, setMailDriver, tryMailDriver } =
     await import('@ultimat3/mail');
-  const memory = createMemoryDriver();
+  const memory = memoryMailDriver();
   const failuresLeft = new Map<string, number>();
   // The ambient driver is process-global; the fixture borrows it for one test and hands it back.
   const previous = tryMailDriver();
