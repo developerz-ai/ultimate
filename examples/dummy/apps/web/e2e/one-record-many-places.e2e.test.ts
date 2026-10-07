@@ -112,7 +112,13 @@ describe.skipIf(noBrowser)('one record, many places', () => {
     await tab.waitFor(everyCount(POSTS.tenancy.id, 3), 'EVERY island to show 3 likes');
 
     // One write went out, and no island went back to the server to re-read what it now shows —
-    // neither a live query nor an action read (`postRecord` is a GET under /api).
+    // neither a live query nor an action read (`postRecord` is a GET under /api). The optimistic
+    // paint lands before the POST leaves: the write is sent after one read of the durable queue (a
+    // write never overtakes one another tab queued), so wait for it before counting.
+    await until(
+      () => requestsSince(session, app.base, mark, /^POST .*\/api\/posts\/like/).length >= 1,
+      "the like's write to reach the server",
+    );
     expect(requestsSince(session, app.base, mark, /^POST .*\/api\/posts\/like/)).toHaveLength(1);
     expect(requestsSince(session, app.base, mark, /^GET .*\/_x\/query\//)).toEqual([]);
     expect(requestsSince(session, app.base, mark, /^GET .*\/api\//)).toEqual([]);
