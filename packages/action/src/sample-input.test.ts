@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AnySchema } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
-import { sampleGaps, sampleInput } from './sample-input';
+import { describeSampleGap, SAMPLE_ITEMS_MAX, sampleGaps, sampleInput } from './sample-input';
 
 const accepts = (schema: AnySchema): boolean =>
   schema.safeParse(sampleInput(schema)).issues === undefined;
@@ -142,6 +142,23 @@ describe('sampleGaps', () => {
   test('an optional field is not sampled, so its pattern is not a gap', () => {
     const schema = t.object({ ref: t.string.pattern(/^ORD-\d{4}$/).optional() });
     expect(sampleGaps(schema)).toEqual([]);
+  });
+
+  test('an array whose minItems is past the sampling ceiling is a gap, never an allocation', () => {
+    // 2 ** 32 is where `Array.from({ length })` throws a RangeError; anything near it allocates
+    // that many samples first. Either way the generated test died instead of reporting.
+    for (const min of [SAMPLE_ITEMS_MAX + 1, 2 ** 32]) {
+      const schema = t.object({ ids: t.array(t.uuid, { min }) });
+      expect(() => sampleInput(schema)).not.toThrow();
+      expect(sampleGaps(schema)).toEqual(['ids']);
+      expect(describeSampleGap(schema, 'ids')).toBe(`ids (needs at least ${min} items)`);
+    }
+  });
+
+  test('an array at the ceiling is sampled whole, and owes nothing', () => {
+    const schema = t.object({ ids: t.array(t.uuid, { min: SAMPLE_ITEMS_MAX }) });
+    expect(sampleGaps(schema)).toEqual([]);
+    expect(accepts(schema)).toBe(true);
   });
 
   test('a schema with no IR owes nothing — there is nothing to be missing', () => {

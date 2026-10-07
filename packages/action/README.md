@@ -605,7 +605,10 @@ reservation.
 `release` takes it too (`As of 2026-10-07`): it is the pre-handler cleanup when `beforeRun` refuses,
 and keyed alone it DELETED whatever record the key held — a replacement's reservation, or its
 settled answer, so the next retry re-ran a handler that had already committed. A release that
-matches nothing does nothing (`idempotency-release.test.ts`, both stores).
+matches nothing does nothing (`idempotency-release.test.ts`, both stores). **A custom store's
+`release(key, reservationId)` must delete only the record whose id is `reservationId` and whose
+status is `in-flight`** — one that ignores the second argument reopens the double-run window, and
+type-checking cannot catch it: a one-parameter function still satisfies the signature.
 
 **Inside a transaction the settlement commits with the write** (`As of 2026-10-02`, BOTH stores —
 `idempotency-parity.test.ts` runs one set of cases over memory and Postgres). An action invoked

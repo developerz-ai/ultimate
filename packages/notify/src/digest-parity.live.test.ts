@@ -10,7 +10,12 @@ import { postgresDigestStore, SQL_NOTIFY_DIGESTS_TABLE } from './digest-pg';
 import type { NotifyEvent } from './notification';
 
 const url = Bun.env['TEST_DATABASE_URL'];
-const PROBE_DB = 'x_notify_digest_probe';
+/**
+ * One database per INVOCATION: a fixed name let two concurrent runs (CI shards, a dev re-run)
+ * share it, and the first `afterAll` dropped it from under the other. pid for the process, a
+ * random hex suffix for two runs that land on one pid in different containers.
+ */
+const PROBE_DB = `x_notify_digest_probe_${String(process.pid)}_${crypto.randomUUID().slice(0, 8)}`;
 
 const slot: DigestSlot = {
   recipient: 'ana',
