@@ -11,7 +11,7 @@ import type { JobDriver, JobRecord } from '@ultimat3/jobs';
 import { jobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
-import { defineStorage, memoryDriver, resetStorage } from '@ultimat3/storage';
+import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
 import { answerPrompt, cancelRun, connectSite, startRun } from './actions';
 import { canRunAct, canRunKey, canRunKeyRevoke, canRunRead, canRunWrite } from './policy';
@@ -96,7 +96,7 @@ const statusOf = async (runId: string) => (await connectedAs(() => repo.runById(
 
 describe(testName('unit', 'one run per connection'), () => {
   beforeEach(() => {
-    defineStorage({ disks: { sessions: memoryDriver() } });
+    defineStorage({ disks: { sessions: memoryStorageDriver() } });
     // A parked run looks for its answer once per turn of the event loop, never once per 250 ms.
     setScrapeClock(noWaitClock);
   });

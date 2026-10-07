@@ -5,8 +5,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createPgliteClient, raw } from '@ultimat3/db';
 import type { AuthAdapter } from './adapter';
-import { BuiltinAdapter } from './builtin-adapter';
-import { MemoryAdapter } from './memory-adapter';
+import { postgresAuthAdapter } from './builtin-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { openTotpSecret, saveTotpSecret, sealMfaSecrets } from './mfa-secret';
 import { AUTH_TABLES } from './tables';
 
@@ -48,12 +48,12 @@ const seeded = async (adapter: AuthAdapter): Promise<AuthAdapter> => {
 };
 
 const adapters: readonly (readonly [string, () => Promise<AuthAdapter>])[] = [
-  ['MemoryAdapter', () => seeded(new MemoryAdapter())],
+  ['MemoryAdapter', () => seeded(memoryAuthAdapter())],
   [
     'BuiltinAdapter',
     async () => {
       await client.execute(raw('delete from x_users'));
-      return await seeded(new BuiltinAdapter(client));
+      return await seeded(postgresAuthAdapter(client));
     },
   ],
 ];

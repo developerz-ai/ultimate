@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
-  MemoryQueueStore,
+  memoryQueueStore,
   OfflineQueue,
   type QueueChange,
   type QueueState,
@@ -35,7 +35,7 @@ function gate(): { readonly entered: Promise<void>; open(): void; wait(): Promis
 
 /** A store that counts what is written to it. */
 class CountingStore implements QueueStore {
-  readonly inner = new MemoryQueueStore();
+  readonly inner = memoryQueueStore();
   readonly writes: QueueChange[] = [];
   load(): Promise<QueueState> {
     return this.inner.load();
@@ -109,7 +109,7 @@ describe('a write queued on a queue whose principal is gone', () => {
   });
 
   test('and so is one whose queue is abandoned WHILE it reads the store', async () => {
-    const inner = new MemoryQueueStore();
+    const inner = memoryQueueStore();
     let abandon: () => void = () => undefined;
     const queue = await OfflineQueue.open({
       load: async () => {
@@ -133,7 +133,7 @@ describe('a write queued on a queue whose principal is gone', () => {
 
 describe('one key, enqueued twice at once', () => {
   test('is ONE entry under one sequence number', async () => {
-    const queue = await OfflineQueue.open(new MemoryQueueStore());
+    const queue = await OfflineQueue.open(memoryQueueStore());
     const [a, b] = await Promise.all([queue.enqueue(like(1)), queue.enqueue(like(1))]);
     expect(queue.size).toBe(1);
     expect(a).toBe(b);
@@ -142,7 +142,7 @@ describe('one key, enqueued twice at once', () => {
   });
 
   test('and two different keys at once still take two sequence numbers', async () => {
-    const queue = await OfflineQueue.open(new MemoryQueueStore());
+    const queue = await OfflineQueue.open(memoryQueueStore());
     await Promise.all([queue.enqueue(like(1)), queue.enqueue(like(2))]);
     expect(queue.all().map((mutation) => mutation.seq)).toEqual([1, 2]);
   });
@@ -152,7 +152,7 @@ describe('a sender that settles the write itself', () => {
   const refusal = { code: 'X_FORBIDDEN', cause: 'no', fix: 'x policy list --json' };
 
   test('a write REFUSED inside send keeps its error and is not counted as sent', async () => {
-    const store = new MemoryQueueStore();
+    const store = memoryQueueStore();
     const queue = await OfflineQueue.open(store);
     await queue.enqueue(like(1));
     await queue.enqueue(like(2));
@@ -171,7 +171,7 @@ describe('a sender that settles the write itself', () => {
   });
 
   test('a write ACKED inside send is counted, and is gone', async () => {
-    const queue = await OfflineQueue.open(new MemoryQueueStore());
+    const queue = await OfflineQueue.open(memoryQueueStore());
     await queue.enqueue(like(1));
     const report = await queue.drain((mutation) => queue.ack(mutation.key));
     expect(report.sent).toBe(1);

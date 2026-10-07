@@ -1,5 +1,5 @@
 // Where a `sync` node's changes come from when this process boots one. Production decodes the
-// write-ahead log (`x dev --role replicator`, `PgLogicalReplicationFeed`, a real `DATABASE_URL`).
+// write-ahead log (`x dev --role replicator`, `postgresChangeFeed()`, a real `DATABASE_URL`).
 // The embedded database has no walsender, and until 2026-09-05 nothing stood in for it: a live
 // subscription under `x dev` took its snapshot and then heard nothing, so every `--live` query in
 // every scaffolded app was dead in development — which is where an author first tries one.

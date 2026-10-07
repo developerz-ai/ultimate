@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import { updatePrivileges } from './privileges';
 import { createSession, type IssuedSession, type SessionRuntime } from './session';
 
@@ -16,7 +16,7 @@ const START = 1_700_000_000_000;
 const setup = async (
   session?: Partial<Auth['sessions']['policy']>,
 ): Promise<{ auth: Auth; adapter: MemoryAdapter; issued: IssuedSession }> => {
-  const adapter = new MemoryAdapter();
+  const adapter = memoryAuthAdapter();
   const auth = defineAuth({
     adapter,
     clock: frozenClock(START),
@@ -192,7 +192,7 @@ describe('a privilege change rotates the id, never the lifetime', () => {
 
   test('repeated grants cannot carry a session past its original ceiling', async () => {
     const clock = frozenClock(START);
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     const auth = defineAuth({ adapter, clock });
     await adapter.createUser({
       id: 'alice',

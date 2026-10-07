@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock, Ctx } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { createLimiter, tenantKeyFrom } from './limits';
@@ -134,7 +134,7 @@ describe('createLimiter', () => {
 describe('worker concurrency', () => {
   test('a tenant at its concurrency cap has the next claim handed straight back, unrun', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const limiter = createLimiter({ perTenant: 2 });
     const worker = createWorker({
       driver,

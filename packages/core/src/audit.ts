@@ -51,20 +51,13 @@ export interface AuditRecord {
   readonly at: Date;
   /**
    * The registered export name of the primitive that acted. A mutator carries its action half's.
-   * Optional in 24.x only so a record an app built with `action` alone still compiles; every
-   * framework writer sets it, and a reader asks `normalizeAuditRecord` rather than this field.
-   * Required in 25.0.0 (plan 101, M9).
+   * Required since 25.0.0, which also dropped the `action` alias this field replaced: one name,
+   * one spelling (plan 101, M9). `@ultimat3/action`'s durable sink still files it in the
+   * `x_audit.action` column — a column rename is a data migration, and the value is the same.
    */
-  readonly name?: string;
-  /**
-   * The same value as `name`, under the word the seam used when only actions were audited.
-   *
-   * @deprecated Read `normalizeAuditRecord(record).name`. Both are written until 25.0.0 removes
-   * this field (plan 101, M9).
-   */
-  readonly action: string;
+  readonly name: string;
   /** `'action'` (a mutator included — see `mutator`) or `'query'`. A read and a write are not one event. */
-  readonly primitive?: AuditPrimitive;
+  readonly primitive: AuditPrimitive;
   /** True when `mutator()` built it. Always false for a query. */
   readonly mutator: boolean;
   readonly surface: AuditSurface;
@@ -106,7 +99,6 @@ export interface AuditRecord {
 const FIELDS: Readonly<Record<keyof AuditRecord, true>> = {
   at: true,
   name: true,
-  action: true,
   primitive: true,
   mutator: true,
   surface: true,
@@ -121,22 +113,6 @@ const FIELDS: Readonly<Record<keyof AuditRecord, true>> = {
 export const AUDIT_RECORD_FIELDS: readonly (keyof AuditRecord)[] = Object.freeze(
   Object.keys(FIELDS) as (keyof AuditRecord)[],
 );
-
-/** A record whose `name` and `primitive` are known — what every sink reads. */
-export type NormalizedAuditRecord = AuditRecord & {
-  readonly name: string;
-  readonly primitive: AuditPrimitive;
-};
-
-/**
- * The one reading of a record at a sink boundary: `name ?? action`, `primitive ?? 'action'`. A
- * record built before `query({ audit: true })` carried `action` alone and was always an action's,
- * so the defaults are what it meant — and a sink that read the fields raw would write `undefined`
- * into a column that cannot hold it. A copy, never the caller's object mutated.
- */
-export function normalizeAuditRecord(record: AuditRecord): NormalizedAuditRecord {
-  return { ...record, name: record.name ?? record.action, primitive: record.primitive ?? 'action' };
-}
 
 /**
  * Where a record goes: a table, an append-only hash chain, an OTel log, a queue — the app's.

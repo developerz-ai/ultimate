@@ -12,7 +12,7 @@
 // service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient, raw, sql, sqlState } from '@ultimat3/db';
+import { type PostgresClient, postgresClient, raw, sql, sqlState } from '@ultimat3/db';
 import { isCurrencyCode } from '@ultimat3/schema';
 import { currencyCheck } from './columns';
 
@@ -48,7 +48,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the currency CHECK', () => {
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     await client.execute(raw(DROP));
     // `text`, not the `char(3)` the money column declares: on a `char(3)` a four-character code is
     // refused for its WIDTH (22001) and a two-character one is space-padded into a value the CHECK

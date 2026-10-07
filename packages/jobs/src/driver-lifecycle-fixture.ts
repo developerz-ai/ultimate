@@ -9,11 +9,11 @@ import { createContext, frozenClock, isUltimateError } from '@ultimat3/core';
 import { announceExhausted } from './claim-exhausted';
 import type { ClaimedJob, JobDriver, JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { cancelJob } from './inspect';
 import type { OperatorHarness } from './operator-surface-fixture';
 import { enqueueItem, itemJob, operatorOf, rowOf, TTL_MS } from './operator-surface-fixture';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import type { JobSettled } from './settled';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
@@ -26,7 +26,7 @@ export function memoryHarness(): OperatorHarness {
   const clock = frozenClock('2026-10-01T00:00:30.000Z');
   return {
     clock,
-    driver: () => Promise.resolve(createMemoryDriver({ clock })),
+    driver: () => Promise.resolve(memoryJobDriver({ clock })),
     elapse: (_driver, ms) => {
       clock.advance(ms);
       return Promise.resolve();
@@ -53,7 +53,7 @@ export function memoryHarness(): OperatorHarness {
         clock.advance(1);
       }
     },
-    schedulerState: () => Promise.resolve(createMemorySchedulerState()),
+    schedulerState: () => Promise.resolve(memorySchedulerState()),
   };
 }
 

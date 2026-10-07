@@ -107,14 +107,14 @@ const backfillTest = (
 ): string => `// ${name.camel}'s durable identity: one live run per name, retried under the same key. The work
 // itself — the pass over real rows and the projection it applies — is the unit suite's, next door.
 
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
 beforeAll(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 afterAll(resetJobDriver);
 

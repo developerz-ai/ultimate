@@ -284,13 +284,13 @@ Two ship, for the ports an app may implement itself — a `JobDriver` and `@ulti
 `BudgetStore`:
 
 ```ts
-import { MemoryBudgetStore } from '@ultimat3/ai';
-import { createMemoryDriver } from '@ultimat3/jobs';
+import { memoryBudgetStore } from '@ultimat3/ai';
+import { memoryJobDriver } from '@ultimat3/jobs';
 import { behavesLike, budgetStoreConformance, describe, jobDriverConformance } from '@ultimat3/testing';
 
 // The shipped ports pass; put your own driver or store where these are.
-describe('my queue', () => behavesLike(jobDriverConformance, () => createMemoryDriver()));
-describe('my budget store', () => behavesLike(budgetStoreConformance, () => new MemoryBudgetStore()));
+describe('my queue', () => behavesLike(jobDriverConformance, () => memoryJobDriver()));
+describe('my budget store', () => behavesLike(budgetStoreConformance, () => memoryBudgetStore()));
 ```
 
 | Suite | Holds a store to |

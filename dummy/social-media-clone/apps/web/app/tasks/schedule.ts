@@ -1,9 +1,8 @@
 // The app's cron. A task ONLY enqueues — the payload is built here, the work happens on the queue.
 //
-// `tz: 'UTC'` on both, said out loud rather than inherited. `app.config.ts` has a
-// `defaultTimeZone`, and leaning on it is the bug: an unzoned `0 * * * *` runs twice or zero times
-// on a DST switch day, and the scheduler's occurrence key would then dedupe two different hours
-// onto one. UTC has no transitions, which is the property these two want — neither is a thing a
+// `tz: 'UTC'` on both, said out loud: there is no ambient zone to inherit, and an unzoned
+// `0 * * * *` runs twice or zero times on a DST switch day, and the scheduler's occurrence key
+// would then dedupe two different hours onto one. UTC has no transitions, which is the property these two want — neither is a thing a
 // reader reads at a local hour.
 
 import { task } from '@ultimat3/jobs';

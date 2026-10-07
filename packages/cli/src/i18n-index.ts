@@ -9,11 +9,12 @@
 // why: Bun has no synchronous existence check — `Bun.file(p).exists()` is async, and this decides
 // whether to write at all, before any await the caller could interleave with.
 import { existsSync } from 'node:fs';
+import { APP_CATALOGS_PATH as I18N_INDEX_PATH } from '@ultimat3/i18n/app-catalogs';
 import { containedPath } from './generate-write';
 import type { Finding } from './output';
 import { CATALOG_ROOT, i18nIndex, localeEntry, localeImport } from './templates';
 
-export const I18N_INDEX_PATH = 'packages/i18n/src/index.ts';
+export { I18N_INDEX_PATH };
 
 /** Every locale with a catalog on disk, sorted — the file names are the tags. */
 export async function catalogLocales(root: string): Promise<readonly string[]> {

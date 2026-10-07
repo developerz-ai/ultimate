@@ -9,9 +9,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createContext, createLogger, seal } from '@ultimat3/core';
 import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
-import { createMemoryEventBus, resetJobs } from '@ultimat3/jobs';
+import { memoryEventBus, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { memoryDriver } from '@ultimat3/storage';
+import { memoryStorageDriver } from '@ultimat3/storage';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { TestScrapeClock } from './clock';
 import { testClock } from './clock';
@@ -91,7 +91,7 @@ const runArgs = (input: Input, lines: Record<string, unknown>[] = []): JobRunArg
 
 /** A bus on which run-1's first prompt is answered at the second look — by "another process". */
 const answeringBus = async (clock: TestScrapeClock, answer: string): Promise<EventBus> => {
-  const memory = createMemoryEventBus({ clock });
+  const memory = memoryEventBus({ clock });
   const sealed = await seal(answer, { purpose: promptEventName('run-1', 1), ...KEYS });
   let looks = 0;
   return {
@@ -107,7 +107,7 @@ const answeringBus = async (clock: TestScrapeClock, answer: string): Promise<Eve
 describe('unit · one declaration: exit, one run per connection, sealed session, bus prompt, usage', () => {
   test('it runs on the fixture driver and the report says what it used', async () => {
     const clock = testClock(new Date('2026-10-01T00:00:00.000Z'));
-    const storage = memoryDriver();
+    const storage = memoryStorageDriver();
     const definition: ScrapeDefinition<Input, { id: string }> = {
       name: 'bank.accounts',
       input: t.object({ connectionId: t.string, exit: t.string }),

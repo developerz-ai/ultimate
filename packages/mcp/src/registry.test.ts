@@ -312,7 +312,7 @@ describe('textResult / jsonResult', () => {
     expect(structuredResult(1n).isError).toBe(true);
   });
 
-  // The value is an ACTION's return value — `toolFromAction` hands `primitive.run`'s output
+  // The value is an ACTION's return value — `toolFrom` hands `primitive.run`'s output
   // straight here — so `JSON.stringify`'s two non-string answers are both reachable from an app:
   // `undefined` for a handler that returns nothing, and a throw on a bigint, a cycle or a
   // `toJSON` of its own. A `ContentBlock.text` that is not a string is an invalid MCP frame, and

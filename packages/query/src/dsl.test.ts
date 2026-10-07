@@ -11,7 +11,6 @@ import { tag } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { toQueryTool } from './mcp-tool';
 import { paginate } from './pagination';
 import { query } from './query';
 import { from } from './source';
@@ -24,7 +23,11 @@ interface Post {
 const ORG = '00000000-0000-4000-8000-000000000001';
 const Input = t.object({ orgId: t.uuid });
 const readerActor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
-const posts: readonly Post[] = [{ id: 'a', orgId: ORG }];
+// Two rows, so a one-row page has a next page and `.page()` below mints a cursor to compare.
+const posts: readonly Post[] = [
+  { id: 'a', orgId: ORG },
+  { id: 'b', orgId: ORG },
+];
 
 function defineTarget() {
   return query({
@@ -42,17 +45,7 @@ function defineTarget() {
 // purpose — a silent drift here is exactly the regression this file exists
 // to catch.
 const BASE_MEMBERS = ['kind', 'name', 'isLive', 'describe', 'named'] as const;
-const FACADE_MEMBERS = [
-  'input',
-  'policy',
-  'cache',
-  'mcp',
-  'as',
-  'page',
-  'live',
-  'tool',
-  'client',
-] as const;
+const FACADE_MEMBERS = ['input', 'policy', 'cache', 'mcp', 'as', 'page', 'live', 'client'] as const;
 
 describe('the query DSL surface', () => {
   test('a built query is callable, and carries every façade member', () => {
@@ -74,16 +67,10 @@ describe('the query DSL surface', () => {
     expect('cache' in target).toBe(false);
   });
 
-  test('.tool() delegates to toQueryTool() — same data, same policy reference', () => {
-    const target = defineTarget();
-    const direct = toQueryTool(target);
-    const viaFacade = target.tool();
-    expect(viaFacade.name).toBe(direct.name);
-    expect(viaFacade.query).toBe(direct.query);
-    expect(viaFacade.description).toBe(direct.description);
-    expect(viaFacade.inputSchema).toEqual(direct.inputSchema);
-    expect(viaFacade.mutates).toBe(direct.mutates);
-    expect(viaFacade.policy).toBe(direct.policy);
+  // O-tool, 25.0.0: the MCP tool is `@ultimat3/mcp`'s one projection. A `.tool()` here was a
+  // second one, and the member list above would not notice it coming back — this does.
+  test('there is no `.tool()` — the MCP tool is not this package’s projection', () => {
+    expect(defineTarget()).not.toHaveProperty('tool');
   });
 
   test('.live() delegates to toLiveQuery() — same sql shape, same policy reference', async () => {
@@ -98,7 +85,7 @@ describe('the query DSL surface', () => {
   test('.as() reads through the one read path, evaluating this same policy', async () => {
     const target = defineTarget();
     const rows = await target.as(readerActor, { orgId: ORG });
-    expect(rows.map((row) => row.id)).toEqual(['a']);
+    expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
   });
 
   test('.page() delegates to paginate() — same rows, same signed cursor', async () => {
@@ -109,26 +96,17 @@ describe('the query DSL surface', () => {
     const viaFacade = await target.page({ orgId: ORG }, args);
     const direct = await paginate(target, { orgId: ORG }, args);
     expect(viaFacade.rows).toEqual(direct.rows);
-    expect(viaFacade.endCursor).toBe(direct.endCursor);
-    expect(viaFacade.hasNextPage).toBe(direct.hasNextPage);
+    expect(viaFacade.nextCursor).toBe(direct.nextCursor);
+    expect(viaFacade.hasMore).toBe(true);
+    expect(direct.hasMore).toBe(true);
     // Opaque and bound to this read: nothing decodes it without the query's own scope.
-    expect(viaFacade.endCursor).toContain('.');
-  });
-
-  // The DSL's central claim: no surface reaches a second authz object. `.tool()`
-  // exposes the query to MCP, `.policy` is what `.as()`/`.live()` enforce on every
-  // call — if these were ever two different objects, an MCP read could diverge
-  // from the HTTP read.
-  test('a.tool().policy === a.policy — one authz object across every surface', () => {
-    const target = defineTarget();
-    expect(target.tool().policy).toBe(target.policy);
+    expect(viaFacade.nextCursor).toContain('.');
   });
 
   test('a named twin carries the same façade — naming never rebuilds it', () => {
     const target = defineTarget();
     const twin = target.named('dslOrgFeedTwin');
     expect(twin.policy).toBe(target.policy);
-    expect(twin.tool().policy).toBe(twin.policy);
     for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS]) {
       expect(twin).toHaveProperty(member);
     }

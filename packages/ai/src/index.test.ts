@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { t as schemaT } from '@ultimat3/schema';
+import * as surface from './index';
 import { t } from './index';
 
 describe('@ultimat3/ai public surface', () => {
@@ -23,5 +24,12 @@ describe('@ultimat3/ai public surface', () => {
 
     expect(schema.parse({ summary: 'ok', tags: ['a'] })).toEqual({ summary: 'ok', tags: ['a'] });
     expect(() => schema.parse({ summary: 'ok', tags: 'a' })).toThrow();
+  });
+
+  // 25.0.0: a prompt's identity is `promptHash`. It was `contentHash`, the name render's
+  // byte hash (xxHash32, `@ultimat3/render/server`) also answers to — one name, two functions.
+  test('the prompt hash is `promptHash`, and `contentHash` is no alias of it', () => {
+    expect(surface).not.toHaveProperty('contentHash');
+    expect(typeof surface.promptHash).toBe('function');
   });
 });

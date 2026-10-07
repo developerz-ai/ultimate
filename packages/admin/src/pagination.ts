@@ -3,7 +3,8 @@
 // otherwise skip and repeat rows, and every page would re-scan everything before it.
 // The position itself is encoded by `@ultimat3/core` — one signed cursor format, framework-wide.
 
-import { decodeCursor, encodeCursor, isUltimateError } from '@ultimat3/core';
+import type { Page } from '@ultimat3/core';
+import { decodeCursor, encodeCursor, isUltimateError, pageOf } from '@ultimat3/core';
 import type { AdminFilter, AdminListQuery, AdminRow, AdminSort } from './registry';
 import { rowId } from './registry';
 import { type AdminResource, repoOf } from './resource';
@@ -66,15 +67,16 @@ export interface PageRequest {
   readonly where?: readonly AdminFilter[];
 }
 
-export interface AdminPage<Row extends AdminRow> {
-  readonly rows: readonly Row[];
+/**
+ * `@ultimat3/core`'s `Page` — `hasMore` (a page exists AFTER this one, what the Next control is
+ * enabled by, in both directions) and `nextCursor` (`null` exactly when it is false) — plus what
+ * only a screen pages by: the sort, the size, and the cursor that walks BACK.
+ */
+export type AdminPage<Row extends AdminRow> = Page<Row> & {
   readonly sort: AdminSort;
   readonly pageSize: number;
-  readonly nextCursor: string | null;
   readonly prevCursor: string | null;
-  /** A page exists AFTER this one — what the Next control is enabled by, in both directions. */
-  readonly hasMore: boolean;
-}
+};
 
 /** The repo query for one page. Asks for `limit + 1` to learn whether a next page exists. */
 export function listQuery<Row extends AdminRow>(
@@ -147,20 +149,22 @@ export function pageFrom<Row extends AdminRow>(
   const hasMore = backwards ? true : overflow;
   const hasPrevious = backwards ? overflow : incoming !== null;
 
-  return {
+  // `pageOf` derives `hasMore` from the cursor, so Next is enabled exactly when it leads somewhere.
+  const next = pageOf(
     rows,
+    hasMore && last !== undefined
+      ? encodeAdminCursor(resource, {
+          direction: 'after',
+          field: sort.field,
+          value: cursorValue(last, sort.field),
+          id: rowId(last, resource.idField),
+        })
+      : null,
+  );
+  return {
+    ...next,
     sort,
     pageSize,
-    hasMore,
-    nextCursor:
-      hasMore && last !== undefined
-        ? encodeAdminCursor(resource, {
-            direction: 'after',
-            field: sort.field,
-            value: cursorValue(last, sort.field),
-            id: rowId(last, resource.idField),
-          })
-        : null,
     prevCursor:
       hasPrevious && first !== undefined
         ? encodeAdminCursor(resource, {

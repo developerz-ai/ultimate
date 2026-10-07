@@ -54,8 +54,7 @@ const LISTENING_ROLES: readonly Role[] = ['web', 'sync'];
  * — it only went on claiming jobs for those seconds, then aborted them at the drain (s1-con #7).
  *
  * The budget (`deadlineMs`) is every role's: it is the time a worker's running job has to finish
- * on a deploy, so it is the one key here a non-listening role needs MOST. `http.drainTimeoutMs`,
- * when declared, is applied after this by `createServer` and still wins on the web role.
+ * on a deploy, so it is the one key here a non-listening role needs MOST.
  */
 export function lifecycleForRole(
   role: Role,

@@ -12,7 +12,7 @@ function operatorOf(driver: JobDriver): JobIntrospection {
   if (driver.introspect === undefined) {
     throw new NotImplementedError({
       cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'call setJobDriver(createPgDriver()) at boot — the pg driver implements introspect — then: x jobs ls --json',
+      fix: 'call setJobDriver(postgresJobDriver()) at boot — the pg driver implements introspect — then: x jobs ls --json',
     });
   }
   return driver.introspect;

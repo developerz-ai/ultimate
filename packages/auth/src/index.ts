@@ -61,7 +61,7 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
-export { BuiltinAdapter } from './builtin-adapter';
+export { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 /** The opaque per-principal id a per-request document hands the page's client store. */
 export type { ClientScopeOptions } from './client-scope';
 export { clientScopeOf } from './client-scope';
@@ -123,7 +123,7 @@ export type { AuthLimiterFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
 export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
-export { MemoryAdapter } from './memory-adapter';
+export { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,
   MemoryTotpReplayGuard,

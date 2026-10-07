@@ -4,7 +4,7 @@
 
 import { type Ctx, createContext, frozenClock, isUltimateError } from '@ultimat3/core';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 import { type WebhookDefinition, type WebhookEndpoint, webhook } from './webhook';
 import { type MemoryWebhookLedger, memoryWebhookLedger } from './webhook-ledger';
 
@@ -94,7 +94,7 @@ export const harness = (
         step: createStepRunner({
           runId: `run-${sequence}`,
           jobName: definition.name,
-          store: createMemoryStepStore(),
+          store: memoryStepStore(),
         }).step,
         ctx: over,
         attempt,

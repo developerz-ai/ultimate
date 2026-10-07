@@ -1,47 +1,21 @@
 // The model catalogue: an OPEN registry of limits, prices and the reasoning controls each model's
-// request surface actually accepts. Open because a company's own gateway serves ids this package
-// has never heard of — a closed union made them untypeable, so the only way past `tsc` was to
-// claim a Claude id and be billed Anthropic list prices for a model nobody ran. As of 2026-08.
+// request surface actually accepts. Mechanism only — the framework registers NO row: an app brings
+// its models (`registerModel`, dated and sourced in its own repo) and picks its provider, so no
+// vendor's id, price or ladder ships here to go stale or to be chosen for it (M12, 25.0.0).
 
 import { assert, finiteCount, renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
-import { asBuiltIn, clearOrigins, markRegistered } from './model-origin';
 
 /**
  * A model id. A plain `string`, deliberately: the routing seam (`Provider`, `createGateway`) has
- * always been open, and a closed union over it meant the VOCABULARY was not — `models:
- * ['llama-internal-70b']` did not typecheck, so `costOf` charged Anthropic prices for a model the
- * company does not use and the budget ledger reserved against the wrong number.
+ * always been open, and a closed union over it made a company's own model untypeable.
  *
- * What replaces the union as the guard is `modelSpec()`: an id nothing registered is
+ * What replaces the union as the guard is `modelSpec()`: an id the app never registered is
  * `X_AI_MODEL_UNKNOWN` at the first read, naming the registered set. A wrong id is still caught —
  * at the call, with a fix line, rather than by making a correct id inexpressible.
  */
 export type ModelId = string;
-
-/**
- * The models `AnthropicProvider` serves, in ladder order (most capable first). Its OWN list, not
- * the registry's: an app that registers an internal model must not have it routed to Anthropic.
- */
-export const ANTHROPIC_MODEL_IDS = [
-  'claude-fable-5-1',
-  'claude-opus-5-5',
-  'claude-opus-5',
-  'claude-sonnet-5-5',
-  'claude-sonnet-5',
-  'claude-haiku-4-5',
-] as const;
-
-/**
- * @deprecated A vendor choice made for the app; removed in 25.0.0. Resolving through it records an
- * `ai.deprecation` (`model-resolve.ts`) — set `createGateway({ defaultModel })` or a declaration's
- * `model`.
- */
-export const DEFAULT_MODEL: ModelId = 'claude-opus-5';
-
-/** The built-in Anthropic rows' ladder. One `family` string, spelled once. */
-const ANTHROPIC_FAMILY = 'anthropic';
 
 /**
  * Reasoning depth, shallowest first — the order is load-bearing, because a model that caps where
@@ -67,21 +41,20 @@ export type ContentKind = 'image' | 'document';
  * builder: adding a fourth model is a row, not an `if`.
  */
 export interface ModelReasoning {
-  /** `output_config.effort`. Models older than 4.6 reject it outright. */
+  /** `output_config.effort`. A model without the control rejects it outright. */
   readonly effort: boolean;
   /** `thinking: {type:'adaptive'}`. Older models take a token budget this package never sends. */
   readonly adaptive: boolean;
   /**
    * Deepest effort at which thinking may be switched off; `undefined` = every effort, `'never'` =
-   * none. `'never'` is a row, not an absence: on Opus 5.5 and Fable 5.1 an off switch is a 400 at
-   * every effort, and refusing it locally names `effort` as the knob that replaced it.
+   * none. `'never'` is a row, not an absence: on a model whose thinking is always on, an off switch
+   * is a 400 at every effort, and refusing it locally names `effort` as the knob that replaced it.
    */
   readonly disableThinkingUpTo: Effort | 'never' | undefined;
   /**
-   * How this model SPELLS "no up-front thinking" on the wire. Absent is `'disabled'`. Sonnet 5.5
-   * answers `disabled` with a 400 pointing at `between_tools`, its lowest setting — the same
-   * request in the vendor's own migration guide, so the framework's one `thinking: 'disabled'`
-   * stays one declaration across the catalogue rather than a per-model vocabulary.
+   * How this model SPELLS "no up-front thinking" on the wire. Absent is `'disabled'`. A model that
+   * answers `disabled` with a 400 pointing at `between_tools` (its lowest setting) states it here,
+   * so the one `thinking: 'disabled'` stays one declaration rather than a per-model vocabulary.
    */
   readonly disabledThinking?: 'disabled' | 'between_tools';
 }
@@ -96,8 +69,8 @@ export interface ModelSpec {
   readonly outputPerMillion: Money;
   /**
    * Cost of one million cache-READ tokens, in minor units. Absent is 0.1x `inputPerMillion`, the
-   * standard multiplier — which is wrong for exactly the rows that publish their own: 0.05x on
-   * Opus 5.5 and 0.025x on Fable 5.1, so a row with a vendor rate states it.
+   * standard multiplier — which is wrong for exactly the models whose vendor publishes its own (0.05x
+   * and 0.025x exist), so a row with a vendor rate states it.
    */
   readonly cacheReadPerMillion?: Money;
   /**
@@ -122,19 +95,12 @@ export interface ModelSpec {
    * an app that registers its whole catalogue in the order it wants keeps comparing across all of
    * it, exactly as before this field existed.
    *
-   * Registering the OpenAI-format rows after the Anthropic ones is what made this load-bearing:
-   * the rung above `gpt-5.6-sol` was `claude-haiku-4-5`, so `X_LLM_REFUSED`'s fix line told an
-   * operator to paste the cheapest model in the catalogue, from a vendor their gateway may not
-   * serve at all.
+   * An app registering two vendors' rows is what makes this load-bearing: without it, the rung
+   * above one vendor's top model is the other vendor's cheapest, and `X_LLM_REFUSED`'s fix line
+   * tells an operator to paste a weaker model from a list their gateway may not serve at all.
    */
   readonly family?: string;
 }
-
-/**
- * A price per million tokens, in INTEGER MINOR UNITS. Token spend is money, and the house rule
- * applies to money wherever it comes from: never a float.
- */
-const usd = (minor: number): Money => ({ minor, currency: 'USD' });
 
 /**
  * Insertion order IS the capability ladder WITHIN a `family`, most capable first —
@@ -149,19 +115,16 @@ const registry = new Map<ModelId, ModelSpec>();
 const SUBJECT = 'registerModel';
 
 /**
- * Add a model to the catalogue, or restate one that is already in it. **The three built-ins
- * register through this same call**, at the bottom of this file — so the default path is the
- * app's path and there is exactly one way to put a model in the catalogue.
+ * Add a model to the catalogue, or restate one that is already in it — the ONE way a model enters
+ * it. The framework calls it for nothing: every row is the app's, written at boot (by convention in
+ * the app's own `models.ts`, with the source and the date beside each number).
  *
- * Re-registering an id replaces its spec and keeps its rung. That is deliberate and it is the
- * negotiated-rate mechanism: an app whose contract prices `claude-opus-5` below list registers it
- * again with its own `inputPerMillion`/`outputPerMillion`, and every `costOf`, every budget
- * reservation and every recorded cost is that number from then on. Boot registers after this
- * module is imported, so the app always wins.
+ * Re-registering an id replaces its spec and keeps its rung. That is the negotiated-rate mechanism:
+ * same id, new prices, and every `costOf`, every budget reservation and every recorded cost is that
+ * number from then on.
  *
- * A model appended after the built-ins is the LEAST capable rung, because that is what appending
- * to a most-capable-first list means. An app that wants its own ladder registers its whole
- * catalogue in the order it wants, re-registering the built-in ids it keeps.
+ * Registration order within a `family` is the capability ladder, most capable first: a model
+ * appended to a family is its LEAST capable rung.
  */
 export function registerModel(spec: ModelSpec): ModelSpec {
   // Screened at the ONE seam every model in the catalogue passes through, and at boot, which is
@@ -185,7 +148,6 @@ export function registerModel(spec: ModelSpec): ModelSpec {
     finiteCount(SUBJECT, `${spec.id} cacheWritePerMillion.minor`, spec.cacheWritePerMillion.minor);
   }
   registry.set(spec.id, spec);
-  markRegistered(spec.id);
   return spec;
 }
 
@@ -251,20 +213,19 @@ export function assertModel(id: ModelId): void {
   modelSpec(id);
 }
 
-/** Test-only reset back to the built-in catalogue. Module state otherwise leaks between files. */
+/** Test-only: empty the catalogue. Module state otherwise leaks between files. */
 export function resetModels(): void {
   registry.clear();
-  clearOrigins();
-  asBuiltIn(registerBuiltInModels);
 }
 
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
 
 /**
- * The model one rung ABOVE `model` IN ITS OWN FAMILY, or `undefined` when it is already the most
- * capable one that family holds. Registration order is most-capable-first — "the others are
- * explicit downgrades" — so the ladder needs no second list to walk; `family` is what stops the
- * walk at the boundary between two vendors' lists, where order is arrival, not capability.
+ * The model one rung ABOVE `model` IN ITS OWN FAMILY, among the rows the APP registered, or
+ * `undefined` when it is already the most capable one that family holds — or nothing above it was
+ * registered at all. The framework holds no rung of its own, so it never suggests a model the app
+ * did not choose. Registration order is most-capable-first, so the ladder needs no second list;
+ * `family` stops the walk at the boundary between two lists, where order is arrival, not capability.
  *
  * A refusal is only worth retrying UPWARD. `MODEL_IDS.find((id) => id !== refused)` answered a
  * refusal on the default model with the next entry DOWN, which is the one retry that cannot help:
@@ -277,13 +238,13 @@ export function moreCapableThan(
   const spec = registry.get(model);
   if (spec === undefined) return undefined;
   const ids = modelIds();
-  // Up, but only within the model's own family: the entry before `gpt-5.6-sol` is
-  // `claude-haiku-4-5`, which is not a rung above anything — it is the previous vendor's list.
+  // Up, but only within the model's own family: the entry before another family's top rung is the
+  // previous family's bottom one, which is not a rung above anything.
   for (let at = ids.indexOf(model) - 1; at >= 0; at -= 1) {
     const above = ids[at];
     if (above === undefined || registry.get(above)?.family !== spec.family) continue;
-    // A rung the SAME declaration cannot run on is not an answer: from Opus 5 with
-    // `thinking: 'disabled'`, pasting Opus 5.5 (thinking always on) turns a refusal into an
+    // A rung the SAME declaration cannot run on is not an answer: from a model with
+    // `thinking: 'disabled'`, pasting one whose thinking is always on turns a refusal into an
     // `X_AI_REQUEST_INVALID` on every call. Skip it and keep climbing.
     if (acceptsReasoning(above, declared)) return above;
   }
@@ -375,121 +336,3 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
     fix: `set effort: '${cap}' in definePrompt alongside thinking: 'disabled', or drop thinking from it`,
   });
 }
-
-/**
- * The built-in Anthropic rows — DEPRECATED reference data, removed in 25.0.0: pricing a call through
- * one the app never `registerModel`-ed records an `ai.deprecation` (`deprecations.ts`). IDs are exact
- * alias strings — never append a date suffix. Registered through the public `registerModel`, in
- * ladder order, so nothing about the built-in path is a private door an app cannot use.
- *
- * Every number is the vendor's, read As of 2026-10-06 from platform.claude.com/docs/en/ —
- * `models/overview` (context, output, prices), `about-claude/pricing` (list, cache-hit and
- * 5-minute cache-write rates),
- * `build-with-claude/prompt-caching` (cache minimum) and `build-with-claude/thinking` (the
- * per-model thinking table). `models-catalogue.test.ts` pins each row whole. The ladder is the
- * vendor's own ordering of its lines (Fable, Opus, Sonnet, Haiku), newer above older within one;
- * it is NOT price order — Opus 5.5 is both newer and cheaper than Opus 5.
- *
- * Every row accepts images and PDFs (`input`): "All current models support text and image input",
- * and "All active models support PDF processing".
- */
-function registerBuiltInModels(): void {
-  const input = ['image', 'document'] as const;
-  // $10 / $50 per MTok. Thinking is adaptive and ALWAYS on: `disabled` is a 400 at every effort.
-  registerModel({
-    id: 'claude-fable-5-1',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(1_000),
-    outputPerMillion: usd(5_000),
-    cacheReadPerMillion: usd(25),
-    cacheWritePerMillion: usd(1_250),
-    cacheMinimumTokens: 512,
-    input,
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'never' },
-  });
-  // $4 / $20 per MTok. Thinking always on, as on Fable 5.1; its API default effort is `medium`,
-  // which changes nothing here because an unasked effort is never sent.
-  registerModel({
-    id: 'claude-opus-5-5',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(400),
-    outputPerMillion: usd(2_000),
-    cacheReadPerMillion: usd(20),
-    cacheWritePerMillion: usd(500),
-    cacheMinimumTokens: 512,
-    input,
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'never' },
-  });
-  // $5 / $25 per MTok.
-  registerModel({
-    id: 'claude-opus-5',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(500),
-    outputPerMillion: usd(2_500),
-    cacheReadPerMillion: usd(50),
-    cacheWritePerMillion: usd(625),
-    cacheMinimumTokens: 512,
-    input,
-    // Thinking is on by default here, and switching it OFF is legal only at `high` or below.
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'high' },
-  });
-  // $2 / $10 per MTok. "No up-front thinking" is `between_tools` here, legal at `high` or below.
-  registerModel({
-    id: 'claude-sonnet-5-5',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(200),
-    outputPerMillion: usd(1_000),
-    cacheReadPerMillion: usd(20),
-    cacheWritePerMillion: usd(250),
-    cacheMinimumTokens: 512,
-    input,
-    reasoning: {
-      effort: true,
-      adaptive: true,
-      disableThinkingUpTo: 'high',
-      disabledThinking: 'between_tools',
-    },
-  });
-  // $2 / $10 per MTok — the STANDARD price: the pricing page records that the launch rate became
-  // permanent and the $3 / $15 step-up scheduled for 2026-09-01 did not happen.
-  registerModel({
-    id: 'claude-sonnet-5',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(200),
-    outputPerMillion: usd(1_000),
-    cacheReadPerMillion: usd(20),
-    cacheWritePerMillion: usd(250),
-    cacheMinimumTokens: 1_024,
-    input,
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
-  });
-  // $1 / $5 per MTok. Pre-4.6, so it has neither knob: an `output_config.effort` or an adaptive
-  // `thinking` block sent here is a 400 on every request, which is what made the cheap tier
-  // uncallable while the request body was one shape for the whole catalogue. `claude-haiku-4-5`
-  // is the documented Claude API alias of the pinned `claude-haiku-4-5-20251001`.
-  registerModel({
-    id: 'claude-haiku-4-5',
-    family: ANTHROPIC_FAMILY,
-    contextWindow: 200_000,
-    maxOutput: 64_000,
-    inputPerMillion: usd(100),
-    outputPerMillion: usd(500),
-    cacheReadPerMillion: usd(10),
-    cacheWritePerMillion: usd(125),
-    cacheMinimumTokens: 4_096,
-    input,
-    reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
-  });
-}
-
-asBuiltIn(registerBuiltInModels);

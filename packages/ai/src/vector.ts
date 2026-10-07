@@ -290,6 +290,14 @@ export class MemoryVectorStore implements VectorStore {
 }
 
 /**
+ * The one way to build the in-process store — the twin of `postgresVectorStore()`. The class is a
+ * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ */
+export function memoryVectorStore(input: MemoryVectorStoreInput): MemoryVectorStore {
+  return new MemoryVectorStore(input);
+}
+
+/**
  * Fuse ranked lists by reciprocal rank. Exported so a reranker can reuse it — which is why the
  * damping is screened HERE too and not only in `hybrid`: a default parameter is a bound like any
  * other, and `1 / (NaN + rank)` scores every document `NaN`, so the fused order is no longer a

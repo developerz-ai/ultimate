@@ -28,15 +28,15 @@ Every one is a **function returning a value**, so an app encodes a house rule by
 
 ## Every primitive projects itself
 
-A primitive's surfaces are methods **on the primitive**, never free functions taking it. `publishPost.tool()`, not `toMcpTool(publishPost)`. Every declared field is lifted onto it, and the declaration object — the `handle`, the `sql`, the `server` — is not reachable from app code at all.
+A primitive's surfaces are methods **on the primitive**, never free functions taking it. `publishPost.openapi()`, not `toOpenApiOperation(publishPost)`. (The MCP tool is `@ultimat3/mcp`'s one projection, `toolFrom(publishPost)`: a tier-3 primitive cannot hold a tier-4 projection.) Every declared field is lifted onto it, and the declaration object — the `handle`, the `sql`, the `server` — is not reachable from app code at all.
 
 | Primitive | Its surface |
 |---|---|
 | `entity` | `$`-sigil members: `posts.$view([...])`, `posts.$parse(row)`, `posts.$assert(row)`. An entity *is* its columns, so the sigil keeps the namespace clear — `posts.name` is a column, `posts.$name` is the entity |
 | `policy` | one signature, `({ actor, input, row, ctx })`, identical on every surface. `row` is required and nullable, never smuggled through `input` |
-| `action` | `.as()` `.tool()` `.openapi()` `.client()` `.job()` `.contract()` `.describe()`, plus `.input` `.output` `.policy` `.mcp`. `handle` is not among them |
+| `action` | `.as()` `.openapi()` `.client()` `.job()` `.contract()` `.describe()`, plus `.input` `.output` `.policy` `.mcp`. `handle` is not among them |
 | `mutator` | everything `action` has, plus `.local()` `.server()` `.conflict` `.describeMutator()` |
-| `query` | `.as()` `.live()` `.tool()` `.client()` `.describe()`, plus `.input` `.policy` `.cache` `.mcp` `.isLive`. `sql` is not among them |
+| `query` | `.as()` `.live()` `.client()` `.describe()`, plus `.input` `.policy` `.cache` `.mcp` `.isLive`. `sql` is not among them |
 | `job` | `.enqueue()` `.as()` `.describe()`, plus `.parse()` and `.idempotencyKeyFor()` |
 | `route` | a normalized descriptor rather than methods — `meta()` always awaits, `budget` is always an object. A route declares no behaviour to project; `describeRoutes()` is the one route list |
 | `task` | `.entries()` `.enqueue()` `.describe()` |

@@ -111,7 +111,7 @@ import. The CLI wires it.
   only drift from the action's own parse. `tools/list` published it and `validate-args.ts` ignored
   it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true`. `pattern` is the
   opposite case and is kept: the rule travels with the schema. The narrowing is `@ultimat3/schema`'s
-  `toWireSchema` (tier 0, so `@ultimat3/action`'s `.tool()` publishes the same document) and the
+  `toWireSchema` (tier 0, so OpenAPI-adjacent readers reach the same document) and the
   type is its `WireJsonSchema`, which `wire.ts` names `JsonSchema`; `validate-args-subset.test.ts`
   asserts every published keyword is one this server enforces, at any depth.
 - **A hand-written app tool parses its own input**, in the slot `invoke` puts it: parse, then
@@ -159,10 +159,9 @@ import. The CLI wires it.
   actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never
   weaken them. A gate can only refuse what a declaration can reach, so a new gate needs a test
   in BOTH: the registry half passes while the declaration surface silently drops the field.
-- **`isExposed` and `exposureOf` both delegate to `isMcpExposed` in `@ultimat3/core`.** That is the
-  framework's one answer to "did this opt in?", shared with `action`, `query`, `ai` and `manifest`
-  — five packages that cannot import each other, which is how three spellings of the check shipped
-  and why the pin lives in `@ultimat3/cli`. Never spell `=== true` inline here again.
+- **Exposure is core's `isMcpExposed`** (private `exposed` and `exposureOf`; no exported
+  wrapper since 25.0.0) — the one answer shared with `action`, `query`, `ai`, `manifest`; the pin
+  lives in `@ultimat3/cli`. Never spell `=== true` inline here again.
 - Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
   `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
   a written-out list is a request, so filtering it would ship a catalog missing a tool its
@@ -180,11 +179,12 @@ import. The CLI wires it.
   query. Writing a primitive out NAMES a tool; it never re-shapes or re-runs one. An action
   with no export name is `X_ACTION_UNREGISTERED` rather than a tool called `''`, which no
   `tools/call` and no `scopes:` entry could ever address.
-- **This package NAMES a tool, it never derives one.** `primitive.mcp?.name ?? primitive.name` in
-  `from-action.ts` is the whole rule, fed the verbatim export name by `projectable.ts`. Every
-  publisher (`action.tool()`, `query.tool()`, `x-ultimate.mcpTool`, `ActionDescriptor.mcp.tool`)
-  owes the same string; `cross-surface.test.ts` drives a `tools/call` with the name OpenAPI
-  published.
+- **This package NAMES a tool, never derives one**: `primitive.name`, verbatim from
+  `projectable.ts` (no `McpExposure.name` since 25.0.0, `type-pins.ts`). `x-ultimate.mcpTool` and
+  `ActionDescriptor.mcp.tool` owe the same string (`cross-surface.test.ts`).
+- **`toolFrom` is THE tool projection** (O-tool, 25.0.0), over a real action/query or a
+  `ProjectablePrimitive`; `toolListEntry(toolFrom(x))` deep-equals the `tools/list` entry.
+  action/query `.tool()` and the `toolFromQuery` alias are deleted.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
   `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`, `X_MCP_SCOPE_UNCOVERED`. The caller reading them is usually an agent
@@ -193,7 +193,7 @@ import. The CLI wires it.
   nothing projects (`X_MCP_SCOPE_UNKNOWN`); one tool under two scopes (`X_MCP_SCOPE_CONFLICT` —
   key order is not a security model); a tool under none (`X_MCP_SCOPE_UNCOVERED`, `As of 2026-10`:
   it answered every token while `bearerMount` served it to nobody — `scope-surfaces.test.ts`).
-- The **projection** invents no `scope` — `toolFromAction` cannot know what a token means.
+- The **projection** invents no `scope` — `toolFrom` cannot know what a token means.
   `defineAppMcp`'s `scopes:` may attach one afterward, as a capability of the CONNECTION; that
   is not a second authz path, because the scope gate decides before the policy runs and never
   reads the input. A hand-written app tool is the same: its `policy` reaches `guard()` from

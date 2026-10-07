@@ -38,14 +38,20 @@ describe('the drain budget', () => {
     expect(drainDeadlineMs()).toBe(600_000);
   });
 
-  test('declaring http.drainTimeoutMs IS declaring the budget, and it still wins', () => {
-    configureLifecycle({ deadlineMs: 600_000 });
-    createServer({
-      routes: [],
-      role: 'web',
-      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0, drainTimeoutMs: 5_000 }),
-    });
-    expect(drainDeadlineMs()).toBe(5_000);
+  // `drain.deadlineMs` reaches core through `lifecycleForRole` → `configureLifecycle`, and since
+  // 25.0.0 nothing in this package may move it afterwards: `http.drainTimeoutMs` used to, on the
+  // web role only, so the web role's budget was whichever of two keys the app happened to set.
+  test("the web role's budget is drain.deadlineMs — a server built after it leaves it alone", () => {
+    for (const role of ['web', 'sync', 'worker'] as const) {
+      configureLifecycle({ deadlineMs: 42_000 });
+      createServer({
+        routes: [],
+        role,
+        config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+      });
+      expect(drainDeadlineMs()).toBe(42_000);
+      resetLifecycle();
+    }
   });
 
   // `drain.readinessGraceMs` is an `app.config.ts` key; this option is how it reaches the one

@@ -4,7 +4,7 @@
 // other is its authz rule, and both belong beside the code they guard. A SCOPE is neither.
 // It is a capability of the CONNECTION — what the token was issued to do — so it is grouped
 // here, once per scope, naming the tools that capability covers. That is also why
-// `toolFromAction` never invents one: a projection cannot know what a token means.
+// `toolFrom` never invents one: a projection cannot know what a token means.
 //
 // Without this map the second outcome is unreachable for a generated app. `ToolRegistry`
 // enforces `scope`, the framework's own dev tools declare one, and until 2026-08 nothing an

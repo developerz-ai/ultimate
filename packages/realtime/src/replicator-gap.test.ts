@@ -5,9 +5,9 @@
 // a WAL position is a byte offset, so every legitimate next change is already an arbitrary jump.
 
 import { describe, expect, test } from 'bun:test';
-import { InMemoryAdvisoryLock } from './advisory-lock';
+import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent } from './changefeed';
-import { formatLsn, InMemoryChangeFeed } from './changefeed';
+import { formatLsn, memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
 import { CHANGE_SUBJECT_PREFIX, createReplicator } from './replicator';
 import { parseChange, parseEnvelope, SeqGapDetector } from './replicator-envelope';
@@ -88,11 +88,11 @@ describe('the replicator sequences what it publishes', () => {
     await transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
       published.push(payload);
     });
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     const replicator = createReplicator({
       feed,
       transport,
-      lock: new InMemoryAdvisoryLock('x:replicator:test-seq'),
+      lock: memoryAdvisoryLock('x:replicator:test-seq'),
     });
     expect(await replicator.start()).toBe(true);
 

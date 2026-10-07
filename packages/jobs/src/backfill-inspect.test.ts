@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { backfillForRun, inspectBackfills, toBackfillProgress } from './backfill-inspect';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 
 const run = (overrides: Partial<BackfillRun> = {}): BackfillRun => ({
   runId: 'run-1',
@@ -62,7 +62,7 @@ describe('inspectBackfills', () => {
     // The key is REMOVED, not set to `undefined`: `backfills?: BackfillLedger` under
     // `exactOptionalPropertyTypes` is "absent or a ledger", and a driver that ships no ledger is
     // one where the property does not exist — which is also the only shape a real driver has.
-    const { backfills: _ledger, ...withoutLedger } = createMemoryDriver();
+    const { backfills: _ledger, ...withoutLedger } = memoryJobDriver();
     const driver: JobDriver = withoutLedger;
     expect(Object.hasOwn(driver, 'backfills')).toBe(false);
     expect(await inspectBackfills(driver)).toEqual([]);
@@ -111,5 +111,5 @@ function driverWithRuns(runs: readonly BackfillRun[]): {
       return Promise.resolve(runs);
     },
   };
-  return { driver: { ...createMemoryDriver(), backfills: ledger }, filters };
+  return { driver: { ...memoryJobDriver(), backfills: ledger }, filters };
 }

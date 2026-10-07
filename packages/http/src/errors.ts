@@ -300,6 +300,21 @@ export const trustProxyUnset = (): HttpError =>
   });
 
 /**
+ * `http.drainTimeoutMs`, deleted in 25.0.0. It was a second knob for the budget `drain.deadlineMs`
+ * owns: applied after `lifecycleForRole` on the web role only, so the web role and every other
+ * role could drain on different budgets from one app config. Refused by key PRESENCE — a JS caller
+ * or a spread still handing it over gets the edit, never a silently ignored number.
+ */
+export const drainTimeoutDeleted = (): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'http.drainTimeoutMs was deleted in 25.0.0: drain.deadlineMs is the one drain budget, for every role, and a second key for the web role alone is two answers to how long SIGTERM waits',
+    fix: 'drain: { deadlineMs: 25_000 }   # in app.config.ts: drain.deadlineMs is the one budget every role, web included, drains on — and delete drainTimeoutMs from configureHttp({ … })',
+    meta: { option: 'drainTimeoutMs', replacement: 'drain.deadlineMs' },
+  });
+
+/**
  * A numeric knob that is not a count, refused where `app.config.ts` still names it.
  *
  * Every one of these arrives as `Number(process.env.X)` as often as a literal, and `NaN` is not

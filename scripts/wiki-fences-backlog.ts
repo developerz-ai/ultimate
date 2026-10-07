@@ -31,7 +31,8 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "Agents: import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';": 1,
   "Agents: import { t } from '@ultimat3/action';": 2,
   'Agents: onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {': 1,
-  "Auth: import { BuiltinAdapter, defineAuth, login, oauthLogin } from '@ultimat3/auth';": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "Auth: import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';": 1,
   'Batching-And-Preloading: await db.tags.insertAll(names.map((name) => ({ orgId, name })));         // one statement, n rows': 1,
   "Batching-And-Preloading: await using batches = db.posts.where({ orgId }).preload('author').inBatches(500);": 1,
   'Batching-And-Preloading: const page = await db.posts.findMany({ orgId });': 1,

@@ -5,7 +5,7 @@
 // running it again.
 
 import type { MfaSecretStore } from '@ultimat3/auth';
-import { BuiltinAdapter, sealMfaSecrets } from '@ultimat3/auth';
+import { postgresAuthAdapter, sealMfaSecrets } from '@ultimat3/auth';
 import { requireAppRoot } from './app-root';
 import { authSpec } from './cmd-auth-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -26,7 +26,7 @@ export interface OpenAuthStore extends MfaSecretStore {
  */
 async function openAppAuthStore(root: string, ctx: CommandContext): Promise<OpenAuthStore> {
   const queue = await startQueue(resolveServices(root, ctx.env), undefined, ctx.env);
-  return { adapter: new BuiltinAdapter(queue.db), close: () => queue.stop() };
+  return { adapter: postgresAuthAdapter(queue.db), close: () => queue.stop() };
 }
 
 /** `open` is the seam a test supplies a store through; the shipped command opens the app's. */

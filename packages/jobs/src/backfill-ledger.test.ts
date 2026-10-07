@@ -7,9 +7,9 @@ import type { BackfillRun } from './backfill-ledger';
 import {
   BACKFILL_STATUSES,
   backfillChecksum,
-  createMemoryBackfillLedger,
   decideBackfill,
   isBackfillStatus,
+  memoryBackfillLedger,
 } from './backfill-ledger';
 import {
   SQL_BACKFILL_FINISH,
@@ -103,7 +103,7 @@ describe('decideBackfill', () => {
 });
 
 describe('the memory ledger', () => {
-  const ledger = () => createMemoryBackfillLedger(frozenClock(new Date('2026-08-14T00:00:00Z')));
+  const ledger = () => memoryBackfillLedger(frozenClock(new Date('2026-08-14T00:00:00Z')));
   const opened = { runId: 'run-1', name: 'sweep', checksum: 'aaaa', appVersion: '1.2.0' };
 
   test('start opens a running row at zero', async () => {

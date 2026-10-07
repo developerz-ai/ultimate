@@ -102,17 +102,21 @@ describe('a declared limit bounds the listing a page is cut from', () => {
     expect(ids(page)).toBe('jih');
   });
 
-  test('a page exactly the limit wide has no next page, and its cursor leads to an empty one', async () => {
+  test('a page exactly the limit wide has no next page and no cursor; a spent one reads nothing', async () => {
     const target = leaderboard();
     registerQuery('leaderboard', target);
     const page = await paginate(target, { top: 3 }, { first: 3, ctx });
     expect(ids(page)).toBe('jih');
     expect(page.hasMore).toBe(false);
-    const next = await paginate(
-      target,
-      { top: 3 },
-      { first: 3, after: page.nextCursor ?? '', ctx },
-    );
+    // 25.0.0: the last page hands back no cursor. One that says the whole limit is spent — kept
+    // from an earlier build, which minted it here — still answers an empty last page.
+    expect(page.nextCursor).toBeNull();
+    const spent = encodeCursor({
+      scope: queryHash('leaderboard', { top: 3 }),
+      key: [80, 'h', 3],
+      id: 'h',
+    });
+    const next = await paginate(target, { top: 3 }, { first: 3, after: spent, ctx });
     expect(next.rows).toEqual([]);
     expect(next.hasMore).toBe(false);
     expect(next.nextCursor).toBeNull();
@@ -128,8 +132,9 @@ describe('a declared limit bounds the listing a page is cut from', () => {
     const two = await paginate(target, { top: 3 }, { first: 2, after: one.nextCursor ?? '', ctx });
     expect(ids(two)).toBe('h');
     expect(two.hasMore).toBe(false);
-    expect(await walk(target, { top: 3 }, 2)).toEqual(['ji', 'h', '']);
-    expect(await walk(target, { top: 5 }, 1)).toEqual(['j', 'i', 'h', 'g', 'f', '']);
+    // The walk stops ON the last page: no empty page is fetched to learn the listing ended.
+    expect(await walk(target, { top: 3 }, 2)).toEqual(['ji', 'h']);
+    expect(await walk(target, { top: 5 }, 1)).toEqual(['j', 'i', 'h', 'g', 'f']);
   });
 
   test('Builder.seek() takes the smaller of the two limits, in the SQL and in the rows', async () => {
@@ -143,7 +148,7 @@ describe('a declared limit bounds the listing a page is cut from', () => {
   test('a source with no seek() is bounded the same way', async () => {
     const target = foreignLeaderboard();
     registerQuery('foreignLeaderboard', target);
-    expect(await walk(target, { top: 3 }, 2)).toEqual(['ji', 'h', '']);
+    expect(await walk(target, { top: 3 }, 2)).toEqual(['ji', 'h']);
     const wide = await paginate(target, { top: 3 }, { first: 9, ctx });
     expect(ids(wide)).toBe('jih');
     expect(wide.hasMore).toBe(false);
@@ -152,7 +157,7 @@ describe('a declared limit bounds the listing a page is cut from', () => {
   test('a read with no limit pages to the end of its rows, as it always has', async () => {
     const target = leaderboard();
     registerQuery('leaderboard', target);
-    expect(await walk(target, {}, 4)).toEqual(['jihg', 'fedc', 'ba', '']);
+    expect(await walk(target, {}, 4)).toEqual(['jihg', 'fedc', 'ba']);
   });
 
   test('a cursor that does not say how much of the limit is spent is X_CURSOR_INVALID', async () => {

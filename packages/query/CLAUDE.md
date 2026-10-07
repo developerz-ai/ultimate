@@ -16,7 +16,6 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
-| `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
 | `client-scale-pins.ts` | compile-time pin: `queryClient<Api['queries']>` over 100 reads in 50 modules — list, `.page` and `single: true` |
 | `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
@@ -40,7 +39,6 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `audit-gate.ts` | `audit: true` — **the only** file that calls an `AuditSink` (core's): one record per call, an audited source per `execute()` |
 | `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` (titles in `errors.ts`) |
-| `deprecation.ts` | `Deprecation` + RFC 9745/8594 render + `deprecated_calls_total` — TWINNED with `@ultimat3/action`'s |
 
 ## Invariants — the read path
 
@@ -55,16 +53,18 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - The declaration never leaves `read.ts`. `defOf`/`stashDef`/`hasDef` are never re-exported from
   `src/index.ts` — that omission is the enforcement. A query has no `.def`; outside the package read
   `.input`/`.policy`/`.cache`/`.mcp`/`.isLive` or `describe()`. A projection is reached through the
-  query (`liveFeed.tool()`); new methods are bound in `facade.ts`.
+  query (`liveFeed.live()`); new methods are bound in `facade.ts`. **No MCP tool is projected
+  here** (O-tool, 25.0.0): `@ultimat3/mcp`'s `toolFrom` is the one projection, reading through
+  `sourceFor(…, { surface: 'mcp' })`. `.tool()`/`toQueryTool` coming back is red in `index.test.ts`,
+  `dsl.test.ts` and `type-pins.ts`.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts` asserts identity).
 - **`LiveQuery` describes the read *and* runs it** (`execute()`, never memoised).
   `@ultimat3/realtime`'s shared window reads through it.
 - `isLive` is the declared boolean, `live()` the subscription. `QueryDescriptor.live` keeps its name
   (`manifest` and `admin` read it).
-- `mcp` is opt-in; `isExposed` delegates to core's `isMcpExposed`.
+- `mcp` is opt-in; `openapi.ts` asks core's `isMcpExposed` directly — the `isExposed` wrapper is gone.
 - **A read has ONE tool name, the export name verbatim.** `toToolName` is deleted.
-  `mcp-tool.test.ts` asserts `toQueryTool(q).name === queryName(q)`; `index.test.ts` asserts the
-  barrel exports nothing matching `/tool_?name/i`.
+  `index.test.ts` asserts the barrel exports nothing matching `/tool_?name/i`.
 - **`queryClient` is the map-wide read client (mirror of `rpc`)**; both spellings run
   `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from `naming.ts`.**
 - **`QueryClient` typechecks at any app size, and a `.test.ts` cannot say so** (`tsconfig.json`
@@ -77,8 +77,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   sent as `[]`. Never for an optional or defaulted one — absence there is the schema's answer.
   `http-round-trip.test.ts` pins both ends against each other.
 - **A `single: true` read answers the row or `X_NOT_FOUND` by ONE rule** (`single-answer.ts`:
-  `oneRowOf`, `readAnswer`) — the route, `tool().read()` and `@ultimat3/mcp`'s served tool all call
-  it. `QueryToolDescriptor<TSingle>` types the answer: rows for a list read, the row for a single.
+  `oneRowOf`, `readAnswer`) — the route and `@ultimat3/mcp`'s served tool both call it.
 - **`rateLimit:` is spent ONCE, in `buildSource`** (`rate-limit-gate.ts`'s `spendReadLimit`), for
   every enforced build — route, `page()`, the MCP tool (`surface: 'mcp'`, judged as `'server'`).
   `'server'` and an `unenforced` build spend nothing. A live subscribe spends via `live.ts`'s
@@ -130,9 +129,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 ## Invariants — the client
 
-- **Flight control is `@ultimat3/core`'s, re-exported** (`createClientFlight`,
-  `DEFAULT_CLIENT_RETRY`, `isTransientFailure`, `isSuperseded`, the types) — the same objects
-  `@ultimat3/action` exports. Fix the pipeline in `packages/core/src/client-flight.ts`. No new error
+- **Flight control is `@ultimat3/core`'s, and NOT re-exported** (`createClientFlight`,
+  `DEFAULT_CLIENT_RETRY`, `isTransientFailure`, `isSuperseded` — `X_HELPER_COPY` refuses a value
+  re-export; only the types `ClientFlight`/`ClientRetry` the options name). Fix the pipeline in `packages/core/src/client-flight.ts`. No new error
   code, curve, fence or retry loop here; `bun run flight-copies` says so.
 - **`isTransientFailure` INVERTS `retryDecision`'s unclassified default** — a caller's own
   `AbortError` is terminal. Must survive.

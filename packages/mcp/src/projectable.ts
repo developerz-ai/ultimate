@@ -33,7 +33,7 @@ import type { JsonSchema } from './wire';
  *
  * The real primitives come first because they are what an app writes: `actions: [publishPost]`.
  * Until 2026-08 this list took `ProjectablePrimitive` alone, which no `action()` or `query()`
- * structurally satisfies — they carry `as`/`tool`, never `run` — so the only value that could
+ * structurally satisfies — they carry `as` and their projections, never `run` — so the only value that could
  * reach `X_MCP_TOOL_UNDECLARED` was a hand-built fake, and the gate refused nothing an app could
  * actually declare. `ProjectablePrimitive` stays in the union for surfaces that build their
  * catalog programmatically (`@ultimat3/admin`) and for tests that project a stand-in.
@@ -90,7 +90,7 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
 export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
   const exposure = exposureOf(target.mcp);
   // A `single: true` read answers ONE row, or not-found — what its route answers (404) and what
-  // `tool().read()` answers. Handing an agent `[]` for a missing id said "found, and empty".
+  // `@ultimat3/query`'s `readAnswer` makes every read answer. Handing an agent `[]` for a missing id said "found, and empty".
   const single = target.single === true;
   // Only a query that DECLARED its rows (`rows: Post.$schema`) has a known answer shape. A list
   // read answers the rows as a list, so the structured copy is `{ rows }` — `structuredContent`
@@ -118,7 +118,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
         // and is what `live`, `paginate` and `explain` build on too. Executed without the
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,
         // not a TTL.
-        // `'mcp'`: an agent's call spends the read's declared `rateLimit:`, as `toQueryTool` does.
+        // `'mcp'`: an agent's call spends the read's declared `rateLimit:`, the one bucket its route draws on.
         const source = await sourceFor(target, input, { surface: 'mcp' });
         // `@ultimat3/query`'s one rule for what a read answers: rows, or a single read's row.
         return readAnswer(target, await source.execute());

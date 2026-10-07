@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import { type DbError, dbUnavailable } from './errors';
 import { POOL_PROFILES } from './pool-profile';
 
@@ -39,7 +39,7 @@ const fakePool = (calls: CloseCall[], delayMs: number): void => {
 };
 
 const clientWith = (drainTimeoutMs: number) =>
-  createPostgresClient({
+  postgresClient({
     url: 'postgres://u:p@localhost:5432/db',
     role: 'web',
     profile: { ...POOL_PROFILES.web, drainTimeoutMs },

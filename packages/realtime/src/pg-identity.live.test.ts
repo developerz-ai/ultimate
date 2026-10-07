@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { postgresChangeFeed } from './changefeed';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
@@ -74,7 +74,7 @@ describe.skipIf(!ready)('live · the replica identity warning', () => {
 
   test('names only the tables with no identity: no primary key, NOTHING, or a dropped identity index', async () => {
     const warn = spyOn(logger, 'warn');
-    const feed = new PgLogicalReplicationFeed({
+    const feed = postgresChangeFeed({
       url: url ?? '',
       slot: SLOT,
       publication: PUBLICATION,

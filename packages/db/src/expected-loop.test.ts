@@ -4,7 +4,7 @@
 // diagnostic that judges a request after its scopes have all closed and so has to guess.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient, setDbClient } from './client';
+import { postgresClient, setDbClient } from './client';
 import { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
@@ -161,7 +161,7 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
     const observer = recorder();
     setStatementObserver(observer);
     installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     await expectedQueryLoop(REASON, () => client.query(sql`select id from members`));
     await client.query(sql`select id from posts`);
@@ -225,7 +225,7 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
 
     await expect(
       expectedQueryLoop(REASON, () =>
-        createPostgresClient({ url: TEST_URL }).query(sql`select id from members`),
+        postgresClient({ url: TEST_URL }).query(sql`select id from members`),
       ),
     ).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
     await expect(

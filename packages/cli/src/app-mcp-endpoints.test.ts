@@ -26,12 +26,12 @@ afterAll(async () => {
 // itself; the file boundary (`registry-leak-guard.ts`) puts it back after.
 beforeAll(clearPermissions);
 
-const fixture = async (name: string, mcpTs: string, path = '/mcp'): Promise<string> => {
+const fixture = async (name: string, mcpTs: string): Promise<string> => {
   const root = join(FIXTURES, name);
   await rm(root, { recursive: true, force: true });
   await Bun.write(
     join(root, 'app.config.ts'),
-    `export const config = { name: 'demo', ai: { mcp: { expose: true, path: '${path}' } } };\n`,
+    `export const config = { name: 'demo', ai: { mcp: { expose: true } } };\n`,
   );
   await Bun.write(join(root, 'apps/web/mcp.ts'), mcpTs);
   return root;
@@ -159,17 +159,20 @@ describe('several endpoints — refusals first', () => {
     expect(mount.warning?.fix).toContain('mcp[1]');
   });
 
-  test('endpoint #0 mounts at ai.mcp.path, as a single export does; the others at their own', async () => {
+  test('endpoint #0 mounts at its own defineAppMcp path, as every other does', async () => {
     const root = await fixture(
-      'default-path',
-      module(`[${endpoint('customer')}, ${endpoint('staff', "path: '/mcp/admin',")}]`),
-      '/agent',
+      'own-path',
+      module(
+        `[${endpoint('customer', "path: '/agent',")}, ${endpoint('staff', "path: '/mcp/admin',")}]`,
+      ),
     );
     const mount = await appMcpMount(root);
+    expect(mount.path).toBe('/agent');
     expect(mount.routes.map((r) => `${r.method} ${r.path}`)).toEqual([
       'POST /agent',
       'POST /mcp/admin',
     ]);
+    expect(routeAt(mount.routes, 'POST', '/agent').meta.name).toBe('mcp');
   });
 });
 
@@ -205,6 +208,32 @@ describe('several endpoints — RFC 9728 metadata per path', () => {
       resource: 'https://app.test/mcp/afiliados',
       scopes_supported: ['afiliados:read'],
     });
+  });
+
+  // The defect 25.0.0 closed: endpoint #0 was mounted at `ai.mcp.path` while its metadata, its
+  // advertised resource and its 401 named its own `defineAppMcp` path — a resource nothing served.
+  test("endpoint #0's metadata, resource and 401 name the path it is mounted on", async () => {
+    const root = await fixture(
+      'own-path-oauth',
+      module(
+        `${endpoint('customer', `path: '/agent', ${oauth("{ 'casos:read': ['customer'] }")}`)}`,
+      ),
+    );
+    const mount = await appMcpMount(root);
+    expect(mount.routes.map((r) => `${r.method} ${r.path}`)).toEqual([
+      'POST /agent',
+      'GET /.well-known/oauth-protected-resource/agent',
+      'GET /.well-known/oauth-protected-resource',
+    ]);
+    const document = await drive(
+      routeAt(mount.routes, 'GET', '/.well-known/oauth-protected-resource'),
+    );
+    expect(await document.json()).toMatchObject({ resource: 'https://app.test/agent' });
+    const unauthenticated = await drive(routeAt(mount.routes, 'POST', '/agent'), undefined, false);
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.headers.get('www-authenticate')).toContain(
+      'resource_metadata="https://app.test/.well-known/oauth-protected-resource/agent"',
+    );
   });
 
   test("each endpoint's 401 names its own metadata document and its own scopes", async () => {

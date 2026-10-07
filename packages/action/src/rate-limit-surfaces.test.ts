@@ -23,7 +23,7 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { toRoute } from './http';
-import { toMcpTool } from './mcp-tool';
+import { invoke } from './invoke';
 
 // The store is process-wide, and so is the test runner: another file's spend must not be ours.
 beforeEach(() => resetRateLimitStore());
@@ -86,11 +86,15 @@ describe('a declared rate limit is refused after the limit on every surface', ()
     expect(response.headers.get('ratelimit-remaining')).toBe('1');
   });
 
+  // `surface: 'mcp'` is the call `@ultimat3/mcp`'s projection makes (`projectable.ts`): the one
+  // tool path, a tier up, reaching this one `invoke`.
   test('MCP: the tool call is refused X_RATE_LIMITED on the third call', async () => {
-    const tool = toMcpTool(limited());
+    const target = limited();
     const seen: string[] = [];
     for (let i = 0; i < 3; i += 1) {
-      seen.push(await runWithContext(anonymous(), () => outcome(tool.invoke(INPUT))));
+      seen.push(
+        await runWithContext(anonymous(), () => outcome(invoke(target, INPUT, { surface: 'mcp' }))),
+      );
     }
     expect(seen).toEqual(['ok', 'ok', 'X_RATE_LIMITED']);
   });
@@ -106,7 +110,9 @@ describe('a declared rate limit is refused after the limit on every surface', ()
   test('the surfaces spend ONE bucket: one caller over MCP and a job leaves HTTP nothing', async () => {
     const target = limited();
     const caller = createContext({ actor: userActor({ id: 'u-shared' }) });
-    expect(await runWithContext(caller, () => outcome(toMcpTool(target).invoke(INPUT)))).toBe('ok');
+    expect(
+      await runWithContext(caller, () => outcome(invoke(target, INPUT, { surface: 'mcp' }))),
+    ).toBe('ok');
     expect(await outcome(target.job().invoke(INPUT, caller))).toBe('ok');
     expect(await outcome(target(INPUT, { ctx: caller, surface: 'http' }))).toBe('X_RATE_LIMITED');
   });
@@ -250,7 +256,9 @@ describe('whose bucket, and from which store', () => {
     const target = limited();
     const ctx = anonymous();
     for (let i = 0; i < 5; i += 1) expect(await outcome(target(INPUT, { ctx }))).toBe('ok');
-    expect(await runWithContext(ctx, () => outcome(toMcpTool(target).invoke(INPUT)))).toBe('ok');
+    expect(
+      await runWithContext(ctx, () => outcome(invoke(target, INPUT, { surface: 'mcp' }))),
+    ).toBe('ok');
   });
 });
 

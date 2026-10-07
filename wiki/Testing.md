@@ -531,7 +531,7 @@ describe(testName('unit', 'publishPost'), () => {
 
 `behavesLike` wraps the body in `describe('behaves like <name>')`, so a failure reads `publishPost > behaves like an authenticated action > denies an anonymous actor` — the subject and the contract both named. Because it calls `describe`, it belongs at declaration scope and never inside a test body. The body runs once per `behavesLike` call.
 
-Two contracts ship as shared examples, for the ports an app may implement itself: `behavesLike(jobDriverConformance, () => myDriver)` holds a custom `JobDriver` to claim / ack / nack, the claim fence, lease expiry and the burial of a row whose lease lapsed on its final attempt (`onExhausted`, `dropExhausted`); `behavesLike(budgetStoreConformance, () => myStore)` races 24 concurrent `take`s on one key against an `@ultimat3/ai` `BudgetStore`. The memory and Postgres job drivers and `MemoryBudgetStore` run the same suites in `@ultimat3/testing`'s own tests.
+Two contracts ship as shared examples, for the ports an app may implement itself: `behavesLike(jobDriverConformance, () => myDriver)` holds a custom `JobDriver` to claim / ack / nack, the claim fence, lease expiry and the burial of a row whose lease lapsed on its final attempt (`onExhausted`, `dropExhausted`); `behavesLike(budgetStoreConformance, () => myStore)` races 24 concurrent `take`s on one key against an `@ultimat3/ai` `BudgetStore`. The memory and Postgres job drivers and `memoryBudgetStore()` run the same suites in `@ultimat3/testing`'s own tests.
 
 ## Generated scaffolds
 

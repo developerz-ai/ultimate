@@ -58,12 +58,10 @@ export type {
   AuditRecord,
   AuditSink,
   AuditSurface,
-  NormalizedAuditRecord,
 } from './audit';
 export {
   AUDIT_RECORD_FIELDS,
   getAuditSink,
-  normalizeAuditRecord,
   resetAuditSink,
   setAuditSink,
 } from './audit';
@@ -159,7 +157,6 @@ export type {
 export {
   DEFAULT_SPECULATION,
   NAVIGATION_SURFACES,
-  resolveSpeculation,
   SPECULATION_EAGERNESS,
 } from './config-navigation';
 export type {
@@ -211,6 +208,9 @@ export {
   resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
+/** The ONE page shape — `nextCursor` is `null` exactly when `hasMore` is false (25.0.0). */
+export type { Page } from './cursor-page';
+export { pageOf } from './cursor-page';
 export { compareDecimalText } from './decimal-order';
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
@@ -234,10 +234,8 @@ export type {
 export { checkEnv, defineEnv, describeEnv, maskedEnvValues } from './env';
 export type { EnvExampleOptions, EnvExampleReport } from './env-example';
 export {
-  assertEnvExample,
   checkEnvExample,
   ENV_EXAMPLE_PATH,
-  EnvExampleDriftError,
   envFileCandidates,
   parseEnvKeys,
   renderEnvExample,

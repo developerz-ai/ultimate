@@ -1,6 +1,6 @@
 // Single responsibility: the secret a disk that mints its OWN URLs signs with — the published
 // development fallback, the env key production must set, and the one rule (`localDriver` and
-// `memoryDriver` both) for refusing the fallback outside a development or test environment.
+// `memoryStorageDriver` both) for refusing the fallback outside a development or test environment.
 
 import { isLocal, type ResolveEnvironmentOptions, resolveEnvironment } from '@ultimat3/core';
 import { signingSecretMissing } from './errors';
@@ -43,7 +43,7 @@ export interface SigningSecretOptions {
 }
 
 /**
- * The secret a disk that mints its OWN URLs signs with — `localDriver` and `memoryDriver` both.
+ * The secret a disk that mints its OWN URLs signs with — `localDriver` and `memoryStorageDriver` both.
  *
  * A dev disk must work with zero config. Outside development the fallback is refused rather than
  * used: the literal is published, so signing with it hands every reader the power to mint a PUT

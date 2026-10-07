@@ -10,8 +10,8 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { JobDriver, NackOptions } from './driver';
 import { nackState } from './driver';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 
 const claimOne = (driver: JobDriver): Promise<unknown> =>
@@ -36,7 +36,7 @@ describe('a refused enqueue REJECTS, in both', () => {
   } as const;
 
   test('the memory driver hands back a rejecting promise rather than throwing', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue(duplicate);
 
     let pending: Promise<unknown> | undefined;
@@ -61,7 +61,7 @@ describe('a refused enqueue REJECTS, in both', () => {
           (text.includes('insert') ? [] : [{ id: 'existing', run_id: 'run-existing' }]) as R[],
         ),
     };
-    await expect(createPgDriver({ executor }).enqueue(duplicate)).rejects.toThrow(
+    await expect(postgresJobDriver({ executor }).enqueue(duplicate)).rejects.toThrow(
       /X_JOB_DUPLICATE/,
     );
   });
@@ -76,7 +76,7 @@ describe('a cancelled job holds no lease either', () => {
    * were fixed for, one settle later.
    */
   test('cancel clears the lease the claim stamped, as SQL_CANCEL does', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'runaway',
       queue: 'default',
@@ -126,7 +126,7 @@ describe('a nack that FAILS the row files it `failed`, in both', () => {
   };
 
   test('the memory driver settles it failed, uncounted, unclaimable and out of the dead letters', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'refused',
       queue: 'default',
@@ -153,7 +153,7 @@ describe('a nack that FAILS the row files it `failed`, in both', () => {
         return Promise.resolve([]);
       },
     };
-    await createPgDriver({ executor }).nack('job-1', refused);
+    await postgresJobDriver({ executor }).nack('job-1', refused);
 
     expect(calls).toEqual([
       {
@@ -198,7 +198,7 @@ describe('a queued payload is what JSON carries, in both', () => {
   const stored = { at: '2026-10-01T00:00:00.000Z', nested: { keep: 1 } };
 
   test('the memory driver stores the JSON form, and hands that to the claim', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const input = live();
     const { id } = await driver.enqueue({
       name: 'payload',
@@ -225,7 +225,7 @@ describe('a queued payload is what JSON carries, in both', () => {
         return Promise.resolve([{ id: 'job-1', run_id: 'run-1' }] as R[]);
       },
     };
-    await createPgDriver({ executor }).enqueue({
+    await postgresJobDriver({ executor }).enqueue({
       name: 'payload',
       queue: 'default',
       input: live(),
@@ -237,7 +237,7 @@ describe('a queued payload is what JSON carries, in both', () => {
   });
 
   test('an absent payload is JSON null in both, never undefined', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'payload',
       queue: 'default',

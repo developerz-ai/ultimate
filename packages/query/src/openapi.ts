@@ -16,10 +16,9 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from '@ultimat3/core';
+import { isMcpExposed, RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from '@ultimat3/core';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, tryIntrospect } from '@ultimat3/schema';
-import { isExposed } from './mcp-tool';
 import { derivePath } from './naming';
 import { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import { policyCapability } from './policy-gate';
@@ -48,19 +47,22 @@ const ANSWERS: readonly Record<string, unknown>[] = [
   { type: 'array', items: {} },
   {
     type: 'object',
-    // `nextCursor`/`hasMore` are the preferred names; the other two are the same values, kept as
-    // aliases — documented as such, not deprecated — so every client written against them reads on.
-    required: ['rows', 'nextCursor', 'hasMore', 'endCursor', 'hasNextPage'],
+    // The one page shape: the `endCursor`/`hasNextPage` alias pair left in 25.0.0 (O-12).
+    required: ['rows', 'nextCursor', 'hasMore'],
     properties: {
       rows: { type: 'array', items: {} },
       nextCursor: {
         type: ['string', 'null'],
-        description: `the signed cursor that continues this listing — send it as ${PAGE_AFTER_KEY}; null on an empty page`,
+        description: `the signed cursor for the next page — send it as ${PAGE_AFTER_KEY}; null exactly when hasMore is false`,
       },
       hasMore: { type: 'boolean', description: 'whether another page follows' },
-      endCursor: { type: ['string', 'null'], description: 'alias of nextCursor — the same value' },
-      hasNextPage: { type: 'boolean', description: 'alias of hasMore — the same value' },
     },
+    // `@ultimat3/core`'s `Page` is a union, and so is its wire shape: the two facts cannot
+    // disagree in a body this document validates (25.0.0 — the last page used to keep a cursor).
+    oneOf: [
+      { properties: { nextCursor: { type: 'string' }, hasMore: { const: true } } },
+      { properties: { nextCursor: { type: 'null' }, hasMore: { const: false } } },
+    ],
   },
 ];
 
@@ -117,9 +119,9 @@ export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknow
       capability: policyCapability(target.policy),
       live: target.isLive,
       cacheTags: tagKeys(target.cache?.tags ?? []),
-      // The same rule `toMcpTool` and the action side apply: a tool is advertised only where the
-      // MCP catalog lists one, under the export name verbatim (`mcp-tool.ts`).
-      tool: isExposed(target) ? name : null,
+      // Core's one predicate, the one `@ultimat3/mcp`'s catalog and the action side ask: a tool is
+      // advertised only where the MCP catalog lists one, under the export name verbatim.
+      tool: isMcpExposed(target.mcp) ? name : null,
     },
   };
 }
@@ -156,7 +158,7 @@ function singleOperation(target: AnyQuery, name: string): Record<string, unknown
       live: target.isLive,
       single: true,
       cacheTags: tagKeys(target.cache?.tags ?? []),
-      tool: isExposed(target) ? name : null,
+      tool: isMcpExposed(target.mcp) ? name : null,
     },
   };
 }
@@ -177,7 +179,7 @@ const PAGE_PARAMETERS: readonly Record<string, unknown>[] = [
     name: PAGE_AFTER_KEY,
     in: 'query',
     required: false,
-    description: `the nextCursor (alias endCursor) a previous page answered; needs ${PAGE_FIRST_KEY}`,
+    description: `the nextCursor a previous page answered; needs ${PAGE_FIRST_KEY}`,
     schema: { type: 'string' },
   },
 ];

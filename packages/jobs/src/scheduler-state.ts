@@ -39,7 +39,7 @@ export interface SchedulerState {
 /**
  * The fire for a store that cannot share a statement with the queue: the watermark is checked,
  * the jobs go through `driver.enqueue`, and the watermark moves last. Not atomic across a crash —
- * which is why `pgSchedulerState` does not use it against the pg driver — but exact for the
+ * which is why `postgresSchedulerState` does not use it against the pg driver — but exact for the
  * memory pair, where nothing can fail between the steps and no second process exists.
  */
 export async function fireThroughDriver(
@@ -58,7 +58,7 @@ export async function fireThroughDriver(
   return results;
 }
 
-export function createMemorySchedulerState(): SchedulerState {
+export function memorySchedulerState(): SchedulerState {
   const fired = new Map<string, number>();
   const state: SchedulerState = {
     lastFiredAt: (taskName) => Promise.resolve(fired.get(taskName)),

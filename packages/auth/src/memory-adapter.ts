@@ -51,7 +51,7 @@ export class MemoryAdapter implements AuthAdapter {
   /**
    * The clock every instant this adapter stamps comes from — one argument, because a stamp is a
    * fact about WHEN a call happened and a test that cannot move it can only assert a range.
-   * Defaults to `systemClock`, so `new MemoryAdapter()` is what it always was.
+   * Defaults to `systemClock`, so `memoryAuthAdapter()` is what it always was.
    */
   constructor(clock: Clock = systemClock) {
     this.#clock = clock;
@@ -347,4 +347,12 @@ export class MemoryAdapter implements AuthAdapter {
     this.#apiKeys.set(id, { ...key, revokedAt: at });
     return true;
   }
+}
+
+/**
+ * The one way to build the in-memory adapter — the twin of `postgresAuthAdapter()`. The class is a
+ * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
+ */
+export function memoryAuthAdapter(clock: Clock = systemClock): MemoryAdapter {
+  return new MemoryAdapter(clock);
 }

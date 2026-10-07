@@ -6,8 +6,9 @@
 // permissions" concept in Ultimate, because there is no second authz system.
 //
 // `run` below is `ProjectableAction`'s — the projection SEAM, which is what carries `invoke`.
-// It is not a member of the action facade: an `action()` is `as`/`tool`/`openapi`/`job`/
-// `contract` and the callable itself, and this header claimed `action.run` until 2026-08.
+// It is not a member of the action facade: an `action()` is `as`/`openapi`/`client`/`job`/
+// `contract` and the callable itself (no `tool` since 25.0.0 — `@ultimat3/mcp`'s `toolFrom` is
+// the MCP projection), and this header claimed `action.run` until 2026-08.
 // `asProjectableAction` is what BUILDS that seam out of a real `action()`, so an app writes
 // `agent({ tools: [publishPost] })` and never a hand-shaped stand-in — the same union
 // @ultimat3/mcp's `ListedPrimitive` accepts, adapted at this package's own edge because the two
@@ -24,10 +25,11 @@ import { isMcpExposed, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
 import { discloseFailure } from './failure-disclosure';
+import { takeToolIdempotencyKey, withToolIdempotencyKey } from './tool-idempotency';
 
 /**
  * The JSON Schema subset the framework emits for tool arguments — `@ultimat3/schema`'s
- * `WireJsonSchema`, the one document `.tool()`, `tools/list` and the model are all handed.
+ * `WireJsonSchema`, the one document `toolFrom`, `tools/list` and the model are all handed.
  */
 export type JsonSchema = WireJsonSchema;
 
@@ -75,7 +77,7 @@ export interface ProjectableAction {
  *
  * The real `action()` comes first because it is what an app has. Until 2026-08 this list took
  * `ProjectableAction` alone, which no `action()` structurally satisfies — an action carries
- * `as`/`tool`/`openapi`/`job`/`contract` and never `run` — so the documented shape
+ * `as`/`openapi`/`client`/`job`/`contract` and never `run` — so the documented shape
  * `agent({ tools: [publishPost] })` was a `TS2741` and every test in this package hand-built a
  * stand-in, which is why the suite stayed green over an API that did not compile (issue #124).
  * `ProjectableAction` stays in the union for a surface that builds its catalog programmatically
@@ -84,8 +86,8 @@ export interface ProjectableAction {
 export type AgentTool = AnyAction | ProjectableAction;
 
 /**
- * Adapt whatever the author listed. The same shape @ultimat3/mcp's `asProjectable` produces, from
- * the same `invoke` — an in-app agent and an external MCP client end at one execution path, so one
+ * Adapt whatever the author listed. The same shape @ultimat3/mcp's `primitiveFromAction` produces,
+ * from the same `invoke` — an in-app agent and an external MCP client end at one execution path, so one
  * policy decides both. The execution adapter is not shared code and cannot be — `mcp` is this
  * package's own tier — but the schema is: both publish `@ultimat3/schema`'s `toWireSchema`.
  *
@@ -96,17 +98,30 @@ export type AgentTool = AnyAction | ProjectableAction;
 export function asProjectableAction(listed: AgentTool): ProjectableAction {
   if (!isAction(listed)) return listed;
   const mcp = listed.mcp;
+  // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than offering a tool called `''`:
+  // a nameless tool is unaddressable by the model, by `runLlmToolCall` and by the author.
+  const name = actionName(listed);
+  const wire = toWireSchema(listed.input);
+  // `idempotent: true` is honoured here as over MCP and HTTP: the model's key reaches `invoke`,
+  // which files it under the action, the caller and the key. Until 25.0.0 this adapter dropped it,
+  // so an action an external agent could retry safely was one an in-app agent could not.
+  const keyed = listed.describe().idempotent;
   return {
-    // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than offering a tool called `''`:
-    // a nameless tool is unaddressable by the model, by `runLlmToolCall` and by the author.
-    name: actionName(listed),
+    name,
     ...(mcp === undefined ? {} : { mcp }),
     ...(mcp?.description === undefined ? {} : { description: mcp.description }),
-    inputJsonSchema: toWireSchema(listed.input),
+    inputJsonSchema: keyed ? withToolIdempotencyKey(name, wire) : wire,
     // The actor rides in on the options and `invoke` swaps it inside the one execution path —
     // the action's own `policy` still decides, and its `input:` still parses what the model sent,
     // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.
-    run: ({ input, actor }) => invoke(listed, input, { surface: 'mcp', actor }),
+    // No `admit`: MCP's is its early gate ahead of ITS argument validation, and this surface has
+    // none — `invoke` asks the same policy before it reads the input, which is the same order.
+    run: keyed
+      ? ({ input: args, actor }) => {
+          const { input, idempotencyKey } = takeToolIdempotencyKey(args);
+          return invoke(listed, input, { surface: 'mcp', actor, idempotencyKey });
+        }
+      : ({ input, actor }) => invoke(listed, input, { surface: 'mcp', actor }),
   };
 }
 

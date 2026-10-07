@@ -9,7 +9,7 @@ import type { PgExecutor } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_STAGE } from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
-import { createPgOutboxStore } from './outbox-pg';
+import { postgresOutboxStore } from './outbox-pg';
 
 function recorder(rows: readonly unknown[] = []): PgExecutor & {
   readonly calls: { sql: string; params: readonly unknown[] }[];
@@ -47,7 +47,7 @@ describe('the pg outbox store', () => {
     // — the exact "enqueue then rollback" the outbox exists to remove.
     const pool = recorder();
     const transaction = recorder();
-    const store = createPgOutboxStore({
+    const store = postgresOutboxStore({
       executor: pool,
       txExecutor: () => transaction,
     });
@@ -75,7 +75,7 @@ describe('the pg outbox store', () => {
   test('commit() writes NOTHING — the rows committed with the business rows', async () => {
     const pool = recorder();
     const transaction = recorder();
-    const store = createPgOutboxStore({ executor: pool, txExecutor: () => transaction });
+    const store = postgresOutboxStore({ executor: pool, txExecutor: () => transaction });
     const open = tx('tx-1');
 
     await store.stage(open, record);
@@ -89,7 +89,7 @@ describe('the pg outbox store', () => {
 
   test('rollback() writes nothing either — the ROLLBACK already took the rows', async () => {
     const transaction = recorder();
-    const store = createPgOutboxStore({ executor: recorder(), txExecutor: () => transaction });
+    const store = postgresOutboxStore({ executor: recorder(), txExecutor: () => transaction });
     const open = tx('tx-1');
     await store.stage(open, record);
     await store.rollback(open);
@@ -115,7 +115,7 @@ describe('the pg outbox store', () => {
         enqueued_by: 'user-9',
       },
     ]);
-    const store = createPgOutboxStore({ executor: pool, txExecutor: () => pool });
+    const store = postgresOutboxStore({ executor: pool, txExecutor: () => pool });
 
     const claimed = await store.claim(10);
 

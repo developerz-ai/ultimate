@@ -348,12 +348,16 @@ database, and `x verify` reports the other as a rule the database does not know.
 ```ts
 export const db = database({ orgs, posts });
 
-db.posts.where({ orgId }).orderBy('createdAt').limit(50).page(); // { rows, nextCursor }
+db.posts.where({ orgId }).orderBy('createdAt').limit(50).page(); // { rows, nextCursor, hasMore }
 ```
 
 `db.posts` exists because `posts` was declared. Pagination is **cursor-only**: `OFFSET` is wrong
 under concurrent writes, because an insert before the offset shifts every later page and the
 client silently skips and repeats rows.
+
+The page is `@ultimat3/core`'s `Page` — the one page shape, the same a `query`'s `.page()` answers
+(this package's own `Page`, `{ rows, nextCursor }` with no `hasMore`, left in 25.0.0). `nextCursor` is `null`
+exactly when `hasMore` is false, so `while (page.hasMore)` stops on the last page.
 
 `nextCursor` is signed by `@ultimat3/core` and scoped to the plan that produced it — this entity,
 these filters, this sort order. A tampered cursor, or one taken from another listing, is

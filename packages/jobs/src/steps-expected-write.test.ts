@@ -14,8 +14,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { DbClient, SqlFragment, StatementEvent } from '@ultimat3/db';
-import { createPostgresClient, setStatementObserver } from '@ultimat3/db';
-import { createPgDriver } from './driver-pg';
+import { postgresClient, setStatementObserver } from '@ultimat3/db';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_STEP_LIST, SQL_STEP_PUT } from './driver-pg-sql';
 import { JobTimeoutError } from './errors';
 import { createStepRunner } from './steps';
@@ -60,8 +60,8 @@ describe('the step write and the N+1 detector', () => {
       },
     });
     installFakeSql();
-    const driver = createPgDriver({
-      executor: executorOver(createPostgresClient({ url: TEST_URL })),
+    const driver = postgresJobDriver({
+      executor: executorOver(postgresClient({ url: TEST_URL })),
     });
     const runner = createStepRunner({ runId: 'run-n1', jobName: 'fiveSteps', store: driver.steps });
 

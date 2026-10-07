@@ -2,7 +2,7 @@
 // before its flush drained it replaced the bucket, so the earlier window's events were never sent.
 
 import { describe, expect, test } from 'bun:test';
-import { createMemoryDigestStore, type DigestSlot } from './digest';
+import { type DigestSlot, memoryDigestStore } from './digest';
 import type { NotifyEvent } from './notification';
 
 const slot: DigestSlot = {
@@ -18,7 +18,7 @@ const ids = (events: readonly NotifyEvent<unknown>[]) =>
 
 describe('memory digest store', () => {
   test('an append after a window closed opens a second window and keeps the first', async () => {
-    const store = createMemoryDigestStore();
+    const store = memoryDigestStore();
     const first = await store.append({
       slot,
       event: event('e1'),
@@ -42,7 +42,7 @@ describe('memory digest store', () => {
   });
 
   test('a flush whose owner crashed is collected by the next window’s drain', async () => {
-    const store = createMemoryDigestStore();
+    const store = memoryDigestStore();
     await store.append({
       slot,
       event: event('e1'),
@@ -62,7 +62,7 @@ describe('memory digest store', () => {
   });
 
   test('appends inside one window share it', async () => {
-    const store = createMemoryDigestStore();
+    const store = memoryDigestStore();
     const first = await store.append({
       slot,
       event: event('e1'),

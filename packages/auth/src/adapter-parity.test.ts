@@ -8,9 +8,9 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { createRecordingClient } from '@ultimat3/db';
-import { BuiltinAdapter } from './builtin-adapter';
+import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import { X_USERS_TABLE } from './tables';
 
 const ID = '00000000-0000-7000-8000-000000000101';
@@ -28,7 +28,7 @@ const seed = async (adapter: MemoryAdapter, email: string): Promise<void> => {
 
 describe('an address is looked up exactly as it is stored', () => {
   test('neither adapter folds case on the way in or on the way out', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await seed(memory, 'ada@example.com');
     expect((await memory.findUserByEmail('ada@example.com'))?.id).toBe(ID);
     // The divergence this pins: the memory adapter lowercased both the stored address and the
@@ -38,7 +38,7 @@ describe('an address is looked up exactly as it is stored', () => {
     expect(await memory.findUserByEmail('Ada@Example.COM')).toBeNull();
 
     const client = createRecordingClient();
-    await new BuiltinAdapter(client).findUserByEmail('Ada@Example.COM');
+    await postgresAuthAdapter(client).findUserByEmail('Ada@Example.COM');
     expect(client.texts.at(-1)).toContain('where email = $1');
     // Bound verbatim, against a column whose uniqueness is the plain `text` one. No `citext` and
     // no `lower(email)` index, so `=` is case-sensitive and this is the whole of the pg answer.
@@ -47,7 +47,7 @@ describe('an address is looked up exactly as it is stored', () => {
   });
 
   test('createUser stores the address it was handed, in both', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await seed(memory, ' Ada@Example.COM ');
     // An adapter that normalises is an adapter that hides a caller which forgot to. Normalisation
     // belongs at the ONE boundary an address enters through (`normaliseEmail`), above the seam, or
@@ -56,7 +56,7 @@ describe('an address is looked up exactly as it is stored', () => {
 
     const client = createRecordingClient();
     client.on('insert into x_users', { rows: [] });
-    await new BuiltinAdapter(client)
+    await postgresAuthAdapter(client)
       .createUser({
         id: ID,
         email: ' Ada@Example.COM ',
@@ -84,7 +84,7 @@ describe('a duplicate identity is refused by both, not created by one', () => {
   const SECOND = '00000000-0000-7000-8000-000000000202';
 
   test('a second row at one email is refused, and the constraint says so in the DDL', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await seed(memory, 'ada@example.com');
 
     let code = 'did-not-throw';
@@ -110,7 +110,7 @@ describe('a duplicate identity is refused by both, not created by one', () => {
   });
 
   test('a second row at one external_id is refused too, for the same constraint', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await memory.createUser({
       id: ID,
       email: 'ada@example.com',
@@ -139,7 +139,7 @@ describe('a duplicate identity is refused by both, not created by one', () => {
   test('the case-sensitivity rule still holds: two spellings are two rows in both', async () => {
     // Uniqueness is over the STORED string, which is `normaliseEmail`'s output at every door.
     // The adapter does not fold case — that would be the divergence the first describe pins.
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await seed(memory, 'ada@example.com');
     await expect(
       memory.createUser({
@@ -175,7 +175,7 @@ describe('a NULL external id collides with nothing, as NULLS DISTINCT says', () 
   });
 
   test('two accounts may both hold no external id', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await memory.createUser(oauthUser(ID, 'ada@example.com'));
 
     await expect(
@@ -191,7 +191,7 @@ describe('a NULL external id collides with nothing, as NULLS DISTINCT says', () 
   });
 
   test('a VALUE still collides, so the constraint is not simply gone', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await memory.createUser({ ...oauthUser(ID, 'ada@example.com'), externalId: 'okta|abc' });
 
     await expect(
@@ -220,7 +220,7 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
   };
 
   test('both adapters read the clock they were handed', async () => {
-    const memory = new MemoryAdapter(frozenClock(REDEEMED_AT));
+    const memory = memoryAuthAdapter(frozenClock(REDEEMED_AT));
     await memory.putVerification(record);
 
     const taken = await memory.takeVerification(
@@ -235,7 +235,7 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
 
     const client = createRecordingClient();
     client.on('update x_verifications', { rows: [] });
-    await new BuiltinAdapter(client, frozenClock(REDEEMED_AT)).takeVerification(
+    await postgresAuthAdapter(client, frozenClock(REDEEMED_AT)).takeVerification(
       record.purpose,
       record.identifier,
       record.tokenHash,
@@ -271,7 +271,7 @@ describe('linkAccount on a pair that is already linked', () => {
   };
 
   test('memory keeps the owner and refreshes the tokens, as Postgres does', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await memory.linkAccount(first);
     const answered = await memory.linkAccount(second);
     const stored = await memory.findAccount('github', '583231');
@@ -299,7 +299,7 @@ describe('linkAccount on a pair that is already linked', () => {
         },
       ],
     });
-    const answered = await new BuiltinAdapter(client).linkAccount(second);
+    const answered = await postgresAuthAdapter(client).linkAccount(second);
     expect(client.texts.at(-1)).toContain('returning *');
     expect(answered.userId).toBe('user-1');
     expect(answered.id).toBe('acc-1');
@@ -321,14 +321,14 @@ describe('listApiKeys answers newest first, in both', () => {
   });
 
   test('memory sorts by created_at desc, then id desc — the Postgres order', async () => {
-    const memory = new MemoryAdapter();
+    const memory = memoryAuthAdapter();
     await memory.putApiKey(key('a1', '2026-08-01T00:00:00.000Z'));
     await memory.putApiKey(key('c3', '2026-09-01T00:00:00.000Z'));
     await memory.putApiKey(key('b2', '2026-09-01T00:00:00.000Z'));
     expect((await memory.listApiKeys('user-1')).map((one) => one.id)).toEqual(['c3', 'b2', 'a1']);
 
     const client = createRecordingClient();
-    await new BuiltinAdapter(client).listApiKeys('user-1');
+    await postgresAuthAdapter(client).listApiKeys('user-1');
     expect(client.texts.at(-1)).toContain('order by created_at desc, id desc');
   });
 });

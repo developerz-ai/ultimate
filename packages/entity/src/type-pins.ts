@@ -451,3 +451,28 @@ export type _MarkerSurvivesNullable = Assert<
 export type _SealedTableIsAReadBuilder = Assert<
   typeof sealedTable extends ReadBuilder<SealedPinRow> ? true : false
 >;
+
+/**
+ * Entity exports no `Page` (owner decision O-12, 25.0.0): `@ultimat3/core`'s is the ONE page
+ * shape, and `findMany` answers it — import it from core (or `@ultimat3/query`, which re-exports
+ * it). A second spelling here is a second door to one name; re-exporting it from this barrel
+ * makes this directive unused, which is the build error.
+ */
+// @ts-expect-error — `Page` is not an export of `@ultimat3/entity`.
+export type _EntityExportsNoPage = import('./index').Page<unknown>;
+
+/**
+ * `findMany` answers core's `Page`, both halves of the union: a repo page whose `nextCursor` could
+ * be set on the last page (entity's 24.x `Page` had no `hasMore` at all) fails here.
+ */
+export type _FindManyAnswersCorePage = Assert<
+  [Awaited<ReturnType<Repo<{ id: string }>['findMany']>>] extends [
+    import('@ultimat3/core').Page<{ id: string }>,
+  ]
+    ? [import('@ultimat3/core').Page<{ id: string }>] extends [
+        Awaited<ReturnType<Repo<{ id: string }>['findMany']>>,
+      ]
+      ? true
+      : false
+    : false
+>;

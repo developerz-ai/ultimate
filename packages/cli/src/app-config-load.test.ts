@@ -30,8 +30,6 @@ afterEach(() => {
 const EVERY_KEY = `export const envSchema = { PORT: { type: 'port' } };
 export const config = {
   name: 'every-key',
-  locales: ['es-co', 'en'],
-  defaultLocale: 'es-co',
   theme: { defaultMode: 'dark' },
   auth: { signInPath: '/sign-in' },
   pwa: {
@@ -49,7 +47,7 @@ export const config = {
   jobs: { queues: ['mail'], concurrency: 3, visibilityTimeoutMs: 45000 },
   realtime: { enabled: false, transport: 'nats', urlEnv: 'BUS_URL' },
   notify: { inboxReadRetentionMs: 1000, inboxUnreadRetentionMs: 2000 },
-  ai: { mcp: { expose: false, path: '/tools' } },
+  ai: { mcp: { expose: false } },
   drain: { readinessGraceMs: 7000 },
   health: { readiness: 'process' },
   site: { origin: 'https://every.example' },
@@ -74,8 +72,6 @@ describe('loadAppConfig', () => {
     const root = await appRoot(EVERY_KEY);
     const config = await loadAppConfig(root);
     expect(config?.name).toBe('every-key');
-    expect(config?.locales).toEqual(['es-co', 'en']);
-    expect(config?.defaultLocale).toBe('es-co');
     expect(config?.theme.defaultMode).toBe('dark');
     expect(config?.auth.signInPath).toBe('/sign-in');
     expect(config?.pwa.enabled).toBe(true);
@@ -92,7 +88,7 @@ describe('loadAppConfig', () => {
     expect(config?.realtime).toEqual({ enabled: false, transport: 'nats', urlEnv: 'BUS_URL' });
     expect(config?.notify.inboxReadRetentionMs).toBe(1000);
     expect(config?.notify.inboxUnreadRetentionMs).toBe(2000);
-    expect(config?.ai.mcp).toEqual({ expose: false, path: '/tools' });
+    expect(config?.ai.mcp).toEqual({ expose: false });
     expect(config?.drain.readinessGraceMs).toBe(7000);
     expect(config?.health.readiness).toBe('process');
     expect(config?.site.origin).toBe('https://every.example');
@@ -112,8 +108,6 @@ describe('loadAppConfig', () => {
   // now from core rather than restated per file.
   test('a config naming nothing reads every one of those keys at its old default', async () => {
     const config = await loadAppConfig(await appRoot("export const config = { name: 'bare' };\n"));
-    expect(config?.locales).toEqual(['en']);
-    expect(config?.defaultLocale).toBe('en');
     expect(config?.theme.defaultMode).toBe('system');
     expect(config?.auth.signInPath).toBeNull();
     expect(config?.pwa.enabled).toBe(false);
@@ -126,7 +120,7 @@ describe('loadAppConfig', () => {
     expect(config?.realtime).toEqual({ enabled: true, transport: 'memory', urlEnv: undefined });
     expect(config?.notify.inboxReadRetentionMs).toBeUndefined();
     expect(config?.notify.inboxUnreadRetentionMs).toBeUndefined();
-    expect(config?.ai.mcp).toEqual({ expose: true, path: '/mcp' });
+    expect(config?.ai.mcp).toEqual({ expose: true });
     expect(typeof config?.drain.readinessGraceMs).toBe('number');
     expect(config?.health.readiness).toBe('dependencies');
     expect(config?.site.origin).toBeNull();

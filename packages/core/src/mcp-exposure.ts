@@ -4,7 +4,7 @@
 
 /**
  * The `mcp` block, read structurally. Each package keeps its own richer declaration —
- * `ActionMcp` carries `visibleTo`, `@ultimat3/mcp`'s `McpExposure` carries `name` — and hands it
+ * `ActionMcp` carries `visibleTo`, `@ultimat3/mcp`'s `McpExposure` carries `listParams` — and hands it
  * here; restating the one field they share binds this to none of them.
  */
 export interface McpExposureDeclaration {

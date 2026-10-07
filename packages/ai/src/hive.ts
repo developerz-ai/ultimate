@@ -5,8 +5,8 @@
  * `@ultimat3/core`, and it is a list rather than a sentence because the ordinal a file writes for
  * itself is wrong the day the next one lands and no file can see the others. A fan-out is still
  * one server-authoritative operation with an input schema, an output schema and a policy, so this
- * returns an `action` and inherits `.tool()`, `.openapi()`, `.client()`, `.job()`, `.contract()`
- * and its manifest row without a line here.
+ * returns an `action` and inherits `.openapi()`, `.client()`, `.job()`, `.contract()`, its MCP
+ * tool and its manifest row without a line here.
  *
  * It exists because the alternative is a hand-rolled `Promise.all` over `agent()` calls, and that
  * loop gets four things wrong every time: it takes the actor from somewhere other than the request,

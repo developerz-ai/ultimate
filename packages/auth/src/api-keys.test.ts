@@ -9,7 +9,7 @@ import {
   verifyApiKey,
 } from './api-keys';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 
 const SCOPES = ['post:read', 'post:publish'] as const;
 
@@ -28,7 +28,7 @@ const START = 1_700_000_000_000;
 /** A store holding one user, and a key that user owns. */
 const owned = async (over: { permissions?: readonly string[] } = {}) => {
   const clock = frozenClock(START);
-  const store = new MemoryAdapter(clock);
+  const store = memoryAuthAdapter(clock);
   const owner = await store.createUser({
     id: 'user-1',
     email: 'ada@corp.test',
@@ -45,7 +45,7 @@ const owned = async (over: { permissions?: readonly string[] } = {}) => {
 
 describe('api keys', () => {
   test('verify matches the stored hash and the plaintext is nowhere in the record', async () => {
-    const store = new MemoryAdapter();
+    const store = memoryAuthAdapter();
     const clock = frozenClock(1_700_000_000_000);
     const issued = issueApiKey({ env: 'prod', scopes: SCOPES, orgId: 'org-1', clock });
     await store.putApiKey(issued.record);
@@ -66,7 +66,7 @@ describe('api keys', () => {
   });
 
   test('a revoked key fails with X_API_KEY_INVALID', async () => {
-    const store = new MemoryAdapter();
+    const store = memoryAuthAdapter();
     const clock = frozenClock(1_700_000_000_000);
     const issued = issueApiKey({ env: 'prod', scopes: SCOPES, clock });
     await store.putApiKey(issued.record);
@@ -77,7 +77,7 @@ describe('api keys', () => {
   });
 
   test('an expired key and a forged secret fail identically', async () => {
-    const store = new MemoryAdapter();
+    const store = memoryAuthAdapter();
     const clock = frozenClock(1_700_000_000_000);
     const expired = issueApiKey({
       env: 'prod',
@@ -137,7 +137,7 @@ describe("a key is its owner's credential", () => {
 
   test('a key whose owner no longer exists is refused', async () => {
     const clock = frozenClock(START);
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     const orphan = issueApiKey({ env: 'prod', scopes: SCOPES, userId: 'gone', clock });
     await store.putApiKey(orphan.record);
     expect((await caught(() => verifyApiKey(store, orphan.plaintext, clock))).code).toBe(
@@ -154,7 +154,7 @@ describe("a key is its owner's credential", () => {
 
   test('a service key — no owner — verifies exactly as before, with no user lookup', async () => {
     const clock = frozenClock(START);
-    const store = new MemoryAdapter(clock);
+    const store = memoryAuthAdapter(clock);
     const issued = issueApiKey({ env: 'prod', scopes: SCOPES, orgId: 'org-1', clock });
     await store.putApiKey(issued.record);
     store.findUserById = () => expect.unreachable('a service key has no owner to load');

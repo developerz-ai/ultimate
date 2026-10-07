@@ -49,7 +49,7 @@ export interface MemoryEventBusOptions {
   readonly maxEvents?: number;
 }
 
-export function createMemoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
+export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
   const clock = options.clock ?? systemClock;
   // TWO screens, because these are two knobs: the default is declared at construction and belongs
   // to whoever built the bus, `ttl` rides the publish CALL. One screen over `ttl ?? defaultTtl`
@@ -152,10 +152,10 @@ export function eventsPurgeTarget(bus: EventBus): PurgeTarget {
   return { name: EVENTS_PURGE_TARGET, purgeExpired: () => bus.purgeExpired() };
 }
 
-let ambientBus: EventBus = createMemoryEventBus();
+let ambientBus: EventBus = memoryEventBus();
 
 /**
- * **Install `createPgEventBus({ executor })` here in any deployment with more than one process.**
+ * **Install `postgresEventBus({ executor })` here in any deployment with more than one process.**
  * The default above is one process's heap: the pod that publishes and the pod that resumes are
  * never the same one, so a webhook landing on web-3 strands a run on worker-7 until its 24h
  * timeout dead-letters it, with nothing logged before then. This line used to promise a
@@ -176,7 +176,7 @@ export function eventBus(): EventBus {
  * wait before that test has asked anything — call this between tests.
  */
 export function resetEventBus(): void {
-  ambientBus = createMemoryEventBus();
+  ambientBus = memoryEventBus();
 }
 
 /** The one function app code calls to unblock a waiting step. */

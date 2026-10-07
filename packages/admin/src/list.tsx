@@ -139,7 +139,7 @@ export function AdminList<Row extends AdminRow>(props: AdminListProps<Row>): JSX
           rows={page.rows}
           rowKey={idOf}
           sort={{ key: page.sort.field, direction: page.sort.direction }}
-          nextCursor={page.hasMore ? (page.nextCursor ?? undefined) : undefined}
+          nextCursor={page.hasMore ? page.nextCursor : undefined}
           prevCursor={page.prevCursor ?? undefined}
           hrefFor={(cursor) => props.hrefFor({ ...state, cursor })}
           // The header's NEXT state, as a URL. "Unsorted" is the list with no sort in it — the

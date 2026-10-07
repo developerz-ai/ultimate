@@ -8,24 +8,19 @@ import { createContext, createLogger } from '@ultimat3/core';
 import type { JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   createJobsFacade,
-  createMemoryDriver as createMemoryJobDriver,
-  createMemoryOutboxStore,
   createOutboxRelay,
-  createPgDriver,
-  createPgOutboxStore,
   createWorker,
+  memoryJobDriver,
+  memoryOutboxStore,
+  postgresJobDriver,
+  postgresOutboxStore,
   resetJobDriver,
   resetJobsFacade,
   SQL_JOBS_TABLE,
   setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
-import {
-  createMemoryDriver,
-  type MemoryMailDriver,
-  resetMailDriver,
-  setMailDriver,
-} from './driver';
+import { type MemoryMailDriver, memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
 import { type SendOptions, send } from './mail';
 import { welcomeMail } from './templates';
 
@@ -39,7 +34,7 @@ let mail: MemoryMailDriver;
 
 const freshMailDriver = (): void => {
   resetMailDriver();
-  mail = createMemoryDriver();
+  mail = memoryMailDriver();
   setMailDriver(mail);
 };
 
@@ -73,9 +68,9 @@ async function drainWith(driver: JobDriver, until?: () => boolean): Promise<void
 describe('memory outbox: send() rides the caller’s transaction', () => {
   const wire = (): { queue: JobDriver; store: OutboxStore; tx: Tx } => {
     freshMailDriver();
-    const queue = createMemoryJobDriver();
+    const queue = memoryJobDriver();
     setJobDriver(queue);
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     const tx = { id: 'request' } as unknown as Tx;
     setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
     return { queue, store, tx };
@@ -157,11 +152,11 @@ describe.skipIf(url === undefined)('pg outbox: send() stages on the caller’s c
     await client.unsafe('truncate x_outbox, x_jobs', []);
     freshMailDriver();
     const executor = executorOf(client);
-    const queue = createPgDriver({ executor });
+    const queue = postgresJobDriver({ executor });
     setJobDriver(queue);
     let bound: PgExecutor | undefined;
     const tx = { id: 'request' } as unknown as Tx;
-    const store = createPgOutboxStore({
+    const store = postgresOutboxStore({
       executor,
       txExecutor: () => bound ?? expect.unreachable('staged outside the transaction'),
     });

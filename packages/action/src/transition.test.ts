@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createContext, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import type { LocalTable, LocalTx } from './mutator';
 import { type TransitionTarget, transition } from './transition';
 
@@ -160,11 +160,11 @@ describe('transition() is a mutator, so it inherits every projection', () => {
     expect(moveOrder.describe().mutator).toBe(true);
   });
 
-  test('projects a route, an OpenAPI operation, a client method, a tool, a job and its tests', () => {
+  test('projects a route, an OpenAPI operation, a client method, a job and its tests', () => {
     expect(moveOrder.describe().path).toBe('/api/orders/move');
     expect(moveOrder.openapi().operationId).toBe('moveOrder');
     expect(typeof moveOrder.client({ baseUrl: 'https://app.test' })).toBe('function');
-    expect(moveOrder.tool().name).toBe('moveOrder');
+    expect(moveOrder.describe().mcp.tool).toBe('moveOrder');
     expect(moveOrder.job().name).toBe('action:moveOrder');
     expect(moveOrder.contract().length).toBeGreaterThan(0);
   });
@@ -175,7 +175,8 @@ describe('transition() is a mutator, so it inherits every projection', () => {
    * typed client refuses the others at compile time, which no test can assert from in here.
    */
   test('publishes the states as an enum, so a typo is refused before a round trip', () => {
-    const schema: Record<string, unknown> = moveOrder.tool().inputSchema;
+    // `toWireSchema` is what `@ultimat3/mcp`'s `tools/list` publishes for `input`.
+    const schema: Record<string, unknown> = { ...toWireSchema(moveOrder.input) };
     const properties = schema['properties'];
     // Narrowed rather than cast: an `inputSchema` that stopped carrying `properties` would make a
     // cast index `undefined` and both assertions below vacuous.

@@ -48,7 +48,7 @@ export const JOB_OWNED_ERROR_CODES = [
 
 /**
  * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. The first is thrown as
- * core's own `NotImplementedError` (`inspect.ts`, the redis/nats stubs), the other two by
+ * core's own `NotImplementedError` (`inspect.ts`), the other two by
  * `JobAbortedError` and `JobDrainedError` below; jobs keeps no title for any of the three, because the copy this file used to hold was a second title that nothing would have failed
  * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
  * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
@@ -434,13 +434,13 @@ export class JobNotCancellableError extends UltimateError {
   }
 }
 
-/** The driver has no `introspect.cancel`. The redis/nats stubs, and any hand-rolled driver. */
+/** The driver has no `introspect.cancel` — a hand-rolled driver that ships no introspection. */
 export class CancelUnsupportedError extends UltimateError {
   constructor(input: { driver: string }) {
     super({
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
-      fix: 'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
+      fix: 'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
     });
   }
 }

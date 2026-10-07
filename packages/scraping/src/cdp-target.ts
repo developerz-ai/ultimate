@@ -349,7 +349,7 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         }
         return parse(cookieSchema, await source.cookies());
       }),
-    // Honest stub, in the shape `packages/jobs/src/driver-redis.ts` uses. A real one needs
+    // Honest stub: correct types and one labelled `X_NOT_IMPLEMENTED`. A real one needs
     // `Browser.setDownloadBehavior` over a raw CDP session plus a directory watch, and a
     // half-written version that silently returned empty bytes is worse than this line.
     //

@@ -17,7 +17,7 @@ import {
 import type { LocalStore } from './local-store-idb';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import type { DrainReport, QueuedMutation, QueueState, QueueStore } from './offline-queue';
-import { MemoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
+import { memoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
 import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle, type OutboxHost } from './outbox-slot';
 import { LocalStoreUnavailableError, OfflineQueueAbandonedError } from './page-errors';
 import { peekPageRealtime } from './page-store';
@@ -103,7 +103,7 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
       queue = await OfflineQueue.open(queueStore(await options.local, scope));
     } catch (error) {
       unavailable('the outbox could not be opened', error);
-      queue = await OfflineQueue.open(new MemoryQueueStore());
+      queue = await OfflineQueue.open(memoryQueueStore());
     }
     // The principal left while the disk was being read: this queue is the one that left with it,
     // and the handler that saw the change has already chained the next open.
@@ -255,7 +255,7 @@ export function createOutbox(options: OutboxOptions): PageOutbox {
 
 /** Persisted under the principal; an UNSCOPED page queues in memory only, and loses it on reload. */
 function queueStore(local: LocalStore, scope: string | undefined): QueueStore {
-  if (scope === undefined) return new MemoryQueueStore();
+  if (scope === undefined) return memoryQueueStore();
   return {
     load: async (): Promise<QueueState> =>
       (await local.queue(scope)) ?? { mutations: [], nextSeq: 1 },

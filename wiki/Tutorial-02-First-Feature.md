@@ -139,13 +139,13 @@ curl -X POST localhost:3000/api/todos/create -H 'content-type: application/json'
   -H 'sec-fetch-site: same-origin' -d '{"title":"Ship it","price":{"minor":1250,"currency":"USD"}}'
 ```
 
-Five artifacts, read off the real registry with `createTodo.describe()`, `.openapi()`, `.tool()`, `.job()` and `.contract()`:
+Five artifacts, read off the real registry with `createTodo.describe()`, `.openapi()`, `.job()`, `.contract()` and `@ultimat3/mcp`'s `toolFrom(createTodo)`:
 
 | Projection | Value, verbatim |
 |---|---|
 | HTTP route | `POST /api/todos/create`, capability `todo:write` |
 | OpenAPI operation | `operationId: "createTodo"`, `summary` from `mcp.description` |
-| MCP tool | none until `mcp: { expose: true, description }` is written; then `createTodo` — the export name verbatim — and `tool().policy === createTodo.policy`, one authz object, not a copy |
+| MCP tool | none until `mcp: { expose: true, description }` is written; then `createTodo` — the export name verbatim — and every call goes through `createTodo`'s own `invoke`, so its policy is the one authz object, not a copy |
 | Job handle | `action:createTodo` — the same handler, run through the queue |
 | Contract tests | 3 generated assertions: garbage input rejected, anonymous denied, operation present in the spec |
 | Typed client | `.client({ baseUrl })` derives the path by string math, so the browser imports no server code |

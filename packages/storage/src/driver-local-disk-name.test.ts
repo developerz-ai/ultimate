@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { etagOfFile, readObjectBytes } from './driver-local-read';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { catchError, codeOf } from './driver-s3-fixture';
 import { isStorageError } from './errors';
 import { defineStorage, resetStorage } from './storage';
@@ -71,7 +71,7 @@ describe('a local not-found fix names the registered disk', () => {
 
 describe('a memory not-found fix names the registered disk too', () => {
   test('the test disk answers a miss with the name the app registered', async () => {
-    const driver = memoryDriver({ signingSecret: 'test-secret' });
+    const driver = memoryStorageDriver({ signingSecret: 'test-secret' });
     defineStorage({ disks: { uploads: driver } });
     namesUploads(await catchError(() => driver.get(MISSING)));
   });

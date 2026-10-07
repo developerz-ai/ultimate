@@ -5,9 +5,9 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, UltimateError } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
-import { createMemoryOutboxStore } from './outbox';
+import { memoryOutboxStore } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 import { createWorker } from './worker';
 
@@ -29,14 +29,14 @@ afterEach(() => {
 
 describe('a worker built on a number that is not a number', () => {
   test('a non-finite visibilityTimeoutMs is refused, not turned into a lease that never expires', () => {
-    // MEASURED against `createMemoryDriver`: `visibleAt = at + NaN` is `NaN`, the reclaim scan asks
+    // MEASURED against `memoryJobDriver`: `visibleAt = at + NaN` is `NaN`, the reclaim scan asks
     // `(record.visibleAt ?? 0) <= at` and `NaN <= at` is FALSE, so a job whose worker died is never
     // claimable again. At-least-once becomes never, with no error, no log, and a row `x jobs ls`
     // still prints as `running`. The Postgres driver takes the same number into `visible_at`.
     for (const visibilityTimeoutMs of NOT_A_BOUND) {
       const build = (): unknown =>
         createWorker({
-          driver: createMemoryDriver(),
+          driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
           visibilityTimeoutMs,
@@ -59,7 +59,7 @@ describe('a worker built on a number that is not a number', () => {
     for (const pollIntervalMs of NOT_A_BOUND) {
       expect(() =>
         createWorker({
-          driver: createMemoryDriver(),
+          driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
           pollIntervalMs,
@@ -72,7 +72,7 @@ describe('a worker built on a number that is not a number', () => {
     for (const heartbeatIntervalMs of NOT_A_BOUND) {
       expect(() =>
         createWorker({
-          driver: createMemoryDriver(),
+          driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
           heartbeatIntervalMs,
@@ -88,7 +88,7 @@ describe('a worker built on a number that is not a number', () => {
     for (const value of NOT_A_BOUND) {
       expect(() =>
         createWorker({
-          driver: createMemoryDriver(),
+          driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
           concurrency: value,
@@ -96,7 +96,7 @@ describe('a worker built on a number that is not a number', () => {
       ).toThrow(UltimateError);
       expect(() =>
         createWorker({
-          driver: createMemoryDriver(),
+          driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
           queues: ['imports'],
@@ -109,7 +109,7 @@ describe('a worker built on a number that is not a number', () => {
   test('the ordinary worker is unchanged — the guard refuses numbers, not workers', async () => {
     // Non-vacuity: a rule that threw on everything would pass every assertion above.
     const worker = createWorker({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       context,
       drainOnShutdown: false,
       visibilityTimeoutMs: 30_000,
@@ -127,8 +127,8 @@ describe('an outbox relay built on a number that is not a number', () => {
     for (const intervalMs of NOT_A_BOUND) {
       expect(() =>
         createOutboxRelay({
-          store: createMemoryOutboxStore(),
-          driver: createMemoryDriver(),
+          store: memoryOutboxStore(),
+          driver: memoryJobDriver(),
           intervalMs,
         }),
       ).toThrow(UltimateError);
@@ -139,8 +139,8 @@ describe('an outbox relay built on a number that is not a number', () => {
     for (const batchSize of NOT_A_BOUND) {
       expect(() =>
         createOutboxRelay({
-          store: createMemoryOutboxStore(),
-          driver: createMemoryDriver(),
+          store: memoryOutboxStore(),
+          driver: memoryJobDriver(),
           batchSize,
         }),
       ).toThrow(UltimateError);
@@ -149,8 +149,8 @@ describe('an outbox relay built on a number that is not a number', () => {
 
   test('an ordinary relay is unchanged', async () => {
     const relay = createOutboxRelay({
-      store: createMemoryOutboxStore(),
-      driver: createMemoryDriver(),
+      store: memoryOutboxStore(),
+      driver: memoryJobDriver(),
       batchSize: 10,
       intervalMs: 50,
     });

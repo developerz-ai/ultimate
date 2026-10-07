@@ -1,11 +1,11 @@
 // The app's own MCP endpoint, mounted by the web role. `defineAppMcp` built `mcp.route` — a
 // `POST` handler with token auth and per-class rate limits — and `app.config.ts` declared
-// `ai: { mcp: { expose: true, path: '/mcp' } }` by DEFAULT, and nothing between the two served it:
+// `ai: { mcp: { expose: true } }` by DEFAULT, and nothing between the two served it:
 // neither `x dev` nor `runRole` mounted the route, so `POST /mcp` answered `X_ROUTE_NOT_FOUND` in
 // every app ever scaffolded (measured 2026-09-05). The contract is one file: `apps/<app>/mcp.ts`
 // exports `mcp` — one `AppMcp`, or an array of them, one per population (customers, staff,
-// affiliates) — this module finds it, and both boots mount what it carries: endpoint #0 at
-// `ai.mcp.path`, every other at its own `defineAppMcp({ path })`.
+// affiliates) — this module finds it, and both boots mount what it carries: EVERY endpoint at its
+// own `defineAppMcp({ path })`, the one path its RFC 9728 metadata and its 401 also name.
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';
@@ -36,7 +36,7 @@ export const APP_MCP_ROUTE_NAME = 'mcp';
 export interface AppMcpMount {
   /** `[]` when `expose` is false, when nothing exports `mcp`, or when no endpoint has a route. */
   readonly routes: readonly Route[];
-  /** Endpoint #0's `POST <path>` when mounted, else `null` — the default, at `ai.mcp.path`. */
+  /** Endpoint #0's `POST <path>` when mounted, else `null` — the default endpoint. */
   readonly path: string | null;
   /** Every mounted endpoint's `POST <path>`, in export order — the boot line prints one each. */
   readonly paths: readonly string[];
@@ -48,17 +48,19 @@ export interface AppMcpMount {
   readonly warning: McpAppUnmountedError | undefined;
 }
 
-interface ExposeDeclaration {
-  readonly expose: boolean;
-  readonly path: string;
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-/** `config.ai.mcp` off the one loader (`app-config-load.ts`); nothing exposed with no config file. */
-async function exposeDeclaration(root: string): Promise<ExposeDeclaration | undefined> {
-  return (await loadAppConfig(root))?.ai.mcp;
+/**
+ * `defineAppMcp`'s own default — `mcp/src/transport-http.ts`, `input.path ?? '/mcp'` — named here
+ * ONLY in a warning about an endpoint that has no route and so no resolved path. It never decides
+ * where anything mounts: a mounted endpoint's path is `route.path`.
+ */
+const UNROUTED_MCP_PATH = '/mcp';
+
+/** `config.ai.mcp.expose` off the one loader (`app-config-load.ts`); false with no config file. */
+async function exposed(root: string): Promise<boolean> {
+  return (await loadAppConfig(root))?.ai.mcp.expose ?? false;
 }
 
 const isAppMcp = (value: unknown): value is AppMcp =>
@@ -94,21 +96,20 @@ const NOTHING: AppMcpMount = { routes: [], path: null, paths: [], warning: undef
  * does not have and answer 401 before the token was ever read.
  */
 export async function appMcpMount(root: string): Promise<AppMcpMount> {
-  const declared = await exposeDeclaration(root);
-  if (declared === undefined || !declared.expose) return NOTHING;
+  if (!(await exposed(root))) return NOTHING;
   const files = await candidates(root);
   const fallbackFile = 'apps/web/mcp.ts';
   for (const file of files) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const endpoints = endpointsOf(module[APP_MCP_EXPORT]);
     if (endpoints === undefined) continue;
-    return mountEndpoints(endpoints, declared.path, file);
+    return mountEndpoints(endpoints, file);
   }
   return {
     ...NOTHING,
     warning: new McpAppUnmountedError({
       reason: 'missing',
-      path: declared.path,
+      path: UNROUTED_MCP_PATH,
       file: files[0] ?? fallbackFile,
     }),
   };
@@ -119,11 +120,7 @@ export async function appMcpMount(root: string): Promise<AppMcpMount> {
  * route: it is skipped and the FIRST such is the warning, so one unfinished population never takes
  * the others down with it. Two endpoints on one route is thrown — see `McpPathDuplicateError`.
  */
-function mountEndpoints(
-  endpoints: readonly AppMcp[],
-  defaultPath: string,
-  file: string,
-): AppMcpMount {
+function mountEndpoints(endpoints: readonly AppMcp[], file: string): AppMcpMount {
   const routes: Route[] = [];
   const paths: string[] = [];
   const claimed = new Map<string, number>();
@@ -133,13 +130,15 @@ function mountEndpoints(
     if (route === undefined) {
       warning ??= new McpAppUnmountedError({
         reason: 'no-route',
-        path: defaultPath,
+        path: UNROUTED_MCP_PATH,
         file,
         ...(index === 0 ? {} : { endpoint: index }),
       });
       return;
     }
-    const path = index === 0 ? defaultPath : route.path;
+    // The descriptor's own path — the one its metadata, its `resourceUrl` and its 401 were built
+    // over. A mount path from anywhere else is a resource advertised where nothing answers.
+    const path = route.path;
     for (const mounted of endpointRoutes(route, path, index)) {
       const key = `${mounted.method} ${mounted.path}`;
       const first = claimed.get(key);
@@ -156,8 +155,7 @@ function mountEndpoints(
     }
     paths.push(path);
   });
-  const path = endpoints[0]?.route === undefined ? null : defaultPath;
-  return { routes, path, paths, warning };
+  return { routes, path: endpoints[0]?.route?.path ?? null, paths, warning };
 }
 
 type Descriptor = NonNullable<AppMcp['route']>;

@@ -16,7 +16,7 @@ import { backfill } from './backfill';
 import { backfillPass } from './backfill-pass';
 import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 const rows = entity('backfill_rate_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },
@@ -59,7 +59,7 @@ const throttled = (rate: number): Throttled => {
   const log: string[] = [];
   const seen: string[][] = [];
   const failOn = new Set<number>();
-  const store = createMemoryStepStore();
+  const store = memoryStepStore();
   const base = memoryRepo(rows, SEED);
   const table = tableFor(rows, {
     ...base,
@@ -169,7 +169,7 @@ describe('the rate throttle', () => {
   test('a declared rate throttles the real pass, and cancelling it leaves the wait at once', async () => {
     // Real timers, the shipped sleeper, and `backfill()` rather than a hand-built plan: this is the
     // end-to-end claim that `rate:` on a definition reaches the batch loop at all.
-    const store = createMemoryStepStore();
+    const store = memoryStepStore();
     const seen: string[][] = [];
     const table = tableFor(rows, memoryRepo(rows, SEED));
     const slow = backfill<Row>({

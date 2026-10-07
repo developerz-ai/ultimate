@@ -4,8 +4,7 @@
 // so a refactor that reorders a struct literal does not produce a diff. Two-space indent and
 // a trailing newline: the file is reviewed by humans and diffed by git.
 
-import { canonicalJson } from '@ultimat3/core';
-import { contentHash } from './build';
+import { canonicalJson, fingerprint } from '@ultimat3/core';
 import { ManifestDriftError } from './errors';
 import type { Manifest } from './schema';
 import { isManifest } from './schema';
@@ -18,7 +17,7 @@ export const MANIFEST_FILENAME = 'x.manifest.json';
  * `as const satisfies` and a test that WALKS it, the treatment `ARRAY_SECTIONS` already has
  * (`schema.ts`) — the annotation catches a key that is not on `Manifest`, only a walk catches one
  * that is missing. It was a bare annotation, and `manifestJson` writes these keys and no others
- * while `contentHash` hashes the whole body: a 14th field added to `Manifest` would have gone into
+ * while `fingerprint` hashes the whole body: a 14th field added to `Manifest` would have gone into
  * the hash and been dropped from the file, after which `assertNoDrift` convicts the committed
  * manifest as HAND_EDITED — a correct refusal carrying the wrong diagnosis, about a file nobody
  * touched. Exported for that test alone; deliberately NOT re-exported by `src/index.ts`, because
@@ -150,7 +149,7 @@ function describeDrift(onDisk: Manifest, fresh: Manifest): readonly string[] {
 /** Verify a file's `buildId` against its own contents — catches a hand-edited manifest. */
 export function verifyBuildId(manifest: Manifest): boolean {
   const { buildId, ...body } = manifest;
-  return contentHash(body) === buildId;
+  return fingerprint(body) === buildId;
 }
 
 async function readIfExists(path: string): Promise<string | undefined> {

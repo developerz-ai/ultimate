@@ -13,7 +13,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Do not regress — two drivers, one meaning
 
-- **`repo.ts` is the contract** (`Repo`, `Page`, `FindManyArgs`, `Transactor`); `memory-repo.ts` is
+- **`repo.ts` is the contract** (`Repo`, `FindManyArgs`, `Transactor`); `memory-repo.ts` is
   `memoryRepo()`.
 - **Two drivers, one meaning.** `memoryDriver()` and `postgresDriver()` share `plan.ts`, `cursor.ts`
   and the `Repo` contract. Every bulk or read feature carries BOTH a `*-parity.test.ts` (identical rows

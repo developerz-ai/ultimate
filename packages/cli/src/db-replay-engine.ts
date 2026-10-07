@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import type { DbClient, LinkedExtensions, Migration } from '@ultimat3/db';
 import {
   createPgliteClient,
-  createPostgresClient,
   DbError,
   linkPgliteExtensions,
+  postgresClient,
   raw,
 } from '@ultimat3/db';
 import { migrationExtensions } from './migration-extensions';
@@ -73,14 +73,14 @@ async function withPostgresScratch<T>(
   work: (client: DbClient) => Promise<T>,
 ): Promise<T> {
   const database = scratchName();
-  const admin = createPostgresClient({ url: adminUrl });
+  const admin = postgresClient({ url: adminUrl });
   try {
     // `template0`: the server's `template1` may carry objects an operator put there, and they
     // would be dumped as the app's.
     await admin.execute(raw(`create database ${database} template template0`));
     const target = new URL(adminUrl);
     target.pathname = `/${database}`;
-    const client = createPostgresClient({ url: target.toString() });
+    const client = postgresClient({ url: target.toString() });
     try {
       return await work(client);
     } finally {

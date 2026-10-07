@@ -1,7 +1,7 @@
 /**
  * The bound, and the honesty about it. Every other memory implementation in this framework is
- * capped and says so — `memoryRateLimitStore`, `MemoryIdempotencyStore`, `createLimiter`,
- * `createTotpReplayGuard`, `createMemoryEventBus` — and this sink was the outlier: a plain array
+ * capped and says so — `memoryRateLimitStore`, `memoryIdempotencyStore`, `createLimiter`,
+ * `createTotpReplayGuard`, `memoryEventBus` — and this sink was the outlier: a plain array
  * with a `push`, retaining a whole `Ctx` per record. 50 audited writes a second is 4.3M immortal
  * records a day, and the pod OOMs holding the trail it was retaining.
  */
@@ -14,7 +14,6 @@ import { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
 const recordAt = (n: number): AuditRecord => ({
   at: new Date(1_700_000_000_000 + n),
   name: `act${n}`,
-  action: `act${n}`,
   primitive: 'action',
   mutator: false,
   surface: 'http',
@@ -40,7 +39,7 @@ describe('the memory audit sink is bounded, and says which records it dropped', 
     const sink = memoryAuditSink({ maxRecords: 3 });
     for (let n = 0; n < 10; n += 1) sink.write(recordAt(n));
 
-    expect(sink.records().map((record) => record.action)).toEqual(['act7', 'act8', 'act9']);
+    expect(sink.records().map((record) => record.name)).toEqual(['act7', 'act8', 'act9']);
   });
 
   /**
@@ -59,12 +58,12 @@ describe('the memory audit sink is bounded, and says which records it dropped', 
     expect(sink.records().some((record) => record === first)).toBe(false);
   });
 
-  test('a 24.x record built with `action` alone is read back with name and primitive', () => {
+  test('a record is kept as written — no reading is laid over it on the way in', () => {
     const sink = memoryAuditSink({ maxRecords: 2 });
-    const { name: _name, primitive: _primitive, ...legacy } = recordAt(1);
-    sink.write(legacy);
+    const written = recordAt(1);
+    sink.write(written);
 
-    expect(sink.records()[0]).toMatchObject({ name: 'act1', action: 'act1', primitive: 'action' });
+    expect(sink.records()[0]).toBe(written);
   });
 
   test('it COUNTS what it discarded, so "it drops" is a number and not a comment', () => {

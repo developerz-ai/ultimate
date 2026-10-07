@@ -48,3 +48,16 @@ describe('@ultimat3/mail/events stays off the barrel', () => {
     expect(barrelSource).not.toMatch(/^export \{[^}]*\} from '\.\/delivery-event/m);
   });
 });
+
+describe('the in-memory mail driver has one spelling', () => {
+  // `createMemoryDriver` was this package's AND `@ultimat3/jobs`' (and `memoryDriver` was entity's
+  // and storage's), so a file wiring a queue and a mailbox aliased one of them by hand. 25.0.0
+  // names the thing: `memoryMailDriver`, beside `MemoryMailDriver`, the type it returns.
+  test('memoryMailDriver is the factory, and no create* spelling survives', async () => {
+    const barrel: Record<string, unknown> = await import('./index');
+    expect(typeof barrel['memoryMailDriver']).toBe('function');
+    expect(
+      Object.keys(barrel).filter((name) => /^create(Memory|Pg|Postgres)[A-Z]/.test(name)),
+    ).toEqual([]);
+  });
+});

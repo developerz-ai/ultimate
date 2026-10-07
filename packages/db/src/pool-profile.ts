@@ -137,7 +137,7 @@ export function assertPoolProfile(profile: PoolProfile): PoolProfile {
     assert(
       Number.isSafeInteger(value) && value >= min,
       `pool profile ${option} is ${String(value)}; it must be a whole number of ${min === 1 ? 'at least 1' : '0 or more, where 0 is the documented "no bound"'}`,
-      `pass a whole number for ${option} in createPostgresClient({ profile }), and parse an environment value first — Number(process.env.DATABASE_${option.toUpperCase()} ?? '') is NaN when the variable is unset`,
+      `pass a whole number for ${option} in postgresClient({ profile }), and parse an environment value first — Number(process.env.DATABASE_${option.toUpperCase()} ?? '') is NaN when the variable is unset`,
     );
   };
   whole('max', profile.max, 1);

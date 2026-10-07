@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { StepStore } from './steps';
 import { createStepRunner, MAX_TRACE_NAMES } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 function counting(inner: StepStore): StepStore & { gets: number; lists: number } {
   const counters = { gets: 0, lists: 0 };
@@ -33,7 +33,7 @@ function counting(inner: StepStore): StepStore & { gets: number; lists: number }
 
 describe('step replay', () => {
   test('a resume costs ONE list, never one get per completed step', async () => {
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     // A first attempt that got through 500 batches.
     for (let i = 0; i < 500; i += 1) {
       await inner.put({
@@ -66,7 +66,7 @@ describe('step replay', () => {
   });
 
   test('replay still returns the PERSISTED output, not a re-execution', async () => {
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     await inner.put({
       runId: 'run-1',
       name: 'charge',
@@ -86,7 +86,7 @@ describe('step replay', () => {
   test('a step written in THIS attempt is visible to the view it wrote through', async () => {
     // The hydrated map is only sound if every write goes into it. A `put` that missed would let a
     // later read of the same run see a stale absence.
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     const store = counting(inner);
     const runner = createStepRunner({ runId: 'run-1', jobName: 'x', store });
     await runner.step.run('a', () => Promise.resolve(1));
@@ -96,7 +96,7 @@ describe('step replay', () => {
   test('sleeps and waits go through the BOUNDED trace, not an unbounded push', async () => {
     // `trace()` is what enforces `MAX_TRACE_NAMES`; `replayed.push` bypassed it, so a long run's
     // replayed-name array grew without limit — the exact leak the trace bound exists to prevent.
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     const total = MAX_TRACE_NAMES + 50;
     for (let i = 0; i < total; i += 1) {
       await inner.put({

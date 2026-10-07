@@ -8,10 +8,14 @@ import type { EvalBaseline } from './eval-baseline';
 import { RECORD_ENV, writeBaseline } from './eval-baseline';
 import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
 import type { Scorer } from './scorers';
 import { exact } from './scorers';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const temporary: string[] = [];
 
@@ -24,7 +28,7 @@ afterEach(async () => {
 
 /** Answers keyed by the rendered prompt — a fixture, so the eval is a real test. */
 function gatewayWith(replies: Record<string, string>) {
-  return createGateway({ providers: [new EchoProvider({ replies })] });
+  return createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider({ replies })] });
 }
 
 const classify = () =>
@@ -205,7 +209,7 @@ describe('unit · a scorer that answers NaN cannot report a pass', () => {
   });
 });
 
-// The baseline is filed under the prompt's content hash, and `contentHash` covers `thinking`. An
+// The baseline is filed under the prompt's content hash, and `promptHash` covers `thinking`. An
 // eval that does not SEND it measures a configuration the hash does not describe.
 describe('unit · the eval sends the whole prompt configuration', () => {
   test('effort and thinking both reach the provider', async () => {
@@ -238,7 +242,7 @@ describe('unit · the eval sends the whole prompt configuration', () => {
       scorers: [exact],
       cases: [{ name: 'one', vars: { text: 'great' }, expected: 'Classify: great' }],
     });
-    await evaluation.run(createGateway({ providers: [recording] }));
+    await evaluation.run(createGateway({ defaultModel: FIXTURE_MODEL, providers: [recording] }));
 
     expect(seen.length).toBe(1);
     expect(seen[0]?.effort).toBe('low');

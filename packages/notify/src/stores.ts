@@ -9,13 +9,13 @@ import type { DigestStore } from './digest';
 import { NotifyStoreMissingError } from './errors';
 import type { InboxStore } from './inbox';
 import type { DeliveryLedger } from './ledger';
-import { createMemoryDeliveryLedger } from './ledger';
+import { memoryDeliveryLedger } from './ledger';
 import type { PreferenceStore } from './preferences';
 import { allowAllPreferences } from './preferences';
 
 export interface NotifyStores {
   /**
-   * Defaults to `createMemoryDeliveryLedger()`. A default is correct here and nowhere else in this
+   * Defaults to `memoryDeliveryLedger()`. A default is correct here and nowhere else in this
    * interface: one process with one replica is genuinely deduped by a heap map, and the failure
    * mode of having none at all — a replayed attempt sending twice — is worse than the failure mode
    * of a dev default, which is a second send only after a restart.
@@ -39,7 +39,7 @@ export interface InstalledNotifyStores {
 }
 
 const defaults = (): InstalledNotifyStores => ({
-  ledger: createMemoryDeliveryLedger(),
+  ledger: memoryDeliveryLedger(),
   inbox: undefined,
   preferences: allowAllPreferences(),
   digest: undefined,
@@ -51,7 +51,7 @@ let installed: InstalledNotifyStores = defaults();
  * `RuntimeOverrides` exists to refuse, and a merge would hide the second call's omissions. */
 export function setNotifyStores(stores: NotifyStores): void {
   installed = {
-    ledger: stores.ledger ?? createMemoryDeliveryLedger(),
+    ledger: stores.ledger ?? memoryDeliveryLedger(),
     inbox: stores.inbox,
     preferences: stores.preferences ?? allowAllPreferences(),
     digest: stores.digest,

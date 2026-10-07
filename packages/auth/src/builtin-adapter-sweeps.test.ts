@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
-import { BuiltinAdapter } from './builtin-adapter';
+import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 
 const ID = '00000000-0000-7000-8000-000000000101';
 
@@ -41,7 +41,7 @@ let adapter: BuiltinAdapter;
 
 const setup = (): void => {
   client = createRecordingClient();
-  adapter = new BuiltinAdapter(client);
+  adapter = postgresAuthAdapter(client);
 };
 
 const lastText = (): string => client.texts.at(-1) ?? '';

@@ -13,7 +13,7 @@ import { jobCursor, MAX_BULK_ROWS, MAX_JOB_PAGE } from './introspection';
 import type { JobDefinition, JobHandle } from './job';
 import { job } from './job';
 import type { SchedulerState } from './scheduler-state';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import type { Worker } from './worker';
 import { createWorker } from './worker';
 
@@ -362,4 +362,4 @@ export function operatorSurfaceScenarios(label: string, harness: OperatorHarness
   });
 }
 
-export { createMemorySchedulerState };
+export { memorySchedulerState };

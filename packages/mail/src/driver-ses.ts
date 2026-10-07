@@ -120,18 +120,18 @@ function bodyFor(message: MailMessage, from: string, raw: string, set: string | 
   });
 }
 
-export function createSesDriver(options: SesDriverOptions): MailDriver {
+export function sesMailDriver(options: SesDriverOptions): MailDriver {
   const region = requireRegion(options.region);
   const credentials = requireCredentials(options.credentials);
   const from = requireFrom(options.from);
   const origin = requireEndpoint(options.endpoint ?? sesEndpoint(region));
   const timeoutMs = finiteCount(
-    'createSesDriver',
+    'sesMailDriver',
     'timeoutMs',
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     1,
   );
-  const retain = resolveRetainMime('createSesDriver', options.retainMime);
+  const retain = resolveRetainMime('sesMailDriver', options.retainMime);
   const clock = options.clock ?? systemClock;
   const doFetch: MailFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
 

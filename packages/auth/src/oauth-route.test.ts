@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, setLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { oauthCallbackPath, oauthStartPath } from './oauth-paths';
 import { registerOAuthProvider } from './oauth-registry';
@@ -21,7 +21,7 @@ let logged: string[];
 let previousSink: ReturnType<typeof setLogSink>;
 
 beforeEach(() => {
-  adapter = new MemoryAdapter();
+  adapter = memoryAuthAdapter();
   auth = defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github', 'google'] });
   logged = [];
   previousSink = setLogSink((line) => {

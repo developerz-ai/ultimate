@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -197,7 +197,7 @@ describe('task', () => {
 
   test('enqueue() fires every declared entry now, once each', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     setJobDriver(driver);
     const nightly = task({
       name: 'nightlyDigest',
@@ -219,7 +219,7 @@ describe('task', () => {
 
   test('a manual enqueue() uses the job plain key; the scheduler stays occurrence-scoped', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     setJobDriver(driver);
     const nightly = task({
       name: 'nightlyDigest',
@@ -278,7 +278,7 @@ describe('a task is refused at declaration, never at the first tick', () => {
     task({ name: 'zGoodDigest', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
     const clock = fakeClock(T0);
     const scheduler = createScheduler({
-      driver: createMemoryDriver({ clock }),
+      driver: memoryJobDriver({ clock }),
       clock,
       cron: dailyAt3,
     });

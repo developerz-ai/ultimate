@@ -8,14 +8,6 @@ import { BadFlagError, MissingSubcommandError, UnknownCommandError } from './err
 // anywhere while still refusing with a fix line a shell reads as one argument.
 import { quoteArg } from './shell-quote';
 
-/**
- * The historical name for `@ultimat3/core`'s `nearestName`, kept because it shipped on this
- * package's exported surface and removing it would be a major for a rename. One implementation
- * behind both — this is a delegation, not the second copy of the algorithm that `@ultimat3/policy`
- * used to carry. New callers import `nearestName` from core.
- */
-export const nearest = nearestName;
-
 export type FlagValue = string | boolean;
 
 export interface FlagSpec {

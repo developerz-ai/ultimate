@@ -17,10 +17,11 @@ export const JOBS_SUBCOMMANDS = [
 
 /**
  * The drivers a drain may move work ONTO — every one of them durable, and that is the whole rule.
- * Closed, and read three ways: the flag summary, the refusal, and the `memory` case below. `drain`
- * itself is planned (`PLANNED_SUBCOMMANDS`): both values are still stubs in `@ultimat3/jobs`.
+ * Closed, and read three ways: the flag summary, the refusal, and the `memory` case below. EMPTY:
+ * `drain` is planned (`PLANNED_SUBCOMMANDS`) because no durable second driver ships — 25.0.0
+ * deleted both all-throw stubs, `nats` and `redis`. A real driver adds itself here.
  */
-export const DRAIN_TARGETS = ['redis', 'nats'] as const;
+export const DRAIN_TARGETS: readonly string[] = [];
 
 export const jobsSpec: CommandSpec = {
   name: 'jobs',
@@ -63,7 +64,7 @@ export const jobsSpec: CommandSpec = {
     {
       name: 'to',
       type: 'string',
-      summary: `drain (planned): target driver — ${DRAIN_TARGETS.join(', ')}`,
+      summary: `drain (planned): target driver — ${DRAIN_TARGETS.length === 0 ? 'none ships yet' : DRAIN_TARGETS.join(', ')}`,
       subcommands: ['drain'],
     },
     {

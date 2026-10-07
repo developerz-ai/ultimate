@@ -7,7 +7,7 @@ import type { DbClient } from '@ultimat3/db';
 import { raw, sql, withTransaction } from '@ultimat3/db';
 import type { IdempotencyStore } from './idempotency';
 import { withIdempotency } from './idempotency';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import { postgresIdempotencyStore, SQL_IDEMPOTENCY_TABLE } from './idempotency-postgres';
 
 /** The deadline every suite reclaims after. */
@@ -70,7 +70,7 @@ export async function postgresUnderTest(client: DbClient): Promise<StoreUnderTes
 /** The process default. Aged by moving its injected clock forward. */
 export function memoryUnderTest(): StoreUnderTest {
   let nowMs = 1_700_000_000_000;
-  let store = new MemoryIdempotencyStore({ now: () => nowMs, reclaimAfterMs: () => RECLAIM_MS });
+  let store = memoryIdempotencyStore({ now: () => nowMs, reclaimAfterMs: () => RECLAIM_MS });
   return {
     get store() {
       return store;
@@ -80,7 +80,7 @@ export function memoryUnderTest(): StoreUnderTest {
       return Promise.resolve();
     },
     reset: () => {
-      store = new MemoryIdempotencyStore({ now: () => nowMs, reclaimAfterMs: () => RECLAIM_MS });
+      store = memoryIdempotencyStore({ now: () => nowMs, reclaimAfterMs: () => RECLAIM_MS });
       return Promise.resolve();
     },
   };

@@ -44,7 +44,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `defineConfig()` for `app.config.ts` | `config.ts` |
 | how overlays layer onto it — per section, key by key | `config-merge.ts` |
 | what each key is when no layer says | `config-defaults.ts` |
-| the shape screens that run before any rule reads a value — section, list, boolean, closed set, path, locale list | `config-shape.ts` |
+| the shape screens that run before any rule reads a value — section, list, boolean, closed set, path | `config-shape.ts` |
+| the keys a major deleted (`locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme.tokens` in 25.0.0; `jobs.driver`, deleted in 5.0.0 and refused since 25.0.0) — each REFUSED by name with `X_CONFIG_INVALID` and its replacement, never ignored | `config-removed.ts` |
 | the `pwa` block — what an install needs, and the boot refusal when it is not there | `config-pwa.ts` |
 | `isSameOriginPath(value)` — a path on THIS origin as a browser resolves it: refuses `//host`, `/\host`, a C0 control or DEL (`/\t/evil.example` parses to `//evil.example`) and a dot segment leaving a `//` pathname. The one predicate for every URL precached as an offline answer, `@ultimat3/pwa`'s build included | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
@@ -204,7 +205,6 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `CookieInvalidError` | `X_COOKIE_INVALID` | `src/cookie.ts` |
 | `CursorInvalidError` | `X_CURSOR_INVALID` | `src/cursor.ts` |
 | `CursorSecretDevError` | `X_CURSOR_SECRET_DEV` | `src/dev-secrets.ts` |
-| `EnvExampleDriftError` | `X_ENV_EXAMPLE_DRIFT` | `src/env-example.ts` |
 | `EnvironmentInvalidError` | `X_ENVIRONMENT_INVALID` | `src/environment.ts` |
 | `EnvMissingError` | `X_ENV_MISSING` | `src/errors.ts` |
 | `ErrorReporterDsnInvalidError` | `X_ERROR_REPORTER_DSN_INVALID` | `src/error-reporter-sentry.ts` |
@@ -307,9 +307,11 @@ safe for `x.manifest.json`. Omit `required` for required — `required: false` i
 loosening. Never declare an env var for *which deploy this is* — that is `ULTIMATE_ENV`, below.
 
 `.env.example` is a **projection** of that schema, never a second list:
-`renderEnvExample(schema)` writes it, `assertEnvExample(schema, text)` fails with
-`X_ENV_EXAMPLE_DRIFT` when a declared key has no line — the failure that otherwise arrives as
-somebody else's `X_ENV_MISSING` on a variable nobody documented.
+`renderEnvExample(schema)` writes it and `checkEnvExample(schema, text)` reports `missing` /
+`extra` as data. The gate is `x verify`'s `manifest` step (`X_ENV_EXAMPLE_DRIFT`, fixed by
+`x env example`) — the failure that otherwise arrives as somebody else's `X_ENV_MISSING` on a
+variable nobody documented. `assertEnvExample` (key presence only, called by nothing) was deleted
+in 25.0.0.
 
 Loading `.env` is **Bun's**, not ours. `envFileCandidates()` states what it does, measured:
 `.env` → `.env.<mode>` → `.env.local`, with `.env.local` skipped under test, and the mode being
@@ -605,6 +607,20 @@ never a silently wrong page.
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
 | `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |
 
+### One page shape
+
+`Page<Row>` (`src/cursor-page.ts`) is what every cursor page answers — an entity `findMany`, a
+`query`'s `.page()`, the `?_first=` HTTP envelope and the typed client: `{ rows, nextCursor,
+hasMore }`, with ONE meaning. `nextCursor` is the cursor for the next page and `null` exactly when
+`hasMore` is false, so `while (page.hasMore)` and `while (page.nextCursor !== null)` are the same
+loop and both stop on the last page without fetching an empty one.
+
+| | |
+|---|---|
+| The type | a union of `{ nextCursor: string; hasMore: true }` and `{ nextCursor: null; hasMore: false }` — a literal that disagrees is a build error (`type-pins.ts`), and `if (page.hasMore)` narrows `nextCursor` to `string` |
+| `pageOf(rows, nextCursor)` | the only constructor: `hasMore` is derived from the cursor, never passed beside it. `null` (or `''`) is the last page |
+| Re-exported | by `@ultimat3/query` as its `Page`; `@ultimat3/entity` exports none — import it from here |
+
 ## One bounded cache for every `Intl` formatter
 
 ```ts
@@ -699,7 +715,7 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
 | `jitterStatedDelay(waitMs, capMs, random?)` | the ONE rule for a delay a responder named | the stated wait as a FLOOR plus a spread in `[0, min(wait / 2, cap))`, so a burst told `Retry-After: 1` does not replay in lockstep. `retryDecision`'s `retry-after` path (floor clamped to `max`; `jitter: 'none'` gets the bare floor) and `@ultimat3/jobs`' rate-limit deferral and webhook throttle all take it |
 | `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `createClientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
-| `createClientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` re-export it verbatim — it is one file because both are tier 3 and neither may import the other |
+| `createClientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` import it from here and re-export only its types — one file, because both are tier 3 and neither may import the other |
 | `isTransientFailure(error)` | what a CLIENT may send again | a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all. It **inverts** `retryDecision`'s unclassified default on purpose: a caller's own `AbortError` and a foreign `TypeError` are terminal |
 | `traceHeaders()`, `problemOf(text)`, `retryForStatus(code, status, retryAfterSeconds?)`, `FRAMEWORK_CODE` | what a typed client puts on the wire and reads back off it | the W3C header (nothing at all when the span context is incomplete), a total `problem+json` read, and the classification a STATUS is allowed to give when nobody declared one for the code — `retry-after` for a 429 or 503 that stated a delay, unless the code is declared `terminal` |
 | `retryAfterSecondsOf(header, date)`, `MAX_RETRY_AFTER_SECONDS` | the one `Retry-After` reader | delta-seconds, or an IMF-fixdate measured against the same response's `Date` header (never the client's clock), capped at a day; `0`, a date already past and anything else `undefined` — only a positive delay is a statement (`retryAfterOf`'s outbound rule), so unstated falls back to the jittered curve. `clientTransport` passes it to `problemError` and to a caller's `decodeError(status, text, retryAfterSeconds)`, which carry it as `meta.retryAfterSeconds` for `statedDelayMs` |

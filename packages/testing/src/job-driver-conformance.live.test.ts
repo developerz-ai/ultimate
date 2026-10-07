@@ -5,8 +5,8 @@
 import { afterAll, beforeAll, describe } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw } from '@ultimat3/db';
-import { createPgDriver, SQL_JOBS_TABLE } from '@ultimat3/jobs';
+import { postgresClient, raw } from '@ultimat3/db';
+import { postgresJobDriver, SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { jobDriverConformance } from './job-driver-conformance';
 import { behavesLike } from './shared-examples';
 import type { WorkerDatabase } from './template-db';
@@ -21,7 +21,7 @@ describe.skipIf(adminUrl === '')(testName('live', 'the pg job driver'), () => {
 
   beforeAll(async () => {
     db = await acquireWorkerDatabase({ adminUrl, templateName: 'ultimate_job_conformance' });
-    client = createPostgresClient({ url: db.url });
+    client = postgresClient({ url: db.url });
     await client.execute(raw(SQL_JOBS_TABLE));
   });
 
@@ -39,5 +39,5 @@ describe.skipIf(adminUrl === '')(testName('live', 'the pg job driver'), () => {
       (client as PostgresClient).query<R>({ text, values }),
   };
 
-  behavesLike(jobDriverConformance, () => createPgDriver({ executor }));
+  behavesLike(jobDriverConformance, () => postgresJobDriver({ executor }));
 });

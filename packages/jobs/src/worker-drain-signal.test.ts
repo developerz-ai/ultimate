@@ -22,7 +22,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver, NackOptions, QueueStats } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker, type Worker } from './worker';
 
@@ -69,7 +69,7 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
   });
   const nacks: NackOptions[] = [];
   let queueAtClose: QueueStats | undefined;
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const driver: JobDriver = {
     ...base,
     async nack(jobId: string, options: NackOptions): Promise<boolean> {
@@ -210,7 +210,7 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
     const isRunning = new Promise<void>((resolve) => {
       started = resolve;
     });
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     job<{ n: number }>({
       tenant: 'none',
       name: 'heldJob',

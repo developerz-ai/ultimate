@@ -170,6 +170,11 @@ export class MemoryBudgetStore implements BudgetStore {
   }
 }
 
+/** The one way to build the per-process store; the class is a type in the barrel only. */
+export function memoryBudgetStore(): MemoryBudgetStore {
+  return new MemoryBudgetStore();
+}
+
 export interface BudgetLedgerInput {
   readonly limits: BudgetLimits;
   /** Stable identity keys. Omit a key to skip that scope even when a limit is set. */

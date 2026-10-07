@@ -111,7 +111,7 @@ function assertProjectable(name: string, target: AnyAction): void {
   for (const field of ['input', 'output'] as const) {
     try {
       jsonSchemaOf(target[field]);
-      // The schema `.tool()` and `tools/list` publish — the one an MCP client reads.
+      // The schema `tools/list` publishes — the one an MCP client reads.
       toWireSchema(target[field]);
     } catch {
       // The thrown value is deliberately not rendered into the cause: it is the provider's, of

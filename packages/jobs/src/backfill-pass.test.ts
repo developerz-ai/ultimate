@@ -20,7 +20,7 @@ import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import type { StepStore } from './steps';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 beforeEach(() => {
   resetJobs();
@@ -147,7 +147,7 @@ describe('resume', () => {
     // cancelled or lease-expired between the two leaves a page that was swept and not recorded.
     // The order is deliberate — checkpointing first would report a page nobody wrote, and a lost
     // page is unrecoverable where a repeated one is the handler's problem.
-    const inner = createMemoryStepStore();
+    const inner = memoryStepStore();
     let dropped = false;
     const losesOneCheckpoint: StepStore = {
       ...inner,

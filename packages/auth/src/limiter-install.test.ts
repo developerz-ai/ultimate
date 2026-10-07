@@ -11,7 +11,7 @@ import {
   purgeAuthLimits,
   resetAuthLimiters,
 } from './limiter-install';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 import { createAuthLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
 
@@ -36,7 +36,7 @@ function tableLimiter(
   };
 }
 
-const adapter = (): MemoryAdapter => new MemoryAdapter();
+const adapter = (): MemoryAdapter => memoryAuthAdapter();
 
 /** Rows a sweep of that window would remove — distinct per window, so the count names the sweeper. */
 const rowsFor = (windowMs: number): number =>

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { RecordRows, Row } from '@ultimat3/core';
 import { rescope, UltimateError } from '@ultimat3/core';
-import { MemoryLocalStore } from './local-store-idb';
+import { memoryLocalStore } from './local-store-idb';
 import type { PersistableStore } from './record-persister';
 import { persistedTypes, recordPersister } from './record-persister';
 
@@ -50,7 +50,7 @@ const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve,
 
 function setup(principal: string | null | undefined) {
   const store = fakeStore();
-  const local = new MemoryLocalStore();
+  const local = memoryLocalStore();
   const timer = manualTimer();
   let leave: () => void = () => {};
   const persister = recordPersister({
@@ -73,7 +73,7 @@ describe('recordPersister', () => {
       expect(() =>
         recordPersister({
           store: { subscribe: () => () => {}, synced: () => undefined, restore: () => {} },
-          local: new MemoryLocalStore(),
+          local: memoryLocalStore(),
           types: new Set(['post']),
           debounceMs,
           onLeave: () => () => {},
@@ -122,7 +122,7 @@ describe('recordPersister', () => {
     const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
     Reflect.set(globalThis, 'document', doc);
     const store = fakeStore();
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     const persister = recordPersister({
       store,
       local,
@@ -178,7 +178,7 @@ describe('recordPersister', () => {
 
   test('a restore whose principal changed while the disk read was in flight restores nothing', async () => {
     const store = fakeStore();
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     await local.write('p:u1', [{ type: 'post', key: 'p1', row: { id: 'p1' } }], []);
     let principal = 'u1';
     let release: () => void = () => {};
@@ -204,7 +204,7 @@ describe('recordPersister', () => {
 
   test("a principal change wipes the previous principal's rows from disk", async () => {
     const store = fakeStore();
-    const local = new MemoryLocalStore();
+    const local = memoryLocalStore();
     recordPersister({ store, local, types: new Set(['post']), onLeave: () => () => {} });
     rescope('u1');
     await local.write('p:u1', [{ type: 'post', key: 'p1', row: { id: 'p1' } }], []);

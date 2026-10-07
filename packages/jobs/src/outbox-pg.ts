@@ -4,7 +4,7 @@
 // memory store hangs rows off the `Tx` object and is correct only inside one process; this is
 // what a deployment installs.
 //
-// `txExecutor` is injected rather than resolved here for the reason `createPgDriver` takes a
+// `txExecutor` is injected rather than resolved here for the reason `postgresJobDriver` takes a
 // `PgExecutor`: this package holds no `@ultimat3/db` dependency, and "which connection is this
 // `Tx` on" is a question only boot can answer. Boot has `currentTx()` — a `DbTx` IS a client on
 // the transaction's connection — so the wiring is one line there and no tier crossing here.
@@ -87,7 +87,7 @@ function toRecord(row: OutboxRow): OutboxRecord {
   };
 }
 
-export function createPgOutboxStore(options: PgOutboxOptions): OutboxStore {
+export function postgresOutboxStore(options: PgOutboxOptions): OutboxStore {
   // What each open transaction has staged, for `commit()`'s return value only. Never the source
   // of truth — that is the row, and the row's fate is the transaction's. A WeakMap so a `Tx` that
   // is neither committed nor rolled back (a process killed mid-request) leaves nothing behind.

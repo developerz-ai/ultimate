@@ -18,7 +18,7 @@
 // with nothing listening.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
 import { raw } from './sql';
@@ -92,7 +92,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a default under both GUC sett
   };
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await teardown();
   });
 

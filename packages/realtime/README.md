@@ -73,21 +73,21 @@ class — stay on `.`.
 | Concern | Entry | Export |
 |---|---|---|
 | tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
-| tier 2 | `./server` | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
-| replication | `./server` | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
+| tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `createReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
+| replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus, behind `NatsTransport` | `./server` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
 | reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
 | the page's record store | `.` | `RecordStore` — one record per `type:key`, synced truth plus the optimistic overlay — `recordKey`, `LocalTx`, `RowWindows`, `applyPatches`/`orderAfterPatches` |
-| the outbox | `.` | `OfflineQueue`, `MemoryQueueStore` — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
+| the outbox | `.` | `OfflineQueue`, `memoryQueueStore()` — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `createSyncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `.` | `useQuery`, `useRecord`, `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`: the boot's restore and the open outbox, capped (#506) |
-| offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `MemoryLocalStore` |
+| offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `memoryLocalStore()` |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
 
 ## `channelRef` — a channel an island can hold
@@ -593,7 +593,7 @@ principal.
   every subscriber learned the id and the instant of every *other* tenant's row as it was deleted,
   on a query whose `visible` rule had never let them see one. A subscriber that holds the row is
   told it is gone; one that does not gets nothing, counted as `rowsDenied`.
-- **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
+- **`postgresChangeFeed()` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication, every entity's replica identity and the slot — in that order, because the identity
   check is worthless once the slot exists — creates the slot when there is none, and confirms the
@@ -601,7 +601,7 @@ principal.
   checked** (`pg-publication.ts`): missing, it is created `FOR TABLE` every entity table; present,
   it gains the entity tables it lacks (`ALTER PUBLICATION … ADD TABLE`) and loses none. `FOR TABLE`
   because a table's owner may publish it without a superuser; a role that may not is refused with
-  `X_REPLICATION_FAILED` and the statement to run as one that may. `InMemoryChangeFeed` + `InProcessTransport` remain the
+  `X_REPLICATION_FAILED` and the statement to run as one that may. `memoryChangeFeed()` + `InProcessTransport` remain the
   defaults for `x dev` and every test. `START_REPLICATION` asks `messages 'true'`, which needs
   **Postgres ≥ 14**.
 - **A replication stream that ends is restarted** (24.0.0). `ChangeFeed.start` takes
@@ -630,7 +630,7 @@ principal.
   mode, detail, slot, lock }`: `mode` is `'embedded' | 'external'`, `detail` is the env key that
   selected it and never a credential, and `lock` is the `AdvisoryLock` for that feed — built here
   rather than by the caller, because constructing one needs the URL and the URL carries a password.
-  Neither `DATABASE_URL` nor `REPLICATION_URL` set → `InMemoryChangeFeed`,
+  Neither `DATABASE_URL` nor `REPLICATION_URL` set → `memoryChangeFeed()`,
   `mode: 'embedded'`. `REPLICATION_URL` wins when both are set, but naming a different host, port or
   database than `DATABASE_URL` is refused at boot with `X_CONFIG_INVALID` — a feed streaming the
   wrong database's WAL would be silently wrong forever. `REPLICATION_SLOT` (default `x_replicator`)
@@ -666,7 +666,7 @@ principal.
 - **A lock that is lost ends the stream** (24.0.0). The lock is a session, and a session can die
   while the replication stream stays up — Postgres then grants the lock to the next process that
   asks, and a holder that kept streaming would be one of two replicators. `AdvisoryLock.onLost(
-  listener)` (required) reports it: `PgAdvisoryLock` watches its idle session through
+  listener)` (required) reports it: `postgresAdvisoryLock()` watches its idle session through
   `PgConnection.watchIdle` (EOF, a read error or a server `FATAL`; no polling), and
   `createReplicator` answers exactly as it does a dead stream — `running` false, feed stopped,
   back into the takeover loop to compete for the lock again.
@@ -678,10 +678,10 @@ principal.
   been published, so a change the bus refuses every time backs off to `maxMs` instead of
   redialling at the base; `stats().failure` names its entity and lsn, and `running` stays `false`
   until it goes out.
-- **`PgAdvisoryLock` is the production `AdvisoryLock`** — `SELECT
+- **`postgresAdvisoryLock()` is the production `AdvisoryLock`** — `SELECT
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
-  `InMemoryAdvisoryLock` remains the single-process default for `x dev` and tests.
+  `memoryAdvisoryLock()` remains the single-process default for `x dev` and tests.
 - **`selectTransport(env, realtime)` decides which transport a boot fans out on** — and since
   22.0.0 the CONFIG decides it, not the environment: `realtime` is `app.config.ts`'s
   `{ transport, urlEnv }`. It returns `{ transport, mode, detail, bucket, presenceTtlMs, connect }`:

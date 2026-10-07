@@ -11,7 +11,7 @@ import { drain, logger, resetLifecycle, shutdownHookCount } from '@ultimat3/core
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { DriverUnavailableError } from './errors';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -57,7 +57,7 @@ interface GatedDriver {
 
 /** The memory driver with `enqueue` held open, so a round can be caught in the middle of one. */
 function gatedDriver(): GatedDriver {
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   let enqueues = 0;
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => {
@@ -326,7 +326,7 @@ describe('a round that fails says what to do about it', () => {
       fix: 'x doctor --json',
     });
     const failing: JobDriver = {
-      ...createMemoryDriver(),
+      ...memoryJobDriver(),
       enqueue: () => Promise.reject(unavailable),
     };
     const scheduler = createScheduler({
@@ -363,7 +363,7 @@ describe('a round that fails says what to do about it', () => {
     const spy = spyOn(logger, 'error');
     const clock = fakeClock(T0);
     const failing: JobDriver = {
-      ...createMemoryDriver(),
+      ...memoryJobDriver(),
       enqueue: () => Promise.reject(new Error('socket hang up')),
     };
     const scheduler = createScheduler({
@@ -395,7 +395,7 @@ describe('a round that fails says what to do about it', () => {
 describe('the scheduler holds its two shutdown hooks, and only while it runs', () => {
   test('start registers the pair, stop hands both back, a restart still holds one pair', async () => {
     const scheduler = createScheduler({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       tasks: [nightly],
       tickIntervalMs: 60_000,
     });
@@ -415,7 +415,7 @@ describe('the scheduler holds its two shutdown hooks, and only while it runs', (
 
   test('drainOnShutdown: false registers nothing to leak', async () => {
     const scheduler = createScheduler({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       tasks: [nightly],
       tickIntervalMs: 60_000,
       drainOnShutdown: false,
@@ -447,7 +447,7 @@ describe('the scheduler holds its two shutdown hooks, and only while it runs', (
     const clock = fakeClock(T0);
     const gate = heldGate();
     const counting = countingLeader(() => gate.held);
-    const scheduler = await armed(createMemoryDriver({ clock }), clock, counting.leader);
+    const scheduler = await armed(memoryJobDriver({ clock }), clock, counting.leader);
     scheduler.start();
 
     const manual = scheduler.stop('deploy');

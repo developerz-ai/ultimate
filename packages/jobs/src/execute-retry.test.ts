@@ -7,7 +7,7 @@ import type { Ctx } from '@ultimat3/core';
 import { createContext, logger, registerErrorRetry, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobExecution } from './execute';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
@@ -56,7 +56,7 @@ async function claimOne(options: {
     retry: { attempts: options.attempts, backoff: 'fixed', delay: 1_000, jitter: false },
     run: () => Promise.reject(options.throws()),
   });
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const nacks: NackOptions[] = [];
   const driver: JobDriver = {
     ...base,
@@ -146,7 +146,7 @@ describe('a terminal error stops on the attempt it happened', () => {
       retry: { attempts: 5, deadLetter: false, jitter: false },
       run: () => Promise.reject(coded(TERMINAL_CODE)),
     });
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const nacks: NackOptions[] = [];
     const spied: JobDriver = {
       ...driver,
@@ -249,7 +249,7 @@ describe('retry-after retries at the time the responder named', () => {
       retry: { attempts: 3, delay: 1_000, maxDelay: 60_000, jitter: false },
       run: () => Promise.reject(coded(RETRY_AFTER_CODE, { seconds: 86_400 })),
     });
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const nacks: NackOptions[] = [];
     const spied: JobDriver = {
       ...driver,
@@ -320,7 +320,7 @@ describe('this package classifies its own codes, and the executor acts on them',
         await step.run('charge', () => 'again');
       },
     });
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue({
       name: 'duplicate-step',
       queue: 'default',

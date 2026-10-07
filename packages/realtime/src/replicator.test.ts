@@ -8,9 +8,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AdvisoryLock } from './advisory-lock';
-import { InMemoryAdvisoryLock } from './advisory-lock';
+import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
-import { formatLsn, InMemoryChangeFeed } from './changefeed';
+import { formatLsn, memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
 import { createReplicator, normalize } from './replicator';
 import { parseChange } from './replicator-envelope';
@@ -23,9 +23,9 @@ const freshKey = (): string => {
 };
 
 const rig = (key: string) => {
-  const feed = new InMemoryChangeFeed();
+  const feed = memoryChangeFeed();
   const transport = new InProcessTransport();
-  const lock = new InMemoryAdvisoryLock(key);
+  const lock = memoryAdvisoryLock(key);
   return {
     feed,
     transport,
@@ -283,7 +283,7 @@ describe('lastLsn', () => {
     const replicator = createReplicator({
       feed,
       transport: new InProcessTransport(),
-      lock: new InMemoryAdvisoryLock(freshKey()),
+      lock: memoryAdvisoryLock(freshKey()),
     });
 
     // A replicator that just took the lock has published nothing, and answering `null` here is
@@ -298,7 +298,7 @@ describe('lastLsn', () => {
     const replicator = createReplicator({
       feed: resumedFeed(null),
       transport: new InProcessTransport(),
-      lock: new InMemoryAdvisoryLock(freshKey()),
+      lock: memoryAdvisoryLock(freshKey()),
     });
     expect(replicator.lastLsn()).toBe(null);
   });
@@ -374,11 +374,11 @@ describe('retryDelayMs', () => {
   });
 
   test('the injected rng is what jitters it, so a takeover storm is spread', () => {
-    const feed = new InMemoryChangeFeed();
+    const feed = memoryChangeFeed();
     const spread = createReplicator({
       feed,
       transport: new InProcessTransport(),
-      lock: new InMemoryAdvisoryLock(freshKey()),
+      lock: memoryAdvisoryLock(freshKey()),
       backoff: { ...defaultBackoff, jitter: 'full' },
       rng: () => 0.25,
     });

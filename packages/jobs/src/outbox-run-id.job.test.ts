@@ -9,11 +9,11 @@ import type { PgExecutor } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { claimOf } from './driver';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { job, resetJobs } from './job';
 import { createJobsFacade } from './outbox';
-import { createPgOutboxStore } from './outbox-pg';
+import { postgresOutboxStore } from './outbox-pg';
 import { createOutboxRelay } from './outbox-relay';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -38,7 +38,7 @@ describe('pg: an enqueue inside a transaction names the job its commit creates',
   test('the staged ids are the published row’s, and a repeated publish adds nothing', async () => {
     const pg = await embeddedPg();
     await pg.reset();
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const sync = job<{ requestId: string }>({
       tenant: 'none',
       name: 'syncAccount',
@@ -50,7 +50,7 @@ describe('pg: an enqueue inside a transaction names the job its commit creates',
 
     let bound: PgExecutor | undefined;
     const tx = { id: 'tx-1' } as unknown as Tx;
-    const store = createPgOutboxStore({
+    const store = postgresOutboxStore({
       executor: pg.executor,
       txExecutor: () => bound ?? expect.unreachable('staged outside the transaction'),
     });

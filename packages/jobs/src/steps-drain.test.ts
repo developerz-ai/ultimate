@@ -8,13 +8,13 @@ import { UltimateError } from '@ultimat3/core';
 import { JobAbortedError, JobDrainedError } from './errors';
 import type { StepFence, StepRecord, StepStore } from './steps';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 const FENCE: StepFence = { job: 'charge', jobId: 'job-1', workerId: 'w-1', claim: 1 };
 
 /** The memory store, recording the fence every write came with. */
 function fencedStore(): StepStore & { readonly fences: (StepFence | undefined)[] } {
-  const inner = createMemoryStepStore();
+  const inner = memoryStepStore();
   const fences: (StepFence | undefined)[] = [];
   return {
     ...inner,

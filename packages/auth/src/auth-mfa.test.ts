@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { type FrozenClock, frozenClock, seal } from '@ultimat3/core';
 import { type Auth, authenticate, defineAuth, login, register } from './auth';
 import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { generateRecoveryCodes, TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
 import {
   completeMfa,
@@ -25,7 +25,7 @@ const START = 1_700_000_000_000;
 const enrolled = async (): Promise<{ auth: Auth; clock: FrozenClock; userId: string }> => {
   const clock = frozenClock(START);
   const auth = defineAuth({
-    adapter: new MemoryAdapter(clock),
+    adapter: memoryAuthAdapter(clock),
     clock,
     password: { minLength: 12, params: FAST_PARAMS },
     rateLimit: { maxAttempts: 5, orgMaxAttempts: 10_000 },

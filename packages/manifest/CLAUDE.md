@@ -44,7 +44,7 @@ by the CLI, not imported.
 - Top-level key order in the file is fixed by `KEY_ORDER` in `emit.ts` — `as const satisfies
   readonly (keyof Manifest)[]` AND walked by `emit.test.ts`, the treatment `ARRAY_SECTIONS` has,
   because the annotation catches a key that is not on `Manifest` and only the walk catches one that
-  is MISSING. `manifestJson` writes those keys and no others while `contentHash` hashes the whole
+  is MISSING. `manifestJson` writes those keys and no others while `fingerprint` hashes the whole
   body, so a 14th field would go into the hash and be dropped from the file — after which
   `assertNoDrift` convicts the committed manifest as HAND_EDITED, a correct refusal with the wrong
   diagnosis, about a file nobody touched.
@@ -162,7 +162,7 @@ by the CLI, not imported.
 - `diff.ts` reads `mcp.expose` through `isMcpExposed` from `@ultimat3/core`, on **both** sides.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
   non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be
-  the answer `toMcpTools` gives, or the gate demands a major bump for a tool that never existed.
+  the answer `@ultimat3/mcp`'s catalog gives, or the gate demands a major bump for a tool that never existed.
 
 ## Commands
 

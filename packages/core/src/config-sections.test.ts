@@ -32,20 +32,21 @@ describe('overlays merge key by key', () => {
   test('an overlay section set to undefined changes nothing', () => {
     const config = defineConfig(
       { name: 'app', realtime: { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } },
-      { realtime: undefined, locales: undefined },
+      { realtime: undefined, roles: undefined },
     );
     expect(config.realtime).toEqual({ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' });
-    expect(config.locales).toEqual(['en']);
+    expect(config.roles).toEqual(['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator']);
   });
 
   test('nested sections merge per layer too: pwa.offline and ai.mcp', () => {
     const config = defineConfig(
-      { name: 'app', pwa: { offline: { fallback: '/offline' } }, ai: { mcp: { path: '/agents' } } },
-      { pwa: { offline: { neverCache: ['/api'] } }, ai: { mcp: { expose: false } } },
+      { name: 'app', pwa: { offline: { fallback: '/offline' } }, ai: { mcp: { expose: false } } },
+      { pwa: { offline: { neverCache: ['/api'] } }, ai: {} },
     );
     expect(config.pwa.offline.fallback).toBe('/offline');
     expect(config.pwa.offline.neverCache).toEqual(['/api']);
-    expect(config.ai.mcp).toEqual({ expose: false, path: '/agents' });
+    // An overlay's empty `ai` says nothing, so the base's `expose: false` survives it.
+    expect(config.ai.mcp).toEqual({ expose: false });
   });
 
   test('later layers still win, and an overlay may not rename the app', () => {

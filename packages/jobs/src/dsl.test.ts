@@ -11,7 +11,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { nowMs } from './clock';
 import { describeJob } from './describe';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -139,7 +139,7 @@ describe('the job DSL surface', () => {
 
   test('.enqueue() and .as() go through one path: the ambient jobs facade', async () => {
     const handle = defineJob();
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
 
     await handle.enqueue({ orgId: 'org-1' });
@@ -190,7 +190,7 @@ describe('the task DSL surface', () => {
 
   test('.enqueue() fires each entry through the job handle it declared, not a copy', async () => {
     const notify = defineJob();
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
 
     const handle = task({

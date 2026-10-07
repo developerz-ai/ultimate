@@ -13,7 +13,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { createMemoryDriver, inspectJob } from '@ultimat3/jobs';
+import { inspectJob, memoryJobDriver } from '@ultimat3/jobs';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
@@ -89,7 +89,7 @@ describe('unit · a sealed column on an operator surface', () => {
   test("a job's stored input, as `x jobs show` and the dev panel render it", async () => {
     const [row] = await table.all();
     expect(row?.credential).toBe(CANARY);
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id: jobId } = await driver.enqueue({
       name: 'rotateCredential',
       queue: 'default',

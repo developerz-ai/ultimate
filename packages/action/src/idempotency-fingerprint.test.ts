@@ -10,7 +10,7 @@ import {
   resetCursorSigning,
 } from '@ultimat3/core';
 import { withIdempotency } from './idempotency';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { type MemoryIdempotencyStore, memoryIdempotencyStore } from './idempotency-memory';
 
 const INPUT = { accountNumber: '0123456789', holderId: '1020304050' };
 const OTHER = { ...INPUT, accountNumber: '9876543210' };
@@ -30,7 +30,7 @@ function counter(): { readonly run: () => Promise<{ n: number }>; readonly runs:
 
 /** A record written by an earlier build: `requestHash` as given, settled with `{ n: 1 }`. */
 async function seeded(requestHash: string): Promise<MemoryIdempotencyStore> {
-  const store = new MemoryIdempotencyStore();
+  const store = memoryIdempotencyStore();
   const { record } = await store.reserve('k', requestHash);
   await store.settle('k', { n: 1 }, record.id, false);
   return store;
@@ -48,7 +48,7 @@ async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
 describe('the persisted request fingerprint', () => {
   test('is keyed: the stored value is not the bare SHA-256 of the input', async () => {
     configureCursorSigning('app-secret');
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     await withIdempotency(store, 'k', INPUT, counter().run);
     const stored = (await store.get('k'))?.requestHash ?? '';
     expect(stored.startsWith('h1:')).toBe(true);
@@ -57,7 +57,7 @@ describe('the persisted request fingerprint', () => {
 
   test('same key, same body replays without re-running', async () => {
     configureCursorSigning('app-secret');
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const { run, runs } = counter();
     await withIdempotency(store, 'k', INPUT, run);
     const second = await withIdempotency(store, 'k', INPUT, run);
@@ -67,7 +67,7 @@ describe('the persisted request fingerprint', () => {
 
   test('same key, different body is X_IDEMPOTENCY_CONFLICT', async () => {
     configureCursorSigning('app-secret');
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const { run, runs } = counter();
     await withIdempotency(store, 'k', INPUT, run);
     expect(await codeOf(withIdempotency(store, 'k', OTHER, run))).toBe('X_IDEMPOTENCY_CONFLICT');
@@ -97,7 +97,7 @@ describe('a record written before keying (legacy unkeyed fingerprint)', () => {
 describe('a record keyed under a secret this process does not hold', () => {
   test('replays on its status: no false conflict, and no second run', async () => {
     configureCursorSigning('old-secret');
-    const first = new MemoryIdempotencyStore();
+    const first = memoryIdempotencyStore();
     await withIdempotency(first, 'k', INPUT, counter().run);
     const stored = (await first.get('k'))?.requestHash ?? '';
 

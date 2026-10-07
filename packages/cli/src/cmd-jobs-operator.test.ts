@@ -8,9 +8,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; import() takes one already joined.
 import { join } from 'node:path';
 import {
-  createMemoryDriver,
   JobKeyBusyError,
   job,
+  memoryJobDriver,
   resetJobDriver,
   resetJobs,
   setJobDriver,
@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe('unit · x jobs show, for an operator', () => {
   test('show names the concurrency key a keyed run counts under, and null for any other', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     job({
       name: 'sync-account',
       tenant: 'none',
@@ -65,7 +65,7 @@ describe('unit · x jobs show, for an operator', () => {
   // `x jobs show` printed `concurrencyKey: null` (and no retry schedule) for every keyed run of a
   // real app — the command read the queue and never loaded the declarations it projects through.
   test('show loads the app, so the key comes from a job only the APP declares', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const root = appRoot();
     const jobsEntry = join(import.meta.dir, '../../jobs/src/index.ts');
     mkdirSync(join(root, 'apps/web/app/sync'), { recursive: true });
@@ -117,7 +117,7 @@ describe('unit · x jobs show, for an operator', () => {
     expect(flagString(args, 'name')).toBe('sync-account');
     expect(flagString(args, 'state')).toBe('running');
 
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const result = await runJobs(driver, {
       subcommand: 'ls',
       flags: { name: 'sync-account', state: 'running' },
@@ -128,7 +128,7 @@ describe('unit · x jobs show, for an operator', () => {
 
 describe('unit · x jobs pause, resume, rm and promote', () => {
   test('pause stops every claim on that queue, resume undoes it, and ls reports it', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
     const claim = () =>
       driver.claim({ queues: ['default'], limit: 5, visibilityTimeoutMs: 30_000, workerId: 'w' });
@@ -149,7 +149,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
   });
 
   test('pause and resume name the queue positional when it is missing', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     for (const subcommand of ['pause', 'resume']) {
       const refusal = await runJobs(driver, { subcommand }).catch((error: unknown) => error);
       expect(refusal).toBeInstanceOf(MissingPositionalError);
@@ -158,7 +158,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
   });
 
   test('rm removes a queued job, refuses a running one, and an unknown id is X_JOB_UNKNOWN', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const queued = await enqueue(driver, 'send-email', Date.now() + 60_000);
     const held = await enqueue(driver, 'send-email');
     await driver.claim({
@@ -186,7 +186,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
   });
 
   test('promote makes a delayed job due, and says why a job that is not waiting cannot be', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const delayed = await enqueue(driver, 'send-email', Date.now() + 60_000);
     const due = await enqueue(driver, 'send-email');
 
@@ -206,7 +206,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
 
 describe('unit · x jobs ls paging', () => {
   test('a full page answers the cursor of the next, and the last page answers null', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const ids: string[] = [];
     for (let index = 0; index < 5; index += 1) ids.push(await enqueue(driver, 'send-email'));
 
@@ -229,7 +229,7 @@ describe('unit · x jobs ls paging', () => {
   });
 
   test('a page past the queue`s bound is a flag error naming the walk', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const refusal = await runJobs(driver, { subcommand: 'ls', flags: { limit: '201' } }).catch(
       (error: unknown) => error,
     );

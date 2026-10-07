@@ -6,9 +6,9 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   setDbClient,
   setStatementObserver,
@@ -46,7 +46,7 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     const migration = generateMigration({

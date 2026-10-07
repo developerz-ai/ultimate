@@ -8,9 +8,9 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   sql,
   sqlState,
@@ -58,7 +58,7 @@ describe.skipIf(!hasPostgres)('live · postgres · iff over a null test becomes 
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     await client.execute(raw(DROP));
     const migration = generateMigration({
       entities: [posts.$describe(), partial.$describe()],

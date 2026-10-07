@@ -1,11 +1,11 @@
-// The drain's two data-integrity rules, exercised against `createMemoryDriver()` — a real driver
+// The drain's two data-integrity rules, exercised against `memoryJobDriver()` — a real driver
 // with real claim/ack/nack and the same `runAt` visibility rule a pg queue enforces. A mock that
 // always granted a lease would assert nothing: not leasing is exactly the case that must be safe.
 
 import { describe, expect, test } from 'bun:test';
 import { NotImplementedError } from '@ultimat3/core';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
-import { createMemoryDriver, createRedisDriver } from '@ultimat3/jobs';
+import { memoryJobDriver } from '@ultimat3/jobs';
 import { drainJobs } from './jobs-drain';
 import { listJobs } from './jobs-report';
 
@@ -74,8 +74,8 @@ function leaselessSource(inner: JobDriver): { driver: JobDriver; acked: string[]
 
 describe('unit · drainJobs ownership', () => {
   test('moves every job it can lease and marks the source copy done', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const readyId = await enqueue(source, 'ready-job');
     const suspendedId = await makeSuspendedJob(source, 'suspended-job');
 
@@ -94,8 +94,8 @@ describe('unit · drainJobs ownership', () => {
   // the same counter every completed run does, so draining 10,000 queued jobs put 10,000 runs in
   // the source's history for work that had not started.
   test('a moved job adds nothing to the source`s counters — it was moved, not run', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const id = await enqueue(source, 'ready-job');
 
     const outcome = await drainJobs(source, target, false);
@@ -106,8 +106,8 @@ describe('unit · drainJobs ownership', () => {
   });
 
   test('never acknowledges a candidate it could not lease', async () => {
-    const inner = createMemoryDriver();
-    const target = createMemoryDriver();
+    const inner = memoryJobDriver();
+    const target = memoryJobDriver();
     const id = await enqueue(inner, 'ready-job');
     const { driver: source, acked } = leaselessSource(inner);
 
@@ -125,8 +125,8 @@ describe('unit · drainJobs ownership', () => {
   });
 
   test('a job that is not yet due is skipped, because no driver leases it before runAt', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const delayedId = await enqueue(source, 'delayed-job', Date.now() + 60_000);
 
     const outcome = await drainJobs(source, target, false);
@@ -138,8 +138,8 @@ describe('unit · drainJobs ownership', () => {
   });
 
   test('--dry-run reports the plan, takes no lease and moves nothing', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const readyId = await enqueue(source, 'ready-job');
     await enqueue(source, 'delayed-job', Date.now() + 60_000);
 
@@ -156,8 +156,20 @@ describe('unit · drainJobs ownership', () => {
   });
 
   test('a record that cannot enqueue on the target is reported and its lease is released', async () => {
-    const source = createMemoryDriver();
-    const target = createRedisDriver(); // honest X_NOT_IMPLEMENTED stub — enqueue always throws
+    const source = memoryJobDriver();
+    // A target whose every enqueue refuses — what the deleted 24.x Redis stub did. The refusal is
+    // input handed to the drain, not this test's verdict.
+    const target: JobDriver = {
+      ...memoryJobDriver(),
+      name: 'refusing',
+      enqueue: () =>
+        Promise.reject(
+          new NotImplementedError({
+            cause: 'enqueue on the "refusing" jobs driver is not implemented',
+            fix: 'call setJobDriver(postgresJobDriver()) at boot',
+          }),
+        ),
+    };
     const id = await enqueue(source, 'ready-job');
 
     const outcome = await drainJobs(source, target, false);
@@ -183,8 +195,8 @@ describe('unit · drainJobs ownership', () => {
 
 describe('unit · drainJobs step transfer', () => {
   test('a suspended run arrives on the target with its persisted steps intact', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const id = await makeSuspendedJob(source, 'checkout');
     const runId = await runIdOf(source, id);
     await source.steps.put(completedStep(runId, 'charge-card'));
@@ -202,8 +214,8 @@ describe('unit · drainJobs step transfer', () => {
   });
 
   test('a candidate left behind keeps its steps on the source, untouched', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const id = await enqueue(source, 'delayed-job', Date.now() + 60_000);
     const runId = await runIdOf(source, id);
     await source.steps.put(completedStep(runId, 'charge-card'));
@@ -215,8 +227,8 @@ describe('unit · drainJobs step transfer', () => {
   });
 
   test('a run with no steps still transfers, and the source is acknowledged last', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     const id = await enqueue(source, 'ready-job');
     const runId = await runIdOf(source, id);
 
@@ -232,8 +244,8 @@ describe('unit · drainJobs step transfer', () => {
 // 100, the summary said "100 left", and 250 stayed on a source the operator was retiring.
 describe('unit · the drain walks every page', () => {
   test('350 ready jobs on the source are 350 candidates, 350 moved, none left', async () => {
-    const source = createMemoryDriver();
-    const target = createMemoryDriver();
+    const source = memoryJobDriver();
+    const target = memoryJobDriver();
     for (let index = 0; index < 350; index += 1) await enqueue(source, `bulk-${index}`);
 
     const planned = await drainJobs(source, target, true);
@@ -253,8 +265,8 @@ describe('unit · the drain walks every page', () => {
 // was owed. A refused id is tried once per drain.
 describe('unit · a refused row is tried once', () => {
   test('a partly refused batch never re-leases the refused id', async () => {
-    const source = createMemoryDriver();
-    const inner = createMemoryDriver();
+    const source = memoryJobDriver();
+    const inner = memoryJobDriver();
     const target: JobDriver = {
       ...inner,
       enqueue: (request) =>

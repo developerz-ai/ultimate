@@ -165,7 +165,7 @@ export const driverUnavailable = (what: string): MailError =>
   new MailError({
     code: 'X_MAIL_DRIVER_UNAVAILABLE',
     cause: `${what} — nothing can deliver the message`,
-    fix: 'setMailDriver(createMemoryDriver()) in dev, createSmtpDriver({ url: env.SMTP_URL }) live',
+    fix: 'setMailDriver(memoryMailDriver()) in dev, smtpMailDriver({ url: env.SMTP_URL }) live',
     meta: { what },
   });
 

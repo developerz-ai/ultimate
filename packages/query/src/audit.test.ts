@@ -85,7 +85,6 @@ describe('unit · an audited read is recorded once per call', () => {
     expect(Object.keys(record).sort()).toEqual([...AUDIT_RECORD_FIELDS].sort());
     expect(record).toMatchObject({
       name: 'postList',
-      action: 'postList',
       primitive: 'query',
       mutator: false,
       surface: 'server',

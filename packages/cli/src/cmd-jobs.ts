@@ -8,8 +8,6 @@ import { renderFixShellArg } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
 import {
   cancelJob,
-  createNatsDriver,
-  createRedisDriver,
   DEFAULT_JOB_PAGE,
   jobCursor,
   MAX_JOB_PAGE,
@@ -46,7 +44,7 @@ import { flagString } from './parse';
 export { DRAIN_TARGETS, JOBS_SUBCOMMANDS } from './cmd-jobs-spec';
 
 /**
- * `memory` was on that list until 2026-09 and could not be: `createMemoryDriver()` is a `Map` in
+ * `memory` was on that list until 2026-09 and could not be: `memoryJobDriver()` is a `Map` in
  * THIS process, so `x jobs drain --to memory` enqueued each job into it and then `ack`ed the
  * durable row off the source. Reproduced against two real drivers — source ready 1 -> 0, target
  * ready 1, `ok: true` — and the target dies with the command. `wiki/CLI-Reference.md` said the
@@ -119,38 +117,28 @@ function refuseOversizedPage(limit: string | undefined): void {
   });
 }
 
-function requireEnvUrl(env: CommandContext['env'], name: string, target: string): string {
-  const value = env[name];
-  if (value === undefined || value.trim().length === 0) {
-    throw new BadFlagError({
-      flag: 'to',
-      command: 'jobs',
-      reason: `--to ${target} needs ${name} set in the environment`,
-    });
-  }
-  return value;
-}
-
 /**
- * PARKED with `drainResult` below, behind `plannedSubcommand('jobs', 'drain')` in `run`: `redis`
- * and `nats` are `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs`, so every drain onto one leased the
- * source batch for `DRAIN_LEASE_MS`, failed each enqueue and nacked it back — five minutes of a
- * production queue no worker could claim from, for a move that could not happen. The body stays,
- * tested, because the day a durable driver ships re-enabling it is deleting the planned row and
- * one line in `run`, and the `memory` refusal is the lesson that must survive that day: a target
- * that accepts every enqueue and then vanishes with the process loses every job it was handed.
+ * PARKED with `drainResult` below, behind `plannedSubcommand('jobs', 'drain')` in `run`. Its one
+ * target was `redis`, an `X_NOT_IMPLEMENTED` stub in `@ultimat3/jobs`, so every drain onto it
+ * leased the source batch for `DRAIN_LEASE_MS`, failed each enqueue and nacked it back — five
+ * minutes of a production queue no worker could claim from, for a move that could not happen.
+ * 25.0.0 deleted the stub, so `DRAIN_TARGETS` is empty and every value is refused here. The body
+ * stays, tested, because the day a durable driver ships re-enabling it is one `DRAIN_TARGETS`
+ * entry, its builder below, deleting the planned row and one line in `run` — and the `memory`
+ * refusal is the lesson that must survive that day: a target that accepts every enqueue and then
+ * vanishes with the process loses every job it was handed.
  */
-export function buildDrainTarget(to: string | undefined, env: CommandContext['env']): JobDriver {
+export function buildDrainTarget(to: string | undefined, _env: CommandContext['env']): JobDriver {
   if (to === 'memory') refuseMemoryTarget();
-  if (to === undefined || !(DRAIN_TARGETS as readonly string[]).includes(to)) {
-    throw new BadFlagError({
-      flag: 'to',
-      command: 'jobs',
-      reason: `expects one of: ${DRAIN_TARGETS.join(', ')}`,
-    });
-  }
-  if (to === 'redis') return createRedisDriver({ url: requireEnvUrl(env, 'REDIS_URL', 'redis') });
-  return createNatsDriver({ servers: [requireEnvUrl(env, 'NATS_URL', 'nats')] });
+  throw new BadFlagError({
+    flag: 'to',
+    command: 'jobs',
+    reason:
+      DRAIN_TARGETS.length === 0
+        ? 'no durable drain target ships in this build: Postgres is the only durable job driver'
+        : `expects one of: ${DRAIN_TARGETS.join(', ')}`,
+    fix: 'x jobs ls --json   # the queue as it stands; Postgres is the only durable driver, so there is nowhere to drain to',
+  });
 }
 
 async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {

@@ -8,7 +8,7 @@
 // un-bypassable rather than merely recommended.
 
 import type { SemanticCache } from '@ultimat3/cache';
-import { createMemorySemanticCache } from '@ultimat3/cache';
+import { memorySemanticCache } from '@ultimat3/cache';
 import { cachedFormatter, MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { HashEmbedder } from './embeddings';
@@ -63,7 +63,7 @@ export function configureAi(input: AiRuntimeInput): void {
   runtime = {
     gateway: input.gateway,
     embedder: input.embedder ?? new HashEmbedder(),
-    semanticCache: input.semanticCache ?? (() => createMemorySemanticCache()),
+    semanticCache: input.semanticCache ?? (() => memorySemanticCache()),
     redact: input.redact ?? noRedaction,
   };
   // A new runtime means a new embedder and a new gateway; vectors from the old one are not
@@ -114,7 +114,7 @@ export function semanticCacheFor(scope: string): SemanticCache {
   return cachedFormatter(
     caches,
     scope,
-    () => runtime?.semanticCache(scope) ?? createMemorySemanticCache(),
+    () => runtime?.semanticCache(scope) ?? memorySemanticCache(),
   );
 }
 

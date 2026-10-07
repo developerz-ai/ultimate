@@ -4,7 +4,7 @@
 // as an untyped driver error instead of X_DB_UNAVAILABLE.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import { DbError } from './errors';
 import { sql } from './sql';
 
@@ -79,10 +79,10 @@ function installFakeSql(options: FakeSqlOptions = {}): FakePool {
 const rejection = (promise: Promise<unknown>): Promise<unknown> =>
   promise.catch((error: unknown) => error);
 
-describe('createPostgresClient', () => {
+describe('postgresClient', () => {
   test('the pool url carries the role statement timeout and the application name', async () => {
     const pool = installFakeSql();
-    const client = createPostgresClient({
+    const client = postgresClient({
       url: TEST_URL,
       role: 'worker',
       applicationName: 'ultimate-worker',
@@ -113,7 +113,7 @@ describe('createPostgresClient', () => {
     // setting that must survive. An operator's `pg_stat_activity` filter, a pooler routing rule
     // and an audit rule all stop matching, silently, when 'ultimate' lands on top of it.
     const pool = installFakeSql();
-    await createPostgresClient({
+    await postgresClient({
       url: `${TEST_URL}?application_name=billing-api`,
       role: 'worker',
     }).query(sql`select 1`);
@@ -122,7 +122,7 @@ describe('createPostgresClient', () => {
 
     // The other spelling of the same setting. Two spellings that disagree is worse than either,
     // because which one the backend honours is argument order nobody here measured.
-    await createPostgresClient({
+    await postgresClient({
       url: `${TEST_URL}?options=-c+application_name%3Dbilling-api`,
       role: 'worker',
     }).query(sql`select 1`);
@@ -132,7 +132,7 @@ describe('createPostgresClient', () => {
 
   test('an explicit applicationName wins over the url, and wins in both spellings', async () => {
     const pool = installFakeSql();
-    await createPostgresClient({
+    await postgresClient({
       url: `${TEST_URL}?options=-c+application_name%3Dbilling-api`,
       role: 'worker',
       applicationName: 'ultimate-worker',
@@ -149,7 +149,7 @@ describe('createPostgresClient', () => {
    */
   test('a role with no statement timeout still pins the timeout off', async () => {
     const pool = installFakeSql();
-    await createPostgresClient({ url: TEST_URL, role: 'migrate' }).query(sql`select 1`);
+    await postgresClient({ url: TEST_URL, role: 'migrate' }).query(sql`select 1`);
 
     expect(pool.urls[0]).toContain('statement_timeout%3D0');
   });
@@ -166,7 +166,7 @@ describe('createPostgresClient', () => {
     for (const role of ['web', 'migrate'] as const) {
       test(`survive alongside the role timeout on ${role}`, async () => {
         const pool = installFakeSql();
-        await createPostgresClient({ url: WITH_OPTIONS, role }).query(sql`select 1`);
+        await postgresClient({ url: WITH_OPTIONS, role }).query(sql`select 1`);
 
         const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
         expect(options).toBe(
@@ -178,7 +178,7 @@ describe('createPostgresClient', () => {
     test('lose to the role on statement_timeout itself, and keep everything else', async () => {
       const pool = installFakeSql();
       const url = `${TEST_URL}?options=-c%20statement_timeout%3D1%20-c%20search_path%3Dapp`;
-      await createPostgresClient({ url, role: 'web' }).query(sql`select 1`);
+      await postgresClient({ url, role: 'web' }).query(sql`select 1`);
 
       const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
       expect(options).toBe('-c search_path=app -c statement_timeout=10000');
@@ -189,7 +189,7 @@ describe('createPostgresClient', () => {
 describe('reserve', () => {
   test('a pin runs its statements on the reserved handle and releases it once', async () => {
     const pool = installFakeSql();
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     await connection.execute(sql`BEGIN READ ONLY`);
     await connection.query(sql`select ${1}`);
@@ -202,7 +202,7 @@ describe('reserve', () => {
   test('a pool that cannot hand out a connection fails with X_DB_UNAVAILABLE', async () => {
     const source = new DriverFailure('sorry, too many clients already');
     installFakeSql({ reserveError: source });
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     const caught = await rejection(client.reserve());
 
@@ -216,7 +216,7 @@ describe('reserve', () => {
 
   test('a statement that fails on the pinned connection is typed the same way', async () => {
     installFakeSql({ statementError: new DriverFailure('deadlock detected') });
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     const caught = await rejection(connection.query(sql`select 1`));
 
@@ -233,7 +233,7 @@ describe('reserve', () => {
       constraint: 'users_email_key',
     });
     installFakeSql({ statementError: source });
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     const caught = (await rejection(connection.execute(sql`insert into users`))) as DbError;
 
@@ -247,7 +247,7 @@ describe('reserve', () => {
   // already given to somebody else — freeing a pin that is not ours to free.
   test('release is idempotent, and disposal is the same call', async () => {
     const pool = installFakeSql();
-    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+    const connection = await postgresClient({ url: TEST_URL }).reserve();
 
     connection.release();
     connection.release();
@@ -262,7 +262,7 @@ describe('reserve', () => {
   // transaction, committed or rolled back with it, and no error anywhere to explain it.
   test('a released reservation runs on the pool, never on the pin it gave back', async () => {
     const pool = installFakeSql();
-    const leaked = await createPostgresClient({ url: TEST_URL }).reserve();
+    const leaked = await postgresClient({ url: TEST_URL }).reserve();
     await leaked.execute(sql`BEGIN`);
     leaked.release();
 
@@ -276,7 +276,7 @@ describe('reserve', () => {
 
   test('`using` gives the pin back on the way out of the block', async () => {
     const pool = installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     {
       using connection = await client.reserve();
@@ -290,7 +290,7 @@ describe('reserve', () => {
 
   test('`using` releases even when the body throws', async () => {
     const pool = installFakeSql({ statementError: new DriverFailure('deadlock detected') });
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     const caught = await rejection(
       (async () => {
@@ -307,7 +307,7 @@ describe('reserve', () => {
 describe('close', () => {
   test('closes the pool it opened, and reopens on the next statement', async () => {
     const pool = installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
 
     await client.query(sql`select 1`);
     await client.close();
@@ -320,7 +320,7 @@ describe('close', () => {
   test('a client that never connected has no pool to close', async () => {
     const pool = installFakeSql();
 
-    await createPostgresClient({ url: TEST_URL }).close();
+    await postgresClient({ url: TEST_URL }).close();
 
     expect(pool.closes).toBe(0);
     expect(pool.urls).toEqual([]);
@@ -332,7 +332,7 @@ describe('close', () => {
   test('a rejecting close still clears the pool, so the next statement opens a live one', async () => {
     const failure = new DriverFailure('connection terminated unexpectedly');
     const pool = installFakeSql({ closeError: failure });
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
     await client.query(sql`select 1`);
 
     expect(await rejection(client.close())).toBe(failure);
@@ -345,7 +345,7 @@ describe('close', () => {
 
   test('closing twice after a rejection closes the second pool, not the dead one', async () => {
     const pool = installFakeSql({ closeError: new DriverFailure('connection terminated') });
-    const client = createPostgresClient({ url: TEST_URL });
+    const client = postgresClient({ url: TEST_URL });
     await client.query(sql`select 1`);
 
     await rejection(client.close());
@@ -377,17 +377,15 @@ describe('the pool profile is screened where the role default is overridden', ()
   for (const option of NUMBERS) {
     test(`${option}: NaN is refused at construction, naming the option`, () => {
       expect(() =>
-        createPostgresClient({ url: TEST_URL, role: 'web', profile: { [option]: Number.NaN } }),
+        postgresClient({ url: TEST_URL, role: 'web', profile: { [option]: Number.NaN } }),
       ).toThrow(new RegExp(option));
     });
   }
 
   test('max must be at least one connection; the timeouts may be zero, which means no bound', () => {
-    expect(() => createPostgresClient({ url: TEST_URL, profile: { max: 0 } })).toThrow(
-      /X_INVARIANT/,
-    );
+    expect(() => postgresClient({ url: TEST_URL, profile: { max: 0 } })).toThrow(/X_INVARIANT/);
     expect(() =>
-      createPostgresClient({
+      postgresClient({
         url: TEST_URL,
         role: 'migrate',
         profile: { statementTimeoutMs: 0, lockTimeoutMs: 0, acquireTimeoutMs: 0 },
@@ -396,14 +394,14 @@ describe('the pool profile is screened where the role default is overridden', ()
   });
 
   test('a fraction is refused — a millisecond budget is whole', () => {
-    expect(() => createPostgresClient({ url: TEST_URL, profile: { idleTimeoutMs: 1.5 } })).toThrow(
+    expect(() => postgresClient({ url: TEST_URL, profile: { idleTimeoutMs: 1.5 } })).toThrow(
       /X_INVARIANT/,
     );
   });
 
   test('every shipped role profile passes its own screen', () => {
     for (const role of ['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator'] as const) {
-      expect(() => createPostgresClient({ url: TEST_URL, role })).not.toThrow();
+      expect(() => postgresClient({ url: TEST_URL, role })).not.toThrow();
     }
   });
 });

@@ -1,16 +1,15 @@
 /**
  * The catalogue's claims about itself: registration order is the capability ladder, so a refusal
  * can be answered with a real upgrade rather than a downgrade; `reasoningBody` sends a control
- * only when the caller asked for one; and — the reason the registry exists — a model an APP
- * registered is priced by its own spec, never by whatever Anthropic charges for a Claude id.
+ * only when the caller asked for one; and — the reason the registry exists — a model is priced by
+ * the spec the APP registered for it, and a model it never registered is priced by nothing.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import {
-  ANTHROPIC_MODEL_IDS,
-  DEFAULT_MODEL,
   isModelRegistered,
   modelIds,
   modelSpec,
@@ -20,6 +19,9 @@ import {
   resetModels,
 } from './models';
 import { costOf } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const GATEWAY_MODEL = 'llama-internal-70b';
 
@@ -92,19 +94,11 @@ describe('the registry is open', () => {
     expect(moreCapableThan('claude-sonnet-5-5')).toBe('claude-opus-5');
   });
 
-  test('resetModels restores exactly the built-in catalogue', () => {
-    registerModel({
-      id: GATEWAY_MODEL,
-      contextWindow: 1,
-      maxOutput: 1,
-      inputPerMillion: { minor: 1, currency: 'USD' },
-      outputPerMillion: { minor: 1, currency: 'USD' },
-      cacheMinimumTokens: 0,
-      reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
-    });
-    expect(modelIds()).toHaveLength(ANTHROPIC_MODEL_IDS.length + 1);
+  // M12: there is no built-in catalogue to restore. Empty is the state an app starts from.
+  test('resetModels empties the catalogue — the framework has no rows to put back', () => {
+    expect(modelIds().length).toBeGreaterThan(0);
     resetModels();
-    expect(modelIds()).toEqual([...ANTHROPIC_MODEL_IDS]);
+    expect(modelIds()).toEqual([]);
   });
 });
 
@@ -113,11 +107,11 @@ describe('moreCapableThan', () => {
   // the default model with `claude-sonnet-5` — the fix line told an operator to retry a refusal
   // on a weaker model, which is the one retry that cannot help.
   test('has no answer for the most capable model, rather than a downgrade', () => {
-    expect(moreCapableThan(ANTHROPIC_MODEL_IDS[0])).toBeUndefined();
-    // The default is no longer the top rung, and its answer is the rung above — never below it.
-    expect(moreCapableThan(DEFAULT_MODEL)).toBe(
-      ANTHROPIC_MODEL_IDS[
-        (ANTHROPIC_MODEL_IDS as readonly string[]).indexOf(DEFAULT_MODEL) - 1
+    expect(moreCapableThan(FIXTURE_ANTHROPIC_IDS[0])).toBeUndefined();
+    // A middle rung's answer is the rung above — never below it.
+    expect(moreCapableThan(FIXTURE_MODEL)).toBe(
+      FIXTURE_ANTHROPIC_IDS[
+        (FIXTURE_ANTHROPIC_IDS as readonly string[]).indexOf(FIXTURE_MODEL) - 1
       ] as string,
     );
   });
@@ -127,24 +121,10 @@ describe('moreCapableThan', () => {
   });
 
   test('walks UP the ladder, never down', () => {
-    for (let i = 1; i < ANTHROPIC_MODEL_IDS.length; i += 1) {
-      const model = ANTHROPIC_MODEL_IDS[i];
+    for (let i = 1; i < FIXTURE_ANTHROPIC_IDS.length; i += 1) {
+      const model = FIXTURE_ANTHROPIC_IDS[i];
       if (model === undefined) continue;
-      expect(moreCapableThan(model)).toBe(ANTHROPIC_MODEL_IDS[i - 1] as string);
-    }
-  });
-
-  // Price order WAS the proof of capability order until Opus 5.5 shipped newer, stronger and
-  // cheaper than Opus 5 — so the ladder is pinned by name, and price only ever rises across LINES.
-  test('the catalogue is ordered most capable first: by line, newest first within one', () => {
-    const line = (id: string): number =>
-      ['fable', 'opus', 'sonnet', 'haiku'].findIndex((name) => id.includes(`-${name}-`));
-    const lines = ANTHROPIC_MODEL_IDS.map(line);
-    expect(lines).toEqual([...lines].sort((a, b) => a - b));
-    expect(lines).not.toContain(-1);
-    const top = (n: number) => modelSpec(ANTHROPIC_MODEL_IDS[lines.indexOf(n)] ?? DEFAULT_MODEL);
-    for (let n = 1; n < 4; n += 1) {
-      expect(top(n).outputPerMillion.minor).toBeLessThan(top(n - 1).outputPerMillion.minor);
+      expect(moreCapableThan(model)).toBe(FIXTURE_ANTHROPIC_IDS[i - 1] as string);
     }
   });
 });
@@ -153,19 +133,19 @@ describe('reasoningBody omits what nobody asked for', () => {
   // The comment above `reasoningBody` claimed this; the code emitted an adaptive block for every
   // adaptive-capable model whether or not the declaration mentioned thinking.
   test('sends no thinking block when the declaration named no mode', () => {
-    for (const model of ANTHROPIC_MODEL_IDS) {
+    for (const model of FIXTURE_ANTHROPIC_IDS) {
       expect(reasoningBody(model, undefined, undefined)['thinking']).toBeUndefined();
     }
   });
 
   test('sends no output_config when the declaration named no effort', () => {
-    for (const model of ANTHROPIC_MODEL_IDS) {
+    for (const model of FIXTURE_ANTHROPIC_IDS) {
       expect(reasoningBody(model, undefined, undefined)['output_config']).toBeUndefined();
     }
   });
 
   test('sends exactly what the declaration DID name', () => {
-    const body = reasoningBody(DEFAULT_MODEL, 'high', 'adaptive');
+    const body = reasoningBody(FIXTURE_MODEL, 'high', 'adaptive');
     expect(body['output_config']).toEqual({ effort: 'high' });
     expect(body['thinking']).toEqual({ type: 'adaptive', display: 'summarized' });
   });
@@ -180,8 +160,8 @@ describe('reasoningBody omits what nobody asked for', () => {
   });
 
   test("still refuses 'disabled' above the model's cap", () => {
-    expect(() => reasoningBody(DEFAULT_MODEL, 'max', 'disabled')).toThrow(AiRequestInvalidError);
-    expect(reasoningBody(DEFAULT_MODEL, 'high', 'disabled')['thinking']).toEqual({
+    expect(() => reasoningBody(FIXTURE_MODEL, 'max', 'disabled')).toThrow(AiRequestInvalidError);
+    expect(reasoningBody(FIXTURE_MODEL, 'high', 'disabled')['thinking']).toEqual({
       type: 'disabled',
     });
   });

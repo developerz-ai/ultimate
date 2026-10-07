@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { ProjectablePrimitive } from './from-action';
-import { toolFromAction, toolsFrom, toolsListed } from './from-action';
+import type { McpExposure, ProjectablePrimitive } from './from-action';
+import { toolFrom, toolsFrom, toolsListed } from './from-action';
 import type { McpCaller } from './registry';
 
 const human = { kind: 'user', id: 'u1' } as unknown as Actor;
@@ -51,7 +51,7 @@ const caller = (actor: Actor): McpCaller => ({ actor, scopes: new Set<string>() 
 describe('one authz system, two surfaces', () => {
   test('HTTP and MCP reach the identical policy decision for the same actor', async () => {
     const { action, decisions } = makeAction();
-    const tool = toolFromAction(action);
+    const tool = toolFrom(action);
     const input = { postId: 'p1', notify: false };
 
     // Surface 1: the seam directly, standing in for the HTTP route — which reaches the same
@@ -74,7 +74,7 @@ describe('one authz system, two surfaces', () => {
 
   test('a denial on HTTP is the same denial on MCP, surfaced as an isError result', async () => {
     const { action, decisions } = makeAction();
-    const tool = toolFromAction(action);
+    const tool = toolFrom(action);
     const input = { postId: 'p1', notify: false };
 
     await expect(action.run({ input, actor: robot })).rejects.toThrow('denied');
@@ -86,7 +86,7 @@ describe('one authz system, two surfaces', () => {
 
   test('a projected tool declares NO scope — the action policy is the only gate', () => {
     const { action } = makeAction();
-    const tool = toolFromAction(action);
+    const tool = toolFrom(action);
     expect(tool.scope).toBeUndefined();
     expect(tool.name).toBe('publishPost');
     expect(tool.description).toBe('Publish a draft post');
@@ -157,25 +157,23 @@ describe('a list the author wrote out is refused, not filtered', () => {
   });
 
   /**
-   * `McpExposure.name` is an override a HAND-AUTHORED `ProjectablePrimitive` can set, and it was
-   * read as dead code because no `action()` or `query()` declaration carries a `name` field —
-   * `exposureOf` in `projectable.ts` cannot copy what `ActionMcp`/`QueryMcp` never declare. But
-   * `ListedPrimitive` accepts a `ProjectablePrimitive` outright, for surfaces that build their
-   * catalog programmatically, and `asProjectable` passes it through untouched: this is the path,
-   * and `packages/mcp/README.md` documents it. Pinned here so the next reader does not delete a
-   * public override on the evidence of the declaration surfaces alone.
+   * 25.0.0 (plan 101, M4): a tool has ONE name field. `McpExposure.name` was an override no
+   * `action()` or `query()` could set, and the one primitive that could — a hand-built
+   * `ProjectablePrimitive` — already writes `name` itself, so it was a second way to say the same
+   * thing. A stale object still carrying the key is ignored rather than obeyed: the primitive's
+   * own name is the tool, which is also the name `X_MCP_TOOL_UNDECLARED` reports.
    */
-  test('a hand-authored primitive may NAME its tool, and the catalog answers under that name', () => {
+  test('a hand-authored primitive names its tool with its own `name`, and nothing else', () => {
+    const stale = { expose: true, name: 'catalog.reindex' } as unknown as McpExposure;
     const primitive: ProjectablePrimitive = {
-      name: 'internalReindex',
-      mcp: { expose: true, name: 'catalog.reindex' },
+      name: 'catalogReindex',
+      mcp: stale,
       mutates: true,
       run: async () => ({ ok: true }),
     };
 
-    expect(toolsListed([primitive]).map((tool) => tool.name)).toEqual(['catalog.reindex']);
-    // ...and only there. The primitive's own name addresses nothing on the wire.
-    expect(toolFromAction(primitive).name).not.toBe('internalReindex');
+    expect(toolsListed([primitive]).map((tool) => tool.name)).toEqual(['catalogReindex']);
+    expect(toolFrom(primitive).name).toBe('catalogReindex');
   });
 
   test('an all-exposed list projects exactly as toolsFrom does — same tools, same order', () => {

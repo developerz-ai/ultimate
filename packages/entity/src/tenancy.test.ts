@@ -387,7 +387,11 @@ describe('the tenant a row is written under', () => {
     });
     // Refused before the row lands, not after: a guard that threw on the way out would leave the
     // row in the table and the caller believing it failed.
-    expect(await repo.findMany({ orgId: ORG_B })).toEqual({ rows: [], nextCursor: null });
+    expect(await repo.findMany({ orgId: ORG_B })).toEqual({
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+    });
   });
 
   test('a patch cannot move a row this tenant owns into another one', async () => {

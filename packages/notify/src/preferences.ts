@@ -52,7 +52,7 @@ const optOutKey = (recipient: string, notifier: string, channel: string): string
  * A test double and a dev store, not a product. Real preferences live in the app's own table
  * beside the taxonomy that names them; this exists so the gate can be exercised without one.
  */
-export function createMemoryPreferenceStore(): MemoryPreferenceStore {
+export function memoryPreferenceStore(): MemoryPreferenceStore {
   const denied = new Set<string>();
   return {
     allows(query) {

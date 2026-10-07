@@ -6,7 +6,7 @@
  */
 
 import type { Auth, AuthAdapter, OAuthLoginOptions, OAuthLoginRoutes } from '@ultimat3/auth';
-import { BuiltinAdapter, defineAuth, oauthLogin } from '@ultimat3/auth';
+import { defineAuth, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 import type { Clock } from '@ultimat3/core';
 
 /**
@@ -17,7 +17,7 @@ export const AFTER_SIGN_IN = '/feed';
 
 export interface PostlyAuthSeams {
   /**
-   * Defaults to Postgres, the shape `BuiltinAdapter(client = db())` already uses. Only a test
+   * Defaults to Postgres, the shape `postgresAuthAdapter(client = db())` already uses. Only a test
    * passes anything else, so the production wiring is what the declaration says rather than
    * something assembled a second time somewhere a test never reaches.
    */
@@ -27,7 +27,7 @@ export interface PostlyAuthSeams {
 
 export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
   return defineAuth({
-    adapter: seams.adapter ?? new BuiltinAdapter(),
+    adapter: seams.adapter ?? postgresAuthAdapter(),
     // GitHub alone. Every provider listed here is a button someone has to keep working, and a
     // provider missing from this list is a 404 rather than a half-configured redirect.
     providers: ['github'],

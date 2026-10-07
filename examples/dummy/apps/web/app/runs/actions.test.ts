@@ -3,7 +3,7 @@
 // each says when there is no queue to ask.
 import { driver } from '@postly/db';
 import { createContext, runWithContext } from '@ultimat3/core';
-import { createMemoryDriver, jobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
 import {
@@ -75,7 +75,7 @@ unitTest('a started run is queued with ids: the exit stays on the connection row
   const exit = 'http://session-41:hunter2hunter2@exit-7.example:8080';
   const input = { orgId: ORG, label: 'Ledger', credential: 'hunter2-hunter2', exit };
   const made = await connectSite.as(writer, input);
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const row = await jobDriver()?.introspect?.job(run.jobId);
   // Both ids name the queue row, on whichever path the enqueue took.
@@ -120,7 +120,7 @@ unitTest('a key from another org, or one nobody issued, cannot be revoked', asyn
 
 unitTest('a cancel names its missing queue instead of failing on undefined', async () => {
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   resetJobDriver();
   const refused = await cancelRun
@@ -131,7 +131,7 @@ unitTest('a cancel names its missing queue instead of failing on undefined', asy
 
 unitTest('a started run has its own row, queued, naming the job that runs it', async () => {
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const row = await runWithContext(createContext({ actor: writer }), () => repo.runById(run.runId));
   expect(row).toMatchObject({
@@ -144,7 +144,7 @@ unitTest('a started run has its own row, queued, naming the job that runs it', a
 });
 
 unitTest('a run nobody started, or another org’s, cannot be cancelled', async () => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
   const theirs = { orgId: OTHER_ORG, runId: run.runId };

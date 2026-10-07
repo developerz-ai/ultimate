@@ -7,10 +7,10 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
-import { createMemoryOutboxStore, enqueueInTx } from './outbox';
+import { enqueueInTx, memoryOutboxStore } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 import { createWorker } from './worker';
 
@@ -42,8 +42,8 @@ afterEach(() => {
 describe('a rolled-back stage never reaches a worker', () => {
   test('the row vanishes with the transaction, and a real worker sees nothing to claim', async () => {
     const runs: unknown[] = [];
-    const driver = createMemoryDriver();
-    const store: OutboxStore = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store: OutboxStore = memoryOutboxStore();
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'welcomeEmail',
@@ -78,8 +78,8 @@ describe('a rolled-back stage never reaches a worker', () => {
 describe('a committed stage reaches a real worker exactly once', () => {
   test('stage, commit, relay, run — the handler fires once', async () => {
     const runs: unknown[] = [];
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const relay = createOutboxRelay({ store, driver });
     const handle = job<{ orgId: string }>({
       tenant: 'none',
@@ -114,8 +114,8 @@ describe('a committed stage reaches a real worker exactly once', () => {
 
   test('a relay that republishes after a crash still yields one execution', async () => {
     const runs: unknown[] = [];
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'welcomeEmailCrashRelay',

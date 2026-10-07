@@ -7,7 +7,7 @@
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import type { SchemaDescription } from './introspect';
@@ -99,7 +99,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
   };
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await drop(TABLE, 'chk_old', 'chk_absent');
   });
 

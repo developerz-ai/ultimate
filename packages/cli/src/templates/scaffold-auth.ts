@@ -107,7 +107,7 @@ const authModule =
 // answers \`{ token, cookie }\` — set \`cookie\` on the response and every request after it is that
 // user, through \`authenticator.ts\`. \`register(appAuth(), { email, password, orgId, roles })\`
 // creates one.
-import { type Auth, BuiltinAdapter, defineAuth } from '@ultimat3/auth';
+import { type Auth, defineAuth, postgresAuthAdapter } from '@ultimat3/auth';
 
 let built: Auth | undefined;
 
@@ -116,7 +116,7 @@ let built: Auth | undefined;
  * the host's shared lockout limiter are installed, and \`defineAuth\` reads both.
  */
 export const appAuth = (): Auth => {
-  built ??= defineAuth({ adapter: new BuiltinAdapter() });
+  built ??= defineAuth({ adapter: postgresAuthAdapter() });
   return built;
 };
 `;
@@ -268,7 +268,7 @@ unitTest('an undeclared role is answered as ANONYMOUS, and the log names what it
 const authenticatorTest =
   (): string => `// The real path and its one fallback: a session cookie is its user in every environment, a bad
 // one is refused rather than replaced, and only development answers a request with no session.
-import { defineAuth, login, MemoryAdapter, register } from '@ultimat3/auth';
+import { defineAuth, login, memoryAuthAdapter, register } from '@ultimat3/auth';
 import { configuredAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
@@ -277,7 +277,7 @@ import { DEFAULT_DEV_ROLE, DEV_ROLE_COOKIE } from './dev-actor';
 
 /** In memory: the session half is the package's, and this test is about the wiring around it. */
 const memoryAuth = () => {
-  const auth = defineAuth({ adapter: new MemoryAdapter() });
+  const auth = defineAuth({ adapter: memoryAuthAdapter() });
   return () => auth;
 };
 

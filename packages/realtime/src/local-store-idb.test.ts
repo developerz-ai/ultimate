@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { UltimateError } from '@ultimat3/core';
 import { type FakeIdbOptions, fakeIndexedDb } from './idb-fake-fixture';
 import type { LocalStore } from './local-store-idb';
-import { MemoryLocalStore, openLocalStore, scopeKey } from './local-store-idb';
+import { memoryLocalStore, openLocalStore, scopeKey } from './local-store-idb';
 
 const quiet = (): { warn: (error: UltimateError) => void; warned: UltimateError[] } => {
   const warned: UltimateError[] = [];
@@ -25,7 +25,7 @@ async function seed(store: LocalStore): Promise<void> {
 
 describe.each([
   ['indexeddb', () => openLocalStore({ indexedDB: fakeIndexedDb(), warn: quiet().warn })],
-  ['memory', async () => new MemoryLocalStore() as LocalStore],
+  ['memory', async () => memoryLocalStore() as LocalStore],
 ] as const)('%s local store', (kind, open) => {
   test('reads back one scope, never another', async () => {
     const store = await open();

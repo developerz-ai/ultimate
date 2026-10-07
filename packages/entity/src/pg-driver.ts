@@ -7,6 +7,7 @@
 // being told — which is how `ctx.jobs.enqueue()` lands its outbox row atomically with the write
 // that caused it. `RepoOptions.tx` is the in-memory driver's undo hook and is ignored here.
 
+import { pageOf } from '@ultimat3/core';
 import {
   currentTx,
   type DbClient,
@@ -248,22 +249,21 @@ export const postgresRepo = <Row>(
       // statement, not one per row — its `await` already ended the coalescing window.
       if (config.jitPreload !== false) tagSiblings(entity, rows);
       const last = rows.at(-1);
-      return {
+      return pageOf(
         rows,
-        nextCursor:
-          found.length > plan.limit && last !== undefined
-            ? // Minted from the PHYSICAL row as well as the decoded one: a `timestamptz` decodes
-              // to a `Date`, and the microseconds that drops are the difference between a position
-              // the `order by` agrees with and one that cuts between two rows.
-              cursorFor(
-                entity,
-                plan,
-                last,
-                idOf(last),
-                sortPrecision(entity, plan.orderBy, page.at(-1)),
-              )
-            : null,
-      };
+        found.length > plan.limit && last !== undefined
+          ? // Minted from the PHYSICAL row as well as the decoded one: a `timestamptz` decodes
+            // to a `Date`, and the microseconds that drops are the difference between a position
+            // the `order by` agrees with and one that cuts between two rows.
+            cursorFor(
+              entity,
+              plan,
+              last,
+              idOf(last),
+              sortPrecision(entity, plan.orderBy, page.at(-1)),
+            )
+          : null,
+      );
     },
 
     async insert(values) {

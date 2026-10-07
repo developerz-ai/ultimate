@@ -23,7 +23,7 @@ export const liveFeed = query({
 | `input` | yes | Standard Schema; `t` re-exported from `@ultimat3/query`, so a query file imports one package. The shipped provider is `@ultimat3/schema`'s dependency-free builtin — ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider`, and no adapter ships. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
-| `single` | no — default `false` | `true` declares a read of ONE object (a detail page's row by id or slug). Only the wire changes: the HTTP GET answers the first row `sql` returns as the body, **404 `X_NOT_FOUND`** when there is none (a list read answers `200 []`), refuses `_first`/`_after` (400), and `openapi.json` documents one object, a `404` and no page controls. The typed client answers `Promise<TRow>` and has no `.page`. The MCP tool answers as the route does — the row, or `X_NOT_FOUND` — over `tools/call` and through `tool().read()` alike (`As of 2026-10`). Every in-process caller — `read(input)`, `.as()`, `.page()`, `.live()` — keeps `readonly TRow[]`. Anything but a boolean is `X_QUERY_SINGLE_INVALID`. `As of 2026-09-29` |
+| `single` | no — default `false` | `true` declares a read of ONE object (a detail page's row by id or slug). Only the wire changes: the HTTP GET answers the first row `sql` returns as the body, **404 `X_NOT_FOUND`** when there is none (a list read answers `200 []`), refuses `_first`/`_after` (400), and `openapi.json` documents one object, a `404` and no page controls. The typed client answers `Promise<TRow>` and has no `.page`. The MCP tool answers as the route does — the row, or `X_NOT_FOUND` — over `tools/call` alike (`As of 2026-10`). Every in-process caller — `read(input)`, `.as()`, `.page()`, `.live()` — keeps `readonly TRow[]`. Anything but a boolean is `X_QUERY_SINGLE_INVALID`. `As of 2026-09-29` |
 | `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
@@ -34,15 +34,14 @@ Nothing else is a query field. Sorting, paging, and filtering are `input` fields
 
 ## The fluent surface
 
-Every projection is a method on the query — `liveFeed.tool()`, never `toQueryTool(liveFeed)` — and every declared field is lifted onto it. A query has no `.def`.
+Every projection this package owns is a method on the query — `liveFeed.live(input)`, never `toLiveQuery(liveFeed, input)` — and every declared field is lifted onto it. The MCP read tool is `@ultimat3/mcp`'s one projection, `toolFrom(liveFeed)` (`As of 25.0.0` there is no `.tool()`). A query has no `.def`.
 
 | Member | Is | Rule |
 |---|---|---|
 | `liveFeed(input, options?)` | the read | the policy's actor half → parse input → evaluate policy → build source → execute, through the cache tiers. A reader refused whatever they send is 401/403, never `X_INPUT_INVALID` |
 | `.as(actor, input, options?)` | the same read, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
-| `.page(input, { first, after? })` | one bounded page | `{ rows, nextCursor, hasMore, endCursor, hasNextPage }` — `nextCursor`/`hasMore` are the preferred names, `endCursor`/`hasNextPage` the same values as aliases (`As of 22.12`). The cursor is signed and scoped to `queryHash(name, input)` — the query's name and its parsed input, never `first` or `after`, which are controls rather than scope. There is no `offset` and there never will be |
+| `.page(input, { first, after? })` | one bounded page | `{ rows, nextCursor, hasMore }` — the one page shape, `@ultimat3/core`'s `Page`, the same `findMany` answers; the `endCursor`/`hasNextPage` aliases left in 25.0.0. `nextCursor` is `null` exactly when `hasMore` is false (25.0.0: the last page used to keep a cursor), so `while (page.hasMore)` stops on the last page. The cursor is signed and scoped to `queryHash(name, input)` — the query's name and its parsed input, never `first` or `after`, which are controls rather than scope. There is no `offset` and there never will be |
 | `.live(input, options?)` | the subscription descriptor | a `LiveQuery` carrying the **same** policy object, re-evaluated per subscriber |
-| `.tool()` | the MCP read tool | `liveFeed.tool().policy === liveFeed.policy`. Reads fresh: an agent diffing two calls must be reading rows, not a TTL |
 | `.client({ baseUrl })` | the typed browser method | `GET /_x/query/live-feed?orgId=…`, keys sorted so one input is one URL. `.client(…).page(input, { first, after })` reads one page over the same route |
 | `.describe()` | the manifest row | name, capability, tags, ttl, `live` |
 | `.input` `.policy` `.cache` `.mcp` `.isLive` | the declaration, lifted | readable. `sql` is not among them |
@@ -102,7 +101,7 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 | Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
 | Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
-| A page | `?_first=20` answers `.page()`'s own envelope — `{ rows, nextCursor, hasMore, endCursor, hasNextPage }`, the last two aliases of the first two — and `&_after=<nextCursor>` continues it. Without a control the answer is the bare array. The keys carry an underscore because `first` is a legal input member (a listing's own page size); declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE`. A size outside 1–10,000 or an `_after` without `_first` is **400** `X_INPUT_INVALID`; a cursor that is not this read's is **400** `X_CURSOR_INVALID`. `As of 2026-09`. **A declared `.limit()` is the size of the listing** (`As of 2026-10`): `_first` pages inside it and never past it, the page after the last is empty with `nextCursor: null`, and a read meant to be paged to the end declares no limit |
+| A page | `?_first=20` answers `.page()`'s own envelope — `{ rows, nextCursor, hasMore }` — and `&_after=<nextCursor>` continues it. Without a control the answer is the bare array. The keys carry an underscore because `first` is a legal input member (a listing's own page size); declaring `_first` or `_after` as input is `X_QUERY_INPUT_UNENCODABLE`. A size outside 1–10,000 or an `_after` without `_first` is **400** `X_INPUT_INVALID`; a cursor that is not this read's is **400** `X_CURSOR_INVALID`. `As of 2026-09`. **A declared `.limit()` is the size of the listing** (`As of 2026-10`): `_first` pages inside it and never past it, the last page inside it answers `hasMore: false` and `nextCursor: null`, and a read meant to be paged to the end declares no limit |
 | In `openapi.json` | every read, as a `GET` path item: the input as `in: query` parameters, then `_first` and `_after`, and a `200` that is `oneOf` the rows and the envelope. A `single: true` read: the input parameters only, a `200` that is one object, a `404`, and `x-ultimate.single: true` |
 | One object | `single: true` answers the row itself, or **404** `X_NOT_FOUND` — see below |
 
@@ -126,7 +125,7 @@ export const postById = query({
 | No row | **404** `X_NOT_FOUND`, `@ultimat3/entity`'s code, whose fix prints the SQL. The policy runs first, so a caller it denies is still 403 |
 | Page controls | `_first` or `_after` is **400** `X_INPUT_INVALID`, and neither is published |
 | `rows:` | the envelope as usual, with the row as `data` |
-| The MCP tool | the row itself, or `X_NOT_FOUND` — the route's answer on both counts, over `tools/call` and through `tool().read()`. A declared `rows:` publishes the row as `outputSchema`, with no `rows` wrapper |
+| The MCP tool | the row itself, or `X_NOT_FOUND` — the route's answer on both counts, over `tools/call`. A declared `rows:` publishes the row as `outputSchema`, with no `rows` wrapper |
 | Not changed | `read(input)`, `.as()`, `.page()` and `.live()` still answer rows. `useQuery` reads lists: a single read in an island is `.client()` or `queryClient` |
 
 ### Two spellings of that client, one URL
@@ -264,11 +263,11 @@ Fifty *counts* collapse neither way — one `count()` per row is fifty different
 
 ## Audit: who saw what
 
-`query({ audit: true })` writes one record per call into the sink an action's `audit: true` writes to — one contract, `@ultimat3/core`'s `AuditRecord` / `AuditSink`, one installed sink (`setAuditSink` from `@ultimat3/core`, or the same function from `@ultimat3/action`). `As of 2026-10`.
+`query({ audit: true })` writes one record per call into the sink an action's `audit: true` writes to — one contract, `@ultimat3/core`'s `AuditRecord` / `AuditSink`, one installed sink (`setAuditSink` from `@ultimat3/core` — `@ultimat3/action` no longer re-exports it, `As of 25.0.0`). `As of 2026-10`.
 
 | Rule | |
 |---|---|
-| What is a call | `read(input)`, `.as()`, the HTTP GET, `.page()`, `.tool().read()` — one record each. `sourceFor(…)` + `execute()` (how `@ultimat3/mcp` serves a tool): one per `execute()`, or one at the build when it is refused |
+| What is a call | `read(input)`, `.as()`, the HTTP GET, `.page()` — one record each. `sourceFor(…)` + `execute()` (how `@ultimat3/mcp` serves a tool): one per `execute()`, or one at the build when it is refused |
 | A memo or cache hit | **recorded**, `replayed: true` — an audit of a read is who saw what, not what the database computed |
 | Outcomes | `allowed` · `denied` (a policy refusal, before or after the input parse) · `failed` (an unparsed input, a spent rate limit, a throwing source) |
 | `surface` | `server` · `http` · `mcp` — the same vocabulary an action's record uses |

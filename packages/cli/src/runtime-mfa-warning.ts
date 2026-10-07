@@ -2,7 +2,7 @@
 // the operator step for sealed MFA secrets). `x doctor` asks the same question only when someone
 // runs it; an unsealed secret is a user refused at the second factor, so the boot says so too.
 
-import { BuiltinAdapter, countUnsealedMfaSecrets } from '@ultimat3/auth';
+import { countUnsealedMfaSecrets, postgresAuthAdapter } from '@ultimat3/auth';
 import { logger } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 
@@ -14,7 +14,7 @@ import type { DbClient } from '@ultimat3/db';
 export async function warnUnsealedMfaSecrets(client: DbClient): Promise<number> {
   let unsealed = 0;
   try {
-    unsealed = await countUnsealedMfaSecrets({ adapter: new BuiltinAdapter(client) });
+    unsealed = await countUnsealedMfaSecrets({ adapter: postgresAuthAdapter(client) });
   } catch {
     return 0;
   }

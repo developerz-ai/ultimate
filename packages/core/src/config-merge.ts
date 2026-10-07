@@ -36,7 +36,7 @@ export function layered<T extends object>(base: T, patches: readonly (Input<T> |
   return patches.reduce<T>((out, patch) => section(out, patch), base);
 }
 
-/** A whole-value key (`locales`, `roles`): the last layer that said something wins. */
+/** A whole-value key (`roles`, `jobs.queues`): the last layer that said something wins. */
 export function lastSaid<T>(base: T, values: readonly (T | undefined)[]): T {
   let out = base;
   for (const value of values) if (value !== undefined) out = value;

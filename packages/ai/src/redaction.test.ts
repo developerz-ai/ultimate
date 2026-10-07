@@ -11,11 +11,15 @@ import { allow } from '@ultimat3/policy';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { llm } from './llm';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
 import { costOf } from './provider';
 import { assertNoSecrets } from './redaction';
 import { aiRedactor, configureAi, resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ patientId: t.uuid });
 const Output = t.object({ value: t.string });
@@ -83,7 +87,7 @@ describe('a Secret never reaches a prompt', () => {
 
   test('an llm() whose vars() returns a Secret refuses before the provider is touched', async () => {
     const { provider, seen } = recorder();
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const summarize = llm({
       input: Input,
       output: Output,
@@ -108,7 +112,7 @@ describe('the declared redactor is the last thing to touch a prompt', () => {
   test('it rewrites the rendered prompt AND the system prompt before either is sent', async () => {
     const { provider, seen } = recorder();
     configureAi({
-      gateway: createGateway({ providers: [provider] }),
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       redact: (text) => text.replaceAll('clinical', '[removed]').replaceAll(PATIENT, '[removed]'),
     });
     const summarize = llm({

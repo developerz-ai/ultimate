@@ -15,8 +15,8 @@ export interface LeaderElection {
   readonly renewEveryMs: number;
 }
 
-/** Single-node default: always the leader. Multi-node uses `createPgLeaseLeader()` — never
- * `createPgLeader()`, whose advisory lock is owned by a pooled session this process cannot name. */
+/** Single-node default: always the leader. Multi-node uses `postgresLeaseLeader()` — never
+ * `postgresLeader()`, whose advisory lock is owned by a pooled session this process cannot name. */
 export function soleLeader(): LeaderElection {
   return {
     acquire: () => Promise.resolve(true),

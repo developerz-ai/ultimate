@@ -128,10 +128,11 @@ ${wrapper}('${name.camel} denies an orgless actor before a read', async () => {
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 
-${wrapper}('${name.camel} exposes one MCP tool that reads, and never writes', () => {
-  // Same policy object on both surfaces — an agent cannot reach a different authz path.
-  expect(target.tool().policy).toBe(target.policy);
-  expect(target.tool().mutates).toBe(false);
+${wrapper}('${name.camel} is offered to agents as a read', () => {
+  // \`@ultimat3/mcp\`'s \`toolFrom\` serves this block as a read (\`mutates: false\`), through
+  // \`.as()\` under this same policy — an agent cannot reach a different authz path.
+  expect(target.kind).toBe('query');
+  expect(target.mcp?.expose).toBe(true);
 });
 ${subscribes ? subscribeTest(name, feature) : ''}`;
 };

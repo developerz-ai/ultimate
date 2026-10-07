@@ -15,18 +15,18 @@ import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultim
 import {
   baseClient,
   createPgliteClient,
-  createPostgresClient,
   currentTx,
   pgliteDataDir,
+  postgresClient,
   setDbClient,
 } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
 import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   createJobsFacade,
-  createPgDriver,
-  createPgEventBus,
-  createPgOutboxStore,
+  postgresEventBus,
+  postgresJobDriver,
+  postgresOutboxStore,
   resetEventBus,
   resetJobDriver,
   resetJobsFacade,
@@ -103,7 +103,7 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
           dataDir: pgliteDataDir(binding.url),
           extensions: () => appExtensions(services.root),
         })
-      : createPostgresClient({ url: binding.url });
+      : postgresClient({ url: binding.url });
   const attached = attachReplica(client, replicaUrlFor(binding, env));
   setDbClient(attached.client);
   return { client, replica: attached.replica };
@@ -184,9 +184,9 @@ async function startJobs(
 ): Promise<RunningQueue> {
   await applySchema(client, schema);
   const executor = pgExecutorFor(client);
-  const driver = overrides?.jobs ?? createPgDriver({ executor });
+  const driver = overrides?.jobs ?? postgresJobDriver({ executor });
   setJobDriver(driver);
-  const outbox = createPgOutboxStore({
+  const outbox = postgresOutboxStore({
     executor,
     // The open transaction is a client on its own connection; the `Tx` token is not that object.
     txExecutor: () => pgExecutorFor(currentTx() ?? client),
@@ -194,7 +194,7 @@ async function startJobs(
   setJobsFacade(
     createJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
   );
-  const events = createPgEventBus({ executor });
+  const events = postgresEventBus({ executor });
   setEventBus(events);
   const idempotency = postgresIdempotencyStore({
     executor,

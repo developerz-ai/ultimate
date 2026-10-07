@@ -3,7 +3,7 @@
 // is what a full bus drops, and the earliest match wins so a resumed step consumes in order.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createMemoryEventBus, eventBus, publishEvent, resetEventBus, setEventBus } from './events';
+import { eventBus, memoryEventBus, publishEvent, resetEventBus, setEventBus } from './events';
 
 const clockAt = (start: number) => {
   let at = start;
@@ -19,7 +19,7 @@ const clockAt = (start: number) => {
 describe('the memory event bus', () => {
   test('an event past its ttl is purged, and purgeExpired says how many it removed', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock, defaultTtl: '1s' });
+    const bus = memoryEventBus({ clock, defaultTtl: '1s' });
     await bus.publish('invoice.paid', { id: 'in_1' });
     await bus.publish('invoice.paid', { id: 'in_2' }, { ttl: '1h' });
     expect(bus.size()).toBe(2);
@@ -33,7 +33,7 @@ describe('the memory event bus', () => {
 
   test('an expired event is unmatchable even before anything purges it', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock, defaultTtl: '1s' });
+    const bus = memoryEventBus({ clock, defaultTtl: '1s' });
     await bus.publish('invoice.paid', { id: 'in_1' });
     clock.advance(2_000);
     expect(await bus.find('invoice.paid', undefined, 0)).toBeUndefined();
@@ -43,7 +43,7 @@ describe('the memory event bus', () => {
 
   test('a full bus drops the OLDEST event, never the newest one a step is waiting for', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock, maxEvents: 2 });
+    const bus = memoryEventBus({ clock, maxEvents: 2 });
     await bus.publish('a', 1);
     clock.advance(10);
     await bus.publish('b', 2);
@@ -56,7 +56,7 @@ describe('the memory event bus', () => {
 
   test('list is publication order and filters by name', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock });
+    const bus = memoryEventBus({ clock });
     await bus.publish('a', 1);
     clock.advance(10);
     await bus.publish('b', 2);
@@ -69,7 +69,7 @@ describe('the memory event bus', () => {
 
   test('find takes the EARLIEST match at or after the wait, not the newest', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock });
+    const bus = memoryEventBus({ clock });
     await bus.publish('invoice.paid', 'first', { correlationKey: 'org-1' });
     clock.advance(10);
     await bus.publish('invoice.paid', 'second', { correlationKey: 'org-1' });
@@ -87,7 +87,7 @@ describe('the memory event bus', () => {
 
   test('another run`s correlation key never matches — that is the whole point of the key', async () => {
     const clock = clockAt(1_000);
-    const bus = createMemoryEventBus({ clock });
+    const bus = memoryEventBus({ clock });
     await bus.publish('invoice.paid', 'theirs', { correlationKey: 'org-2' });
     expect(await bus.find('invoice.paid', 'org-1', 0)).toBeUndefined();
     // An uncorrelated wait matches anything of that name, which is the documented fallback.
@@ -107,7 +107,7 @@ describe('the ambient bus', () => {
   });
 
   test('publishEvent goes to whichever bus is installed', async () => {
-    const installed = createMemoryEventBus({ clock: clockAt(1_000) });
+    const installed = memoryEventBus({ clock: clockAt(1_000) });
     setEventBus(installed);
     expect(eventBus()).toBe(installed);
 

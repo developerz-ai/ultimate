@@ -5,7 +5,7 @@
 // `primary-key.ts` raises one step earlier. Every table here is dropped on the way in and out.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -67,7 +67,7 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
   const before = posts(['id'], ['id', 'slug', 'org_id']);
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await teardown();
     await apply(generateMigration({ entities: [before], name: 'init', now: at }).up);
     await client.execute(

@@ -3,20 +3,19 @@
 // identity check is worthless once the slot exists. Split from `pg-replication.test.ts`.
 import { describe, expect, spyOn, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { postgresChangeFeed } from './changefeed';
 import { CHANNEL_IDENTITY_EVENT } from './pg-preflight';
 import { start } from './pg-replication-fixture';
 
 describe('PgLogicalReplicationFeed', () => {
   test('an empty entity list is refused before a socket is opened', () => {
-    expect(
-      () =>
-        new PgLogicalReplicationFeed({
-          url: 'postgres://x@y/z',
-          slot: 's',
-          publication: 'p',
-          entities: [],
-        }),
+    expect(() =>
+      postgresChangeFeed({
+        url: 'postgres://x@y/z',
+        slot: 's',
+        publication: 'p',
+        entities: [],
+      }),
     ).toThrow(/empty entity list/);
   });
 

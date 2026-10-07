@@ -45,6 +45,8 @@ export class EchoProvider implements Provider {
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
+    // No model of its own: the double must not choose one for an app any more than the real
+    // providers do. The gateway resolves before it routes; a direct call names one or is refused.
     const model = resolveModel('echo-provider', request.model);
     const prompt = lastUserMessage(request.messages);
     const text = this.fixedReply(prompt) ?? this.config.fallback?.(prompt) ?? prompt;

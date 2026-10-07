@@ -4,6 +4,8 @@
 // concurrent writes an insert before the offset shifts every later page, so a client silently
 // skips and repeats rows.
 
+import type { Page } from '@ultimat3/core';
+import { pageOf } from '@ultimat3/core';
 import type { BatchIterator } from './batch';
 import { assertBatchable, batchIterator } from './batch';
 import { entityNow } from './clock';
@@ -12,7 +14,7 @@ import { searchUndeclared } from './feature-errors';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
-import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
+import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
@@ -380,14 +382,14 @@ const builder = <Source, Row>(
         // in place of the chain's: one statement per batch, and the same one `page()` sends.
         page: async (cursor) => {
           const result = await repo.findMany({ ...args(), limit: size, cursor });
-          return { rows: await attach(result.rows), nextCursor: result.nextCursor };
+          return pageOf(await attach(result.rows), result.nextCursor);
         },
       });
     },
 
     page: async () => {
       const result = await repo.findMany(args());
-      return { rows: await attach(result.rows), nextCursor: result.nextCursor };
+      return pageOf(await attach(result.rows), result.nextCursor);
     },
 
     all: async () => attach((await repo.findMany(args())).rows),

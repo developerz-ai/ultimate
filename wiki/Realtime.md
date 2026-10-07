@@ -78,7 +78,7 @@ export const likePost = mutator({
 
 ## The fluent surface
 
-`interface Mutator extends Action` — a mutator **is** an action, so every action member is already on it (`likePost.tool()`, `.openapi()`, `.client({ baseUrl })`, `.job()`, `.contract()`, `.as()`, `.describe()`, `.named()`, and the lifted `.input` `.output` `.policy` `.mcp`). The three names it was authored with — `.local`, `.server`, `.conflict` — project unchanged, plus a brand and its own descriptor. Both halves are reached through the mutator itself, `likePost.local(tx, input)`, never a declaration object. A mutator has no `.def`.
+`interface Mutator extends Action` — a mutator **is** an action, so every action member is already on it (`likePost.openapi()`, `.client({ baseUrl })`, `.job()`, `.contract()`, `.as()`, `.describe()`, `.named()`, and the lifted `.input` `.output` `.policy` `.mcp`). The three names it was authored with — `.local`, `.server`, `.conflict` — project unchanged, plus a brand and its own descriptor. Both halves are reached through the mutator itself, `likePost.local(tx, input)`, never a declaration object. A mutator has no `.def`.
 
 | Member | Is | Rule |
 |---|---|---|

@@ -4,7 +4,7 @@
  * The eight primitives are the whole vocabulary. A model call is a server-authoritative
  * operation with an input schema, an output schema and a policy, which is the definition of
  * an `action` — so this file is a FACTORY over `action()`, never a new kind of thing. That is
- * why `summarize.tool()`, `.openapi()`, `.client()`, `.job()` and `.contract()` all exist
+ * why `summarize.openapi()`, `.client()`, `.job()`, `.contract()` and its MCP tool all exist
  * without a line here: the value is an action, so it projects like one, and an app gains an
  * MCP tool backed by a model the moment it declares one.
  *
@@ -14,7 +14,7 @@
  *
  * `.stream()` is the same action over a different transport, and it is here rather than beside
  * the gateway for one reason: everything that makes `llm()` worth using — policy, input parse,
- * budget scope, semantic cache, span, `.tool()` — is lost the moment a feature has to reach past
+ * budget scope, semantic cache, span, MCP tool — is lost the moment a feature has to reach past
  * it to `aiGateway()` for tokens on a screen. `./llm-stream.ts` holds the plumbing and states the
  * two decisions a stream forces (no repair turn, budget reserved exactly as before); what a
  * streamed answer must satisfy is decided in this file, next to the non-streaming version of the
@@ -41,7 +41,7 @@ import type { LlmCache } from './llm-cache';
 import { openCache } from './llm-cache';
 import type { LlmSink, LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, streamOneTurn, withLlmSink } from './llm-stream';
-import { resolveModel } from './model-resolve';
+import { modelForCall } from './model-resolve';
 import type { ModelId } from './models';
 import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
@@ -50,7 +50,7 @@ import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { parseJsonish, RESPOND, respondFor } from './respond';
-import { aiGateway, aiRedactor, installedGateway } from './runtime';
+import { aiGateway, aiRedactor } from './runtime';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -102,7 +102,7 @@ export interface LlmDef<
 }
 
 /**
- * An `action` with one extra way to be called. Every projection an action has, it has — `.tool()`,
+ * An `action` with one extra way to be called. Every projection an action has, it has — its MCP tool,
  * `.openapi()`, `.client()`, `.job()`, `.contract()` — plus a transport for the case an action's
  * single return value cannot serve: text on a screen before the answer is finished.
  */
@@ -192,8 +192,10 @@ async function generate<
   // The prompt ref is the identity every failure here is about, and unlike the action's
   // export name it exists before registration and can never twin.
   const name = prompt.ref;
+  // Screened first: a bad declaration is refused whether or not a gateway exists.
+  const limits = limitsOf(def.budget);
   // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
-  const model = resolveModel('llm', def.model, prompt.model, installedGateway()?.defaultModel);
+  const model = modelForCall('llm', name, def.model, prompt.model);
   // `vars()` is the one declared place a model call loads data, so it is the one place the
   // framework can refuse a `Secret` and the one place an app's redactor can see the row before it
   // leaves the process. Both run here, between the load and the request, and neither is optional
@@ -251,8 +253,6 @@ async function generate<
     // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
     // and org ceilings this call runs inside, never widen them. The gateway reserves against
     // it before the provider is touched — that is where `X_AI_BUDGET_EXCEEDED` comes from.
-    // Screened first, as before: a bad declaration is refused whether or not a gateway exists.
-    const limits = limitsOf(def.budget);
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
     // Keyed on the CALLER, so the gateway's `actor` / `org` ceilings count this call against them.

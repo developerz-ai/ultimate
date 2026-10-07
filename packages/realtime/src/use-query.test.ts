@@ -207,8 +207,8 @@ describe('useQuery — paged', () => {
   test('first page, then more() appends from the server cursor; hasMore follows the answer', async () => {
     pageHarness();
     const urls = answering(
-      { rows: [{ id: 'p1' }, { id: 'p2' }], endCursor: 'c2', hasNextPage: true },
-      { rows: [{ id: 'p3' }], endCursor: 'c3', hasNextPage: false },
+      { rows: [{ id: 'p1' }, { id: 'p2' }], nextCursor: 'c2', hasMore: true },
+      { rows: [{ id: 'p3' }], nextCursor: null, hasMore: false },
     );
     const posts = useQuery({ name: 'listPosts', entity: 'posts' }, null, { first: 2 });
     await flush();
@@ -230,7 +230,7 @@ describe('useQuery — paged', () => {
   // page nobody is showing, and the next `more()` skipped the second page.
   test('a superseded more() leaves the cursor to the read that replaced it', async () => {
     pageHarness();
-    const bodies: unknown[] = [{ rows: [{ id: 'p1' }], endCursor: 'c1', hasNextPage: true }];
+    const bodies: unknown[] = [{ rows: [{ id: 'p1' }], nextCursor: 'c1', hasMore: true }];
     const held: ((body: unknown) => void)[] = [];
     const urls: string[] = [];
     globalThis.fetch = ((url: string) => {
@@ -252,9 +252,9 @@ describe('useQuery — paged', () => {
     posts.more(); // held: the page after c1
     posts.refetch(); // held: a fresh first page
     // The refetch answers first; the stale more() answers last.
-    held[1]?.({ rows: [{ id: 'p1' }], endCursor: 'fresh', hasNextPage: true });
+    held[1]?.({ rows: [{ id: 'p1' }], nextCursor: 'fresh', hasMore: true });
     await flush();
-    held[0]?.({ rows: [{ id: 'p2' }], endCursor: 'stale', hasNextPage: false });
+    held[0]?.({ rows: [{ id: 'p2' }], nextCursor: null, hasMore: false });
     await flush();
     expect(posts()).toEqual({ status: 'ready', data: [{ id: 'p1' }] });
     expect(posts.hasMore()).toBe(true);

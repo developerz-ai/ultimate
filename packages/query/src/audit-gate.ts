@@ -5,7 +5,7 @@
  */
 
 import type { AuditOutcome, AuditRecord, AuditSink, Ctx } from '@ultimat3/core';
-import { getAuditSink, isUltimateError, logger, normalizeAuditRecord } from '@ultimat3/core';
+import { getAuditSink, isUltimateError, logger } from '@ultimat3/core';
 import { QueryAuditSinkFailedError, QueryAuditSinkMissingError } from './audit-errors';
 import { QueryDeniedError } from './errors';
 import type { QuerySurface } from './policy-gate';
@@ -137,8 +137,6 @@ function recordOf(audit: ReadAudit, at: Date, outcome: AuditOutcome, error: unkn
   return {
     at,
     name: audit.name,
-    // The deprecated alias, written with the same value until 25.0.0 removes it (plan 101, M9).
-    action: audit.name,
     primitive: 'query',
     mutator: false,
     surface: audit.surface,
@@ -159,7 +157,7 @@ async function recordSettled(sink: AuditSink, record: AuditRecord): Promise<void
   try {
     await sink.write(record);
   } catch (error) {
-    throw new QueryAuditSinkFailedError(normalizeAuditRecord(record).name, error);
+    throw new QueryAuditSinkFailedError(record.name, error);
   }
 }
 
@@ -171,7 +169,7 @@ async function recordThrew(sink: AuditSink, record: AuditRecord): Promise<void> 
     // audited primitive. Never the record: rendering an input the sink just choked on is the
     // second throw this branch exists to prevent.
     logger.error('audit.sink.failed', {
-      query: normalizeAuditRecord(record).name,
+      query: record.name,
       outcome: record.outcome,
       error,
     });

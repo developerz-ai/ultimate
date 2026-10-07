@@ -99,20 +99,12 @@ export function buildManifest(sources: ManifestSources): Manifest {
 
   // Before the hash: a fact the written file cannot hold must never get a buildId at all.
   assertFiniteFacts(body, '');
-  return { ...body, buildId: contentHash(body) };
-}
-
-/**
- * Content hash of the manifest body: `@ultimat3/core`'s `fingerprint`, SHA-256/16 over the same
- * INJECTIVE `canonicalJson` the diff compares on, so a fact that changed cannot hash the same as
- * the fact it replaced. It was a hand-written copy of that function, byte for byte — the value is
- * unchanged, the second implementation is gone. Deliberately excludes `buildId` itself.
- *
- * This is a HASH, never the published document: `manifestJson` in `emit.ts` is what reaches disk,
- * and it is `JSON.stringify` with a fixed key order for exactly that reason.
- */
-export function contentHash(body: Omit<Manifest, 'buildId'>): string {
-  return fingerprint(body);
+  // The build id is `@ultimat3/core`'s `fingerprint` of the body — SHA-256/16 over the same
+  // INJECTIVE `canonicalJson` the diff compares on, so a fact that changed cannot hash the same as
+  // the fact it replaced — and deliberately excludes `buildId` itself. A HASH, never the published
+  // document: `manifestJson` in `emit.ts` is what reaches disk, with a fixed key order. The
+  // `contentHash` alias this package exported for it left in 25.0.0 (plan 101, M3).
+  return { ...body, buildId: fingerprint(body) };
 }
 
 function sortBy<T>(items: readonly T[], key: (item: T) => string): readonly T[] {

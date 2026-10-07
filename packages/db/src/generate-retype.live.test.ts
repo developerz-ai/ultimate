@@ -8,7 +8,7 @@
 // Every table, type and row here is dropped on the way in and on the way out; nothing is left behind.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import { raw } from './sql';
@@ -127,7 +127,7 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
   };
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await teardown();
     // The enum type is hand-written, exactly as `examples/dummy`'s `0001_init.sql` writes it:
     // `SchemaDescription` has no field for a CREATE TYPE, so the generator neither makes nor

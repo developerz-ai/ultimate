@@ -134,7 +134,7 @@ describe('startQueue', () => {
  * other got a routed client with no scope, or a scope with no standby — and both halves report
  * nothing at all, because a replica that is never read looks exactly like one that is not there.
  *
- * No `db.ping()` here and no database: `createPostgresClient` connects on the first statement, so
+ * No `db.ping()` here and no database: `postgresClient` connects on the first statement, so
  * this asks only which URL the pair was built from.
  */
 describe('unit · which environment the boot builds its client from', () => {

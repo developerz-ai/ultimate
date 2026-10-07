@@ -9,8 +9,12 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
 import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { BudgetLimits, BudgetStore } from './budget';
-import { BudgetLedger, budgetKeysFor, estimateSpend, MemoryBudgetStore } from './budget';
+import { BudgetLedger, budgetKeysFor, estimateSpend, memoryBudgetStore } from './budget';
+import { useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const usd = (minor: number) => ({ minor, currency: 'USD' });
 
@@ -76,7 +80,7 @@ describe('reserve refuses, naming the scope', () => {
   });
 
   test('nothing is debited by a refusal', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     const ledger = new BudgetLedger({ limits: { actor: 10 }, actorKey: 'actor:u1', store });
     await expect(ledger.reserve(estimateSpend(request('hi')))).rejects.toMatchObject({
       code: 'X_AI_BUDGET_EXCEEDED',
@@ -104,7 +108,7 @@ describe('derive tightens, never widens', () => {
   });
 
   test('the identity keys and the store survive, so cross-request counters keep counting', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     const parent = new BudgetLedger({ limits: { actor: 1_000 }, actorKey: 'actor:u1', store });
     const child = parent.derive({ costPerCall: usd(500) });
 
@@ -178,7 +182,7 @@ describe('derive tightens, never widens', () => {
   });
 
   test('the shared store is still credited exactly once per debit', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     // Ceilings declared: a key with no ceiling is never written at all (`budget-identity.test.ts`).
     const limits = { actor: 1_000_000, org: 1_000_000 };
     const parent = new BudgetLedger({ limits, actorKey: 'actor:u1', orgKey: 'org:o1', store });
@@ -207,7 +211,7 @@ describe('the ceiling holds under parallelism', () => {
    * and whose `take` is atomic on its own side, as a real store's `EVAL` or `update … where` is.
    */
   function slowStore(): BudgetStore & { read(key: string): number } {
-    const inner = new MemoryBudgetStore();
+    const inner = memoryBudgetStore();
     return {
       async spent(key: string): Promise<number> {
         await Promise.resolve();
@@ -261,7 +265,7 @@ describe('the ceiling holds under parallelism', () => {
   });
 
   test('release gives an unspent reservation back in full', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
 
     const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
@@ -272,7 +276,7 @@ describe('the ceiling holds under parallelism', () => {
   });
 
   test('record reconciles down to the real count, never on top of the estimate', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
 
     const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
@@ -353,7 +357,7 @@ describe('the ledger refuses a ceiling that cannot hold', () => {
 // must fail as a coded refusal naming the shape, never as a `TypeError` off `undefined`.
 describe('a BudgetStore whose take answers the wrong shape', () => {
   test('is X_INVARIANT, before anything is debited', async () => {
-    const inner = new MemoryBudgetStore();
+    const inner = memoryBudgetStore();
     const store: BudgetStore = {
       spent: (key) => inner.spent(key),
       add: (key, tokens) => inner.add(key, tokens),

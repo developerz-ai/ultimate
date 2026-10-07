@@ -12,17 +12,17 @@ import type { UltimateError } from '@ultimat3/core';
 import { logger, resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig, memoryRateLimitStore } from '@ultimat3/http';
 import {
-  createMemoryDriver,
-  createMemoryEventBus,
-  createMemoryOutboxStore,
   jobDriver,
+  memoryEventBus,
+  memoryJobDriver,
+  memoryOutboxStore,
   resetJobDriver,
   resetJobs,
   resetJobsFacade,
   resetTasks,
   setJobDriver,
 } from '@ultimat3/jobs';
-import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
+import { memoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { RunningRoles } from './role-start';
@@ -38,15 +38,15 @@ function fakeRuntime(): RunningServices {
   return {
     services: resolveServices(ROOT, {}),
     db: { async ping() {}, async close() {} } as unknown as RunningServices['db'],
-    jobs: createMemoryDriver(),
-    outbox: createMemoryOutboxStore(),
-    events: createMemoryEventBus(),
+    jobs: memoryJobDriver(),
+    outbox: memoryOutboxStore(),
+    events: memoryEventBus(),
     transport,
     realtime: REALTIME_DEFAULTS,
     transportDetail: 'in-process fanout',
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
-    mail: createMemoryMailDriver(),
+    mail: memoryMailDriver(),
     mailDetail: 'embedded',
     purge: noopPurgeDriver(),
     purgeDetail: 'none',
@@ -69,9 +69,9 @@ afterEach(async () => {
 describe('an override that reaches the enqueue side but not the worker is refused', () => {
   test('a driver installed after the boot captured its own is a coded boot failure', async () => {
     const runtime = fakeRuntime();
-    // Exactly what an app module doing `setJobDriver(createMemoryDriver())` at import time does:
+    // Exactly what an app module doing `setJobDriver(memoryJobDriver())` at import time does:
     // `loadApp` runs after `startServices`, so this lands between the capture and `startRoles`.
-    setJobDriver(createMemoryDriver());
+    setJobDriver(memoryJobDriver());
 
     const boot = startRoles({
       roles: ['worker'],

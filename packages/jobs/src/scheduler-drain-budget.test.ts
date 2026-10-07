@@ -15,7 +15,7 @@ import {
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -64,7 +64,7 @@ interface Rig {
  */
 async function rig(): Promise<Rig> {
   const clock = fakeClock(T0);
-  const base = createMemoryDriver({ clock });
+  const base = memoryJobDriver({ clock });
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => {
     open = resolve;

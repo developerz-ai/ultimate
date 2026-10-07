@@ -7,10 +7,10 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createPostgresClient, raw, sql } from '@ultimat3/db';
+import { postgresClient, raw, sql } from '@ultimat3/db';
 import type { AuthAdapter } from './adapter';
-import { BuiltinAdapter } from './builtin-adapter';
-import { MemoryAdapter } from './memory-adapter';
+import { postgresAuthAdapter } from './builtin-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { AUTH_TABLES } from './tables';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -35,7 +35,7 @@ const EMAILS_IN_ORDER = [
   `\u{1d51e}stral@${DOMAIN}`,
 ];
 
-let client: ReturnType<typeof createPostgresClient>;
+let client: ReturnType<typeof postgresClient>;
 
 const wipe = async (): Promise<void> => {
   await client.execute(sql`delete from x_users where email like ${`%@${DOMAIN}`}`);
@@ -43,7 +43,7 @@ const wipe = async (): Promise<void> => {
 
 beforeAll(async () => {
   if (url === undefined) return;
-  client = createPostgresClient({ url, applicationName: 'auth-list-order-live' });
+  client = postgresClient({ url, applicationName: 'auth-list-order-live' });
   for (const entry of AUTH_TABLES) {
     for (const statement of entry.split(';')) {
       if (statement.trim() !== '') await client.execute(raw(statement));
@@ -61,8 +61,8 @@ afterAll(async () => {
 describeLive('listUsersByOrg · one order on both adapters', () => {
   test('memory and Postgres both answer byte order, whatever the database collation', async () => {
     const adapters: readonly (readonly [string, AuthAdapter])[] = [
-      ['MemoryAdapter', new MemoryAdapter(clock)],
-      ['BuiltinAdapter', new BuiltinAdapter(client, clock)],
+      ['MemoryAdapter', memoryAuthAdapter(clock)],
+      ['BuiltinAdapter', postgresAuthAdapter(client, clock)],
     ];
     const answers: string[][] = [];
     for (const [name, adapter] of adapters) {

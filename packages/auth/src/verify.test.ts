@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { assert, type FrozenClock, frozenClock } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { sha256Hex } from './tokens';
 import {
   consumeVerification,
@@ -25,7 +25,7 @@ import {
  */
 class RecordingVerificationStore implements VerificationStore {
   readonly written = new Map<string, AuthVerification>();
-  readonly #adapter = new MemoryAdapter();
+  readonly #adapter = memoryAuthAdapter();
 
   async putVerification(record: AuthVerification): Promise<void> {
     await this.#adapter.putVerification(record);

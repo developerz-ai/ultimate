@@ -24,8 +24,7 @@ import { oneRowOf } from './single-answer';
 /**
  * `liveFeed` -> `GET /_x/query/live-feed`. Named for the primitive rather than spelled
  * `toRoute`, because a host mounts this beside `@ultimat3/action`'s and an alias at the
- * import site is a name the reader has to hold — the same reason the tool projection
- * here is `toQueryTool`.
+ * import site is a name the reader has to hold.
  */
 export function toQueryRoute(target: AnyQuery): Route {
   const name = queryName(target);
@@ -84,12 +83,11 @@ export function toQueryRoute(target: AnyQuery): Route {
       return answerRow(oneRowOf(name, await runQuery(target, input, spending)));
     }
     // With a page control the answer is the `Page` envelope `query.page()` answers a server
-    // caller with — `{ rows, nextCursor, hasMore, endCursor, hasNextPage }`, the same names (the
-    // last two aliases of the first two), so a cursor read off the
+    // caller with — `{ rows, nextCursor, hasMore }`, the same names, so a cursor read off the
     // wire and one read off a direct call are the same string in the same field. Without one the
     // answer is the bare array it has always been: every client written before the controls
-    // existed keeps reading rows, and `hasNextPage` never rides on a row where a page marker
-    // has no business being.
+    // existed keeps reading rows, and `hasMore` never rides on a row where a page marker has no
+    // business being.
     return answer(
       page === undefined
         ? await runQuery(target, input, spending)
@@ -110,6 +108,9 @@ export function toQueryRoute(target: AnyQuery): Route {
     // rule reads (`ownsOrg(actor, input.orgId)`); the stage would decide the same policy
     // from raw strings, and would need an `authorize` hook wired to decide at all.
     enforcedBy: 'handler',
+    // Which primitive this is, for `@ultimat3/http`'s bucket check (a bucket named after a query
+    // limits nothing since 25.0.0, and is refused rather than ignored).
+    primitive: 'query',
     // `input` stays absent, deliberately: the pipeline's body stage validates `meta.input`
     // against the BODY, and a GET has none — declaring it would fail every read on an
     // absent body before the handler ran. The schema is not skipped, it is applied in the

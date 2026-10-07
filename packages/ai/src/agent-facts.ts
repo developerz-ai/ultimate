@@ -19,7 +19,7 @@ export interface AgentBudgetFact {
 }
 
 export interface AgentFact {
-  /** The export name registration stamped — the same name `.tool()` and `tools/call` answer to. */
+  /** The export name registration stamped — the same name `toolFrom` and `tools/call` answer to. */
   readonly name: string;
   readonly prompt: string;
   readonly promptId: string;
@@ -28,13 +28,13 @@ export interface AgentFact {
    * which agent ran and not which agent it was — the same reason every eval result carries it.
    */
   readonly promptHash: string;
-  /** The model a call runs on: the declaration's, its prompt's, then the gateway's `defaultModel`. */
-  readonly model: string;
   /**
-   * Which of those answered. `built-in-default` is the deprecated `DEFAULT_MODEL` (removed in
-   * 25.0.0); `gateway` and `built-in-default` are as of the gateway installed when the row is read.
+   * The model a call runs on: the declaration's, its prompt's, then the gateway's `defaultModel`.
+   * `null` when none names one yet — a call in that state is refused (`X_AI_MODEL_UNRESOLVED`).
    */
-  readonly modelFrom: ModelSource;
+  readonly model: string | null;
+  /** Which of those answered; `gateway` and `null` are as of the gateway installed at read time. */
+  readonly modelFrom: ModelSource | null;
   readonly maxTurns: number;
   readonly maxToolResultChars: number;
   /** Tool names, sorted — the catalogue this agent may call, which is its blast radius. */

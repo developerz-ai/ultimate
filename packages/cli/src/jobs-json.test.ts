@@ -5,11 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { JobRecord } from '@ultimat3/jobs';
 import {
-  createMemoryDriver,
   inspectBackfills,
   inspectDeadLetters,
   inspectJob,
   inspectQueues,
+  memoryJobDriver,
 } from '@ultimat3/jobs';
 import type { DrainFailure, DrainSkip } from './jobs-drain';
 import {
@@ -65,7 +65,7 @@ describe('unit · jobRecordToJson', () => {
 
 describe('unit · queue projections', () => {
   test('the depth report and dead letters survive a JSON round trip unchanged', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue({
       name: 'send-email',
       queue: 'default',
@@ -82,7 +82,7 @@ describe('unit · queue projections', () => {
   });
 
   test('a job trace projects its steps and retry delays as plain JSON', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id, runId } = await driver.enqueue({
       name: 'checkout',
       queue: 'default',
@@ -111,7 +111,7 @@ describe('unit · queue projections', () => {
   });
 
   test('a job that is not a backfill carries an explicit null, never a missing key', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue({
       name: 'send-email',
       queue: 'default',
@@ -127,7 +127,7 @@ describe('unit · queue projections', () => {
   });
 
   test("a backfill run's progress rides on its own trace, so --json never drops it", async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id, runId } = await driver.enqueue({
       name: 'reindex-posts',
       queue: 'default',
@@ -157,7 +157,7 @@ describe('unit · queue projections', () => {
 
 describe('unit · backfillToJson', () => {
   test('every absent value is already null at the source, so no key vanishes', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.backfills?.start({
       runId: 'run_1',
       name: 'reindex-posts',

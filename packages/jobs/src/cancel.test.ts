@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { JOB_ROW_COLUMNS, SQL_ACK, SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 import { cancelJob } from './inspect';
 import { job, resetJobs } from './job';
@@ -38,7 +38,7 @@ describe('cancelling a job', () => {
   test('a RUNNING job that is cancelled is not un-cancelled by its own worker settling', async () => {
     // The bug this pins: `UPDATE x_jobs SET state='dead'` was the only recourse, and the worker's
     // next ack/nack wrote straight over it. Both settlements are now fenced on `running`.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue(enqueue('runaway'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 5000, workerId: 'w' });
 
@@ -54,7 +54,7 @@ describe('cancelling a job', () => {
   });
 
   test('a cancelled job is never claimed again', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue(enqueue('runaway'));
     await driver.introspect?.cancel?.(id);
 
@@ -68,7 +68,7 @@ describe('cancelling a job', () => {
   });
 
   test('cancel REFUSES rather than reporting a silent no-op', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue(enqueue('finished'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 5000, workerId: 'w' });
     await driver.ack(id, { workerId: 'w', claim: 1 });
@@ -82,7 +82,7 @@ describe('cancelling a job', () => {
     // The cancel writes a terminal state; the renewal that misses it is the signal. `false` from
     // `heartbeat` is the whole mechanism — before, it returned `void` and nothing could tell a
     // renewal that landed from one that matched no row.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const { id } = await driver.enqueue(enqueue('runaway'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 5000, workerId: 'w' });
 
@@ -97,7 +97,7 @@ describe('cancelling a job', () => {
   });
 
   test('a cancelled attempt stops writing: the run belongs to nobody now', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     let reachedSecondStep = false;
     job({
       tenant: 'none',

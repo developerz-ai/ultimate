@@ -1,5 +1,5 @@
 // The Postgres digest store: one row per window, so a `digested` event outlives the process that
-// appended it and every replica coalesces into the same window. `createMemoryDigestStore` is the
+// appended it and every replica coalesces into the same window. `memoryDigestStore` is the
 // same queue of windows in one heap; this is what a deployment with more than one process installs.
 
 import type { PgExecutor } from '@ultimat3/core';
@@ -173,10 +173,10 @@ export interface PgDigestStore extends DigestStore {
   purgeExpired(nowMs: number): Promise<number>;
 }
 
-export function createPgDigestStore(options: PgDigestStoreOptions): PgDigestStore {
+export function postgresDigestStore(options: PgDigestStoreOptions): PgDigestStore {
   const { executor } = options;
   const retentionMs = finiteCount(
-    'createPgDigestStore',
+    'postgresDigestStore',
     'retentionMs',
     options.retentionMs ?? DEFAULT_DIGEST_RETENTION_MS,
     1,

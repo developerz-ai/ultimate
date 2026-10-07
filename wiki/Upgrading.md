@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 24.x → 25.0.0 | **31** so far, and **unreleased** — Bun 1.4.2 as the floor; seven deleted `app.config.ts` keys refused by name, the locales in `defineCatalogs()`; `assertEnvExample`, `resolveSpeculation` and `normalizeAuditRecord` removed, `AuditRecord.name` / `.primitive` required, the deprecation helpers from core only; one `memoryX` / `postgresX` spelling per factory; `entity`'s `Page` and `http.drainTimeoutMs` removed, a `bearerMount` catch-all; one MCP projection (`toolFrom`), one page shape (`nextCursor`, `hasMore`), a per-action rate limit that is the action's own, a redaction-keeping `IdempotencyStore`, `SQL_*` statements off the barrels, the NATS job driver stub deleted, required `WebhookLedger.isDisabled` and `ChangeEvent.write`; `McpExposure.name` and `contentHash` removed, a scopes map that names every tool, a required `DigestAppend.appender`; **no model chosen for an app — it registers its own and names one**; a widened `Menu` `aria-controls`, a private `FakeElement.listeners`, offline scrapes that state their robots reason, `nearest` removed, a `--cdp-url` capture that fails closed, a page that may not import a repo, and ai's `contentHash` renamed `promptHash` | the `24.x → 25.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 23.x → 24.0.0 | **202** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, an awaited browser `close()`; then auth — **a sealed MFA secret that needs `x auth seal-mfa` run once**, a retired `x_auth_failures` table, a reservation-shaped `AuthLimiter`, API keys bound to their owner and its grants, `X_MFA_REQUIRED` carrying a challenge, eight more required `AuthAdapter` members, `oauthLogin` requiring `APP_URL`, an e2e `offline()` that rejects when a page refuses the switch; then `compareValues` removed from query, a `.limit()` that bounds every page, a `single` read answering one row over MCP, `admin:*` declared by `defineAdmin()` rather than by import; then `mutator()` requiring `idempotent: true`, a regenerated `openapi.json` and schema dump, idempotent actions and cache busts that settle with the commit, a `manifest` step that fails on a stale `openapi.json`; then jobs — a final-attempt lapse buried instead of re-claimed, `cancel` refusing finished jobs, step writes fenced on the claim, a uuid-only `runId`, an awaited `purgeExpired()`, `x_job_events` swept; then realtime — **three operator steps: `APP_URL` on the `sync` role as the whole origin allow-list, `REPLICA IDENTITY FULL` for channels with params, and a replication connection that refuses a weak password without TLS** — rows revived across the bus, five interfaces with new required members, stricter channel re-authorization, and an offline queue abandoned when the principal changes; then a catch-all route that answers its bare prefix, a zero-length ISR `ttl` refused, `NativeReason` gaining `'unparsable'`, CSS-module classes scoped in selectors only with every scoped name changed once, a positional `CompiledPattern.specificity`, and a notification tap that opens this app only; then ui — two required `ThemeEnv` members, a fixed `theme.defaultMode` that a "System" pick and an OS change no longer override, the deprecated theme inline script removed, a `Popover` trigger whose `aria-controls` can be absent, and file controls that post only the files they accepted; then a required `peek` on every rate-limit store and an address refused on required routes once its failed credentials are spent; then mcp — a 5xx cause hidden from a remote caller, `db.query` refusing SQL run as text, a meta tool without `destructive` listed as a query, list calls held to their whitelist, failed tokens metered per address; then a `send()` that waits for its transaction's commit and one recipient rule on every mail driver; then `x_notify_digests` in the schema dump, queries publishing `input`, a non-finite manifest fact refused, and a dropped NOT NULL default classed as breaking; then ai — an atomic `BudgetStore.take`, a required `Gateway.callLedger(keys)`, **gateway `actor` and `org` ceilings that count every model call's caller**, a 5xx tool cause hidden from the model, `fnv1a` removed and `HashEmbedder` vectors changed, an unknown finish reason read as truncated, an unscoped vector read refused inside an org's request, a required `VectorStore.prune`, `chunk()` owning `source`, and `numericTolerance` refusing a bound that is not one; then testing — a coded `app()` before boot, `assertDeterministic` by canonical form, `frozenClock` announcing its moves, one module instance per island mount; then scraping — a proxy switch in launch args refused, a required browser-level `target()`, a jar-less browser refused, `burnSession` comparing `savedAt`, `maxDrop` held to a fraction, credential-shaped URL redaction, a declared header that replaces the session's, wildcard hosts resolved and pinned, robots redirects screened per hop, and an undated recording read as stale; then admin — a nullable keyset bound, **edit forms that post `_version` and a 409 for a stale edit**, a required `AdminFormProps.version`, a `'stale'` `CrudResult`, creates and updates decided on what they write, tenant-scoped audit screens, actions and batches that commit with their audit entry, `?scope=*` for no scope, and stricter list filters; then a split sitemap's parts under `/sitemaps/`, a permission's declaration site restored with it, then cli — an export directory a build must prove is its own, a static build that fails on a module that does not load, unread build flags refused, a `--dry-run` that is the write plan, generator names and API bindings refused before writing, an unowned path read as root-wide, test discovery anchored at the root, guards and app entry files under `filesize` and `errors`, SEO answers kept an hour, a scaffold pinned to the repository's `solid-js` and typechecking the root program, **a permission only `defineAdmin()` declared refused by the `policy` step**, **an unrecorded `REPLICA IDENTITY FULL` refused by the `drift` step**, and a registry snapshot that carries permission sites; then a handler's own CSP kept beside the app's, `x routes --json` in every route fix, **serving roles that leave the framework schema to `ROLE=migrate`**, decimal-only ports and proxy hops, stored files served as sandboxed downloads, no readiness grace off the listening roles, a replicator ready only while its stream runs, and cli commands that exit 1 on an unknown name or any finding, a `/_x` SQL panel that runs only a same-origin POST from this machine, and stricter `x doctor`, `x jobs`, `x shot`, `x dev`, `x verify merge`, `tests.run`, `x mcp serve` and `x routes`; then `checkErrorCodesThrown` waiving only the codes a list names; then **a chart that renders a NetworkPolicy per role, a bounded `/tmp` and a Secret every role must have**, and a sync listener on its own port at port 0 | the `24.0.0` section, in order |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
@@ -69,6 +70,275 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 24.x → 25.0.0, entry by entry — **unreleased**
+
+**Thirty-one entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order: Bun
+first, then grouped by package, lowest tier first. No legacy path, no codemod, no compatibility
+shim — every break is a build error or an `X_*` error naming the rewrite. Most of the major is
+deletion: a second spelling, a second projection or a second page shape removed, and the keys and
+re-exports a deprecation promised to remove. **Entries 2 and 8 refuse the boot** of an app that
+still writes a deleted key. **Entry 12 is silent:** a per-action bucket in `configureHttp` stops
+limiting anything, so move it before the deploy — upgrade step 9. **Entries 22–24 refuse every AI
+call** until the app registers its own models and names one — upgrade step 8. Entry 31 landed
+after the cut, so it sits below 30 rather than with ai's 22–24. A later slice
+appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it
+as `(#N)` after the dash.
+
+### The upgrade, top to bottom
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | `bun upgrade` to 1.4.2 and move the app's own image to a 1.4.2 base | `X_BUN_VERSION` from `x` and `x doctor` | 1 |
+| 2 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
+| 3 | delete the removed keys from `app.config.ts` and each overlay; declare the locales in `defineCatalogs` (`packages/i18n/src/index.ts`); move a non-`/mcp` `ai.mcp.path` to the first `defineAppMcp({ path })` in `apps/<app>/mcp.ts`; move `drainTimeoutMs` to `drain: { deadlineMs }` | TS2353 in a typed config; `X_CONFIG_INVALID` naming the key and its replacement at the first import | 2, 8 |
+| 4 | `bun run typecheck` for the renames and removed exports: factory spellings, `checkEnvExample`, the core deprecation, client-flight and audit-sink helpers, `fingerprint`, `nearestName`, `promptHash`, `entity`'s `Page`, `SQL_*`, `createNatsDriver` and `createRedisDriver` imports | TS2305 / TS2724 at each import; TS1485 / TS1362 at a class now exported as a type | 3, 5–7, 14, 15, 20, 28, 31 |
+| 5 | `bun run typecheck` for the MCP projection and the page shape: `.tool()` and `toolFromAction` → `toolFrom`, `endCursor` / `hasNextPage` → `nextCursor` / `hasMore`, `mcp.name` → the primitive's `name` | TS2339 / TS2305 / TS2353 at each site | 10, 11, 18 |
+| 6 | `bun run typecheck` for the members a custom implementation owes: `AuditRecord.name` / `.primitive`, `IdempotencyStore.keepsRedaction` and `settle(…, redacted)`, `WebhookLedger.isDisabled`, `ChangeEvent.write`, `DigestAppend.appender`; widen a `Menu` trigger's `aria-controls`; read `listenerFor` instead of `listeners` | TS2741 / TS2554 / TS2322 / TS2341 at each site | 4, 13, 16, 17, 21, 25, 26 |
+| 7 | `bun run typecheck` for ai: pass `models` to each `new AnthropicProvider(…)`, replace `OPENAI_MODEL_IDS` with the app's ids | TS2554 / TS2305 at each site | 23 |
+| 8 | **before the deploy, where the app calls a model:** `registerModel` every model it names (by convention in its own `models.ts`), and name one on each declaration or as `createGateway({ defaultModel })`; a test registers its rows in `beforeEach` and passes `model` to `EchoProvider` | `X_AI_MODEL_UNKNOWN` before any provider call; `X_AI_MODEL_UNRESOLVED` at a call that names none | 22–24 |
+| 9 | **before the deploy:** move each `rateLimit.buckets.<actionName>` from `configureHttp` to that action's `rateLimit: { limit, windowMs }` | `X_CONFIG_INVALID` at boot, naming the bucket and the action | 12 |
+| 10 | `x manifest`, commit `x.manifest.json` and `openapi.json` | `X_MANIFEST_STALE` from the `manifest` step | 11 |
+| 11 | `x verify --only boundaries,unit,contract,e2e` and fix what it fails: move an app wildcard off a `bearerMount` prefix, list every projected tool under a scope, give each offline scrape a `robots: { ignore }` reason, move a page's repo read into a query | `X_ROUTE_CONFLICT`; `X_MCP_SCOPE_UNCOVERED` at boot; `X_SCRAPE_ROBOTS_DISALLOWED`; `X_BOUNDARY_ROUTE_TO_DB` | 9, 19, 27, 30 |
+| 12 | read each script or CI job that runs `x shot --cdp-url` against a hosted browser | `X_CDP_CALL_FAILED` where a capture used to proceed | 29 |
+| 13 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+
+### Entry by entry
+
+Every package (1). Tier 0 — `@ultimat3/core` (2–5). Tier 1 and up — the factory spellings of
+`db`, `cache`, `storage`, `auth`, `action`, `jobs`, `realtime`, `mail`, `notify`, `ai` and
+`testing` (6). Tier 2 — `@ultimat3/entity` (7),
+`@ultimat3/http` (8–9). Tier 3 — `@ultimat3/action` and `@ultimat3/query` (10–14),
+`@ultimat3/jobs` (15–16), `@ultimat3/realtime` (17). Tier 4 — `@ultimat3/mcp` (18–19),
+`@ultimat3/manifest` (20), `@ultimat3/notify` (21), `@ultimat3/ai` (22–24), `@ultimat3/ui` (25).
+Tier 5 — `@ultimat3/testing` (26), `@ultimat3/scraping` (27), `@ultimat3/cli` (28–30). After
+the cut — `@ultimat3/ai` (31).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `engines.bun`, `x`, `x doctor` | you run Bun 1.4.0 or 1.4.1. `X_BUN_VERSION`; `bun upgrade`, and a 1.4.2 base image in the app's own Dockerfile |
+| 2 | `app.config.ts`, keys removed: `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme.tokens`, `jobs.driver`, `ai.mcp.path` | a layer writes one. `X_CONFIG_INVALID` naming the key and its replacement; TS2353 in a typed config; TS2339 where code reads `config.locales`. The locales and their default are `defineCatalogs({ default, locales })` in `packages/i18n/src/index.ts`; the zone is passed per call, the currency per `Money`; the theme is `defineTheme` in `apps/web/shared/theme.ts`; the driver is `setJobDriver(postgresJobDriver({ executor }))`. Delete `ai.mcp.path`: every MCP endpoint, #0 included, mounts at its own `defineAppMcp({ path })` (default `/mcp`) — if yours was not `/mcp`, pass it as `path` to the first `defineAppMcp` in `apps/<app>/mcp.ts`. `McpConfig` is `{ expose }` |
+| 3 | `assertEnvExample`, `EnvExampleDriftError`, `resolveSpeculation` | you import one. `checkEnvExample(…)` returns findings instead of throwing — or let `x verify --only manifest` run it; speculation is `defineConfig({ navigation: { speculation } })` |
+| 4 | `AuditRecord`, `normalizeAuditRecord`, `NormalizedAuditRecord` | a sink or test reads `record.action` or builds a record without `name` and `primitive`. TS2339 / TS2741. Read and write `name` and `primitive`; no DDL changed |
+| 5 | `Deprecation`, `DeprecationField`, `DeprecationRender`, `recordDeprecatedCall`, `renderDeprecation`; the values `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isSuperseded`, `isTransientFailure`, `getAuditSink`, `setAuditSink`, `resetAuditSink` | you import one from `@ultimat3/action` or `@ultimat3/query`. Import it from `@ultimat3/core`; `action` and `query` re-export types only |
+| 6 | every `createMemory*`, `createPg*`, `pgSchedulerState`, `createPostgresClient`; a `Memory*` / `InMemory*` / `Pg*` / `BuiltinAdapter` class `new`-ed as a value; every `create<Vendor>Driver`; storage's `memoryDriver` | you call one. TS2305 / TS2724; TS1485 / TS1362 where the class is now a type only. Rename per the table below. Arguments and return types are unchanged; option type names too, but storage's `MemoryDriverOptions` → `MemoryStorageDriverOptions` |
+| 7 | `Page` from `@ultimat3/entity` | you annotate a `findMany` or `.page()` result with it. Import `Page` from `@ultimat3/core` (or `@ultimat3/query`): `findMany` answers it, so the page now carries `hasMore` too. A hand-written `Repo` builds its page with core's `pageOf(rows, nextCursor)` (TS2741 / TS2322 at a `{ rows, nextCursor }` literal) |
+| 8 | `configureHttp({ drainTimeoutMs })`, `defineHttpConfig({ drainTimeoutMs })` | you pass it. `X_CONFIG_INVALID` naming `drain.deadlineMs`, refused by key so a spread is caught too. Declare `drain: { deadlineMs }` in `app.config.ts` — every role, web included, drains on it |
+| 9 | `bearerMount` | the app declares a wildcard at the mount's own `<prefix>/*rest`. `X_ROUTE_CONFLICT` at registration; the mount answers every method under its prefix |
+| 10 | `.tool()`, `toMcpTool(s)`, `toQueryTool(s)`, `isExposed`, `toolFromAction`, `toolFromQuery`, `McpToolDescriptor`, `McpInvokeOptions`, `QueryTool*` | you project or call a tool by hand. `toolFrom(x)` for an action or a query (`toolFromAction` renamed, no alias), `toolListEntry(tool)` for the `tools/list` entry, `invoke(x, input, { ctx, surface: 'mcp' })` to call, `(await sourceFor(q, input, { surface: 'mcp' })).execute()` to read, `isMcpExposed(x.mcp)` from `@ultimat3/core` |
+| 11 | query `Page`, the `?_first=` envelope, `openapi.json` | a client reads `endCursor` or `hasNextPage`. Read `nextCursor` and `hasMore`; pass `nextCursor` as `after` (`_after=` on the wire). Run `x manifest`. **And** a client keeps the LAST page's cursor — to poll for rows appended after it, or because it reads `nextCursor` without `hasMore`: the last page's `nextCursor` is now `null` (it is `null` exactly when `hasMore` is false, on every surface), so a `while (page.nextCursor)` loop no longer fetches an empty page past the end. To tail a listing, keep the cursor of the last page that had one, or re-read the first page |
+| 12 | `http.rateLimit.buckets.<actionName>` | you limited an action through a named bucket. It is refused at boot with `X_CONFIG_INVALID` (a bucket keyed by a mounted action's or query's name): delete it from `configureHttp` and declare `rateLimit: { limit, windowMs }` on the action |
+| 13 | `IdempotencyStore` | you wrote your own. Declare `keepsRedaction: true`, keep `settle`'s 4th argument `redacted` and return it as `IdempotencyRecord.redacted` |
+| 14 | `SQL_*` exports of `action`, `jobs`, `notify`, `admin` | you import a statement other than a table DDL (`SQL_AUDIT_TABLE`, `SQL_IDEMPOTENCY_TABLE`, `SQL_JOBS_TABLE`, `SQL_NOTIFY_*_TABLE`, `SQL_ADMIN_AUDIT_TABLE`) — `SQL_CLAIM`, `SQL_OUTBOX_RELEASE` and `SQL_NOTIFY_INBOX_MARK_READ` included. Call the store that runs it, or copy the text into the app |
+| 15 | `createNatsDriver`, `NatsDriverOptions`, `createRedisDriver`, `RedisDriverOptions` | you import one — every method threw `X_NOT_IMPLEMENTED`. Postgres is the durable driver: `postgresJobDriver({ executor })` |
+| 16 | `WebhookLedger` | you wrote your own. Add `isDisabled(endpointId): Promise<boolean>` |
+| 17 | `ChangeEvent` | a custom change feed builds one. Pass `write: null` where it has no write name |
+| 18 | `McpExposure.name` | a hand-built primitive handed to `toolFrom` sets `mcp: { name }`. Rename the primitive instead |
+| 19 | `defineAppMcp({ scopes })` | the map leaves a projected tool out — `include: 'exposed'` and hand-written tools such as `whoami` included. `X_MCP_SCOPE_UNCOVERED` at boot; list each tool under a scope |
+| 20 | `contentHash` from `@ultimat3/manifest` | you import it. `fingerprint(body)` from `@ultimat3/core`, the same 16 hex characters |
+| 21 | `DigestAppend`, `DigestStore` | you wrote a store. Key its replay on the required `appender` |
+| 22 | `DEFAULT_MODEL`, a call with no model | a declaration, its prompt and the gateway all leave the model out. `X_AI_MODEL_UNRESOLVED` naming the three places; `EchoProvider` needs `model` too, and so does a request to a provider called directly (`AnthropicProvider`, `openAiProvider`), which runs `request.model` and nothing else. `describeAgents()` answers `model: null` there |
+| 23 | `new AnthropicProvider()`, `ANTHROPIC_MODEL_IDS`, `OPENAI_MODEL_IDS` | you construct a provider without `models` or with the built-in list. TS2554 / TS2305; an empty list is `X_AI_REQUEST_INVALID`. Pass the ids the app registered |
+| 24 | the built-in catalogue, `registerOpenAiModels()` | the app names a model it never `registerModel`-ed. `X_AI_MODEL_UNKNOWN` before any provider call. Register each model at boot, with its source and date beside each number |
+| 25 | `Menu` trigger props | you type `aria-controls` as `string`. It is `string \| undefined`; a closed menu carries none |
+| 26 | `FakeElement.listeners` | a test reads it. `element.listenerFor(name)`, or `island.fire(selector, type)` |
+| 27 | an offline `scrape()` test with `fakeBrowser` / `fixtureBrowser` | it declares no `robots: { ignore }`. `X_SCRAPE_ROBOTS_DISALLOWED` under `bun test`; write the reason the run is permitted |
+| 28 | `nearest` from `@ultimat3/cli` | you import it. `nearestName` from `@ultimat3/core` |
+| 29 | `x shot --cdp-url` | the provider refuses the browser-target attach. `X_CDP_CALL_FAILED`; point at a browser that allows it, or drop the flag |
+| 30 | the `boundaries` step | a `page`, `layout` or `route` imports a slice's `repo`. `X_BOUNDARY_ROUTE_TO_DB`; read through a query |
+| 31 | `contentHash` from `@ultimat3/ai` | you import it. `promptHash(input)`, the same argument and the same hash; `contentHash` is `@ultimat3/render/server`'s byte hash only |
+
+Entry 6, the renames:
+
+| Package | Was | Is |
+|---|---|---|
+| `db` | `createPostgresClient` | `postgresClient` |
+| `cache` | `createMemorySemanticCache` | `memorySemanticCache` |
+| `jobs` | `createMemoryDriver`, `createPgDriver` | `memoryJobDriver`, `postgresJobDriver` |
+| `jobs` | `createPgLeader`, `createPgLeaseLeader`, `pgSchedulerState` | `postgresLeader`, `postgresLeaseLeader`, `postgresSchedulerState` |
+| `jobs` | `createPgEventBus`, `createPgOutboxStore` | `postgresEventBus`, `postgresOutboxStore` |
+| `jobs` | `createMemoryEventBus`, `createMemoryOutboxStore`, `createMemoryStepStore` | `memoryEventBus`, `memoryOutboxStore`, `memoryStepStore` |
+| `jobs` | `createMemoryLeaseStore`, `createMemorySchedulerState`, `createMemoryBackfillLedger` | `memoryLeaseStore`, `memorySchedulerState`, `memoryBackfillLedger` |
+| `mail` | `createMemoryDriver` | `memoryMailDriver` |
+| `notify` | `createMemoryDeliveryLedger`, `createMemoryDigestStore`, `createMemoryInboxStore`, `createMemoryPreferenceStore` | `memoryDeliveryLedger`, `memoryDigestStore`, `memoryInboxStore`, `memoryPreferenceStore` |
+| `notify` | `createPgDeliveryLedger`, `createPgDigestStore`, `createPgInboxStore` | `postgresDeliveryLedger`, `postgresDigestStore`, `postgresInboxStore` |
+| `storage` | `memoryDriver`, `MemoryDriverOptions` | `memoryStorageDriver`, `MemoryStorageDriverOptions` |
+| `auth` | `new BuiltinAdapter(…)`, `new MemoryAdapter(…)` | `postgresAuthAdapter(…)`, `memoryAuthAdapter(…)` |
+| `action` | `new MemoryIdempotencyStore(…)` | `memoryIdempotencyStore(…)` |
+| `realtime` | `new MemoryLocalStore()`, `new MemoryQueueStore()` | `memoryLocalStore()`, `memoryQueueStore()` |
+| `realtime/server` | `new InMemoryAdvisoryLock(…)`, `new PgAdvisoryLock(…)` | `memoryAdvisoryLock(…)`, `postgresAdvisoryLock(…)` |
+| `realtime/server` | `new InMemoryChangeFeed(…)`, `new PgLogicalReplicationFeed(…)`; `PgOutputDecoder` | `memoryChangeFeed(…)`, `postgresChangeFeed(…)`; not exported — the feed decodes |
+| `mail` | `createSmtpDriver`, `createResendDriver`, `createLogDriver`, `createUnconfiguredDriver` | `smtpMailDriver`, `resendMailDriver`, `logMailDriver`, `unconfiguredMailDriver` |
+| `ai` | `new PgVectorStore(…)`, `new MemoryVectorStore(…)`, `new MemoryBudgetStore()` | `postgresVectorStore(…)`, `memoryVectorStore(…)`, `memoryBudgetStore()` |
+| `testing` | `createSubscribeDriver()` | `subscribeDriver()` |
+
+Each class above stays nameable as a type (`import type { MemoryVectorStore }`).
+
+### Before → after
+
+Entry 2 — `app.config.ts`, and where each key went:
+
+```diff
+ export const config = defineConfig({
+   name: 'my-app',
+-  locales: ['en', 'es'],
+-  defaultLocale: 'en',
+-  defaultTimeZone: 'UTC',
+-  defaultCurrency: 'USD',
+-  theme: { defaultMode: 'system', tokens: { brand: '#0a84ff' } },
+-  jobs: { driver: 'postgres' },
+-  ai: { mcp: { expose: true, path: '/agents' } },
++  theme: { defaultMode: 'system' },
++  ai: { mcp: { expose: true } },
++  drain: { deadlineMs: 25_000 }, // entry 8: was configureHttp({ drainTimeoutMs })
+ });
+
+ // apps/web/mcp.ts — an endpoint's path is its own; /mcp needs no line
++export const mcp = defineAppMcp({ path: '/agents', /* name, tools, resolveToken … */ });
+
+ // packages/i18n/src/index.ts — the one declaration of the locales and their default
++export const catalogs = defineCatalogs({ default: 'en', locales: { en, es } });
+
+ // at each format call — there is no ambient zone
+-formatDate(at, { locale });
++formatDate(at, { locale, zone: 'Europe/Paris' });
+```
+
+Entry 10 — the one MCP projection:
+
+```diff
+-import { toMcpTool, isExposed } from '@ultimat3/action';
+-import { toQueryTool } from '@ultimat3/query';
++import { invoke } from '@ultimat3/action';
++import { isMcpExposed } from '@ultimat3/core';
++import { toolFrom, toolListEntry } from '@ultimat3/mcp';
++import { sourceFor } from '@ultimat3/query';
+
+-const entry = publishPost.tool();                       // or toMcpTool(publishPost)
++const entry = toolListEntry(toolFrom(publishPost)); // an action or a query
+-await toMcpTool(publishPost).invoke(input, { ctx });
++await invoke(publishPost, input, { ctx, surface: 'mcp' });
+-await toQueryTool(postList).read(input);
++await (await sourceFor(postList, input, { surface: 'mcp' })).execute();
+-if (isExposed(publishPost)) …
++if (isMcpExposed(publishPost.mcp)) …
+```
+
+Entry 11 — a page:
+
+```diff
+ const page = await client.postList({ _first: 20 });
+-if (page.hasNextPage) next = page.endCursor;
++next = page.nextCursor; // null exactly when !page.hasMore — the last page carries no cursor
+```
+
+Entry 12 — a per-action limit:
+
+```diff
+-configureHttp({ rateLimit: { buckets: { publishPost: { capacity: 10, refillPerSecond: 0.1 } } } });
+ export const publishPost = action({
+   input: t.object({ id: t.uuid }),
++  rateLimit: { limit: 10, windowMs: 60_000 },
+   …
+ });
+```
+
+Entries 4, 13, 16, 17 and 21 — the members a custom implementation owes:
+
+```diff
+-const record = { action: 'publishPost', /* … */ };
++const record = { name: 'publishPost', primitive: 'action', /* … */ };
+
+ const store: IdempotencyStore = {
++  keepsRedaction: true,
+-  settle: (key, value, reservationId) => …,
++  settle: (key, value, reservationId, redacted) => …, // keep it; return it as record.redacted
+ };
+
+ const ledger: WebhookLedger = {
++  isDisabled: (endpointId) => Promise.resolve(disabled.has(endpointId)),
+ };
+
+-await feed.emit({ entity, op, before, after, lsn, txid, orgId, at });
++await feed.emit({ entity, op, before, after, lsn, txid, orgId, at, write: null });
+```
+
+Entries 22–24 — the app brings its models. Every number below is a placeholder: copy the vendor's
+published limits and prices into the app's own `models.ts`, with the source and the date beside
+each, as `examples/dummy/apps/web/app/models.ts` does.
+
+```ts
+import { AnthropicProvider, configureAi, createGateway, registerModel } from '@ultimat3/ai';
+
+const usd = (minor: number) => ({ minor, currency: 'USD' }) as const;
+
+export const appModel = registerModel({
+  id: 'your-model-id',
+  family: 'your-vendor',
+  contextWindow: 200_000,
+  maxOutput: 32_000,
+  inputPerMillion: usd(300),
+  outputPerMillion: usd(1_500),
+  cacheMinimumTokens: 1_024,
+  reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
+});
+
+configureAi({
+  gateway: createGateway({
+    providers: [new AnthropicProvider({ models: [appModel.id] })],
+    defaultModel: appModel.id,
+  }),
+});
+```
+
+```diff
+-new AnthropicProvider()
++new AnthropicProvider({ models: [appModel.id] })
+-openAiProvider({ apiKey, models: [...OPENAI_MODEL_IDS] })
++openAiProvider({ apiKey, models: [appModel.id] })
+-beforeEach(() => registerOpenAiModels());
++beforeEach(() => registerModel(testModelRow));
+-new EchoProvider().generate({ prompt })
++new EchoProvider().generate({ prompt, model: appModel.id })
+```
+
+### Not breaking, but you will see it
+
+| Surface | What changed |
+|---|---|
+| `x shot`, the PWA manifests, `x g --locales`, `x i18n`, the e2e default locale | read the locales from the app's `defineCatalogs()`, never `app.config.ts` — an app with no `packages/i18n/src/index.ts` has none declared |
+| Helm grace periods | sized from `drain.deadlineMs` alone, which `x deploy --method helm` passes on every upgrade |
+| `x jobs drain` | still planned: `X_NOT_IMPLEMENTED` before it boots the queue or leases a job; `--to` accepts no value, since no durable second driver ships |
+| `describeAgents()` | `model` and `modelFrom` are `null` where nothing names a model; `'built-in-default'` is gone |
+| fix lines | no `fix:` names a vendor's model as the default |
+| `pwa.offline.fallback`, `.image`, `.font` | must be paths on this origin: `//host`, `/\host` and absolute URLs are `X_CONFIG_INVALID` at config load |
+| a raw MCP tool with no `destructive` | billed to the write bucket and listed as `(action)`; set `destructive: false` on a hand-registered read |
+| `BarChart` | renders a `<figure>` around `<svg role="img">`; `class` lands on the figure |
+| `x shot --matrix` | directories are `<theme>-<w>x<h>`, were `<theme>-<w>` |
+| `/admin` home | counts a resource only when it declares `count: true` |
+
+### Where the sites are
+
+```sh
+grep -rnwE "locales|defaultLocale|defaultTimeZone|defaultCurrency|tokens|driver|drainTimeoutMs" app.config.ts apps packages --include=*.ts
+grep -n "mcp" app.config.ts
+grep -rnwE "createMemory[A-Z]\w*|createPg[A-Z]\w*|pgSchedulerState|createPostgresClient|create[A-Z]\w*Driver|(Nats|Redis|Memory)DriverOptions|memoryDriver|MemoryIdempotencyStore|(Pg|Memory)VectorStore|MemoryBudgetStore|(Builtin|Memory)Adapter|Memory(Local|Queue)Store|(InMemory|Pg)AdvisoryLock|InMemoryChangeFeed|PgLogicalReplicationFeed|PgOutputDecoder" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "assertEnvExample|EnvExampleDriftError|resolveSpeculation|normalizeAuditRecord|NormalizedAuditRecord|contentHash|nearest" apps packages scripts --include=*.ts --include=*.tsx
+grep -rnE "(Deprecation\w*|recordDeprecatedCall|renderDeprecation|createClientFlight|DEFAULT_CLIENT_RETRY|isSuperseded|isTransientFailure|(get|set|reset)AuditSink).*from '@ultimat3/(action|query)'" apps packages --include=*.ts --include=*.tsx
+grep -rnE "\.tool\(\)|toMcpTools?\b|toQueryTools?\b|isExposed\b|toolFromAction|toolFromQuery|McpToolDescriptor|McpInvokeOptions|QueryTool(Descriptor|ReadOptions|Answer)" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "endCursor|hasNextPage|SQL_[A-Z_]+|AuditRecord|IdempotencyStore|WebhookLedger|ChangeEvent|DigestAppend|DigestStore|FakeElement" apps packages --include=*.ts --include=*.tsx
+grep -rnE "Page\b.*from '@ultimat3/entity'|bearerMount\(|scopes:|buckets:|aria-controls|robots:|fakeBrowser\(|fixtureBrowser\(" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "DEFAULT_MODEL|ANTHROPIC_MODEL_IDS|OPENAI_MODEL_IDS|registerOpenAiModels|AnthropicProvider|EchoProvider|defaultModel|registerModel" apps packages --include=*.ts --include=*.tsx
+grep -rnE "cdp-url|x shot" .github scripts package.json bin
+```
+
+The `typecheck` step finds 3–7, 10, 11, 13–18, 20, 21, 23, 25–28 and 31 at the import or the member,
+and 2 in a typed `app.config.ts`. Entries 2 and 8 also refuse at the first import of the config
+(`X_CONFIG_INVALID`), 19 at boot, 9 at route registration and 22 and 24 at the first model call.
+The `manifest` step finds 11's stale `openapi.json`, `boundaries` finds 30, and the unit and e2e
+suites find 27. Nothing finds 12 — a bucket keyed by an action's name is read by nobody — or 29
+until a capture runs; read each `configureHttp` for 12 and each `x shot --cdp-url` caller for 29.
+Entry 1 is `x doctor`'s first line.
 
 ## 23.x → 24.0.0, entry by entry
 
@@ -196,7 +466,7 @@ Tier 4 — `@ultimat3/render` (196). Tier 5 — `@ultimat3/cli` (197). Tier 0 �
 | 3 | `t.object`, `t.record`, `t.money` | you pass a `Map`, a `Date` or a class instance. Pass a plain object: `{ ...instance }`, `Object.fromEntries(map)`. Null-prototype objects are still accepted |
 | 4 | `.default(v)` | `v` fails the schema it is declared on (`t.number.min(5).default(1)`). `X_SCHEMA_DEFAULT_INVALID` at the first import of the file; the cause quotes the rule. Edit the default, or relax the rule |
 | 5 | HTTP query and form coercion | a client sends `0x10`, `0b11` or `0o17` for a number. It stays a string and fails as `expected a number`. Send decimal |
-| 6 | `defineConfig` | `app.config.ts` or an overlay holds: an unknown `roles` entry, `jobs.backoff`, `database.driver` or `theme.defaultMode`; a non-boolean `database.ssl`, `realtime.enabled` or `ai.mcp.expose` (`'false'` from an env variable read as on — write `process.env.X === 'true'`); `auth.signInPath` or `ai.mcp.path` with no leading `/`; `cache.tiers: []`; an empty or non-string `jobs.queues` entry; one locale twice (`['EN', 'en']`); a section set to `null`. `X_CONFIG_INVALID` names each key |
+| 6 | `defineConfig` | `app.config.ts` or an overlay holds: an unknown `roles` entry, `jobs.backoff`, `database.driver` or `theme.defaultMode`; a non-boolean `database.ssl`, `realtime.enabled` or `ai.mcp.expose` (`'false'` from an env variable read as on — write `process.env.X === 'true'`); `auth.signInPath` with no leading `/` (`ai.mcp.path`, then also checked here, is deleted in 25.0.0); `cache.tiers: []`; an empty or non-string `jobs.queues` entry; one locale twice (`['EN', 'en']`); a section set to `null`. `X_CONFIG_INVALID` names each key |
 | 7 | `LOG_LEVEL` | a deploy sets a value that is not `trace`, `debug`, `info`, `warn`, `error`, `fatal` or `silent`, lower-case — `DEBUG` and `verbose` included. The process exits at import (`X_INVARIANT`); it used to log at `info`. Unset and empty are unchanged |
 | 8 | `retry()`, `retryDecision()` | `attempts` can be `NaN`, infinite, negative or a fraction, or `timeBudgetMs` `NaN` or infinite — typically `Number(process.env.X)` on an unset variable. `X_INVARIANT` before the first try. Parse and default the value before passing it. `attempts: 0` still runs once |
 | 9 | `createFlightGate` | `maxConcurrent` or `maxQueued` is `NaN`, infinite, negative or a fraction (`X_INVARIANT` at construction), or `maxConcurrent` is `0` and you expected callers to wait: each is refused with `X_FLIGHT_GATE_OVERLOADED` |
@@ -260,7 +530,7 @@ Tier 4 — `@ultimat3/render` (196). Tier 5 — `@ultimat3/cli` (197). Tier 0 �
 | 67 | `oauthLogin` | neither `baseUrl` nor `APP_URL` is set. `X_ENV_MISSING` at the start leg: set `APP_URL` to the app's public origin |
 | 68 | `E2eSession.offline()` | an e2e test toggles offline while a page refuses the script — a page mid-navigation, a crashed tab. `X_CDP_CALL_FAILED` where the call used to resolve and leave that page online. Wait for the page to settle, or close it, before `offline()` |
 | 69 | `compareValues`, `compareRows`, `matchesFilter`, `isAfterKey` from `@ultimat3/query` | you wrote a custom `SqlSource` or matcher: delete `compareValues` (TS2305) and pass `kindsOf(shape.entity)` as the kinds argument of the other three (TS2554) |
-| 70 | a read with `.limit()` | a client pages it past the limit with `.page()` / `?_first=` and a cursor. The listing now ends at the limit: the next page is empty with `nextCursor: null`. Drop the `.limit()` to page to the end. A cursor a client held across the deploy on a limited read is `X_CURSOR_INVALID` once — restart from the first page |
+| 70 | a read with `.limit()` | a client pages it past the limit with `.page()` / `?_first=` and a cursor. The listing now ends at the limit: the last page inside it answers `hasMore: false` and `nextCursor: null`. Drop the `.limit()` to page to the end. A cursor a client held across the deploy on a limited read is `X_CURSOR_INVALID` once — restart from the first page |
 | 71 | the MCP tool of a `single: true` read | an agent, prompt or test reads `{ rows }` from it. It answers the row itself, or `X_NOT_FOUND`; its `outputSchema` is the row |
 | 72 | `adminPermissions`, permissions declared by importing `@ultimat3/admin` | you import `adminPermissions` (TS2305), or your own closed permission set relies on the import having declared `admin:*` before `defineAdmin()` runs: add `...ADMIN_PERMISSIONS` to `definePermissions([...])` |
 | 73 | `mutator({ … })` | always, for every mutator: add `idempotent: true` (TS2741; `X_MUTATOR_NOT_IDEMPOTENT` from untyped code). `x g mutator` writes it. Running more than one replica: `configureIdempotency({ scope: 'shared' })` |
@@ -945,7 +1215,7 @@ reader. **One is `bun upgrade`.** The other two are types.
 | # | Surface | Costs you an edit if |
 |---|---|---|
 | 1 | the Bun floor, `>=1.4.0` in `engines.bun` and in `x`'s own check | you run Bun below 1.4.0. **The edit is `bun upgrade`.** The floor said `>=1.3.0` while `x test` emitted `bun test --isolate`, a flag Bun introduced in **1.3.13** — so on 1.3.0..1.3.12 the gate's dominant step died on an unknown flag and `x doctor` called the runtime fine. `1.4.0` rather than `1.3.13` because a floor is a claim about a runtime somebody tested: CI pins `1.4.x` and both images build on `oven/bun:1.4-*` |
-| 2 | `AppConfig.pwa` | you set `pwa.enabled: true`. It now also requires `pwa.name` and `pwa.colors.light` / `pwa.colors.dark`, each with `themeColor` and `backgroundColor`. `defineConfig` refuses an incomplete block **at boot**, not at `x build`, and the `fix:` carries the whole block. There is nothing to derive them from: `app.name` is a slug, so an install prompt offering `ledger-demo` is wrong rather than rough, and a browser paints the install splash before a stylesheet loads. Raw hex is legal here — one of two places in an app it is, beside `theme.tokens`. **Or set `pwa.enabled: false`**, which is what it effectively was |
+| 2 | `AppConfig.pwa` | you set `pwa.enabled: true`. It now also requires `pwa.name` and `pwa.colors.light` / `pwa.colors.dark`, each with `themeColor` and `backgroundColor`. `defineConfig` refuses an incomplete block **at boot**, not at `x build`, and the `fix:` carries the whole block. There is nothing to derive them from: `app.name` is a slug, so an install prompt offering `ledger-demo` is wrong rather than rough, and a browser paints the install splash before a stylesheet loads. Raw hex is legal here — one of two places in an app it is, beside `theme.tokens` (itself removed in 25.0.0). **Or set `pwa.enabled: false`**, which is what it effectively was |
 | 3 | `@ultimat3/pwa`'s exports | you import `PwaConfig`, `ThemeTokens` or `SchemeColors` from it. `PwaConfig` is now `WebManifestInput` — two exported types of one name with no map between them is axiom 1, and this was the one that lied: its doc said "the `pwa` block of `app.config.ts`" and it was the generator's input. `ThemeTokens`/`SchemeColors` are `PwaColors`/`PwaSchemeColors` from `@ultimat3/core`, which is where the config lives |
 | 4 | `x test --json`, and four `@ultimat3/cli` exports | you read `data.shards[]` or `data.failed`, or import `planShards`, `shardArgs`, `SHARD_COMMAND_PREFIX` or `Shard`. `x test` runs one `bun test --parallel=N` now, so there are no shards to report: read `data.ok` instead of scanning for a failure and `data.reproduce` instead of rebuilding the rerun. `testArgs(…)` builds the argv, `filesIn(command)` reads the file list back out. `X_TEST_SHARD_FAILED` still exists and is `x test --worker I`'s alone |
 | 5 | `ScrapeTarget` / `ScrapePage` | you implement either interface yourself. `ScrapeTarget` gains `setColorScheme` and `ScrapePage` gains `colorScheme`; a driver of your own stops compiling until it has both. Calling `@ultimat3/scraping` rather than implementing it costs nothing |

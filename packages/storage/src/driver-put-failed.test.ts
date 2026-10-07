@@ -12,7 +12,7 @@ import { isUltimateError } from '@ultimat3/core';
 import type { PutOptions, StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { commitObject } from './driver-local-write';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, FakeS3Client, s3Error, textOf } from './driver-s3-fixture';
 
@@ -29,7 +29,7 @@ beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-put-failed-`);
   fake = new FakeS3Client();
   local = localDriver({ root, signingSecret: 'test-secret' });
-  memory = memoryDriver({ signingSecret: 'test-secret' });
+  memory = memoryStorageDriver({ signingSecret: 'test-secret' });
   s3 = s3Driver({ bucket: 'b', client: fake });
 });
 

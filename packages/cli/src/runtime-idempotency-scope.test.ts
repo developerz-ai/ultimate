@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { IdempotencyStore } from '@ultimat3/action';
-import { MemoryIdempotencyStore, postgresIdempotencyStore } from '@ultimat3/action';
+import { memoryIdempotencyStore, postgresIdempotencyStore } from '@ultimat3/action';
 import { logger } from '@ultimat3/core';
 import { warnIfIdempotencyProcessScoped } from './runtime-idempotency-scope';
 
@@ -20,7 +20,7 @@ describe('unit · the idempotency store a container boot ends with', () => {
     logger.warn = (message: string, fields?: Record<string, unknown>) => {
       warned.push(`${message} ${String(fields?.['fix'])}`);
     };
-    expect(warnIfIdempotencyProcessScoped(new MemoryIdempotencyStore())).toBe(true);
+    expect(warnIfIdempotencyProcessScoped(memoryIdempotencyStore())).toBe(true);
     expect(warned).toEqual(["X_CONFIG_INVALID configureIdempotency({ scope: 'shared' })"]);
   });
 

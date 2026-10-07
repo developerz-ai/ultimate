@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AuthAccount, AuthApiKeyRecord, AuthSession, AuthVerification } from './adapter';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 
 const user = (overrides: Partial<Parameters<MemoryAdapter['createUser']>[0]> = {}) => ({
   id: 'user-1',
@@ -18,7 +18,7 @@ const user = (overrides: Partial<Parameters<MemoryAdapter['createUser']>[0]> = {
 
 describe('users', () => {
   test('findUserByEmail matches exactly, as `where email = $1` does', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createUser(user());
 
     expect((await adapter.findUserByEmail('A@Example.com'))?.id).toBe('user-1');
@@ -29,7 +29,7 @@ describe('users', () => {
   });
 
   test('createUser stores the email it was handed and starts with no permissions/mfa', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     const created = await adapter.createUser(user());
     expect(created.email).toBe('A@Example.com');
     expect(created.permissions).toEqual([]);
@@ -38,17 +38,17 @@ describe('users', () => {
   });
 
   test('findUserById returns null for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.findUserById('ghost')).toBeNull();
   });
 
   test('updateUser returns null for an unknown id, and does not create one', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.updateUser('ghost', { roles: ['admin'] })).toBeNull();
   });
 
   test('updateUser: an omitted field keeps the old value; an explicit null clears it', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createUser(user());
     await adapter.updateUser('user-1', { mfaSecret: 'SECRET' });
 
@@ -64,7 +64,7 @@ describe('users', () => {
   });
 
   test('updateUser replaces roles wholesale, not merged', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createUser(user({ roles: ['editor', 'viewer'] }));
     const updated = await adapter.updateUser('user-1', { roles: ['admin'] });
     expect(updated?.roles).toEqual(['admin']);
@@ -86,17 +86,17 @@ describe('sessions', () => {
   });
 
   test('getSession returns null for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.getSession('ghost')).toBeNull();
   });
 
   test('updateSession returns null for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.updateSession('ghost', { mfaSatisfied: true })).toBeNull();
   });
 
   test('updateSession patches only the given fields', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createSession(session());
     const updated = await adapter.updateSession('sess-1', { ip: '1.2.3.4' });
     expect(updated?.ip).toBe('1.2.3.4');
@@ -105,14 +105,14 @@ describe('sessions', () => {
   });
 
   test('deleteSession returns whether a row actually existed', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createSession(session());
     expect(await adapter.deleteSession('sess-1')).toBe(true);
     expect(await adapter.deleteSession('sess-1')).toBe(false);
   });
 
   test('deleteOtherSessions kills every session for the user except the kept one', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createSession(session({ id: 's1' }));
     await adapter.createSession(session({ id: 's2' }));
     await adapter.createSession(session({ id: 's3', userId: 'user-2' }));
@@ -125,7 +125,7 @@ describe('sessions', () => {
   });
 
   test("listSessions returns only the user's sessions, newest lastSeenAt first", async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.createSession(session({ id: 's1', lastSeenAt: new Date(100) }));
     await adapter.createSession(session({ id: 's2', lastSeenAt: new Date(300) }));
     await adapter.createSession(session({ id: 's3', userId: 'user-2', lastSeenAt: new Date(500) }));
@@ -149,14 +149,14 @@ describe('accounts', () => {
   });
 
   test('findAccount is keyed by provider + providerAccountId, not id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.linkAccount(account());
     expect(await adapter.findAccount('github', 'gh-1')).not.toBeNull();
     expect(await adapter.findAccount('google', 'gh-1')).toBeNull();
   });
 
   test('listAccounts scopes to the given user', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.linkAccount(account({ id: 'a1' }));
     await adapter.linkAccount(account({ id: 'a2', userId: 'user-2', providerAccountId: 'gh-2' }));
     const listed = await adapter.listAccounts('user-1');
@@ -177,7 +177,7 @@ describe('verifications', () => {
   });
 
   test('takeVerification returns the record once, then null on a second take', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putVerification(record());
 
     const first = await adapter.takeVerification('email-verify', 'a@example.com', 'hash');
@@ -189,12 +189,12 @@ describe('verifications', () => {
   });
 
   test('takeVerification returns null for an unknown purpose/identifier pair', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.takeVerification('email-verify', 'nobody@example.com', 'hash')).toBeNull();
   });
 
   test('takeVerification consumes nothing when the hash does not match', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putVerification(record());
 
     expect(await adapter.takeVerification('email-verify', 'a@example.com', 'wrong')).toBeNull();
@@ -203,7 +203,7 @@ describe('verifications', () => {
   });
 
   test('putVerification for the same purpose+identifier replaces the previous row', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putVerification(record({ id: 'v1', tokenHash: 'first' }));
     await adapter.putVerification(record({ id: 'v2', tokenHash: 'second' }));
 
@@ -230,12 +230,12 @@ describe('api keys', () => {
   });
 
   test('findApiKeyById returns null for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.findApiKeyById('ghost')).toBeNull();
   });
 
   test('listApiKeys matches on either userId or orgId as the owner', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putApiKey(key({ id: 'k1', userId: 'user-1', orgId: null }));
     await adapter.putApiKey(key({ id: 'k2', userId: null, orgId: 'org-1' }));
     await adapter.putApiKey(key({ id: 'k3', userId: 'user-2', orgId: 'org-2' }));
@@ -245,7 +245,7 @@ describe('api keys', () => {
   });
 
   test('touchApiKey updates lastUsedAt, and is a no-op for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putApiKey(key());
     await adapter.touchApiKey('key-1', new Date(42));
     expect((await adapter.findApiKeyById('key-1'))?.lastUsedAt).toEqual(new Date(42));
@@ -255,7 +255,7 @@ describe('api keys', () => {
   });
 
   test('revokeApiKey succeeds once, then reports false for an already-revoked key', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     await adapter.putApiKey(key());
 
     expect(await adapter.revokeApiKey('key-1', new Date(1))).toBe(true);
@@ -264,7 +264,7 @@ describe('api keys', () => {
   });
 
   test('revokeApiKey returns false for an unknown id', async () => {
-    const adapter = new MemoryAdapter();
+    const adapter = memoryAuthAdapter();
     expect(await adapter.revokeApiKey('ghost', new Date(1))).toBe(false);
   });
 });

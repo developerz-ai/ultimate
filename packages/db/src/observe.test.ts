@@ -7,7 +7,7 @@
 // to be assembled — and a statement returns exactly what it returned before the seam existed.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { createPostgresClient } from './client';
+import { postgresClient } from './client';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver, statementObserver } from './observe';
 import { createPgliteClient, type PgliteDriver } from './pglite';
@@ -138,7 +138,7 @@ describe('the production path — no observer installed', () => {
     installFakeSql();
     clock = spyOn(performance, 'now');
 
-    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+    await postgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     expect(clock).not.toHaveBeenCalled();
   });
@@ -156,7 +156,7 @@ describe('the production path — no observer installed', () => {
     setStatementObserver({ onStatement: () => undefined });
     clock = spyOn(performance, 'now');
 
-    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+    await postgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     // Proves the two tests above are a real fork in the code, not an unreachable spy.
     expect(clock).toHaveBeenCalled();
@@ -164,11 +164,11 @@ describe('the production path — no observer installed', () => {
 
   test('a silent observer changes nothing about what a statement returns', async () => {
     installFakeSql([{ id: 1 }]);
-    const bare = await createPostgresClient({ url: TEST_URL }).query(sql`select ${1}`);
+    const bare = await postgresClient({ url: TEST_URL }).query(sql`select ${1}`);
 
     installFakeSql([{ id: 1 }]);
     setStatementObserver({ onStatement: () => undefined });
-    const observed = await createPostgresClient({ url: TEST_URL }).query(sql`select ${1}`);
+    const observed = await postgresClient({ url: TEST_URL }).query(sql`select ${1}`);
 
     // Byte-identical `runOn` behavior: the observed shell hands `sendOn` the same call and returns
     // exactly what it returned, whether or not anything is installed to watch it happen.

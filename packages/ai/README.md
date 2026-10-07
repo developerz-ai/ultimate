@@ -4,9 +4,11 @@ The LLM gateway primitive. Every model call in an Ultimate app goes through it, 
 and cost accounting cannot be bypassed by a stray `fetch`.
 
 **Register your models, pick your provider.** The framework ships the mechanism — the `Provider`
-contract, two wire-format adapters, the gateway, budgets, `registerModel` — and no vendor choice:
-which models an app runs, at what price, through which endpoint, is the app's, dated in the app's
-repo.
+contract, two wire-format adapters, the gateway, budgets, `registerModel` — and no vendor choice
+and no vendor data: no default model, no catalogue row, no price. Which models an app runs, at what
+price, through which endpoint, is the app's, dated and sourced in the app's own `models.ts`
+([`examples/dummy/apps/web/app/models.ts`](../../examples/dummy/apps/web/app/models.ts) is the
+example).
 
 ```ts
 import {
@@ -53,24 +55,22 @@ const answer = await ai.scope(budgetKeysFor(actor), async () => {
 
 | Provider | Speaks | For |
 |---|---|---|
-| `new AnthropicProvider({ apiKey?, baseUrl? })` | the Anthropic Messages format | Anthropic, or any server speaking that format |
+| `new AnthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format | Anthropic, or any server speaking that format |
 | `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format | OpenAI, Azure, vLLM, Ollama, LiteLLM, a company gateway — [below](#the-openai-format--azure-vllm-ollama-your-own-gateway) |
 | your own `Provider` | anything | `{ name, models, generate, stream }` — the same contract both adapters implement |
 
-Peers: neither adapter is the default, and the gateway routes a model to the first provider whose
-`models` lists it. A model resolves from the declaration's `model`, then its prompt's, then
-`createGateway({ defaultModel })`.
+Peers: neither adapter is the default, each serves exactly the `models` list the app hands it (an
+empty one is `X_AI_REQUEST_INVALID` at construction), and the gateway routes a model to the first
+provider whose `models` lists it.
 
-**Deprecated, removed in 25.0.0** — the vendor data this package still ships:
-
-| What | Today | Recorded once per process as `ai.deprecation` | Do instead |
-|---|---|---|---|
-| `DEFAULT_MODEL` (`claude-opus-5`) | answers a call with no model declared anywhere | `kind: 'default-model'`, per `site` (`llm`, `agent`, `gateway`, `provider`, `echo-provider`) | `createGateway({ defaultModel })`, or `model:` on the declaration |
-| the built-in catalogue (6 Anthropic, 3 OpenAI rows) | prices a model the app never registered | `kind: 'built-in-price'`, per row | `registerModel({ id, … })` at boot with your own prices — a restated built-in id is yours from then on |
-
-Each warns once (a `warn` line, `msg: 'ai.deprecation'`, with `fix` and `removedIn`) and counts every
-use on `ai_deprecated_fallbacks_total{kind, subject}` — the number that says when it is safe to
-upgrade.
+| Question | Answer |
+|---|---|
+| which model a call runs on | the declaration's `model`, then its prompt's, then `createGateway({ defaultModel })` — first match wins |
+| none of the three names one | `X_AI_MODEL_UNRESOLVED`, naming all three — never a model the framework picked |
+| an id the app never `registerModel`-ed | `X_AI_MODEL_UNKNOWN` at the first read (`costOf`, the budget's estimate, the request builder) — before anything is sent or reserved; the fix is `registerModel(…)` |
+| `X_LLM_REFUSED`'s "a more capable model" | a rung above, in the same `family`, among the rows the APP registered — or no suggestion at all |
+| a direct provider call naming no model | `X_AI_MODEL_UNRESOLVED` from every shipped provider — `AnthropicProvider`, `openAiProvider()` and `EchoProvider` alike; a provider's `models` list is what it serves, never a fallback |
+| `EchoProvider` | serves whatever the app registered, and has no model of its own |
 
 ## Budgets — and which of the three is fleet-wide
 
@@ -80,7 +80,7 @@ or `''` has no org key — never a shared `org:` window), so where they live dec
 
 | `budgetStore` | `actor` / `org` counts | Right for |
 |---|---|---|
-| omitted — `MemoryBudgetStore` (the default) | **per process**, and reset on every deploy | `x dev`, tests, a single-replica app |
+| omitted — `memoryBudgetStore()` (the default) | **per process**, and reset on every deploy | `x dev`, tests, a single-replica app |
 | your own `BudgetStore` | fleet-wide | anything with more than one replica |
 
 ```ts
@@ -113,7 +113,8 @@ const sharedBudget: BudgetStore = {
 };
 
 export const sharedGateway = createGateway({
-  providers: [new AnthropicProvider()],
+  providers: [new AnthropicProvider({ models: ['house-large'] })],
+  defaultModel: 'house-large',
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },
   budgetStore: sharedBudget,
 });
@@ -213,39 +214,33 @@ registerModel({
 configureAi({ gateway: createGateway({ providers: [new InternalGatewayProvider()] }) });
 ```
 
-**The built-ins register through this same call.** There is one way to put a model in the
-catalogue, and the default path is the app's path. Re-registering an id replaces its spec and keeps
-its rung — which is how a negotiated enterprise rate is expressed, and why there is no second
-`overrideModel` call. An id nothing registered is `X_AI_MODEL_UNKNOWN` at the first read, naming
-the registered set; that check is what replaced the closed union, so a wrong id is still caught
-without making a right one inexpressible.
+**The framework registers no model.** `registerModel` is the one way into the catalogue and only the
+app calls it — at boot, by convention in its own `models.ts`, each row with the page and the date its
+numbers were read from, so a stale price is a diff in the app's repo rather than a framework release.
+Re-registering an id replaces its spec and keeps its rung — which is how a negotiated enterprise rate
+is expressed, and why there is no second `overrideModel` call. An id nothing registered is
+`X_AI_MODEL_UNKNOWN` at the first read, naming the registered set.
 
-Registration order is the capability ladder, most capable first — `moreCapableThan` is its only
-reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it. It is the vendor's line
-order (Fable, Opus, Sonnet, Haiku), newest first within a line — **not** price order: Opus 5.5 is
-newer, stronger and cheaper than Opus 5.
+Registration order within a `family` is the capability ladder, most capable first — `moreCapableThan`
+is its only reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it. Register your rows
+in the order you mean; a family the app registered one model of suggests nothing.
 
-Built in — **deprecated reference data, removed in 25.0.0**; pricing through a row you did not
-register records `ai.deprecation` (above). `As of 2026-10-06`, every number read from
-platform.claude.com's models overview, pricing, prompt-caching and thinking pages
-(`models-catalogue.test.ts` pins each row whole):
+The reasoning fields are data on the spec, not prose: `body()` builds the reasoning half from them,
+so a downgrade for price cannot become a request the provider rejects.
 
-| Model | Context | Max output | Input / MTok | Output / MTok | `effort` | `thinking: 'disabled'` |
-|---|---|---|---|---|---|---|
-| `claude-fable-5-1` | 1M | 128K | $10 | $50 | yes | refused — thinking is always on |
-| `claude-opus-5-5` | 1M | 128K | $4 | $20 | yes | refused — thinking is always on |
-| `claude-opus-5` (the deprecated `DEFAULT_MODEL`) | 1M | 128K | $5 | $25 | yes | sent, only at `effort ≤ high` |
-| `claude-sonnet-5-5` | 1M | 128K | $2 | $10 | yes | sent as `between_tools`, only at `effort ≤ high` |
-| `claude-sonnet-5` | 1M | 128K | $2 | $10 | yes | sent |
-| `claude-haiku-4-5` | 200K | 64K | $1 | $5 | no — a 400 | nothing to send (no adaptive thinking) |
+| Field | Means | Sent |
+|---|---|---|
+| `reasoning.effort: false` | the model has no effort control | an asked `effort` is `X_AI_REQUEST_INVALID`, never dropped |
+| `reasoning.adaptive: false` | no adaptive thinking block | an asked `thinking: 'adaptive'` is refused; `'disabled'` needs nothing sent |
+| `disableThinkingUpTo: 'high'` | thinking may be switched off only at `effort ≤ high` | `thinking: 'disabled'` above it is refused |
+| `disableThinkingUpTo: 'never'` | thinking is always on | `thinking: 'disabled'` is refused at every effort |
+| `disabledThinking: 'between_tools'` | the model spells "no up-front thinking" differently | one `thinking: 'disabled'` declaration either way |
+| `cacheReadPerMillion` / `cacheWritePerMillion` | the vendor's own cache rates | absent is 0.1x / 1.25x input |
+| `input: ['image', 'document']` | the non-text blocks it takes | absent is text only |
+| `family` | which ladder it is a rung on | absent is its own family |
 
-The last two columns are data on the spec, not prose: `body()` builds the reasoning half from
-them, so a downgrade for price cannot become a request the provider rejects.
-`disableThinkingUpTo: 'never'` is the row for a model with no off switch, and
-`disabledThinking: 'between_tools'` the row for one that spells it differently — one
-`thinking: 'disabled'` declaration either way. `AnthropicProvider.models` is its own list, never the
-registry's — your internal model is not routed to Anthropic. `claude-haiku-4-5` is the documented
-API alias of the pinned `claude-haiku-4-5-20251001`.
+`AnthropicProvider.models` is the list you gave it, never the registry's — a model served
+elsewhere is not routed to Anthropic.
 
 ## Images and documents
 
@@ -257,10 +252,11 @@ import { createGateway, AnthropicProvider } from '@ultimat3/ai';
 declare const png: string;      // base64, no data: prefix
 declare const pdf: string;
 declare const minutes: string;
-const ai = createGateway({ providers: [new AnthropicProvider()] });
+declare const visionModel: string;  // an id your app registered with input: ['image', 'document']
+const ai = createGateway({ providers: [new AnthropicProvider({ models: [visionModel] })] });
 
 await ai.generate({
-  model: 'claude-opus-5-5',
+  model: visionModel,
   maxTokens: 1_024,
   messages: [{
     role: 'user',
@@ -281,7 +277,7 @@ await ai.generate({
 | base64 is the standard alphabet, padded, no `data:` prefix, at most `MAX_IMAGE_BASE64_CHARS` (10 MiB) for an image and `MAX_DOCUMENT_BASE64_CHARS` (32 MiB) for a document | the Claude API's per-image limit and its whole-request limit; one table for both formats, the stricter, so which provider answers never changes the verdict |
 | A `url` source is `https:` only | a `data:` URL is the base64 source spelled twice; `http:` is a fetch anyone on the path can rewrite |
 | A media block outside a `user` turn is `X_AI_CONTENT_UNSUPPORTED` | neither format takes one from the assistant |
-| A model takes only the kinds its row lists in `input` — absent is text only | an app's text-only endpoint must not be sent a picture; every built-in row lists `['image', 'document']` |
+| A model takes only the kinds its row lists in `input` — absent is text only | an app's text-only endpoint must not be sent a picture |
 | The OpenAI format refuses a document by URL and a `text/plain` document (`X_AI_CONTENT_UNSUPPORTED`, naming the provider) | chat completions has no document-by-URL part and takes only PDF files; the fix names the block it does take |
 | An image reserves `IMAGE_TOKEN_ESTIMATE` (4,784) tokens pre-flight, a base64 PDF its length over four, a PDF by URL nothing | the most visual tokens one image costs; `record` reconciles to the real usage afterwards |
 
@@ -292,10 +288,13 @@ OpenAI, vLLM, Ollama, LiteLLM, OpenRouter, Together and most self-hosted company
 that format, so "point Ultimate at our internal model gateway" is a `baseUrl` and a `models` list.
 
 ```ts
-import { openAiProvider, OPENAI_MODEL_IDS, createGateway, configureAi } from '@ultimat3/ai';
+import { openAiProvider } from '@ultimat3/ai';
 
-// OpenAI itself. `apiKey` takes a `Secret`; OPENAI_API_KEY is read when it is omitted.
-openAiProvider({ apiKey: env.OPENAI_API_KEY, models: [...OPENAI_MODEL_IDS] });
+declare const env: Record<'OPENAI_API_KEY' | 'OPENAI_MODEL' | 'AZURE_OPENAI_KEY' | 'GATEWAY_TOKEN', string>;
+
+// OpenAI itself. `apiKey` takes a `Secret`; OPENAI_API_KEY is read when it is omitted. `models`
+// are the ids your app registered for this endpoint.
+openAiProvider({ apiKey: env.OPENAI_API_KEY, models: [env.OPENAI_MODEL] });
 
 // Azure OpenAI — the deployment URL as written, api-version query and all. `models` are
 // DEPLOYMENT names on Azure, and the key rides in `api-key`, not `Authorization`.
@@ -320,19 +319,10 @@ openAiProvider({
 openAiProvider({ apiKey: 'ollama', baseUrl: 'http://localhost:11434/v1', models: ['qwen3'] });
 ```
 
-Priced built-ins — deprecated reference data like the Anthropic rows, removed in 25.0.0 — list
-price from `developers.openai.com/api/docs/pricing`, read **2026-08-16**:
-
-| Model | Context | Max output | Input / MTok | Output / MTok | `reasoning_effort` |
-|---|---|---|---|---|---|
-| `gpt-5.6-sol` | 1.05M | 128K | $5 | $30 | yes |
-| `gpt-5.6-terra` | 1.05M | 128K | $2 | $12 | yes |
-| `gpt-5.6-luna` | 1.05M | 128K | $0.20 | $1.20 | yes |
-
-Three, and no more, on purpose: `gpt-4o` and the `o1` family cache at **0.5x** input where `costOf`
-assumes 0.1x, and the `pro` tiers publish no cached rate at all. A wrong price is worse than a
-missing one — `costOf` answers confidently either way, and the missing entry says so with
-`X_AI_MODEL_UNKNOWN`. Register those yourself, at the rate your own contract names.
+Nothing is priced for you on this format either. One trap worth knowing when you write a row: some
+models cache at **0.5x** input where `costOf` assumes 0.1x, and some publish no cached rate at all —
+state `cacheReadPerMillion` from the vendor's page, or the cache-heavy half of the bill is
+under-reported.
 
 | Rule | Why |
 |---|---|
@@ -364,7 +354,7 @@ import { llm, t } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
 
 export const summarize = llm({
-  model:  'claude-sonnet-5',
+  model:  HOUSE_LARGE,                                          // imported from your models.ts
   input:  t.object({ postId: t.uuid }),
   output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                                       // versioned artifact
@@ -374,7 +364,7 @@ export const summarize = llm({
   policy: can('post:read'),
 });
 
-summarize.tool();        // an MCP tool, gated by the same policy object
+toolFrom(summarize); // an MCP tool (`@ultimat3/mcp`), gated by the same policy object
 summarize.openapi();     // an HTTP operation
 summarize.job();         // a job handle, for the long chains
 summarize.contract();    // the contract tests
@@ -398,7 +388,7 @@ for await (const chunk of summarize.stream({ postId }, { ctx })) {
 }
 ```
 
-Policy, input parse, budget scope, semantic cache, span, audit and `.tool()` all still apply: the
+Policy, input parse, budget scope, semantic cache, span, audit and the MCP tool all still apply: the
 invocation is an ordinary one, marked so the model half streams. Two consequences worth knowing:
 
 | Decision | Why |
@@ -548,6 +538,11 @@ agent runs a second time from the top** — as does every page a `backfill()` re
 So every tool the agent may call has to be idempotent: an `upsertAll`, an `updateWhere`, a statement
 whose second run changes nothing. Otherwise a replayed attempt issues a second refund.
 
+An action declaring `idempotent: true` offers the model the same optional `idempotencyKey`
+argument `@ultimat3/mcp` advertises, and the key reaches `invoke`: a model retrying an ambiguous
+call within one run replays the first result. That covers a retry the MODEL makes, not a replayed
+job attempt — a fresh run mints fresh keys.
+
 **The framework does not check this, and the reason is worth knowing.** `mutates` is not a fact an
 `action()` declares — it exists only in `@ultimat3/mcp`, which sets it to `true` for *every* action
 it projects — so a read-only `lookupOrder` and a destructive `issueRefund` are indistinguishable
@@ -562,7 +557,7 @@ caught all of it. This is a contract you keep, not one the compiler keeps for yo
 import { describeAgents } from '@ultimat3/ai';
 
 describeAgents();
-// [{ name: 'supportAgent', prompt: 'support@1.0.0', promptHash: '…', model: 'claude-opus-5',
+// [{ name: 'supportAgent', prompt: 'support@1.0.0', promptHash: '…', model: 'house-large', modelFrom: 'gateway',
 //    maxTurns: 6, maxToolResultChars: 4000, tools: ['issueRefund', 'lookupOrder'],
 //    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' } },
 //    mcp: true }]
@@ -679,7 +674,9 @@ export const summarize = definePrompt<{ ticket: string }>({
 });
 ```
 
-Content-hashed over id, version, system, template, schemas, model, effort, and thinking mode.
+Hashed over id, version, system, template, schemas, model, effort, and thinking mode —
+`promptHash(input)` is that hash, `prompt.hash` its value (render's `contentHash` hashes bytes and
+is a different function).
 Edit the template without bumping the version and `definePrompt` throws — otherwise every
 score ever recorded against that version is silently invalid. An unfilled `{{variable}}`
 throws too, like an i18n miss.
@@ -687,7 +684,7 @@ throws too, like an i18n miss.
 ## Retrieval
 
 ```ts
-const store = new PgVectorStore({ name: 'doc_chunks', dimension: 256 });   // MemoryVectorStore in dev
+const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev
 await indexDocument({ store, embedder, document: { id: 'faq', text } });
 
 const hits = await retrieve({ store, embedder, query, k: 8 });
@@ -699,9 +696,9 @@ Retrieval is **hybrid by default** — vector + lexical, fused by reciprocal ran
 search loses on exactly the queries users type: error codes, SKUs, identifiers, rare terms.
 RRF fuses by *rank*, so the two score scales never have to be reconciled.
 
-`PgVectorStore` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
+`postgresVectorStore()` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
 (`websearch_to_tsquery` + `ts_rank_cd`, GIN) in **the same Postgres**, fused by `1/(k+rank)` in
-one statement. `MemoryVectorStore` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
+one statement. `memoryVectorStore()` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
 the same envelope, the same cosine (magnitude never ranks; a zero-norm row scores `NaN` and sorts
 last, as float8 does), and fusion on the same `(tenant, id)` key, so an unscoped hybrid keeps two
 tenants' same-id rows apart.
@@ -709,7 +706,7 @@ tenants' same-id rows apart.
 `store.ddl()` returns one string: `create extension if not exists vector`, the table, and the
 three indexes (hnsw on `embedding`, GIN on `tsv`, GIN on `metadata`). **No command emits it,
 `As of 2026-08`** — `x db gen <name>` diffs `describeEntities()`, a vector store is not an
-`entity()`, and no CLI file references `PgVectorStore` or `ddl()` at all. Split it and paste each
+`entity()`, and no CLI file references `postgresVectorStore()` or `ddl()` at all. Split it and paste each
 statement into its own file under `packages/db/migrations/`, exactly as `AUTH_TABLES` is applied,
 then `x db migrate`.
 
@@ -730,7 +727,7 @@ nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant 
 A store opened without a scope binds no tenant, and **reading it inside a request acting for an
 org is `X_VECTOR_UNSCOPED`** — the forgotten `.scoped()` that searched every tenant's rows. Outside a
 request, or for an actor with no org, it reads as before. The backfill path opts in by name:
-`new PgVectorStore({ name, dimension, scope: UNSCOPED })`, or `store.scoped(UNSCOPED)`.
+`postgresVectorStore({ name, dimension, scope: UNSCOPED })`, or `store.scoped(UNSCOPED)`.
 
 `chunk()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
 — a fact split across a boundary with no overlap is retrievable by neither chunk. All three

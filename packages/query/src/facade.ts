@@ -1,16 +1,16 @@
 /**
- * The fluent surface: every projection reachable as a method on the query itself,
- * `orgFeed.tool()` rather than `toQueryTool(orgFeed)`, and every declared field
- * lifted off `def` so app code never reaches through `.def`. The projection
- * functions stay exported for the framework's own call sites — this file only
- * binds them to the query, it never re-implements one.
+ * The fluent surface: every projection this package owns reachable as a method on the query
+ * itself, `orgFeed.live(input)` rather than `toLiveQuery(orgFeed, input)`, and every declared
+ * field lifted off `def` so app code never reaches through `.def`. The projection functions stay
+ * exported for the framework's own call sites — this file only binds them to the query, it never
+ * re-implements one. There is no `.tool()`: the MCP tool is `@ultimat3/mcp`'s one projection
+ * (`toolFrom(orgFeed)`), a tier this package cannot import.
  */
 
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryClientMethodOf } from './client';
 import { queryClientMethodFor } from './client';
 import { toLiveQuery } from './live';
-import { toQueryTool } from './mcp-tool';
 import { paginate } from './pagination';
 import type { Query, QueryDef, QueryFacade } from './query';
 import { queryName, runQuery } from './read';
@@ -45,7 +45,6 @@ export function facadeFor<
     // signed cursor is only reachable through the query that issued it.
     page: (input, args) => paginate(self(), input, args),
     live: (input, options) => toLiveQuery(self(), input, options),
-    tool: () => toQueryTool<TSingle>(self()),
     // One implementation for both wire shapes: the route decides the body, the transport parses
     // it, and only the TYPE differs — a single read's method answers the row, and has no `page`.
     client: (options) =>

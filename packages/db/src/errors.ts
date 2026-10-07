@@ -290,7 +290,7 @@ export const drainTimeout = (ms: number, role: string): DbError =>
   new DbError({
     code: 'X_DB_DRAIN_TIMEOUT',
     cause: `the ${role} pool still held connections after ${String(ms)}ms, so close() stopped waiting`,
-    fix: `find the statement that will not finish — psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'" — or raise drainTimeoutMs in createPostgresClient({ profile }) for the ${role} role`,
+    fix: `find the statement that will not finish — psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'" — or raise drainTimeoutMs in postgresClient({ profile }) for the ${role} role`,
     meta: { drainTimeoutMs: ms, role },
   });
 

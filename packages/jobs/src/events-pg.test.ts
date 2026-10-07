@@ -13,7 +13,7 @@ import {
   SQL_EVENT_PURGE_COUNTED,
 } from './driver-pg-sql';
 import { eventsPurgeTarget } from './events';
-import { createPgEventBus } from './events-pg';
+import { postgresEventBus } from './events-pg';
 
 function recorder(rows: readonly unknown[] = []) {
   const calls: { sql: string; params: readonly unknown[] }[] = [];
@@ -30,7 +30,7 @@ describe('the pg event bus', () => {
   test('a step on ANOTHER process finds an event this one published', async () => {
     // One table, so the pod that publishes and the pod that resumes are never the same heap.
     const { executor } = recorder([{ payload: { invoice: 'in_1' }, published_at: '1000000' }]);
-    const bus = createPgEventBus({ executor });
+    const bus = postgresEventBus({ executor });
 
     const hit = await bus.find('invoice.paid', 'org-1', 0);
 
@@ -39,7 +39,7 @@ describe('the pg event bus', () => {
 
   test('publish sends a TTL and no instant: the database stamps the row, and its stamps come back', async () => {
     const { executor, calls } = recorder([{ published_at: '5000000', expires_at: '8600000' }]);
-    const bus = createPgEventBus({ executor, defaultTtl: '1h' });
+    const bus = postgresEventBus({ executor, defaultTtl: '1h' });
 
     const event = await bus.publish('invoice.paid', { invoice: 'in_1' }, { correlationKey: 'o-1' });
 
@@ -64,7 +64,7 @@ describe('the pg event bus', () => {
 
   test('now() is the database clock, floored to the millisecond', async () => {
     const { executor, calls } = recorder([{ now: '1790000000123' }]);
-    expect(await createPgEventBus({ executor }).now()).toBe(1_790_000_000_123);
+    expect(await postgresEventBus({ executor }).now()).toBe(1_790_000_000_123);
     expect(calls[0]?.sql).toBe(SQL_EVENT_NOW);
     expect(SQL_EVENT_NOW).toContain('floor(');
   });
@@ -94,7 +94,7 @@ describe('the pg event bus', () => {
 
   test('an unmatched event is `undefined`, which is what re-suspends the step', async () => {
     const { executor } = recorder([]);
-    expect(await createPgEventBus({ executor }).find('never.published', undefined, 0)).toBe(
+    expect(await postgresEventBus({ executor }).find('never.published', undefined, 0)).toBe(
       undefined,
     );
   });
@@ -123,7 +123,7 @@ describe('the pg event bus, read back and swept', () => {
       },
     ]);
 
-    const events = await createPgEventBus({ executor, listLimit: 25 }).list('invoice.paid');
+    const events = await postgresEventBus({ executor, listLimit: 25 }).list('invoice.paid');
 
     expect(events).toEqual([
       {
@@ -149,13 +149,13 @@ describe('the pg event bus, read back and swept', () => {
 
   test('an unfiltered list passes a null name, never a missing predicate', async () => {
     const { executor, calls } = recorder([]);
-    await createPgEventBus({ executor }).list();
+    await postgresEventBus({ executor }).list();
     expect(calls[0]?.params).toEqual([null, 1_000]);
   });
 
   test('purgeExpired is ONE counted DELETE, awaited, and answers what the database removed', async () => {
     const { executor, calls } = recorder([{ removed: '3' }]);
-    const bus = createPgEventBus({ executor });
+    const bus = postgresEventBus({ executor });
     expect(await bus.purgeExpired()).toBe(3);
     expect(calls.map((call) => call.sql)).toEqual([SQL_EVENT_PURGE_COUNTED]);
     expect(calls[0]?.params).toEqual([]);
@@ -167,7 +167,7 @@ describe('the pg event bus, read back and swept', () => {
     const executor: PgExecutor = {
       query: () => Promise.reject(new Error('deadlock detected')),
     };
-    const outcome = await createPgEventBus({ executor })
+    const outcome = await postgresEventBus({ executor })
       .purgeExpired()
       .catch((error: unknown) => error);
     expect((outcome as Error).message).toBe('deadlock detected');
@@ -175,7 +175,7 @@ describe('the pg event bus, read back and swept', () => {
 
   test('the bus is a PurgeTarget named for its table, on its own clock', async () => {
     const { executor, calls } = recorder([{ removed: 2 }]);
-    const target = eventsPurgeTarget(createPgEventBus({ executor }));
+    const target = eventsPurgeTarget(postgresEventBus({ executor }));
     expect(target.name).toBe('x_job_events');
     // The sweep's instant is the job's process clock; this table's is the database's.
     expect(await target.purgeExpired(1)).toBe(2);
@@ -184,7 +184,7 @@ describe('the pg event bus, read back and swept', () => {
 
   test('size() is -1, the honest "not a number this bus keeps" — never 0, which reads as empty', async () => {
     const { executor } = recorder([]);
-    const bus = createPgEventBus({ executor });
+    const bus = postgresEventBus({ executor });
     await bus.publish('invoice.paid', {});
     expect(bus.size()).toBe(-1);
   });

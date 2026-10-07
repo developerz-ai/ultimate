@@ -7,13 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import type { CronResolver } from './scheduler';
 import { createScheduler } from './scheduler';
 import type { ScheduledFire, SchedulerState } from './scheduler-state';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
 
@@ -94,8 +94,8 @@ function watched(inner: SchedulerState) {
 describe('run-once is one write', () => {
   test('the catch-up and the dropped occurrences move in ONE fire, with no mark behind it', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
-    const { state, fires, marks } = watched(createMemorySchedulerState());
+    const driver = memoryJobDriver({ clock });
+    const { state, fires, marks } = watched(memorySchedulerState());
     const scheduler = createScheduler({ driver, clock, cron: hourly, state, tasks: [once] });
 
     await scheduler.tick(); // Arms: the one legitimate `markFired`.
@@ -115,8 +115,8 @@ describe('run-once is one write', () => {
 
   test('a scheduler that dies right after the fire leaves nothing for its successor to re-fire', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
-    const durable = createMemorySchedulerState();
+    const driver = memoryJobDriver({ clock });
+    const durable = memorySchedulerState();
     const first = watched(durable);
     const dying = createScheduler({
       driver,
@@ -155,8 +155,8 @@ describe('run-once is one write', () => {
   });
 
   test('a fire with no watermark of its own lands on its occurrence, as every other policy does', async () => {
-    const driver = createMemoryDriver();
-    const state = createMemorySchedulerState();
+    const driver = memoryJobDriver();
+    const state = memorySchedulerState();
     await state.fire(driver, { task: 't', occurrenceMs: 5_000, jobs: [] });
     expect(await state.lastFiredAt('t')).toBe(5_000);
     await state.fire(driver, { task: 't', occurrenceMs: 6_000, watermarkMs: 9_000, jobs: [] });

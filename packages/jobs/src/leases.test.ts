@@ -5,9 +5,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createMemoryLeaseStore, jobLeaseKey } from './leases';
+import { jobLeaseKey, memoryLeaseStore } from './leases';
 import { createWorker } from './worker';
 
 afterEach(() => {
@@ -37,9 +37,9 @@ describe('fleet-wide job concurrency', () => {
     // Two workers, one shared lease store — the deployment shape: two pods, one Postgres. Before
     // `x_job_leases` both ran `rebuildSearchIndex` at once while `x jobs show` and the manifest
     // both reported `concurrency: 1`.
-    const leases = createMemoryLeaseStore();
-    const driverA = createMemoryDriver({ leases });
-    const driverB = createMemoryDriver({ leases });
+    const leases = memoryLeaseStore();
+    const driverA = memoryJobDriver({ leases });
+    const driverB = memoryJobDriver({ leases });
 
     const gate = deferred();
     let started = 0;
@@ -110,8 +110,8 @@ describe('fleet-wide job concurrency', () => {
   });
 
   test('a job with NO concurrency never touches the lease table', async () => {
-    const leases = createMemoryLeaseStore();
-    const driver = createMemoryDriver({ leases });
+    const leases = memoryLeaseStore();
+    const driver = memoryJobDriver({ leases });
     job({
       tenant: 'none',
       name: 'uncapped',
@@ -149,7 +149,7 @@ describe('fleet-wide job concurrency', () => {
       concurrency: 2,
       run: () => Promise.resolve(),
     });
-    const { leases: _dropped, ...withoutLeases } = createMemoryDriver();
+    const { leases: _dropped, ...withoutLeases } = memoryJobDriver();
     const worker = createWorker({
       // The lease store is what makes it enforceable, so a driver without one is the case.
       driver: withoutLeases,
@@ -164,7 +164,7 @@ describe('fleet-wide job concurrency', () => {
 
 describe('the lease store itself', () => {
   test('slots are handed out up to the limit and no further', async () => {
-    const store = createMemoryLeaseStore();
+    const store = memoryLeaseStore();
     const first = await store.acquire('job:x', 2, 1000, 'a');
     const second = await store.acquire('job:x', 2, 1000, 'b');
     const third = await store.acquire('job:x', 2, 1000, 'c');
@@ -175,7 +175,7 @@ describe('the lease store itself', () => {
 
   test('an expired slot is reclaimed, so a SIGKILLed worker does not hold it forever', async () => {
     let at = 1_000_000;
-    const store = createMemoryLeaseStore({
+    const store = memoryLeaseStore({
       clock: { now: () => new Date(at), monotonic: () => at },
     });
     const held = await store.acquire('job:x', 1, 5_000, 'dead-worker');
@@ -189,7 +189,7 @@ describe('the lease store itself', () => {
   });
 
   test('release by a non-holder is a no-op — two runs must never share one slot', async () => {
-    const store = createMemoryLeaseStore();
+    const store = memoryLeaseStore();
     const held = await store.acquire('job:x', 1, 1000, 'a');
     expect(held).toBeDefined();
     if (held === undefined) return;

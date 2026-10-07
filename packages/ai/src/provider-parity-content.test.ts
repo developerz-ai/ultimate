@@ -9,10 +9,18 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { secret } from '@ultimat3/core';
 import type { AiMediaBlock } from './content-blocks';
 import type { AiFetch } from './fetch-seam';
+import {
+  FIXTURE_ANTHROPIC_IDS,
+  FIXTURE_OPENAI_IDS,
+  registerFixtureModels,
+  useFixtureModels,
+} from './model-fixture';
 import { chatCompletionBody } from './openai-body';
-import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { openAiProvider } from './openai-provider';
 import { type AiMessage, AnthropicProvider } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const KEY = 'sk-live-do-not-log-me';
 const OPENAI_MODEL = 'gpt-5.6-sol';
@@ -30,7 +38,7 @@ function thrownBy(run: () => unknown): unknown {
 
 beforeEach(() => {
   // `resetModels()` in another suite clears the whole registry, this format's specs included.
-  registerOpenAiModels();
+  registerFixtureModels();
 });
 
 describe('an image or a document reads the same on both wires, or is refused the same way', () => {
@@ -52,7 +60,11 @@ describe('an image or a document reads the same on both wires, or is refused the
     { role: 'user', content: [...blocks, { type: 'text', text: 'compare them' }] },
   ];
   const anthropicBody = (messages: readonly AiMessage[]) =>
-    new AnthropicProvider().body({ model: ANTHROPIC_MODEL, messages, maxTokens: 64 });
+    new AnthropicProvider({ models: FIXTURE_ANTHROPIC_IDS }).body({
+      model: ANTHROPIC_MODEL,
+      messages,
+      maxTokens: 64,
+    });
   const openaiBody = (messages: readonly AiMessage[]) =>
     chatCompletionBody({
       request: { messages, maxTokens: 64 },
@@ -138,10 +150,14 @@ describe('an image or a document reads the same on both wires, or is refused the
       return new Response('{}');
     };
     const bad = [{ role: 'assistant', content: [pdf] }] as const satisfies readonly AiMessage[];
-    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: counting });
+    const anthropic = new AnthropicProvider({
+      models: FIXTURE_ANTHROPIC_IDS,
+      apiKey: KEY,
+      fetch: counting,
+    });
     const openai = openAiProvider({
       apiKey: secret(KEY, 'OPENAI_API_KEY'),
-      models: [...OPENAI_MODEL_IDS],
+      models: [...FIXTURE_OPENAI_IDS],
       fetch: counting,
     });
     for (const call of [

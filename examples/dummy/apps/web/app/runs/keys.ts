@@ -9,9 +9,9 @@
 import type { ApiKeyVerifyStore } from '@ultimat3/auth';
 import {
   apiKeyResolver,
-  BuiltinAdapter,
   issueApiKey,
-  MemoryAdapter,
+  memoryAuthAdapter,
+  postgresAuthAdapter,
   revokeApiKey,
 } from '@ultimat3/auth';
 import { type Clock, resolveEnvironment, storeMode } from '@ultimat3/core';
@@ -30,7 +30,7 @@ export const RUN_KEY_SCOPES = {
  */
 let store: ApiKeyVerifyStore | undefined;
 const keys = (): ApiKeyVerifyStore => {
-  store ??= storeMode(Bun.env) === 'memory' ? new MemoryAdapter() : new BuiltinAdapter();
+  store ??= storeMode(Bun.env) === 'memory' ? memoryAuthAdapter() : postgresAuthAdapter();
   return store;
 };
 

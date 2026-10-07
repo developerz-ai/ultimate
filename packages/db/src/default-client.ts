@@ -3,7 +3,7 @@
 // framework decides a process's database topology from the environment, and `client.ts` is at the
 // line ceiling.
 
-import { createPostgresClient, type DbClient } from './client';
+import { type DbClient, postgresClient } from './client';
 import { poolMaxFromEnv } from './pool-profile';
 import { replicatedClient } from './replica-client';
 
@@ -18,7 +18,7 @@ import { replicatedClient } from './replica-client';
 export const REPLICA_URL_ENV = 'DATABASE_REPLICA_URL';
 
 /**
- * Composed rather than folded into `createPostgresClient`, on purpose: `migrate`, `x db branch` and
+ * Composed rather than folded into `postgresClient`, on purpose: `migrate`, `x db branch` and
  * every test build a client that must be exactly one pool, and a second pool reachable through the
  * same factory would be a second thing `reserve()`, `close()` and `ping()` each have to mean two
  * ways.
@@ -29,8 +29,8 @@ export const REPLICA_URL_ENV = 'DATABASE_REPLICA_URL';
  */
 export function defaultClient(): DbClient {
   const profile = poolMaxFromEnv();
-  const primary = createPostgresClient({ profile });
+  const primary = postgresClient({ profile });
   const replicaUrl = process.env[REPLICA_URL_ENV];
   if (replicaUrl === undefined || replicaUrl.trim() === '') return primary;
-  return replicatedClient(primary, createPostgresClient({ url: replicaUrl, profile }));
+  return replicatedClient(primary, postgresClient({ url: replicaUrl, profile }));
 }

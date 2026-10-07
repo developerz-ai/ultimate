@@ -57,7 +57,6 @@ describe('@ultimat3/action public surface', () => {
   test('the tool name is the registered name, and no deriver is exported', () => {
     // Structural, with no literal to drift: whatever the action was registered as IS the tool.
     expect(surface.describeAction(publishPost).mcp.tool).toBe(publishPost.name);
-    expect(publishPost.tool().name).toBe(publishPost.name);
 
     const exported = Object.keys(surface);
     for (const name of NO_TOOL_NAME_DERIVER) expect(exported).not.toContain(name);
@@ -65,10 +64,30 @@ describe('@ultimat3/action public surface', () => {
     expect(exported).toContain('derivePath');
   });
 
+  test('the deprecation helpers are core’s alone — 25.0.0 dropped the re-exports', () => {
+    // `@ultimat3/core` is their one home (`HELPER_HOMES`); a re-export here is a second import
+    // path to the same function, which is how an app ends up with two spellings in one file.
+    for (const name of ['renderDeprecation', 'recordDeprecatedCall']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+  });
+
+  // O-tool, 25.0.0: an MCP tool has ONE projection, `@ultimat3/mcp`'s `toolFrom` — the one
+  // `tools/list` serves. `.tool()` was a second one built here, and it disagreed with the served
+  // tool (description fallback, the idempotency argument, annotations). Tier 3 cannot import the
+  // tier-4 projection, so the twin cannot be made to return it: it is gone, and this keeps it gone.
+  test('no MCP tool projection lives here — `@ultimat3/mcp` owns the one', () => {
+    for (const name of ['toMcpTool', 'toMcpTools', 'isExposed']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    expect(publishPost).not.toHaveProperty('tool');
+    // Exposure itself is still asked, of core's one predicate, by the manifest fact.
+    expect(surface.describeAction(publishPost).mcp.expose).toBe(false);
+  });
+
   test('no projection carries the declaration out with it', () => {
     const projections: readonly [string, object][] = [
       ['describe', publishPost.describe()],
-      ['tool', publishPost.tool()],
       ['openapi', publishPost.openapi()],
       ['job', publishPost.job()],
       ['route', surface.toRoute(publishPost)],

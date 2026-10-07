@@ -6,8 +6,16 @@
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { CacheTierName } from './cache-vocabulary';
-import type { AppConfigInput, CacheConfig, DatabaseConfig, RealtimeConfig } from './config';
+import type {
+  AppConfig,
+  AppConfigInput,
+  CacheConfig,
+  DatabaseConfig,
+  RealtimeConfig,
+  ThemeConfig,
+} from './config';
 import type { CtxPatch } from './context';
+import type { Page } from './cursor-page';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -100,6 +108,29 @@ type _DatabaseInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['database']>, DeadDatabaseField> extends never
     ? true
     : false
+>;
+
+/**
+ * The five keys deleted in 25.0.0 stay deleted — on the config an app reads AND the input it
+ * writes. `defineConfig` refuses each by name at run time (`config-removed.ts`); this is the build
+ * error, so re-declaring one fails `tsc -b` before any test runs. `locales` / `defaultLocale` were
+ * a second declaration of `defineCatalogs({ default })`; `defaultTimeZone` / `defaultCurrency`
+ * and `theme.tokens` were read by nothing.
+ */
+type RemovedTopLevelKey = 'locales' | 'defaultLocale' | 'defaultTimeZone' | 'defaultCurrency';
+
+type _AppConfigCarriesNoRemovedKey = Assert<
+  Extract<keyof AppConfig, RemovedTopLevelKey> extends never ? true : false
+>;
+
+type _AppConfigInputCarriesNoRemovedKey = Assert<
+  Extract<keyof AppConfigInput, RemovedTopLevelKey> extends never ? true : false
+>;
+
+type _ThemeConfigIsDefaultModeAlone = Assert<Exact<keyof ThemeConfig, 'defaultMode'>>;
+
+type _ThemeInputCarriesNoTokens = Assert<
+  'tokens' extends keyof NonNullable<AppConfigInput['theme']> ? false : true
 >;
 
 /**
@@ -218,4 +249,23 @@ type _CacheConfigNamesTheLadder = Assert<Exact<CacheConfig['tiers'], readonly Ca
 
 type _CacheInputNamesTheLadder = Assert<
   Exact<NonNullable<AppConfigInput['cache']>['tiers'], readonly CacheTierName[] | undefined>
+>;
+
+// The one page shape (`cursor-page.ts`): the two facts cannot disagree in a value that
+// typechecks, and `hasMore` narrows `nextCursor`.
+
+// @ts-expect-error — `hasMore: true` with no cursor is not a page: "more" must say where.
+export const _MoreWithoutCursor: Page<number> = { rows: [], nextCursor: null, hasMore: true };
+
+// @ts-expect-error — a cursor on the last page is not a page: it would continue a `while` loop.
+export const _LastWithCursor: Page<number> = { rows: [], nextCursor: 'c', hasMore: false };
+
+/** On the `hasMore` side `nextCursor` is a `string` — a loop passes it on with no `?? ''`. */
+export type _HasMoreNarrowsCursor = Assert<
+  Extract<Page<number>, { readonly hasMore: true }>['nextCursor'] extends string ? true : false
+>;
+
+/** On the last page it is exactly `null` — `while (page.nextCursor !== null)` is the same loop. */
+export type _LastPageHasNoCursor = Assert<
+  Extract<Page<number>, { readonly hasMore: false }>['nextCursor'] extends null ? true : false
 >;

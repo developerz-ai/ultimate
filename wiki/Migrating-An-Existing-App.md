@@ -246,7 +246,7 @@ Two vocabularies. `columns.ts` holds the **opinionated** builders — one way to
 | an array column | `arrayOf(column)` | `readonly T[]` | shipped. The element is a column, so its own `$parse` decides every member. `arrayOf(money())` and nested arrays are refused **at declaration** |
 | `timestamp without time zone` | — | — | **no builder, and there will not be one.** A naive timestamp is a bug that only surfaces twice a year |
 | a native Postgres `enum` **type** | `text()` today | `string` | **deferred.** `text()` reads and writes such a column correctly; what is missing is a declaration that knows the type's variants |
-| `vector` (pgvector) | — | — | **deferred.** `PgVectorStore` in `@ultimat3/ai` is the retrieval path; a `vector` **column** on an entity is not declarable |
+| `vector` (pgvector) | — | — | **deferred.** `postgresVectorStore()` in `@ultimat3/ai` is the retrieval path; a `vector` **column** on an entity is not declarable |
 | `inet`, `cidr`, `tsvector`, `hstore`, `interval`, `citext`, PostGIS | — | — | **no builder**, and none planned |
 
 ### 1.3 There is no schema-to-entity generator
@@ -555,7 +555,7 @@ Verified against the code, `As of 2026-08`.
 |---|---|---|
 | No schema baseline | every unmodelled table is `unexpected-table`, every unmodelled column is `unexpected-column`; no command snapshots the pre-existing schema as a starting point | model everything, or give Ultimate its own database |
 | No schema-to-entity generator | no command turns a live schema into `entity()` declarations. `introspect()` is public and gives the catalog as JSON | write the entities from `introspect()`'s output |
-| Three column shapes have no builder | a naive `timestamp without time zone` (permanently), a native Postgres `enum` **type**, and `vector` | convert a naive timestamp to `timestamptz`; declare an enum column as `text()`; keep vectors in `PgVectorStore` |
+| Three column shapes have no builder | a naive `timestamp without time zone` (permanently), a native Postgres `enum` **type**, and `vector` | convert a naive timestamp to `timestamptz`; declare an enum column as `text()`; keep vectors in `postgresVectorStore()` |
 | A renamed column arrives under its **physical** name in a live query | `@ultimat3/realtime` rebuilds rows from physical names and cannot read `.column()` overrides across the tier boundary | do not make a renamed slice live first, or map the name in the subscriber |
 | One database globally | `db()` is a singleton | one Postgres, or a second client outside the framework |
 | ~~No read/write split~~ | **shipped `As of 2026-08-24`** — `DATABASE_REPLICA_URL` builds a primary + replica client and `withReplicaReads(fn)` is the scope inside which a plain read may leave the primary, with read-your-writes and a 3-failure/10s breaker back to it | opt in twice ([Configuration → Read replicas](Configuration#read-replicas)); the scope is the app's to open |

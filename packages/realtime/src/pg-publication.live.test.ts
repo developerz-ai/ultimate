@@ -11,7 +11,7 @@
 //     bun test packages/realtime/src/pg-publication.live.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { PgLogicalReplicationFeed } from './changefeed';
+import { type PgLogicalReplicationFeed, postgresChangeFeed } from './changefeed';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
@@ -65,7 +65,7 @@ const feedFor = (
   entities: readonly string[],
   target = url ?? '',
 ): PgLogicalReplicationFeed =>
-  new PgLogicalReplicationFeed({ url: target, slot, publication: PUBLICATION, entities });
+  postgresChangeFeed({ url: target, slot, publication: PUBLICATION, entities });
 
 describe.skipIf(!ready)('live · the replicator ensures its publication', () => {
   let sql: PgConnection;

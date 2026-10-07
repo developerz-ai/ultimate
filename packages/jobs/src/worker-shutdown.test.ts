@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext, drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { createWorker } from './worker';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
@@ -20,7 +20,7 @@ interface ClosingDriver {
 /** The memory driver with `claim` neutered (no registry needed) and `close` observable. */
 function closingDriver(close?: () => Promise<void>): ClosingDriver {
   let closes = 0;
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   return {
     driver: {
       ...base,

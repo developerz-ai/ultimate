@@ -2,6 +2,7 @@
 // parsing. The request half is `provider.test.ts`.
 import { describe, expect, test } from 'bun:test';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import {
   AnthropicProvider,
   costOf,
@@ -11,16 +12,24 @@ import {
 } from './provider';
 import { type Call, collect, fakeFetch, STREAM_EVENTS, sseResponse } from './provider-fixture';
 
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
+
 describe('streaming', () => {
   test('asks for an event stream and yields text as it arrives, then the assembled result', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
     });
 
     const chunks = await collect(
-      remote.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }),
+      remote.stream({
+        model: FIXTURE_MODEL,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 64,
+      }),
     );
 
     expect(calls[0]?.body['stream']).toBe(true);
@@ -56,22 +65,30 @@ describe('streaming', () => {
   test('a stream cut before message_stop fails instead of returning the partial answer', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS.slice(0, 4))),
     });
 
     await expect(
-      collect(remote.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 })),
+      collect(
+        remote.stream({
+          model: FIXTURE_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 64,
+        }),
+      ),
     ).rejects.toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
   });
 
   test('a streamed budget is debited from the final chunk, not the estimate', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
     });
-    const gateway = createGateway({ providers: [remote] });
+    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [remote] });
 
     const spent = await gateway.scope({ actorKey: 'actor-1' }, async () => {
       await collect(gateway.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }));
@@ -93,6 +110,7 @@ describe('a completion too large for one response', () => {
   test('generate above the ceiling goes over the streaming transport and assembles the result', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
     });
@@ -100,9 +118,10 @@ describe('a completion too large for one response', () => {
     // A non-streaming request this large hits the HTTP timeout after paying for the whole
     // completion, and `llm()` has no streaming path — so the transport switches, not the API.
     const maxTokens = STREAM_ONLY_MAX_TOKENS + 1;
-    expect(requiresStreaming({ messages: [], maxTokens })).toBe(true);
+    expect(requiresStreaming({ model: FIXTURE_MODEL, messages: [], maxTokens })).toBe(true);
 
     const result = await remote.generate({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'write a long thing' }],
       maxTokens,
     });
@@ -118,7 +137,7 @@ describe('a completion too large for one response', () => {
     expect(requiresStreaming({ model: 'claude-haiku-4-5', messages: [], maxTokens: 500_000 })).toBe(
       true,
     );
-    expect(requiresStreaming({ messages: [], maxTokens: 8_000 })).toBe(false);
+    expect(requiresStreaming({ model: FIXTURE_MODEL, messages: [], maxTokens: 8_000 })).toBe(false);
   });
 });
 
@@ -164,6 +183,7 @@ describe('response parsing', () => {
   test('a streamed refusal carries its details too, not just the reason', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () =>
         sseResponse([
@@ -179,7 +199,11 @@ describe('response parsing', () => {
     });
 
     const chunks = await collect(
-      remote.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }),
+      remote.stream({
+        model: FIXTURE_MODEL,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 64,
+      }),
     );
     const done = chunks.at(-1);
     expect(done?.type).toBe('done');

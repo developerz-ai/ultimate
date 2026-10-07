@@ -7,7 +7,12 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { OAuthFetch, OAuthLoginOptions } from '@ultimat3/auth';
-import { authenticate, MemoryAdapter, readSessionCookie } from '@ultimat3/auth';
+import {
+  authenticate,
+  type MemoryAdapter,
+  memoryAuthAdapter,
+  readSessionCookie,
+} from '@ultimat3/auth';
 import { frozenClock, setLogSink } from '@ultimat3/core';
 import { AFTER_SIGN_IN, postlyAuth, postlyLogin } from './login';
 
@@ -56,7 +61,7 @@ let logged: string[];
 let previousSink: ReturnType<typeof setLogSink>;
 
 beforeEach(() => {
-  adapter = new MemoryAdapter();
+  adapter = memoryAuthAdapter();
   auth = postlyAuth({ adapter, clock: frozenClock(NOW) });
   login = postlyLogin(auth, SEAMS);
   logged = [];

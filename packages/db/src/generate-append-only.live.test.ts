@@ -3,7 +3,7 @@
 // missing or disabled, the finding's repair restores it, and turning the flag off releases the rows.
 
 import { afterAll, beforeAll, describe, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { proveAppendOnlyTrigger } from './generate-append-only-fixture';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -13,7 +13,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the append-only trigger', () 
   let client: PostgresClient;
 
   beforeAll(() => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
   });
 
   afterAll(async () => {

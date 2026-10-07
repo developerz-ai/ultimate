@@ -274,12 +274,6 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A search `token`’s four-letter prefix scored against a topic, so `retries` reaches `retry` — a word a human typed into `x docs search`.',
   },
-  'packages/manifest/src/emit.ts: contentHash(body) === buildId': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A `contentHash` against the build id, deciding whether the manifest is current — a digest of content this process emitted.',
-  },
   'packages/query/src/live.ts: cursor.queryHash !== hash': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `query` package row.
     count: 1,

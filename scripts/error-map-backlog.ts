@@ -35,7 +35,7 @@ export const OFF_SOCKET: Pins = {
     'X_SECRETS_KEY_ACL_FAILED',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
-  // by `new LruCache(...)` and `createMemorySemanticCache(...)`, which a boot builds once.
+  // by `new LruCache(...)` and `memorySemanticCache(...)`, which a boot builds once.
   cache: ['X_CACHE_LIMIT_INVALID'],
   // tier 1 — `x db` commands and release-phase work, plus `close()`: the pool handle is cleared
   // before the drain's await, so nothing inside a request reaches a client that is draining.

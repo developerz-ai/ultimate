@@ -10,7 +10,7 @@ import type {
   WebManifestInput,
 } from '@ultimat3/pwa';
 
-/** The app's locales as `app.config.ts` declares them, default first. */
+/** The app's locales as its catalogs declare them (`defineCatalogs`), default first. */
 export interface AppLocales {
   readonly routed: readonly string[];
   readonly fallback: string;
@@ -23,9 +23,9 @@ const strings = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
 /**
- * `locales` and `defaultLocale`, read off the config object. The manifest's `lang` was the
- * generator's hardcoded `'en'` for an `es-co` app (notificado.co, 22.3.2). An untyped config with
- * neither is core's own default, `en`.
+ * `locales` and `defaultLocale`, read off `loadAppCatalogs`'s answer (`@ultimat3/i18n/app-catalogs`). The manifest's `lang` was the
+ * generator's hardcoded `'en'` for an `es-co` app (notificado.co, 22.3.2). An app with no catalog
+ * module is the framework's own default, `en`.
  */
 export function appLocales(config: Record<string, unknown>): AppLocales {
   const declared = strings(config['locales']);

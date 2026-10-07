@@ -14,7 +14,7 @@ import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
-import { createMemoryDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, setJobDriver } from '@ultimat3/jobs';
 
 // Loaded after `@ultimat3/render/server` has installed its `.tsx` loader, and never statically:
 // `admin.ts` statically imports `pages/ops.tsx`. The rule is enforced by
@@ -64,7 +64,7 @@ const ask = (
 
 beforeAll(async () => {
   // `/admin/jobs` reads the process's queue, as it does under `x dev` and in the container.
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
   await seedDemo();
 });
 

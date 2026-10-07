@@ -6,15 +6,14 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { createContext, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { AuditRecord, AuditSink } from './audit';
-import { resetAuditSink, setAuditSink } from './audit';
 import { memoryAuditSink } from './audit-memory';
 import { idempotencyKeyFor } from './idempotency-key';
-import { MemoryIdempotencyStore } from './idempotency-memory';
+import { memoryIdempotencyStore } from './idempotency-memory';
 import * as surface from './index';
 import { invoke } from './invoke';
 import { mutator } from './mutator';
@@ -61,7 +60,7 @@ describe('the audit seam', () => {
     await publishPost().server(editor, { postId: POST_ID });
 
     expect(sink.records()).toHaveLength(1);
-    expect(sink.records()[0]?.action).toBe('publishPost');
+    expect(sink.records()[0]?.name).toBe('publishPost');
     expect(sink.records()[0]?.outcome).toBe('allowed');
     expect(sink.records()[0]?.mutator).toBe(true);
   });
@@ -170,7 +169,7 @@ describe('the audit seam', () => {
       idempotent: true,
       handle: ({ input }) => ({ id: input.postId, published: true }),
     }).named('publishPost');
-    const store = new MemoryIdempotencyStore();
+    const store = memoryIdempotencyStore();
     const options = { ctx: editor, idempotencyKey: 'k1', store };
 
     await invoke(target, { postId: POST_ID }, options);
@@ -275,7 +274,7 @@ describe('the audit seam', () => {
       {
         ctx: editor,
         idempotencyKey: 'k1',
-        store: new MemoryIdempotencyStore(),
+        store: memoryIdempotencyStore(),
       },
     ).catch((e: unknown) => e);
 
@@ -321,7 +320,9 @@ describe('the audit seam', () => {
     for (const name of ['auditSettled', 'auditThrew', 'auditSinkFor']) {
       expect(exported).not.toContain(name);
     }
-    expect(exported).toContain('setAuditSink');
+    // The slot is core's alone since 25.0.0 — the barrel exports the sinks, never the install.
+    expect(exported).not.toContain('setAuditSink');
+    expect(exported).toContain('memoryAuditSink');
   });
 
   test('`audited` is published on the descriptor, so the fact is checkable', () => {

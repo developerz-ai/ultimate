@@ -190,6 +190,11 @@ export class InMemoryChangeFeed implements ChangeFeed {
   }
 }
 
+/** The one way to build the in-process feed — the twin of `postgresChangeFeed()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function memoryChangeFeed(options: InMemoryChangeFeedOptions = {}): InMemoryChangeFeed {
+  return new InMemoryChangeFeed(options);
+}
+
 /** Settles the shadow lane whichever way the delivery went. Nothing observes the value. */
 const ignore = (): void => undefined;
 
@@ -261,4 +266,9 @@ export class PgLogicalReplicationFeed implements ChangeFeed {
   stats(): ReplicationStreamStats {
     return this.#stream.stats();
   }
+}
+
+/** The one way to build the WAL-backed feed — the twin of `memoryChangeFeed()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function postgresChangeFeed(options: PgLogicalReplicationOptions): PgLogicalReplicationFeed {
+  return new PgLogicalReplicationFeed(options);
 }

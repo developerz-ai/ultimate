@@ -1,13 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { EnvSchema } from './env';
-import {
-  assertEnvExample,
-  checkEnvExample,
-  envFileCandidates,
-  parseEnvKeys,
-  renderEnvExample,
-} from './env-example';
-import { isUltimateError, type UltimateError } from './errors';
+import { checkEnvExample, envFileCandidates, parseEnvKeys, renderEnvExample } from './env-example';
+import * as core from './index';
 
 const schema = {
   DATABASE_URL: { type: 'url', secret: true, description: 'Postgres connection string' },
@@ -57,37 +51,25 @@ describe('checkEnvExample', () => {
     expect(report.extra).toEqual(['ROLE']);
   });
 
-  // The half the comment on `EnvExampleReport.extra` used to overstate. An extra key ALONE keeps
-  // `ok: true`, so `assertEnvExample` returns before it builds an error and the list reaches no
-  // surface at all — it rides out only on `meta` of a drift raised by a MISSING key, i.e. only when
-  // something else already failed. `checkEnvExample` is public, so an app reading `.extra` itself
-  // is the one reader there is; the framework's own reporter (`@ultimat3/cli`'s `app-env.ts`)
-  // builds its finding from `missing` only.
-  test('an extra key alone is not drift, and nothing raises it', () => {
+  // An extra key ALONE keeps `ok: true`: the framework's reporter (`@ultimat3/cli`'s `app-env.ts`)
+  // builds its finding from `missing` only, so `checkEnvExample` is public for an app that wants
+  // `.extra` itself.
+  test('an extra key alone is not drift', () => {
     const text = `${[...Object.keys(schema), 'LEGACY_KEY'].join('=\n')}=\n`;
     const report = checkEnvExample(schema, text);
     expect(report.ok).toBe(true);
     expect(report.missing).toEqual([]);
     expect(report.extra).toEqual(['LEGACY_KEY']);
-    // Silent: the value is computed and there is no path that reports it on its own.
-    expect(() => {
-      assertEnvExample(schema, text);
-    }).not.toThrow();
   });
+});
 
-  test('assertEnvExample throws X_ENV_EXAMPLE_DRIFT naming the keys and the rewrite', () => {
-    let caught: unknown;
-    try {
-      assertEnvExample(schema, 'PORT=3000\n');
-    } catch (thrown) {
-      caught = thrown;
-    }
-    expect(isUltimateError(caught)).toBe(true);
-    const error = caught as UltimateError;
-    expect(error.code).toBe('X_ENV_EXAMPLE_DRIFT');
-    expect(error.cause).toContain('DATABASE_URL');
-    expect(error.fix).toContain("Bun.write('.env.example', renderEnvExample(schema))");
-    expect(assertEnvExample(schema, renderEnvExample(schema))).toBeUndefined();
+// 25.0.0 deleted the second, weaker `.env.example` gate: key presence only, and nothing called it.
+// The gate is `x verify`'s `manifest` step. Re-exporting either name fails here.
+describe('assertEnvExample', () => {
+  test('is gone from the public API, with the error class only it threw', () => {
+    expect(Object.hasOwn(core, 'assertEnvExample')).toBe(false);
+    expect(Object.hasOwn(core, 'EnvExampleDriftError')).toBe(false);
+    expect(typeof core.checkEnvExample).toBe('function');
   });
 });
 

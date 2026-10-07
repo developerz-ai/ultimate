@@ -81,8 +81,9 @@ function resolveExecutor(injected: PgExecutor | undefined): PgExecutor {
     driver: 'pg',
     // `Bun.sql` is named nowhere in this function and never was: there is no ambient fallback to
     // be "not configured". An executor is injected by the boot or the driver has none.
-    cause: 'createPgDriver() was called with no executor, and this driver has no ambient fallback',
-    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: setJobDriver(createMemoryDriver())',
+    cause:
+      'postgresJobDriver() was called with no executor, and this driver has no ambient fallback',
+    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: setJobDriver(memoryJobDriver())',
   });
 }
 
@@ -196,7 +197,7 @@ function pgLeaseStore(exec: () => PgExecutor): LeaseStore {
   };
 }
 
-export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
+export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
   const clock = options.clock ?? systemClock;
   let executor: PgExecutor | undefined;
   const exec = (): PgExecutor => {
@@ -437,12 +438,12 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
  * key would need a second `release()` — hence the `held` guard below, which makes repeated
  * `acquire()` calls (the scheduler renews every round) a no-op rather than a leak.
  *
- * `@ultimat3/realtime`'s `PgAdvisoryLock` is the shape that gets this right: it opens a connection
+ * `@ultimat3/realtime`'s `postgresAdvisoryLock()` is the shape that gets this right: it opens a connection
  * of its own and *is* the lock. This package holds no wire protocol, so the executor it is handed
- * is whatever boot built — which is a pool. **Use `createPgLeaseLeader` instead** unless you can
+ * is whatever boot built — which is a pool. **Use `postgresLeaseLeader` instead** unless you can
  * prove the executor is a single dedicated session.
  */
-export function createPgLeader(
+export function postgresLeader(
   lockKey: number,
   options: PgDriverOptions = {},
 ): { acquire(): Promise<boolean>; release(): Promise<void>; readonly renewEveryMs: number } {

@@ -1,7 +1,8 @@
 /**
  * Every model Postly calls, registered by Postly. Apps bring their own models and providers: the
- * framework's built-in catalogue is a fallback on its way out (plan 101, B23), so a model this app
- * names is a row this app wrote, with its own numbers and its own source.
+ * framework registers none and chooses none (`@ultimat3/ai` 25.0.0), so a model this app names is a
+ * row this app wrote, with its own numbers and its own source — and an id it never registered is
+ * `X_AI_MODEL_UNKNOWN` at the first call.
  *
  * Each id is EXPORTED from here and spelled nowhere else — a prompt or an agent names a model by
  * importing it, so naming one and registering it are the same import, and an id this file does not

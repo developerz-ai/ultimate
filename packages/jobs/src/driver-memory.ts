@@ -5,7 +5,7 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteCount, systemClock, uuid } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
-import { createMemoryBackfillLedger } from './backfill-ledger';
+import { memoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
 import { nackOutcome } from './counters';
 import type {
@@ -37,10 +37,10 @@ import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './err
 import type { JobIntrospection } from './introspection';
 import { MAX_ERROR_STACK_LENGTH } from './introspection';
 import type { LeaseStore } from './leases';
-import { createMemoryLeaseStore } from './leases';
+import { memoryLeaseStore } from './leases';
 import { isFinalAttempt } from './retry';
 import type { StepStore } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 export interface MemoryDriverOptions {
   readonly clock?: Clock;
@@ -62,9 +62,9 @@ export interface MemoryDriverOptions {
  */
 export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
 
-export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
+export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
   const clock = options.clock ?? systemClock;
-  const stepStore = options.steps ?? createMemoryStepStore();
+  const stepStore = options.steps ?? memoryStepStore();
   // `SQL_STEP_PUT`'s fence: a write made under a claim lands only while that claim holds the row.
   const steps: StepStore = {
     ...stepStore,
@@ -79,9 +79,8 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJob
       return stepStore.put(record);
     },
   };
-  const backfills = options.backfills ?? createMemoryBackfillLedger(clock);
-  const leases =
-    options.leases ?? createMemoryLeaseStore(options.clock === undefined ? {} : { clock });
+  const backfills = options.backfills ?? memoryBackfillLedger(clock);
+  const leases = options.leases ?? memoryLeaseStore(options.clock === undefined ? {} : { clock });
   const jobs = new Map<string, JobRecord>();
 
   // Keyed by NAME, TENANT and key, exactly as `x_jobs_name_tenant_idempotency_live_idx` is. A

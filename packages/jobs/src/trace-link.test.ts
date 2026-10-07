@@ -13,7 +13,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import { createWorker } from './worker';
@@ -44,7 +44,7 @@ const collectSpans = (): ReadableSpan[] => {
 describe('the trace link across the queue', () => {
   test('an enqueue inside a span stamps that span onto the row', async () => {
     const spans = collectSpans();
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
 
     const chargeCard = job({
@@ -69,7 +69,7 @@ describe('the trace link across the queue', () => {
 
   test('the job span is a CHILD of the enqueuing request, not a new root', async () => {
     const spans = collectSpans();
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
 
     job({
@@ -110,7 +110,7 @@ describe('the trace link across the queue', () => {
   });
 
   test('an enqueue outside any trace carries no header rather than a malformed one', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     const sendDigest = job({
       tenant: 'none',
@@ -128,7 +128,7 @@ describe('the trace link across the queue', () => {
   });
 
   test('handle.as(actor) records WHO asked and grants them nothing', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     setJobDriver(driver);
     const exportLedger = job({
       tenant: 'none',

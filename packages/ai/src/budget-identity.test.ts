@@ -10,13 +10,17 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import type { BudgetLimits, BudgetStore, BudgetTake } from './budget';
-import { budgetKeysFor, MemoryBudgetStore } from './budget';
+import { budgetKeysFor, type MemoryBudgetStore, memoryBudgetStore } from './budget';
 import { createGateway } from './gateway';
 import { hive } from './hive';
 import { ANSWER, ctxFor, declare, POST_ID, promptFor, stub } from './llm-fixture';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 beforeEach(() => {
   resetAiRuntime();
@@ -25,7 +29,7 @@ beforeEach(() => {
 
 /** The store, wrapped so a test can read what each reservation asked for. */
 function recording(): { store: BudgetStore; takes: number[]; inner: MemoryBudgetStore } {
-  const inner = new MemoryBudgetStore();
+  const inner = memoryBudgetStore();
   const takes: number[] = [];
   return {
     inner,
@@ -47,7 +51,12 @@ function recording(): { store: BudgetStore; takes: number[]; inner: MemoryBudget
 
 function install(provider: Provider, limits: BudgetLimits, store: BudgetStore): void {
   configureAi({
-    gateway: createGateway({ providers: [provider], budget: limits, budgetStore: store }),
+    gateway: createGateway({
+      defaultModel: FIXTURE_MODEL,
+      providers: [provider],
+      budget: limits,
+      budgetStore: store,
+    }),
   });
 }
 
@@ -77,7 +86,7 @@ describe('an llm() runs under its caller’s actor and org ceilings', () => {
   test('the second call of one actor is refused; another actor still runs', async () => {
     const estimate = await oneEstimate();
     const { provider, seen } = stub(ANSWER);
-    install(provider, { actor: estimate + 1 }, new MemoryBudgetStore());
+    install(provider, { actor: estimate + 1 }, memoryBudgetStore());
     const summarize = declare(promptFor());
 
     await summarize({ postId: POST_ID }, { ctx: ctxFor('u-1', 'acme') });
@@ -91,7 +100,7 @@ describe('an llm() runs under its caller’s actor and org ceilings', () => {
   test('two actors of one org share the org ceiling', async () => {
     const estimate = await oneEstimate();
     const { provider, seen } = stub(ANSWER);
-    install(provider, { org: estimate + 1 }, new MemoryBudgetStore());
+    install(provider, { org: estimate + 1 }, memoryBudgetStore());
     const summarize = declare(promptFor());
 
     await summarize({ postId: POST_ID }, { ctx: ctxFor('u-1', 'acme') });
@@ -119,7 +128,7 @@ describe('an agent() runs under its caller’s org ceiling', () => {
     const estimate = takes[0] ?? 0;
     expect(estimate).toBeGreaterThan(0);
 
-    install(provider, { org: estimate + 1 }, new MemoryBudgetStore());
+    install(provider, { org: estimate + 1 }, memoryBudgetStore());
     await support({ q: 'a' }, { ctx: ctxFor('u-1', 'acme') });
     await expect(support({ q: 'a' }, { ctx: ctxFor('u-9', 'acme') })).rejects.toMatchObject({
       code: 'X_AI_BUDGET_EXCEEDED',
@@ -141,7 +150,13 @@ describe('a hive()’s members run under the gateway budget', () => {
 
   test('a gateway request ceiling refuses every member, as it refuses a direct call', async () => {
     const { provider, seen } = stub(ANSWER);
-    configureAi({ gateway: createGateway({ providers: [provider], budget: { request: 1 } }) });
+    configureAi({
+      gateway: createGateway({
+        defaultModel: FIXTURE_MODEL,
+        providers: [provider],
+        budget: { request: 1 },
+      }),
+    });
     const result = await fanOutOf('requestCappedHive')({}, { ctx: ctxFor('u-1', 'acme') });
     expect(result.failed).toBe(3);
     expect(seen.length).toBe(0);
@@ -150,7 +165,7 @@ describe('a hive()’s members run under the gateway budget', () => {
   test('the per-actor ceiling counts the members against the caller', async () => {
     const estimate = await oneEstimate();
     const { provider, seen } = stub(ANSWER);
-    install(provider, { actor: estimate + 1 }, new MemoryBudgetStore());
+    install(provider, { actor: estimate + 1 }, memoryBudgetStore());
     const result = await fanOutOf('actorCappedHive')({}, { ctx: ctxFor('u-1', 'acme') });
     // Serial members: the first records its real (smaller) use, and the window still cannot hold
     // a second full estimate on top of it.
@@ -216,13 +231,14 @@ describe('the org ceiling holds under concurrency', () => {
   });
 
   test('a scope per request, one org key: the same answer through gateway.scope()', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
     const { provider: inner, seen } = stub(ANSWER);
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [
         {
           ...inner,
@@ -259,7 +275,7 @@ describe('the org ceiling holds under concurrency', () => {
 // writes per call — in an app that declared no `actor` / `org` ceiling at all.
 describe('a scope with no ceiling never touches the store', () => {
   test('N distinct callers, no budget declared: the store is empty and saw zero writes', async () => {
-    const inner = new MemoryBudgetStore();
+    const inner = memoryBudgetStore();
     const writes: string[] = [];
     const store: BudgetStore = {
       spent: (key) => inner.spent(key),
@@ -274,7 +290,13 @@ describe('a scope with no ceiling never touches the store', () => {
       },
     };
     const { provider, seen } = stub(ANSWER);
-    configureAi({ gateway: createGateway({ providers: [provider], budgetStore: store }) });
+    configureAi({
+      gateway: createGateway({
+        defaultModel: FIXTURE_MODEL,
+        providers: [provider],
+        budgetStore: store,
+      }),
+    });
     const summarize = declare(promptFor());
     for (let index = 0; index < 20; index += 1) {
       await summarize({ postId: POST_ID }, { ctx: ctxFor(`u-${index}`, `org-${index}`) });
@@ -293,7 +315,7 @@ describe('a scope with no ceiling never touches the store', () => {
   });
 
   test('a counter that returns to zero is forgotten, not kept as an entry', () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     store.add('actor:user:u-1', 50);
     store.add('actor:user:u-1', -50);
     expect(store.size()).toBe(0);

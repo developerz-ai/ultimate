@@ -5,8 +5,8 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { JOBS_WAKE_CHANNEL } from './driver-pg-wake-sql';
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
@@ -51,7 +51,7 @@ const delivered = async (): Promise<readonly string[]> => {
 
 describe('list({ idPrefix })', () => {
   test('a prefix is literal on both drivers: `_` and `%` are characters, not wildcards', async () => {
-    const drivers = [createPgDriver({ executor: pg.executor }), createMemoryDriver()];
+    const drivers = [postgresJobDriver({ executor: pg.executor }), memoryJobDriver()];
     for (const driver of drivers) {
       const { id } = await enqueue(driver, `prefix:${driver.name}`);
       const list = async (idPrefix: string) =>
@@ -74,7 +74,7 @@ describe('list({ idPrefix })', () => {
 
 describe('the enqueue wake', () => {
   test('a row that sent no wake does not silence the next one in its slot', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     // Created first in the slot and due in an hour: it is not due soon, so it notifies nobody.
     await enqueue(driver, 'far', { queue: 'mail', runAt: Date.now() + 3_600_000 });
     expect(await delivered()).toEqual([]);

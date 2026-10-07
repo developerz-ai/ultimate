@@ -94,12 +94,12 @@ describe('page two of a read ordered by a non-JSON type', () => {
       const feed = feedOn(`feed_${column}`, column);
       const first = await paginate(feed, { orgId: ORG }, { first: 2, ctx });
       expect(first.rows.map((row) => row.id)).toEqual(['a', 'b']);
-      expect(first.endCursor).not.toBeNull();
+      expect(first.nextCursor).not.toBeNull();
 
       const second = await paginate(
         feed,
         { orgId: ORG },
-        { first: 2, ctx, after: first.endCursor ?? '' },
+        { first: 2, ctx, after: first.nextCursor ?? '' },
       );
       expect(second.rows.map((row) => row.id)).toEqual(['c']);
     });

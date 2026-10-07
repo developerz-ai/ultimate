@@ -27,7 +27,7 @@ export type {
   PostgresClientOptions,
   ReservableClient,
 } from './client';
-export { baseClient, createPostgresClient, db, isReservable, setDbClient } from './client';
+export { baseClient, db, isReservable, postgresClient, setDbClient } from './client';
 export type { ColumnDefaultLike } from './column-default';
 export { defaultExpression } from './column-default';
 export type { DbHealthReport } from './db-health';

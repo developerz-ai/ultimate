@@ -4,7 +4,7 @@
 // The facts (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
 
 import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
-import { createPostgresClient, type DbClient } from '@ultimat3/db';
+import { type DbClient, postgresClient } from '@ultimat3/db';
 import type { CommandContext } from './command';
 import type { BranchRow } from './db-branch';
 import {
@@ -62,7 +62,7 @@ function branchRetry(word: string, name: string | undefined): string {
  * database routinely outlives the 10s a `web` profile allows.
  */
 async function withBranchClient<T>(url: string, fn: (client: DbClient) => Promise<T>): Promise<T> {
-  const client = createPostgresClient({ url, role: 'migrate', applicationName: 'x-db-branch' });
+  const client = postgresClient({ url, role: 'migrate', applicationName: 'x-db-branch' });
   try {
     return await fn(client);
   } finally {

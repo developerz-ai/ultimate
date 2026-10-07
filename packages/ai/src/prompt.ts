@@ -67,7 +67,7 @@ export interface Prompt<V extends PromptVars = PromptVars> {
 const registry = new Map<string, Prompt>();
 
 export function definePrompt<V extends PromptVars>(input: DefinePromptInput<V>): Prompt<V> {
-  const hash = contentHash(input);
+  const hash = promptHash(input);
   const key = `${input.id}@${input.version}`;
   const existing = registry.get(key);
   if (existing !== undefined && existing.hash !== hash) {
@@ -161,7 +161,7 @@ function render(template: string, vars: PromptVars, ref: string): string {
  * An absent schema stays the empty string rather than becoming `canonicalJson(undefined)`'s
  * `null` — that is what keeps every hash already recorded in a baseline the same value.
  */
-export function contentHash<V extends PromptVars>(input: DefinePromptInput<V>): string {
+export function promptHash<V extends PromptVars>(input: DefinePromptInput<V>): string {
   const fields = [
     `id:${input.id}`,
     `version:${input.version}`,

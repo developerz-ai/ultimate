@@ -3,11 +3,11 @@
 // zero and silent, because a boot that never configured retention has made a decision.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createMemoryDigestStore } from './digest';
+import { memoryDigestStore } from './digest';
 import type { PgDigestStore } from './digest-pg';
-import { createMemoryInboxStore } from './inbox';
+import { memoryInboxStore } from './inbox';
 import type { InboxPurgeBefore, PgInboxStore } from './inbox-pg';
-import { createMemoryDeliveryLedger } from './ledger';
+import { memoryDeliveryLedger } from './ledger';
 import type { PgDeliveryLedger } from './ledger-pg';
 import { purgeNotifyDeliveries, purgeNotifyDigests, purgeNotifyInbox } from './retention';
 import { resetNotifyStores, setNotifyStores } from './stores';
@@ -16,7 +16,7 @@ const AT = new Date('2026-08-24T09:00:00Z');
 
 /** A Postgres inbox as far as the capability check is concerned: it has the method. */
 const purgeableInbox = (calls: InboxPurgeBefore[]): PgInboxStore => ({
-  ...createMemoryInboxStore(),
+  ...memoryInboxStore(),
   purgeBefore: (before) => {
     calls.push(before);
     return Promise.resolve(7);
@@ -24,7 +24,7 @@ const purgeableInbox = (calls: InboxPurgeBefore[]): PgInboxStore => ({
 });
 
 const purgeableLedger = (calls: number[]): PgDeliveryLedger => ({
-  ...createMemoryDeliveryLedger(),
+  ...memoryDeliveryLedger(),
   windowMs: 60_000,
   purgeExpired: (nowMs) => {
     calls.push(nowMs);
@@ -44,7 +44,7 @@ describe('unit · notify retention seam', () => {
   // inbox is a heap map bounded by process life. Reaching for a method it does not have is a
   // `TypeError` inside the hourly sweep, which would take the other four targets down with it.
   test('a memory inbox sweeps nothing and does not throw', async () => {
-    setNotifyStores({ inbox: createMemoryInboxStore() });
+    setNotifyStores({ inbox: memoryInboxStore() });
     expect(await purgeNotifyInbox({ read: AT, unread: AT })).toBe(0);
   });
 
@@ -73,7 +73,7 @@ describe('unit · notify retention seam', () => {
   // rather than as a crash. The capability check is on the METHOD, so a property that happens to
   // share the name but is not callable is not a store this can sweep either.
   test('a foreign store carrying a non-function of the same name is not swept', async () => {
-    const notAMethod = { ...createMemoryInboxStore(), purgeBefore: 'soon' };
+    const notAMethod = { ...memoryInboxStore(), purgeBefore: 'soon' };
     setNotifyStores({ inbox: notAMethod as unknown as PgInboxStore });
     expect(await purgeNotifyInbox({ read: AT })).toBe(0);
   });
@@ -82,12 +82,12 @@ describe('unit · notify retention seam', () => {
   test('no digest store or a memory one sweeps nothing; a Postgres one gets the caller clock', async () => {
     setNotifyStores({});
     expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
-    setNotifyStores({ digest: createMemoryDigestStore() });
+    setNotifyStores({ digest: memoryDigestStore() });
     expect(await purgeNotifyDigests(AT.getTime())).toBe(0);
 
     const calls: number[] = [];
     const store: PgDigestStore = {
-      ...createMemoryDigestStore(),
+      ...memoryDigestStore(),
       retentionMs: 60_000,
       purgeExpired: (nowMs) => {
         calls.push(nowMs);

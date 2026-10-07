@@ -17,20 +17,14 @@ import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { accountKey, defineAuth, MemoryAdapter } from '@ultimat3/auth';
+import { accountKey, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
 import { createContext, systemClock } from '@ultimat3/core';
 import type { PurgeReport } from '@ultimat3/jobs';
+import { createStepRunner, getJob, memoryStepStore, resetJobs, resetTasks } from '@ultimat3/jobs';
 import {
-  createMemoryStepStore,
-  createStepRunner,
-  getJob,
-  resetJobs,
-  resetTasks,
-} from '@ultimat3/jobs';
-import {
-  createPgDeliveryLedger,
-  createPgDigestStore,
-  createPgInboxStore,
+  postgresDeliveryLedger,
+  postgresDigestStore,
+  postgresInboxStore,
   resetNotifyStores,
   setNotifyStores,
 } from '@ultimat3/notify';
@@ -105,7 +99,7 @@ async function runSweep(): Promise<PurgeReport> {
   const runner = createStepRunner({
     runId: crypto.randomUUID(),
     jobName: handle.name,
-    store: createMemoryStepStore(),
+    store: memoryStepStore(),
   });
   const result = await handle.run({
     input: {},
@@ -140,7 +134,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       await boot();
 
       // The app's own call, exactly as a scaffolded `apps/web/app/auth/login.ts` writes it.
-      const auth = defineAuth({ adapter: new MemoryAdapter() });
+      const auth = defineAuth({ adapter: memoryAuthAdapter() });
       expect(auth.limiter.policy.scope).toBe('shared');
       await auth.limiter.reserve(accountKey('ada@example.com'));
 
@@ -155,7 +149,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
     'the sweep the boot declared really runs its statements, on every table',
     async () => {
       await boot();
-      const auth = defineAuth({ adapter: new MemoryAdapter() });
+      const auth = defineAuth({ adapter: memoryAuthAdapter() });
       const live = accountKey('ada@example.com');
       await auth.limiter.reserve(live);
       // Two keys whose only attempt left the window long ago and one whose lockout has already
@@ -210,8 +204,8 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         "export const config = { name: 'fixture', notify: { inboxReadRetentionMs: 60_000 } };\n",
       );
       const executor = pgExecutorFor(started.db);
-      const ledger = createPgDeliveryLedger({ executor, windowMs: 60_000 });
-      const inbox = createPgInboxStore({ executor });
+      const ledger = postgresDeliveryLedger({ executor, windowMs: 60_000 });
+      const inbox = postgresInboxStore({ executor });
       setNotifyStores({ ledger, inbox });
       try {
         const now = systemClock.now();
@@ -288,7 +282,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
     'the digest sweep takes an abandoned closed window and leaves a recent one',
     async () => {
       const started = await boot();
-      const digest = createPgDigestStore({
+      const digest = postgresDigestStore({
         executor: pgExecutorFor(started.db),
         retentionMs: 60_000,
       });
@@ -370,7 +364,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
 
       // Back to `createAuthLimiter`: a limiter over a pool this process has closed is worse than
       // a per-process one, because every sign-in then fails instead of being counted narrowly.
-      expect(defineAuth({ adapter: new MemoryAdapter() }).limiter.policy.scope).toBe('process');
+      expect(defineAuth({ adapter: memoryAuthAdapter() }).limiter.policy.scope).toBe('process');
       expect(await runSweep()).toEqual({ swept: [], removed: 0 });
       // The clock is the boot's own and nothing here froze it; stated so the assertion above is
       // read as "no targets", never as "the clock happened to make every sweep empty".

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { InProcessTransport } from './fanout';
-import { PgAdvisoryLock } from './pg-advisory-lock';
+import { postgresAdvisoryLock } from './pg-advisory-lock';
 import {
   authOk,
   commandComplete,
@@ -38,7 +38,7 @@ const rig = (sessions: FakeStream[]) => {
     return Promise.resolve(server);
   });
   let lockDials = 0;
-  const lock = new PgAdvisoryLock({
+  const lock = postgresAdvisoryLock({
     url: 'postgres://repluser:hunter2@localhost:5432/app?sslmode=disable',
     key: 'x:replicator:watched',
     stream: () => {

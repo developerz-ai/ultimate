@@ -7,10 +7,10 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { type Ctx, createContext, isUltimateError, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
-import { createMemoryLeaseStore } from './leases';
+import { memoryLeaseStore } from './leases';
 import { createLimiter } from './limits';
 import { createWorker } from './worker';
 import { createFleetSlots } from './worker-fleet-slots';
@@ -58,7 +58,7 @@ describe('a fleet-slot acquire that rejects', () => {
     });
 
     let down = true;
-    const backing = createMemoryLeaseStore();
+    const backing = memoryLeaseStore();
     const leases: LeaseStore = {
       ...backing,
       acquire: (key, limit, ttlMs, holder) =>
@@ -66,7 +66,7 @@ describe('a fleet-slot acquire that rejects', () => {
           ? Promise.reject(new Error('lease store down'))
           : backing.acquire(key, limit, ttlMs, holder),
     };
-    const driver = createMemoryDriver({ leases });
+    const driver = memoryJobDriver({ leases });
     const limiter = createLimiter({});
     const worker = createWorker({
       driver,
@@ -124,7 +124,7 @@ describe('a fleet-slot renewal that answers false', () => {
       },
     });
 
-    const backing = createMemoryLeaseStore();
+    const backing = memoryLeaseStore();
     let renewals = 0;
     const leases: LeaseStore = {
       ...backing,
@@ -135,7 +135,7 @@ describe('a fleet-slot renewal that answers false', () => {
         return Promise.resolve(false);
       },
     };
-    const driver = createMemoryDriver({ leases });
+    const driver = memoryJobDriver({ leases });
     const worker = createWorker({
       driver,
       concurrency: 1,
@@ -184,7 +184,7 @@ describe('a fleet-slot renewal that answers false AFTER the run settled', () => 
     // finds the row gone. `stop()` cleared the interval and nothing else, so that answer still
     // took the loss branch: `jobs.worker.slot-lost` at ERROR and an abort on a controller
     // `runSignal.dispose()` had already torn down.
-    const backing = createMemoryLeaseStore();
+    const backing = memoryLeaseStore();
     let land = (_renewed: boolean): void => undefined;
     const leases: LeaseStore = {
       ...backing,

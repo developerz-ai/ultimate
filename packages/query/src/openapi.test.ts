@@ -68,17 +68,17 @@ describe('the read half of openapi.json', () => {
       oneOf: readonly Record<string, unknown>[];
     };
     expect(ok.oneOf).toHaveLength(2);
-    expect(ok.oneOf[1]?.['required']).toEqual([
-      'rows',
-      'nextCursor',
-      'hasMore',
-      'endCursor',
-      'hasNextPage',
-    ]);
+    expect(ok.oneOf[1]?.['required']).toEqual(['rows', 'nextCursor', 'hasMore']);
     const properties = ok.oneOf[1]?.['properties'] as Record<string, { description?: string }>;
+    expect(Object.keys(properties).sort()).toEqual(['hasMore', 'nextCursor', 'rows']);
     expect(properties['nextCursor']?.description).toBeString();
-    expect(properties['endCursor']?.description).toContain('nextCursor');
-    expect(properties['hasNextPage']?.description).toContain('hasMore');
+    // The one page shape's one meaning, on the wire (25.0.0): a cursor exactly when another page
+    // follows. A generated client or a validator reads it here, not from prose.
+    expect(ok.oneOf[1]?.['oneOf']).toEqual([
+      { properties: { nextCursor: { type: 'string' }, hasMore: { const: true } } },
+      { properties: { nextCursor: { type: 'null' }, hasMore: { const: false } } },
+    ]);
+    expect(properties['nextCursor']?.description).toContain('null exactly when hasMore is false');
     expect(operation.responses['400']?.content['application/problem+json']?.schema).toEqual({
       $ref: '#/components/schemas/Problem',
     });

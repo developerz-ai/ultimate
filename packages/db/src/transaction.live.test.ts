@@ -5,7 +5,7 @@
 // nothing distinguished a lost race from a dead socket. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { raw, sql } from './sql';
 import { withTransaction } from './transaction';
 
@@ -34,7 +34,7 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
   const clients: PostgresClient[] = [];
 
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '', role: 'web' });
+    const client = postgresClient({ url: url ?? '', role: 'web' });
     clients.push(client);
     return client;
   };
@@ -150,7 +150,7 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
 describe.skipIf(!hasPostgres)('live · postgres · a transaction the server aborted', () => {
   const clients: PostgresClient[] = [];
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '', role: 'web' });
+    const client = postgresClient({ url: url ?? '', role: 'web' });
     clients.push(client);
     return client;
   };

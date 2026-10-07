@@ -126,14 +126,7 @@ export {
 } from './errors-transport';
 export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
-export {
-  deriveAnnotations,
-  isExposed,
-  toolFromAction,
-  toolFromQuery,
-  toolsFrom,
-  toolsListed,
-} from './from-action';
+export { deriveAnnotations, toolFrom, toolsFrom, toolsListed } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';

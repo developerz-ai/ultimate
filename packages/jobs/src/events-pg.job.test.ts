@@ -9,9 +9,9 @@ import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
 import type { EventBus } from './events';
 import { eventsPurgeTarget } from './events';
-import { createPgEventBus } from './events-pg';
+import { postgresEventBus } from './events-pg';
 import { createStepRunner, isStepSuspension } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 let pg: EmbeddedPg;
 
@@ -30,7 +30,7 @@ afterAll(async () => {
  * cases were written against the bus that did read one: every one of them failed on it.
  */
 const busOnAPodSkewedBy = (at: number, skewMs: number): EventBus =>
-  createPgEventBus({
+  postgresEventBus({
     executor: pg.executor,
     // @ts-expect-error — `PgEventBusOptions` has no `clock`: every instant is the database's.
     clock: frozenClock(at + skewMs),
@@ -92,8 +92,8 @@ describe('the stored event bus keeps one clock', () => {
 describe('a wait against the stored bus is stamped by the database', () => {
   test('a worker whose clock is 5 s ahead still resumes on an event published after it asked', async () => {
     const at = await databaseNow();
-    const events = createPgEventBus({ executor: pg.executor });
-    const store = createMemoryStepStore();
+    const events = postgresEventBus({ executor: pg.executor });
+    const store = memoryStepStore();
     // The worker pod: 5 s ahead of the database that stamps every `published_at`.
     const attempt = (aheadMs: number): Promise<unknown> =>
       createStepRunner({
@@ -122,7 +122,7 @@ describe('the retention sweep shrinks x_job_events', () => {
   };
 
   test('expired rows are deleted and counted, live ones stay matchable', async () => {
-    const bus = createPgEventBus({ executor: pg.executor });
+    const bus = postgresEventBus({ executor: pg.executor });
     await bus.publish('otp', { code: 1 }, { ttl: 5_000 });
     await bus.publish('otp', { code: 2 }, { ttl: 5_000 });
     await bus.publish('otp', { code: 3 }, { ttl: '1h' });

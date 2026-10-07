@@ -9,7 +9,7 @@
 // re-read at the end: nothing is left behind.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
 import type { SchemaDescription } from './introspect';
@@ -167,7 +167,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   };
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: url ?? '' });
+    client = postgresClient({ url: url ?? '' });
     await clean();
   });
 

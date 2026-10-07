@@ -1,12 +1,10 @@
-// The drain values a helm deploy hands the chart. `http.drainTimeoutMs`, when the app declares it,
-// replaces the drain budget on the web role at boot (`createServer`), so the chart must be sized
-// for the LARGER of the two, or a web pod is SIGKILLed mid-drain at the smaller grace period.
+// The drain values a helm deploy hands the chart: `app.config.ts`'s `drain` section, the one drain
+// budget every role — the web role included — runs on since 25.0.0 deleted `http.drainTimeoutMs`.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
-import { resetHttpConfig } from '@ultimat3/http';
 import { helmDrainOverrides, readHelmDrainOverrides } from './cmd-deploy-drain';
 import { processRoot } from './process-root-fixture';
 
@@ -15,12 +13,11 @@ const ROOT = processRoot(join(import.meta.dir, '..', '.deploy-drain-fixture'));
 
 afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
-  resetHttpConfig();
 });
 
 describe('unit · the chart drain budget', () => {
-  test('is the app drain budget when no HTTP drain timeout is declared', () => {
-    expect(helmDrainOverrides({ deadlineMs: 30_000, readinessGraceMs: 5_000 }, undefined)).toEqual([
+  test('is the app drain budget, with the readiness grace beside it', () => {
+    expect(helmDrainOverrides({ deadlineMs: 30_000, readinessGraceMs: 5_000 })).toEqual([
       '--set',
       'drain.deadlineSeconds=30',
       '--set',
@@ -28,20 +25,12 @@ describe('unit · the chart drain budget', () => {
     ]);
   });
 
-  test('is the HTTP drain timeout when that is the larger, and never smaller than the budget', () => {
-    expect(helmDrainOverrides({ deadlineMs: 25_000 }, 120_500)).toContain(
-      'drain.deadlineSeconds=121',
-    );
-    expect(helmDrainOverrides({ deadlineMs: 60_000 }, 10_000)).toContain(
-      'drain.deadlineSeconds=60',
-    );
+  test('rounds a budget up to whole seconds, and an app with no config sends nothing', () => {
+    expect(helmDrainOverrides({ deadlineMs: 120_500 })).toContain('drain.deadlineSeconds=121');
+    expect(helmDrainOverrides(undefined)).toEqual([]);
   });
 
-  test('an HTTP timeout alone, on an app with no config, still sizes the chart', () => {
-    expect(helmDrainOverrides(undefined, 90_000)).toEqual(['--set', 'drain.deadlineSeconds=90']);
-  });
-
-  test('a booted app that declared configureHttp({ drainTimeoutMs }) is read at the deploy', async () => {
+  test("a deployed app's drain.deadlineMs is read off its app.config.ts", async () => {
     await rm(ROOT, { recursive: true, force: true });
     await Bun.write(
       join(ROOT, 'package.json'),
@@ -50,14 +39,8 @@ describe('unit · the chart drain budget', () => {
     await Bun.write(
       join(ROOT, 'app.config.ts'),
       "import { defineConfig } from '@ultimat3/core';\n" +
-        "export const config = defineConfig({ name: 'deploy-drain-fixture' });\n",
+        "export const config = defineConfig({ name: 'deploy-drain-fixture', drain: { deadlineMs: 180_000 } });\n",
     );
-    await Bun.write(
-      join(ROOT, 'apps', 'web', 'http.ts'),
-      "import { configureHttp } from '@ultimat3/http';\n" +
-        'configureHttp({ drainTimeoutMs: 180_000 });\n',
-    );
-    resetHttpConfig();
     expect(await readHelmDrainOverrides(ROOT)).toContain('drain.deadlineSeconds=180');
   }, 60_000);
 });

@@ -5,8 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
-import { createMemoryBackfillLedger } from './backfill-ledger';
-import { createPgDriver } from './driver-pg';
+import { memoryBackfillLedger } from './backfill-ledger';
+import { postgresJobDriver } from './driver-pg';
 
 const RUN_ID = '019ff1c5-0000-7000-8000-00000000beef';
 
@@ -37,7 +37,7 @@ const BAD: readonly unknown[] = ['x', 'order-42', '', RUN_ID.toUpperCase(), `${R
 
 describe('a ledger list filtered by a run id that is not a uuid', () => {
   test('the memory ledger refuses it with X_ID_INVALID, never an empty page', async () => {
-    const ledger = createMemoryBackfillLedger();
+    const ledger = memoryBackfillLedger();
     for (const runId of BAD) {
       const refused = await refusal(ledger.list({ runId: runId as string }));
       expect(refused.code).toBe('X_ID_INVALID');
@@ -47,7 +47,7 @@ describe('a ledger list filtered by a run id that is not a uuid', () => {
 
   test('the pg ledger refuses the same values BEFORE it issues a statement', async () => {
     const { executor, sql } = recording();
-    const ledger = createPgDriver({ executor }).backfills;
+    const ledger = postgresJobDriver({ executor }).backfills;
     if (ledger === undefined) return expect.unreachable('the pg driver ships a ledger');
     for (const runId of BAD) {
       const refused = await refusal(ledger.list({ runId: runId as string }));
@@ -57,16 +57,16 @@ describe('a ledger list filtered by a run id that is not a uuid', () => {
   });
 
   test('what was typed is described, never echoed: a mistyped id is as often a secret', async () => {
-    const refused = await refusal(createMemoryBackfillLedger().list({ runId: 'sk_live_abc' }));
+    const refused = await refusal(memoryBackfillLedger().list({ runId: 'sk_live_abc' }));
     expect(refused.cause).not.toContain('sk_live_abc');
   });
 
   test('a uuid, and no run id at all, are read as before — on both', async () => {
-    const memory = createMemoryBackfillLedger();
+    const memory = memoryBackfillLedger();
     expect(await memory.list({ runId: RUN_ID })).toEqual([]);
     expect(await memory.list()).toEqual([]);
     const { executor, sql } = recording();
-    const pg = createPgDriver({ executor }).backfills;
+    const pg = postgresJobDriver({ executor }).backfills;
     expect(await pg?.list({ runId: RUN_ID })).toEqual([]);
     expect(await pg?.list({})).toEqual([]);
     expect(sql).toHaveLength(2);

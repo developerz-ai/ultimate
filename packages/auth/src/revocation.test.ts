@@ -9,7 +9,7 @@ import { frozenClock, setLogSink } from '@ultimat3/core';
 import { issueApiKey, verifyApiKey } from './api-keys';
 import { type Auth, defineAuth } from './auth';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
 import {
   disableUser,
   enableUser,
@@ -22,7 +22,7 @@ import { createSession } from './session';
 const START = 1_700_000_000_000;
 
 const setup = async (): Promise<{ auth: Auth; adapter: MemoryAdapter }> => {
-  const adapter = new MemoryAdapter();
+  const adapter = memoryAuthAdapter();
   const auth = defineAuth({ adapter, clock: frozenClock(START) });
   const members: readonly [string, string | null][] = [
     ['alice', 'org-1'],

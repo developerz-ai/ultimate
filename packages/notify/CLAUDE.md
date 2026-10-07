@@ -55,7 +55,7 @@ A job body runs **before** its checkpoint lands, so both layers are load-bearing
 `attempt.ts` is the only place a send happens, so there is exactly one implementation of that order.
 The **one at-most-once seam** is a digest flush: `DigestStore.drain` empties the window, and a
 process killed between the drain and its checkpoint loses that batch. It is stated in `digest.ts`
-rather than hidden. `createPgDigestStore` makes the window itself durable and shared — the
+rather than hidden. `postgresDigestStore` makes the window itself durable and shared — the
 partial unique index `x_notify_digests_open_idx` lets two replicas' first appends collide so ONE
 opens the window and owns the flush; an elapsed open window is sealed and the append retried — but
 its `drain` is still a delete, so the seam is unchanged (`digest-parity.live.test.ts` runs one
@@ -103,7 +103,7 @@ off.
 `list`/`markRead`** (`As of 2026-09`). `markRead`'s contract is that an id belonging to nobody is
 *simply absent* — the memory store skips it — while the Postgres one bound the caller's ids into
 `any($2::uuid[])`, so one malformed id raised 22P02 out of the store and the nineteen good ids in
-the batch went unmarked. `createPgInboxStore` screens with `isUuid` before binding and answers `0`
+the batch went unmarked. `postgresInboxStore` screens with `isUuid` before binding and answers `0`
 with no round trip when nothing survives; the statement keeps its `::uuid[]` cast and its primary
 key index, which `id::text = any($2)` would have given up. And the memory `list` now sorts
 `(createdAt desc, notifier, key)` — the total order `SQL_NOTIFY_INBOX_PAGE` takes — because
@@ -111,8 +111,8 @@ key index, which `id::text = any($2)` would have given up. And the memory `list`
 can drop one and repeat the other.
 
 **The tail is `(notifier, key)` and never `id`, `As of 2026-09-06`.** Both stores had a tail and
-they were two different total orders: `createPgInboxStore` mints a UUIDv7 that Postgres compares by
-its 16 BYTES, while `createMemoryInboxStore` derives its id from
+they were two different total orders: `postgresInboxStore` mints a UUIDv7 that Postgres compares by
+its 16 BYTES, while `memoryInboxStore` derives its id from
 `JSON.stringify([recipient, notifier, key])` and compares by code point — so equal-`createdAt` rows
 came back one way in dev and the other in production, which is the drop-and-repeat the tail exists
 to prevent, on whichever driver nobody tested against. `(notifier, key)` is unique within a

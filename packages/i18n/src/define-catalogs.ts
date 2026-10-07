@@ -38,6 +38,18 @@ let declarations = 0;
  */
 export const catalogDeclarationCount = (): number => declarations;
 
+/**
+ * Every set `defineCatalogs()` returned in this process — held weakly, so a set nothing references
+ * is never kept alive by being asked about. `app-catalogs.ts` asks it of a module's exports: a
+ * module evaluates once, so on its second `import()` the count above has not moved, and the set it
+ * exports is the one fact left that it declared.
+ */
+const declaredSets = new WeakSet<object>();
+
+/** Whether `value` is a set some `defineCatalogs()` call returned — never a lookalike object. */
+export const isDeclaredCatalogSet = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && declaredSets.has(value);
+
 export function defineCatalogs<TLocales extends CatalogSources>(
   input: DefineCatalogsInput<TLocales>,
 ): CatalogSet<TLocales> {
@@ -62,10 +74,12 @@ export function defineCatalogs<TLocales extends CatalogSources>(
   declarations += 1;
 
   const catalogs = Object.fromEntries(loaded) as Readonly<Record<keyof TLocales & string, Catalog>>;
-  return {
+  const set: CatalogSet<TLocales> = {
     default: input.default,
     locales,
     catalogs,
     keys: () => catalogKeys(mergeCatalogs(...loaded.map(([, catalog]) => catalog))),
   };
+  declaredSets.add(set);
+  return set;
 }

@@ -7,9 +7,9 @@ import { frozenClock } from '@ultimat3/core';
 import { createPgliteClient, raw } from '@ultimat3/db';
 import type { AuthAdapter } from './adapter';
 import { defineAuth } from './auth';
-import { BuiltinAdapter } from './builtin-adapter';
+import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
-import { MemoryAdapter } from './memory-adapter';
+import { memoryAuthAdapter } from './memory-adapter';
 import { revokeSessionsCreatedBefore } from './revocation';
 import {
   createSession,
@@ -43,7 +43,7 @@ afterAll(async () => {
 });
 
 const fresh = (
-  make: (clock: ReturnType<typeof frozenClock>) => AuthAdapter = () => new MemoryAdapter(),
+  make: (clock: ReturnType<typeof frozenClock>) => AuthAdapter = () => memoryAuthAdapter(),
 ) => {
   const clock = frozenClock(START);
   const adapter = make(clock);
@@ -52,8 +52,8 @@ const fresh = (
 };
 
 const ADAPTERS = [
-  ['memory', () => new MemoryAdapter()],
-  ['postgres', (clock: ReturnType<typeof frozenClock>) => new BuiltinAdapter(client, clock)],
+  ['memory', () => memoryAuthAdapter()],
+  ['postgres', (clock: ReturnType<typeof frozenClock>) => postgresAuthAdapter(client, clock)],
 ] as const;
 
 const codeOf = async (call: Promise<unknown>): Promise<string> => {

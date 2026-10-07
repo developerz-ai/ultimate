@@ -10,14 +10,14 @@
 
 import type { Post } from '@postly/db';
 import { postId as toPostId } from '@postly/domain';
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { postExcerpts, withExcerpt } from './post-excerpts';
 
 // The job driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test file runs next.
 beforeAll(() => {
-  setJobDriver(createMemoryDriver());
+  setJobDriver(memoryJobDriver());
 });
 afterAll(resetJobDriver);
 

@@ -62,13 +62,13 @@ describe('unit · the scaffold authenticates through @ultimat3/auth', () => {
   // lockout limiter exist, and `defineAuth` reads both.
   test('the Auth instance is built lazily over the framework tables, never at import', () => {
     const auth = code(text('apps/web/app/auth/auth.ts'));
-    expect(auth).toContain('defineAuth({ adapter: new BuiltinAdapter() })');
+    expect(auth).toContain('defineAuth({ adapter: postgresAuthAdapter() })');
     expect(auth).toContain('built ??=');
   });
 
   test('the emitted tests cover the session, the fallback and the install', () => {
     const tests = text('apps/web/app/auth/authenticator.test.ts');
-    expect(tests).toContain('MemoryAdapter');
+    expect(tests).toContain('memoryAuthAdapter');
     expect(tests).toContain('installAuthenticator(');
     expect(files().map((file) => file.path)).toContain('apps/web/app/auth/dev-actor.test.ts');
   });

@@ -1,6 +1,6 @@
 // A `fix:` in this package may not tell the reader to edit `jobs.driver`.
 //
-// `JobsConfig.driver` was declared and read by NOTHING — boot always builds `createPgDriver`
+// `JobsConfig.driver` was declared and read by NOTHING — boot always builds `postgresJobDriver`
 // (`driver.ts`'s header states it, `dev-queue.ts` is where it happens). Six shipped `fix:` lines
 // named that field as the repair for `X_NOT_IMPLEMENTED`, so six error paths handed an agent an
 // instruction that changes nothing and returns it to the same throw. Axiom 4 asks for the exact
@@ -46,7 +46,7 @@ describe('fix lines', () => {
   test('the rule catches the string that actually shipped', () => {
     expect(DEAD_FIELD.test("set jobs: { driver: 'postgres' } in app.config.ts")).toBe(true);
     expect(DEAD_FIELD.test('or set jobs.driver in app.config.ts and run `x dev`')).toBe(true);
-    expect(DEAD_FIELD.test('call setJobDriver(createPgDriver()) at boot')).toBe(false);
+    expect(DEAD_FIELD.test('call setJobDriver(postgresJobDriver()) at boot')).toBe(false);
   });
 
   test('every fix: in this package is non-empty', () => {

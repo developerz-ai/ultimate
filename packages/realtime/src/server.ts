@@ -4,7 +4,7 @@
 // island realtime promises unbuildable. Every name here has exactly one home; the shared
 // vocabulary (the wire, the errors, `Row`, the backoff) stays on `@ultimat3/realtime`.
 
-export { type AdvisoryLock, InMemoryAdvisoryLock } from './advisory-lock';
+export { type AdvisoryLock, type InMemoryAdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
 // ---- the retained change window one node fans out from ------------------------------------------
 export {
   type ChangeBufferOptions,
@@ -19,11 +19,13 @@ export {
   type ChangeFeedStartOptions,
   type ChangeOp,
   formatLsn,
-  InMemoryChangeFeed,
+  type InMemoryChangeFeed,
   type InMemoryChangeFeedOptions,
-  PgLogicalReplicationFeed,
+  memoryChangeFeed,
+  type PgLogicalReplicationFeed,
   type PgLogicalReplicationOptions,
   parseLsn,
+  postgresChangeFeed,
 } from './changefeed';
 export {
   type ChangeFeedSelection,
@@ -114,7 +116,11 @@ export {
 export { decodeToken, encodeToken, NatsKvSet, type NatsKvSetOptions } from './nats-kv';
 export { openNatsClient } from './nats-open';
 export { NatsTransport, type NatsTransportOptions } from './nats-transport';
-export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
+export {
+  type PgAdvisoryLock,
+  type PgAdvisoryLockOptions,
+  postgresAdvisoryLock,
+} from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
 export { entityRow } from './pg-entity-row';
 export { paramsChannelTables } from './pg-identity-tables';
@@ -130,11 +136,10 @@ export { answersWeakAuth } from './pg-tls';
 // `entityRow`'s: a caller naming either type has to be able to name what is inside one.
 export { decodeValue, type PhysicalRow, type PhysicalValue } from './pg-values';
 export type { PgStream } from './pg-wire';
-export {
-  type PgColumn,
-  PgOutputDecoder,
-  type PgOutputMessage,
-  type PgRelation,
+export type {
+  PgColumn,
+  PgOutputMessage,
+  PgRelation,
 } from './pgoutput';
 export { authorizeWithPolicy, type GateOptions, visibleWithPolicy } from './policy-gate';
 export {

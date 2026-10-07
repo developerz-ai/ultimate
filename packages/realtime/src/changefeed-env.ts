@@ -6,10 +6,10 @@
 import type { Clock } from '@ultimat3/core';
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { AdvisoryLock } from './advisory-lock';
-import { InMemoryAdvisoryLock } from './advisory-lock';
+import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeFeed } from './changefeed';
-import { InMemoryChangeFeed, PgLogicalReplicationFeed } from './changefeed';
-import { PgAdvisoryLock } from './pg-advisory-lock';
+import { memoryChangeFeed, postgresChangeFeed } from './changefeed';
+import { postgresAdvisoryLock } from './pg-advisory-lock';
 import type { PgTarget } from './pg-socket';
 import { parsePgUrl } from './pg-socket';
 import type { PgStream } from './pg-wire';
@@ -105,12 +105,12 @@ export function selectChangeFeed(
 
   if (url === undefined) {
     return {
-      feed: new InMemoryChangeFeed(options.retain === undefined ? {} : { retain: options.retain }),
+      feed: memoryChangeFeed(options.retain === undefined ? {} : { retain: options.retain }),
       mode: 'embedded',
       detail: 'in-process change feed — set DATABASE_URL to decode a real WAL',
       slot: null,
       // Single-process mutual exclusion, which is all one process needs and all it can enforce.
-      lock: new InMemoryAdvisoryLock(replicatorLockKey(DEFAULT_REPLICATION_SLOT)),
+      lock: memoryAdvisoryLock(replicatorLockKey(DEFAULT_REPLICATION_SLOT)),
     };
   }
 
@@ -122,7 +122,7 @@ export function selectChangeFeed(
   return {
     // Slot and publication are validated inside the feed, against the same identifier rule the
     // replication command needs — a second copy of that regex here is a second thing to keep true.
-    feed: new PgLogicalReplicationFeed({
+    feed: postgresChangeFeed({
       url,
       slot,
       publication: nonEmpty(env['REPLICATION_PUBLICATION']) ?? DEFAULT_REPLICATION_PUBLICATION,
@@ -136,7 +136,7 @@ export function selectChangeFeed(
     slot,
     // Taken on the same database the feed reads, so the lock and the slot cannot end up in
     // different places — which is the only way "exactly one replicator" could quietly become two.
-    lock: new PgAdvisoryLock({
+    lock: postgresAdvisoryLock({
       url,
       key: replicatorLockKey(slot),
       stream: options.stream,

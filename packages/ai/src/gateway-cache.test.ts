@@ -4,11 +4,15 @@
 // recorded call turned the answer into a failure the caller retried and paid for twice.
 
 import { describe, expect, test } from 'bun:test';
-import { MemoryBudgetStore } from './budget';
+import { memoryBudgetStore } from './budget';
 import { EchoProvider } from './echo-provider';
 import { cacheKeyFor, createGateway } from './gateway';
+import { useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
 import type { LlmTool } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const respond = (properties: NonNullable<LlmTool['input_schema']['properties']>): LlmTool => ({
   name: 'respond',
@@ -54,7 +58,7 @@ describe('cacheKeyFor', () => {
 
 describe('a cache that cannot write', () => {
   test('the paid answer still reaches the caller, billed once', async () => {
-    const store = new MemoryBudgetStore();
+    const store = memoryBudgetStore();
     let calls = 0;
     const echo = new EchoProvider();
     const gateway = createGateway({

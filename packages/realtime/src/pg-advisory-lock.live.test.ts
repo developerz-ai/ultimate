@@ -11,7 +11,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { selectChangeFeed } from './changefeed-env';
-import { PgAdvisoryLock } from './pg-advisory-lock';
+import { type PgAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
@@ -23,7 +23,7 @@ const KEY = 'x:replicator:x_live_lock_slot';
 const held: PgAdvisoryLock[] = [];
 
 const lock = (key = KEY): PgAdvisoryLock => {
-  const made = new PgAdvisoryLock({ url: url ?? '', key });
+  const made = postgresAdvisoryLock({ url: url ?? '', key });
   held.push(made);
   return made;
 };

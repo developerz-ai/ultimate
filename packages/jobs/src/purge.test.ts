@@ -9,7 +9,7 @@ import type { PurgeReport, PurgeTarget } from './purge';
 import { DEFAULT_PURGE_CRON, purge } from './purge';
 import type { StepStore } from './steps';
 import { createStepRunner } from './steps';
-import { createMemoryStepStore } from './steps-memory';
+import { memoryStepStore } from './steps-memory';
 
 const START_MS = 1_700_000_000_000;
 
@@ -84,7 +84,7 @@ describe('purge()', () => {
       },
     });
 
-    const report = await attempt(handle, createMemoryStepStore());
+    const report = await attempt(handle, memoryStepStore());
 
     expect(first.at).toEqual([START_MS]);
     expect(second.at).toEqual([START_MS]);
@@ -106,7 +106,7 @@ describe('purge()', () => {
     };
     let targets: readonly PurgeTarget[] = [kept, failing];
     const handle = purge({ name: 'retention', clock, targets: () => targets });
-    const store = createMemoryStepStore();
+    const store = memoryStepStore();
 
     await attempt(handle, store).catch(() => undefined);
     expect(kept.at).toHaveLength(1);
@@ -128,12 +128,12 @@ describe('purge()', () => {
     });
     // `step.run` would raise `X_STEP_DUPLICATE` on the second one — after the first table had
     // already been emptied by a pass that then dead-letters.
-    expect(await codeOf(attempt(handle, createMemoryStepStore()))).toBe('X_INVARIANT');
+    expect(await codeOf(attempt(handle, memoryStepStore()))).toBe('X_INVARIANT');
   });
 
   test('an empty target list is a pass that removes nothing', async () => {
     const handle = purge({ name: 'retention', targets: () => [] });
-    expect(await attempt(handle, createMemoryStepStore())).toEqual({ swept: [], removed: 0 });
+    expect(await attempt(handle, memoryStepStore())).toEqual({ swept: [], removed: 0 });
   });
 
   test('the shipped cron is hourly and off the hour', () => {

@@ -8,7 +8,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { job, resetJobs } from './job';
 import type { HeldLease } from './leases';
-import { createMemoryLeaseStore, jobLeaseKey } from './leases';
+import { jobLeaseKey, memoryLeaseStore } from './leases';
 import { createFleetSlots } from './worker-fleet-slots';
 
 const passthrough: StandardSchemaV1<unknown, Record<string, never>> = {
@@ -43,7 +43,7 @@ function fixture() {
     concurrency: 2,
     run: () => Promise.resolve(),
   });
-  const leases = createMemoryLeaseStore();
+  const leases = memoryLeaseStore();
   /** Renewals armed by hand: each `tick` is one interval passing. */
   const ticks: (() => void)[] = [];
   const slots = createFleetSlots({

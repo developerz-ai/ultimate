@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import { HashEmbedder, normalize } from './embeddings';
 import { assembleContext, chunk } from './rag';
-import { fuse, MemoryVectorStore } from './vector';
+import { fuse, type MemoryVectorStore, memoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
@@ -20,7 +20,7 @@ const UNNORMALISED = [
  * vector likes best.
  */
 async function seeded(): Promise<MemoryVectorStore> {
-  const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+  const store = memoryVectorStore({ dimension: 4, name: 'docs' });
   await store.upsert([
     {
       id: 'drift',
@@ -89,7 +89,7 @@ describe('hybrid search', () => {
  */
 describe('scope', () => {
   const seedTenants = async (): Promise<MemoryVectorStore> => {
-    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    const store = memoryVectorStore({ dimension: 4, name: 'docs' });
     await store
       .scoped({ tenant: 'acme' })
       .upsert([
@@ -116,7 +116,7 @@ describe('scope', () => {
   });
 
   test('an allow-list is default deny: a row missing the key is invisible', async () => {
-    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    const store = memoryVectorStore({ dimension: 4, name: 'docs' });
     await store.upsert([
       {
         id: 'tagged',
@@ -138,7 +138,7 @@ describe('scope', () => {
   });
 
   test('a derived scope may only tighten', async () => {
-    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    const store = memoryVectorStore({ dimension: 4, name: 'docs' });
     expect(store.scope).toEqual({});
     expect(() => store.scoped({ tenant: 'acme' }).scoped({ tenant: 'globex' })).toThrow(
       /X_VECTOR_SCOPE_WIDENED/,
@@ -159,7 +159,7 @@ describe('scope', () => {
  */
 describe('pg parity', () => {
   test('memory search ranks by cosine, not magnitude (pg parity)', async () => {
-    const store = new MemoryVectorStore({ dimension: 4 });
+    const store = memoryVectorStore({ dimension: 4 });
     await store.upsert(UNNORMALISED);
     const hits = await store.search(Float32Array.from([2, 0, 0, 0]), 10);
     expect(hits.map((hit) => hit.id)).toEqual(['aligned', 'long', 'blank']);
@@ -173,7 +173,7 @@ describe('pg parity', () => {
   test('unscoped hybrid keeps same-id rows of two tenants apart', async () => {
     // pg fuses on `group by "tenant", "id"`. Fusing on `id` alone summed globex's ranks into acme's
     // row and dropped globex's — a merged score for a document neither tenant has.
-    const store = new MemoryVectorStore({ dimension: 4 });
+    const store = memoryVectorStore({ dimension: 4 });
     const row = { id: 'a', text: 'invoice policy', vector: vec(1, 0, 0, 0) };
     await store.scoped({ tenant: 'acme' }).upsert([{ ...row, metadata: { owner: 'acme' } }]);
     await store.scoped({ tenant: 'globex' }).upsert([{ ...row, metadata: { owner: 'globex' } }]);
@@ -315,17 +315,17 @@ describe('a bound that is not a number is refused, in the store a developer runs
 
   test('the BM25 constants are screened where they are declared', () => {
     for (const value of NOT_A_BOUND) {
-      expect(refusal(() => new MemoryVectorStore({ dimension: 4, k1: value })).code).toBe(
+      expect(refusal(() => memoryVectorStore({ dimension: 4, k1: value })).code).toBe(
         'X_INVARIANT',
       );
-      expect(refusal(() => new MemoryVectorStore({ dimension: 4, b: value })).cause).toContain('b');
+      expect(refusal(() => memoryVectorStore({ dimension: 4, b: value })).cause).toContain('b');
     }
     // Fractional and finite is the whole point of these two: 1.2 and 0.75 are the paper's values.
-    expect(() => new MemoryVectorStore({ dimension: 4, k1: 1.6, b: 0.5 })).not.toThrow();
+    expect(() => memoryVectorStore({ dimension: 4, k1: 1.6, b: 0.5 })).not.toThrow();
   });
 
   test('the hybrid read refuses k, candidates and rrfK, and names which one', async () => {
-    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    const store = await seed(memoryVectorStore({ dimension: 4 }));
     const query = { query: 'schema', vector: vec(1, 0, 0, 0) };
     const k = await asyncRefusal(() => store.hybrid({ ...query, k: Number.NaN }));
     expect(k.code).toBe('X_INVARIANT');
@@ -340,7 +340,7 @@ describe('a bound that is not a number is refused, in the store a developer runs
   });
 
   test('a k with no default is screened on the plain reads too', async () => {
-    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    const store = await seed(memoryVectorStore({ dimension: 4 }));
     expect((await asyncRefusal(() => store.search(vec(1, 0, 0, 0), Number.NaN))).cause).toContain(
       'k',
     );
@@ -357,7 +357,7 @@ describe('a bound that is not a number is refused, in the store a developer runs
   });
 
   test('an honest hybrid read still ranks — the non-vacuity half', async () => {
-    const store = await seed(new MemoryVectorStore({ dimension: 4 }));
+    const store = await seed(memoryVectorStore({ dimension: 4 }));
     const hits = await store.hybrid({ query: 'schema', vector: vec(1, 0, 0, 0), k: 2 });
     expect(hits).toHaveLength(2);
     expect(hits.every((hit) => Number.isFinite(hit.score))).toBe(true);

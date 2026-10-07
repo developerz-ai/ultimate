@@ -5,5 +5,5 @@
 
 /** `?_first=20` — the page size. Present is what makes the route answer a `Page`. */
 export const PAGE_FIRST_KEY = '_first';
-/** `?_after=<cursor>` — the signed cursor the previous page's `endCursor` carried. */
+/** `?_after=<cursor>` — the signed cursor the previous page's `nextCursor` carried. */
 export const PAGE_AFTER_KEY = '_after';

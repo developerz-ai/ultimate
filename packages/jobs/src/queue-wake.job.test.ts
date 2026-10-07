@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:tes
 import { createContext } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { JobDriver } from './driver';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import {
   JOBS_WAKE_CHANNEL,
   OUTBOX_WAKE_CHANNEL,
@@ -20,11 +20,11 @@ import { embeddedPg } from './embedded-pg-fixture';
 import { setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
-import { createPgOutboxStore } from './outbox-pg';
+import { postgresOutboxStore } from './outbox-pg';
 import { createOutboxRelay } from './outbox-relay';
 import type { QueueWake } from './queue-wake';
 import { startQueueWake } from './queue-wake';
-import { pgSchedulerState } from './scheduler-pg';
+import { postgresSchedulerState } from './scheduler-pg';
 import { createWorker } from './worker';
 import type { Worker } from './worker-types';
 
@@ -100,7 +100,7 @@ const enqueue = (
 /** A worker on its own driver, started, and idled until its wait is past `ms`. */
 async function idleWorker(ms: number, idlePollMaxMs = 60_000): Promise<Worker> {
   const worker = createWorker({
-    driver: createPgDriver({ executor: pg.executor }),
+    driver: postgresJobDriver({ executor: pg.executor }),
     pollIntervalMs: FLOOR_MS,
     idlePollMaxMs,
     heartbeatIntervalMs: 3_600_000,
@@ -123,7 +123,7 @@ async function liveWake(): Promise<QueueWake> {
 
 describe('what a statement announces', () => {
   test('an enqueue notifies its QUEUE NAME and nothing else, once per slot', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const handle = itemJob({ run: () => Promise.resolve() });
     await enqueue(driver, handle.name, 'a', { queue: 'mail' });
     await enqueue(driver, handle.name, 'b', { queue: 'mail' });
@@ -139,7 +139,7 @@ describe('what a statement announces', () => {
   });
 
   test('a row that is not about to be claimable, or was never inserted, announces nothing', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const handle = itemJob({ run: () => Promise.resolve() });
     // Delayed well past what a woken worker would wait out.
     await enqueue(driver, handle.name, 'later', { runAt: Date.now() + 60_000 });
@@ -159,7 +159,7 @@ describe('what a statement announces', () => {
   test('an outbox stage notifies on COMMIT, never on rollback, and not behind a row already waiting', async () => {
     const tx = { id: 'tx' } as unknown as Tx;
     let bound = pg.executor;
-    const store = createPgOutboxStore({ executor: pg.executor, txExecutor: () => bound });
+    const store = postgresOutboxStore({ executor: pg.executor, txExecutor: () => bound });
     const row = (id: string) => ({
       id,
       runId: id,
@@ -206,8 +206,8 @@ describe('what a statement announces', () => {
   });
 
   test('a scheduler fire announces each queue it filled once, and a refused fire announces nothing', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
-    const state = pgSchedulerState(pg.executor);
+    const driver = postgresJobDriver({ executor: pg.executor });
+    const state = postgresSchedulerState(pg.executor);
     const jobs = ['a', 'b', 'c'].map((item, index) => ({
       name: 'nightly',
       queue: index === 2 ? 'mail' : 'reports',
@@ -228,7 +228,7 @@ describe('what a statement announces', () => {
   });
 
   test('an operator repair is announced: requeue, promote, resume', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const operator = driver.introspect;
     if (operator === undefined)
       return expect.unreachable('the pg driver ships an operator surface');
@@ -272,7 +272,7 @@ describe('the loops it wakes', () => {
     });
     await idleWorker(400);
 
-    const other = createPgDriver({ executor: pg.executor });
+    const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
     await until(() => started.length === 1, 2_000);
@@ -292,7 +292,7 @@ describe('the loops it wakes', () => {
     const ceiling = 400;
     await idleWorker(ceiling, ceiling);
 
-    const other = createPgDriver({ executor: pg.executor });
+    const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'polled');
     // Nothing told the worker: where the wake starts the job, this one is still waiting.
@@ -314,8 +314,8 @@ describe('the loops it wakes', () => {
       },
     });
     await idleWorker(400);
-    const driver = createPgDriver({ executor: pg.executor });
-    const relayStore = createPgOutboxStore({
+    const driver = postgresJobDriver({ executor: pg.executor });
+    const relayStore = postgresOutboxStore({
       executor: pg.executor,
       txExecutor: () => pg.executor,
     });
@@ -332,7 +332,7 @@ describe('the loops it wakes', () => {
 
     // The web pod: its own store, its own transaction, no signal raised in this process.
     let bound = pg.executor;
-    const webStore = createPgOutboxStore({ executor: pg.executor, txExecutor: () => bound });
+    const webStore = postgresOutboxStore({ executor: pg.executor, txExecutor: () => bound });
     const before = performance.now();
     await pg.transaction(async (executor) => {
       bound = executor;
@@ -357,7 +357,7 @@ describe('the loops it wakes', () => {
     expect(wake.live()).toBe(true);
     await wake.stop();
     expect(wakeIsLive()).toBe(false);
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const handle = itemJob({ run: () => Promise.resolve() });
     await enqueue(driver, handle.name, 'after-stop');
     // The statement still announces — the session that would have heard it is gone.

@@ -78,12 +78,10 @@ export interface JobDriver {
 |---|---|---|---|
 | `pg` (default) | `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_rate_buckets` | yes | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
 | `memory` | in-process maps, lost with the process | yes | tests and `x dev` only — nothing survives a restart, so it is never a deployment target |
-| `redis` | streams + consumer groups, outbox relay in front | no | high throughput, short jobs; loses "queue state in one backup" |
-| `nats` | JetStream, outbox relay in front | no | strongest delivery semantics, most operational surface. `As of 2026-08-22` `claim` throws `X_NOT_IMPLEMENTED`. There is no driver switch to answer with: `JobsConfig.driver` accepted `postgres`/`redis`/`nats`, had no reader anywhere, and boot always built the Postgres driver — so it was deleted in 5.0.0 and Postgres is simply what runs |
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on all four. Switching is the `setJobDriver(…)` call at boot plus `x jobs drain --to redis` for in-flight rows — a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`): `redis` and `nats` are stubs, so there is nowhere durable to drain to.
+Because `steps` is a driver member, step persistence works identically on both. There is no NATS or Redis jobs driver: both all-throw stubs were deleted in 25.0.0. Switching is the `setJobDriver(…)` call at boot plus `x jobs drain --to <driver>` for in-flight rows — a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`): no second durable driver ships, so there is nowhere to drain to.
 
 ## The pg claim loop
 
@@ -150,7 +148,7 @@ a lapsed row, or buries it on its final attempt.
 
 ## Scheduler leader election
 
-`scheduler` is fixed-1 by design. Election is an **expiring row**, `createPgLeaseLeader`
+`scheduler` is fixed-1 by design. Election is an **expiring row**, `postgresLeaseLeader`
 ([`packages/jobs/src/scheduler-pg.ts`](../../packages/jobs/src/scheduler-pg.ts)) — one row per
 `lock_key` in `x_scheduler_leader`, holder plus expiry, and `acquire()` is also the renewal.
 
@@ -161,7 +159,7 @@ explicit unlock, the pool's reset on release, or the connection dying, and the r
 may run on a different connection entirely. Both endings break election: a lock stranded on a
 backend nobody can release, and a lock dropped by a reset mid-round while the node still believes it
 leads — a rolling update double-fires every task.
-`createPgLeader` does not exist; `@ultimat3/realtime`'s `PgAdvisoryLock` solves the same problem by
+`postgresLeader` (`driver-pg.ts`, the advisory-lock leader) is correct only on a DEDICATED connection, so the scheduler never uses it; `@ultimat3/realtime`'s `postgresAdvisoryLock()` solves the same problem by
 owning its connection, and this package holds no wire protocol, so it solves it with a row.
 
 | Property | Detail |
@@ -172,7 +170,7 @@ owning its connection, and this package holds no wire protocol, so it solves it 
 | A non-leader | stays a warm standby and never dispatches. It reports **no** readiness — the `scheduler` role opens no HTTP socket at all, only the metrics listener on `DEFAULT_METRICS_PORT` (`packages/cli/src/metrics-endpoint.ts:22-26`) |
 | Crash | the lease is reclaimed by expiry, with nothing to clean up — the one property the advisory lock had, and one a plain `insert … on conflict do nothing` would not |
 | Single node | `soleLeader()`, which acquires unconditionally |
-| Missed tick | decided against the durable watermark in `x_scheduler_state` (`pgSchedulerState`), per `catchUp` — `skip` (default), `run-once` or `run-all` bounded by `maxCatchUp` |
+| Missed tick | decided against the durable watermark in `x_scheduler_state` (`postgresSchedulerState`), per `catchUp` — `skip` (default), `run-once` or `run-all` bounded by `maxCatchUp` |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` |
 | `replicator` | a second container never double-delivers: it stays up, `/readyz` 503, and asks for the lock again on a backoff until the holder goes. Only `x dev --role replicator` refuses, with `X_REPLICATOR_SLOT_HELD` |
 
@@ -300,7 +298,7 @@ await onboardOrg.enqueue({ org: { ...30 fields } });  // ❌ a record
 
 | Consequence of a payload-as-record | Detail |
 |---|---|
-| Draining or migrating the queue loses business facts | `x jobs drain --to redis` must be a boring operation |
+| Draining or migrating the queue loses business facts | `x jobs drain --to <driver>` must be a boring operation, the day a second durable driver ships |
 | A stale payload overwrites newer state on retry | the job re-applies values captured minutes ago |
 | The truth is unqueryable | "which orgs are mid-onboarding" needs a table, not a queue scan |
 | Step results are not business state either | they are a replay memo with a retention window; if a fact must survive, write it in a step |
@@ -317,9 +315,9 @@ Rule: after the queue is wiped, the business must be reconstructible from Postgr
 | `X_JOB_TIMEOUT` | the job exceeded its wall-clock limit | `raise timeout on the job definition, or split the work into step.run() calls` |
 | `X_JOB_LEASE_LOST` | the queue took this job back mid-run | `x jobs show <id> --json` |
 | `X_JOB_SLOT_LOST` | the fleet concurrency slot was taken by another worker | `x jobs ls --state running --json` |
-| `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `call setJobDriver(createPgDriver({ executor })) at boot, then: x jobs cancel <id> --json` |
+| `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `call setJobDriver(postgresJobDriver({ executor })) at boot, then: x jobs cancel <id> --json` |
 | `X_JOB_TENANT_REQUIRED` | the job declares no tenant | `add tenant: (input) => input.orgId to the job — or tenant: 'none', which declares NO org` |
-| `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or call setJobDriver(createPgDriver({ executor }))` |
+| `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or call setJobDriver(postgresJobDriver({ executor }))` |
 | `X_OUTBOX_NO_TX` | `enqueue` outside a transaction | `wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }` |
 | `X_DRIVER_UNAVAILABLE` | the queue driver is unreachable | the factory takes the `fix` from the driver — it names the connection to repair |
-| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `call setJobDriver(createPgDriver({ executor })) at boot` |
+| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `call setJobDriver(postgresJobDriver({ executor })) at boot` |

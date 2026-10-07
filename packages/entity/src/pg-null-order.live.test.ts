@@ -5,10 +5,11 @@
 // about where the NULLs sit: a text assertion cannot, and `memoryRepo` sorts by its own rule.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { Page } from '@ultimat3/core';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   setDbClient,
   statementsOf,
@@ -19,7 +20,6 @@ import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
-import type { Page } from './repo';
 import type { SortDirection } from './tenancy';
 
 const adminUrl = Bun.env['TEST_DATABASE_URL'];
@@ -66,7 +66,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a nullable sort key', () => {
   let client: PostgresClient;
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     const migration = generateMigration({

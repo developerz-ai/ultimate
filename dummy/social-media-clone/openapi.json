@@ -565,7 +565,7 @@
             }
           },
           {
-            "description": "the nextCursor (alias endCursor) a previous page answered; needs _first",
+            "description": "the nextCursor a previous page answered; needs _first",
             "in": "query",
             "name": "_after",
             "required": false,
@@ -585,24 +585,35 @@
                       "type": "array"
                     },
                     {
-                      "properties": {
-                        "endCursor": {
-                          "description": "alias of nextCursor — the same value",
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": true
+                            },
+                            "nextCursor": {
+                              "type": "string"
+                            }
+                          }
                         },
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": false
+                            },
+                            "nextCursor": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
                         "hasMore": {
                           "description": "whether another page follows",
                           "type": "boolean"
                         },
-                        "hasNextPage": {
-                          "description": "alias of hasMore — the same value",
-                          "type": "boolean"
-                        },
                         "nextCursor": {
-                          "description": "the signed cursor that continues this listing — send it as _after; null on an empty page",
+                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
                           "type": [
                             "string",
                             "null"
@@ -616,9 +627,7 @@
                       "required": [
                         "rows",
                         "nextCursor",
-                        "hasMore",
-                        "endCursor",
-                        "hasNextPage"
+                        "hasMore"
                       ],
                       "type": "object"
                     }
@@ -686,7 +695,7 @@
             }
           },
           {
-            "description": "the nextCursor (alias endCursor) a previous page answered; needs _first",
+            "description": "the nextCursor a previous page answered; needs _first",
             "in": "query",
             "name": "_after",
             "required": false,
@@ -706,24 +715,35 @@
                       "type": "array"
                     },
                     {
-                      "properties": {
-                        "endCursor": {
-                          "description": "alias of nextCursor — the same value",
-                          "type": [
-                            "string",
-                            "null"
-                          ]
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": true
+                            },
+                            "nextCursor": {
+                              "type": "string"
+                            }
+                          }
                         },
+                        {
+                          "properties": {
+                            "hasMore": {
+                              "const": false
+                            },
+                            "nextCursor": {
+                              "type": "null"
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
                         "hasMore": {
                           "description": "whether another page follows",
                           "type": "boolean"
                         },
-                        "hasNextPage": {
-                          "description": "alias of hasMore — the same value",
-                          "type": "boolean"
-                        },
                         "nextCursor": {
-                          "description": "the signed cursor that continues this listing — send it as _after; null on an empty page",
+                          "description": "the signed cursor for the next page — send it as _after; null exactly when hasMore is false",
                           "type": [
                             "string",
                             "null"
@@ -737,9 +757,7 @@
                       "required": [
                         "rows",
                         "nextCursor",
-                        "hasMore",
-                        "endCursor",
-                        "hasNextPage"
+                        "hasMore"
                       ],
                       "type": "object"
                     }

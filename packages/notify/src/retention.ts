@@ -37,7 +37,7 @@ export async function purgeNotifyInbox(before: InboxPurgeBefore): Promise<number
 
 /**
  * Delete delivery claims past the ledger's own window, and answer how many. The window is the
- * LEDGER's, never this caller's: `createPgDeliveryLedger({ windowMs })` is where an app states it,
+ * LEDGER's, never this caller's: `postgresDeliveryLedger({ windowMs })` is where an app states it,
  * beside the statement that reads it, so there is one number rather than two that can disagree.
  *
  * `nowMs` is the job's clock for the reason `x_rate_limit`'s target states — `at` is written by

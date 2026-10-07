@@ -14,7 +14,6 @@ import { action } from './action';
 import { ActionDeniedError } from './errors';
 import { toOpenApiOperation } from './http';
 import { toJobHandle } from './job-handle';
-import { toMcpTool } from './mcp-tool';
 import type { LocalTable, LocalTx } from './mutator';
 import { mutator } from './mutator';
 
@@ -43,7 +42,6 @@ const FACADE_MEMBERS = [
   'policy',
   'mcp',
   'as',
-  'tool',
   'openapi',
   'client',
   'job',
@@ -69,16 +67,10 @@ describe('the action DSL surface', () => {
     expect('mcp' in target).toBe(false);
   });
 
-  test('.tool() delegates to toMcpTool() — same data, same policy reference', () => {
-    const target = defineTarget();
-    const direct = toMcpTool(target);
-    const viaFacade = target.tool();
-    expect(viaFacade.name).toBe(direct.name);
-    expect(viaFacade.action).toBe(direct.action);
-    expect(viaFacade.description).toBe(direct.description);
-    expect(viaFacade.inputSchema).toEqual(direct.inputSchema);
-    expect(viaFacade.outputSchema).toEqual(direct.outputSchema);
-    expect(viaFacade.policy).toBe(direct.policy);
+  // O-tool, 25.0.0: the MCP tool is `@ultimat3/mcp`'s one projection. A `.tool()` here was a
+  // second one, and the member list above would not notice it coming back — this does.
+  test('there is no `.tool()` — the MCP tool is not this package’s projection', () => {
+    expect(defineTarget()).not.toHaveProperty('tool');
   });
 
   test('.openapi() delegates to toOpenApiOperation() verbatim', () => {
@@ -105,19 +97,10 @@ describe('the action DSL surface', () => {
     expect(contracts.every((contract) => typeof contract.run === 'function')).toBe(true);
   });
 
-  // The DSL's central claim: no surface reaches a second authz object. `.tool()`
-  // exposes the action to MCP, `.policy` is what `invoke` enforces on every call —
-  // if these were ever two different objects, an MCP call could diverge from HTTP.
-  test('a.tool().policy === a.policy — one authz object across every surface', () => {
-    const target = defineTarget();
-    expect(target.tool().policy).toBe(target.policy);
-  });
-
   test('a named twin carries the same façade — naming never rebuilds it', () => {
     const target = defineTarget();
     const twin = target.named('dslPublishPostTwin');
     expect(twin.policy).toBe(target.policy);
-    expect(twin.tool().policy).toBe(twin.policy);
     for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS]) {
       expect(twin).toHaveProperty(member);
     }
@@ -208,20 +191,8 @@ describe('the mutator DSL surface', () => {
     expect((denied as ActionDeniedError).code).toBe('X_UNAUTHENTICATED');
   });
 
-  test('.tool() delegates to toMcpTool() — same data, same policy reference', () => {
-    const target = defineMutatorTarget();
-    const direct = toMcpTool(target);
-    const viaFacade = target.tool();
-    expect(viaFacade.name).toBe(direct.name);
-    expect(viaFacade.policy).toBe(direct.policy);
-  });
-
-  // Same central claim as the action façade above, pinned again for the mutator
-  // instance specifically: wrapping (`mutator.ts`'s `wrap()`) must never fork the
-  // policy the action itself carries — `.tool()` and `.server()` decide from one object.
-  test('a.tool().policy === a.policy — one authz object across every surface', () => {
-    const target = defineMutatorTarget();
-    expect(target.tool().policy).toBe(target.policy);
+  test('a mutator has no `.tool()` either — wrapping adds no projection', () => {
+    expect(defineMutatorTarget()).not.toHaveProperty('tool');
   });
 
   test('a named twin carries the same façade — naming never rebuilds it', () => {
@@ -229,7 +200,6 @@ describe('the mutator DSL surface', () => {
     const twin = target.named('dslLikePostTwin');
     expect(twin.policy).toBe(target.policy);
     expect(twin.conflict).toBe(target.conflict);
-    expect(twin.tool().policy).toBe(twin.policy);
     for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS, ...MUTATOR_MEMBERS]) {
       expect(twin).toHaveProperty(member);
     }

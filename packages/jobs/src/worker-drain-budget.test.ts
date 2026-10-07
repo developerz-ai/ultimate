@@ -18,7 +18,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker, type Worker } from './worker';
 
@@ -54,7 +54,7 @@ async function rig(options: { jobMs: number }): Promise<Rig> {
   const isRunning = new Promise<void>((resolve) => {
     started = resolve;
   });
-  const base = createMemoryDriver();
+  const base = memoryJobDriver();
   const driver: JobDriver = {
     ...base,
     async close(): Promise<void> {

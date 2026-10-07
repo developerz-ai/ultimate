@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { collectMetrics } from '@ultimat3/core';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { trackPool } from './pool-gauge';
 import { sql } from './sql';
 
@@ -77,7 +77,7 @@ function installGatedSql(): { settle(): void; failNext(): void } {
 }
 
 const client = (max: number): PostgresClient => {
-  const created = createPostgresClient({ url: TEST_URL, role: 'web', profile: { max } });
+  const created = postgresClient({ url: TEST_URL, role: 'web', profile: { max } });
   opened.push(created);
   return created;
 };

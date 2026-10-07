@@ -5,7 +5,7 @@
 // `TEST_DATABASE_URL` is set, the same convention as `pg-driver.live.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import type {
   ColumnDescriptionLike,
@@ -24,7 +24,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate advisory lock', () =>
   const clients: PostgresClient[] = [];
 
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     clients.push(client);
     return client;
   };
@@ -135,7 +135,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a script', ()
   const clients: PostgresClient[] = [];
 
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     clients.push(client);
     return client;
   };
@@ -227,7 +227,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite i
   const clients: PostgresClient[] = [];
 
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     clients.push(client);
     return client;
   };
@@ -342,7 +342,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key
   const clients: PostgresClient[] = [];
 
   const freshClient = (): PostgresClient => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     clients.push(client);
     return client;
   };
@@ -460,7 +460,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate under an image rollba
   };
 
   test('the older build accepts the newer rows, applies nothing, and names them', async () => {
-    const client = createPostgresClient({ url: url ?? '' });
+    const client = postgresClient({ url: url ?? '' });
     try {
       await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
       await client.execute(raw('drop table if exists "live_rollback_base"'));

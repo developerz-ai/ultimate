@@ -59,7 +59,7 @@ where recipient = $2 and notifier = $3 and key = $4
  * `unique (recipient, notifier, key)`, so the order is total and a bounded page cannot drop or
  * repeat a row when two notifications land in the same millisecond.
  *
- * `collate "C"` and not the column's collation: `createMemoryInboxStore` compares the same two
+ * `collate "C"` and not the column's collation: `memoryInboxStore` compares the same two
  * columns by CODE POINT, and a database initialised under an ICU or a `en_US.UTF-8` collation
  * orders text by locale rules — case-insensitively, ignoring punctuation at the first level — so
  * the two stores would disagree on exactly the Unicode keys nobody writes a test for. `id` was the
@@ -160,7 +160,7 @@ export interface PgInboxStore extends InboxStore {
   purgeBefore(before: InboxPurgeBefore): Promise<number>;
 }
 
-export function createPgInboxStore(options: PgInboxStoreOptions): PgInboxStore {
+export function postgresInboxStore(options: PgInboxStoreOptions): PgInboxStore {
   const { executor } = options;
   const newId = options.newId ?? uuid;
   return {
@@ -184,7 +184,7 @@ export function createPgInboxStore(options: PgInboxStoreOptions): PgInboxStore {
       // what a driver does with a `NaN` parameter is the driver's business — the memory store beside
       // it answered `[]` for the same input. `??` cannot see it, because `NaN` is not nullish.
       const limit = finiteCount(
-        'createPgInboxStore',
+        'postgresInboxStore',
         'limit',
         query.limit ?? DEFAULT_INBOX_PAGE,
         0,

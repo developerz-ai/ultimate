@@ -59,8 +59,8 @@ export const envExampleFor = (schema: EnvSchema): string => renderEnvExample(sch
 const driftFinding = (cause: string): Finding => ({
   code: 'X_ENV_EXAMPLE_DRIFT',
   cause,
-  // The generator, not the assertion: `assertEnvExample`'s own fix is a `Bun.write(…)` call for
-  // an app that has a schema object in scope, and a gate reader has a shell.
+  // The generator, never a `Bun.write(…)` call: that needs a schema object in scope, and a gate
+  // reader has a shell.
   fix: 'x env example',
   docs: ERROR_DOCS_URL,
   at: ENV_EXAMPLE_PATH,

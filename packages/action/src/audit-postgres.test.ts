@@ -44,7 +44,6 @@ const ctxFor = (over: Parameters<typeof createContext>[0] = {}) =>
 const recordFor = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   at: AT,
   name: 'publishPost',
-  action: 'publishPost',
   primitive: 'action',
   mutator: true,
   surface: 'http',
@@ -94,19 +93,18 @@ describe('the postgres audit sink writes one append-only row', () => {
   test('which primitive acted reaches the row, so a read and a write are told apart', async () => {
     const { exec, calls } = executor();
     await postgresAuditSink({ executor: exec }).write(
-      recordFor({ name: 'postList', action: 'postList', primitive: 'query', mutator: false }),
+      recordFor({ name: 'postList', primitive: 'query', mutator: false }),
     );
 
     expect(paramsOf(calls).at(-1)).toBe('query');
     expect(paramsOf(calls)[2]).toBe('postList');
   });
 
-  test('a 24.x record built with `action` alone writes name and primitive, never undefined', async () => {
+  test('the record is written as it was handed over: `name` into `action`, never undefined', async () => {
     const { exec, calls } = executor();
-    const { name: _name, primitive: _primitive, ...legacy } = recordFor({ action: 'oldAction' });
-    await postgresAuditSink({ executor: exec }).write(legacy);
+    await postgresAuditSink({ executor: exec }).write(recordFor({ name: 'renamedAction' }));
 
-    expect(paramsOf(calls)[2]).toBe('oldAction');
+    expect(paramsOf(calls)[2]).toBe('renamedAction');
     expect(paramsOf(calls).at(-1)).toBe('action');
     expect(paramsOf(calls)).not.toContain(undefined);
   });

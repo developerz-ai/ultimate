@@ -3,11 +3,11 @@
 // (`.job.`): the embedded Postgres costs seconds to boot.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_SCHEDULER_FIRE } from './driver-pg-operator-sql';
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
-import { pgSchedulerState } from './scheduler-pg';
+import { postgresSchedulerState } from './scheduler-pg';
 
 const HOUR_MS = 3_600_000;
 const T0 = Date.UTC(2026, 6, 26, 0, 0, 0);
@@ -34,9 +34,9 @@ const request = (occurrenceMs: number) => ({
 
 describe('a fire that lands its watermark past its occurrence, on pg', () => {
   test('queues the occurrence and fences every occurrence it dropped', async () => {
-    const driver = createPgDriver({ executor: pg.executor });
+    const driver = postgresJobDriver({ executor: pg.executor });
     const statements: string[] = [];
-    const state = pgSchedulerState({
+    const state = postgresSchedulerState({
       query(sql, params) {
         statements.push(sql);
         return pg.executor.query(sql, params);

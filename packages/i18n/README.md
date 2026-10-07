@@ -99,6 +99,17 @@ catalog is a fallback chain, it reads as `isMiss === false`, and `assertCatalogs
 see it because `CatalogSet.catalogs` carries app strings only. Translate the framework keys your
 app renders into your own catalog — that is the one path, and it is the same merge an override is.
 
+## Reading an app's declared locales (tooling)
+
+`@ultimat3/i18n/app-catalogs` — server-only, its own entry so no island bundle carries it:
+
+| Export | What |
+|---|---|
+| `APP_CATALOGS_PATH` | `'packages/i18n/src/index.ts'`, where `x new` writes the app's `defineCatalogs()` |
+| `loadAppCatalogs(root)` | imports that module and answers `{ locales, defaultLocale }` (default first), or `undefined` when no `defineCatalogs()` was declared — never the ambient `localeConfig()` read blind. A module that throws rejects with its own error |
+
+The one reader the CLI (pwa manifest, `x shot`, `x g`) and `@ultimat3/testing`'s e2e preload share.
+
 ## Enforcement
 
 `extractKeys()` scans source for `t('...')` calls; `auditCatalogs()` reports keys used,

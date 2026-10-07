@@ -253,7 +253,7 @@ The single public documentation surface; there is no separate marketing site. So
 - [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.
 - [Deployment](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deployment.md): one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/`.
 - [Observability](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Observability.md): counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach.
-- [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): one section per major with every manual edit, the in-flight 23.0.0 as a checklist, version skew — and that `x upgrade` is planned.
+- [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): one section per major with every manual edit, the in-flight major as a checklist under `[Unreleased]`, version skew — and that `x upgrade` is planned.
 - [Troubleshooting](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Troubleshooting.md): symptom → cause → fix.
 - [Known gaps](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Known-Gaps.md): every defect and unfinished seam in the published release, named.
 - [FAQ](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/FAQ.md): why Bun only, why no GraphQL, is it production ready.

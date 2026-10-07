@@ -17,10 +17,15 @@ import { asyncRefusal, NOT_A_BOUND } from './bounds-fixture';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
 import { hive } from './hive';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf, messageText } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
+import { asProjectableAction, toLlmTool } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const USAGE: TokenUsage = {
   inputTokens: 12,
@@ -205,7 +210,7 @@ describe('the actor boundary holds on the fan-out path', () => {
 describe('ran-and-failed is not never-ran', () => {
   test("onMemberError: 'abort' skips the siblings, and their provider is never called", async () => {
     const { provider, seen } = byPrompt((prompt) => prompt.includes('bad'));
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const fanOut = hive({
       input: t.object({}),
@@ -232,7 +237,7 @@ describe('ran-and-failed is not never-ran', () => {
 
   test("onMemberError: 'collect' harvests the rest", async () => {
     const { provider, seen } = byPrompt((prompt) => prompt.includes('bad'));
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const fanOut = hive({
       input: t.object({}),
@@ -255,7 +260,7 @@ describe('the ceiling holds under concurrency', () => {
   // one fits refuses the other two — no new budget machinery, and none needed.
   test('three members against a ceiling only one fits leaves exactly one ok', async () => {
     const { provider } = byPrompt(() => false, 200);
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const fanOut = hive({
       input: t.object({}),
@@ -408,7 +413,8 @@ describe('hive() is an action factory, not a ninth primitive', () => {
 
     expect(isAction(fanOut)).toBe(true);
     expect(fanOut.describe().kind).toBe('action');
-    expect(fanOut.tool().name).toBe('projectingHive');
+    // The model-tool projection (`@ultimat3/mcp`'s `toolFrom` is the MCP one, a tier away).
+    expect(toLlmTool(asProjectableAction(fanOut)).name).toBe('projectingHive');
     expect(fanOut.job().name).toBe('action:projectingHive');
     // The member's own `output` rides inside the `ok` arm — a hive publishes what it harvested,
     // not an opaque object.

@@ -3,9 +3,9 @@
 // release reads any more. Reaching the server is `authStorageProbe`, deciding is
 // `authStorageFindings` — the split `doctor-sealed.ts` makes.
 
-import { BuiltinAdapter, countUnsealedMfaSecrets } from '@ultimat3/auth';
+import { countUnsealedMfaSecrets, postgresAuthAdapter } from '@ultimat3/auth';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { createPostgresClient, raw } from '@ultimat3/db';
+import { postgresClient, raw } from '@ultimat3/db';
 import type { Finding } from './output';
 
 /**
@@ -71,7 +71,7 @@ export function authStorageFindings(fact: AuthStorageFact): readonly Finding[] {
  */
 export async function authStorageProbe(url: string | undefined): Promise<AuthStorageFact> {
   if (url === undefined || url.trim() === '') return NO_AUTH_STORAGE_FACT;
-  const client = createPostgresClient({ url, applicationName: 'x-doctor' });
+  const client = postgresClient({ url, applicationName: 'x-doctor' });
   try {
     const present = async (table: string): Promise<boolean> => {
       const rows = await client.query<{ readonly present: boolean }>(
@@ -84,7 +84,7 @@ export async function authStorageProbe(url: string | undefined): Promise<AuthSto
       if (await present(table)) retiredTables.push(table);
     }
     const unsealedMfaSecrets = (await present('x_users'))
-      ? await countUnsealedMfaSecrets({ adapter: new BuiltinAdapter(client) })
+      ? await countUnsealedMfaSecrets({ adapter: postgresAuthAdapter(client) })
       : 0;
     return { unsealedMfaSecrets, retiredTables };
   } catch {

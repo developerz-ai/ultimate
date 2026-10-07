@@ -201,7 +201,7 @@ export class McpToolUndeclaredError extends UltimateError {
 
 /**
  * `config.ai.mcp.expose` is `true` — the DEFAULT — and the web role found nothing to mount at
- * `config.ai.mcp.path`. Two causes, one code: no `apps/<app>/mcp.ts` exports an `mcp`, or the one
+ * any `defineAppMcp` path. Two causes, one code: no `apps/<app>/mcp.ts` exports an `mcp`, or the one
  * that does was built without `resolveToken`, so `defineAppMcp` built no `route` (a token resolver
  * is what turns a bearer header into an actor, and an endpoint with no way to name its caller is
  * not one the framework will serve). Logged once per boot by the web role, never thrown: an app

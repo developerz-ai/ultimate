@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { asyncRefusal } from './bounds-fixture';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
 import {
@@ -13,6 +14,9 @@ import {
   llmJudge,
   numericTolerance,
 } from './scorers';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 afterEach(() => {
   resetPrompts();
@@ -111,7 +115,7 @@ describe('unit · llm judge', () => {
 
   test('the judge prompt hash is part of the scorer name, so a judge edit is visible', () => {
     const judge = judgePrompt();
-    const gateway = createGateway({ providers: [new EchoProvider()] });
+    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] });
     expect(llmJudge({ gateway, judge }).name).toBe(`llm-judge@${judge.hash}`);
   });
 
@@ -119,6 +123,7 @@ describe('unit · llm judge', () => {
     const judge = judgePrompt();
     const rendered = (output: string) => judge.render({ output, expected: 'ref' });
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [
         new EchoProvider({
           replies: { [rendered('good')]: '0.8', [rendered('vague')]: 'pretty good, I think' },
@@ -132,7 +137,7 @@ describe('unit · llm judge', () => {
   });
 
   test('the judge is called with the whole prompt configuration it was declared with', async () => {
-    // The scorer's NAME is the judge prompt's content hash, and `contentHash` covers `effort` and
+    // The scorer's NAME is the judge prompt's content hash, and `promptHash` covers `effort` and
     // `thinking` — so a call that drops either measures with a judge the name does not describe.
     const judge = definePrompt<{ output: string; expected: string }>({
       id: 'judge.configured',
@@ -155,7 +160,10 @@ describe('unit · llm judge', () => {
       stream: (request) => echo.stream(request),
     };
 
-    const scorer = llmJudge({ gateway: createGateway({ providers: [recording] }), judge });
+    const scorer = llmJudge({
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [recording] }),
+      judge,
+    });
     await scorer.score({ output: 'good', expected: 'ref' });
 
     expect(seen.length).toBe(1);
@@ -178,7 +186,7 @@ describe('the judge screens its completion ceiling', () => {
       version: '1',
       template: 'Score 0..1. Answer: {{output}}. Reference: {{expected}}.',
     });
-    const gateway = createGateway({ providers: [new EchoProvider()] });
+    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] });
     const scorer = llmJudge({ gateway, judge, maxTokens: Number.NaN });
     const error = await asyncRefusal(() => scorer.score({ output: 'good', expected: 'ref' }));
     expect(error.code).toBe('X_INVARIANT');
@@ -193,6 +201,7 @@ describe('the judge screens its completion ceiling', () => {
       template: 'Score 0..1. Answer: {{output}}. Reference: {{expected}}.',
     });
     const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
       providers: [
         new EchoProvider({
           replies: { [judge.render({ output: 'good', expected: 'ref' })]: '0.9' },

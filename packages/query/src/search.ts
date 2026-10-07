@@ -84,7 +84,7 @@ const limitSchema = (max: number, fallback: number) =>
  * `SqlSource` is handed a `SeekKey` (the previous page's sort VALUES) and the chain wants its own
  * signed, plan-scoped string, and there is no way to mint one from the other here. Falling through
  * to `paginate`'s in-memory slice would cut inside the one page the provider fetched and report
- * `hasNextPage: false` at its edge — rows served on no page at all, which is the defect 12.0.0 spent
+ * `hasMore: false` at its edge — rows served on no page at all, which is the defect 12.0.0 spent
  * a release removing from the timestamp seek. So it is a refusal naming the alternative: page with
  * the entity chain's own `.search(term).after(cursor)`, or raise this read's `limit`.
  *
@@ -93,7 +93,7 @@ const limitSchema = (max: number, fallback: number) =>
  * `assert` they were `X_INVARIANT`, a 500 that blamed the server and paged whoever watches it.
  *
  * **The refusal is on the rows that would be CUT, never on the window** (`As of 2026-08-26`). It
- * used to serve `first` rows, mint an `endCursor` and report `hasNextPage: true` — a connection
+ * used to serve `first` rows, mint an `nextCursor` and report `hasMore: true` — a connection
  * protocol saying "call me again with this" for a call the cursor assert is guaranteed to throw on.
  * A first repair demanded `first >= limit` and refused the window itself, which refuses the
  * framework's OWN default pair: `limit` defaults to 20 and `first` arrives from a client
@@ -103,7 +103,7 @@ const limitSchema = (max: number, fallback: number) =>
  *
  * So the condition is the one thing that is actually wrong: the read answered MORE rows than the
  * window carries, and this seam has no second page to put the rest on. Below that, the page is
- * whole and `hasNextPage` is false by construction — the true stop signal, and no cursor is ever
+ * whole and `hasMore` is false by construction — the true stop signal, and no cursor is ever
  * handed back that a second call is guaranteed to refuse.
  *
  * **`seek` narrows the WINDOW and never the ORDER, and that is the whole reason this wrapper takes a
@@ -135,7 +135,7 @@ const onePage = <Row extends object>(
         `search of ${entity} serves one page: a relevance-filtered read has no cursor this layer can carry — raise this read's limit, or page the entity chain itself with .search(term).after(cursor)`,
       );
     }
-    // `paginate` asks for `first + 1` — the extra row IS `hasNextPage` — so the window it names is
+    // `paginate` asks for `first + 1` — the extra row IS `hasMore` — so the window it names is
     // one wider than the page it will serve.
     return windowOf(base, read, entity, served, window - 1);
   },
@@ -157,7 +157,7 @@ const windowOf = <Row extends object>(
   read: string,
   entity: string,
   served: number,
-  /** Rows `paginate` will serve. It fetched one more, to decide `hasNextPage`. */
+  /** Rows `paginate` will serve. It fetched one more, to decide `hasMore`. */
   first: number,
 ): SqlSource<Row> => {
   const windowed = base.limit(first + 1);

@@ -10,7 +10,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { job, resetJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
-import { createMemoryLeaseStore } from './leases';
+import { memoryLeaseStore } from './leases';
 import { createFleetSlots } from './worker-fleet-slots';
 
 const TTL_MS = 30_000;
@@ -63,7 +63,7 @@ async function fixture(renew: LeaseStore['renew']) {
   const clock = fakeClock();
   const ticks: (() => void)[] = [];
   const slots = createFleetSlots({
-    leases: { ...createMemoryLeaseStore({ clock }), renew },
+    leases: { ...memoryLeaseStore({ clock }), renew },
     workerId: 'w1',
     ttlMs: TTL_MS,
     renewIntervalMs: TTL_MS / 3,

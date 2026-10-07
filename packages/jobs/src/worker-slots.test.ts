@@ -7,9 +7,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimOptions, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createMemoryLeaseStore, type LeaseStore } from './leases';
+import { type LeaseStore, memoryLeaseStore } from './leases';
 import { createWorker } from './worker';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
@@ -71,7 +71,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       run: () => Promise.resolve(),
     });
 
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const worker = createWorker({ driver, concurrency: 2, context, drainOnShutdown: false });
     await enqueue(driver, 'slowJob', 'default');
 
@@ -116,7 +116,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       run: () => Promise.resolve(),
     });
 
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       claim(options: ClaimOptions) {
@@ -165,7 +165,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       });
     }
 
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const worker = createWorker({ driver, concurrency: 1, context, drainOnShutdown: false });
     await enqueue(driver, 'jobA', 'default');
     await enqueue(driver, 'jobB', 'default');
@@ -200,8 +200,8 @@ describe('the fleet slot is handed back before the driver goes', () => {
       },
     });
 
-    const base = createMemoryDriver();
-    const store = createMemoryLeaseStore();
+    const base = memoryJobDriver();
+    const store = memoryLeaseStore();
     const leases: LeaseStore = {
       ...store,
       // A slot release is a DELETE in `x_job_leases` — a round trip, not a map delete.
@@ -240,7 +240,7 @@ describe('the fleet slot is handed back before the driver goes', () => {
 describe('the concurrency table is read by OWN keys, so a queue name is only ever data', () => {
   test('a queue called `constructor` gets the default slot count, never the Object function', async () => {
     const asked: { queue: string; limit: number }[] = [];
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       claim(options: ClaimOptions) {
@@ -286,8 +286,8 @@ describe('a claim round that fails part-way hands the rest of the batch back', (
       retry: { attempts: 3, jitter: false },
       run: () => Promise.resolve(),
     });
-    const base = createMemoryDriver();
-    const store = createMemoryLeaseStore();
+    const base = memoryJobDriver();
+    const store = memoryLeaseStore();
     const driver: JobDriver = {
       ...base,
       leases: {

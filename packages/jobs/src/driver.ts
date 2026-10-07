@@ -4,8 +4,8 @@
 //
 // This header used to say "switching backends is a config line" (`As of 2026-08`). There is no
 // such config line: `JobsConfig.driver` has no reader anywhere and boot always builds
-// `createPgDriver`. `pg` and `memory` are the two that exist; `redis` and `nats` are honest
-// `X_NOT_IMPLEMENTED` stubs. What IS true is the second half — swapping the driver is
+// `postgresDriver`. `pg` and `memory` are the two that exist (25.0.0 deleted the all-throw `redis`
+// and `nats` stubs). What IS true is the second half — swapping the driver is
 // `setJobDriver(other)` and ZERO job-code change — and that is what the interface buys.
 
 import { finiteCount, finiteOption } from '@ultimat3/core';

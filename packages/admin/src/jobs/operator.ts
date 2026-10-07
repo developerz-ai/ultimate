@@ -21,13 +21,13 @@ export function jobsOperator(): JobsOperator {
     throw new DriverUnavailableError({
       driver: 'none',
       cause: 'the jobs dashboard was asked for rows and this process installed no queue',
-      fix: 'run the app through x dev or the container entry, which install the queue — or in a test: setJobDriver(createMemoryDriver())',
+      fix: 'run the app through x dev or the container entry, which install the queue — or in a test: setJobDriver(memoryJobDriver())',
     });
   }
   if (driver.introspect === undefined) {
     throw new NotImplementedError({
       cause: `the operator surface of the "${driver.name}" jobs driver is not implemented: the driver has no introspect`,
-      fix: 'call setJobDriver(createPgDriver()) at boot — the pg and memory drivers implement introspect',
+      fix: 'call setJobDriver(postgresJobDriver()) at boot — the pg and memory drivers implement introspect',
     });
   }
   return { driver, introspect: driver.introspect };

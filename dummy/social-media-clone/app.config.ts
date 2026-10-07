@@ -70,10 +70,7 @@ checkProductionEnv(env, resolveEnvironment(), logger);
 
 export const config = defineConfig({
   name: 'social-media-clone',
-  locales: ['en'],
-  defaultLocale: 'en',
-  defaultTimeZone: 'UTC',
-  defaultCurrency: 'USD',
+  // Locales are the catalogs' (`defineCatalogs` in `packages/i18n/src/index.ts`).
   // Without `signInPath` a browser that opens /dashboard with no session is answered with the
   // problem+json document — correct for an agent, and rendered as raw JSON text to a person.
   // Naming the page turns that into a 303 carrying `?next=`, and the page sends them back.
@@ -107,7 +104,7 @@ export const config = defineConfig({
       dark: { themeColor: '#05070d', backgroundColor: '#05070d' },
     },
   },
-  ai: { mcp: { expose: true, path: '/mcp' } },
+  ai: { mcp: { expose: true } },
 });
 
 /**

@@ -12,7 +12,7 @@ import {
   resetLifecycle,
 } from '@ultimat3/core';
 import type { JobDriver, NackOptions, QueueStats } from '@ultimat3/jobs';
-import { createMemoryDriver, createWorker, job, resetJobs, type Worker } from '@ultimat3/jobs';
+import { createWorker, job, memoryJobDriver, resetJobs, type Worker } from '@ultimat3/jobs';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { holdWhileBooting } from './hold';
 
@@ -44,7 +44,7 @@ afterEach(() => {
 describe('holdWhileBooting', () => {
   test('a SIGTERM during boot drains the worker the boot started: its job handed back', async () => {
     configureLifecycle({ deadlineMs: 200 });
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const nacks: NackOptions[] = [];
     let atClose: QueueStats | undefined;
     const driver: JobDriver = {

@@ -23,12 +23,7 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
  * decision the row was waiting for. `realtime.urlEnv` was the same defect and 22.0.0 spent it the
  * other way — by WIRING it: `@ultimat3/realtime`'s `selectTransport` dials the variable it names.
  */
-export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
-  defaultTimeZone:
-    "read by NOTHING but `config.ts`'s own validator (`isIanaZoneName`): no package reads it (CLAUDE.md forbids an ambient time zone) and neither tracked app does — both only write it in app.config.ts. Delete-or-wire is an owner decision, plan 101 slice 15 row 6, asked and unanswered; this row is that debt.",
-  defaultCurrency:
-    "read by NOTHING but `config.ts`'s validator (`CURRENCY_RE`): `Money` carries its own currency, so no package defaults one, and neither tracked app reads it outside app.config.ts. Same owner decision as `defaultTimeZone`, plan 101 slice 15 row 6.",
-};
+export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {};
 
 /**
  * The SECOND table: leaf keys whose "readers" are a bare-name collision and not evidence at all.

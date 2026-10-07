@@ -10,9 +10,13 @@ import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { llm } from './llm';
 import { install, stub } from './llm-fixture';
+import { useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import { parseJsonish, respondFor } from './respond';
 import { resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 beforeEach(() => {
   resetAiRuntime();

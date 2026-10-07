@@ -65,7 +65,7 @@ x-postgres: &postgres
 # digest, which is what runs: a tag is a pointer its publisher can move. Held by
 # scripts/test-services-shape.test.ts; Dependabot's docker-compose ecosystem moves tag and digest.
 services:
-  # pgvector, not stock postgres: `@ultimat3/ai`'s PgVectorStore is the only production vector
+  # pgvector, not stock postgres: `@ultimat3/ai`'s postgresVectorStore() is the only production vector
   # path, and `pg-vector.live.test.ts` refuses to skip when the extension is missing.
   postgres:
     <<: *postgres

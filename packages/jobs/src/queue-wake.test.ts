@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { LogSink, PgExecutor } from '@ultimat3/core';
 import { createContext, frozenClock, setLogSink } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
 import {
@@ -14,7 +14,7 @@ import {
   IDLE_POLL_CEILING_MS,
   WOKEN_IDLE_POLL_CEILING_MS,
 } from './idle-backoff';
-import { createMemoryOutboxStore } from './outbox';
+import { memoryOutboxStore } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 import type { PgListener } from './queue-wake';
 import { startQueueWake } from './queue-wake';
@@ -363,7 +363,7 @@ describe('an idle minute with a proven wake', () => {
   test('a worker converges to one claim every five seconds: 15 statements a minute, was 33', async () => {
     setWakeLive(true);
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     let claims = 0;
     const worker = createWorker({
       driver: {
@@ -396,9 +396,9 @@ describe('an idle minute with a proven wake', () => {
   test('a relay converges to one claim every five seconds: 16 a minute, was 33', async () => {
     setWakeLive(true);
     let claims = 0;
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     const relay = createOutboxRelay({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       store: {
         ...store,
         claim: (limit) => {
@@ -421,9 +421,9 @@ describe('an idle minute with a proven wake', () => {
 
 describe('the relay hears a COMMITTED stage', () => {
   const relayOver = (onClaim: () => void) => {
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     return createOutboxRelay({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       store: {
         ...store,
         claim: (limit) => {

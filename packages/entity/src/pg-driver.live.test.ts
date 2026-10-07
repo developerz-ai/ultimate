@@ -10,11 +10,12 @@
 // `db-integration.test.ts`; CI's `postgres` service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { Page } from '@ultimat3/core';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   setDbClient,
   setStatementObserver,
@@ -26,7 +27,7 @@ import { entity } from './entity';
 import { postgresDriver, postgresRepo } from './pg-driver';
 import { postgresTransactor } from './pg-transactor';
 import { clearRegistry } from './registry';
-import type { FindManyArgs, Page } from './repo';
+import type { FindManyArgs } from './repo';
 
 // `TEST_DATABASE_URL` only. `beforeAll`/`afterAll` here run `drop table … cascade`, so falling
 // back to the app's own `DATABASE_URL` would hand this file whatever database a developer had
@@ -84,7 +85,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
   let other = '';
 
   beforeAll(async () => {
-    client = createPostgresClient({ url: adminUrl ?? '' });
+    client = postgresClient({ url: adminUrl ?? '' });
     setDbClient(client);
     await client.execute(raw(DROP));
     migration = generateMigration({

@@ -4,9 +4,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError, NotImplementedError } from '@ultimat3/core';
 import {
-  createMemoryDriver,
   type JobDriver,
   MAX_JOB_PAGE,
+  memoryJobDriver,
   resetJobDriver,
   setJobDriver,
 } from '@ultimat3/jobs';
@@ -201,7 +201,7 @@ describe('a job page at the store’s own ceiling', () => {
   test('a page of MAX_JOB_PAGE still learns whether a next page exists — both ways', async () => {
     // A fresh queue of 205 runs: the admin asks one past a 200-row page, the store answers 200 at
     // most, and a full store page read as "no more" left five rows on no page.
-    const many = createMemoryDriver();
+    const many = memoryJobDriver();
     setJobDriver(many);
     try {
       for (let at = 0; at < MAX_JOB_PAGE + 5; at += 1) {

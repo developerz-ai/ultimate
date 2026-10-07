@@ -95,7 +95,7 @@ function parseSmtpUrl(raw: string): SmtpUrl {
 
 /**
  * `decodeURIComponent` throws a bare `URIError` for a `%` that starts no escape, which escaped
- * `createSmtpDriver` as the one SMTP_URL mistake that was not a config error. The value is a
+ * `smtpMailDriver` as the one SMTP_URL mistake that was not a config error. The value is a
  * credential, so neither the cause nor the fix ever carries it.
  */
 function decodedCredential(part: 'user' | 'password', raw: string): string {
@@ -152,7 +152,7 @@ function createLimiter(size: number): (run: () => Promise<SendResult>) => Promis
   };
 }
 
-export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
+export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
   const target = parseSmtpUrl(options.url);
   if (options.from.trim() === '') {
     throw new ConfigInvalidError({
@@ -167,13 +167,13 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
   // non-finite deadline does not disable itself, it fires on the next tick and every send fails
   // "the server sent nothing for NaNms". `0` is the same failure spelled deliberately.
   const timeoutMs = finiteCount(
-    'createSmtpDriver',
+    'smtpMailDriver',
     'timeoutMs',
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     1,
   );
   const limit = createLimiter(resolvePoolSize(options.poolSize));
-  const retain = resolveRetainMime('createSmtpDriver', options.retainMime);
+  const retain = resolveRetainMime('smtpMailDriver', options.retainMime);
   const session: SmtpSessionOptions = {
     clientName: options.clientName ?? addressDomain(options.from),
     secure: target.tls,

@@ -108,7 +108,7 @@ describe('unit · the app.config.ts x new writes', () => {
           dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
         },
       },
-      ai: { mcp: { expose: true, path: '/mcp' } },
+      ai: { mcp: { expose: true } },
     }) as unknown as Record<string, unknown>;
 
     const emitted = keyPathsIn(configLiteral(source()));

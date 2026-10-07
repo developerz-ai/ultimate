@@ -9,13 +9,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { defineAuth, MemoryAdapter, resetAuthLimiters } from '@ultimat3/auth';
+import { defineAuth, memoryAuthAdapter, resetAuthLimiters } from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
 import { NotImplementedError, registerReadinessCheck } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
-import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
+import { memoryMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { TransportUnavailableError } from '@ultimat3/realtime';
 import { DEFAULT_PRESENCE_TTL_MS, selectTransport } from '@ultimat3/realtime/server';
 import type { DevServices } from './runtime-bindings';
@@ -102,9 +102,7 @@ afterAll(() => {
 
 describe('describeMail', () => {
   test('a caught outbox reports as embedded, like the other bindings', () => {
-    expect(describeMail(runtimeWith(createMemoryDriver(), 'caught in memory'))).toBe(
-      'mail=embedded',
-    );
+    expect(describeMail(runtimeWith(memoryMailDriver(), 'caught in memory'))).toBe('mail=embedded');
   });
 
   test('a real transport names itself and the env key that selected it', () => {
@@ -127,7 +125,7 @@ describe('describeMail', () => {
  */
 describe('the rendered label and the machine status', () => {
   test('agree for every mail case', () => {
-    const memory = runtimeWith(createMemoryDriver(), 'caught in memory');
+    const memory = runtimeWith(memoryMailDriver(), 'caught in memory');
     expect(mailLabel(memory)).toBe(describeMail(memory));
     const smtp = runtimeWith(fakeSmtp(), 'SMTP_URL');
     expect(mailLabel(smtp)).toBe(describeMail(smtp));
@@ -362,7 +360,7 @@ describe('startServices', () => {
         // proves nothing about what was released. `'process'` is the answer when no factory is
         // installed; a leaked one answers `'shared'` over a pool this boot has already closed.
         expect(jobDriver()).toBeUndefined();
-        expect(defineAuth({ adapter: new MemoryAdapter() }).limiter.policy.scope).toBe('process');
+        expect(defineAuth({ adapter: memoryAuthAdapter() }).limiter.policy.scope).toBe('process');
       } finally {
         releaseName();
         resetAuthLimiters();

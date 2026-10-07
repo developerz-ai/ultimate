@@ -4,7 +4,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { describeJobs, getJob, job, registeredJobs, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -48,7 +48,7 @@ beforeEach(() => {
   resetJobs();
   resetJobsFacade();
   resetJobDriver();
-  driver = createMemoryDriver();
+  driver = memoryJobDriver();
   notify = job<OrgInput>({
     tenant: 'none',
     name: 'notifySubscribers',

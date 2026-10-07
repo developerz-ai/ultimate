@@ -111,4 +111,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MAIL_EVENT_PROVIDER_UNREACHABLE: 503,
   // @ultimat3/mcp — an MCP confirmation approval did not carry the arguments the agent sent
   X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH: 409,
+  // @ultimat3/ai — a model call named no model
+  X_AI_MODEL_UNRESOLVED: 500,
 } satisfies Readonly<Record<string, number>>;

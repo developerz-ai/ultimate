@@ -4,7 +4,7 @@
 // exhaustion arrived as a hang rather than as a 503.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { baseClient, createPostgresClient, type PostgresClient, setDbClient } from './client';
+import { baseClient, type PostgresClient, postgresClient, setDbClient } from './client';
 import type { DbError } from './errors';
 import { POOL_MAX_ENV, poolProfileFor } from './pool-profile';
 
@@ -113,7 +113,7 @@ describe('acquireTimeoutMs', () => {
       }
       async close(): Promise<void> {}
     };
-    const client = createPostgresClient({
+    const client = postgresClient({
       url: TEST_URL,
       profile: { acquireTimeoutMs: 20, max: 4 },
     });
@@ -138,7 +138,7 @@ describe('acquireTimeoutMs', () => {
 
   test('0 waits, which is what a run-once role wants', async () => {
     const counter = installFakeSql();
-    const client = createPostgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 0 } });
+    const client = postgresClient({ url: TEST_URL, profile: { acquireTimeoutMs: 0 } });
 
     const connection = await client.reserve();
     connection.release();
@@ -163,7 +163,7 @@ describe('named prepared statements', () => {
       }
       async close(): Promise<void> {}
     };
-    await createPostgresClient({ url: TEST_URL, role: 'web' }).ping();
+    await postgresClient({ url: TEST_URL, role: 'web' }).ping();
     expect(options?.['prepare']).toBe(false);
   });
 });

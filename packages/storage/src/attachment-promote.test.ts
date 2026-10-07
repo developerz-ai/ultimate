@@ -13,7 +13,7 @@ import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { attachmentKey, pendingKey, promoteAttachment, releaseQuarantine } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
-import { memoryDriver } from './driver-memory';
+import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
 import { bytesOf, catchError, FakeS3Client, textOf } from './driver-s3-fixture';
 import { uploadPolicy } from './upload';
@@ -32,7 +32,7 @@ beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-promote-`);
   disks = [
     localDriver({ root, signingSecret: 'test-secret', clock }),
-    memoryDriver({ signingSecret: 'test-secret', clock }),
+    memoryStorageDriver({ signingSecret: 'test-secret', clock }),
     s3Driver({ bucket: 'b', client: new FakeS3Client() }),
   ];
 });

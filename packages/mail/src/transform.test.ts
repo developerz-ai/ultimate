@@ -6,20 +6,11 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import type { JobRunArgs } from '@ultimat3/jobs';
-import {
-  createMemoryDriver as createMemoryJobDriver,
-  resetJobDriver,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import type { MailMessage } from './driver';
-import {
-  createMemoryDriver,
-  type MemoryMailDriver,
-  resetMailDriver,
-  setMailDriver,
-} from './driver';
+import { type MemoryMailDriver, memoryMailDriver, resetMailDriver, setMailDriver } from './driver';
 import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { defineMail, renderMessage, type SendOptions, send } from './mail';
@@ -49,7 +40,7 @@ const pixel = (meta: MailTransformMeta): string =>
 
 beforeEach(() => {
   resetMailDriver();
-  memory = createMemoryDriver();
+  memory = memoryMailDriver();
   setMailDriver(memory);
   resetJobDriver();
   calls = [];
@@ -175,7 +166,7 @@ test('the transform runs once per send, after render, and sees the untransformed
 });
 
 test('a queued send stores the transformed bytes, and a job retry reuses them without re-running the hook', async () => {
-  const queue = createMemoryJobDriver();
+  const queue = memoryJobDriver();
   setJobDriver(queue);
   setMailTransform((rendered, meta) => {
     calls.push(meta);

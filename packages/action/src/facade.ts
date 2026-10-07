@@ -1,9 +1,10 @@
 /**
- * The fluent surface: every projection reachable as a method on the action itself,
- * `publishPost.tool()` rather than `toMcpTool(publishPost)`, and every declared
- * field lifted off `def` so app code never reaches through `.def`. The projection
- * functions stay exported for the framework's own call sites — this file only
- * binds them to the action, it never re-implements one.
+ * The fluent surface: every projection this package owns reachable as a method on the action
+ * itself, `publishPost.openapi()` rather than `toOpenApiOperation(publishPost)`, and every
+ * declared field lifted off `def` so app code never reaches through `.def`. The projection
+ * functions stay exported for the framework's own call sites — this file only binds them to the
+ * action, it never re-implements one. There is no `.tool()`: the MCP tool is `@ultimat3/mcp`'s
+ * one projection (`toolFrom(publishPost)`), a tier this package cannot import.
  */
 
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -13,7 +14,6 @@ import { contractTestsFor } from './contract-test';
 import { toOpenApiOperation } from './http';
 import { actionName, invoke } from './invoke';
 import { toJobHandle } from './job-handle';
-import { toMcpTool } from './mcp-tool';
 
 /**
  * `self` is a thunk on purpose: the façade is attached while the action is still
@@ -33,7 +33,6 @@ export function facadeFor<TInput extends StandardSchemaV1, TOutput extends Stand
     // the output type is this action's by construction.
     as: (actor, input, options) =>
       invoke(self(), input, { ...options, actor }) as Promise<InferOutput<TOutput>>,
-    tool: () => toMcpTool(self()),
     openapi: () => toOpenApiOperation(self()),
     client: (options) => clientMethodFor(actionName(self()), options, def.http?.path),
     job: () => toJobHandle(self()),

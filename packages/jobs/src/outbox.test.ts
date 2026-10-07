@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { EnqueueRequest, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
 import {
   createJobsFacade,
-  createMemoryOutboxStore,
   enqueueInTx,
+  memoryOutboxStore,
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
@@ -55,8 +55,8 @@ const fakeTx = (): Tx => ({ id: 'tx-1' }) as unknown as Tx;
 
 describe('transactional outbox', () => {
   test('a job staged in a rolled-back transaction is never delivered', async () => {
-    const driver = createMemoryDriver();
-    const store: OutboxStore = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store: OutboxStore = memoryOutboxStore();
     const relay = createOutboxRelay({ store, driver });
     const tx = fakeTx();
 
@@ -72,8 +72,8 @@ describe('transactional outbox', () => {
   });
 
   test('a job staged in a committed transaction is delivered exactly once by the relay', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const relay = createOutboxRelay({ store, driver });
     const tx = fakeTx();
 
@@ -92,8 +92,8 @@ describe('transactional outbox', () => {
   });
 
   test('a re-published outbox row is collapsed by the idempotency key (at-least-once)', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
 
     await enqueueInTx({ store, driver }, tx, notify, { orgId: 'org-1' });
@@ -124,8 +124,8 @@ describe('transactional outbox', () => {
 
 describe('ctx.jobs.enqueue facade', () => {
   test('joins the ambient transaction when there is one, publishes directly when there is not', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
     const jobs = createJobsFacade({ store, driver }, () => ambient);
@@ -142,8 +142,8 @@ describe('ctx.jobs.enqueue facade', () => {
   });
 
   test('outbox mode "required" refuses an enqueue with no transaction', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const jobs = createJobsFacade({ store, driver, mode: 'required' }, () => undefined);
     await expect(jobs.enqueue(notify, { orgId: 'org-3' })).rejects.toThrow(OutboxNoTxError);
   });
@@ -151,8 +151,8 @@ describe('ctx.jobs.enqueue facade', () => {
 
 describe('handle.enqueue through the installed facade', () => {
   test('stages into the ambient transaction — the row exists only after commit', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const relay = createOutboxRelay({ store, driver });
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
@@ -181,8 +181,8 @@ describe('handle.enqueue through the installed facade', () => {
   });
 
   test('the installed facade carries handle.as tenant stamping into the outbox row', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     setJobsFacade(createJobsFacade({ store, driver }, () => tx));
 
@@ -192,8 +192,8 @@ describe('handle.enqueue through the installed facade', () => {
   });
 
   test('resetJobsFacade puts the process back to the driver-only fallback', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     setJobsFacade(createJobsFacade({ store, driver }, () => tx));
     resetJobsFacade();
@@ -207,7 +207,7 @@ describe('handle.enqueue through the installed facade', () => {
 describe('the relay loop', () => {
   /** A store whose `claim` fails N times, then behaves. Models a pool timeout in a failover. */
   function flakyStore(failures: number): OutboxStore & { claims: number } {
-    const inner = createMemoryOutboxStore();
+    const inner = memoryOutboxStore();
     let left = failures;
     return {
       claims: 0,
@@ -234,7 +234,7 @@ describe('the relay loop', () => {
   // unpublished. Bun's test runner fails this file on an unhandled rejection, which is what
   // makes this a test rather than a claim.
   test('survives a claim that rejects and publishes on the next pass', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const store = flakyStore(1);
     const tx = fakeTx();
     setJobsFacade(createJobsFacade({ store, driver }, () => tx));
@@ -264,7 +264,7 @@ describe('the relay loop', () => {
     // `claim()` returns rows in `staged_at` order, and the loop used to log and continue: an app
     // that stages `createInvoice` then `chargeCard` in one transaction could have the charge run
     // first. Order per queue was in the comment and not in the code.
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     const published: string[] = [];
     const driver: Pick<JobDriver, 'enqueue'> = {
@@ -327,7 +327,7 @@ describe('the relay joins the tick it is stopping', () => {
         return { id: 'x', runId: 'r', deduped: false };
       },
     };
-    const store = createMemoryOutboxStore();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     await store.stage(tx, {
       id: 'row-parked',
@@ -364,20 +364,20 @@ describe('the relay joins the tick it is stopping', () => {
 
   test('stop() with nothing in flight resolves, and a second one is a no-op', async () => {
     const relay = createOutboxRelay({
-      store: createMemoryOutboxStore(),
-      driver: createMemoryDriver(),
+      store: memoryOutboxStore(),
+      driver: memoryJobDriver(),
     });
     await relay.stop();
     await relay.stop();
   });
 });
 
-describe('createMemoryOutboxStore retention', () => {
+describe('memoryOutboxStore retention', () => {
   // Rewriting the record in place kept every payload ever enqueued for the process's lifetime,
   // and made `claim()` and `pendingCount()` walk all of them every 200ms tick.
   test('holds nothing once a row is published', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const relay = createOutboxRelay({ store, driver, batchSize: 500 });
 
     for (let i = 0; i < 200; i += 1) {

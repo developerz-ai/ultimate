@@ -145,7 +145,7 @@ const page = await ctx.posts.list({
   limit: 20,
   after: cursor,                                       // opaque
 });
-// page.items, page.nextCursor (null when exhausted)
+// page.rows, page.nextCursor, page.hasMore — core's `Page`: nextCursor is null exactly when !hasMore
 ```
 
 Generated SQL — a keyset predicate, index-friendly:

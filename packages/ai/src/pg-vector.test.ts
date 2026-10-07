@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
 import { asyncRefusal } from './bounds-fixture';
 import { normalize } from './embeddings';
-import { PgVectorStore } from './pg-vector';
+import { type PgVectorStore, postgresVectorStore } from './pg-vector';
 import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
-import { MemoryVectorStore } from './vector';
+import { memoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 
@@ -15,7 +15,7 @@ interface Harness {
 
 function harness(): Harness {
   const client = createRecordingClient();
-  return { client, store: new PgVectorStore({ name: 'docs', dimension: 4, client }) };
+  return { client, store: postgresVectorStore({ name: 'docs', dimension: 4, client }) };
 }
 
 const codeOf = (error: unknown): string =>
@@ -23,7 +23,7 @@ const codeOf = (error: unknown): string =>
 
 describe('PgVectorStore ddl', () => {
   test('one table, a composite tenant key and both indexes the queries need', () => {
-    const ddl = new PgVectorStore({ name: 'docs', dimension: 1536 }).ddl();
+    const ddl = postgresVectorStore({ name: 'docs', dimension: 1536 }).ddl();
     expect(ddl).toContain('create extension if not exists vector;');
     expect(ddl).toContain('embedding vector(1536) not null');
     // The key is (tenant, id), so one tenant can never overwrite another tenant's row by id.
@@ -35,7 +35,7 @@ describe('PgVectorStore ddl', () => {
 
   test('the FTS language is the one the queries bind, not a second default', async () => {
     const client = createRecordingClient();
-    const store = new PgVectorStore({ name: 'docs', dimension: 4, client, language: 'simple' });
+    const store = postgresVectorStore({ name: 'docs', dimension: 4, client, language: 'simple' });
     expect(store.ddl()).toContain("to_tsvector('simple', content)");
     await store.searchText('x_db_drift', 5);
     expect(client.statements[0]?.values).toContain('simple');
@@ -195,7 +195,7 @@ describe('PgVectorStore reads', () => {
     const client = createRecordingClient();
     setDbClient(client);
     try {
-      await new PgVectorStore({ name: 'docs', dimension: 4 }).searchText('drift', 1);
+      await postgresVectorStore({ name: 'docs', dimension: 4 }).searchText('drift', 1);
       expect(client.statements).toHaveLength(1);
     } finally {
       setDbClient(undefined);
@@ -243,7 +243,7 @@ describe('PgVectorStore scope', () => {
   });
 
   test('scoping tightens: allow-lists intersect and a new key is added', () => {
-    const store = new PgVectorStore({ name: 'docs', dimension: 4 });
+    const store = postgresVectorStore({ name: 'docs', dimension: 4 });
     const scoped = store
       .scoped({ allow: { kind: ['guide', 'error'] } })
       .scoped({ allow: { kind: ['error', 'billing'], locale: ['en'] } });
@@ -251,7 +251,7 @@ describe('PgVectorStore scope', () => {
   });
 
   test('a scoped store cannot be re-scoped to another tenant', () => {
-    const scoped = new PgVectorStore({ name: 'docs', dimension: 4 }).scoped({ tenant: 'acme' });
+    const scoped = postgresVectorStore({ name: 'docs', dimension: 4 }).scoped({ tenant: 'acme' });
     expect(scoped.scoped({ tenant: 'acme' }).scope.tenant).toBe('acme');
     let thrown: unknown;
     try {
@@ -356,7 +356,7 @@ describe('PgVectorStore.upsert with a repeated id', () => {
   });
 
   test('memory keeps the last one too — the parity this pins', async () => {
-    const memory = new MemoryVectorStore({ dimension: 4 });
+    const memory = memoryVectorStore({ dimension: 4 });
     await memory.upsert([
       { id: 'a', vector: vec(1, 0, 0, 0), text: 'first' },
       { id: 'a', vector: vec(0, 0, 1, 0), text: 'last' },

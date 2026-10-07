@@ -176,3 +176,8 @@ export class PgAdvisoryLock implements AdvisoryLock {
     }
   }
 }
+
+/** The one way to build the session lock — the twin of `memoryAdvisoryLock()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
+export function postgresAdvisoryLock(options: PgAdvisoryLockOptions): PgAdvisoryLock {
+  return new PgAdvisoryLock(options);
+}

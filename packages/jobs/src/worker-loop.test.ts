@@ -7,7 +7,7 @@ import type { Clock } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { setWakeLive, signalEnqueued } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
@@ -59,7 +59,7 @@ const enqueue = (driver: JobDriver, name: string, item: string, queue = 'default
 
 describe('the claim loop', () => {
   test('a wake landing on a pass in flight asks for ONE more pass, never a second loop', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     let inFlight = 0;
     let most = 0;
     let claims = 0;
@@ -109,7 +109,7 @@ describe('the claim loop', () => {
   });
 
   test('a wake naming a queue this worker does not serve changes nothing', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const worker = createWorker({
       driver,
       queues: ['mail'],
@@ -132,7 +132,7 @@ describe('the claim loop', () => {
   });
 
   test('a slot coming free is refilled at once, not at the end of the backed-off wait', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const first = deferred();
     const started: string[] = [];
     let secondAt = 0;
@@ -169,7 +169,7 @@ describe('the claim loop', () => {
   });
 
   test('a retry is picked up when it falls due, not at the next backed-off poll', async () => {
-    const driver = createMemoryDriver({ clock: moving });
+    const driver = memoryJobDriver({ clock: moving });
     const attempts: number[] = [];
     const handle = itemJob({
       retry: { attempts: 2, backoff: 'fixed', delay: 450, jitter: false },

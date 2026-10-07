@@ -55,7 +55,7 @@ The framework does not hide these, and three of them touch a seam it owns. `As o
 | Free-tier constraint | What it hits | Answer today |
 |---|---|---|
 | **The instance sleeps** when idle and cold-starts on the next request | `web` tolerates it — a cold start is a slow first request. `scheduler` and `worker` **do not**: a cron that fires while the process is asleep does not fire, and a sleeping worker claims nothing | **Stated plainly: a free single-service deploy cannot run the `scheduler` role.** A durable job still runs — the queue is Postgres, so work waits — but it waits until something wakes the instance. Cron on a free tier needs either a paid always-on service or an external pinger, and neither is the framework's to supply ([axiom 7](./00-thesis.md)) |
-| **Low connection cap** on free Postgres, often 20 or fewer | `POOL_PROFILES` defaults `web` to `max: 20` ([`packages/db/src/client.ts`](../../packages/db/src/client.ts)), which alone can consume the whole cap and starve the `migrate` release step | Override the profile at `createPostgresClient({ profile })`, or set `DATABASE_POOL_MAX` — the one pool knob an operator reaches without a rebuild (`POOL_MAX_ENV`, layered over the role profile by `baseClient()`). **There is no `database.poolSize`**: 4.0.0 deleted it, validated and read by nothing, and [break 4](#where-the-invariant-breaks-today) is the gate that now refuses a key like it |
+| **Low connection cap** on free Postgres, often 20 or fewer | `POOL_PROFILES` defaults `web` to `max: 20` ([`packages/db/src/client.ts`](../../packages/db/src/client.ts)), which alone can consume the whole cap and starve the `migrate` release step | Override the profile at `postgresClient({ profile })`, or set `DATABASE_POOL_MAX` — the one pool knob an operator reaches without a rebuild (`POOL_MAX_ENV`, layered over the role profile by `baseClient()`). **There is no `database.poolSize`**: 4.0.0 deleted it, validated and read by nothing, and [break 4](#where-the-invariant-breaks-today) is the gate that now refuses a key like it |
 | **Ephemeral filesystem** — the disk is gone on every restart | `@ultimat3/storage`'s `driver-local` writes under a directory; PGlite, if `DATABASE_URL` is unset, does the same | The storage seam is the point: set `S3_ENDPOINT` and `S3_*` for `driver-s3` and nothing in the app changes. Never ship a free tier with the local driver holding user uploads, and always set `DATABASE_URL` |
 | **Memory ceiling**, typically 512MB | one process running every role at once | Rung 0 is one `web` service. Live queries at any size want their own process — that is rung 1, and the reason the ladder exists |
 | **A free database that expires** after a fixed window on some platforms | everything | A migration ledger and `x db` are the same on a paid instance; changing `DATABASE_URL` is the whole migration |
@@ -102,7 +102,7 @@ What actually turns on at this rung:
 |---|---|---|
 | cross-node fanout | `NATS_URL` | `selectTransport` builds a `NatsTransport` instead of `InProcessTransport` |
 | presence across nodes | `NATS_KV_BUCKET` (default `x_presence`) | presence is a JetStream KV bucket; its age limit and the presence TTL are one number |
-| live queries off a real WAL | `REPLICATION_URL` / `REPLICATION_SLOT` / `REPLICATION_PUBLICATION` | `selectChangeFeed` builds `PgLogicalReplicationFeed` instead of `InMemoryChangeFeed`, and takes `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` so exactly one replicator exists |
+| live queries off a real WAL | `REPLICATION_URL` / `REPLICATION_SLOT` / `REPLICATION_PUBLICATION` | `selectChangeFeed` builds `postgresChangeFeed()` instead of `memoryChangeFeed()`, and takes `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` so exactly one replicator exists |
 
 **App code change: none.** Both selectors key on env, never on a code path — one image resolves `x dev`, a Compose host and a cluster identically.
 
@@ -132,7 +132,7 @@ Every scale component, and exactly what to swap.
 
 | Concern | Package · interface | Production implementation | `app.config.ts` | Env key that actually decides | Status |
 |---|---|---|---|---|---|
-| Rows / SQL | `@ultimat3/db` · `DbClient`, `ReservableClient` | `createPostgresClient()` over `Bun.SQL`; `setDbClient()` overrides | `database.driver`, `database.ssl` — `urlEnv`, `poolSize` and `schema` were deleted in 4.0.0, each read by nothing | `DATABASE_URL` | shipped |
+| Rows / SQL | `@ultimat3/db` · `DbClient`, `ReservableClient` | `postgresClient()` over `Bun.SQL`; `setDbClient()` overrides | `database.driver`, `database.ssl` — `urlEnv`, `poolSize` and `schema` were deleted in 4.0.0, each read by nothing | `DATABASE_URL` | shipped |
 | Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `createPgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
 | Repository | `@ultimat3/entity` · `Repo`, `Driver` | `postgresRepo()`; `memoryRepo()` for tests | — | — | shipped |
 | Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE`, `DATABASE_POOL_MAX` | shipped |
@@ -141,23 +141,22 @@ Every scale component, and exactly what to swap.
 | Cache, per-process | `@ultimat3/cache` · `CacheTier` | LRU | `cache.tiers: ['lru']` | — | shipped |
 | Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `createRedisTier()` over `Bun.redis` | `cache.tiers: ['redis']` | `REDIS_URL` | shipped |
 | Cache, edge | `@ultimat3/cache` · `CacheTier` | CDN headers + purge (Cloudflare, Fastly, HTTP) | `cache.tiers: ['cdn']` | purge-provider env | shipped |
-| Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `createPgDriver()`; `setJobDriver()` installs it | **none** — `jobs.driver` was deleted in 5.0.0 and `setJobDriver()` is the only switch | `DATABASE_URL` | shipped |
-| Job queue, Redis | same interface | `createRedisDriver()` — Streams + consumer groups + `XAUTOCLAIM` | none; `setJobDriver(createRedisDriver())` | `REDIS_URL` | **interface-complete stub, throws `X_NOT_IMPLEMENTED`** |
-| Job queue, NATS | same interface | `createNatsDriver()` — work-queue stream per queue, durable pull consumer, `ack_wait` as the visibility timeout, KV for steps | none; `setJobDriver(createNatsDriver())` | `NATS_URL` | **interface-complete stub, throws `X_NOT_IMPLEMENTED`** |
-| Scheduler leader | `@ultimat3/jobs` · `createPgLeaseLeader` | `SQL_LEADER_ACQUIRE` / `SQL_LEADER_RELEASE` — an expiring row in `x_scheduler_leader`, TTL 30s, `acquire()` doubling as the renewal. **Never `pg_try_advisory_lock`**: it is session-scoped, and the executor is a pool, so the grant dies when the connection returns and every node reads itself as leader | — | — | shipped |
+| Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `postgresJobDriver()`; `setJobDriver()` installs it | **none** — `jobs.driver` was deleted in 5.0.0 and `setJobDriver()` is the only switch | `DATABASE_URL` | shipped |
+| Job queue, Redis | same interface | a future `redisJobDriver()` — Streams + consumer groups + `XAUTOCLAIM` | none; `setJobDriver(redisJobDriver())` | `REDIS_URL` | **not shipped** — the all-throw stub was deleted in 25.0.0; a real driver arrives as a minor |
+| Scheduler leader | `@ultimat3/jobs` · `postgresLeaseLeader` | `SQL_LEADER_ACQUIRE` / `SQL_LEADER_RELEASE` — an expiring row in `x_scheduler_leader`, TTL 30s, `acquire()` doubling as the renewal. **Never `pg_try_advisory_lock`**: it is session-scoped, and the executor is a pool, so the grant dies when the connection returns and every node reads itself as leader | — | — | shipped |
 | Realtime fanout | `@ultimat3/realtime` · `Transport`, via `selectTransport(env, realtime)` | `InProcessTransport` \| `NatsTransport` | `realtime.transport` — **decides**, as of 22.0.0 | the variable `realtime.urlEnv` names (`NATS_URL`) | shipped |
 | Presence | `@ultimat3/realtime` · JetStream KV | bucket, default `x_presence`, TTL 30s | — | `NATS_KV_BUCKET` | shipped |
-| Change feed | `@ultimat3/realtime` · `ChangeFeed`, via `selectChangeFeed(env)` | `InMemoryChangeFeed` \| `PgLogicalReplicationFeed` (own PG v3 client, SCRAM-SHA-256, CopyBoth, `pgoutput`) | — | `REPLICATION_URL`, `REPLICATION_SLOT`, `REPLICATION_PUBLICATION` | shipped |
-| Replicator singleton | `@ultimat3/realtime` · `AdvisoryLock` | `PgAdvisoryLock` (`pg_try_advisory_lock(hashtext(key))`, session-scoped) | — | — | shipped |
+| Change feed | `@ultimat3/realtime` · `ChangeFeed`, via `selectChangeFeed(env)` | `memoryChangeFeed()` \| `postgresChangeFeed()` (own PG v3 client, SCRAM-SHA-256, CopyBoth, `pgoutput`) | — | `REPLICATION_URL`, `REPLICATION_SLOT`, `REPLICATION_PUBLICATION` | shipped |
+| Replicator singleton | `@ultimat3/realtime` · `AdvisoryLock` | `postgresAdvisoryLock()` (`pg_try_advisory_lock(hashtext(key))`, session-scoped) | — | — | shipped |
 | Migration lock | `@ultimat3/db` · `MIGRATION_LOCK_KEY` | `pg_advisory_lock(4919202607)` on a pool pinned to `max: 1` | — | — | shipped |
 | Object storage | `@ultimat3/storage` · `Driver` | `driver-local` \| `driver-s3` | — | `S3_ENDPOINT`, `S3_*` | shipped |
 | Mail | `@ultimat3/mail` · `Driver` | `driver-smtp` \| `driver-resend` | — | mail env | shipped |
-| Vector search | `@ultimat3/ai` · `PgVectorStore` | pgvector: `hnsw` on `vector_cosine_ops`, two `gin` indexes, generated `tsvector` | — | `DATABASE_URL` | shipped, Postgres-only — see below |
+| Vector search | `@ultimat3/ai` · `postgresVectorStore()` | pgvector: `hnsw` on `vector_cosine_ops`, two `gin` indexes, generated `tsvector` | — | `DATABASE_URL` | shipped, Postgres-only — see below |
 | Tracing | `@ultimat3/core` · `SpanExporter`, `configureTelemetry()` | `noopExporter` (default) \| `memoryExporter` \| `otlpSpanExporter()` over OTLP/HTTP JSON | — | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_SAMPLER_ARG` | shipped — **HTTP JSON only**, gRPC refused |
 | Metrics | `@ultimat3/core` · `Counter`/`Gauge`/`Histogram`, `MetricExporter`, `metricsText()` | no-op exporter by default, memory exporter for tests; Prometheus text with no dependency | — | `METRICS_PORT` (default 9090) | shipped and wired — every role serves `METRICS_PATH`; `http`/`realtime`/`jobs` each hold one call site; the chart declares the port, publishes it and ships an opt-in ServiceMonitor |
 | Secrets in logs | `@ultimat3/core` · `Secret`, `revealSecret()` | redacts by value at any depth, frozen so a spread cannot unwrap it | env declared `secret: true` | — | shipped |
 | Which deploy this is | `@ultimat3/core` · `resolveEnvironment()` | `development \| test \| staging \| production` | — | `ULTIMATE_ENV` | shipped |
-| `.env.example` | `@ultimat3/core` · `renderEnvExample()`, `assertEnvExample()` | projected from the `defineEnv` declaration | — | — | shipped |
+| `.env.example` | `@ultimat3/core` · `renderEnvExample()`, `checkEnvExample()` | projected from the `defineEnv` declaration | — | — | shipped |
 | Admission control | `@ultimat3/realtime` · `AcceptBudget` | token bucket, 500/s default, burst 2000 | — | — | shipped |
 
 Rule that survives every rung: **an unset variable means the embedded default.** No `NATS_URL` means in-process fanout. No `DATABASE_URL` means PGlite. No `REDIS_URL` means the shared tier is absent, not broken.
@@ -208,12 +207,12 @@ Not a supported target. No test in this repo runs against YugabyteDB, and no dia
 
 ### The blocking findings
 
-1. **Below v2025.1, YugabyteDB cannot run this framework at all.** No advisory locks means no migrations (`migrate()` takes `pg_advisory_lock(4919202607)` before it reads the ledger), no replicator singleton (`PgAdvisoryLock`, which owns its connection), and no parallel test template. Scheduler leader election is **not** on that list: it is an expiring row (`createPgLeaseLeader`), so it survives a database with no advisory locks — and it is a pool, not a session, that made the row the right shape in the first place. Two of the three fail closed with a typed error; the replicator one would let two replicators double-deliver.
+1. **Below v2025.1, YugabyteDB cannot run this framework at all.** No advisory locks means no migrations (`migrate()` takes `pg_advisory_lock(4919202607)` before it reads the ledger), no replicator singleton (`postgresAdvisoryLock()`, which owns its connection), and no parallel test template. Scheduler leader election is **not** on that list: it is an expiring row (`postgresLeaseLeader`), so it survives a database with no advisory locks — and it is a pool, not a session, that made the row the right shape in the first place. Two of the three fail closed with a typed error; the replicator one would let two replicators double-deliver.
 2. **`@ultimat3/ai`'s vector store does not create its schema on YugabyteDB, at any version.** `ddlSql()` emits two `USING gin` indexes. The vector index is fine; hybrid search's full-text half and the metadata index are not — and `ybgin` would still refuse the multi-column and multi-term cases the FTS path needs.
 3. **The `replicator` role does not start on a default Yugabyte database.** Its default replica identity, `CHANGE`, cannot be decoded by `pgoutput`, and one such table in the database is enough. Every replicated table needs `REPLICA IDENTITY FULL` before slot creation — a migration the framework does not write today.
 4. **Migrations are no longer atomic.** `migrate()` runs each `up` inside `withTransaction`; v2026.1 disables transactional DDL. A migration that fails partway leaves the schema partly applied while the ledger row is absent — and the ledger's checksum audit then refuses to move forward. This is the failure that most needs a live test.
 
-Beyond the four, `PgLogicalReplicationFeed` survives the rest of Yugabyte's CDC caveats by accident of design: it confirms the slot as it goes, treats `TRUNCATE` as advisory, never issues `IDENTIFY SYSTEM`, and never compares LSNs across slots. A `TRUNCATE` on a replicated table sending no record is a silent divergence for anything that truncates — the one caveat that still bites.
+Beyond the four, `postgresChangeFeed()` survives the rest of Yugabyte's CDC caveats by accident of design: it confirms the slot as it goes, treats `TRUNCATE` as advisory, never issues `IDENTIFY SYSTEM`, and never compares LSNs across slots. A `TRUNCATE` on a replicated table sending no record is a silent divergence for anything that truncates — the one caveat that still bites.
 
 ### What would have to change
 
@@ -284,7 +283,7 @@ The framework speaks NATS through the official `nats` client (`nats@2.29.3`, pin
 
 **2.11 is the floor, not the version to run.** NATS supports the current and previous minor series only; as of 2026-08 that is **2.14** and **2.12**, and 2.11 is end-of-life. `docker-compose.dev.yml` pins `nats:2.11-alpine` — correct as a compatibility floor, stale as a deployment. Pin 2.12 or 2.14 in production.
 
-What the framework uses NATS for today: **fanout and presence only.** The NATS *jobs* driver is a stub. Its intended mapping is written down and has no design decisions left — a JetStream work-queue stream per queue, a durable pull consumer per worker pool where `fetch` is `claim` and `ack`/`nak` map 1:1, `ack_wait` as the visibility timeout, and a KV bucket for step records ([`packages/jobs/src/driver-nats.ts`](../../packages/jobs/src/driver-nats.ts)). Every piece exists: pull consumers with explicit ack, `MaxDeliver` bounding redelivery, `Nats-Msg-Id` deduplication ([docs](https://docs.nats.io/nats-concepts/jetstream/consumers)). Three constraints that mapping will meet, worth knowing before it is written:
+What the framework uses NATS for today: **fanout and presence only.** There is no NATS *jobs* driver: its all-throw stub was deleted in 25.0.0 (owner decision O-5). The mapping it carried, kept here for whoever builds one — a JetStream work-queue stream per queue, a durable pull consumer per worker pool where `fetch` is `claim` and `ack`/`nak` map 1:1, `ack_wait` as the visibility timeout, and a KV bucket for step records. Every piece exists: pull consumers with explicit ack, `MaxDeliver` bounding redelivery, `Nats-Msg-Id` deduplication ([docs](https://docs.nats.io/nats-concepts/jetstream/consumers)). Three constraints that mapping will meet, worth knowing before it is written:
 
 | Constraint | Consequence for the driver |
 |---|---|
@@ -341,7 +340,7 @@ Two rules underneath all of them:
 |---|---|
 | one image, `ROLE` selects the process | **true** — `packages/core/src/roles.ts`, `docker/Dockerfile` |
 | Postgres job queue with `SKIP LOCKED`, partial-unique idempotency, lease-row leader | **true** — `packages/jobs/src/driver-pg-sql.ts` |
-| Redis and NATS job drivers | **stubs** — interface-complete, every method throws `X_NOT_IMPLEMENTED` |
+| Redis job driver | **stub** — interface-complete, every method throws `X_NOT_IMPLEMENTED`. There is no NATS job driver (deleted in 25.0.0) |
 | shared cache tier over the Redis protocol, tag sets, declared-key invalidation | **true** — `packages/cache/src/redis.ts`; one call per tag over `{entity}`-tagged buckets, then the value keys one `DEL` each, plus single-flight, TTL jitter and a bucket lease |
 | NATS fanout and JetStream KV presence | **true** — `packages/realtime/src/nats-transport.ts`, selected by `NATS_URL` |
 | Postgres logical replication change feed, `pgoutput`, own wire client | **true** — `packages/realtime/src/pg-replication.ts` |

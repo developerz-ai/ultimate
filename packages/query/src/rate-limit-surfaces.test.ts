@@ -11,7 +11,6 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
 import { spendQueryLimit } from './live';
-import { toQueryTool } from './mcp-tool';
 import { query } from './query';
 import { sourceFor } from './read';
 import { from } from './source';
@@ -52,6 +51,11 @@ const outcome = (attempt: Promise<unknown>): Promise<string> =>
     (error: unknown) => (error as { readonly code?: string }).code ?? 'uncoded',
   );
 
+// `@ultimat3/mcp`'s one projection serves a read as `sourceFor(…, { surface: 'mcp' })` then
+// `execute()` (`projectable.ts`) — so that call is the MCP surface asserted here.
+const viaMcp = async (target: ReturnType<typeof searchOrders>): Promise<unknown> =>
+  (await sourceFor(target, { orgId: ORG }, { surface: 'mcp' })).execute();
+
 const asReader = <T>(run: () => Promise<T>): Promise<T> =>
   runWithContext(createContext({ actor: reader }), run);
 
@@ -81,17 +85,16 @@ describe('a declared read limit is refused after the limit on every surface', ()
   });
 
   test('MCP: the read tool is refused X_RATE_LIMITED on the third call', async () => {
-    const tool = toQueryTool(searchOrders());
+    const target = searchOrders();
     const seen: string[] = [];
-    for (let i = 0; i < 3; i += 1)
-      seen.push(await asReader(() => outcome(tool.read({ orgId: ORG }))));
+    for (let i = 0; i < 3; i += 1) seen.push(await asReader(() => outcome(viaMcp(target))));
     expect(seen).toEqual(['ok', 'ok', 'X_RATE_LIMITED']);
   });
 
   test('HTTP and MCP spend ONE bucket', async () => {
     const target = searchOrders();
     expect((await get(serve(target))).status).toBe(200);
-    expect(await asReader(() => outcome(toQueryTool(target).read({ orgId: ORG })))).toBe('ok');
+    expect(await asReader(() => outcome(viaMcp(target)))).toBe('ok');
     expect((await get(serve(target))).status).toBe(429);
   });
 

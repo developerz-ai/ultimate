@@ -1,6 +1,7 @@
 # @ultimat3/action
 
-Owns the `action` + `mutator` primitives and their six projections. Tier 3.
+Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP tool is
+`@ultimat3/mcp`'s one projection (O-tool, 25.0.0).
 
 ## Boundary
 
@@ -33,9 +34,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
-| — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported from `src/index.ts`. There is no local copy and must not be one |
+| — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, imported from core — `src/index.ts` re-exports only the `ClientFlight`/`ClientRetry` types. There is no local copy and must not be one |
 | `wire-headers.ts` | `BUILD_ID_HEADER` + `IDEMPOTENCY_HEADER`, and nothing else. Their own module so `client.ts` can name them without importing `http.ts` |
-| `mcp-tool.ts` | MCP descriptor, same `invoke` |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
 | `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
@@ -44,13 +44,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
 | `idempotency-redact.ts` | `restingAnswer` — the copy of an answer a store may keep: core's `isRedactedKey` + `isSecret`, the SAME reference when nothing is redacted |
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
-| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust) and `liveTransaction` (the settle) |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
-| `audit.ts` | the audit seam, re-exported from `@ultimat3/core` (shared with `query`) |
+| `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`setAuditSink`) is core's alone |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
 | `audit-postgres.ts` | the DURABLE sink — one append-only `x_audit` table, one insert per record |
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
@@ -69,7 +68,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - The declaration never leaves `invoke.ts`: `defOf`/`stashDef` are never re-exported from
   `src/index.ts` (`index.test.ts`). An action has no `.def`; outside, read `.input`/`.output`/
   `.policy`/`.mcp` or `describe()`. App code reaches a projection through the action
-  (`publishPost.tool()`); new methods are bound in `facade.ts`.
+  (`publishPost.openapi()`); new methods are bound in `facade.ts`. **No `.tool()`**: it was a second
+  MCP projection beside mcp's `toolFrom` (`index.test.ts`, `type-pins.ts`).
 - **`toRoute` sets `enforcedBy: 'handler'`** — `invoke` is the one evaluation and the only one holding
   the row `def.row` loaded; `meta.policy` stays set. `http.test.ts` counts exactly one evaluation.
 - **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, via
@@ -178,10 +178,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   namespaced idempotency key (never a metric label). `telemetry.test.ts`.
 - **`policyCapability` is a display label; `policyPermissions` (`ActionDescriptor.permissions`) is
   what a report matches on** (a `not()` clause contributes its permissions).
-- **MCP exposure reads core's `isMcpExposed`, in all three places** (`toMcpTools`, `describeAction`,
-  `x-ultimate.mcpTool`). **A tool's NAME is the export name verbatim everywhere** — `toToolName` is
-  deleted; `mcp-tool.test.ts` asserts one verbatim name across surfaces. `ActionFact.mcp` in the app
-  manifest carries only `{ expose, description? }`.
+- **MCP exposure is core's `isMcpExposed`** (`describeAction`, `x-ultimate.mcpTool`); **a tool's
+  NAME is the export name verbatim** (`mcp-surface.test.ts`). `ActionFact.mcp` in the app manifest
+  carries only `{ expose, description? }`.
 - **`ActionJobHandle` is not consumed by `@ultimat3/jobs`** (`isJobHandle` needs `job()`'s private
   map). `.job()` gives `action:<name>` as a queue key, a payload-derived idempotency key and an
   `invoke` under `surface: 'job'`. The bridge is `agentJob()` in `@ultimat3/ai`, or an app's own
@@ -189,23 +188,21 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 ## Invariants — flight control
 
-- **Flight control is `@ultimat3/core`'s, re-exported** — the same objects `@ultimat3/query`
-  exports. Fix the pipeline in `packages/core/src/client-flight.ts`. No new code, curve, fence or
-  retry loop here (`bun run flight-copies`).
+- **Flight control is `@ultimat3/core`'s, and NOT re-exported** — its values are imported from
+  core (`X_HELPER_COPY` refuses a re-export); only the types `ClientFlight`/`ClientRetry`. Fix the
+  pipeline in `packages/core/src/client-flight.ts`. No new code, curve, fence or retry loop here (`bun run flight-copies`).
 - **`isTransientFailure` INVERTS `retryDecision`'s unclassified default** (a caller's `AbortError`
   is terminal). Must survive.
 - **`ClientFlight` is a TYPE inside `client.ts`, never a value.** Measured,
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | before (HEAD `98d16d84`) | onto `clientTransport` | trace headers moved to core's outbound slot | As of 2026-09-23 |
-  |---|---|---|---|---|
-  | `rpc` | 18,097 B | 23,007 B | 18,119 B | 19,074 B |
-  | `rpc` + `createClientFlight` | 23,903 B | 28,823 B | not measured | 25,197 B |
+  | Entry | `As of 2026-10-01` |
+  |---|---|
+  | `rpc` | 19,671 B (+181 B for the document's path-style stamp) |
+  | `rpc` + core's `createClientFlight` | 25,954 B |
 
-  Net against the pre-transport figure: +977 B, about the envelope decoder's size. `As of 2026-10-01`
-  `rpc` is 19,671 B (19,490 B before the document's path-style stamp was read: +181 B, +45 gzipped)
-  and `rpc` + `createClientFlight` 25,954 B.
+  Earlier columns (pre-transport 18,097 B, +977 B net for the envelope decoder) are in git history.
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
   not. An http refusal needs no http module: core's decoders take its title off the body and its
@@ -273,7 +270,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. The
   vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
   duplicate that unifying would need core for.
-- **Records carry `name` + `primitive`**; `action` is its deprecated alias (M9). Read `name`.
+- **Records carry `name` + `primitive`, required** (`type-pins.ts`); no `action` alias since 25.0.0.
+  The `x_audit.action` column holds `name`.
 - **The memory sink DROPS** — a ring at `DEFAULT_MAX_AUDIT_RECORDS`, oldest first, counting `dropped`;
   no spelling of "unbounded".
 - **A durable sink writes what `audit-input.ts` allows**: input redacted through core's
@@ -283,7 +281,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `locale`, `tz`, `buildId`, `role`, actor `id`/`kind`/`orgId`/`onBehalfOf`) and keeps
   `failure.code`, never the error.
 - **`x_audit` ships no purge**, deliberately. **`SQL_AUDIT_INSERT` is positional**, pinned by
-  `audit-parity.test.ts` with a distinct value per field.
+  `audit-parity.test.ts` with a distinct value per field. Only `*_TABLE` DDL is exported
+  (`X_SQL_EXPORT_UNREAD`).
 - **The two failure policies are opposites**: `X_AUDIT_SINK_MISSING` before the input parse (no
   logger-backed default sink); a sink refusing an ALLOWED record is `X_AUDIT_SINK_FAILED`, whose `fix:`
   branches on `record.idempotencyKey !== null` (`meta.replayable`); a sink refusing a denied or failed

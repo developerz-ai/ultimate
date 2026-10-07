@@ -5,8 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import { AiTransportError } from './errors';
 import { backoffMs, createGateway, isRetryable, type RetryPolicy } from './gateway';
-import { ANTHROPIC_MODEL_IDS } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const POLICY: RetryPolicy = { attempts: 5, baseDelayMs: 500, maxDelayMs: 8_000 };
 
@@ -15,7 +18,7 @@ function failingGateway(status: number, waits: number[], random: () => number) {
   let attempts = 0;
   const failing: Provider = {
     name: 'failing',
-    models: ANTHROPIC_MODEL_IDS,
+    models: FIXTURE_ANTHROPIC_IDS,
     generate(): Promise<GenerateResult> {
       attempts += 1;
       return Promise.reject(new AiTransportError({ provider: 'failing', status, detail: 'no' }));
@@ -26,6 +29,7 @@ function failingGateway(status: number, waits: number[], random: () => number) {
     },
   };
   const gateway = createGateway({
+    defaultModel: FIXTURE_MODEL,
     providers: [failing],
     retry: { attempts: 3, baseDelayMs: 500, maxDelayMs: 8_000 },
     random,

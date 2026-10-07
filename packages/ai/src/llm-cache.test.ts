@@ -5,7 +5,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
-import { createMemorySemanticCache } from '@ultimat3/cache';
+import { memorySemanticCache } from '@ultimat3/cache';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { createGateway } from './gateway';
@@ -20,8 +20,12 @@ import {
   promptFor,
   stub,
 } from './llm-fixture';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt } from './prompt';
 import { configureAi, resetAiRuntime } from './runtime';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 beforeEach(() => {
   resetAiRuntime();
@@ -206,10 +210,10 @@ describe('the semantic cache', () => {
 describe('the entry key', () => {
   test('two rendered prompts that collide under FNV-1a are two entries', async () => {
     const keys: string[] = [];
-    const inner = createMemorySemanticCache();
+    const inner = memorySemanticCache();
     const { provider } = stub({ answer: 'ok' });
     configureAi({
-      gateway: createGateway({ providers: [provider] }),
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
       // entry KEY is the only thing under test.
       embedder: {

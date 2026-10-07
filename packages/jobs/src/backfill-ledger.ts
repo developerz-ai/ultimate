@@ -153,7 +153,7 @@ export function decideBackfill(
   return { run: force, previous: completed, changed: completed.checksum !== checksum };
 }
 
-export function createMemoryBackfillLedger(clock: Clock = systemClock): BackfillLedger {
+export function memoryBackfillLedger(clock: Clock = systemClock): BackfillLedger {
   const runs = new Map<string, BackfillRun>();
   const patch = (runId: string, fields: Partial<BackfillRun>): void => {
     const existing = runs.get(runId);

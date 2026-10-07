@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { MailMessage } from './driver';
-import { createSmtpDriver } from './driver-smtp';
+import { smtpMailDriver } from './driver-smtp';
 import { mailIdempotencyKey } from './idempotency';
 import type { SmtpStream, SmtpTarget } from './smtp-client';
 
@@ -129,7 +129,7 @@ function startLocalSmtp(): LocalServer {
 test('a real delivery over a real socket lands the full MIME message', async () => {
   const server = startLocalSmtp();
   try {
-    const driver = createSmtpDriver({
+    const driver = smtpMailDriver({
       url: `smtp://127.0.0.1:${server.port}`,
       from: FROM,
       allowInsecure: true,
@@ -172,7 +172,7 @@ test('a real delivery over a real socket lands the full MIME message', async () 
 test('a body far larger than one socket buffer is written whole', async () => {
   const server = startLocalSmtp();
   try {
-    const driver = createSmtpDriver({
+    const driver = smtpMailDriver({
       url: `smtp://127.0.0.1:${server.port}`,
       from: FROM,
       allowInsecure: true,
@@ -194,7 +194,7 @@ test('a body far larger than one socket buffer is written whole', async () => {
 test('a cleartext server without STARTTLS is refused when insecure sending is not opted into', async () => {
   const server = startLocalSmtp();
   try {
-    const driver = createSmtpDriver({ url: `smtp://127.0.0.1:${server.port}`, from: FROM });
+    const driver = smtpMailDriver({ url: `smtp://127.0.0.1:${server.port}`, from: FROM });
 
     const error = await caught(driver.send(messageFixture()));
 
@@ -209,7 +209,7 @@ test('a refused connection is a transient send failure, not a bare socket error'
   const server = startLocalSmtp();
   const port = server.port;
   server.stop();
-  const driver = createSmtpDriver({
+  const driver = smtpMailDriver({
     url: `smtp://127.0.0.1:${port}`,
     from: FROM,
     allowInsecure: true,
@@ -247,7 +247,7 @@ test('poolSize caps how many conversations run at once', async () => {
       },
     });
   };
-  const driver = createSmtpDriver({
+  const driver = smtpMailDriver({
     url: 'smtp://mail.example.test:587',
     from: FROM,
     allowInsecure: true,
@@ -286,7 +286,7 @@ test('smtps defaults to 465 and smtp to 587, and credentials are percent-decoded
     });
   };
   const send = async (url: string): Promise<void> => {
-    const driver = createSmtpDriver({ url, from: FROM, allowInsecure: true, connect: connector });
+    const driver = smtpMailDriver({ url, from: FROM, allowInsecure: true, connect: connector });
     await caught(driver.send(messageFixture()));
   };
 
@@ -308,7 +308,7 @@ test('smtps defaults to 465 and smtp to 587, and credentials are percent-decoded
 
 test('a poolSize that opens no connection is refused at construction, never a silent deadlock', () => {
   const build = (poolSize: number): unknown =>
-    thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test:587', from: FROM, poolSize }));
+    thrown(() => smtpMailDriver({ url: 'smtp://mail.example.test:587', from: FROM, poolSize }));
 
   // 0 used to park every send on a slot that was never handed out: no error, no retry, and the
   // worker slot gone until a restart. Each of these is that same "no connection" value.
@@ -318,19 +318,19 @@ test('a poolSize that opens no connection is refused at construction, never a si
   }
   // The valid boundary still builds — the check refuses `< 1`, not "small".
   expect(
-    thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test', from: FROM, poolSize: 1 })),
+    thrown(() => smtpMailDriver({ url: 'smtp://mail.example.test', from: FROM, poolSize: 1 })),
   ).toBeUndefined();
 });
 
 test('a url that is not SMTP is a config error at construction, not at the first send', () => {
   expect(
-    codeOf(thrown(() => createSmtpDriver({ url: 'https://mail.example.test', from: FROM }))),
+    codeOf(thrown(() => smtpMailDriver({ url: 'https://mail.example.test', from: FROM }))),
   ).toBe('X_CONFIG_INVALID');
-  expect(codeOf(thrown(() => createSmtpDriver({ url: 'not a url', from: FROM })))).toBe(
+  expect(codeOf(thrown(() => smtpMailDriver({ url: 'not a url', from: FROM })))).toBe(
     'X_CONFIG_INVALID',
   );
   expect(
-    codeOf(thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test', from: '  ' }))),
+    codeOf(thrown(() => smtpMailDriver({ url: 'smtp://mail.example.test', from: '  ' }))),
   ).toBe('X_CONFIG_INVALID');
 });
 
@@ -341,13 +341,13 @@ test('a malformed percent-escape in the credentials is a coded refusal', () => {
     'smtp://user:pa%ss@mail.example.test',
     'smtp://us%er:pass@mail.example.test',
   ]) {
-    const error = thrown(() => createSmtpDriver({ url, from: FROM }));
+    const error = thrown(() => smtpMailDriver({ url, from: FROM }));
     expect(codeOf(error)).toBe('X_CONFIG_INVALID');
     expect(isUltimateError(error) ? error.cause : '').not.toContain('pa%ss');
   }
   // Plan 101 sweep 1c: the prompt label is one of two literals, screened so the guard can see it.
   const fix = (url: string): string => {
-    const error = thrown(() => createSmtpDriver({ url, from: FROM }));
+    const error = thrown(() => smtpMailDriver({ url, from: FROM }));
     return isUltimateError(error) ? error.fix : '';
   };
   expect(fix('smtp://us%er:pass@mail.example.test')).toContain('prompt("user:")');
@@ -360,7 +360,7 @@ test('a malformed percent-escape in the credentials is a coded refusal', () => {
 // where `poolSize` already is: at construction, naming the argument an operator passes.
 test('a non-finite timeout is refused at construction, like poolSize', () => {
   const error = thrown(() =>
-    createSmtpDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: Number.NaN }),
+    smtpMailDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: Number.NaN }),
   );
   expect(codeOf(error)).not.toContain('not an UltimateError');
   expect(isUltimateError(error) ? error.cause : '').toContain('timeoutMs');
@@ -368,7 +368,7 @@ test('a non-finite timeout is refused at construction, like poolSize', () => {
 
 test('a zero timeout is refused rather than expiring every read on the next tick', () => {
   const error = thrown(() =>
-    createSmtpDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: 0 }),
+    smtpMailDriver({ url: 'smtp://mail.test:587', from: FROM, timeoutMs: 0 }),
   );
   expect(isUltimateError(error) ? error.cause : '').toContain('timeoutMs');
 });
@@ -384,7 +384,7 @@ test('a zero timeout is refused rather than expiring every read on the next tick
 test('a display-form recipient is delivered to its bare address spec', async () => {
   const server = startLocalSmtp();
   try {
-    const driver = createSmtpDriver({
+    const driver = smtpMailDriver({
       url: `smtp://127.0.0.1:${server.port}`,
       from: FROM,
       allowInsecure: true,
@@ -407,7 +407,7 @@ test('a display-form recipient is delivered to its bare address spec', async () 
 test('a recipient that would open a second envelope command is still refused', async () => {
   const server = startLocalSmtp();
   try {
-    const driver = createSmtpDriver({
+    const driver = smtpMailDriver({
       url: `smtp://127.0.0.1:${server.port}`,
       from: FROM,
       allowInsecure: true,
@@ -430,7 +430,7 @@ test('retainMime keeps the exact message the server received, and only for an ac
   const server = startLocalSmtp();
   const retained: string[] = [];
   try {
-    const driver = createSmtpDriver({
+    const driver = smtpMailDriver({
       url: `smtp://127.0.0.1:${server.port}`,
       from: FROM,
       allowInsecure: true,
@@ -446,7 +446,7 @@ test('retainMime keeps the exact message the server received, and only for an ac
     server.stop();
   }
 
-  const refused = createSmtpDriver({
+  const refused = smtpMailDriver({
     url: 'smtp://127.0.0.1:1',
     from: FROM,
     allowInsecure: true,

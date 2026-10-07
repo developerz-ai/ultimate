@@ -57,7 +57,7 @@ export interface MemoryLeaseStore extends LeaseStore {
  * memory driver enforces `concurrency` with the same code path the pg driver does, and so the
  * "a second worker is refused" test is a real test rather than a pg-only one.
  */
-export function createMemoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryLeaseStore {
+export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryLeaseStore {
   const clock = options.clock ?? systemClock;
   type Slots = Map<number, { holder: string; expiresAt: number }>;
   const slots = new Map<string, Slots>();

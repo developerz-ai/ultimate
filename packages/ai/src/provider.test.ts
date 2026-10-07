@@ -2,15 +2,20 @@
 // The streaming and parsing halves are `provider-stream.test.ts`.
 import { describe, expect, test } from 'bun:test';
 import { createGateway, isRetryable } from './gateway';
-import { ANTHROPIC_MODEL_IDS, modelSpec } from './models';
+import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
+import { modelSpec } from './models';
 import { AnthropicProvider, estimateInputTokens, estimateTokens } from './provider';
 import { type Call, collect, fakeFetch } from './provider-fixture';
 
-const provider = new AnthropicProvider();
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
+
+const provider = new AnthropicProvider({ models: [FIXTURE_MODEL] });
 
 describe('Anthropic request body', () => {
   test('never sends sampling parameters or a thinking budget', () => {
     const body = provider.body({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 1_000,
     });
@@ -23,6 +28,7 @@ describe('Anthropic request body', () => {
 
   test('effort lives inside output_config, and a control nobody asked for is omitted', () => {
     const body = provider.body({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 1_000,
       effort: 'xhigh',
@@ -36,6 +42,7 @@ describe('Anthropic request body', () => {
 
   test('a thinking mode the caller DID ask for is sent', () => {
     const body = provider.body({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 1_000,
       thinking: 'adaptive',
@@ -46,6 +53,7 @@ describe('Anthropic request body', () => {
   test('disabling thinking above high effort is refused locally, not by a 400', () => {
     expect(() =>
       provider.body({
+        model: FIXTURE_MODEL,
         messages: [{ role: 'user', content: 'hi' }],
         maxTokens: 1_000,
         effort: 'max',
@@ -53,6 +61,7 @@ describe('Anthropic request body', () => {
       }),
     ).toThrow();
     const ok = provider.body({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 1_000,
       effort: 'high',
@@ -103,7 +112,7 @@ describe('Anthropic request body', () => {
   test('an effort nobody asked for is not sent, on any model', () => {
     // A default sent as a request is indistinguishable on the wire from a declaration that asked
     // for it, and it is a 400 on a model without the knob — so omission is the only safe shape.
-    for (const model of ANTHROPIC_MODEL_IDS) {
+    for (const model of FIXTURE_ANTHROPIC_IDS) {
       const body = provider.body({
         model,
         messages: [{ role: 'user', content: 'hi' }],
@@ -115,7 +124,7 @@ describe('Anthropic request body', () => {
 
   test('every blessed model gets a body its own spec says it accepts', () => {
     // Catalogue-driven, so a fourth model cannot be added with a body it would 400 on.
-    for (const model of ANTHROPIC_MODEL_IDS) {
+    for (const model of FIXTURE_ANTHROPIC_IDS) {
       const { reasoning } = modelSpec(model);
       const body = provider.body({
         model,
@@ -151,12 +160,22 @@ describe('Anthropic request body', () => {
 
   test('a remote call without a key throws X_AI_KEY_MISSING naming the env var', async () => {
     // An explicit empty key, so the result does not depend on the developer's own environment.
-    const keyless = new AnthropicProvider({ apiKey: '' });
+    const keyless = new AnthropicProvider({ models: [FIXTURE_MODEL], apiKey: '' });
     await expect(
-      keyless.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 }),
+      keyless.generate({
+        model: FIXTURE_MODEL,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 8,
+      }),
     ).rejects.toMatchObject({ code: 'X_AI_KEY_MISSING' });
     await expect(
-      collect(keyless.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 })),
+      collect(
+        keyless.stream({
+          model: FIXTURE_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 8,
+        }),
+      ),
     ).rejects.toMatchObject({ code: 'X_AI_KEY_MISSING' });
   });
 });
@@ -165,6 +184,7 @@ describe('transport', () => {
   test('generate posts a non-streaming body to the Messages endpoint and parses the reply', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'sk-ant-test',
       fetch: fakeFetch(calls, () =>
         Response.json({
@@ -176,6 +196,7 @@ describe('transport', () => {
     });
 
     const result = await remote.generate({
+      model: FIXTURE_MODEL,
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 64,
     });
@@ -192,6 +213,7 @@ describe('transport', () => {
   test('a non-2xx carries its status, so the gateway can tell momentary from permanent', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () =>
         Response.json(
@@ -202,7 +224,7 @@ describe('transport', () => {
     });
 
     const failure = await remote
-      .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 })
+      .generate({ model: FIXTURE_MODEL, messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 })
       .catch((error: unknown) => error);
 
     expect(failure).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE', status: 429 });
@@ -214,12 +236,13 @@ describe('transport', () => {
   test('a 400 is never retried — the same body earns the same rejection', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => new Response('max_tokens too large', { status: 400 })),
     });
 
     const failure = await remote
-      .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 })
+      .generate({ model: FIXTURE_MODEL, messages: [{ role: 'user', content: 'hi' }], maxTokens: 8 })
       .catch((error: unknown) => error);
 
     expect(isRetryable(failure)).toBe(false);
@@ -229,6 +252,7 @@ describe('transport', () => {
   test('the gateway retries a 429 and succeeds on the attempt that lands', async () => {
     const calls: Call[] = [];
     const remote = new AnthropicProvider({
+      models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, (_call, index) =>
         index < 2
@@ -240,7 +264,11 @@ describe('transport', () => {
             }),
       ),
     });
-    const gateway = createGateway({ providers: [remote], sleep: async () => undefined });
+    const gateway = createGateway({
+      defaultModel: FIXTURE_MODEL,
+      providers: [remote],
+      sleep: async () => undefined,
+    });
 
     const result = await gateway.generate({
       messages: [{ role: 'user', content: 'hi' }],

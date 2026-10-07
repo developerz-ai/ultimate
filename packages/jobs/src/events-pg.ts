@@ -40,7 +40,7 @@ export interface PgEventBusOptions {
   readonly listLimit?: number;
 }
 
-export function createPgEventBus(options: PgEventBusOptions): EventBus {
+export function postgresEventBus(options: PgEventBusOptions): EventBus {
   // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
   // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
   // whichever value actually arrived.

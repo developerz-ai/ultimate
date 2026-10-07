@@ -18,7 +18,6 @@ import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
-import type { QueryToolDescriptor } from './mcp-tool';
 import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { policyCapability, policyPermissions } from './policy-gate';
@@ -286,7 +285,6 @@ export interface AnyQuery {
   /** One bounded page plus the signed cursor that continues it. There is no `offset`. */
   page(input: unknown, args: PaginateArgs): Promise<Page<object>>;
   live(input: unknown, options?: ToLiveOptions): Promise<LiveQuery>;
-  tool(): QueryToolDescriptor;
 }
 
 export interface Query<
@@ -312,8 +310,6 @@ export interface Query<
    * so it lives here and not on the schema-erased `AnyQuery` view.
    */
   client(options: QueryClientOptions): QueryClientMethodOf<TInput, TRow, TSingle>;
-  /** Narrowed by the declaration: a list read's tool answers rows, a single read's one row. */
-  tool(): QueryToolDescriptor<TSingle>;
 }
 
 /** The fluent half of a query: lifted declaration plus one method per projection. */
@@ -335,7 +331,6 @@ export type QueryFacade<
   | 'as'
   | 'page'
   | 'live'
-  | 'tool'
   | 'client'
 >;
 
@@ -389,7 +384,7 @@ export function isQuery(value: unknown): value is AnyQuery {
 /**
  * Stamp the export name onto the query the app declared, rather than handing back a
  * differently-named copy of it. `import { liveFeed } from './live'` is then the query
- * that projects — `liveFeed.tool()` after boot, with nothing to remember. The same
+ * that projects — `liveFeed.client()` after boot, with nothing to remember. The same
  * rule `nameAction` follows; naming twice is the one case that still needs a twin.
  */
 export function nameQuery<Q extends AnyQuery>(target: Q, name: string): Q {

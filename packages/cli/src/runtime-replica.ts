@@ -7,7 +7,7 @@
 // 1. `defaultClient()` is the one place db composes `replicatedClient(primary, replica)` from
 //    `DATABASE_REPLICA_URL`, and it runs only from `baseClient()` — "the client an app installed
 //    none for". Every process the framework boots installs one: `runtime-queue.ts` calls
-//    `setDbClient(createPgliteClient(…) | createPostgresClient({ url }))`, so `defaultClient()` was
+//    `setDbClient(createPgliteClient(…) | postgresClient({ url }))`, so `defaultClient()` was
 //    unreachable from `x dev`, from `apps/web/server.ts` and from every container role.
 // 2. Routing needs an OPEN scope as well as a configured replica, and nothing opened one.
 //
@@ -17,12 +17,7 @@
 // what a database is.
 
 import type { DbClient, PostgresClient } from '@ultimat3/db';
-import {
-  createPostgresClient,
-  REPLICA_URL_ENV,
-  replicatedClient,
-  withReplicaReads,
-} from '@ultimat3/db';
+import { postgresClient, REPLICA_URL_ENV, replicatedClient, withReplicaReads } from '@ultimat3/db';
 import type { Middleware } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -61,7 +56,7 @@ export function attachReplica(
   replicaUrl: string | undefined,
 ): ReplicaAttachment {
   if (replicaUrl === undefined) return { client: primary, replica: undefined };
-  const replica = createPostgresClient({ url: replicaUrl, applicationName: 'ultimate-replica' });
+  const replica = postgresClient({ url: replicaUrl, applicationName: 'ultimate-replica' });
   return { client: replicatedClient(primary, replica), replica };
 }
 

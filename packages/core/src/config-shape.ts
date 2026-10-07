@@ -77,36 +77,3 @@ export function nameListIssues(
     }
   }
 }
-
-function canonicalTag(tag: unknown): string | undefined {
-  if (typeof tag !== 'string') return undefined;
-  try {
-    const canonical = Intl.getCanonicalLocales(tag);
-    return canonical.length === 1 ? canonical[0] : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The locale list and the tag that must be in it. Two spellings of ONE locale are refused: the
- * list keys a catalog, a route prefix and an `hreflang` each, and `['EN', 'en']` is two of every
- * one of them for a single language.
- */
-export function localeIssues(tags: readonly unknown[], fallback: unknown, issues: string[]): void {
-  if (tags.length === 0) issues.push('locales must list at least one locale');
-  const seen = new Map<string, unknown>();
-  for (const tag of tags) {
-    const canonical = canonicalTag(tag);
-    if (canonical === undefined) {
-      issues.push(`locales contains ${said(tag)}, not a BCP-47 tag`);
-    } else if (seen.has(canonical)) {
-      issues.push(
-        `locales lists ${canonical} twice, as ${said(seen.get(canonical))} and ${said(tag)}`,
-      );
-    } else {
-      seen.set(canonical, tag);
-    }
-  }
-  if (!tags.includes(fallback)) issues.push(`defaultLocale ${said(fallback)} is not in locales`);
-}

@@ -1,6 +1,6 @@
 // Single responsibility: the JSON Schema subset an MCP tool publishes, and the two narrowings onto
-// it — an input's and an output's. One home, tier 0, so `@ultimat3/action`'s `.tool()` and
-// `@ultimat3/mcp`'s `tools/list` publish ONE document for one declaration rather than two.
+// it — an input's and an output's. One home, tier 0: `@ultimat3/mcp`'s `tools/list` is the one
+// tool projection, and no second one may publish a different document for the same declaration.
 
 import type { JsonSchema } from './json-schema';
 import { toMcpInputSchema } from './json-schema';

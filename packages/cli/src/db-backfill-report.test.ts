@@ -1,11 +1,11 @@
 // What `x db backfill` SHOWS: flag parsing, the ledger projection behind `--list`, and the table
-// a human reads. Driven through `createMemoryDriver()` — a real `BackfillLedger` with real
+// a human reads. Driven through `memoryJobDriver()` — a real `BackfillLedger` with real
 // start/progress/finish semantics, so a row here got its `cursor` and `durationMs` the way a pg
 // ledger would. What the command DOES lives in `db-backfill.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import type { BackfillStatus, JobDriver } from '@ultimat3/jobs';
-import { BACKFILL_STATUSES, createMemoryDriver } from '@ultimat3/jobs';
+import { BACKFILL_STATUSES, memoryJobDriver } from '@ultimat3/jobs';
 import { listBackfills, parseBackfillStatusFlag, renderBackfillTable } from './db-backfill';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
@@ -60,7 +60,7 @@ describe('unit · backfill filter parsing', () => {
   });
 
   test('a bad --limit is refused as a db flag, not as a jobs one', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const thrown: unknown = await listBackfills(driver, { limit: '0' }).then(
       () => undefined,
       (error: unknown) => error,
@@ -72,11 +72,11 @@ describe('unit · backfill filter parsing', () => {
 
 describe('unit · listBackfills', () => {
   test('an empty ledger is an answer, not a failure', async () => {
-    expect(await listBackfills(createMemoryDriver())).toEqual([]);
+    expect(await listBackfills(memoryJobDriver())).toEqual([]);
   });
 
   test('every pass, newest first, with progress and duration as the ledger recorded them', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seed(driver, { runId: 'run_1', name: 'recount-likes', rows: 500, finish: 'completed' });
     await seed(driver, { runId: 'run_2', name: 'reindex-posts', rows: 120, cursor: 'post_120' });
 
@@ -96,7 +96,7 @@ describe('unit · listBackfills', () => {
   });
 
   test('--name and --status narrow the ledger, --limit caps it', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seed(driver, { runId: 'run_1', name: 'recount-likes', rows: 10, finish: 'completed' });
     await seed(driver, { runId: 'run_2', name: 'recount-likes', rows: 3 });
     await seed(driver, { runId: 'run_3', name: 'reindex-posts', rows: 7, finish: 'failed' });
@@ -115,7 +115,7 @@ describe('unit · listBackfills', () => {
 
 describe('unit · renderBackfillTable', () => {
   test('the header, one padded row per pass, and the ISO start printed verbatim', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seed(driver, { runId: 'run_2', name: 'reindex-posts', rows: 120, cursor: 'post_120' });
     const rows = await listBackfills(driver);
 
@@ -132,7 +132,7 @@ describe('unit · renderBackfillTable', () => {
   });
 
   test('a cursor that has not moved and a pass that has not finished render the empty cell', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seed(driver, { runId: 'run_9', name: 'recount-likes' });
     const lines = renderBackfillTable(await listBackfills(driver));
     const cells = (lines[1] ?? '').split(/\s{2,}/);

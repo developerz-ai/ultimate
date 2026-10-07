@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { resetLocaleConfig } from '@ultimat3/i18n';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { loadPwaArtifacts, pwaManifestRoute } from './pwa-artifacts';
 
@@ -18,16 +19,29 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+  resetLocaleConfig();
 });
 
 const COLORS =
   "{ light: { themeColor: '#21378C', backgroundColor: '#EEF0F5' }, " +
   "dark: { themeColor: '#0B0D1A', backgroundColor: '#0B0D1A' } }";
 
-const load = async (top: string, pwa = ''): Promise<PwaArtifacts> => {
+/** The app's catalogs: the one place its locales are declared (25.0.0). Default first. */
+type Locales = readonly [string, ...string[]];
+
+// By absolute path: a module under /tmp cannot resolve `@ultimat3/i18n`.
+const I18N = JSON.stringify(Bun.resolveSync('@ultimat3/i18n', import.meta.dir));
+
+const load = async (locales: Locales, pwa = ''): Promise<PwaArtifacts> => {
+  const sources = locales.map((locale) => `'${locale}': {}`).join(', ');
+  await Bun.write(
+    join(root, 'packages/i18n/src/index.ts'),
+    `import { defineCatalogs } from ${I18N};\n` +
+      `export const catalogs = defineCatalogs({ default: '${locales[0]}', locales: { ${sources} } });\n`,
+  );
   await Bun.write(
     join(root, 'app.config.ts'),
-    `export const config = { name: 'probe', ${top} pwa: { enabled: true, name: 'Notificado', ` +
+    `export const config = { name: 'probe', pwa: { enabled: true, name: 'Notificado', ` +
       `offline: { fallback: '/offline' }, colors: ${COLORS}${pwa} } };\n`,
   );
   const artifacts = await loadPwaArtifacts(root);
@@ -41,7 +55,7 @@ const parse = (body: string | undefined): Record<string, unknown> =>
 const bodyAt = (artifacts: PwaArtifacts, path: string): Record<string, unknown> =>
   parse(artifacts.manifests.find((manifest) => manifest.path === path)?.body);
 
-const TWO_LOCALES = "locales: ['es-co', 'en'], defaultLocale: 'es-co',";
+const TWO_LOCALES: Locales = ['es-co', 'en'];
 
 describe('a manifest per routed locale', () => {
   test('the default manifest speaks the default locale, never a hardcoded en', async () => {
@@ -93,7 +107,7 @@ describe('a manifest per routed locale', () => {
   });
 
   test('a single-locale app gets one manifest, in its one locale', async () => {
-    const artifacts = await load("locales: ['fr'], defaultLocale: 'fr',");
+    const artifacts = await load(['fr']);
     expect(artifacts.manifests.map((manifest) => manifest.path)).toEqual(['/manifest.webmanifest']);
     expect(parse(artifacts.body)['lang']).toBe('fr');
   });
@@ -204,7 +218,7 @@ describe('the install sheet members an app declares', () => {
 
   test('a locale a record does not name falls back to the default locale’s text', async () => {
     const artifacts = await load(
-      "locales: ['es-co', 'en', 'pt'], defaultLocale: 'es-co',",
+      ['es-co', 'en', 'pt'],
       ", description: { 'es-co': 'Solo en español' }",
     );
     expect(bodyAt(artifacts, '/pt/manifest.webmanifest')['description']).toBe('Solo en español');

@@ -204,6 +204,14 @@ Other workflows, each explained by its own header: `release.yml` (a **published*
 issue on disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
 `wiki.yml` (push to `main` → the GitHub wiki).
 
+## How to work
+
+Act as an independent, proactive senior engineer and do the full job. Don't ask questions you can
+answer from the code, the docs or a sensible default: decide, then state the decision. Finish the
+work: fix, test, document, run the gate. Don't hand back a half-done step. Find the root cause and
+fix what you find along the way. Ask only before an irreversible or outward-facing act the owner
+hasn't already asked for.
+
 ## Note
 
 Do not use git worktrees — work directly in this checkout. If a task is big enough to need

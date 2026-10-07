@@ -6,10 +6,10 @@ import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { DigestSlot } from './digest';
 import {
-  createPgDigestStore,
   DEFAULT_DIGEST_RETENTION_MS,
   DIGEST_PURGE_BATCH,
   DIGEST_PURGE_MAX_BATCHES,
+  postgresDigestStore,
   SQL_NOTIFY_DIGEST_APPEND,
   SQL_NOTIFY_DIGEST_DRAIN,
   SQL_NOTIFY_DIGEST_SEAL,
@@ -35,7 +35,7 @@ const recording = (answer: (call: Call) => readonly unknown[], calls: Call[]): P
 });
 
 const append = (executor: PgExecutor) =>
-  createPgDigestStore({ executor }).append({
+  postgresDigestStore({ executor }).append({
     slot,
     event,
     windowMs: 60_000,
@@ -92,7 +92,7 @@ describe('unit · postgres digest store', () => {
   test('a drain hands back every window’s events, flattened, with `at` a Date again', async () => {
     const calls: Call[] = [];
     const stored = (key: string) => ({ ...event, key, at: NOW.toISOString() });
-    const store = createPgDigestStore({
+    const store = postgresDigestStore({
       executor: recording(
         () => [{ events: [stored('e1'), stored('e2')] }, { events: [stored('e3')] }],
         calls,
@@ -146,7 +146,7 @@ describe('unit · postgres digest retention', () => {
 
   test('the default keeps a closed window a week, and the cutoff is the caller clock minus it', async () => {
     const calls: Call[] = [];
-    const store = createPgDigestStore({ executor: recording(() => [{ seq: 1 }], calls) });
+    const store = postgresDigestStore({ executor: recording(() => [{ seq: 1 }], calls) });
     expect(store.retentionMs).toBe(DEFAULT_DIGEST_RETENTION_MS);
     expect(DEFAULT_DIGEST_RETENTION_MS).toBe(7 * 24 * 60 * 60 * 1000);
     expect(await store.purgeExpired(PURGE_AT)).toBe(1);
@@ -162,7 +162,7 @@ describe('unit · postgres digest retention', () => {
     const calls: Call[] = [];
     const full = Array.from({ length: DIGEST_PURGE_BATCH }, (_, seq) => ({ seq }));
     let pass = 0;
-    const store = createPgDigestStore({
+    const store = postgresDigestStore({
       executor: recording(() => (pass++ < 2 ? full : [{ seq: 0 }]), calls),
       retentionMs: 1000,
     });
@@ -173,14 +173,14 @@ describe('unit · postgres digest retention', () => {
   test('bounded: one pass deletes at most its batch ceiling, the next hourly pass goes on', async () => {
     const calls: Call[] = [];
     const full = Array.from({ length: DIGEST_PURGE_BATCH }, (_, seq) => ({ seq }));
-    const store = createPgDigestStore({ executor: recording(() => full, calls) });
+    const store = postgresDigestStore({ executor: recording(() => full, calls) });
     expect(await store.purgeExpired(PURGE_AT)).toBe(DIGEST_PURGE_BATCH * DIGEST_PURGE_MAX_BATCHES);
     expect(calls).toHaveLength(DIGEST_PURGE_MAX_BATCHES);
   });
 
   test('a retention that is not a whole positive count is refused at construction', () => {
     expect(() =>
-      createPgDigestStore({ executor: recording(() => [], []), retentionMs: 0 }),
+      postgresDigestStore({ executor: recording(() => [], []), retentionMs: 0 }),
     ).toThrow('X_INVARIANT');
   });
 });

@@ -6,14 +6,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver } from './scheduler';
 import { createScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
-import { createMemorySchedulerState } from './scheduler-state';
+import { memorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -114,7 +114,7 @@ describe('scheduler', () => {
       enqueue: () => [[sendDigest, {}]],
     });
     const scheduler = createScheduler({
-      driver: createMemoryDriver(),
+      driver: memoryJobDriver(),
       clock: fakeClock(T0),
       cron: dailyAt3,
     });
@@ -131,7 +131,7 @@ describe('scheduler', () => {
       enqueue: () => [[sendDigest, {}]],
     });
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({ driver, clock, cron: dailyAt3 });
 
     // First tick arms the task; it must not fire retroactively.
@@ -154,8 +154,8 @@ describe('scheduler', () => {
 
   test('catch-up: "skip" fires only the latest missed occurrence, "run-all" fires each', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
-    const state = createMemorySchedulerState();
+    const driver = memoryJobDriver({ clock });
+    const state = memorySchedulerState();
     const skipping = task({
       name: 'skipDigest',
       cron: '0 3 * * *',
@@ -200,7 +200,7 @@ describe('scheduler', () => {
   // truncation is a property of the walk, and the measurement was taken against `@ultimat3/time`.
   test('catch-up: "skip" fires the real latest occurrence, once, past maxCatchUp', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const everyMinute = task({
       name: 'pollFleet',
       cron: '* * * * *',
@@ -210,7 +210,7 @@ describe('scheduler', () => {
     const scheduler = createScheduler({
       driver,
       clock,
-      state: createMemorySchedulerState(),
+      state: memorySchedulerState(),
       tasks: [everyMinute],
     });
 
@@ -246,7 +246,7 @@ describe('scheduler', () => {
   // that just ran instead of past the ones the policy drops.
   test('catch-up: "run-once" fires exactly one catch-up, however many ticks follow', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const once = task({
       name: 'hourlyOnce',
       cron: '0 * * * *',
@@ -258,7 +258,7 @@ describe('scheduler', () => {
       driver,
       clock,
       cron: hourly,
-      state: createMemorySchedulerState(),
+      state: memorySchedulerState(),
       tasks: [once],
     });
 
@@ -281,7 +281,7 @@ describe('scheduler', () => {
 
   test('catch-up: "run-once" fires the EARLIEST missed occurrence, not the latest', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const once = task({
       name: 'hourlyOnce',
       cron: '0 * * * *',
@@ -293,7 +293,7 @@ describe('scheduler', () => {
       driver,
       clock,
       cron: hourly,
-      state: createMemorySchedulerState(),
+      state: memorySchedulerState(),
       tasks: [once],
     });
 
@@ -310,7 +310,7 @@ describe('scheduler', () => {
   // dropped, never past what has not happened yet.
   test('catch-up: "run-once" leaves the next real occurrence due', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const once = task({
       name: 'hourlyOnce',
       cron: '0 * * * *',
@@ -322,7 +322,7 @@ describe('scheduler', () => {
       driver,
       clock,
       cron: hourly,
-      state: createMemorySchedulerState(),
+      state: memorySchedulerState(),
       tasks: [once],
     });
 
@@ -346,7 +346,7 @@ describe('scheduler', () => {
       enqueue: (occurrenceMs) => [[dated, { runDate: utcDate(occurrenceMs) }]],
     });
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
 
     await scheduler.tick(); // Arms it for 2026-07-26T03:00Z.
@@ -377,7 +377,7 @@ describe('scheduler', () => {
       enqueue: (occurrenceMs) => [[dated, { runDate: utcDate(occurrenceMs) }]],
     });
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
 
     await scheduler.tick();
@@ -408,7 +408,7 @@ describe('scheduler', () => {
       acquire: () => Promise.resolve(false),
       release: () => Promise.resolve(),
     };
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const scheduler = createScheduler({ driver, clock, cron: dailyAt3, leader: follower });
 
     await scheduler.tick();
@@ -421,13 +421,13 @@ describe('scheduler', () => {
 describe('leadership is re-asserted inside the round, not only on entry', () => {
   test('a lease that expires mid-walk stops the round at the task it reached', async () => {
     const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const tasks = ['alpha', 'beta', 'gamma'].map((name) =>
       task({ name, cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] }),
     );
     let acquires = 0;
     let heldUntil = Number.POSITIVE_INFINITY;
-    // A lease-backed election (`createPgLeaseLeader`) expires on a wall clock, not on a round
+    // A lease-backed election (`postgresLeaseLeader`) expires on a wall clock, not on a round
     // boundary: node B takes it at 31s while this node is still walking its own task list.
     const expiring: LeaderElection = {
       // Asked every round and before every task: the expiry mid-round is the case.

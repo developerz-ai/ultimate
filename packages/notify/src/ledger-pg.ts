@@ -109,7 +109,7 @@ export interface PgDeliveryLedgerOptions {
    *
    * NEVER SHORTER THAN YOUR IDEMPOTENCY WINDOW, and this is the one dangerous direction: a job
    * replayed inside the idempotency window, against a delivery claim that has already been
-   * purged, claims cleanly and sends the notification a second time. `createPgDeliveryLedger({
+   * purged, claims cleanly and sends the notification a second time. `postgresDeliveryLedger({
    * executor, windowMs: idempotency.windowMs })` makes that impossible by construction rather
    * than by two defaults that happen to agree.
    */
@@ -130,10 +130,10 @@ export interface PgDeliveryLedger extends DeliveryLedger {
   purgeExpired(nowMs: number): Promise<number>;
 }
 
-export function createPgDeliveryLedger(options: PgDeliveryLedgerOptions): PgDeliveryLedger {
+export function postgresDeliveryLedger(options: PgDeliveryLedgerOptions): PgDeliveryLedger {
   const { executor } = options;
   const windowMs = finiteCount(
-    'createPgDeliveryLedger',
+    'postgresDeliveryLedger',
     'windowMs',
     options.windowMs ?? DEFAULT_DELIVERY_WINDOW_MS,
     1,

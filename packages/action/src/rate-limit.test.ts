@@ -95,9 +95,9 @@ describe('an action rate limit is enforced, not only published', () => {
     expect(statuses.every((status) => status === 200)).toBe(true);
   });
 
-  // The declaration is the action's own: an HTTP bucket configured under the same name is a
-  // different table now, so it neither collides at boot nor loosens what the action declared.
-  test('a configured HTTP bucket of the same name neither conflicts nor loosens the limit', async () => {
+  // The declaration is the action's own (25.0.0): an HTTP bucket configured under the same name
+  // limits nothing, so it is refused at boot rather than left reading as a limit.
+  test('a configured HTTP bucket named after the action is refused at boot', () => {
     const config = defineHttpConfig({
       rateLimit: {
         scope: 'process',
@@ -107,10 +107,9 @@ describe('an action rate limit is enforced, not only published', () => {
         },
       },
     });
-    const server = createServer({ routes: [toRoute(contactSales())], config });
-    const statuses = await drain(server, 6);
-    expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
-    expect(statuses[5]).toBe(429);
+    expect(() => createServer({ routes: [toRoute(contactSales())], config })).toThrow(
+      /X_CONFIG_INVALID/,
+    );
   });
 });
 

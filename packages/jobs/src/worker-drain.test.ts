@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { type Ctx, createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, ClaimOptions, JobDriver } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
 
@@ -48,7 +48,7 @@ describe('stop() waits out the round it races', () => {
     const trace: string[] = [];
     const claiming = gate();
     const entered = gate();
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       async claim(options: ClaimOptions): Promise<readonly ClaimedJob[]> {
@@ -106,7 +106,7 @@ describe('stop() waits out the round it races', () => {
     const asked: string[] = [];
     const entered = gate();
     const claiming = gate();
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       async claim(options: ClaimOptions): Promise<readonly ClaimedJob[]> {
@@ -139,7 +139,7 @@ describe('stop() waits out the round it races', () => {
   test('a round that starts inside a drain claims nothing at all', async () => {
     const held = gate();
     let claims = 0;
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       async claim(): Promise<readonly ClaimedJob[]> {
@@ -163,7 +163,7 @@ describe('stop() waits out the round it races', () => {
 
   test('two concurrent stops share one teardown', async () => {
     let closes = 0;
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     const driver: JobDriver = {
       ...base,
       async close(): Promise<void> {
@@ -182,7 +182,7 @@ describe('stop() waits out the round it races', () => {
 
 describe('a close that throws stops the worker rather than pinning it', () => {
   const failing = (): JobDriver => {
-    const base = createMemoryDriver();
+    const base = memoryJobDriver();
     return {
       ...base,
       close(): Promise<void> {

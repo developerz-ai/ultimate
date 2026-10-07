@@ -14,11 +14,16 @@ import { agent } from './agent';
 import { BudgetLedger, withBudget } from './budget';
 import { EchoProvider } from './echo-provider';
 import { createGateway } from './gateway';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
+import { asProjectableAction, toLlmTool } from './tools';
+
+// The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
+useFixtureModels();
 
 const Input = t.object({ orderId: t.string });
 const Output = t.object({ answer: t.string });
@@ -114,7 +119,7 @@ describe('the actor boundary', () => {
       { calls: [{ name: 'lookupOrder', input: { actor: 'admin', id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -132,7 +137,7 @@ describe('the actor boundary', () => {
 
   test("the agent's own policy still decides, before any turn", async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'respond', input: { answer: 'x' } }] });
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,
@@ -151,7 +156,9 @@ describe('the actor boundary', () => {
 
 describe('agent() is an action factory, not a ninth primitive', () => {
   test('it returns a real action and declares itself as one of the eight', () => {
-    configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+    configureAi({
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] }),
+    });
     const support = agent({
       input: Input,
       output: Output,
@@ -167,7 +174,8 @@ describe('agent() is an action factory, not a ninth primitive', () => {
     expect(support.describe().kind).toBe('action');
     // The export name verbatim — the same rule `llm()` inherits, for the same reason: an
     // `agent()` is an action, and `@ultimat3/mcp` serves an action under its export name.
-    expect(support.tool().name).toBe('projectingAgent');
+    // The model-tool projection (`@ultimat3/mcp`'s `toolFrom` is the MCP one, a tier away).
+    expect(toLlmTool(asProjectableAction(support)).name).toBe('projectingAgent');
     expect(support.job().name).toBe('action:projectingAgent');
   });
 
@@ -195,7 +203,7 @@ describe('agent() is an action factory, not a ninth primitive', () => {
 describe('the loop is bounded', () => {
   test('a model that never answers hits X_AGENT_MAX_TURNS, never a partial answer', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'lookupOrder', input: {} }] });
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,
@@ -214,7 +222,7 @@ describe('the loop is bounded', () => {
 
   test('a per-run token ceiling stops the loop mid-way instead of after it', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'lookupOrder', input: {} }] });
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,
@@ -237,7 +245,7 @@ describe('the loop is bounded', () => {
 
   test('a huge tool result is truncated, and says so', async () => {
     const { provider, seen } = scripted({ calls: [{ name: 'dumpRows', input: {} }] });
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,
@@ -266,7 +274,7 @@ describe('the loop is bounded', () => {
       { calls: [{ name: 'lookupOrder', input: { id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     );
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
     const support = agent({
       input: Input,
       output: Output,
@@ -315,7 +323,7 @@ describe('a real action() is a tool — issue #124', () => {
       { calls: [{ name: 'lookupOrder', input: { id: 'o-1' } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const support = agent({
       input: Input,
@@ -362,7 +370,7 @@ describe('an agent can be a tool of another agent', () => {
           : inner.provider.generate(request),
       stream: (request) => new EchoProvider().stream(request),
     };
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
 
     const orderStatus = agent({
       input: t.object({ orderId: t.string }),
@@ -399,7 +407,9 @@ describe('an agent can be a tool of another agent', () => {
   });
 
   test('a sub-agent that never opted into MCP is refused at declaration, like any other tool', () => {
-    configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+    configureAi({
+      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] }),
+    });
     const hidden = agent({
       input: Input,
       output: Output,

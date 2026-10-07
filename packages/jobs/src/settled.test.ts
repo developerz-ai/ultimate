@@ -6,7 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { createContext, frozenClock, logger, useContext } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import { cancelJob } from './inspect';
 import type { JobDefinition, JobHandle } from './job';
 import { job, resetJobs } from './job';
@@ -81,7 +81,7 @@ afterEach(() => {
 
 describe('onSettled', () => {
   test('a completed run hands over what the body returned, after the row is done', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const seen: { settled: JobSettled<SyncInput, Report>; rowState: string; org: unknown }[] = [];
     const handle = syncJob<Report>({
       run: () => Promise.resolve({ rows: 7 }),
@@ -116,7 +116,7 @@ describe('onSettled', () => {
   });
 
   test('a retry and a suspension are not settlements; the dead letter is, with its code', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const handle = syncJob({
       retry: { attempts: 2, jitter: false, delay: 1, backoff: 'fixed' },
@@ -150,7 +150,7 @@ describe('onSettled', () => {
   });
 
   test('a dropped run says so, and a coded failure carries its code', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const handle = syncJob({
       retry: { attempts: 1, jitter: false, deadLetter: false },
@@ -182,7 +182,7 @@ describe('onSettled', () => {
   });
 
   test('a run its concurrency key refused is settled too — the body never ran', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const gate = Promise.withResolvers<void>();
     let started = 0;
@@ -220,7 +220,7 @@ describe('onSettled', () => {
   });
 
   test('a run cancelled under its body is not this worker’s to announce', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     const seen: JobSettled<SyncInput, unknown>[] = [];
     const gate = Promise.withResolvers<void>();
     let started = 0;
@@ -248,7 +248,7 @@ describe('onSettled', () => {
   });
 
   test('a hook that throws spends its own tries, is logged with a code, and changes nothing', async () => {
-    const driver = createMemoryDriver({ clock });
+    const driver = memoryJobDriver({ clock });
     let calls = 0;
     const handle = syncJob({
       run: () => Promise.resolve('done'),

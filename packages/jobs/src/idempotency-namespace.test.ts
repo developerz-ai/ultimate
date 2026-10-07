@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createMemoryDriver } from './driver-memory';
-import { createPgDriver } from './driver-pg';
+import { memoryJobDriver } from './driver-memory';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_ENQUEUE, SQL_FIND_LIVE_BY_KEY, SQL_JOBS_TABLE } from './driver-pg-sql';
 
 const enqueue = (name: string, key: string, tenantId?: string) => ({
@@ -24,7 +24,7 @@ describe('the idempotency namespace', () => {
     // provisionWorkspace six months later with the same natural key, one signup enqueues both.
     // Before this, the second enqueue deduped into the first job's row and returned ITS id — the
     // workspace was never provisioned, nothing was raised, and `x jobs ls` showed one healthy job.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
 
     const welcome = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
     const workspace = await driver.enqueue(enqueue('provisionWorkspace', 'user:42'));
@@ -41,7 +41,7 @@ describe('the idempotency namespace', () => {
   });
 
   test('the SAME job with the same key still dedupes — the guarantee is unchanged', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const first = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
     const second = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
 
@@ -50,7 +50,7 @@ describe('the idempotency namespace', () => {
   });
 
   test('a completed job frees its key for the same job again', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const first = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));
     await driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 1000, workerId: 'w' });
     await driver.ack(first.id, { workerId: 'w', claim: 1 });
@@ -71,7 +71,7 @@ describe('the idempotency namespace', () => {
         return Promise.resolve([{ id: 'existing', run_id: 'run' }] as unknown as readonly R[]);
       },
     };
-    const driver = createPgDriver({ executor });
+    const driver = postgresJobDriver({ executor });
 
     const result = await driver.enqueue(enqueue('provisionWorkspace', 'user:42'));
 
@@ -89,7 +89,7 @@ describe('the idempotency namespace is per tenant', () => {
     // Tenant A has a live `invoice:1001`. Tenant B enqueues its own `invoice:1001`. Before this,
     // `do nothing` fired, the lookup found A's row, and B got `{ deduped: true, id: A.id }`: B's
     // work never ran, nothing was raised, and B's caller held a job id belonging to A.
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
 
     const a = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-a'));
     const b = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-b'));
@@ -104,7 +104,7 @@ describe('the idempotency namespace is per tenant', () => {
   });
 
   test('the SAME tenant with the same key still dedupes — the guarantee is unchanged', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const first = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-a'));
     const second = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-a'));
 
@@ -113,7 +113,7 @@ describe('the idempotency namespace is per tenant', () => {
   });
 
   test('a tenantless enqueue is its own namespace, in both directions', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const shared = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001'));
     const tenanted = await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-a'));
     expect(tenanted.deduped).toBe(false);
@@ -125,9 +125,9 @@ describe('the idempotency namespace is per tenant', () => {
   });
 
   test('onConflict: error raises for the same tenant and stays silent across tenants', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-a'));
-    // `createMemoryDriver().enqueue` throws synchronously, so this cannot be `rejects`.
+    // `memoryJobDriver().enqueue` throws synchronously, so this cannot be `rejects`.
     let sameTenant: unknown;
     try {
       await driver.enqueue({
@@ -156,7 +156,7 @@ describe('the idempotency namespace is per tenant', () => {
         return Promise.resolve([{ id: 'existing', run_id: 'run' }] as unknown as readonly R[]);
       },
     };
-    const driver = createPgDriver({ executor });
+    const driver = postgresJobDriver({ executor });
 
     await driver.enqueue(enqueue('sendInvoice', 'invoice:1001', 'org-b'));
 

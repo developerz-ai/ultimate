@@ -8,10 +8,10 @@ import { isUltimateError } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { claimOf } from './driver';
-import { createMemoryDriver } from './driver-memory';
+import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createJobsFacade, createMemoryOutboxStore, enqueueInTx, resetJobsFacade } from './outbox';
+import { createJobsFacade, enqueueInTx, memoryOutboxStore, resetJobsFacade } from './outbox';
 import { createOutboxRelay } from './outbox-relay';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -52,8 +52,8 @@ const RUN = '00000000-0000-4000-8000-0000000000b1';
 
 describe('an enqueue names its run on every path', () => {
   test('inside a transaction the answer is the job the relay publishes', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     const jobs = createJobsFacade({ store, driver }, () => tx);
 
@@ -73,8 +73,8 @@ describe('an enqueue names its run on every path', () => {
   });
 
   test('a caller may name the run, staged or direct', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
     const jobs = createJobsFacade({ store, driver }, () => ambient);
@@ -93,8 +93,8 @@ describe('an enqueue names its run on every path', () => {
   });
 
   test('a row published twice is one job, even after the first one finished', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     const jobs = createJobsFacade({ store, driver }, () => tx);
     const queued = await jobs.enqueue(sync, { requestId: 'r1' });
@@ -157,8 +157,8 @@ describe('a named run is a uuid on every path, refused before anything is writte
   ];
 
   test('direct: the driver is never asked', async () => {
-    const driver = createMemoryDriver();
-    const jobs = createJobsFacade({ store: createMemoryOutboxStore(), driver }, () => undefined);
+    const driver = memoryJobDriver();
+    const jobs = createJobsFacade({ store: memoryOutboxStore(), driver }, () => undefined);
     for (const runId of NOT_UUIDS) {
       const options = { runId } as { runId: string };
       expect(await codeOf(() => jobs.enqueue(sync, { requestId: 'r1' }, options))).toBe(
@@ -169,8 +169,8 @@ describe('a named run is a uuid on every path, refused before anything is writte
   });
 
   test('staged: nothing reaches the outbox, through the facade or enqueueInTx', async () => {
-    const driver = createMemoryDriver();
-    const store = createMemoryOutboxStore();
+    const driver = memoryJobDriver();
+    const store = memoryOutboxStore();
     const tx = fakeTx();
     const jobs = createJobsFacade({ store, driver }, () => tx);
     for (const runId of NOT_UUIDS) {
@@ -187,7 +187,7 @@ describe('a named run is a uuid on every path, refused before anything is writte
 
   test('the refusal names the option and never echoes the value', async () => {
     const jobs = createJobsFacade(
-      { store: createMemoryOutboxStore(), driver: createMemoryDriver() },
+      { store: memoryOutboxStore(), driver: memoryJobDriver() },
       () => undefined,
     );
     const thrown = await jobs

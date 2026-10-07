@@ -13,3 +13,9 @@ test('importing the barrel registers the CLI codes and hands out the registry', 
   expect(SPECS.length).toBe(COMMANDS.length);
   expect(VERIFY_STEP_NAMES).toContain('manifest');
 });
+
+// 25.0.0 (M3): `nearest` was a second name for core's `nearestName` — one way to do each thing.
+test('the barrel carries no `nearest` alias: the one spelling is `nearestName` from core', async () => {
+  const barrel: Record<string, unknown> = await import('./index');
+  expect(Object.hasOwn(barrel, 'nearest')).toBe(false);
+});

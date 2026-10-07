@@ -13,7 +13,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules — configuration
 
 - **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`,
-  `requestTimeoutMs`, `maxInflight`, `drainTimeoutMs`, `trustedProxyHops`) → `X_CONFIG_INVALID`
+  `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID`
   (borrowed). `requestTimeoutMs` tops out at `MAX_TIMER_MS` (2^31−1): past it a timer arms ~1 ms.
   `buildId: null` is a declaration (`=== undefined`, never `??`); `hostname` never reads `HOSTNAME`. Helpers carry `Finite` (`assertFiniteCount`, `assertFiniteKeyCap`,
   `assertFiniteBodyLimit`) so `bun run finite-bounds` sees them; `webhook-verify.ts` and
@@ -28,9 +28,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `trustedProxyHops`, `rateLimit.scope`) is a type error where an app writes it. `mergeHttpConfig`
   merges `security.csp.extend` per directive. `type-pins.ts` refuses a key on `HttpConfig` missing
   from `HttpConfigInput`.
-- **`config.drainTimeoutMs` defaults to `null`**: `createServer` calls `configureLifecycle({
-  deadlineMs })` only when declared. **`ServerOptions.drain`** (`app.config.ts`'s `drain`) passes
-  `readinessGraceMs` to core the same way.
+- **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role). Key
+  `drainTimeoutMs` (deleted 25.0.0) is `X_CONFIG_INVALID` via `refuseDeletedHttpKeys`.
+  **`ServerOptions.drain`** passes only `readinessGraceMs`, and only when declared.
 - **`cors.origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID`.** A refused origin
   still gets `vary: origin`.
 - **A `security.csp.extend` entry must emit only the directive it names**

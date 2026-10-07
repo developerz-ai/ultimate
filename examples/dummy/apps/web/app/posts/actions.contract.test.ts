@@ -171,9 +171,9 @@ contractTest('every post action passes the contract an action owes', async () =>
 contractTest(
   'the action projects the MCP tool and the OpenAPI operation from one declaration',
   () => {
+    // One declaration, read by both projections: `@ultimat3/mcp`'s `toolFrom` serves this
+    // `mcp` block (and runs through `invoke`, under this same `policy`), OpenAPI the operation.
     expect(publishPost.mcp).toEqual({ expose: true, description: 'Publish a draft post' });
-    // Same policy object on both surfaces — an MCP call cannot reach a different authz path.
-    expect(publishPost.tool().policy).toBe(publishPost.policy);
     expect(publishPost.openapi().operationId).toBe('publishPost');
   },
 );

@@ -29,7 +29,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `liveFeed.as(actor, { orgId })` | the same read as another actor — the surrounding context is untouched, `null` is signed out |
 | `liveFeed.page({ orgId }, { first: 20, after })` | one bounded page plus the signed cursor that continues it. There is no `offset` |
 | `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
-| `liveFeed.tool()` | the MCP read tool, named `liveFeed`. `tool().policy === liveFeed.policy`, and it reads fresh |
+| `toolFrom(liveFeed)` | the MCP read tool, from `@ultimat3/mcp` — named `liveFeed`, exactly what `tools/list` serves, reading fresh through `sourceFor` with the same policy object. There is no `liveFeed.tool()` (`As of 25.0.0`): it was a second projection a tier below the served one |
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways. `.page(input, { first, after })` on the same method reads one page over the wire |
 | `liveFeed.describe()` | the manifest row |
 
@@ -129,7 +129,8 @@ identical reads become ONE dispatch, a fence can retire everything issued before
 worth sending again is sent again on `@ultimat3/core`'s one backoff curve.
 
 ```ts
-import { createClientFlight, isSuperseded, queryClient } from '@ultimat3/query';
+import { createClientFlight, isSuperseded } from '@ultimat3/core';
+import { queryClient } from '@ultimat3/query';
 
 declare const session: () => { userId: string };
 declare const baseUrl: string;
@@ -159,10 +160,11 @@ flight.bump();
 | an **unclassified** throw is not retried | core's `retryDecision` retries anything nobody classified — a caller's own `AbortError` included. A client retries a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all |
 | a deadline is `X_TIMEOUT` | core's code, already classified `retryable`, so a caller's own loop needs no table |
 
-`createClientFlight` is **`@ultimat3/core`'s**, re-exported here: it is the same object
-`@ultimat3/action` re-exports, because both packages are tier 3 and neither may import the other.
-It shipped as a byte-identical copy in each; the copies are gone and every name is importable from
-this package exactly as before.
+`createClientFlight` is **`@ultimat3/core`'s**, and imported from there, `isSuperseded` with it.
+It shipped as a byte-identical copy here and in `@ultimat3/action` (both tier 3, neither may import
+the other); the copies are gone, and since 25.0.0 so are the re-exports: one value, one import
+path (`X_HELPER_COPY`, `bun run flight-copies`). The types `ClientFlight` and `ClientRetry` stay
+re-exported, because `queryClient`'s options name them.
 
 Bundle cost is why `ClientFlight` is a TYPE inside `client.ts` and never a value. Importing
 `queryClient` alone through this package's barrel, `bun build --target=browser --minify`,
@@ -346,7 +348,7 @@ empty box is not an empty result set.
 
 **It serves one page.** The rows come from the entity chain, which pages by its own signed cursor;
 that cursor cannot cross the `SqlSource` seam, and slicing in memory instead would cut inside the
-page the provider fetched and report `hasNextPage: false` at its edge. So a second page is
+page the provider fetched and report `hasMore: false` at its edge. So a second page is
 refused, and the cause names the chain — `db.posts.search(term).after(cursor).page()`.
 
 | A request `search()` refuses | Answer |
@@ -373,17 +375,19 @@ not exported, because a page is the read's own answer rather than an imported he
 
 The route reads two controls off the search string BEFORE the schema sees it, and with either
 present answers the `Page` envelope `.page()` answers a server caller with — `{ rows, nextCursor,
-hasMore, endCursor, hasNextPage }`, the same names, so a cursor read off the wire and one read off a
-direct call are one string in one field. **`nextCursor` and `hasMore` are the preferred names**
-(`As of 22.12`); `endCursor` and `hasNextPage` carry the same two values, always, as aliases — not
-deprecated, so a client reading them keeps working. `openapi.json` lists all five as required, the
-aliases described as such. Without a control the answer is the bare array it has always been, so a
+hasMore }`, the same names, so a cursor read off the wire and one read off a direct call are one
+string in one field. The `endCursor`/`hasNextPage` alias pair is gone (`As of 25.0.0`): `Page` is
+the framework's one page type — `@ultimat3/core`'s, re-exported here, the same an entity `findMany`
+answers — and `openapi.json` lists exactly those three as required. **`nextCursor` is `null` exactly
+when `hasMore` is false** (`As of 25.0.0`; the last page used to keep a cursor, so a
+`while (page.nextCursor)` loop fetched an empty page past the end): `openapi.json` says so as a
+`oneOf`, and the type is a union that narrows `nextCursor` to `string` under `if (page.hasMore)`. Without a control the answer is the bare array it has always been, so a
 client written before the controls existed keeps reading rows. `As of 2026-09`; until then the
 route had no envelope, and a query over a paged external source carried its page marker on a row
 (an `olderCursor` column on the oldest message), which is a cursor on the wrong side of the shape.
 
 ```
-GET /_x/query/live-feed?orgId=…&_first=20             → { rows, nextCursor, hasMore, endCursor, hasNextPage }
+GET /_x/query/live-feed?orgId=…&_first=20             → { rows, nextCursor, hasMore }
 GET /_x/query/live-feed?orgId=…&_first=20&_after=<c>  → the next page (<c> = nextCursor)
 GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (unchanged)
 ```
@@ -395,7 +399,7 @@ GET /_x/query/live-feed?orgId=…                       → [ …rows ]   (uncha
 | `_first` outside 1–10,000, not a whole number, or `_after` without `_first` | **400** `X_INPUT_INVALID` with the read's own fix line — judged at the wire (`page-controls.ts`), because `paginate` asserts the same bound as `X_INVARIANT`, which is a 500 blaming the server for a number the caller typed |
 | a cursor that is not this read's | **400** `X_CURSOR_INVALID` — `decodeCursor` is the one judge of a cursor; the route checks only that `_after` is one non-empty string |
 | a control sent twice | refused, never resolved to the last one as a declared scalar is: two page sizes is two pages asked for in one request |
-| a declared `.limit()` is the size of the LISTING | `first` is the size of a page and never widens it: the window is `min(what the limit has left, first + 1)`, a limited read's cursor carries how many rows are already served, and the page after the last is empty with `nextCursor: null`. `As of 2026-10`; until then `first` REPLACED the limit, so `?_first=10000` walked a "top 3" to the end of the table. A read paged past its limit on purpose drops the `.limit()` |
+| a declared `.limit()` is the size of the LISTING | `first` is the size of a page and never widens it: the window is `min(what the limit has left, first + 1)`, a limited read's cursor carries how many rows are already served, and the last page inside it answers `hasMore: false` with `nextCursor: null`. `As of 2026-10`; until then `first` REPLACED the limit, so `?_first=10000` walked a "top 3" to the end of the table. A read paged past its limit on purpose drops the `.limit()` |
 | a cursor a limited read minted before that | **400** `X_CURSOR_INVALID` — it does not say how much of the limit is spent, and honouring it would start a second "top N" below the first |
 | the typed client | `feed.client({ baseUrl }).page(input, { first, after })` and `queries.feed.page(…)` append the two controls after the sorted input, so a paged URL is the plain URL plus a suffix |
 | `openapi.json` | every read is a `GET` path item with its input as `in: query` parameters, the two controls after them, and a `200` that is `oneOf` the bare rows and the envelope — `queryOpenApiPaths`, merged into `@ultimat3/action`'s document by the CLI |
@@ -608,9 +612,8 @@ before the read is deleted. A date that cannot be rendered is `X_QUERY_DEPRECATI
 projection, not on the first read. Versioning is two deployments behind one ingress, never a
 router feature here.
 
-`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s, re-exported
-from this package's index for existing callers (the re-exports leave in 25.0.0); this package
-imports them from core directly, as `@ultimat3/action` does.
+`Deprecation`, `renderDeprecation` and `recordDeprecatedCall` are `@ultimat3/core`'s and are
+imported from there — this package does not re-export them (`As of 25.0.0`).
 
 ## `audit: true` — who saw what
 
@@ -641,9 +644,9 @@ the reader whose call executed the SQL.
 
 | Field | On a read |
 |---|---|
-| `name` | the export name. `action` carries the same value — **deprecated**, removed in 25.0.0 |
+| `name` | the export name — required, and the record's only name (the `action` alias left in 25.0.0) |
 | `primitive` / `mutator` | `'query'` / `false` |
-| `surface` | `server` (a direct call, `.as()`, `.page()`), `http` (the route), `mcp` (`.tool().read()`, and `@ultimat3/mcp`'s served tool) |
+| `surface` | `server` (a direct call, `.as()`, `.page()`), `http` (the route), `mcp` (`@ultimat3/mcp`'s served tool: `sourceFor(…, { surface: 'mcp' })`) |
 | `input` | the **parsed** input, as an action's record carries it; `undefined` when the parse failed. Unredacted in the record — a persisting sink redacts through `auditableInput` (core's credential-key table and `Secret`), as `postgresAuditSink` does |
 | `replayed` | `true` when the request memo or a cache tier answered |
 | `idempotencyKey` | always `null` |

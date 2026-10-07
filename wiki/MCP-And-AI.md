@@ -2,7 +2,7 @@
 
 The differentiator. Not a chat widget, not an "AI SDK integration" — the framework is built so an agent can read it, drive it, and verify its own work, and so the apps it generates have the same property.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). The MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built, and so are the four that used to be contracted: `llm()` is an action factory ([`packages/ai/src/llm.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/llm.ts)), prompts are versioned, `PgVectorStore` fuses pgvector cosine with Postgres FTS via RRF, and evals gate on a committed baseline inside `x verify`'s `eval` step.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). The MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built, and so are the four that used to be contracted: `llm()` is an action factory ([`packages/ai/src/llm.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/llm.ts)), prompts are versioned, `postgresVectorStore()` fuses pgvector cosine with Postgres FTS via RRF, and evals gate on a committed baseline inside `x verify`'s `eval` step.
 
 ## Built-in MCP dev server
 
@@ -197,7 +197,7 @@ developer's.
 ### The app's own endpoint is mounted by the web role
 
 `As of 2026-09-05`. `defineAppMcp({ …, resolveToken })` builds `mcp.route`, and `app.config.ts`
-declares `ai: { mcp: { expose: true, path: '/mcp' } }` **by default** — and until this date nothing
+declares `ai: { mcp: { expose: true } }` **by default** (the path is `defineAppMcp`'s own, `/mcp` by default) — and until this date nothing
 between the two served it: `POST /mcp` was `X_ROUTE_NOT_FOUND` under `x dev` and in every
 container. The contract is one file:
 
@@ -226,7 +226,7 @@ export const mcp = [
 
 | Rule | Detail |
 |---|---|
-| endpoint #0 | mounts at `ai.mcp.path`, exactly as a single export does, and owns the root `/.well-known/oauth-protected-resource` |
+| endpoint #0 | mounts at its own `defineAppMcp({ path })` (default `/mcp`), exactly as a single export does, and owns the root `/.well-known/oauth-protected-resource` |
 | every other endpoint | mounts at its own `defineAppMcp({ path })` (default `/mcp`), route name `mcp:<path>` |
 | isolation | each endpoint is its own `McpServer`: a tool, resource or prompt of one is absent from another's `tools/list` and answers `-32601` there |
 | two endpoints on one route | `X_MCP_PATH_DUPLICATE`, **thrown** at boot — a second endpoint that forgot `path` collides with the default `/mcp` |

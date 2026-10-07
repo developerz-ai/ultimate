@@ -8,10 +8,10 @@ full reference is
 the walk-through is [Tutorial 3](Tutorial-03-Auth-And-Admin).
 
 ```ts
-import { BuiltinAdapter, defineAuth, login, oauthLogin } from '@ultimat3/auth';
+import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 
 export const auth = defineAuth({
-  adapter: new BuiltinAdapter(),            // or MemoryAdapter
+  adapter: postgresAuthAdapter(),            // or memoryAuthAdapter()
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
   mfa: { issuer: 'Acme' },
@@ -66,7 +66,7 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 |---|---|
 | TOTP + recovery codes | `enrolTotp`, `saveTotpSecret`, `generateRecoveryCodes`. The secret is **sealed at rest** under the app's master key and a plaintext one is refused, never read (`X_MFA_SECRET_UNSEALED`; `x auth seal-mfa` seals rows from before); a recovery code is consumed in one statement, so it works once. A password proven with a factor outstanding is `X_MFA_REQUIRED`, whose `meta.challenge` is a sealed five-minute credential; `completeMfa(auth, challenge, code)` finishes the sign-in, meters the guess against the same lockout buckets a password guess spends, and refuses a spent code |
 | email verification, password reset | `issueVerification` / `consumeVerification`; a token is consumed only when its hash matches, so a wrong guess cannot burn the victim's live link. The mail is sent through an injected `MailSender` ([Mail](Mail)) |
-| API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are the key's and never the owner's roles (`X_API_KEY_INVALID`). A key is its owner's credential: a missing or disabled owner refuses it on the next use, a wildcard scope (`*`, `<resource>:*`) is refused at issue, and an owned key keeps only the scopes its owner's grants cover — pass `grantsOf` to expand roles ([`packages/auth/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/README.md)); a key with no `userId` is unchanged. `apiKeyResolver(() => store)` is both as the `resolveToken` a bearer mount and `defineAppMcp()` take: `{ actor, scopes }` for a live key, one `null` for every wrong one, and a store fault left a throw. In a test the store is `new MemoryAdapter()` |
+| API keys — how an agent authenticates | `issueApiKey` → `ult_<env>_<id>_<secret>`, shown once; `verifyApiKey` + `apiKeyActor` give a `kind: 'agent'` actor whose scopes are the key's and never the owner's roles (`X_API_KEY_INVALID`). A key is its owner's credential: a missing or disabled owner refuses it on the next use, a wildcard scope (`*`, `<resource>:*`) is refused at issue, and an owned key keeps only the scopes its owner's grants cover — pass `grantsOf` to expand roles ([`packages/auth/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/README.md)); a key with no `userId` is unchanged. `apiKeyResolver(() => store)` is both as the `resolveToken` a bearer mount and `defineAppMcp()` take: `{ actor, scopes }` for a live key, one `null` for every wrong one, and a store fault left a throw. In a test the store is `memoryAuthAdapter()` |
 | service-to-service | `verifyWorkloadToken` reads a Kubernetes service-account token, a SPIFFE JWT-SVID or a cloud IMDS token (they are all one JWT); `actorFromService` gives a `kind: 'service'` actor. mTLS is the mesh's job |
 
 Every auth code — `X_UNAUTHENTICATED`, `X_SESSION_EXPIRED`, `X_MFA_REQUIRED`, `X_OAUTH_*`,

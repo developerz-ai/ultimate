@@ -81,7 +81,8 @@ export interface Gateway {
   /**
    * The model a call with none declared runs on — `createGateway({ defaultModel })`. Read by
    * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
-   * fallback; absent, the built-in default answers and records a deprecation (removed in 25.0.0).
+   * fallback; absent, a call naming no model is refused (`X_AI_MODEL_UNRESOLVED`) — never routed to
+   * a vendor the framework picked.
    */
   readonly defaultModel?: ModelId | undefined;
   generate(request: GenerateRequest): Promise<GenerateResult>;
@@ -120,7 +121,7 @@ class GatewayImpl implements Gateway {
     // `attempts` is the retry loop's only exit condition and nothing screened it: `attempt <= NaN`
     // is false on the first comparison, so `attempt()` calls no provider at all and raises
     // `X_AI_PROVIDER_UNAVAILABLE` with an EMPTY attempt list — measured, "no provider could serve
-    // model claude-opus-5 ()" for a provider that was never asked. A floor of 1 because the field
+    // model <id> ()" for a provider that was never asked. A floor of 1 because the field
     // is documented as total attempts INCLUDING the first, so zero of them is not a policy.
     // `baseDelayMs` and `maxDelayMs` are deliberately not screened here: `backoffDelay` refuses a
     // non-finite one already, and a NEGATIVE base is clamped to a zero wait on purpose

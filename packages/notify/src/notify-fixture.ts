@@ -9,7 +9,7 @@
 import type { Ctx, FrozenClock } from '@ultimat3/core';
 import { assert, createContext, frozenClock } from '@ultimat3/core';
 import type { JobHandle, StepStore } from '@ultimat3/jobs';
-import { createMemoryStepStore, createStepRunner, isStepSuspension } from '@ultimat3/jobs';
+import { createStepRunner, isStepSuspension, memoryStepStore } from '@ultimat3/jobs';
 import type { BulkNotifyChannel, NotifyChannel } from './channel';
 import { bulkChannel, channel } from './channel';
 import type { NotifyPayload, NotifyReport } from './plan';
@@ -96,7 +96,7 @@ const MAX_ATTEMPTS = 20;
 export function driver(options: { store?: StepStore; runId?: string } = {}): Driver {
   const clock = frozenClock(START);
   const ctx = createContext({ clock });
-  const store = options.store ?? createMemoryStepStore();
+  const store = options.store ?? memoryStepStore();
   const runId = options.runId ?? RUN_ID;
   let attempts = 0;
 

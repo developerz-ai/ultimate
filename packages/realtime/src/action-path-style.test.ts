@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { CLIENT_PATH_STYLE_META } from '@ultimat3/core/page';
 import { pageHarness, resetPage } from './hooks-fixture';
-import { MemoryLocalStore } from './local-store-idb';
+import { memoryLocalStore } from './local-store-idb';
 import { createOutbox } from './page-outbox';
 import { useMutation } from './use-mutation';
 
@@ -55,7 +55,7 @@ describe("a write sent by name, in a 'readable' app", () => {
   test('the outbox replays a queued write to the same path', async () => {
     render('readable');
     const urls = recordFetch();
-    const outbox = createOutbox({ local: new MemoryLocalStore(), principal: () => 'u1' });
+    const outbox = createOutbox({ local: memoryLocalStore(), principal: () => 'u1' });
 
     await outbox.enqueue({ key: 'like:1', name: 'likePost', input: { postId: 'p1' } });
     const report = await outbox.replay();
@@ -70,7 +70,7 @@ describe('a write sent by name, in an app that declared no style', () => {
     render(undefined);
     pageHarness();
     const urls = recordFetch();
-    const outbox = createOutbox({ local: new MemoryLocalStore(), principal: () => 'u1' });
+    const outbox = createOutbox({ local: memoryLocalStore(), principal: () => 'u1' });
 
     await useMutation({ name: 'likePost' })({ postId: 'p1' });
     await outbox.enqueue({ key: 'like:1', name: 'likePost', input: { postId: 'p1' } });

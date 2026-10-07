@@ -6,10 +6,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { createPostgresClient, raw } from '@ultimat3/db';
+import { postgresClient, raw } from '@ultimat3/db';
 import type { JobDriver, JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
-import { createPgDriver } from './driver-pg';
+import { postgresJobDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -41,10 +41,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the claim buries a poison row
   let driver: JobDriver;
 
   beforeAll(async () => {
-    admin = createPostgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+    admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
     await admin.execute(raw(`create database ${PROBE_DB}`));
-    client = createPostgresClient({ url: probeUrl(), role: 'web', profile: { max: SESSIONS } });
+    client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: SESSIONS } });
     for (const statement of SQL_JOBS_TABLE.split(';')) {
       if (statement.trim().length > 0) await client.execute(raw(statement));
     }
@@ -52,7 +52,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the claim buries a poison row
       query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
         client.query<R>({ text, values }),
     };
-    driver = createPgDriver({ executor });
+    driver = postgresJobDriver({ executor });
   });
 
   beforeEach(async () => {

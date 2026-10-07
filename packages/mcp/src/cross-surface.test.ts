@@ -5,7 +5,7 @@
 // every existing test asserts one surface at a time:
 //   - `nullable` reached none of them — the OpenAPI component said `{"type":"string"}` for a field
 //     the action's own `output:` validator returns `null` from;
-//   - `pattern` reached OpenAPI and `action.tool()` but NOT `tools/list`, the path an agent
+//   - `pattern` reached OpenAPI and `action.tool()` (gone in 25.0.0) but NOT `tools/list`, the path an agent
 //     actually reads, so the agent was given no way to know the format and got `X_INPUT_INVALID`
 //     from the action's own parse.
 // This file is the cross-surface assertion. A keyword the wire subset cannot enforce is a
@@ -13,15 +13,14 @@
 // is per keyword and states which surface owes what.
 //
 // The same claim applies to the tool's NAME, and nothing asserted it until 2026-08: this package
-// serves `actionName(target)`/`queryName(target)` verbatim (`projectable.ts`), while `.tool()`,
-// `x-ultimate.mcpTool` and `ActionDescriptor.mcp.tool` all published `toToolName(name)` —
+// serves `actionName(target)`/`queryName(target)` verbatim (`projectable.ts`), while the old
+// `.tool()`, `x-ultimate.mcpTool` and `ActionDescriptor.mcp.tool` all published `toToolName(name)` —
 // `publishPost` served, `publish_post` published. An agent that read the spec and issued
 // `tools/call { name: 'publish_post' }` got ToolNotFound. Every existing test asserted one side
 // or the other, never the two against each other, so the second block below compares each
 // PUBLISHED name against the catalog the server actually answers.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { AnyAction } from '@ultimat3/action';
 import {
   action,
   buildOpenApi,
@@ -40,7 +39,9 @@ import {
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
+import { toolFrom } from './from-action';
 import type { McpCaller } from './registry';
+import { toolListEntry } from './registry';
 import { validateArgs } from './validate-args';
 import type { JsonSchema } from './wire';
 
@@ -122,11 +123,9 @@ describe('one declaration, three schema surfaces', () => {
 
   test('`pattern` reaches every surface an agent or a client reads', async () => {
     const openapi = props(openapiSchema())['orderRef'] as Record<string, unknown>;
-    const tool = props(archiveOrder.tool().inputSchema)['orderRef'] as Record<string, unknown>;
     const listed = props(await listedSchema())['orderRef'] as Record<string, unknown>;
 
     expect(openapi['pattern']).toBe(ORDER_REF.source);
-    expect(tool['pattern']).toBe(ORDER_REF.source);
     // The one that was missing: an agent read `tools/list` and saw only the two lengths.
     expect(listed['pattern']).toBe(ORDER_REF.source);
   });
@@ -135,16 +134,14 @@ describe('one declaration, three schema surfaces', () => {
     const nullBranch = { type: 'null' };
 
     const openapi = props(openapiSchema())['note'] as Record<string, unknown>;
-    const tool = props(archiveOrder.tool().inputSchema)['note'] as Record<string, unknown>;
     const listed = props(await listedSchema())['note'] as Record<string, unknown>;
 
-    for (const projected of [openapi, tool, listed]) {
+    for (const projected of [openapi, listed]) {
       expect(projected['anyOf']).toContainEqual(nullBranch);
     }
 
     // nullable ≠ optional, on every surface.
     expect(openapiSchema()['required']).toContain('note');
-    expect(archiveOrder.tool().inputSchema['required']).toContain('note');
     expect((await listedSchema()).required).toContain('note');
   });
 
@@ -223,12 +220,14 @@ describe('a flagged pattern: the MCP server and the schema agree', () => {
 });
 
 /**
- * `.tool()` is what an author reads to learn the tool an agent is shown, so it has to BE that tool:
- * it published the full draft-07 shape (`format: 'uuid'`, every bound on the output) while
- * `tools/list` served `@ultimat3/schema`'s wire subset — two documents for one declaration.
+ * O-tool, 25.0.0: ONE projection. `@ultimat3/action`'s `.tool()` and `@ultimat3/query`'s were a
+ * second one, built a tier below this package, and they disagreed with what `tools/list` serves —
+ * the full draft-07 shape first, then a description falling back to the bare name, no
+ * `idempotencyKey` argument, no annotations. They are deleted; `toolFrom` is the one an
+ * author asks, and this pins that what it answers IS the served entry, field for field.
  */
-describe('`.tool()` returns the shape `tools/list` serves', () => {
-  const declareShaped = () =>
+describe('`toolFrom` is the entry `tools/list` serves', () => {
+  const declareShaped = (idempotent: boolean) =>
     action({
       input: t.object({
         orderId: t.uuid,
@@ -238,39 +237,48 @@ describe('`.tool()` returns the shape `tools/list` serves', () => {
       }),
       output: t.object({ id: t.uuid, archivedAt: t.string.max(40) }),
       policy: can('order:archive'),
-      mcp: { expose: true, description: 'Archive by id' },
+      idempotent,
+      mcp: { expose: true, title: 'Archive', annotations: { destructiveHint: false } },
       handle: () => ({ id: '00000000-0000-4000-8000-000000000000', archivedAt: 'now' }),
     });
 
   beforeEach(() => {
     resetActions();
+    resetQueries();
     definePermissions(['order:archive']);
     defineRoles({ owner: { grants: ['order:archive'] } });
   });
 
   afterEach(() => {
     resetActions();
+    resetQueries();
     clearRoles();
     clearPermissions();
   });
 
-  const served = async (target: AnyAction) => {
-    const response = await defineAppMcp({ actions: [target] }).server.handle(
+  const served = async (app: Parameters<typeof defineAppMcp>[0], name: string) => {
+    const response = await defineAppMcp(app).server.handle(
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
       caller,
     );
-    const result = response?.result as
-      | { tools?: { inputSchema: JsonSchema; outputSchema?: JsonSchema }[] }
-      | undefined;
-    return result?.tools?.[0];
+    const result = response?.result as { tools?: { name: string }[] } | undefined;
+    return (result?.tools ?? []).find((entry) => entry.name === name);
   };
 
-  test('input and output alike, keyword for keyword', async () => {
-    const archiveById = registerAction('archiveById', declareShaped());
-    const listed = await served(archiveById);
+  for (const idempotent of [false, true]) {
+    test(`an action (idempotent: ${idempotent}): the whole entry, deep-equal`, async () => {
+      const archiveById = registerAction('archiveById', declareShaped(idempotent));
+      const listed = await served({ actions: [archiveById] }, 'archiveById');
+      expect(listed).toBeDefined();
+      expect(toolListEntry(toolFrom(archiveById))).toEqual(listed as never);
+    });
+  }
+
+  test('a query: the whole entry, deep-equal', async () => {
+    const recentOrders = registerQuery('recentOrders', declareRead());
+    const listed = await served({ queries: [recentOrders] }, 'recentOrders');
     expect(listed).toBeDefined();
-    expect(archiveById.tool().inputSchema).toEqual({ ...listed?.inputSchema });
-    expect(archiveById.tool().outputSchema).toEqual({ ...listed?.outputSchema });
+    expect(toolListEntry(toolFrom(recentOrders))).toEqual(listed as never);
   });
 
   test('an output with no object root publishes no outputSchema on either side', async () => {
@@ -284,8 +292,8 @@ describe('`.tool()` returns the shape `tools/list` serves', () => {
         handle: () => [],
       }),
     );
-    expect((await served(listIds))?.outputSchema).toBeUndefined();
-    expect(listIds.tool().outputSchema).toBeUndefined();
+    expect(await served({ actions: [listIds] }, 'listIds')).not.toHaveProperty('outputSchema');
+    expect(toolFrom(listIds).outputSchema).toBeUndefined();
   });
 });
 
@@ -344,17 +352,17 @@ describe('one declaration, ONE tool name', () => {
 
     // The served name is the export name VERBATIM — no derivation, on either side.
     expect([...served].sort()).toEqual(['archiveOrder', 'recentOrders']);
-    // The three an action publishes. Each was `archive_order` until 2026-08, and none of the
-    // three is a name this catalog has ever contained.
-    expect(served).toContain(archiveOrder.tool().name);
+    // The two an action publishes. Each was `archive_order` until 2026-08, and neither is a name
+    // this catalog has ever contained.
     // Asserted defined first: `toContain(undefined)` would be a comparison against nothing, and a
     // missing `x-ultimate.mcpTool` is exactly one of the drifts this file reports.
     const published = openapiMcpTool();
     expect(published).toBeDefined();
     expect(served).toContain(published ?? '');
     expect(served).toContain(archiveOrder.describe().mcp.tool);
-    // A query publishes one; `QueryDescriptor` carries no `mcp` block, so there is no fourth.
-    expect(served).toContain(recentOrders.tool().name);
+    // A query publishes none of its own: `QueryDescriptor` carries no `mcp` block, and the one
+    // projection is this package's, so its name is the served one by construction.
+    expect(served).toContain(toolFrom(recentOrders).name);
   });
 
   // The failure end to end, and the reason the assertion above is not enough on its own: an

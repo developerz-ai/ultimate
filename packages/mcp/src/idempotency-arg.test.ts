@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   action,
-  MemoryIdempotencyStore,
+  memoryIdempotencyStore,
   registerAction,
   resetRegistry as resetActions,
   resetIdempotency,
@@ -83,7 +83,7 @@ const listedSchema = async (server: ReturnType<typeof defineAppMcp>['server']) =
 beforeEach(() => {
   runs = 0;
   seen = [];
-  setIdempotencyStore(new MemoryIdempotencyStore());
+  setIdempotencyStore(memoryIdempotencyStore());
   definePermissions(['card:charge']);
   defineRoles({ owner: { grants: ['card:charge'] } });
 });

@@ -110,7 +110,7 @@ const tallyOf = (executions: readonly JobExecution[]): Record<string, StepTally>
 
 export async function createRunJobs(): Promise<RunJobs> {
   const jobs = await import('@ultimat3/jobs');
-  const driver: JobDriver = jobs.createMemoryDriver();
+  const driver: JobDriver = jobs.memoryJobDriver();
   // Captured before the overwrite: the ambient driver is process-global, so without this the
   // next file to call `send()` enqueues into this test's dead queue instead of sending inline.
   const previous = jobs.jobDriver();
@@ -119,7 +119,7 @@ export async function createRunJobs(): Promise<RunJobs> {
   // answer one test published resumed the next test's waiting run. A fresh bus per fixture, and
   // the process's own handed back with the driver.
   const previousBus = jobs.eventBus();
-  jobs.setEventBus(jobs.createMemoryEventBus());
+  jobs.setEventBus(jobs.memoryEventBus());
   const anonymousWorker = createContext({ role: 'worker' });
   const renewals = frozenScheduler();
 

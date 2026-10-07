@@ -3,7 +3,7 @@
 // Two shapes. A FUNCTION is complete and shipped — an app writes its own fallback, gets the page
 // and the failure, and answers whether the attempt should be retried. `'agent'` is the seam for
 // letting a model re-derive the selector from the page, and it is an honest
-// `X_NOT_IMPLEMENTED` today, in the shape `packages/jobs/src/driver-redis.ts` uses: correct types
+// `X_NOT_IMPLEMENTED` today: correct types
 // so an app can be written against it, one labelled throw, no silent no-op.
 
 import { NotImplementedError } from '@ultimat3/core';

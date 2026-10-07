@@ -1,4 +1,4 @@
-// Flag parsing plus ls / show / retry, driven through `createMemoryDriver()` — a real driver with
+// Flag parsing plus ls / show / retry, driven through `memoryJobDriver()` — a real driver with
 // real introspection and claim/ack/nack, so a dead letter here reached `dead` the way a pg queue
 // would. Drain has its own suite next to `jobs-drain.ts`.
 
@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
 // `JOB_STATES` from the package that OWNS the vocabulary, never from the module under test: the
 // loop below is only a test while the list it walks is the queue's own.
-import { createMemoryDriver, JOB_STATES } from '@ultimat3/jobs';
+import { JOB_STATES, memoryJobDriver } from '@ultimat3/jobs';
 import { BadFlagError, JobUnknownError } from './errors';
 import {
   JOB_STATES as CLI_JOB_STATES,
@@ -101,7 +101,7 @@ describe('unit · jobs flag parsing', () => {
 
 describe('unit · listJobs', () => {
   test('an empty queue reports zero everywhere', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const result = await listJobs(driver);
     expect(result.rows).toEqual([]);
     expect(result.deadLetters).toEqual([]);
@@ -116,7 +116,7 @@ describe('unit · listJobs', () => {
   });
 
   test('ready, delayed and dead jobs are all counted and listed', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const readyId = await enqueue(driver, { name: 'ready-job' });
     const delayedId = await enqueue(driver, { name: 'delayed-job', runAt: Date.now() + 60_000 });
     const deadId = await makeDeadJob(driver, 'dead-job');
@@ -136,7 +136,7 @@ describe('unit · listJobs', () => {
   });
 
   test('--state, --queue and --limit each narrow the row list', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const aId = await enqueue(driver, { queue: 'queue-a' });
     await enqueue(driver, { queue: 'queue-b' });
     const deadId = await makeDeadJob(driver, 'dead-job');
@@ -147,13 +147,13 @@ describe('unit · listJobs', () => {
   });
 
   test('a rejected flag surfaces before any driver call', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await expect(listJobs(driver, { state: 'exploded' })).rejects.toThrow(BadFlagError);
     await expect(listJobs(driver, { limit: '3.5' })).rejects.toThrow(BadFlagError);
   });
 
   test('only the backfills still sweeping come back — a finished one is history', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     for (const runId of ['run_live', 'run_old']) {
       await driver.backfills?.start({
         runId,
@@ -172,27 +172,27 @@ describe('unit · listJobs', () => {
   });
 
   test('a queue with no ledger rows reports no backfills rather than failing', async () => {
-    expect((await listJobs(createMemoryDriver())).backfills).toEqual([]);
+    expect((await listJobs(memoryJobDriver())).backfills).toEqual([]);
   });
 });
 
 describe('unit · showJob and retryJob', () => {
   test('showJob returns the full trace for a known job', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await enqueue(driver, { name: 'send-email' });
     const trace = await showJob(driver, id);
     expect(trace).toMatchObject({ id, name: 'send-email', state: 'ready', attempt: 0, steps: [] });
   });
 
   test('retryJob puts a dead job back to ready', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await makeDeadJob(driver);
     expect((await showJob(driver, id)).state).toBe('dead');
     expect(await retryJob(driver, id)).toMatchObject({ state: 'ready', attempt: 0 });
   });
 
   test('--from-step drops that step so it re-executes, keeping the others', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const id = await makeDeadJob(driver);
     const { runId } = await showJob(driver, id);
     await driver.steps.put(completedStep(runId, 'charge-card'));
@@ -204,7 +204,7 @@ describe('unit · showJob and retryJob', () => {
   });
 
   test('an unknown id throws X_JOB_UNKNOWN from both commands', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await expect(showJob(driver, 'no-such-id')).rejects.toThrow(JobUnknownError);
     await expect(retryJob(driver, 'no-such-id')).rejects.toThrow(JobUnknownError);
   });

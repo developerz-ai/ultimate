@@ -10,9 +10,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import {
-  createPostgresClient,
   generateMigration,
   type PostgresClient,
+  postgresClient,
   raw,
   sql,
   sqlState,
@@ -91,7 +91,7 @@ let client: PostgresClient;
 
 beforeAll(async () => {
   if (!hasPostgres) return;
-  client = createPostgresClient({ url: adminUrl ?? '' });
+  client = postgresClient({ url: adminUrl ?? '' });
   await client.execute(raw(DROP));
   // The table an escaped literal would have dropped. Created BEFORE the migration, so its survival
   // is a fact about the migration and not about the order of this file.
@@ -250,7 +250,7 @@ describe.skipIf(!hasPostgres)("live · postgres · E'' fixes the dialect in the 
   let pinned: PostgresClient;
 
   beforeAll(async () => {
-    pinned = createPostgresClient({ url: adminUrl ?? '', profile: { max: 1 } });
+    pinned = postgresClient({ url: adminUrl ?? '', profile: { max: 1 } });
     await pinned.execute(raw('set standard_conforming_strings = off'));
   });
 

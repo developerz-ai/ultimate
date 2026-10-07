@@ -107,6 +107,53 @@ describe('a second implementation of a helper with one home is refused', () => {
   });
 });
 
+describe('a RE-EXPORT of a core helper from another package is a second home', () => {
+  // `@ultimat3/action` and `@ultimat3/query` re-exported core's client-flight and audit-sink
+  // values "so no import moves" — two import paths for one value, and an agent picks one at random.
+  test('every client-flight and audit-sink value, re-exported from @ultimat3/core', () => {
+    expect(
+      helpersIn(
+        "export {\n  createClientFlight,\n  DEFAULT_CLIENT_RETRY,\n  isSuperseded,\n  isTransientFailure,\n} from '@ultimat3/core';",
+      ),
+    ).toEqual(['createClientFlight', 'DEFAULT_CLIENT_RETRY', 'isSuperseded', 'isTransientFailure']);
+    expect(
+      helpersIn('export { getAuditSink, resetAuditSink, setAuditSink } from "@ultimat3/core";'),
+    ).toEqual(['getAuditSink', 'resetAuditSink', 'setAuditSink']);
+  });
+
+  test('an alias is still the helper', () => {
+    expect(helpersIn("export { isSuperseded as superseded } from '@ultimat3/core';")).toEqual([
+      'isSuperseded',
+    ]);
+  });
+
+  test('a TYPE re-export, an import, a sibling name and a core-relative re-export are not', () => {
+    expect(
+      helpersIn(
+        [
+          "export type { AuditRecord, AuditSink, ClientFlight } from '@ultimat3/core';",
+          "export { type ClientRetry, renderFixShellArg } from '@ultimat3/core';",
+          "import { createClientFlight, setAuditSink } from '@ultimat3/core';",
+          "export { isSupersededBy } from '@ultimat3/core';",
+          "export { getAuditSink } from './audit';",
+          "// export { setAuditSink } from '@ultimat3/core';",
+        ].join('\n'),
+      ),
+    ).toEqual([]);
+  });
+
+  test('the finding asks for the import at the caller and the re-export deleted', () => {
+    const [finding] = checkHelperHomes({
+      at,
+      text: "\nexport { setAuditSink } from '@ultimat3/core';",
+    });
+    expect(finding?.cause).toContain(`${at}:2`);
+    expect(finding?.cause).toContain('re-export');
+    expect(finding?.fix).toContain("import { setAuditSink } from '@ultimat3/core'");
+    expect(finding?.fix).toContain(`delete the re-export in ${at}`);
+  });
+});
+
 describe('what is never a copy', () => {
   test('each helper in its own home', () => {
     const samples: Readonly<Record<string, string>> = {
@@ -118,6 +165,13 @@ describe('what is never a copy', () => {
       PgExecutor: 'export interface PgExecutor {}',
       storeMode: "resolveEnvironment({ env }) === 'test' ? 'memory' : 'database'",
       renderDeprecation: 'const link = \'</v2>; rel="successor-version"\';',
+      createClientFlight: "export { createClientFlight } from '@ultimat3/core';",
+      DEFAULT_CLIENT_RETRY: "export { DEFAULT_CLIENT_RETRY } from '@ultimat3/core';",
+      isTransientFailure: "export { isTransientFailure } from '@ultimat3/core';",
+      isSuperseded: "export { isSuperseded } from '@ultimat3/core';",
+      getAuditSink: "export { getAuditSink } from '@ultimat3/core';",
+      setAuditSink: "export { setAuditSink } from '@ultimat3/core';",
+      resetAuditSink: "export { resetAuditSink } from '@ultimat3/core';",
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

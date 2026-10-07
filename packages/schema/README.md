@@ -212,7 +212,7 @@ swap. `introspect()` is what OpenAPI/MCP generation needs; a provider without it
 
 ```ts
 toJsonSchema(publishPost);                    // OpenAPI 3.1 (2020-12)
-toWireSchema(publishPost);                    // an MCP tool's inputSchema: what tools/list serves and .tool() returns
+toWireSchema(publishPost);                    // an MCP tool's inputSchema: what tools/list serves
 toWireOutputSchema(publishPost);              // its outputSchema: structure only; undefined for a non-object root
 toJsonSchema(publishPost, { dialect: 'x' });  // X_SCHEMA_UNSUPPORTED — the two spellings are closed
 parse(publishPost, coerceQuery(publishPost, url.searchParams));

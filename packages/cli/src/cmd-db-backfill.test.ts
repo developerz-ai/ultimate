@@ -1,4 +1,4 @@
-// `x db backfill`'s four shapes, driven through `createMemoryDriver()` — which sweeps are
+// `x db backfill`'s four shapes, driven through `memoryJobDriver()` — which sweeps are
 // pending, what a dry run plans, what `--write` enqueues and what the ledger reports. Split from
 // `cmd-db.test.ts` with the wiring it drives (`cmd-db-backfill.ts`): that file crossed the
 // 500-line ceiling, and "does this command run one engine" and "what does a sweep pass report"
@@ -13,13 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entity, memoryRepo, tableFor, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import {
-  backfill,
-  createMemoryDriver,
-  resetJobDriver,
-  resetJobs,
-  setJobDriver,
-} from '@ultimat3/jobs';
+import { backfill, memoryJobDriver, resetJobDriver, resetJobs, setJobDriver } from '@ultimat3/jobs';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
@@ -123,7 +117,7 @@ describe('unit · x db backfill', () => {
   // Plan 101 row S12: the two-shapes refusal echoes the FIRST shape asked for. The target is always
   // listed last, so the echo is a flag literal — a hostile target is named in the cause, never run.
   test('two shapes asked at once echo the flag, never the hostile target', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const thrown: unknown = await runBackfill(driver, [
       'db',
       'backfill',
@@ -138,7 +132,7 @@ describe('unit · x db backfill', () => {
   });
 
   test('a bare x db backfill refuses and names a shape that works', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const thrown: unknown = await runBackfill(driver, ['db', 'backfill']).then(
       () => undefined,
       (error: unknown) => error,
@@ -164,7 +158,7 @@ describe('unit · x db backfill', () => {
     // had named one sweep — the same argv one flag over has always been refused.
     [['db', 'backfill', 'cleanup', '--list'], 'cleanup'],
   ])('%o asks two questions, so it is refused rather than resolved', async (argv, second) => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     const thrown: unknown = await runBackfill(driver, argv).then(
       () => undefined,
       (error: unknown) => error,
@@ -186,7 +180,7 @@ describe('unit · x db backfill', () => {
     [['db', 'backfill', '--all', '--limit', '5'], 'limit', 'x db backfill --list --json'],
     [['db', 'backfill', '--list', '--write'], 'write', 'x db backfill --all --write --json'],
   ])('%o carries a flag its shape cannot read', async (argv, flag, fix) => {
-    const thrown: unknown = await runBackfill(createMemoryDriver(), argv).then(
+    const thrown: unknown = await runBackfill(memoryJobDriver(), argv).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -198,7 +192,7 @@ describe('unit · x db backfill', () => {
   // `--name` keeps both meanings, and each is still reachable: a filter under `--list`, a target
   // without it. Two spellings of the target in one argv is the ambiguity, not the flag itself.
   test('--name filters the ledger under --list, and names the pass without it', async () => {
-    const listed = await runBackfill(createMemoryDriver(), [
+    const listed = await runBackfill(memoryJobDriver(), [
       'db',
       'backfill',
       '--list',
@@ -207,7 +201,7 @@ describe('unit · x db backfill', () => {
     ]);
     expect(listed.ok).toBe(true);
 
-    const thrown: unknown = await runBackfill(createMemoryDriver(), [
+    const thrown: unknown = await runBackfill(memoryJobDriver(), [
       'db',
       'backfill',
       'cleanup',
@@ -224,7 +218,7 @@ describe('unit · x db backfill', () => {
   // The instructive half of the refusal above: the fix hands back the SAME question in the one
   // spelling `--list` reads, so the reader retypes nothing.
   test('a positional under --list is answered with the --name form of the same question', async () => {
-    const thrown: unknown = await runBackfill(createMemoryDriver(), [
+    const thrown: unknown = await runBackfill(memoryJobDriver(), [
       'db',
       'backfill',
       'cleanup',
@@ -240,7 +234,7 @@ describe('unit · x db backfill', () => {
     // Declared in the test body, never at module scope: the jobs registry is process-wide and
     // this file shares it with every other suite in the run.
     declareSweep('cmd-db-never-run');
-    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', '--pending']);
+    const result = await runBackfill(memoryJobDriver(), ['db', 'backfill', '--pending']);
 
     // The exit code is the whole point: a cron reads it without parsing the table.
     expect(result.ok).toBe(false);
@@ -251,7 +245,7 @@ describe('unit · x db backfill', () => {
   });
 
   test('a name no declaration carries is X_BACKFILL_UNKNOWN, and writes nothing', async () => {
-    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', 'never-declared']);
+    const result = await runBackfill(memoryJobDriver(), ['db', 'backfill', 'never-declared']);
     expect(result.ok).toBe(false);
     expect(result.findings?.[0]?.code).toBe('X_BACKFILL_UNKNOWN');
     expect(result.findings?.[0]?.fix).toContain('x db backfill --pending');
@@ -260,7 +254,7 @@ describe('unit · x db backfill', () => {
 
   test('a dry run plans and writes nothing; --all --write enqueues the pending sweep', async () => {
     declareSweep('cmd-db-all-sweep');
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
 
     const dry = await runBackfill(driver, ['db', 'backfill', '--all']);
     expect(planFor(dry, 'cmd-db-all-sweep')?.action).toBe('planned');
@@ -273,7 +267,7 @@ describe('unit · x db backfill', () => {
   });
 
   test('--list prints the ledger as a table and carries the same rows in data', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seedPass(driver, 'run_1', 'reindex-posts');
 
     const result = await runBackfill(driver, ['db', 'backfill', '--list']);
@@ -291,7 +285,7 @@ describe('unit · x db backfill', () => {
   });
 
   test('an empty ledger is ok: nothing has swept this database yet is an answer', async () => {
-    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', '--list']);
+    const result = await runBackfill(memoryJobDriver(), ['db', 'backfill', '--list']);
 
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.db.backfill.empty'));
@@ -300,7 +294,7 @@ describe('unit · x db backfill', () => {
   });
 
   test('--name and --status filter the ledger the command prints', async () => {
-    const driver = createMemoryDriver();
+    const driver = memoryJobDriver();
     await seedPass(driver, 'run_1', 'reindex-posts');
     await seedPass(driver, 'run_2', 'recount-likes');
 
@@ -330,7 +324,7 @@ describe('unit · x db backfill', () => {
       ['db', 'backfill', '--pending'],
       ['db', 'backfill', '--all'],
     ]) {
-      const result = await runBackfill(createMemoryDriver(), argv, broken);
+      const result = await runBackfill(memoryJobDriver(), argv, broken);
       expect([argv.join(' '), result.ok]).toEqual([argv.join(' '), false]);
       expect(result.findings?.some((finding) => finding.at === 'apps/web/shared/sweeps.ts')).toBe(
         true,

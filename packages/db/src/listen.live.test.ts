@@ -4,7 +4,7 @@
 // Skips unless `TEST_DATABASE_URL` is set, like `client.live.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient } from './client';
+import { type PostgresClient, postgresClient } from './client';
 import { sql } from './sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -37,7 +37,7 @@ async function untilSettled<T>(
 describe.skipIf(!hasPostgres)('live · postgres · LISTEN on a session of its own', () => {
   const clients: PostgresClient[] = [];
   const fresh = (applicationName: string, max = 2): PostgresClient => {
-    const client = createPostgresClient({
+    const client = postgresClient({
       url: url ?? '',
       role: 'web',
       applicationName,

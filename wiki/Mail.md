@@ -46,11 +46,11 @@ between environments — the credential does.
 
 | env | driver |
 |---|---|
-| nothing set, `development` / `test` | `createMemoryDriver()` — caught in the `/_x` mail panel, never sent |
-| nothing set, `staging` / `production` | `createUnconfiguredDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING`; the boot still succeeds, so an app that sends no mail deploys |
-| `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)` — ESMTP over `Bun.connect`, STARTTLS required unless `allowInsecure` |
-| `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` — one `POST /emails` with an `Idempotency-Key` |
-| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `createSesDriver(...)` — one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK. `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
+| nothing set, `development` / `test` | `memoryMailDriver()` — caught in the `/_x` mail panel, never sent |
+| nothing set, `staging` / `production` | `unconfiguredMailDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING`; the boot still succeeds, so an app that sends no mail deploys |
+| `SMTP_URL` + `MAIL_FROM` | `smtpMailDriver(...)` — ESMTP over `Bun.connect`, STARTTLS required unless `allowInsecure` |
+| `RESEND_API_KEY` + `MAIL_FROM` | `resendMailDriver(...)` — one `POST /emails` with an `Idempotency-Key` |
+| `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `sesMailDriver(...)` — one SES v2 `SendEmail` with the raw MIME, SigV4-signed, no SDK. `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
 
 Every key, with what it means: [Configuration → `mail`](Configuration#mail). More than one of
 `SMTP_URL`, `RESEND_API_KEY` and `SES_REGION` is `X_CONFIG_INVALID` rather than a silent winner.
