@@ -25,7 +25,7 @@ const ARTIFACTS: readonly {
   readonly userText: readonly string[];
 }[] = [
   { prompt: summarizePrompt, file: 'summarize.v5.md', userText: ['title', 'body'] },
-  { prompt: reviewDraftPrompt, file: 'review-draft.v1.md', userText: ['title', 'body'] },
+  { prompt: reviewDraftPrompt, file: 'review-draft.v2.md', userText: ['title', 'body'] },
 ];
 
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n\n/;

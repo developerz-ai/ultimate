@@ -82,12 +82,16 @@ export const postPublish = can<PostScope, PostRow>('post:publish', ({ actor, inp
 });
 
 /**
- * Moving a post between `draft` and `scheduled` — the editorial calendar, so the publishing right.
- * Grant-only: a `transition()` input names the row and the two states, nothing a predicate could
- * decide tenancy on, so the tenancy half is the table's — the move's statement is scoped to the
- * actor's org, and another org's post is `X_NOT_FOUND`, never moved.
+ * Moving a post between `draft` and `scheduled` — the editorial calendar, so the publishing right,
+ * decided as publishing is: owns-or-org-admin, on the row `movePostStatus`'s `row:` loader read
+ * (`ctx.posts.authorship`, scoped to the acting member's org). A `transition()` input names only
+ * the row and the two states, so the row IS the tenancy evidence: another org's post loads as
+ * `null`, and `null` is a denial — never an existence oracle, never a pass.
  */
-export const postSchedule = can('post:publish');
+export const postSchedule = can<unknown, PostRow>('post:publish', ({ actor, row }) => {
+  const member = memberOf(actor);
+  return member !== null && row !== null && ownsPost(member, row);
+});
 
 /**
  * Exporting every post of an org — the whole org's writing in one object, so an admin's right, and
@@ -103,6 +107,22 @@ export const postRead = can<PostScope>(
   'post:read',
   ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
 );
+
+/** What `reviewDraft` decides on: the org, and the member the review is made for. */
+export interface ReviewScope extends PostScope {
+  readonly memberId: MemberId;
+}
+
+/**
+ * Asking for a review is reading, FOR ONESELF: the member the input names is the caller. The same
+ * rule on both paths — a request's caller is its own member, and a queued `reviewDraftLater` run
+ * acts for the member its input names (`agentJob({ actor })`) — so the id in the payload is never
+ * an identity anyone else can borrow.
+ */
+export const postReview = can<ReviewScope>('post:read', ({ actor, input }) => {
+  const member = memberOf(actor);
+  return member !== null && member.orgId === input.orgId && member.memberId === input.memberId;
+});
 
 /**
  * Liking is a membership right; the same tenancy check is what keeps it tenant-safe.

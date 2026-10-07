@@ -6,7 +6,13 @@
 import { type Actor as Member, memberOf, NotAMember } from '@postly/core';
 import { excerptOf, type MemberId, type OrgId, type PostId, slugify } from '@postly/domain';
 import { defineService } from '@ultimat3/core';
-import type { CommentView, CreatePostInput, PostView } from './entity';
+import type {
+  CommentView,
+  CreatePostInput,
+  PostView,
+  RecordReviewInput,
+  ReviewView,
+} from './entity';
 import { PostNotFound } from './errors';
 import type { PostRow } from './policy';
 import {
@@ -20,6 +26,8 @@ import {
   markPublished,
   publishedSince,
   recountLikes,
+  reviewOf,
+  upsertReview,
 } from './repo';
 
 /**
@@ -135,6 +143,39 @@ export const postsService = defineService('posts', (ctx) => {
         authorId: authorId(),
         body,
       });
+    },
+
+    /**
+     * Keep a review of a post — the write `reviewDraft`'s tool makes. Made FOR the acting member,
+     * who is the asker on every path: a request's own member, or the member an `agentJob` run
+     * re-resolved and acts for. Never a member the model names.
+     */
+    async recordReview(
+      postId: PostId,
+      review: Pick<RecordReviewInput, 'verdict' | 'notes'>,
+    ): Promise<ReviewView> {
+      const post = await this.byId(postId); // tenancy check by construction
+      return upsertReview({
+        orgId: tenantId(),
+        postId: post.id as PostId,
+        verdict: review.verdict,
+        notes: review.notes,
+        reviewedBy: authorId(),
+      });
+    },
+
+    /**
+     * A post read inside a NAMED org, with no acting member required — what a delivery job reads
+     * its event from, whose actor carries only the org it declared. The entity guard refuses an
+     * org that is not the actor's own, so a request cannot reach another tenant through this.
+     */
+    async inOrg(orgId: OrgId, postId: PostId): Promise<PostView | null> {
+      return byId(orgId, postId);
+    },
+
+    /** The post's latest review, or `null` before any was recorded. */
+    async review(postId: PostId): Promise<ReviewView | null> {
+      return reviewOf(tenantId(), postId);
     },
 
     /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */

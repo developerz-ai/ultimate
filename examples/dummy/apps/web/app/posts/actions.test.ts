@@ -77,7 +77,11 @@ test('reviewDraft answers a verdict in its schema, from the draft it was pointed
     bruno: 'member:bruno',
   });
 
-  const review = await reviewDraft.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+  const review = await reviewDraft.as(actorFor(bruno), {
+    postId: draft.id,
+    orgId: draft.orgId,
+    memberId: bruno.id,
+  });
 
   expect(review).toEqual({ verdict: 'revise', notes: 'Say which rounding rule the body defends.' });
   // The draft's own words reached the model — `vars` loaded the row the input named.
@@ -94,7 +98,24 @@ test('reviewDraft is refused for a member of another org, at no cost', async ({
   });
 
   await expect(
-    reviewDraft.as(actorFor(mara), { postId: draft.id, orgId: draft.orgId }),
+    reviewDraft.as(actorFor(mara), { postId: draft.id, orgId: draft.orgId, memberId: mara.id }),
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
+  expect(sent).toEqual([]);
+});
+
+test('reviewDraft is refused for a member asking in a colleague’s name, at no cost', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, ada, bruno } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    ada: 'member:ada',
+    bruno: 'member:bruno',
+  });
+
+  // Same org, same grant — but the review is FOR a member, and only that member may ask for it.
+  await expect(
+    reviewDraft.as(actorFor(ada), { postId: draft.id, orgId: draft.orgId, memberId: bruno.id }),
   ).rejects.toBeUltimateError('X_FORBIDDEN');
   expect(sent).toEqual([]);
 });

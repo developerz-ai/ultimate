@@ -24,25 +24,22 @@ jobTest(
       body: 'The composite key is the part I would have forgotten.',
     });
     expect(await runJobs.depth(commentPosted)).toBe(1);
-    await runJobs.drain({ actor: actorFor(kenji) });
+    // No `actor`: the production worker is nobody (`role-start.ts`).
+    await runJobs.drain();
     expect(mail.outbox().map((sent) => sent.message.to)).toEqual([[ada.email]]);
 
     // The same comment's notification again — an operator's retry, a second enqueue after the first
     // settled: the delivery ledger already holds it under `key`, so nothing more goes out.
-    await runJobs(
-      commentPosted,
-      {
-        params: {
-          postId: post.id,
-          orgId: post.orgId,
-          commentId: comment.id,
-          commenterId: kenji.id,
-          title: post.title,
-          commenter: kenji.name,
-        },
+    await runJobs(commentPosted, {
+      params: {
+        postId: post.id,
+        orgId: post.orgId,
+        commentId: comment.id,
+        commenterId: kenji.id,
+        title: post.title,
+        commenter: kenji.name,
       },
-      { actor: actorFor(kenji) },
-    );
+    });
     expect(mail.outbox()).toHaveLength(1);
   },
 );
@@ -57,7 +54,7 @@ jobTest(
       orgId: post.orgId,
       body: 'Adding the migration note.',
     });
-    await runJobs.drain({ actor: actorFor(ada) });
+    await runJobs.drain();
 
     expect(mail.outbox()).toEqual([]);
   },

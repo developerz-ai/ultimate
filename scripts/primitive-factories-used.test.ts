@@ -25,12 +25,7 @@ const REFERENCE_APP = 'examples/dummy';
  * ratchet, never an allow-list: a name here that the app now uses is a failure ("delete the row"),
  * so the list only shrinks. Adding a row is a reviewable diff with its reason beside it.
  */
-export const PENDING_IN_REFERENCE_APP: Readonly<Record<string, string>> = {
-  agentJob:
-    'a queued run keeps no output (x_jobs has no result column), so a background agent is only real with an idempotent write tool, and Postly has no write an editor agent should make — a comment is not idempotent',
-  webhook:
-    'needs an org-owned endpoints entity with a sealed secret and a WebhookLedger the app persists — the framework ships no ledger table and memoryWebhookLedger() is dev-only',
-};
+export const PENDING_IN_REFERENCE_APP: Readonly<Record<string, string>> = {};
 
 /** Shipped app source: no tests (a test calling a factory proves nothing about the app), no deps. */
 const appSources = async (): Promise<readonly { path: string; source: string }[]> => {

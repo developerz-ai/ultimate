@@ -191,6 +191,7 @@
         "@postly/domain": "0.0.1",
         "@ultimat3/action": "25.0.0",
         "@ultimat3/core": "25.0.0",
+        "@ultimat3/db": "25.0.0",
         "@ultimat3/mcp": "25.0.0",
         "@ultimat3/testing": "25.0.0",
       },

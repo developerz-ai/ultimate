@@ -138,6 +138,30 @@ export const orgsService = defineService('orgs', (ctx) => ({
     return updatePreferences(acting.orgId, acting.memberId, values);
   },
 
+  /**
+   * The member a background run acts FOR, and their org, re-read on every attempt — the half of an
+   * `agentJob`'s `actor` an app owns (`app/posts/actions.ts`'s `reviewDraftLater`). No acting
+   * member is required, because the caller is a job whose actor carries only the org it DECLARED;
+   * the org is named, and the entity guard refuses a read outside the actor's own, so a request
+   * cannot use this to reach another tenant. A member who left is `X_ORG_NOT_FOUND`, never trusted
+   * from the payload that queued the run.
+   */
+  async actingFor(orgId: OrgId, id: MemberId): Promise<{ member: MemberView; org: OrgView }> {
+    return { member: await this.memberIn(orgId, id), org: await this.byId(orgId) };
+  },
+
+  /**
+   * One member, read inside a NAMED org with no acting member required — the read every job makes,
+   * because a served worker's actor is nobody and carries only the org its job DECLARED. The org
+   * is the job's input, never `ctx.actor.orgId`; the entity guard refuses one that is not the
+   * actor's own, so a request cannot reach another tenant through this either.
+   */
+  async memberIn(orgId: OrgId, id: MemberId): Promise<MemberView> {
+    const member = await memberById(orgId, id);
+    if (!member) throw new OrgNotFound(orgId);
+    return member;
+  },
+
   async memberById(id: MemberId): Promise<MemberView> {
     const orgId = actingMember(ctx.actor).orgId;
     const member = await memberById(orgId, id);

@@ -44,5 +44,7 @@ test('the model-backed actions resolve and price on the app rows, with no gatewa
   const input = { postId: draft.id, orgId: draft.orgId };
 
   expect(await summarize.as(actorFor(bruno), input)).toMatchObject({ tags: ['money'] });
-  expect(await reviewDraft.as(actorFor(bruno), input)).toMatchObject({ verdict: 'ready' });
+  expect(await reviewDraft.as(actorFor(bruno), { ...input, memberId: bruno.id })).toMatchObject({
+    verdict: 'ready',
+  });
 });

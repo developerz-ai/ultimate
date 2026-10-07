@@ -157,6 +157,12 @@ slices:                    # one row per independently merged sweep; `sweep` is 
     status: complete
     percent: 100
     evidence: ["#699", "v25.0.0"]
+  - file: 10-carried-backlog.md
+    tier: 0
+    sweep: "13"
+    status: complete
+    percent: 100
+    evidence: ["#701", "#703", "#706"]
 evidence: []
 notes: "Audit at d7b8c7fa (24.0.0), 2026-10-04: 13 read-only agents in two waves + a Windows audit. Supersedes the open trackers of 2026/08/12/101, 2026/09/22/102, 2026/09/28/101; 2026/10/01/101 and 2026/10/02/101 marked complete. Owner answers are recorded here and in the owner-decisions issue."
 last_updated: 2026-10-07

@@ -24,10 +24,18 @@ import type {
 } from '@postly/domain';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
-import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
+import type {
+  CommentView,
+  CreatePostInput,
+  PostSummary,
+  PostView,
+  RecordReviewInput,
+  ReviewView,
+} from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
 import type { ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from '../app/runs/entity';
 import type { RunOwner } from '../app/runs/policy';
+import type { AddEndpointInput, EndpointIssued } from '../app/webhooks/entity';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -37,6 +45,15 @@ export interface PostsService {
   like(postId: PostId): Promise<PostView>;
   unlike(postId: PostId): Promise<PostView>;
   comment(postId: PostId, body: string): Promise<CommentView>;
+  /** Upsert the post's one review, made for the acting member. A second write is the same row. */
+  recordReview(
+    postId: PostId,
+    review: Pick<RecordReviewInput, 'verdict' | 'notes'>,
+  ): Promise<ReviewView>;
+  /** A post inside a NAMED org, no acting member needed: a job's read. `null` when absent. */
+  inOrg(orgId: OrgId, postId: PostId): Promise<PostView | null>;
+  /** The post's latest review, `null` before any. */
+  review(postId: PostId): Promise<ReviewView | null>;
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
   /**
@@ -65,6 +82,10 @@ export interface OrgsService {
     digestOptIn?: boolean;
     /** The WHOLE row: the preference actions answer it as a record the page store adopts. */
   }): Promise<MemberRow>;
+  /** A member and their org, read inside a NAMED org — what a background run acts for. */
+  actingFor(orgId: OrgId, memberId: MemberId): Promise<{ member: MemberView; org: OrgView }>;
+  /** A member inside a NAMED org, no acting member needed: what a job reads. */
+  memberIn(orgId: OrgId, memberId: MemberId): Promise<MemberView>;
   memberById(memberId: MemberId): Promise<MemberView>;
   /**
    * The acting member's own row. No argument, for the reason `grantAvatarUpload` has none: the
@@ -100,9 +121,16 @@ export interface RunsService {
   revokeKey(keyId: string): Promise<boolean>;
 }
 
+export interface WebhooksService {
+  /** Register a receiver; the answer is the only copy of its secret. */
+  addEndpoint(input: AddEndpointInput): Promise<EndpointIssued>;
+  /** One `post.published` delivery per live endpoint of the acting member's org. */
+  announcePublished(post: PostView): Promise<number>;
+}
+
 /**
- * Three services, and all are registered: `defineService('posts', …)`, `defineService('orgs', …)`
- * and `defineService('runs', …)` run when `apps/web/api/index.ts` imports their modules, which is
+ * Four services, and all are registered: `defineService('posts', …)`, `defineService('orgs', …)`,
+ * `defineService('runs', …)` and `defineService('webhooks', …)` run when `apps/web/api/index.ts` imports their modules, which is
  * this app's whole boot.
  *
  * A `session` and a `channel` were declared here until 2026-08 and neither was ever registered —
@@ -116,5 +144,6 @@ declare module '@ultimat3/core' {
     readonly posts: PostsService;
     readonly orgs: OrgsService;
     readonly runs: RunsService;
+    readonly webhooks: WebhooksService;
   }
 }

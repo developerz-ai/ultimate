@@ -60,6 +60,11 @@ import '../app/runs/service';
 import * as settingsActions from '../app/settings/actions';
 // A mutator IS an action, exactly like `postMutators` above.
 import * as settingsMutators from '../app/settings/mutator';
+import * as webhookActions from '../app/webhooks/actions';
+// `webhook()` is a job factory, so a delivery registers in the `jobs` list. It names itself
+// (`posts.published.webhook`): a delivery's name is a durable queue key, never an export name.
+import * as webhookJobs from '../app/webhooks/jobs';
+import '../app/webhooks/service';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
@@ -70,6 +75,7 @@ export const api = defineApi({
     contactActions,
     authActions,
     runActions,
+    webhookActions,
     mcpConfirmationActions,
   ],
   mutators: [postMutators, settingsMutators],
@@ -83,6 +89,11 @@ export const api = defineApi({
     contactJobs,
     runJobs,
     mcpJobs,
+    webhookJobs,
+    // `agentJob()` is a job factory declared BESIDE the agent it wraps (`reviewDraftLater`, which
+    // reads `reviewDraft` at module scope), so the actions module is handed over here too. Each
+    // registrar takes only its own kind, so neither list double-registers anything.
+    postActions,
   ],
   tasks: [scheduledTasks],
   // A second door for machine callers, onto the run actions a browser already calls: same

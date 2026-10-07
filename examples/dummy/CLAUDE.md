@@ -187,6 +187,26 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   both ids are allocated when the job is staged. How a run ENDED — failed, dead-lettered, refused
   for a busy connection (`X_JOB_KEY_BUSY`, said in words) — and what it used is `onSettled`'s to
   write; a cancel is the canceller's.
+- **A job reads in the org its INPUT names — a served worker's actor is nobody.** `role-start.ts`
+  builds the worker with no actor; `executeJob` puts the job's declared `tenant` on it and nothing
+  else, so `memberOf(ctx.actor)` is `null` in every job and an acting-member read
+  (`ctx.posts.byId`, `ctx.orgs.memberById`, `ctx.orgs.me`) is `X_ORG_NOT_A_MEMBER`. Jobs call the
+  named-org reads — `ctx.posts.inOrg(orgId, …)`, `ctx.orgs.memberIn(orgId, …)` — with the org off
+  their own input. A job test drains the way production does: `runJobs.drain()` with NO `actor`.
+  `notifySubscribers`, `commentPosted` and `sendInvite` were green under `actor: actorFor(…)` and
+  dead-lettered in production until 2026-10-07.
+- **A background agent is `agentJob(agent, { actor })` plus one idempotent write tool.** A queued
+  run keeps no output (`x_jobs` has no result column) and an attempt that loses its lease runs the
+  agent again from the top. `app/posts/actions.ts`: `reviewDraftLater` re-reads the member who
+  asked on every attempt (`ctx.orgs.actingFor`), and the verdict lands through `recordReview`, an
+  upsert on `post_reviews`' key `(orgId, postId)`, read back by the `postReview` query. Declared
+  BESIDE the agent it wraps (it reads it at module scope), so `api/index.ts` hands `postActions`
+  to the `jobs` list too.
+- **Outbound webhooks are `app/webhooks/`.** `webhook()` is the mechanism; which endpoints exist
+  (`webhook_endpoints`, `secret` sealed), the ledger (`ledger.ts` over `webhook_deliveries`) and
+  the fan-out (`ctx.webhooks.announcePublished`, one enqueue per live endpoint, from
+  `publishPost`) are Postly's. The org rides on every delivery's input (`tenant: ({ orgId }) =>
+  orgId`) and is handed to both seams — never read off the actor.
 - **`repo.appendEvent` updates the run by id**, one row by primary key. A filtered write
   (`updateWhere`) re-reads every live window over that entity on the next change; the framework
   defect that left that change undelivered is fixed in 23.0.0, and a by-id update needs no re-read.

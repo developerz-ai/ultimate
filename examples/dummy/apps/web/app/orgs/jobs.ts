@@ -39,9 +39,9 @@ export const onboardOrg = job({
 export const sendInvite = job({
   /**
    * `orgId` rides beside the member id because `members` is tenant-scoped and the org is not
-   * recoverable from a member id without already being inside the tenant: `ctx.orgs.memberById`
-   * scopes by the ACTING actor's org, and the only thing that puts one on a job's actor is this
-   * declaration. `inviteMember` takes it off the row it just wrote, which is the org the member
+   * recoverable from a member id without already being inside the tenant. It is also the org the
+   * read NAMES — `ctx.orgs.memberIn`, never `memberById`, which needs an acting member, and a
+   * served worker's actor is nobody: it carries the org this declaration put there and no more. `inviteMember` takes it off the row it just wrote, which is the org the member
    * actually landed in.
    */
   input: t.object({ memberId: t.uuid, orgId: t.uuid }),
@@ -52,7 +52,7 @@ export const sendInvite = job({
   queue: 'mail',
   async run({ input, step, ctx }) {
     const member = await step.run('load-member', () =>
-      ctx.orgs.memberById(toMemberId(input.memberId)),
+      ctx.orgs.memberIn(toOrgId(input.orgId), toMemberId(input.memberId)),
     );
     await step.run('send', () =>
       send(inviteEmail, member, { to: member.email, locale: member.locale }),
