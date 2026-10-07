@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { accountKey, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
 import { ctxOf, systemClock } from '@ultimat3/core';
+import { dbExecutor } from '@ultimat3/db';
 import type { PurgeReport } from '@ultimat3/jobs';
 import { getJob, memoryStepStore, resetJobs, resetTasks, stepRunner } from '@ultimat3/jobs';
 import {
@@ -30,7 +31,6 @@ import {
 } from '@ultimat3/notify';
 import { resolveServices } from './runtime-bindings';
 import { PURGE_JOB_NAME } from './runtime-purge';
-import { pgExecutorFor } from './runtime-queue';
 import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
 
@@ -203,7 +203,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       const started = await boot(
         "export const config = { name: 'fixture', notify: { inboxReadRetentionMs: 60_000 } };\n",
       );
-      const executor = pgExecutorFor(started.db);
+      const executor = dbExecutor(() => started.db);
       const ledger = postgresDeliveryLedger({ executor, windowMs: 60_000 });
       const inbox = postgresInboxStore({ executor });
       setNotifyStores({ ledger, inbox });
@@ -283,7 +283,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
     async () => {
       const started = await boot();
       const digest = postgresDigestStore({
-        executor: pgExecutorFor(started.db),
+        executor: dbExecutor(() => started.db),
         retentionMs: 60_000,
       });
       setNotifyStores({ digest });

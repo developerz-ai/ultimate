@@ -88,6 +88,7 @@ describe('unit · the ui.interact step schema is anyOf over five one-key shapes'
     expect(valid('click')).toBe(false);
   });
 
+  // A placement, not a limit: `validate-args.ts` enforces `maxItems`, but this count is the CLI's.
   test('the schema states no maxItems — the count is the handler contract, refused by the CLI', () => {
     expect(JSON.stringify(recording().tool.inputSchema)).not.toContain('maxItems');
     expect(valid(Array.from({ length: 13 }, () => ({ wait: 1 })))).toBe(true);

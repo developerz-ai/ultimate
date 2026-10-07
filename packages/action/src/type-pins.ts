@@ -92,6 +92,11 @@ export type _APreRedactionStoreIsNotAStore = Assert<
   Equals<PreRedactionStore extends IdempotencyStore ? true : false, false>
 >;
 
+/** A release names the reservation it drops — the fence `settle` and `fail` already carry. */
+export type _ReleaseNamesTheReservation = Assert<
+  Equals<Parameters<IdempotencyStore['release']>['length'], 2>
+>;
+
 /** …and `settle`'s flag is required of every CALLER, so a wrapping store cannot drop it either. */
 export type _SettleRequiresTheRedactedFlag = Assert<
   Equals<Parameters<IdempotencyStore['settle']>['length'], 4>

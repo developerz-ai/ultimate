@@ -12,7 +12,7 @@ import { ctxOf, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t, toWireSchema } from '@ultimat3/schema';
 import type { LocalTable, LocalTx } from './mutator';
-import { type TransitionTarget, transition } from './transition';
+import { type TransitionTarget, type TransitionValues, transition } from './transition';
 
 const STATES = ['pending', 'paid', 'shipped'] as const;
 type State = (typeof STATES)[number];
@@ -149,6 +149,57 @@ describe('transition(), against the statement underneath it', () => {
     const rows = new Map<string, OrderRow>([[ID, { id: ID, reference: 'r-1', status: 'pending' }]]);
     moveOrder.local(fakeTx(rows), { id: ID, from: 'pending', to: 'paid' });
     expect(rows.get(ID)).toEqual({ id: ID, reference: 'r-1', status: 'paid' });
+  });
+});
+
+/**
+ * Issue #687: a transition's policy could not see the row it moves, so "only the author may
+ * archive" had nowhere to live. The loader is the action seam (`row`), passed straight through —
+ * the factory reads no row of its own.
+ */
+describe('transition() takes a `row` loader, so its policy decides about the row', () => {
+  interface Owned {
+    readonly authorId: string;
+  }
+  const authorOnly = can<TransitionValues<State>, Owned>(
+    'order:move',
+    ({ actor, row }) => row !== null && row.authorId === actor?.id,
+  );
+  const movedBy = (authorId: string | null, seen: TransitionValues<State>[]) =>
+    transition({
+      table: () => table,
+      column: 'status',
+      states: STATES,
+      localTable: 'orders',
+      output: OrderView,
+      policy: authorOnly,
+      row: ({ input }) => {
+        seen.push(input);
+        return authorId === null ? null : { authorId };
+      },
+    }).named('moveOwnOrder');
+
+  test('the loaded row reaches the predicate: the author moves, anyone else is refused', async () => {
+    refuseWith = null;
+    calls.length = 0;
+    const seen: TransitionValues<State>[] = [];
+    // One policy, one actor, one input: only the loaded row differs, so the pair fails unless the
+    // row genuinely reaches the rule.
+    await movedBy('u1', seen)({ id: ID, from: 'pending', to: 'paid' }, { ctx });
+    expect(
+      await codeOf(() => movedBy('u2', seen)({ id: ID, from: 'pending', to: 'paid' }, { ctx })),
+    ).toBe('X_FORBIDDEN');
+    expect(calls).toHaveLength(1);
+    // The loader is handed the parsed move, so it can address the row by `id`.
+    expect(seen[0]).toEqual({ id: ID, from: 'pending', to: 'paid' });
+  });
+
+  test('a loader that finds nothing denies — the statement never runs', async () => {
+    calls.length = 0;
+    expect(
+      await codeOf(() => movedBy(null, [])({ id: ID, from: 'pending', to: 'paid' }, { ctx })),
+    ).toBe('X_FORBIDDEN');
+    expect(calls).toEqual([]);
   });
 });
 

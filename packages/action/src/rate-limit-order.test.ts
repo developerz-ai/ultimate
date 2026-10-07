@@ -105,9 +105,9 @@ describe('an idempotent key spends once, for the run that happens', () => {
       reserve: (key, hash) => inner.reserve(key, hash),
       settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
       fail: (key, failure, id) => inner.fail(key, failure, id),
-      release: (key) => {
+      release: (key, id) => {
         released.push(key);
-        return inner.release(key);
+        return inner.release(key, id);
       },
       get: async () =>
         ({

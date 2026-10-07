@@ -502,13 +502,17 @@ subscription table, one `enqueue` per endpoint.
 import { memoryWebhookLedger, webhook } from '@ultimat3/jobs';
 
 declare const db: {
-  endpoints: { byId(id: string): Promise<{ id: string; url: string; secret: string } | null> };
+  endpoints: {
+    byId(id: string): Promise<{ id: string; orgId: string; url: string; secret: string } | null>;
+  };
   events: { byId(id: string): Promise<{ topic: string; body: string } | null> };
 };
 
 export const deliver = webhook({
   name: 'partner.webhooks',
-  tenant: 'none',
+  // The org that owns the endpoint, carried on every enqueue — or `tenant: 'none'` for endpoints
+  // no tenant owns. `tenant` is synchronous over the input, so the org rides beside the two ids.
+  tenant: ({ orgId }) => orgId,
   // Read once per ATTEMPT and never checkpointed: the endpoint carries a secret, and a step's
   // output is written to `x_job_steps`.
   endpoint: ({ endpointId }) => db.endpoints.byId(endpointId),
@@ -518,11 +522,11 @@ export const deliver = webhook({
 });
 
 // The fan-out is yours, because the subscription table is yours.
-declare function subscribersOf(topic: string): Promise<readonly { id: string }[]>;
+declare function subscribersOf(topic: string): Promise<readonly { id: string; orgId: string }[]>;
 declare const event: { readonly id: string };
 
 for (const endpoint of await subscribersOf('orders.paid')) {
-  await deliver.enqueue({ endpointId: endpoint.id, eventId: event.id });
+  await deliver.enqueue({ endpointId: endpoint.id, eventId: event.id, orgId: endpoint.orgId });
 }
 ```
 
@@ -558,6 +562,7 @@ re-exports (`X_HELPER_COPY`). Same argument `timing-safe-equal.ts` makes for its
 | the DRAIN never aborts a POST already on the wire; it stops one not yet sent | torn down, the job goes to the next pod, which re-POSTs the same event on every deploy. Finished, it is recorded like any other outcome — a real failure during the drain included |
 | re-enabling is always yours | an endpoint the framework un-disabled on its own is a retry loop with no end |
 | `WebhookLedger` is a seam, not a table | retention is seven years for one business and thirty days for the next, so shipping a schema would ship one of those answers |
+| an org-owned delivery carries `orgId` on its input | `tenant` is a synchronous function of the input, so an org derived from the endpoint id would be a read before the run has an org to read under. `tenant: ({ orgId }) => orgId` makes it required at every enqueue (`OrgWebhookDeliveryInput`); a queued row without it is refused before either seam reads |
 
 **Set `timeout` below the drain budget.** A webhook has no timeout unless you declare one, and a
 POST on the wire when SIGTERM lands runs until the receiver answers. With a `timeout`, a drained
@@ -867,18 +872,18 @@ hourly task fire 24 catch-ups a second apart.
 
 ### A `PgExecutor`
 
-`PgExecutor` is one method — `query(text, values)` — and the boot supplies it (`@ultimat3/cli`'s
-`pgExecutorFor(client)`). Outside the boot — a test, a script — build it over `@ultimat3/db`'s
-client, which already speaks `(text, values)` and decodes `jsonb`:
+`PgExecutor` is one method — `query(text, values)` — and there is ONE builder for it:
+`@ultimat3/db`'s `dbExecutor()`, which the boot uses too (`dbExecutor(() => client)`). It resolves
+its client per statement — by default the installed one, which inside `withTransaction` is the
+transaction's own connection — and that client already speaks `(text, values)` and decodes `jsonb`.
+Outside the boot — a test, a script — hand it the client to stay on:
 
 ```ts
-import { postgresClient } from '@ultimat3/db';
+import { dbExecutor, postgresClient } from '@ultimat3/db';
 import type { PgExecutor } from '@ultimat3/jobs';
 
 const client = postgresClient({ url: 'postgres://localhost:5432/app_test' });
-export const executor: PgExecutor = {
-  query: <R>(text: string, values: readonly unknown[]) => client.query<R>({ text, values }),
-};
+export const executor: PgExecutor = dbExecutor(() => client);
 ```
 
 | Not this | Because |

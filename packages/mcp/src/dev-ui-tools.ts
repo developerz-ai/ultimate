@@ -230,9 +230,9 @@ export interface InspectSpecRead {
 }
 
 /**
- * The four `ui.inspect` fields, bounded HERE and not in the schema: `validate-args.ts` enforces
- * no `maxItems`, and a bound the catalog cannot state is one the handler must apply and then
- * confess to. Shared with `ui.interact`, whose `inspect` block is these same four fields.
+ * The four `ui.inspect` fields, bounded HERE and not in the schema: the handler TRIMS and confesses
+ * (`trimmed`, `droppedStyles`), where a schema `maxItems` — which `validate-args.ts` enforces —
+ * would refuse the whole call. Shared with `ui.interact`, whose `inspect` block is these four.
  */
 export function inspectSpecOf(args: ToolArgs): InspectSpecRead {
   const wanted = strings(args['selectors']);

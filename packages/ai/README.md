@@ -516,6 +516,44 @@ export const summariseBacklog = agentJob(summarisePost, {
 });
 ```
 
+An agent whose policy reads a member — every real app's — names who it runs for. The reference
+app's `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`) is the worked call, with
+its idempotent `recordReview` tool and its `review.job.test.ts` on the production worker:
+
+```ts
+import { t } from '@ultimat3/action';
+import { type Actor, userActor } from '@ultimat3/core';
+import { agent, agentJob, definePrompt } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+// The app's own read, under the job's tenant: a member of another org is simply not found.
+declare function memberById(id: string): Promise<{ id: string; orgId: string; role: string }>;
+
+const reviewDraft = agent({
+  input: t.object({ postId: t.uuid, orgId: t.uuid, memberId: t.uuid }),
+  output: t.object({ verdict: t.string }),
+  prompt: definePrompt<{ postId: string }>({
+    id: 'review-draft',
+    version: '1.0.0',
+    template: 'Review post {{postId}}.',
+  }),
+  vars: ({ input }) => ({ postId: input.postId }),
+  tools: [],
+  policy: can('post:read'),
+});
+
+export const reviewLater = agentJob(reviewDraft, {
+  name: 'posts.review',
+  tenant: (input) => input.orgId,
+  retry: { attempts: 3, backoff: 'exponential' },
+  // Re-read on every attempt: a member who left, or lost the role, is refused rather than trusted.
+  actor: async ({ input }): Promise<Actor> => {
+    const member = await memberById(input.memberId);
+    return userActor({ id: member.id, orgId: member.orgId, roles: [member.role] });
+  },
+});
+```
+
 It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's
 cancellation, `x jobs show` and its manifest row all arrive for free. Pair it with `backfill()` for
 the sweep and `hive()` for the fan-out inside one page.
@@ -526,7 +564,9 @@ the sweep and `hive()` for the fan-out inside one page.
 | `tenant` and `retry` are required, no default | `jobs` states it: every candidate default for `tenant` is a cross-tenant read waiting for the first job that takes an org id in its input. `tenant: 'none'` is the explicit statement that it touches no scoped table |
 | the action projection is read **lazily** | `agentJob()` runs at module scope beside the `agent()` it wraps, and names are stamped by `registerAction` at boot — reading `.job()` eagerly makes that ordinary file `X_ACTION_UNREGISTERED` |
 | one execution path, and it is the action's | `run` is `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and the `ctx` is the worker's, so an attempt timing out aborts the agent's turn loop |
-| the actor is the worker context's, never the model's | the job body runs with system authority and the org comes from the job's declared `tenant`; nothing a model emits can reach either |
+| the actor is the worker context's, never the model's | the org comes from the job's declared `tenant`; nothing a model emits can reach the identity. In a served app the worker's actor is the **anonymous** one, so a member policy refuses it `X_UNAUTHENTICATED` — declare `actor` |
+| `actor({ input, ctx })` resolves who the run acts FOR, on every attempt | the jobs rule — a job acting for a user takes the user's id in its input and re-authorises it in the body — for a body that is the agent's. Load the member under the job's tenant; the swap is core's `impersonate`, so the worker stays on the record as `onBehalfOf`. An actor in another org than `tenant` is refused before the agent starts |
+| a queued run's return value is **not stored** | `x_jobs` keeps no result column. What the agent produces is written by one of its TOOLS — which is why that tool has to be idempotent (below) |
 
 ### The at-least-once trap, said plainly
 

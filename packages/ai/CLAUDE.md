@@ -259,7 +259,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   is `@ultimat3/cli`. The facts are a THUNK; an unnamed agent has no row.
 - **`agentJob()` composes `job()`** (never an imitation handle). `name`, `tenant`, `retry` are
   REQUIRED; both reads of `target.job()` are LAZY. **Every tool an `agentJob()`'d agent may call must
-  be idempotent** — stated in `AgentJobOptions.idempotencyKey`'s doc and the README, not enforceable.
+  be idempotent** — unenforceable; no result is stored, a tool writes it. **`actor`** re-resolves
+  who it acts FOR per attempt (a served worker is ANONYMOUS) via `impersonate`; outside `tenant`
+  is an `assert`.
 
 ## Invariants — evals, retrieval, fix lines
 

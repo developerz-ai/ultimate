@@ -18,6 +18,7 @@ import type {
   StringSchema,
 } from '@ultimat3/schema';
 import { nodeOf, t } from '@ultimat3/schema';
+import type { ActionRowArgs } from './action';
 import { type Mutator, mutator } from './mutator';
 import type { ActionPolicy } from './policy-gate';
 
@@ -57,6 +58,7 @@ export interface TransitionDef<
   Row extends InferOutput<TOutput> & object,
   K extends keyof Row & string,
   S extends Row[K] & string,
+  TRow = unknown,
 > {
   /** The request's table — `(ctx) => posts(ctx)`, so the move is tenant-scoped like every write. */
   readonly table: (ctx: Ctx) => TransitionTarget<Row, S>;
@@ -84,7 +86,14 @@ export interface TransitionDef<
    * column's own shape.
    */
   readonly id?: StringSchema;
-  readonly policy: ActionPolicy;
+  readonly policy: ActionPolicy<TRow>;
+  /**
+   * The row a row-level `policy` decides about — an action's own `row` loader, handed through
+   * unchanged: loaded once, after the input parse, before the guard and before the statement. The
+   * factory reads no row itself; which columns a rule needs (an `authorId` the `output` view may not
+   * carry) is the app's. Omitted, the rule sees `row: null` — and must fail closed on it.
+   */
+  row?(args: ActionRowArgs<TransitionInput<S>>): TRow | null | Promise<TRow | null>;
   /**
    * OFF unless the app says otherwise, and deliberately not `?? true`.
    *
@@ -110,7 +119,8 @@ export function transition<
   Row extends InferOutput<TOutput> & object,
   K extends keyof Row & string,
   const S extends Row[K] & string,
->(def: TransitionDef<TOutput, Row, K, S>): Mutator<TransitionInput<S>, TOutput> {
+  TRow = unknown,
+>(def: TransitionDef<TOutput, Row, K, S, TRow>): Mutator<TransitionInput<S>, TOutput> {
   const state = t.enum(def.states);
   // ONE cast, and it is a compiler limitation rather than an unknown value: `t.object`'s output is
   // a mapped type over its shape, and a mapped type does not reduce while a type parameter is still
@@ -119,13 +129,16 @@ export function transition<
   // reason. What arrives here has already been parsed by the schema two lines up, and nothing else
   // can reach these two callbacks.
   const valuesOf = (raw: unknown): TransitionValues<S> => raw as TransitionValues<S>;
-  return mutator({
+  const row = def.row;
+  return mutator<TransitionInput<S>, TOutput, TRow>({
     input: t.object({ id: def.id ?? keySchemaOf(def.output), from: state, to: state }),
     output: def.output,
     policy: def.policy,
     // A compare-and-set move replayed under its key answers the first outcome, never a second
     // `X_STATE_CONFLICT` for a move that already happened.
     idempotent: true,
+    // `.call(def, …)`, as `mutator()` hands its own on: a loader written as a method keeps `this`.
+    ...(row === undefined ? {} : { row: (args) => row.call(def, args) }),
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     // Never overridable: the server is the half that REFUSED the move, and a local twin that won
     // the rebase would leave the client showing a state the database rejected.

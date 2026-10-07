@@ -160,7 +160,7 @@ export function postgresAuditLog(options: PostgresAuditLogOptions = {}): AuditLo
     async append(draft: AuditDraft): Promise<AuditEntry> {
       const entry = auditEntry(draft, nextId(), now());
       if (reads || !isAllowedRead(entry)) {
-        // A plain `{ text, values }`, the shape `pgExecutorFor` hands the same client: the text
+        // A plain `{ text, values }`, the shape `dbExecutor` hands the same client: the text
         // is this file's constant and every value is bound.
         await client().query({
           text: SQL_ADMIN_AUDIT_INSERT,

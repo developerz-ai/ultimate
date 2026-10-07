@@ -98,7 +98,7 @@ describe('a post-commit throw does not release the reservation', () => {
       reserve: (key, hash) => inner.reserve(key, hash),
       settle: () => Promise.reject(new Error('store is down')),
       fail: (key, failure: IdempotencyFailure, id) => inner.fail(key, failure, id),
-      release: (key) => inner.release(key),
+      release: (key, id) => inner.release(key, id),
       get: (key) => inner.get(key),
     };
     let runs = 0;
@@ -120,7 +120,7 @@ describe('a post-commit throw does not release the reservation', () => {
       keepsRedaction: true,
       reserve: (key, hash) => inner.reserve(key, hash),
       settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
-      release: (key) => inner.release(key),
+      release: (key, id) => inner.release(key, id),
       get: (key) => inner.get(key),
     };
     let runs = 0;

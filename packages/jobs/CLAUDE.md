@@ -227,7 +227,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
   reading per pass, duplicate names refused.
 - **`exportRows()`**: one object per PAGE, named by page index; NO cross-tenant escape.
 - **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
-  before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.**
+  before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.** An org
+  tenant reads `orgId` OFF THE INPUT (`OrgWebhookDeliveryInput`); missing is an `assert`.
 - A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` subclass on
   purpose (it stands in for app code).
 

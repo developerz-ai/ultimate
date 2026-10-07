@@ -116,6 +116,37 @@ describe('validateArgs: array', () => {
     });
   });
 
+  test('minItems/maxItems bound the count, inclusive — a hand-written tool is held to them', () => {
+    const bounded: JsonSchema = {
+      type: 'object',
+      properties: { ids: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 2 } },
+    };
+    expect(validateArgs(bounded, { ids: [] })).toEqual({
+      ok: false,
+      issues: [{ path: 'ids', message: 'must have at least 1 item' }],
+    });
+    expect(validateArgs(bounded, { ids: ['a', 'b', 'c'] })).toEqual({
+      ok: false,
+      issues: [{ path: 'ids', message: 'must have at most 2 items' }],
+    });
+    expect(validateArgs(bounded, { ids: ['a'] }).ok).toBe(true);
+    expect(validateArgs(bounded, { ids: ['a', 'b'] }).ok).toBe(true);
+  });
+
+  test('a count bound and an item fault are both reported', () => {
+    const bounded: JsonSchema = {
+      type: 'object',
+      properties: { ids: { type: 'array', items: { type: 'string' }, minItems: 3 } },
+    };
+    expect(validateArgs(bounded, { ids: [1] })).toEqual({
+      ok: false,
+      issues: [
+        { path: 'ids', message: 'must have at least 3 items' },
+        { path: 'ids[0]', message: 'must be a string' },
+      ],
+    });
+  });
+
   test('items schema omitted passes each element through untouched', () => {
     const loose: JsonSchema = { type: 'object', properties: { any: { type: 'array' } } };
     expect(validateArgs(loose, { any: [1, 'two', true] })).toEqual({

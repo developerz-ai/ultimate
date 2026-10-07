@@ -115,8 +115,12 @@ function sampleFor(node: SchemaNode): unknown {
       return node.values?.[0] ?? SAMPLE_STRING;
     case 'literal':
       return node.literal ?? null;
+    // The fewest items the array accepts: `[]` under a `minItems` is a sample its own schema
+    // refuses. Items repeat the one item sample; a uniqueness rule would be a refinement.
     case 'array':
-      return [];
+      return Array.from({ length: node.minItems ?? 0 }, () =>
+        node.items === undefined ? null : sampleFor(node.items),
+      );
     case 'union': {
       const first = node.anyOf?.[0];
       return first === undefined ? null : sampleFor(first);

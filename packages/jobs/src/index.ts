@@ -356,6 +356,7 @@ export { getTask, isTaskHandle, registeredTasks, resetTasks, restoreTasks, task 
  */
 export type { JobTenant } from './tenant';
 export type {
+  OrgWebhookDeliveryInput,
   WebhookDefinition,
   WebhookDeliveryInput,
   WebhookEndpoint,

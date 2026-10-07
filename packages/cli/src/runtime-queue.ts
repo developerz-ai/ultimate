@@ -11,17 +11,18 @@ import {
   resetIdempotency,
   setIdempotencyStore,
 } from '@ultimat3/action';
-import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
+import type { PgliteClient, PostgresClient } from '@ultimat3/db';
 import {
   baseClient,
   currentTx,
+  dbExecutor,
   pgliteClient,
   pgliteDataDir,
   postgresClient,
   setDbClient,
 } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
-import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
+import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import {
   outboxJobsFacade,
   postgresEventBus,
@@ -110,20 +111,6 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
 }
 
 /**
- * `@ultimat3/jobs` deliberately depends on no database package: Postgres reaches it as an
- * injected `PgExecutor`. Boot code is what supplies one, and this is the boot.
- *
- * The fragment is assembled by hand rather than through `sql`` ` because the driver hands over
- * `$1..$n` text it wrote itself plus already-bound values — there is no interpolation to guard.
- */
-export function pgExecutorFor(client: DbClient): PgExecutor {
-  return {
-    query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
-      client.query<R>({ text, values } satisfies SqlFragment),
-  };
-}
-
-/**
  * Every table this process's framework packages own, applied before anything reads one.
  *
  * The LIST is `FRAMEWORK_SCHEMA` and lives in `framework-schema.ts`, not here: this function is on
@@ -183,13 +170,15 @@ async function startJobs(
   schema: SchemaMode,
 ): Promise<RunningQueue> {
   await applySchema(client, schema);
-  const executor = pgExecutorFor(client);
+  // Bound to `client`, never the ambient `db()`: the queue, the event bus and the idempotency
+  // reservations stay on the boot's pool whatever transaction is open.
+  const executor = dbExecutor(() => client);
   const driver = overrides?.jobs ?? postgresJobDriver({ executor });
   setJobDriver(driver);
   const outbox = postgresOutboxStore({
     executor,
     // The open transaction is a client on its own connection; the `Tx` token is not that object.
-    txExecutor: () => pgExecutorFor(currentTx() ?? client),
+    txExecutor: () => dbExecutor(() => currentTx() ?? client),
   });
   setJobsFacade(
     outboxJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),

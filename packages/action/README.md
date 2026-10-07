@@ -410,6 +410,7 @@ await moveOrder({ id, from: 'pending', to: 'paid' }, { ctx });
 | `id` is the entity's **key**, read off `output.id` | a uuid key stays `t.uuid` (a malformed one is `X_INPUT_INVALID` before a database reads it); a `text()` key keeps its length and a `bigint()` key its digits pattern — never a fixed `t.uuid`, which refused every move on an entity keyed by anything else. An `output` that does not carry the key as `id` passes the key's schema as `id:`; with neither, the id is a uuid |
 | `idempotent: true`, always | a move replayed under its `Idempotency-Key` answers the first outcome, not an `X_STATE_CONFLICT` for a move that already happened |
 | `audit` is **off** unless the app says so | `audit: true` with no sink installed is `X_AUDIT_SINK_MISSING`, raised before the input parse — an on-by-default audit would make every `transition()` refuse until an unrelated decision was made. What the row is kept for, and for how long, is the same compliance question that kept a purge out of `postgresAuditSink` |
+| a row-level `policy` gets its row from **`row`** | the action's own loader, handed through: `row: ({ input, ctx }) => posts(ctx).find(input.id)`, then `can<TransitionValues<S>, Post>('post:move', ({ actor, row }) => row !== null && row.authorId === actor?.id)`. Loaded once, after the input parse, before the guard and the statement; the factory reads no row itself. Omitted, the rule sees `row: null` and must fail closed |
 | `X_STATE_TRANSITION_ILLEGAL`, `X_STATE_CONFLICT` and `X_STATE_UNDECLARED` propagate untouched | they are `@ultimat3/entity`'s. A second error class over one failure is a second path |
 
 `table` is typed structurally (`TransitionTarget`), not imported — a real `Table` satisfies the
@@ -519,7 +520,7 @@ export function counted(inner: IdempotencyStore, onSettle: () => void): Idempote
       onSettle();
       return inner.settle(key, value, reservationId, redacted);
     },
-    release: (key) => inner.release(key),
+    release: (key, reservationId) => inner.release(key, reservationId),
     get: (key) => inner.get(key),
   };
 }
@@ -600,6 +601,11 @@ Both stores fence on it AND on `in-flight` `As of 2026-08`, the way `@ultimat3/j
 `id = $1 and state = 'running'`: a reservation whose window lapsed is reclaimed by the next caller,
 so a straggler from the first attempt satisfied a status-only fence exactly and overwrote a live
 reservation.
+
+`release` takes it too (`As of 2026-10-07`): it is the pre-handler cleanup when `beforeRun` refuses,
+and keyed alone it DELETED whatever record the key held — a replacement's reservation, or its
+settled answer, so the next retry re-ran a handler that had already committed. A release that
+matches nothing does nothing (`idempotency-release.test.ts`, both stores).
 
 **Inside a transaction the settlement commits with the write** (`As of 2026-10-02`, BOTH stores —
 `idempotency-parity.test.ts` runs one set of cases over memory and Postgres). An action invoked

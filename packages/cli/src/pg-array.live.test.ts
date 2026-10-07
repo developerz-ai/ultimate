@@ -5,7 +5,7 @@
 //
 // THE NOTIFY CASE IS HERE BECAUSE `@ultimat3/notify` CANNOT SEE THE EXECUTOR. It depends on no
 // driver (`packages/notify/package.json`), so it cannot build the `PostgresClient`-backed executor
-// every booted role gets; `pgExecutorFor` (`runtime-queue.ts`) can, and that composition is what is
+// every booted role gets; `@ultimat3/db`'s `dbExecutor` can, and that composition is what is
 // under test. It goes through `postgresInboxStore().markRead()`, the public path, so the statement
 // stays unexported (`sql-export-readers`: a test outside a package reads its `*_TABLE` only). The
 // jobs statements are tested in their own package: `jobs/src/driver-pg-array.live.test.ts`.
@@ -25,9 +25,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, statementsOf } from '@ultimat3/db';
+import { dbExecutor, postgresClient, statementsOf } from '@ultimat3/db';
 import { postgresInboxStore, SQL_NOTIFY_INBOX_TABLE } from '@ultimat3/notify';
-import { pgExecutorFor } from './runtime-queue';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
@@ -44,7 +43,8 @@ let executor: PgExecutor | undefined;
 beforeAll(async () => {
   if (url === undefined) return;
   client = postgresClient({ url, role: 'worker' });
-  executor = pgExecutorFor(client);
+  const open = client;
+  executor = dbExecutor(() => open);
   // `statementsOf` and not `split(';')`: the DDL carries comments and the package's own splitter is
   // the one answer to where a statement ends.
   for (const statement of statementsOf(SQL_NOTIFY_INBOX_TABLE)) {

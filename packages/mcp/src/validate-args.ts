@@ -121,6 +121,15 @@ function array(schema: JsonSchema, input: unknown, path: string, issues: ArgIssu
     issues.push({ path, message: 'must be an array' });
     return input;
   }
+  // `@ultimat3/schema` publishes `t.array(items, { min, max })` as these two; a bound on the wire
+  // that nothing here checks is an agent obeying a rule a hand-written tool never enforced.
+  const count = (n: number): string => `${n} item${n === 1 ? '' : 's'}`;
+  if (schema.minItems !== undefined && input.length < schema.minItems) {
+    issues.push({ path, message: `must have at least ${count(schema.minItems)}` });
+  }
+  if (schema.maxItems !== undefined && input.length > schema.maxItems) {
+    issues.push({ path, message: `must have at most ${count(schema.maxItems)}` });
+  }
   const items = schema.items;
   if (items === undefined) return input;
   return input.map((item, index) => walk(items, item, `${path}[${index}]`, issues));

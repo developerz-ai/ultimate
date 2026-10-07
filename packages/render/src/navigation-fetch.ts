@@ -1,8 +1,9 @@
 /**
  * The client router's one request: the headers the server's navigation gate reads (purpose, the
  * document's `<app>:<surface>`, its principal, its build on a GET), `redirect: 'manual'` so no
- * redirect is followed behind the router's back, and the answer read ONCE into an `Answer` — the
- * page's text, or a non-page's bytes to hand over (a prefetch's are dropped unread).
+ * redirect is followed behind the router's back, `cache: 'no-cache'` so the browser's HTTP cache
+ * never answers, and the answer read ONCE into an `Answer` — the page's text, or a non-page's
+ * bytes to hand over (a prefetch's are dropped unread).
  */
 
 import {
@@ -50,8 +51,16 @@ export function fetchDocument(
   // GET only: a skewed GET is refused before any route runs; a POST is never refused mid-submit.
   const build = metaOf(doc, CLIENT_BUILD_META);
   if ((init.method ?? 'GET') === 'GET' && build !== null) headers[CLIENT_BUILD_META] = build;
+  // `no-cache`: the browser's HTTP cache never answers — a `stale-while-revalidate` page would be
+  // swapped in stale after a write, a sign-out or a deploy (#693); the router's cache is the only one.
   return win
-    .fetch(url, { ...init, credentials: 'same-origin', redirect: 'manual', headers })
+    .fetch(url, {
+      ...init,
+      cache: 'no-cache',
+      credentials: 'same-origin',
+      redirect: 'manual',
+      headers,
+    })
     .then(async (response) => {
       const contentType = response.headers.get('content-type') ?? '';
       const opaqueRedirect = response.type === 'opaqueredirect';

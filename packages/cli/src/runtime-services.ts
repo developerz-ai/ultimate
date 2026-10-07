@@ -15,6 +15,7 @@ import {
   resolveEnvironment,
   systemClock,
 } from '@ultimat3/core';
+import { dbExecutor } from '@ultimat3/db';
 import type { RateLimitStore } from '@ultimat3/http';
 import { adoptRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
@@ -40,7 +41,7 @@ import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
 import type { DevDbClient, SchemaMode } from './runtime-queue';
-import { pgExecutorFor, startQueue } from './runtime-queue';
+import { startQueue } from './runtime-queue';
 import { realtimeConfigOf } from './runtime-realtime';
 
 export interface RunningServices {
@@ -351,7 +352,7 @@ export async function startServices(
   // The same executor the jobs driver, the outbox, the event bus and the idempotency store run
   // on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
   // `undefined`), one wrapper.
-  const executor = pgExecutorFor(db);
+  const executor = dbExecutor(() => db);
   const rateLimitStore = postgresRateLimitStore({ executor });
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.

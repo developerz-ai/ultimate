@@ -13,6 +13,8 @@
  */
 
 import type { Action, ActionJobHandle } from '@ultimat3/action';
+import type { Actor, Ctx } from '@ultimat3/core';
+import { assert, impersonate, useContext } from '@ultimat3/core';
 import type { JobHandle, JobTenant, RetryPolicy } from '@ultimat3/jobs';
 import { job } from '@ultimat3/jobs';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -51,6 +53,19 @@ export interface AgentJobOptions<I> {
    * indistinguishable here, and a rule refusing both would be a wrong refusal. See the README.
    */
   idempotencyKey?(input: I): string;
+  /**
+   * Who the run acts FOR, resolved from its own input on EVERY attempt — the jobs rule "a job
+   * acting for a user takes the user's id in its input and re-authorises it in the body", for a
+   * body that is the agent's. Without it the agent, its policy and every tool run as the WORKER,
+   * which in a served app is the anonymous actor: a member rule refuses it `X_UNAUTHENTICATED`.
+   *
+   * Load the member under the job's tenant (the ambient context already carries it) and build the
+   * same actor a request would: a member who left, or lost the role, is refused on the next
+   * attempt rather than trusted from the enqueue. The swap is core's `impersonate`, so the worker
+   * stays on the record as `onBehalfOf`. An actor in another org than `tenant` declared is refused
+   * before the agent starts — `tenant` is the org this run acts under, and nothing moves it.
+   */
+  actor?(args: { readonly input: I; readonly ctx: Ctx }): Promise<Actor> | Actor;
 }
 
 /**
@@ -82,8 +97,29 @@ export function agentJob<TInput extends StandardSchemaV1, TOutput extends Standa
     // input, { surface: 'job', ctx })`, so the agent's policy, its input parse, its budget scope
     // and its span all apply — and `ctx` is the WORKER's, so `ctx.signal` aborting at the attempt
     // timeout reaches the agent's turn loop.
-    run: ({ input, ctx }) => bridge().invoke(asInput<TInput>(input), ctx),
+    run: async ({ input, ctx }) => {
+      if (options.actor === undefined) return bridge().invoke(asInput<TInput>(input), ctx);
+      const actor = await options.actor({ input, ctx });
+      assertSameTenant(options.name, actor, ctx.actor.orgId);
+      return impersonate(actor, `agentJob ${options.name} acts for the actor its input names`, () =>
+        // The CHILD context: the resolved actor, the worker's signal, deadline and services.
+        bridge().invoke(asInput<TInput>(input), useContext()),
+      );
+    },
   });
+}
+
+/**
+ * The resolver's actor stays inside the org the job declared. `assert` and no code of its own, as
+ * `jobTenantFor`'s empty-tenant refusal: the declaration is wrong, and the repair is that edit.
+ */
+function assertSameTenant(name: string, actor: Actor, tenant: string | undefined): void {
+  const orgId = actor.orgId ?? undefined;
+  assert(
+    orgId === tenant,
+    `agentJob "${name}" actor() resolved an actor in org ${orgId ?? '(none)'}, but the job's tenant is ${tenant ?? "'none'"}, so the run would act outside the org it declared`,
+    `load the member in agentJob("${name}").actor under the job's own tenant — the ambient context already carries it — so a member of another org is not found rather than returned`,
+  );
 }
 
 /**

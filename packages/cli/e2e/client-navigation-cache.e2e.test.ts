@@ -1,7 +1,8 @@
 // Client navigation in a real Chrome: the per-tab prefetch cache — emptied by a client write, by
-// another tab, by time for a `no-store` page, and never holding a failure as an answer. Ordered
-// by what the server recorded and what the page received (`recorded`, `landed`, `hold`), never by
-// a sleep: a hover's prefetch leaves on a page timer, and a stalled renderer sends it late.
+// another tab, by time for a `no-store` page, never holding a failure as an answer, and never
+// backed by the browser's HTTP cache (#693). Ordered by what the server recorded and what the
+// page received (`recorded`, `landed`, `hold`), never by a sleep: a hover's prefetch leaves on a
+// page timer, and a stalled renderer sends it late.
 //
 //   bun test packages/cli/e2e/client-navigation-cache.e2e.test.ts
 
@@ -41,12 +42,18 @@ describe.skipIf(noBrowser)('client navigation · the prefetch cache never answer
   test(
     'a client write (the typed client) empties the cache — the click asks again',
     async () => {
+      state.eager = 1;
       await start('/a');
       await prefetched('to-eager', '/eager');
       await read(WRITE);
+      state.eager = 2;
       await click('to-eager');
       await currentTab().waitFor('document.title === "Eager"', 'Eager');
       expect(ran).toEqual(['GET /eager prefetch', 'GET /eager soft']);
+      // What the server renders NOW, not the browser's HTTP cache: an anonymous page is cached
+      // `stale-while-revalidate`, so an asked-again click answered from it still records the
+      // soft GET (the background revalidation) while showing the stale page (#693).
+      expect(await read('document.getElementById("eager").textContent')).toBe('2');
     },
     TIMEOUT_MS,
   );
@@ -93,6 +100,7 @@ describe.skipIf(noBrowser)('client navigation · the prefetch cache never answer
   test(
     "another tab clearing (a sign-out, a write there) empties this tab's cache too",
     async () => {
+      state.eager = 1;
       await start('/a');
       await prefetched('to-eager', '/eager');
       // Created after the router's own channel: a message reaches one document's channels oldest
@@ -110,9 +118,11 @@ describe.skipIf(noBrowser)('client navigation · the prefetch cache never answer
       }
       await currentTab().waitFor('window.__cleared === true', "the other tab's message");
       ran.length = 0;
+      state.eager = 2;
       await click('to-eager');
       await currentTab().waitFor('document.title === "Eager"', 'Eager');
       expect(ran).toEqual(['GET /eager soft']);
+      expect(await read('document.getElementById("eager").textContent')).toBe('2');
     },
     TIMEOUT_MS,
   );

@@ -363,8 +363,11 @@ export const triageJob = agentJob(supportAgent, {
 | `retry` | yes | a model call fails transiently; how many times is nobody else's guess |
 | `queue` | no | |
 | `idempotencyKey` | no | defaults to the action projection's `action:<name>:<fingerprint of input>` |
+| `actor` | no | `({ input, ctx }) => Actor` — who the run acts FOR, re-resolved on every attempt from the id its input carries. Without it the agent runs as the worker, whose actor is **anonymous** in a served app, so a member policy refuses it `X_UNAUTHENTICATED`. Swapped in through core's `impersonate` (the worker stays on the record as `onBehalfOf`); an actor outside the declared `tenant` is refused before the agent starts |
 
 It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row all arrive for free. One execution path, and it is the action's: `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and `ctx` is the **worker's**, so an attempt timing out aborts the turn loop.
+
+**A queued run's return value is not stored** — `x_jobs` keeps no result column. Whatever the agent produces has to be written by one of its tools, which is what makes the next rule load-bearing rather than theoretical. Worked example: the reference app's `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`) — `agentJob(reviewDraft, { actor })`, whose `recordReview` tool upserts the post's one review on `(orgId, postId)`, read back with the `postReview` query.
 
 ### The at-least-once trap
 

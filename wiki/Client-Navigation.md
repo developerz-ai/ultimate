@@ -181,7 +181,10 @@ a long press — never skips it, so named elements finish their glide (`As of 20
 On intent: `pointerover` that rests 65 ms, `focusin`, `touchstart`. The server answers only pages
 that declared `navigation: 'prefetch'`; everything else is an empty `204`, remembered so a second
 hover does not ask again. Answers wait in a per-tab **memory** cache (never storage), 30 s, at most 20
-documents, keyed with the query sorted and without the fragment.
+documents, keyed with the query sorted and without the fragment. It is the ONLY reuse layer: every
+router fetch goes out `cache: 'no-cache'`, so the browser's HTTP cache never answers a soft
+navigation — an anonymous page's `stale-while-revalidate` would otherwise show the document from
+before a write, a sign-out or a deploy (`navigation-fetch.ts`; issue #693).
 
 | A prefetched answer is never used when | |
 |---|---|

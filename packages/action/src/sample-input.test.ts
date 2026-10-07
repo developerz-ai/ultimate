@@ -84,6 +84,15 @@ describe('sampleInput', () => {
     expect(sampleInput(t.union(t.uuid, t.number))).toBe('00000000-0000-4000-8000-000000000000');
   });
 
+  test('a bounded array samples its minimum count, so the sample passes its own schema', () => {
+    const page = t.array(t.uuid, { min: 2, max: 5 });
+    expect(sampleInput(page)).toEqual([
+      '00000000-0000-4000-8000-000000000000',
+      '00000000-0000-4000-8000-000000000000',
+    ]);
+    expect(accepts(page)).toBe(true);
+  });
+
   test('money samples as minor units plus a currency, never a bare amount', () => {
     expect(sampleInput(t.money)).toEqual({ minor: 0, currency: 'USD' });
   });

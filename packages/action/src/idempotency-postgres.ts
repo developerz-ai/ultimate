@@ -109,7 +109,9 @@ update x_idempotency set status = 'failed', value = null, failure = $2::jsonb,
 returning key
 `;
 
-export const SQL_IDEMPOTENCY_RELEASE = `delete from x_idempotency where key = $1`;
+export const SQL_IDEMPOTENCY_RELEASE = `
+delete from x_idempotency where key = $1 and id = $2::uuid and status = 'in-flight'
+`;
 
 export const SQL_IDEMPOTENCY_PURGE = `
 delete from x_idempotency where created_at < now() - make_interval(secs => $1::double precision)
@@ -294,8 +296,10 @@ export function postgresIdempotencyStore(
       fenced(rows, key, reservationId, 'fail');
     },
 
-    async release(key): Promise<void> {
-      await exec.query(SQL_IDEMPOTENCY_RELEASE, [key]);
+    // Fenced, and silent when it matches nothing: a release is a pre-handler cleanup, so a record
+    // that is no longer this reservation's is somebody else's to settle.
+    async release(key, reservationId): Promise<void> {
+      await exec.query(SQL_IDEMPOTENCY_RELEASE, [key, reservationId]);
     },
 
     get: fetch,

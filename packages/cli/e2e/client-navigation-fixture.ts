@@ -236,8 +236,8 @@ const page = (
     navigation ?? undefined,
   );
 
-/** Mutable per-route counters a suite resets and reads. */
-export const state = { flaky: 0, paid: 0 };
+/** Mutable per-route counters a suite resets and reads; `eager` is what `/eager` renders now. */
+export const state = { flaky: 0, paid: 0, eager: 0 };
 const other = Bun.serve({
   port: 0,
   fetch(request): Response {
@@ -277,7 +277,11 @@ const routes: Route[] = [
   // Tall enough to scroll on its own: a reload drops anything a test set through the CSSOM.
   page('/tall', () => ({ title: 'Tall', path: '/tall', body: '<p>row</p>'.repeat(300) })),
   page('/missing', () => ({ title: 'Not found', path: '/missing' }), nav(), { status: 404 }),
-  page('/eager', () => ({ title: 'Eager', path: '/eager' }), nav({ prefetch: true })),
+  page(
+    '/eager',
+    () => ({ title: 'Eager', path: '/eager', body: `<p id="eager">${String(state.eager)}</p>` }),
+    nav({ prefetch: true }),
+  ),
   page('/eager-ns', () => ({ title: 'Eager NS', path: '/eager-ns' }), nav({ prefetch: true }), {
     headers: { 'cache-control': 'private, no-store' },
   }),
