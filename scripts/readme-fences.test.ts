@@ -3,6 +3,7 @@
 // at all, which is the false green three of this month's other gate checks shipped with.
 
 import { describe, expect, test } from 'bun:test';
+import { fenceSite, pageOfSite, pinKey } from './lib/fence-sites';
 import {
   buildFixtures,
   fenceOf,
@@ -20,10 +21,12 @@ import {
 } from './readme-fences';
 import { README_FENCE_BACKLOG } from './readme-fences-backlog';
 
-const fail = (pkg: string, readmeLine: number) => ({
+/** A failure at a site: `first` is the fence's first code line, so it names the backlog row. */
+const fail = (pkg: string, readmeLine: number, first = 'const a = b;') => ({
   pkg,
   readmeLine,
   reason: 'TS2304: Cannot find name.',
+  site: `${pkg}: ${first}`,
 });
 
 describe('a package with more failing examples than it is pinned at', () => {
@@ -31,7 +34,7 @@ describe('a package with more failing examples than it is pinned at', () => {
     const gaps = checkFences({
       packages: ['render'],
       failures: [fail('render', 80), fail('render', 120)],
-      backlog: { render: 1 },
+      backlog: { 'render: const a = b;': 1 },
     });
     expect(gaps).toHaveLength(1);
     expect(gaps[0]?.kind).toBe('over');
@@ -48,32 +51,75 @@ describe('a package with more failing examples than it is pinned at', () => {
 
   test('at or under the pin holds', () => {
     expect(
-      checkFences({ packages: ['ai'], failures: [fail('ai', 9)], backlog: { ai: 1 } }),
+      checkFences({
+        packages: ['ai'],
+        failures: [fail('ai', 9)],
+        backlog: { 'ai: const a = b;': 1 },
+      }),
     ).toEqual([]);
+  });
+
+  test('a fixed example cannot be SWAPPED for a new broken one at an equal count', () => {
+    // A per-package count of 1 held both trees below. Per fence, the new one is its own row.
+    const gaps = checkFences({
+      packages: ['ai'],
+      failures: [fail('ai', 30, 'createAgent({ model });')],
+      backlog: { 'ai: const a = b;': 1 },
+    });
+    expect(gaps.map((gap) => `${gap.kind} ${gap.site}`)).toEqual([
+      'stale ai: const a = b;',
+      'over ai: createAgent({ model });',
+    ]);
+    expect(fenceGapFindingFor(gaps[1] as never).cause).toContain(
+      'opening `createAgent({ model });`',
+    );
+  });
+
+  test('the site is the package and the first NON-BLANK code line, trimmed', () => {
+    expect(fenceSite({ pkg: 'ai', code: ['', '   import { x } from "y";  ', 'x();'] })).toBe(
+      'ai: import { x } from "y";',
+    );
+    expect(pageOfSite('ai: a: b')).toBe('ai');
   });
 });
 
 describe('the ratchet only tightens', () => {
   test('a pin higher than what fails is a finding, and the fix is one command', () => {
-    const gaps = checkFences({ packages: ['ai'], failures: [], backlog: { ai: 3 } });
+    const gaps = checkFences({ packages: ['ai'], failures: [], backlog: { 'ai: x;': 3 } });
     expect(gaps[0]?.kind).toBe('stale');
     expect(fenceGapFindingFor(gaps[0] as never).fix).toBe('bun run scripts/readme-fences.ts --pin');
   });
 
-  test('--pin lowers a count and refuses to raise one', () => {
+  test('--pin lowers a row, drops a zero, refuses to raise one, and writes Biome keys', () => {
     const source = [
       'export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
-      '  ai: 16,',
-      '  render: 5,',
-      '  time: 1,',
+      "  'ai: const a = b;': 16,",
+      `  "render: import { meta } from '@ultimat3/render';": 5,`,
+      "  'time: x;': 1,",
       '};',
     ].join('\n');
-    const next = pinnedSource({ ai: 2, render: 99 }, { ai: 16, render: 5, time: 1 }, source);
-    expect(next).toContain('  ai: 2,');
-    // measured 99, pinned 5 — the pin stays, because raising it is a reviewed edit
-    expect(next).toContain('  render: 5,');
+    const backlog = {
+      'ai: const a = b;': 16,
+      "render: import { meta } from '@ultimat3/render';": 5,
+      'time: x;': 1,
+    };
+    const next = pinnedSource(
+      { 'ai: const a = b;': 2, "render: import { meta } from '@ultimat3/render';": 99 },
+      backlog,
+      source,
+    );
+    expect(next).toContain("  'ai: const a = b;': 2,");
+    // measured 99, pinned 5 — the pin stays, because raising it is a reviewed edit; the key keeps
+    // the double quotes Biome picks for a string holding single ones.
+    expect(next).toContain(`  "render: import { meta } from '@ultimat3/render';": 5,`);
     // measured nothing, so the row goes
     expect(next).not.toContain('time');
+  });
+
+  test('a key with a dollar sign or a backslash is written back verbatim', () => {
+    expect(pinKey('ai: const $x = `\\$y`;')).toBe("'ai: const $x = `\\\\$y`;'");
+    expect(pinKey('Actions')).toBe('Actions');
+    expect(pinKey(`ui: it's "q"`)).toBe(`'ui: it\\'s "q"'`);
   });
 });
 
@@ -150,7 +196,7 @@ describe('the fence reader and the fixture', () => {
     expect(diagnostics).toHaveLength(1);
     expect(fenceOf(fixtures, 'ui__1.tsx')?.readmeLine).toBe(12);
     expect(failuresFrom(fixtures, diagnostics)).toEqual([
-      { pkg: 'ui', readmeLine: 12, reason: 'TS2304: Cannot find name.' },
+      { pkg: 'ui', readmeLine: 12, reason: 'TS2304: Cannot find name.', site: 'ui: <Button />;' },
     ]);
   });
 });

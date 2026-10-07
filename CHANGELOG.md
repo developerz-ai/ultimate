@@ -26,7 +26,7 @@ confirmation for MCP tools, SES and verified delivery events, the Claude 5.5 mod
 sweep 10d the tier 5 ones: admin scopes, a scaffold that boots as a binary on every OS, and the AI
 package's first step to apps bringing their own models and providers. Sweep 11 is an audit of
 every file earlier waves had not reached: 36 proven defects fixed, and the guards that let some
-of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
+of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth's 14.
 
 ### Added
 
@@ -253,6 +253,17 @@ of them through tightened. Sweep 11b fixes a fourth wave's 25 more.
 
 - `registry-audit`: the fix for a package behind on npm depends on whether its release tag is on the
   remote (tag, push, `gh release create --verify-tag`), and dispatches the workflow only when it is.
+- Repo tooling hardened by sweep 11c's audit:
+  - `trust-publishers --check` and `bench-claims` fail over a tree they read nothing from.
+  - `budget-raises` reports a deleted route `js` budget as an unlimited raise.
+  - The CI summary shows the merged document's own verdict, never ✓ over a red merge.
+  - `error-render` sees an `unknown` under a cast, `!` or a `??`/`||` fallback.
+  - The image libc rule follows `COPY --from` through intermediate stages.
+  - New gate code `X_WIKI_TABLE_UNSCANNED`.
+  - The citation scanners read `bun run x -- …` (one rule, `asXCitation`, in `@ultimat3/cli`).
+  - `DOC_COMMAND_PINS`, the README and wiki fence backlogs and `UNRELEASED_CLAIM_PINS` are pinned per site.
+  - `new-error-code` works for every package and writes `SEO_ERROR_CODES`.
+  - `new-package` scaffolds a package that passes the gate.
 - Repo guards tightened by sweep 11's audit, each with a fixture that slipped before:
   - `secret-compare` pins are per site (`<path>: <comparison>`), so a pinned false positive can't be
     swapped for a real one; it also reads template interpolations, `.equals()` and `Buffer.compare()`.

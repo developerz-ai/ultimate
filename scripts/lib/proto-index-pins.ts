@@ -72,7 +72,7 @@ export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
   // why: 26 -> 27 because core's source-mask now reads past a regex inside a template ${}, which
   // had hidden scripts/side-effects.ts's FINDINGS[gap.kind] — the same shape this row already pins.
   scripts: {
-    count: 27,
+    count: 26,
     reason:
       'the gate scripts themselves: `FINDINGS[gap.kind]` in every ratchet, a table keyed by a union the same file declares one line above and narrows exhaustively. Not shipped to an app, and the key never crosses a process boundary. It went 36 -> 38 when the two newest ratchets landed, which is the honest cost of keeping one shape across twenty guards rather than one guard shaped differently.',
   },

@@ -6,12 +6,14 @@
 // omits a non-optional field. Both read as authoritative and neither would compile.
 //
 // It ships on a RATCHET, not enforcing: 155 of 170 examples are illustrative fragments today
-// (`scripts/readme-fences-backlog.ts` records the count per package, and it may only fall). The
-// edge is real all the same — a NEW example must compile the day it is written.
+// (`scripts/readme-fences-backlog.ts` records them per FENCE — package plus first code line — and a
+// row may only fall). The edge is real all the same — a NEW example must compile the day it is
+// written, and per fence since plan 101 sweep 11c it cannot be traded for a fixed one.
 //
 //   bun run scripts/readme-fences.ts [--json] [--pin]
 
 import { flagBool, parseScriptArgs } from './lib/args';
+import { fenceSite, loweredRows, pageOfSite, siteTally } from './lib/fence-sites';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { Diagnostic, Fence, Fixture } from './lib/readme-fences';
@@ -32,6 +34,8 @@ export interface FenceFailure {
   readonly pkg: string;
   readonly readmeLine: number;
   readonly reason: string;
+  /** `<pkg>: <first code line>` — the backlog row this failure is counted against. */
+  readonly site: string;
 }
 
 /**
@@ -44,6 +48,8 @@ export type FenceGapKind = 'over' | 'stale' | 'unscanned';
 export interface FenceGap {
   readonly kind: FenceGapKind;
   readonly pkg: string;
+  /** The backlog row: `<pkg>: <first code line>`. Empty for `unscanned`. */
+  readonly site: string;
   readonly failing: number;
   readonly pinned: number;
   readonly failures: readonly FenceFailure[];
@@ -58,7 +64,8 @@ export interface FenceInput {
   readonly unscanned?: string;
 }
 
-const byPkg = (a: FenceGap, b: FenceGap): number => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0);
+const bySite = (a: FenceGap, b: FenceGap): number =>
+  a.site < b.site ? -1 : a.site > b.site ? 1 : 0;
 
 /** Pure, so the negative case is a fixture rather than an edit to a README someone else owns. */
 export function checkFences(input: FenceInput): readonly FenceGap[] {
@@ -67,6 +74,7 @@ export function checkFences(input: FenceInput): readonly FenceGap[] {
       {
         kind: 'unscanned',
         pkg: '',
+        site: '',
         failing: 0,
         pinned: 0,
         failures: [],
@@ -75,19 +83,15 @@ export function checkFences(input: FenceInput): readonly FenceGap[] {
     ];
   }
   const gaps: FenceGap[] = [];
-  const names = new Set([...input.packages, ...Object.keys(input.backlog)]);
-  for (const pkg of names) {
-    const failures = input.failures.filter((one) => one.pkg === pkg);
-    const pinned = pinnedFor(pkg, input.backlog);
-    if (failures.length > pinned) {
-      gaps.push({ kind: 'over', pkg, failing: failures.length, pinned, failures });
-      continue;
-    }
-    if (failures.length < pinned) {
-      gaps.push({ kind: 'stale', pkg, failing: failures.length, pinned, failures });
-    }
+  const sites = new Set([...input.failures.map((one) => one.site), ...Object.keys(input.backlog)]);
+  for (const site of sites) {
+    const failures = input.failures.filter((one) => one.site === site);
+    const pinned = pinnedFor(site, input.backlog);
+    const at = { pkg: pageOfSite(site), site, failing: failures.length, pinned, failures };
+    if (failures.length > pinned) gaps.push({ kind: 'over', ...at });
+    else if (failures.length < pinned) gaps.push({ kind: 'stale', ...at });
   }
-  return gaps.sort(byPkg);
+  return gaps.sort(bySite);
 }
 
 const readme = (pkg: string): string => `packages/${pkg}/README.md`;
@@ -97,15 +101,15 @@ const overFinding = (gap: FenceGap): Finding => {
   const lines = gap.failures.map((one) => one.readmeLine).join(', ');
   return {
     code: 'X_README_EXAMPLE_UNCOMPILED',
-    cause: `${gap.failures.length} fenced example(s) in ${readme(gap.pkg)} do not typecheck and ${gap.pinned} are pinned — failing at line(s) ${lines}; the first says: ${first?.reason ?? ''}`,
-    fix: `make the example at ${readme(gap.pkg)}:${first?.readmeLine ?? 0} compile — bun run scripts/readme-fences.ts --json prints every diagnostic — or raise '${gap.pkg}' to ${gap.failures.length} in ${BACKLOG_FILE} on purpose`,
+    cause: `${gap.failures.length} fenced example(s) in ${readme(gap.pkg)} opening \`${gap.site.slice(gap.pkg.length + 2)}\` do not typecheck and ${gap.pinned} are pinned — failing at line(s) ${lines}; the first says: ${first?.reason ?? ''}`,
+    fix: `make the example at ${readme(gap.pkg)}:${first?.readmeLine ?? 0} compile — bun run scripts/readme-fences.ts --json prints every diagnostic — or pin its row in ${BACKLOG_FILE} at ${gap.failures.length} on purpose, with a // why:`,
     at: `${readme(gap.pkg)}:${first?.readmeLine ?? 0}`,
   };
 };
 
 const staleFinding = (gap: FenceGap): Finding => ({
   code: 'X_README_EXAMPLE_PIN_STALE',
-  cause: `${BACKLOG_FILE} pins ${gap.pinned} failing example(s) for ${gap.pkg} and ${gap.failing} fail now — a ratchet that does not tighten is a ratchet nobody reads`,
+  cause: `${BACKLOG_FILE} pins ${gap.pinned} failing example(s) at '${gap.site}' and ${gap.failing} fail now — a ratchet that does not tighten is a ratchet nobody reads`,
   fix: 'bun run scripts/readme-fences.ts --pin',
   at: BACKLOG_FILE,
 });
@@ -140,6 +144,7 @@ export const failuresFrom = (
     pkg: fence.pkg,
     readmeLine: fence.readmeLine,
     reason,
+    site: fenceSite(fence),
   }));
 };
 
@@ -179,20 +184,15 @@ export async function readmeFenceFindings(root: string): Promise<readonly Findin
   return checkFences({ ...measured, backlog: README_FENCE_BACKLOG }).map(fenceGapFindingFor);
 }
 
-/** `--pin`: lower a count to what is measured. It never raises one — that is a reviewed edit. */
+/** `--pin`: lower each row to what is measured. It never raises one — that is a reviewed edit. */
 export function pinnedSource(
   measured: Readonly<Record<string, number>>,
   backlog: Readonly<Record<string, number>>,
   source: string,
 ): string {
-  const next = Object.entries(backlog)
-    .map(([pkg, count]) => [pkg, Math.min(count, measured[pkg] ?? 0)] as const)
-    .filter(([, count]) => count > 0)
-    .map(([pkg, count]) => `  ${pkg}: ${count},`)
-    .join('\n');
   return source.replace(
     /(export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = \{\n)[\s\S]*?(\n\};)/,
-    `$1${next}$2`,
+    (_whole, open: string, close: string) => `${open}${loweredRows(measured, backlog)}${close}`,
   );
 }
 
@@ -202,10 +202,9 @@ if (import.meta.main) {
   const measured = await fenceFailures(root);
   const gaps = checkFences({ ...measured, backlog: README_FENCE_BACKLOG });
   if (flagBool(args, 'pin')) {
-    const counts: Record<string, number> = {};
-    for (const one of measured.failures) counts[one.pkg] = (counts[one.pkg] ?? 0) + 1;
     const path = `${root}/${BACKLOG_FILE}`;
-    await Bun.write(path, pinnedSource(counts, README_FENCE_BACKLOG, await Bun.file(path).text()));
+    const text = await Bun.file(path).text();
+    await Bun.write(path, pinnedSource(siteTally(measured.failures), README_FENCE_BACKLOG, text));
   }
   const total = measured.failures.length;
   report(
@@ -215,7 +214,7 @@ if (import.meta.main) {
       summary:
         gaps.length === 0
           ? `${measured.packages.length} package READMEs, ${total} fenced example(s) failing, every one pinned`
-          : `${gaps.length} package README(s) whose fenced examples moved off the ratchet (${total} failing)`,
+          : `${gaps.length} README fence site(s) off the ratchet (${total} failing)`,
       findings: gaps.map(fenceGapFindingFor),
       data: { failures: measured.failures },
     },

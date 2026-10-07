@@ -10,6 +10,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeReferencePath } from '@ultimat3/cli';
 import { frameworkVersion } from '@ultimat3/core';
+// The leaf, not the CLI barrel: the floor the shipped `x` enforces, and what `x new` writes as an
+// app's `engines.bun` (`scaffold-repo.ts`) — the source `scripts/bun-pin.test.ts` reads it from.
+import { REQUIRED_BUN } from '../packages/cli/src/app-root';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -35,33 +38,44 @@ const pascal = (name: string): string =>
     .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
     .join('');
 
+/**
+ * The manifest, built as a value and serialised — a `--description` with a quote, a backslash or a
+ * newline was interpolated raw into a template and produced a `package.json` no install could
+ * read. Two-space output with every object expanded is also exactly what Biome prints for JSON,
+ * so a scaffolded manifest passes `bun run lint` without a `--write` first.
+ */
+export function packageJson(name: string, description: string): string {
+  return `${JSON.stringify(
+    {
+      name: `@ultimat3/${name}`,
+      version: frameworkVersion(),
+      description,
+      license: 'MIT',
+      type: 'module',
+      repository: {
+        type: 'git',
+        url: 'git+https://github.com/developerz-ai/ultimate.git',
+        directory: `packages/${name}`,
+      },
+      publishConfig: { access: 'public', provenance: true },
+      exports: { '.': './src/index.ts' },
+      files: ['src', '!src/**/*.test.ts', '!src/**/*-fixture.ts', 'README.md', 'LICENSE'],
+      // The floor the shipped `x` enforces and `x new` writes into an app (`scripts/bun-pin.test.ts`).
+      engines: { bun: `>=${REQUIRED_BUN}` },
+      scripts: { typecheck: 'tsc --noEmit -p tsconfig.json', test: 'bun test' },
+      dependencies: {},
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 export function packageTemplates(name: string, tier: number, description: string): Template[] {
   const Name = pascal(name);
   return [
     {
       path: 'package.json',
-      contents: `{
-  "name": "@ultimat3/${name}",
-  "version": "${frameworkVersion()}",
-  "description": "${description}",
-  "license": "MIT",
-  "type": "module",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/developerz-ai/ultimate.git",
-    "directory": "packages/${name}"
-  },
-  "publishConfig": { "access": "public", "provenance": true },
-  "exports": { ".": "./src/index.ts" },
-  "files": ["src", "!src/**/*.test.ts", "!src/**/*-fixture.ts", "README.md", "LICENSE"],
-  "engines": { "bun": ">=1.3.0" },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test"
-  },
-  "dependencies": {}
-}
-`,
+      contents: packageJson(name, description),
     },
     {
       path: 'LICENSE',
@@ -126,11 +140,27 @@ Commands: \`bun test\`, \`bunx tsc --noEmit -p tsconfig.json\`.
 // No \`docs:\` line, and that is deliberate: \`UltimateError\`'s constructor resolves the registered
 // descriptor, whose default is \`ERROR_DOCS_URL\` in @ultimat3/core. A URL written out here is a
 // second answer to a question core already answers, and the last one went stale host and all.
-import { UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const ${upper(name)}_ERROR_CODES = ['X_${upper(name)}_INVALID'] as const;
+// The shape \`bun run new-error-code\` adds to: the owned array, the TITLES beside it, and the
+// registration. A package written another way is refused by that generator, so it is written this
+// way from the first file.
+export const ${upper(name)}_ERROR_CODES = [
+  // Kept multi-line, a comment holding it open: the generator appends one line per code.
+  'X_${upper(name)}_INVALID',
+] as const;
 
 export type ${Name}ErrorCode = (typeof ${upper(name)}_ERROR_CODES)[number];
+
+export const ${upper(name)}_ERROR_TITLES: Readonly<Record<${Name}ErrorCode, string>> = {
+  X_${upper(name)}_INVALID: 'an input @ultimat3/${name} refuses is invalid',
+};
+
+registerErrorCodes(
+  Object.fromEntries(
+    Object.entries(${upper(name)}_ERROR_TITLES).map(([code, title]) => [code, { title }]),
+  ),
+);
 
 export class ${Name}InvalidError extends UltimateError {
   constructor(input: { cause: string; fix: string }) {
@@ -147,14 +177,14 @@ export class ${Name}InvalidError extends UltimateError {
       path: 'src/index.ts',
       contents: `// Public API of @ultimat3/${name}. Explicit re-exports only.
 
-export { ${upper(name)}_ERROR_CODES, ${Name}InvalidError } from './errors';
 export type { ${Name}ErrorCode } from './errors';
+export { ${upper(name)}_ERROR_CODES, ${Name}InvalidError } from './errors';
 `,
     },
     {
       path: 'src/errors.test.ts',
       contents: `import { describe, expect, test } from 'bun:test';
-import { ${Name}InvalidError, ${upper(name)}_ERROR_CODES } from './errors';
+import { ${upper(name)}_ERROR_CODES, ${Name}InvalidError } from './errors';
 
 describe('unit · @ultimat3/${name} errors', () => {
   test('the error carries a stable code, a cause and a fix', () => {

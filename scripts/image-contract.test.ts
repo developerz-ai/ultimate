@@ -171,6 +171,72 @@ describe('unit · what the rules refuse to guess', () => {
   });
 });
 
+// The libc the binary asks for is the stage that LINKED it, however many stages carry it after.
+// Following only the final stage's own COPY --from read `assemble` (debian, glibc) and passed an
+// alpine-built binary onto a glibc runtime.
+describe('unit · an artifact relayed through an intermediate stage', () => {
+  const relayed = (build: string, from = 'build', inherit = false) =>
+    [
+      `FROM ${build} AS build`,
+      'RUN bun build --compile --outfile /out/app ./x.ts',
+      'FROM debian:bookworm-slim AS assemble',
+      `COPY --from=${from} /out/app /stage/app`,
+      ...(inherit ? ['FROM assemble AS packed', 'RUN true'] : []),
+      'FROM gcr.io/distroless/cc-debian13 AS runtime',
+      `COPY --from=${inherit ? 'packed' : 'assemble'} /stage/app /app/x`,
+      'RUN ["/app/x", "--version"]',
+      'ENTRYPOINT ["/app/x"]',
+      '',
+    ].join('\n');
+
+  test('build alpine -> assemble debian -> distroless cc is reported at the linking stage', () => {
+    const found = findings(relayed('oven/bun:1.3-alpine'));
+    expect(found.map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+    expect(found[0]?.cause).toContain('build on oven/bun:1.3-alpine (musl)');
+    expect(found[0]?.at).toBe(`${DOCKERFILE}:1`);
+    expect(findings(relayed('oven/bun:1.3-slim'))).toEqual([]);
+  });
+
+  test('a relay through a stage built FROM the intermediate, or by index, is walked too', () => {
+    expect(findings(relayed('oven/bun:1.3-alpine', 'build', true)).map((one) => one.code)).toEqual([
+      'X_IMAGE_LIBC_MISMATCH',
+    ]);
+    expect(findings(relayed('oven/bun:1.3-alpine', '0')).map((one) => one.code)).toEqual([
+      'X_IMAGE_LIBC_MISMATCH',
+    ]);
+  });
+
+  test('an external image copied into an intermediate stage is reported at THAT stage', () => {
+    const text = [
+      'FROM debian:bookworm-slim AS assemble',
+      'COPY --from=alpine:3 /bin/busybox /stage/app',
+      'FROM gcr.io/distroless/cc-debian13 AS runtime',
+      'COPY --from=assemble /stage/app /app/x',
+      'RUN ["/app/x", "--version"]',
+      'ENTRYPOINT ["/app/x"]',
+      '',
+    ].join('\n');
+    const found = findings(text);
+    expect(found.map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+    expect(found[0]?.at).toBe(`${DOCKERFILE}:1`);
+  });
+
+  test('a cycle of COPY --from between stages terminates', () => {
+    const cyclic = [
+      'FROM oven/bun:1.3-alpine AS a',
+      'COPY --from=b /x /x',
+      'FROM debian:bookworm-slim AS b',
+      'COPY --from=a /x /x',
+      'FROM gcr.io/distroless/cc-debian13 AS runtime',
+      'COPY --from=b /x /app/x',
+      'RUN ["/app/x", "--version"]',
+      'ENTRYPOINT ["/app/x"]',
+      '',
+    ].join('\n');
+    expect(findings(cyclic).map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+  });
+});
+
 describe('unit · reading a Dockerfile', () => {
   test('leading FROM flags are not the base image', () => {
     // `--platform=$BUILDPLATFORM` read as the base made `libcOf` answer undefined, and undefined

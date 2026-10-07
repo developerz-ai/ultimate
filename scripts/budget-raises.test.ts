@@ -51,7 +51,7 @@ describe('a raise must state its number and its reason', () => {
     expect(finding.code).toBe('X_BUDGET_RAISE_UNSTATED');
     expect(finding.at).toBe(`${PATH}:3`);
     expect(finding.fix).toContain('// measured: <N> B');
-    expect(finding.fix).toContain('restore js: 16kb');
+    expect(finding.fix).toContain("restore js: '16kb'");
   });
 
   test('a comment directly above carrying measured: N B and why: states it', () => {
@@ -94,6 +94,61 @@ describe('a raise must state its number and its reason', () => {
     expect(
       checkBudgetRaises([{ path: PATH, base: undefined, now: route("{ js: '90kb' }") }]),
     ).toEqual([]);
+  });
+});
+
+describe('deleting a js budget is an unlimited raise', () => {
+  test('`budget: {}`, a budget with no js, or no budget key at all, is reported against the old value', () => {
+    expect(raises(route("{ js: '16kb' }"), route('{}'))).toEqual(['js:16kb->none']);
+    expect(raises(route("{ js: '16kb' }"), route("{ css: '4kb' }"))).toEqual(['js:16kb->none']);
+    const unbudgeted = "export const config = defineRoute({\n  render: 'csr',\n});\n";
+    const [gone] = checkBudgetRaises([
+      { path: PATH, base: route("{ js: '16kb' }"), now: unbudgeted },
+    ]);
+    expect(gone).toEqual({
+      file: PATH,
+      line: 1,
+      key: 'js',
+      was: '16kb',
+      now: 'none',
+      keyRemoved: true,
+    });
+    // No budget line is left to sit a comment above: the fix restores the whole key, quoted, and
+    // names the command that re-checks it.
+    const fix = raiseFinding(gone ?? expect.unreachable('no raise'), BASE_REF).fix;
+    expect(fix).toContain("budget: { js: '16kb' }");
+    expect(fix).not.toContain('directly above the budget line');
+    expect(fix).toContain('bun run budget-raises --json');
+  });
+
+  test('a js that is no longer a literal is unread, so it is an unlimited raise too', () => {
+    expect(raises(route("{ js: '16kb' }"), route('{ js: LIMIT }'))).toEqual(['js:16kb->none']);
+    // A whole budget that became a constant keeps its key line, so a statement above it counts.
+    expect(raises(route("{ js: '16kb' }"), route('LIMIT'))).toEqual(['js:16kb->none']);
+    expect(readBudget(route('LIMIT'))).toEqual({ line: 3 });
+    const stated = '  // measured: 880000 B — why: the dashboard ships the chart library\n';
+    expect(raises(route("{ js: '16kb' }"), route('LIMIT', stated))).toEqual([]);
+  });
+
+  test('a removal stated directly above the budget line (measured + why) is accepted', () => {
+    const stated = '  // measured: 880000 B — why: the dashboard is admin-only and unbudgeted\n';
+    expect(raises(route("{ js: '16kb' }"), route('{}', stated))).toEqual([]);
+  });
+
+  test('a backtick literal is read like a quoted one — it is not an absent budget', () => {
+    expect(readBudget(route('{ js: `20kb` }'))).toEqual({
+      line: 3,
+      js: { written: '20kb', bytes: 20480 },
+    });
+    expect(raises(route("{ js: '30kb' }"), route('{ js: `900kb` }'))).toEqual(['js:30kb->900kb']);
+    expect(raises(route('{ js: `30kb` }'), route("{ js: '20kb' }"))).toEqual([]);
+    // An interpolated template is not a literal this rule can weigh.
+    expect(readBudget(route(`{ js: \`${'$'}{N}kb\` }`))).toEqual({ line: 3 });
+  });
+
+  test('a route the base did not budget is not a raise when it still has none', () => {
+    const bare = "export const config = defineRoute({ render: 'csr' });\n";
+    expect(checkBudgetRaises([{ path: PATH, base: bare, now: bare }])).toEqual([]);
   });
 });
 

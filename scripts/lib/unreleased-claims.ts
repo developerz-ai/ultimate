@@ -72,30 +72,38 @@ export interface ClaimGap {
   readonly at: string;
 }
 
+/**
+ * A pin row's key: the page, then the version it calls unreleased. Per SITE, not per page: a
+ * per-page count let a fixed line be swapped for a new one about another version at an equal count.
+ */
+export const claimSite = (claim: UnreleasedClaim): string => `${claim.path}: ${claim.version}`;
+
 /** Over its pin is a new stale line; under it is a pin nobody lowered. Both fail. */
 export function claimGaps(
   claims: readonly UnreleasedClaim[],
   pins: Readonly<Record<string, number>> = UNRELEASED_CLAIM_PINS,
 ): readonly ClaimGap[] {
-  const byPath = new Map<string, UnreleasedClaim[]>();
-  for (const claim of claims) byPath.set(claim.path, [...(byPath.get(claim.path) ?? []), claim]);
+  const bySite = new Map<string, UnreleasedClaim[]>();
+  for (const claim of claims) {
+    bySite.set(claimSite(claim), [...(bySite.get(claimSite(claim)) ?? []), claim]);
+  }
   const gaps: ClaimGap[] = [];
-  for (const path of new Set([...byPath.keys(), ...Object.keys(pins)])) {
-    const found = byPath.get(path) ?? [];
-    const pinned = Object.hasOwn(pins, path) ? (pins[path] ?? 0) : 0;
+  for (const site of new Set([...bySite.keys(), ...Object.keys(pins)])) {
+    const found = bySite.get(site) ?? [];
+    const pinned = Object.hasOwn(pins, site) ? (pins[site] ?? 0) : 0;
     const first = found[0];
     if (found.length > pinned && first !== undefined) {
       gaps.push({
         code: 'X_DOC_UNRELEASED_STALE',
-        cause: `${path}:${first.line} calls ${first.version} unreleased, and CHANGELOG.md dates ${first.version} — ${found.length} such line(s) here, pinned at ${pinned}`,
-        fix: `edit ${path}:${first.line} — drop "unreleased" (or name the version that is), then rerun: bun run changelog-check`,
-        at: `${path}:${first.line}`,
+        cause: `${first.path}:${first.line} calls ${first.version} unreleased, and CHANGELOG.md dates ${first.version} — ${found.length} such line(s) there, pinned at ${pinned}`,
+        fix: `edit ${first.path}:${first.line} — drop "unreleased" (or name the version that is), then rerun: bun run changelog-check`,
+        at: `${first.path}:${first.line}`,
       });
     } else if (found.length < pinned) {
       gaps.push({
         code: 'X_DOC_UNRELEASED_PIN_STALE',
-        cause: `${path} has ${found.length} stale "unreleased" line(s) and ${UNRELEASED_PINS_FILE} still allows ${pinned}`,
-        fix: `edit ${UNRELEASED_PINS_FILE} — set the row for ${path} to ${found.length}, or delete it at 0`,
+        cause: `${site} has ${found.length} stale "unreleased" line(s) and ${UNRELEASED_PINS_FILE} still allows ${pinned}`,
+        fix: `edit ${UNRELEASED_PINS_FILE} — set the row '${site}' to ${found.length}, or delete it at 0`,
         at: UNRELEASED_PINS_FILE,
       });
     }

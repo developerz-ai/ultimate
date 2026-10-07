@@ -1,6 +1,8 @@
 // The ratchet under `changelog-check`'s unreleased-claim rule: how many lines on each current page
-// still call a DATED version "unreleased". A count may fall and may never rise; a count above what
-// is measured is `X_DOC_UNRELEASED_PIN_STALE`, so the sweep and the pin land in one commit.
+// still call a DATED version "unreleased", keyed `<page>: <version>` — per site since plan 101
+// sweep 11c, so a fixed line cannot be swapped for a new one at an equal count. A count may fall
+// and may never rise; a count above what is measured is `X_DOC_UNRELEASED_PIN_STALE`, so the sweep
+// and the pin land in one commit.
 //
 // why: measured 2026-09-23, the day 21.0.0 was dated — 33 lines on 17 pages, every one written the
 // day before and true then. Plan 101 slice 17 swept them the same day, and this table holds what

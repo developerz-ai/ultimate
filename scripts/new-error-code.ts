@@ -26,6 +26,7 @@ import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { NewErrorCode } from './lib/error-code-plan';
 import {
   backlogPinIn,
+  codeNameIn,
   FIX_TABLES,
   fixRowIn,
   registerIn,
@@ -137,6 +138,11 @@ export interface Planned {
   readonly errorsPath: string;
   readonly errorsTs: string;
   readonly wiki: string;
+  /**
+   * The package's code NAME table (`SEO_ERROR_CODES`), when it keeps one apart from the titles:
+   * written in `errorsPath` itself when it lives there, else in the package's `errors.ts` (`ui`).
+   */
+  readonly names?: { readonly path: string; readonly text: string } | undefined;
   /** The third edit, when the code's tier has a status to decide: the table or the backlog. */
   readonly status?: { readonly path: string; readonly text: string } | undefined;
   /** The package's typed fix table, when it keeps one (`FIX_TABLES`): the `--fix` line as a row. */
@@ -161,6 +167,12 @@ export async function planFiles(
     `packages/${input.pkg}/src/${input.pkg}-error-codes.ts`,
     `packages/${input.pkg}/src/errors.ts`,
     `packages/${input.pkg}/src/${input.pkg}-error.ts`,
+    // Where a package split its TITLES out of `errors.ts` so the constructors can be side-effect
+    // free (`@ultimat3/action`, `http` and `realtime` — `error-titles.ts`; `ui` — `error-registry.ts`).
+    // After `errors.ts` on purpose: a file the planner cannot add to is passed over, so these only
+    // win where `errors.ts` is only the constructors.
+    `packages/${input.pkg}/src/error-titles.ts`,
+    `packages/${input.pkg}/src/error-registry.ts`,
   ];
   let registered: { readonly errorsPath: string; readonly errorsTs: string } | undefined;
   let unrecognised: ScriptError | undefined;
@@ -185,7 +197,20 @@ export async function planFiles(
       fix: 'bun run workspaces:list — then rerun with --package set to one of the listed package directories',
     });
   }
-  const { errorsPath, errorsTs } = registered;
+  const { errorsPath } = registered;
+  let errorsTs = registered.errorsTs;
+  let names: Planned['names'];
+  const inFile = codeNameIn(errorsTs, errorsPath, input, false);
+  if (inFile !== undefined) errorsTs = inFile;
+  else {
+    // `@ultimat3/ui` keeps the registration in `error-registry.ts` and the name table in `errors.ts`.
+    const companion = `packages/${input.pkg}/src/errors.ts`;
+    const file = Bun.file(`${root}/${companion}`);
+    if (companion !== errorsPath && (await file.exists())) {
+      const text = codeNameIn(await file.text(), companion, input, true);
+      if (text !== undefined) names = { path: companion, text };
+    }
+  }
   const wiki = rowIn(await Bun.file(`${root}/${WIKI_PAGE}`).text(), input);
   const fixesPath = FIX_TABLES.get(input.pkg);
   let fixes: Planned['fixes'];
@@ -195,7 +220,7 @@ export async function planFiles(
     const current = (await table.exists()) ? await table.text() : '';
     fixes = { path: fixesPath, text: fixRowIn(current, fixesPath, input) };
   }
-  if (decision.kind === 'none') return { errorsPath, errorsTs, wiki, fixes };
+  if (decision.kind === 'none') return { errorsPath, errorsTs, wiki, names, fixes };
   const path = decision.kind === 'row' ? statusTableFor(input.pkg) : STATUS_BACKLOG;
   const current = await Bun.file(`${root}/${path}`).text();
   if (decision.kind === 'pin') {
@@ -203,6 +228,7 @@ export async function planFiles(
       errorsPath,
       errorsTs,
       wiki,
+      names,
       fixes,
       status: { path, text: offSocketPinIn(current, path, input) },
     };
@@ -215,7 +241,7 @@ export async function planFiles(
       statusRowIn(await file.text(), other, input, decision.status);
   }
   const text = statusRowIn(current, path, input, decision.status);
-  return { errorsPath, errorsTs, wiki, fixes, status: { path, text } };
+  return { errorsPath, errorsTs, wiki, names, fixes, status: { path, text } };
 }
 
 export function inputFrom(argv: readonly string[]): NewErrorCode {
@@ -254,7 +280,7 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   const planned = await planFiles(root, input, statusDecision(input.pkg, argv));
   await Bun.write(`${root}/${planned.errorsPath}`, planned.errorsTs);
   await Bun.write(`${root}/${WIKI_PAGE}`, planned.wiki);
-  for (const extra of [planned.fixes, planned.status]) {
+  for (const extra of [planned.names, planned.fixes, planned.status]) {
     if (extra !== undefined) await Bun.write(`${root}/${extra.path}`, extra.text);
   }
   return {
@@ -262,6 +288,7 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
     written: [
       planned.errorsPath,
       WIKI_PAGE,
+      ...(planned.names === undefined ? [] : [planned.names.path]),
       ...(planned.fixes === undefined ? [] : [planned.fixes.path]),
       ...(planned.status === undefined ? [] : [planned.status.path]),
     ],

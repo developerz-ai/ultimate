@@ -3,6 +3,8 @@
 // guards each carried their own copy of all of it (a gap union, a `*PinnedFor`, a regex
 // `apply*Unpin`, a counts walk, a two-branch main), and the copies had drifted: three read a pin's
 // `reason` and five did not. What stays in a guard is what is its own — the scanner and the words.
+// A guard grouped by PACKAGE (the default `groupOf`) admits a swap — one pinned site fixed, a new
+// one added, the count unmoved — which a guard closes by grouping per site, as `secret-compare` does.
 
 import { flagBool, flagList, parseScriptArgs } from './args';
 import type { Finding } from './log';

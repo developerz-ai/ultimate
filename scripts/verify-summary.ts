@@ -75,8 +75,12 @@ function findingItems(step: PartStep): readonly Item[] {
   ];
 }
 
-/** The document's own `summary` and its top-level `findings` — what no single step owns. */
-function documentFacts(text: string): { readonly summary: string; readonly top: Finding[] } {
+/** The document's own `ok`, `summary` and top-level `findings` — what no single step owns. */
+function documentFacts(text: string): {
+  readonly ok: boolean;
+  readonly summary: string;
+  readonly top: Finding[];
+} {
   const lines = text.trim().split('\n');
   const doc: unknown = JSON.parse(lines[lines.length - 1] ?? '');
   const field = (key: string): unknown =>
@@ -84,6 +88,8 @@ function documentFacts(text: string): { readonly summary: string; readonly top: 
   const summary = field('summary');
   const top = field('findings');
   return {
+    // Only an explicit `true` is green: a document that does not say so is not a pass.
+    ok: field('ok') === true,
     summary: typeof summary === 'string' ? summary : '',
     top: Array.isArray(top) ? top.filter(isFinding) : [],
   };
@@ -97,10 +103,12 @@ function documentFacts(text: string): { readonly summary: string; readonly top: 
 export function renderMergeSummary(text: string, file: string, pointer: string): string {
   // Refuses anything but a verify document, by the same reader and code the merge uses.
   const { steps } = parsePart(file, text, REPO_GATE);
-  const { summary, top } = documentFacts(text);
+  const { ok, summary, top } = documentFacts(text);
   // The table is the human render's own, over steps stripped of everything that can be large.
   const table: CommandResult = {
-    ok: steps.every((step) => step.ok),
+    // The merge's verdict, never one recomputed from the steps: an incomplete merge (a step no
+    // part ran) is red with every step it saw green, and the summary must not print ✓ over it.
+    ok: ok && steps.every((step) => step.ok),
     command: 'verify',
     summary,
     steps: steps.map(({ output: _output, warnings: _warnings, ...step }) => ({

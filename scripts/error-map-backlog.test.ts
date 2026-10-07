@@ -10,9 +10,14 @@ import {
   OFF_SOCKET,
   UNDECIDED,
 } from './error-map-backlog';
+import { BASE_REF, baseRef, textAt } from './lib/base-ref';
+import { tableDeclaration } from './lib/pin-tables';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 /**
- * THE RATCHET. The undecided count as of this edit. A smaller count is the goal — lower this number
+ * THE RATCHET. The undecided count as of this edit. A count alone admits a SWAP — decide one code,
+ * add another, the number holds — so `every code in it was undecided at origin/main` below closes
+ * that per code, against the base's own `UNDECIDED` literal. A smaller count is the goal — lower this number
  * to match in the same diff, so the debt cannot regrow into the room it left. A larger one is the
  * failure this test exists for: decide the new code instead (`--status <n>` or `--off-socket`).
  */
@@ -39,6 +44,48 @@ describe('UNDECIDED only shrinks', () => {
       );
     }
   });
+});
+
+/** The codes a source text's `UNDECIDED` literal lists, comments dropped. */
+const undecidedIn = (source: string): ReadonlySet<string> =>
+  new Set(
+    [
+      ...(tableDeclaration(source, 'UNDECIDED') ?? '')
+        .replace(/\/\/[^\n]*/g, '')
+        .matchAll(/'(X_[A-Z0-9_]+)'/g),
+    ].map((match) => match[1] as string),
+  );
+
+/** Codes undecided now that the base did not list: each is a new undecided code, never allowed. */
+const newlyUndecided = (now: readonly string[], base: ReadonlySet<string>): readonly string[] =>
+  now.filter((code) => !base.has(code));
+
+describe('UNDECIDED only shrinks, code by code', () => {
+  test('a decided code swapped for a new one at an equal count is caught', () => {
+    const base = undecidedIn(
+      "export const UNDECIDED: Pins = {\n  // 'X_IN_A_COMMENT'\n  db: ['X_DB_A', 'X_DB_B'],\n};\n",
+    );
+    expect([...base]).toEqual(['X_DB_A', 'X_DB_B']);
+    expect(newlyUndecided(['X_DB_A', 'X_DB_C'], base)).toEqual(['X_DB_C']);
+    expect(newlyUndecided(['X_DB_A'], base)).toEqual([]);
+  });
+
+  test(
+    'every code in it was undecided at origin/main',
+    async () => {
+      const root = repoRoot();
+      expect(await baseRef(root)).toBe(BASE_REF);
+      const then = await textAt(root, BASE_REF, 'scripts/error-map-backlog.ts');
+      if (then === undefined)
+        expect.unreachable(`scripts/error-map-backlog.ts is not at ${BASE_REF}`);
+      const base = undecidedIn(then);
+      // Non-vacuity: the base literal was found and read.
+      expect(base.size).toBeGreaterThan(0);
+      // A new code here is a code nobody decided: give it a status row or `--off-socket` instead.
+      expect(newlyUndecided(flat(UNDECIDED), base)).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });
 
 describe('two lists, one meaning each', () => {

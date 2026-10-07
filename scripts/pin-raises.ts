@@ -8,7 +8,10 @@
 // A row higher than at `origin/main`'s tip (absent there reads as 0) needs a `why:` on the row or in
 // the comment block directly above it — and one the base did not already have for that row, since
 // the sentence written for the old number licenses nothing about the new one. Else
-// `X_PIN_RAISE_UNSTATED`. A checkout without `origin/main` is refused (`X_PIN_BASE_MISSING`).
+// `X_PIN_RAISE_UNSTATED`. A table wholly RE-KEYED from per-page to per-site keys (no row key kept,
+// no base key already a site, its total not above the base's) is one debt under new names, stated
+// by a `why:` in its header the base's header did not carry. A checkout without `origin/main` is
+// refused (`X_PIN_BASE_MISSING`).
 //
 //   bun run scripts/pin-raises.ts [--json]
 
@@ -117,10 +120,48 @@ const headerStates = (table: PinTableVersions): boolean => {
   return /\bwhy:/.test(firstExport === -1 ? table.source : table.source.slice(0, firstExport));
 };
 
+/** Each `why: …` sentence in the comment header above a file's first export, whitespace collapsed. */
+export function headerWhys(source: string): ReadonlySet<string> {
+  const first = source.search(/^export /m);
+  const header = first === -1 ? source : source.slice(0, first);
+  const text = header
+    .split('\n')
+    .map((line) => line.trim().replace(/^(?:\/\/|\/\*+|\*\/?)\s?/, ''))
+    .join('\n');
+  const whys = new Set<string>();
+  for (const paragraph of text.split(/\n\s*\n/)) {
+    for (const piece of paragraph.split(/(?=\bwhy:)/)) {
+      if (piece.startsWith('why:')) whys.add(piece.replace(/\s+/g, ' ').trim());
+    }
+  }
+  return whys;
+}
+
+const total = (rows: ReadonlyMap<string, number>): number =>
+  [...rows.values()].reduce((sum, count) => sum + count, 0);
+
+/**
+ * A table wholly RE-KEYED since the base from per-PAGE to per-SITE keys — not one row key in
+ * common, no base key already a site, the total not above the base's — is one debt under new
+ * names. A `why:` in its header that the base's header did not carry states every row. Sharing one key, or a total
+ * that grew, and it is compared row by row like any table: a rename cannot carry a raise.
+ */
+const rekeyStates = (table: PinTableVersions): boolean => {
+  const base = table.base;
+  if (base === undefined || base.size === 0 || table.now.size === 0) return false;
+  // Only the page-to-site migration: a base already keyed per site (`<page>: <site>`) is compared
+  // row by row, or later debt could replace existing debt under one fresh header sentence.
+  if ([...base.keys()].some((row) => row.slice(row.indexOf('.') + 1).includes(': '))) return false;
+  if ([...table.now.keys()].some((row) => base.has(row))) return false;
+  if (total(table.now) > total(base)) return false;
+  const before = headerWhys(table.baseSource ?? '');
+  return [...headerWhys(table.source)].some((why) => !before.has(why));
+};
+
 export function checkPinRaises(tables: readonly PinTableVersions[]): readonly PinRaise[] {
   const raises: PinRaise[] = [];
   for (const table of tables) {
-    if (headerStates(table)) continue;
+    if (headerStates(table) || rekeyStates(table)) continue;
     for (const [row, now] of table.now) {
       const was = table.base?.get(row) ?? 0;
       if (now <= was) continue;

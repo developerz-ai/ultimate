@@ -91,7 +91,15 @@ export interface FixCitation {
  * names two commands (`x db migrate, then confirm with x db query "…" --json`), and charging the
  * second command's flags to the first would report a finding on the wrong half of the sentence.
  */
-export function fixCitations(fix: string): readonly FixCitation[] {
+/**
+ * The repo's in-repo spelling of the CLI, `bun run x -- <command>`, read as the citation it is —
+ * `x <command>` — so a fix written the way CLAUDE.md prescribes is resolved, not skipped.
+ */
+export const asXCitation = (text: string): string =>
+  text.replace(/(^|[\s;|&("'`])bun\s+run\s+x\s+--(?=\s)/g, '$1x');
+
+export function fixCitations(written: string): readonly FixCitation[] {
+  const fix = asXCitation(written);
   const matches = [...fix.matchAll(CITATION)].filter((match) => match[1] !== undefined);
   return matches.map((match, index) => {
     const start = match.index + match[0].length;

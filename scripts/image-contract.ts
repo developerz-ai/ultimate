@@ -8,7 +8,9 @@
 //
 // THREE RULES over EVERY Dockerfile in the tree, derived from files, none needing a stale table:
 //   libc     whatever the runtime COPYs its artifact from — a stage by name or index, or an
-//            external image — must link the libc family the runtime provides. `alpine` means
+//            external image, and RECURSIVELY whatever that stage copied in (alpine build ->
+//            debian assemble -> distroless still ships a musl binary) — must link the libc family
+//            the runtime provides. `alpine` means
 //            musl and `slim`/`debian`/`distroless/cc` mean glibc for as long as those
 //            distributions exist; an image neither pattern recognises yields NO finding, because
 //            unknown is not broken.
@@ -35,6 +37,7 @@
 
 import { renderFixShellArg, renderThrowable, SECRETS_KEY_FILE } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
+import { baseImageOf, copySources, parseDockerfile, producersOf } from './lib/dockerfile-stages';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -42,60 +45,8 @@ import { ScriptError } from './lib/script-error';
 
 export const DOCKERFILE = 'docker/Dockerfile';
 
-export interface Instruction {
-  readonly keyword: string;
-  readonly value: string;
-  /** 1-based, so `docker/Dockerfile:92` opens it. */
-  readonly line: number;
-}
-
-export interface Stage {
-  readonly base: string;
-  readonly name?: string;
-  readonly line: number;
-  readonly instructions: readonly Instruction[];
-}
-
-/**
- * Stages, with continuations joined and comments dropped. A `RUN` that spans five lines is one
- * instruction — reading the file line by line would see its tail as five unknown keywords.
- */
-export function parseDockerfile(text: string): readonly Stage[] {
-  const stages: Stage[] = [];
-  const lines = text.split('\n');
-  let buffer = '';
-  let start = 0;
-  for (const [index, raw] of lines.entries()) {
-    const line = raw ?? '';
-    if (buffer === '' && /^\s*(?:#|$)/.test(line)) continue;
-    if (buffer === '') start = index + 1;
-    buffer += line.replace(/\\\s*$/, ' ');
-    if (/\\\s*$/.test(line)) continue;
-    const match = /^\s*([A-Za-z]+)\s+(.*)$/.exec(buffer);
-    buffer = '';
-    if (match === null) continue;
-    const keyword = (match[1] ?? '').toUpperCase();
-    const value = (match[2] ?? '').trim();
-    if (keyword === 'FROM') {
-      // `FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build` — the flags come FIRST, and
-      // reading `--platform=…` as the base image made `libcOf` answer `undefined`, which this file
-      // treats as "unknown, say nothing". A cross-build Dockerfile would therefore have skipped the
-      // libc rule entirely: the one syntax most likely to pair two architectures, silently exempt.
-      const from = /^((?:--\S+\s+)*)(\S+)(?:\s+[Aa][Ss]\s+(\S+))?/.exec(value);
-      stages.push({
-        base: from?.[2] ?? value,
-        line: start,
-        instructions: [],
-        ...(from?.[3] === undefined ? {} : { name: from[3] }),
-      });
-      continue;
-    }
-    const stage = stages.at(-1);
-    if (stage === undefined) continue;
-    (stage.instructions as Instruction[]).push({ keyword, value, line: start });
-  }
-  return stages;
-}
+export type { Instruction, Producer, Stage } from './lib/dockerfile-stages';
+export { baseImageOf, copySources, parseDockerfile, producersOf };
 
 export type Libc = 'musl' | 'glibc';
 
@@ -130,23 +81,6 @@ export function argv0(value: string): string | undefined {
   return text.split(/\s+/)[0];
 }
 
-/** `COPY --from=build /out/app /app/x` -> `build`. */
-export const copySources = (stage: Stage): readonly string[] =>
-  stage.instructions
-    .filter((one) => one.keyword === 'COPY')
-    .flatMap((one) => [...one.value.matchAll(/--from=(\S+)/g)].map((match) => match[1] ?? ''));
-
-/** A stage may build `FROM` another stage; follow it to the image that actually supplies the libc. */
-export function baseImageOf(stage: Stage, stages: readonly Stage[]): string {
-  let current = stage;
-  for (let hop = 0; hop < stages.length; hop += 1) {
-    const next = stages.find((one) => one.name?.toLowerCase() === current.base.toLowerCase());
-    if (next === undefined) return current.base;
-    current = next;
-  }
-  return current.base;
-}
-
 export type ImageGapKind = 'libc' | 'guard';
 
 export interface ImageGap {
@@ -159,20 +93,6 @@ export interface ImageGap {
   readonly runtime: string;
 }
 
-/**
- * Where a `COPY --from=<source>` artifact was linked: a stage by name, a stage by INDEX (`--from=0`
- * is the first `FROM`), or else an image reference — whose libc is its own, exactly as a stage's.
- * Reading every non-name as "nothing to compare" let `--from=alpine:3` and `--from=0` through.
- */
-function producerImage(source: string, stages: readonly Stage[]): { image: string; line?: number } {
-  const named = stages.find((one) => one.name?.toLowerCase() === source.toLowerCase());
-  const indexed = /^\d+$/.test(source) ? stages[Number(source)] : undefined;
-  const stage = named ?? indexed;
-  return stage === undefined
-    ? { image: source }
-    : { image: baseImageOf(stage, stages), line: stage.line };
-}
-
 /** Pure, so the negative case is a fixture rather than an edit to the Dockerfile that ships. */
 export function checkImage(dockerfile: string, file: string = DOCKERFILE): readonly ImageGap[] {
   const stages = parseDockerfile(dockerfile);
@@ -182,14 +102,14 @@ export function checkImage(dockerfile: string, file: string = DOCKERFILE): reado
   const runtimeLibc = libcOf(runtimeImage);
   const gaps: ImageGap[] = [];
 
-  for (const source of copySources(runtime)) {
-    const producer = producerImage(source, stages);
+  for (const producer of producersOf(runtime, stages)) {
+    const { source } = producer;
     const libc = libcOf(producer.image);
     if (libc === undefined || runtimeLibc === undefined || libc === runtimeLibc) continue;
     gaps.push({
       kind: 'libc',
       file,
-      // An external image has no line of its own; the stage that copies from it is where to look.
+      // A stage producer is its FROM line; an external image is the stage that copies from it.
       line: producer.line ?? runtime.line,
       detail: `${source} on ${producer.image} (${libc})`,
       runtime: `${runtimeImage} (${runtimeLibc})`,

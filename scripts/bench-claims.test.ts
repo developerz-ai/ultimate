@@ -163,11 +163,17 @@ describe('unit · a file that is not there', () => {
     }
   });
 
-  test('neither file is the one silence left, and it is about the TREE, not the rule', async () => {
-    // A synthetic root in scripts/verify.test.ts makes no capacity claims and commits no bench.
+  test('neither file is a floor, not a silence: CLAUDE.md links the claims page', async () => {
+    // A tree with no bench at all used to answer []: a green step over figures nobody checked.
     const root = await dir({ 'README.md': '# not this repo\n' });
     try {
-      expect(await benchClaimGaps(root)).toEqual([]);
+      const gaps = await benchClaimGaps(root);
+      expect(gaps.length).toBe(CLAIMS.length);
+      expect(gaps.every((gap) => gap.kind === 'absent')).toBe(true);
+      const finding = benchGapFindingFor(gaps[0] as BenchGap);
+      expect(finding.code).toBe('X_BENCH_CLAIM_STALE');
+      expect(finding.cause).toContain(CLAIMS_FILE);
+      expect(finding.fix).toMatch(/^git checkout origin\/main -- /);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

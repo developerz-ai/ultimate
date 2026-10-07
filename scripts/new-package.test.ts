@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { PACKAGE_FILES } from '@ultimat3/cli';
+import { registerIn } from './lib/error-code-plan';
 import { allowedTiersFor, TIERS } from './lib/tiers';
 import {
   nameProblem,
@@ -147,5 +148,56 @@ describe('unit · the name is a package directory, nothing else', () => {
     for (const name of [...Object.values(TIERS).flat(), 'create-ultimate', 'i18n', 'brand-new']) {
       expect(nameProblem(name)).toBeUndefined();
     }
+  });
+});
+
+describe('unit · the emitted package.json is the manifest every other package has', () => {
+  const manifest = (): Record<string, unknown> =>
+    JSON.parse(fileNamed('widgets', 1, 'package.json')) as Record<string, unknown>;
+  const withDescription = (description: string): Record<string, unknown> => {
+    const file = packageTemplates('widgets', 1, description).find(
+      (entry) => entry.path === 'package.json',
+    );
+    return JSON.parse(file?.contents ?? '') as Record<string, unknown>;
+  };
+
+  // It wrote `>=1.3.0` while every other manifest said `>=1.4.2`, and `bun-pin.test.ts` needs one
+  // series — a scaffolded package was a red gate the moment it existed.
+  test('engines.bun is the floor the root manifest declares', async () => {
+    const root = (await Bun.file(`${import.meta.dir}/../package.json`).json()) as {
+      engines: { bun: string };
+    };
+    expect((manifest()['engines'] as { bun: string }).bun).toBe(root.engines.bun);
+  });
+
+  // `--description 'the "fast" one'` was interpolated raw: invalid JSON, so the next install died.
+  test('a description with quotes, backslashes or a newline is still valid JSON, verbatim', () => {
+    for (const description of ['the "fast" one', 'a \\ path', 'two\nlines', "it's 'quoted'"]) {
+      expect(withDescription(description)['description']).toBe(description);
+    }
+  });
+});
+
+describe('unit · the scaffolded errors.ts is a shape new-error-code can add to', () => {
+  // The template had no TITLES object and no registerErrorCodes, so the generator refused a package
+  // the scaffolder had just written: "register it by hand" as the first thing to do with a new package.
+  test('registerIn adds a code to the array and the titles, and the result transpiles', () => {
+    const source = fileNamed('widget-set', 1, 'src/errors.ts');
+    const out = registerIn(source, 'packages/widget-set/src/errors.ts', {
+      code: 'X_WIDGET_SET_EMPTY',
+      pkg: 'widget-set',
+      title: 'a widget set with no widgets',
+      cause: 'c',
+      fix: 'f',
+    });
+    expect(out).toContain("  'X_WIDGET_SET_EMPTY',\n] as const;");
+    expect(out).toContain("  X_WIDGET_SET_EMPTY: 'a widget set with no widgets',\n};");
+    expect(() => new Bun.Transpiler({ loader: 'ts' }).transformSync(out)).not.toThrow();
+  });
+
+  test('it registers the title it declares', () => {
+    const source = fileNamed('widget-set', 1, 'src/errors.ts');
+    expect(source).toContain('registerErrorCodes(');
+    expect(source).toContain('WIDGET_SET_ERROR_TITLES');
   });
 });

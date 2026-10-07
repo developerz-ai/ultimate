@@ -5,6 +5,7 @@
 // delete the other's fixture. The compile itself runs on the gate's `manifest` step.
 
 import { describe, expect, test } from 'bun:test';
+import { fenceSite } from './lib/fence-sites';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { FenceFailure } from './readme-fences';
 import {
@@ -16,17 +17,18 @@ import {
 } from './wiki-fences';
 import { WIKI_FENCE_BACKLOG } from './wiki-fences-backlog';
 
-const fail = (page: string, line: number): FenceFailure => ({
+const fail = (page: string, line: number, first = 'const a = b;'): FenceFailure => ({
   pkg: page,
   readmeLine: line,
   reason: 'TS2304: Cannot find name.',
+  site: `${page}: ${first}`,
 });
 
 describe('the wiki-fence ratchet', () => {
   test('a page failing more examples than it is pinned at is the finding, naming the line', () => {
     const gaps = checkWikiFences(
       { pages: ['Actions'], failures: [fail('Actions', 12), fail('Actions', 40)] },
-      { Actions: 1 },
+      { 'Actions: const a = b;': 1 },
     );
     expect(gaps.map((gap) => gap.kind)).toEqual(['over']);
     const finding = wikiFenceFinding(gaps[0] ?? expect.unreachable('no gap'));
@@ -42,9 +44,15 @@ describe('the wiki-fence ratchet', () => {
 
   test('at the pin holds, and under it is a stale pin whose fix is one command', () => {
     expect(
-      checkWikiFences({ pages: ['Money'], failures: [fail('Money', 3)] }, { Money: 1 }),
+      checkWikiFences(
+        { pages: ['Money'], failures: [fail('Money', 3)] },
+        { 'Money: const a = b;': 1 },
+      ),
     ).toEqual([]);
-    const [stale] = checkWikiFences({ pages: ['Money'], failures: [] }, { Money: 2 });
+    const [stale] = checkWikiFences(
+      { pages: ['Money'], failures: [] },
+      { 'Money: const a = b;': 2 },
+    );
     const finding = wikiFenceFinding(stale ?? expect.unreachable('no gap'));
     expect(finding.code).toBe('X_WIKI_EXAMPLE_PIN_STALE');
     expect(finding.fix).toBe('bun run scripts/wiki-fences.ts --pin');
@@ -60,21 +68,29 @@ describe('the wiki-fence ratchet', () => {
     expect(wikiFenceFinding(refused[0] ?? expect.unreachable('no gap')).cause).toContain('TS5058');
   });
 
-  test('--pin lowers a count, drops a zero, refuses to raise one, and writes Biome keys', () => {
+  test('a fixed example swapped for a new broken one on the same page is reported', () => {
+    const gaps = checkWikiFences(
+      { pages: ['Money'], failures: [fail('Money', 9, 'money(1, "EUR");')] },
+      { 'Money: const a = b;': 1 },
+    );
+    expect(gaps.map((gap) => gap.kind).sort()).toEqual(['over', 'stale']);
+  });
+
+  test('--pin lowers a row, drops a zero, refuses to raise one, and writes Biome keys', () => {
     const source = [
       'export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {',
-      '  Actions: 3,',
-      "  'Error-Codes': 2,",
-      '  Money: 1,',
+      "  'Actions: const a = b;': 3,",
+      "  'Error-Codes: x;': 2,",
+      "  'Money: y;': 1,",
       '};',
     ].join('\n');
     const next = pinnedWikiSource(
-      { Actions: 1, 'Error-Codes': 9 },
-      { Actions: 3, 'Error-Codes': 2, Money: 1 },
+      { 'Actions: const a = b;': 1, 'Error-Codes: x;': 9 },
+      { 'Actions: const a = b;': 3, 'Error-Codes: x;': 2, 'Money: y;': 1 },
       source,
     );
-    expect(next).toContain('  Actions: 1,\n');
-    expect(next).toContain("  'Error-Codes': 2,\n");
+    expect(next).toContain("  'Actions: const a = b;': 1,\n");
+    expect(next).toContain("  'Error-Codes: x;': 2,\n");
     expect(next).not.toContain('Money');
   });
 
@@ -85,13 +101,13 @@ describe('the wiki-fence ratchet', () => {
 
 describe('against this repo', () => {
   test(
-    'every pinned page exists and carries at least as many fences as it pins',
+    'every pinned site is a fence the wiki still opens with, as many times as it pins',
     async () => {
       const fences = await readWikiFences(repoRoot());
       expect(fences.length).toBeGreaterThan(100);
-      for (const [page, pinned] of Object.entries(WIKI_FENCE_BACKLOG)) {
-        const onPage = fences.filter((fence) => fence.pkg === page).length;
-        expect({ page, enough: onPage >= pinned }).toEqual({ page, enough: true });
+      for (const [site, pinned] of Object.entries(WIKI_FENCE_BACKLOG)) {
+        const atSite = fences.filter((fence) => fenceSite(fence) === site).length;
+        expect({ site, enough: atSite >= pinned }).toEqual({ site, enough: true });
       }
     },
     REPO_SCAN_TIMEOUT_MS,

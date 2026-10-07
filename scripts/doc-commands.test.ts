@@ -59,6 +59,16 @@ describe('a page that names a command this build cannot run', () => {
     expect(docCommandFindingFor(found[0] as never).cause).toContain('X_CLI_BAD_FLAG');
   });
 
+  test('the in-repo spelling `bun run x -- …` is the same citation as `x …`', () => {
+    // CLAUDE.md's own `bun run x -- <args>` row: the `--` hid every command after it.
+    const found = gaps('in this repo: `bun run x -- db query "select 1" --json`');
+    expect(found.map((one) => one.subject)).toEqual(['x db query']);
+    expect(gaps('```sh\nbun run x -- env check --fix\n```').map((one) => one.subject)).toEqual([
+      'x env --fix',
+    ]);
+    expect(gaps('`bun run x -- db migrate`')).toEqual([]);
+  });
+
   test('a shell fence is read — that is where a reader copies from', () => {
     expect(gaps('```\n  fix:   x db query "select 1"\n```')).toHaveLength(1);
   });
@@ -155,57 +165,65 @@ describe('the rule cannot quietly stop being one', () => {
 describe('the pin is a ratchet, so it may only shrink', () => {
   const pinned = (pins: Readonly<Record<string, number>>, ...files: readonly MarkdownFile[]) =>
     checkDocCommands({ files, catalog, allow: [], pins });
+  const QUERY = 'wiki/Pinned.md: x db query';
+  const DRIFT = 'wiki/Pinned.md: x db drift';
   const two = page('`x db query`\n`x db drift`', 'wiki/Pinned.md');
 
-  test('a page holding exactly its pin reports nothing — that is what a pin buys', () => {
-    expect(pinned({ 'wiki/Pinned.md': 2 }, two)).toEqual([]);
+  test('a page holding exactly its pinned sites reports nothing — that is what a pin buys', () => {
+    expect(pinned({ [QUERY]: 1, [DRIFT]: 1 }, two)).toEqual([]);
   });
 
-  test('one more than the pin never offers to raise it', () => {
+  test('a fixed citation cannot be SWAPPED for a new one at an equal count', () => {
+    // Per-page counts admitted this: one pin for the page, `x db query` fixed, `x db drift`
+    // written instead — still one. The new invocation is its own site, so it is unpinned.
+    const found = pinned({ [QUERY]: 1 }, page('`x db drift`', 'wiki/Pinned.md'));
+    expect(found.map((one) => `${one.kind} ${one.subject}`).sort()).toEqual([
+      `pin ${QUERY}`,
+      'unresolved x db drift',
+    ]);
+  });
+
+  test('one more line than the pin never offers to raise it', () => {
     // This test asserted the defect until 2026-08-22: it expected the SAME code and the same fix
     // the improved direction gets, which is `set DOC_COMMAND_PINS[…] to the first number in the
     // detail` — the bigger number. A ratchet printing the instruction for raising itself.
-    const found = pinned({ 'wiki/Pinned.md': 1 }, two);
+    const found = pinned({ [QUERY]: 1 }, page('`x db query`\n`x db query`', 'wiki/Pinned.md'));
     expect(found.map((one) => one.kind)).toEqual(['pin-exceeded']);
-    expect(found[0]?.subject).toBe('wiki/Pinned.md');
+    expect(found[0]?.subject).toBe(QUERY);
     expect(found[0]?.detail).toBe('2 now, pinned at 1');
     const finding = docCommandFindingFor(found[0] as never);
     expect(finding.code).toBe('X_DOC_COMMAND_PIN_EXCEEDED');
     expect(finding.fix).not.toContain('DOC_COMMAND_PINS');
     expect(finding.cause).toContain('may only come down');
+    expect(finding.at).toBe('wiki/Pinned.md');
   });
 
   test('a pin ABOVE what the page holds is a finding too — slack is a waiver nobody reads', () => {
-    const found = pinned({ 'wiki/Pinned.md': 2 }, page('`x db query`', 'wiki/Pinned.md'));
+    const found = pinned({ [QUERY]: 2 }, page('`x db query`', 'wiki/Pinned.md'));
     expect(found.map((one) => one.kind)).toEqual(['pin']);
     expect(found[0]?.detail).toBe('1 now, pinned at 2');
     // The direction that DOES ask for the number, so the two fixes are provably not one string.
     const finding = docCommandFindingFor(found[0] as never);
-    expect(finding.fix).toContain(
-      "set DOC_COMMAND_PINS['wiki/Pinned.md'] in scripts/doc-commands.ts",
-    );
+    expect(finding.fix).toContain(`set DOC_COMMAND_PINS['${QUERY}'] in scripts/doc-commands.ts`);
     // `at` is the file the fix EDITS, and the two directions edit different files: this one lowers
     // a number in the pin table, `pin-exceeded` above corrects citations in the page itself.
     expect(finding.at).toBe(PINS_FILE);
-    expect(docCommandFindingFor(pinned({ 'wiki/Pinned.md': 1 }, two)[0] as never).at).toBe(
-      'wiki/Pinned.md',
-    );
   });
 
   test('a pin that no page contradicts is still checked against zero', () => {
-    // The stale-allowance rule, one file set on: a pinned page whose last bad citation was fixed
+    // The stale-allowance rule, one file set on: a pinned site whose last bad citation was fixed
     // must lose its entry, or the number outlives the debt it recorded.
-    const found = pinned({ 'wiki/Gone.md': 1 }, page('nothing here'));
+    const found = pinned({ 'wiki/Gone.md: x db query': 1 }, page('nothing here'));
     expect(found.map((one) => one.kind)).toEqual(['pin']);
     expect(found[0]?.detail).toBe('0 now, pinned at 1');
     expect(docCommandFindingFor(found[0] as never).fix).toContain(
-      "DOC_COMMAND_PINS['wiki/Gone.md']",
+      "DOC_COMMAND_PINS['wiki/Gone.md: x db query']",
     );
   });
 
   test('a pin suppresses its own page and no other', () => {
     const found = pinned(
-      { 'wiki/Pinned.md': 1 },
+      { [QUERY]: 1 },
       page('`x db query`', 'wiki/Pinned.md'),
       page('`x db query`', 'wiki/Other.md'),
     );

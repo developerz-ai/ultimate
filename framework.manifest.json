@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ec9c5a5483664fda5f154d5280da6ecd558fe28205908886e0a605a8b4bfad9d",
+  "buildId": "2fcb8e44443a1d618ec5de96121aa67efb4f9038eb85eb34a1c297b9df45f68c",
   "tiers": {
     "0": [
       "core",
@@ -4601,6 +4601,11 @@
     },
     {
       "code": "X_WIKI_TABLE_MALFORMED",
+      "owner": "scripts",
+      "at": "scripts/wiki-tables.ts"
+    },
+    {
+      "code": "X_WIKI_TABLE_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/wiki-tables.ts"
     },

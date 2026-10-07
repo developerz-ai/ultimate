@@ -30,4 +30,18 @@ describe('importPinSource', () => {
       await rm(home, { recursive: true, force: true });
     }
   });
+
+  test("a `from './…'` inside a row KEY is data, never rewritten as an import", async () => {
+    // A fence-backlog key is a fence's first code line, and `import { x } from './api/posts';` is
+    // one: rewritten, its quotes broke the table literal and every pin comparison crashed.
+    const home = await mkdtemp(join(tmpdir(), 'pin-rows-key-'));
+    try {
+      const key = "mcp: import { publishPost } from './api/posts';";
+      const source = `export const DEMO_BACKLOG = { ${JSON.stringify(key)}: 1 };\n`;
+      const loaded = await importPinSource(source, join(home, 'scratch'), join(home, 'x-pins.ts'));
+      expect([...pinRows(loaded)]).toEqual([[`DEMO_BACKLOG.${key}`, 1]]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
 });

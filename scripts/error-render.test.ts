@@ -38,6 +38,45 @@ describe('checkErrorRendering catches the shape that shipped three times', () =>
     expect(found.map((one) => one.field)).toEqual(['cause', 'fix']);
   });
 
+  test('a bare unknown under a cast, a non-null assertion, parentheses or a ??/|| fallback', () => {
+    // Each renders the value itself: the cast and `!` are erased at runtime, the parentheses are
+    // grouping, and a fallback renders its left operand whenever that is an object.
+    for (const shape of [
+      'given as string',
+      'given!',
+      '(given)',
+      '((given as string))',
+      "given ?? 'none'",
+      "given || 'none'",
+      'label ?? given',
+      'label as string || given',
+      'label as A | B || given',
+    ]) {
+      const found = scan(`
+        export const bad = (label: string, given: unknown): E =>
+          new E({ cause: \`got \${${shape}}\`, fix: 'x doctor' });
+      `);
+      expect({ shape, kinds: found.map((one) => one.kind) }).toEqual({
+        shape,
+        kinds: ['interpolation'],
+      });
+    }
+  });
+
+  test('a fallback, cast or group around a read OF the value is still not the value', () => {
+    for (const shape of [
+      "(given as Error).message ?? 'none'",
+      'typeof given',
+      "given instanceof Error ? given.message : 'other'",
+    ]) {
+      const found = scan(`
+        export const fine = (given: unknown): E =>
+          new E({ cause: \`got \${${shape}}\`, fix: 'x doctor' });
+      `);
+      expect({ shape, found }).toEqual({ shape, found: [] });
+    }
+  });
+
   test('String() of an unknown, and a cause built by assignment rather than as a property', () => {
     const found = scan(`
       export function toUltimateError(value: unknown): UltimateError {
