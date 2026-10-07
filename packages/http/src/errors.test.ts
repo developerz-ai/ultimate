@@ -282,7 +282,9 @@ describe('HTTP_ERROR_CODES', () => {
     expect(new Set(EVERY_CODE).size).toBe(EVERY_CODE.length);
     for (const code of OWNED_CODES) {
       expect(code).toMatch(/^X_[A-Z0-9_]+$/);
-      expect(page, `${code} has no wiki row`).toContain(`\`${code}\``);
+      expect(page, `${code} has no wiki table row`).toMatch(
+        new RegExp(`^\\| \`${code}\` \\|`, 'm'),
+      );
     }
   });
 });

@@ -229,27 +229,36 @@ export function codeNameIn(
 ): string | undefined {
   const found = /const\s+\w*ERROR_CODES\b[^=]*=\s*\{/.exec(source);
   if (found === null) return undefined;
+  const open = found.index + found[0].length;
   const close = source.indexOf('\n} as const;', found.index);
-  const body = close < 0 ? '' : source.slice(found.index + found[0].length, close);
-  const lines = body.split('\n').filter((line) => !/^\s*(\/\/.*)?$/.test(line));
-  if (lines.length === 0 || !lines.every((line) => /^\s+\w+: 'X_[A-Z0-9_]+',$/.test(line))) {
-    return undefined;
-  }
+  const emptyOneLine = /^\}\s*as const;/.test(source.slice(open));
+  const body = emptyOneLine ? '' : close < 0 ? undefined : source.slice(open, close);
+  if (body === undefined) return undefined;
+  // `entry` wraps a long key onto two lines, as Biome does: read `key:\n    'X_…',` as one entry.
+  const lines = body
+    .replace(/:\n\s+'/g, ": '")
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/.*)?$/.test(line));
+  if (!lines.every((line) => /^\s+\w+: 'X_[A-Z0-9_]+',$/.test(line))) return undefined;
   if (mustBeNew && new RegExp(`\\b${input.code}\\b`).test(source)) {
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_EXISTS',
       cause: `${path} already names ${input.code}, and a code is registered once`,
-      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit the existing registration in ${path}`,
+      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json   # then pick a new code, or edit the existing registration in ${path}`,
     });
   }
   const key = codeKey(input.code, input.pkg);
   if (new RegExp(`^\\s+${key}:`, 'm').test(body)) {
     throw invalid(
       `${path} already has a name "${key}" in its code table, so ${input.code} has no distinct key there`,
-      `bun test ${renderFixShellArg(`packages/${input.pkg}/src/errors.test.ts`, '<the errors test>')}   # after adding ${input.code} under a name of your own in ${path}`,
+      `${RERUN}   # with a code whose name after X_${input.pkg.toUpperCase()}_ is not ${key}, or edit ${path} by hand`,
     );
   }
-  return insertBefore(source, found.index, '\n} as const;', entry(key, `'${input.code}'`));
+  const line = entry(key, `'${input.code}'`);
+  if (emptyOneLine) {
+    return `${source.slice(0, open)}\n${line}\n${source.slice(open)}`;
+  }
+  return insertBefore(source, found.index, '\n} as const;', line);
 }
 
 /**

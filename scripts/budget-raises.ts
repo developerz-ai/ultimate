@@ -42,22 +42,25 @@ export interface RouteBudget {
   readonly js?: { readonly written: string; readonly bytes: number };
 }
 
-/** The first `budget: { … }` in CODE — never one a string or a comment quotes. */
+/**
+ * The first `budget:` in CODE — never one a string or a comment quotes. The KEY is located apart
+ * from its value: `budget: LIMIT` still has a line a stating comment sits above, and only a
+ * `{ … }` literal can carry a `js` this rule reads.
+ */
 export function readBudget(source: string): RouteBudget | undefined {
   const masked = maskLiterals(source);
   const text = stripComments(source);
-  const found = /\bbudget\s*:\s*\{/.exec(masked);
+  const found = /\bbudget\s*:\s*/.exec(masked);
   if (found === null) return undefined;
-  const open = found.index + found[0].length - 1;
+  const line = lineOf(masked, found.index);
+  const open = found.index + found[0].length;
+  if (masked[open] !== '{') return { line };
   const close = balancedClose(masked.replace(/\{/g, '(').replace(/\}/g, ')'), open);
   const body = text.slice(open, close < 0 ? undefined : close + 1);
   // A backtick literal is a literal; one that interpolates (`${N}kb`) is not one this rule can weigh.
   const js = /\bjs\s*:\s*(['"`])([^'"`$]+)\1/.exec(body)?.[2];
   const bytes = parseByteBudget(js);
-  return {
-    line: lineOf(masked, found.index),
-    ...(js === undefined || bytes === null ? {} : { js: { written: js, bytes } }),
-  };
+  return { line, ...(js === undefined || bytes === null ? {} : { js: { written: js, bytes } }) };
 }
 
 /** The comment lines directly above `line`, joined — a blank line ends the block. */
@@ -80,6 +83,8 @@ export interface BudgetRaise {
   readonly key: BudgetKey;
   readonly was: string;
   readonly now: string;
+  /** The `budget:` key itself is gone, so there is no line to state the raise above. */
+  readonly keyRemoved?: true;
 }
 
 export interface RouteVersions {
@@ -109,7 +114,14 @@ function raiseOf(route: RouteVersions): BudgetRaise | undefined {
   const now = readBudget(route.now);
   // No `budget:` key left at all: nothing to sit a comment above, so the removal is never stated.
   if (now === undefined) {
-    return { file: route.path, line: 1, key: 'js', was: was.js.written, now: UNBUDGETED };
+    return {
+      file: route.path,
+      line: 1,
+      key: 'js',
+      was: was.js.written,
+      now: UNBUDGETED,
+      keyRemoved: true,
+    };
   }
   // A js budget deleted (`{}`, no js, a non-literal) is the largest raise there is: unlimited.
   const ceiling = now.js?.bytes ?? Number.POSITIVE_INFINITY;
@@ -131,7 +143,9 @@ export function raiseFinding(raise: BudgetRaise, base: string): Finding {
     code: 'X_BUDGET_RAISE_UNSTATED',
     at: `${raise.file}:${raise.line}`,
     cause: `${raise.file}:${raise.line} ${raise.now === UNBUDGETED ? `removes budget.${raise.key} (${raise.was}) — an unlimited raise —` : `raises budget.${raise.key} from ${raise.was} to ${raise.now}`} since ${base} and the comment above it states no new measured number within ${raise.now} and no reason — a comment ${base} already had measured the old budget`,
-    fix: `edit ${raise.file}:${raise.line} — add // measured: <N> B (bun run x -- build --json) — why: <the function it buys> directly above the budget line, or restore ${raise.key}: ${raise.was}`,
+    fix: raise.keyRemoved
+      ? `bun run budget-raises --json   # after restoring budget: { ${raise.key}: '${raise.was}' } in the defineRoute config of ${raise.file}, or writing budget: {} there under // measured: <N> B (bun run x -- build --json) — why: <the function it buys>`
+      : `edit ${raise.file}:${raise.line} — add // measured: <N> B (bun run x -- build --json) — why: <the function it buys> directly above the budget line, or restore ${raise.key}: '${raise.was}', then bun run budget-raises --json`,
   };
 }
 

@@ -118,6 +118,10 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
     // A re-key that GROWS the total is a raise smuggled through a rename.
     const grown = { ...now, 'DEMO_PINS.core: b.ts': 4 };
     expect(checkPinRaises([table(site, grown, base, old)])).toHaveLength(2);
+    // Only the page-to-site migration: a base ALREADY keyed per site gets no re-key exemption,
+    // or later debt could replace existing debt under a fresh header sentence.
+    const siteBase = { 'DEMO_PINS.cli: old.ts': 12, 'DEMO_PINS.core: old.ts': 3 };
+    expect(checkPinRaises([table(site, now, siteBase, old)])).toHaveLength(2);
     // One key kept is not a re-key: the rows are compared one by one.
     const kept = { 'DEMO_PINS.cli': 12, 'DEMO_PINS.core: b.ts': 3 };
     expect(checkPinRaises([table(site, kept, base, old)]).map((raise) => raise.row)).toEqual([

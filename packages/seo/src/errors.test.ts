@@ -21,7 +21,9 @@ describe('SEO_ERROR_CODES', () => {
     expect(Object.keys(SEO_ERROR_CODES).length).toBe(codes.length);
     for (const code of codes) {
       expect(hasErrorCode(code), `${code} is not registered`).toBe(true);
-      expect(page, `${code} has no wiki row`).toContain(`\`${code}\``);
+      expect(page, `${code} has no wiki table row`).toMatch(
+        new RegExp(`^\\| \`${code}\` \\|`, 'm'),
+      );
     }
   });
 

@@ -49,6 +49,8 @@ describe('checkErrorRendering catches the shape that shipped three times', () =>
       "given ?? 'none'",
       "given || 'none'",
       'label ?? given',
+      'label as string || given',
+      'label as A | B || given',
     ]) {
       const found = scan(`
         export const bad = (label: string, given: unknown): E =>

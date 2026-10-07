@@ -206,6 +206,21 @@ describe('unit · an artifact relayed through an intermediate stage', () => {
     ]);
   });
 
+  test('an external image copied into an intermediate stage is reported at THAT stage', () => {
+    const text = [
+      'FROM debian:bookworm-slim AS assemble',
+      'COPY --from=alpine:3 /bin/busybox /stage/app',
+      'FROM gcr.io/distroless/cc-debian13 AS runtime',
+      'COPY --from=assemble /stage/app /app/x',
+      'RUN ["/app/x", "--version"]',
+      'ENTRYPOINT ["/app/x"]',
+      '',
+    ].join('\n');
+    const found = findings(text);
+    expect(found.map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+    expect(found[0]?.at).toBe(`${DOCKERFILE}:1`);
+  });
+
   test('a cycle of COPY --from between stages terminates', () => {
     const cyclic = [
       'FROM oven/bun:1.3-alpine AS a',

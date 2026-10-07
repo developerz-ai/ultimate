@@ -111,7 +111,8 @@ export function producersOf(stage: Stage, stages: readonly Stage[]): readonly Pr
     for (const source of copySources(current)) {
       const producer = stageNamed(source, stages);
       if (producer === undefined) {
-        found.push({ source, image: source });
+        // An image has no line of its own: the stage that copies from it is the edit.
+        found.push({ source, image: source, line: current.line });
         continue;
       }
       if (seen.has(producer)) continue;

@@ -26,7 +26,9 @@ describe('DB_OWNED_ERROR_CODES', () => {
     expect(new Set(DB_OWNED_ERROR_CODES).size).toBe(DB_OWNED_ERROR_CODES.length);
     for (const code of DB_OWNED_ERROR_CODES) {
       expect(code).toMatch(/^X_[A-Z0-9_]+$/);
-      expect(page, `${code} has no wiki row`).toContain(`\`${code}\``);
+      expect(page, `${code} has no wiki table row`).toMatch(
+        new RegExp(`^\\| \`${code}\` \\|`, 'm'),
+      );
     }
   });
 

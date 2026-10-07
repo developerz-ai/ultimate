@@ -3,6 +3,7 @@
 // at the 500-line ceiling along that seam.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { codeNameIn } from './lib/error-code-plan';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { tierOf } from './lib/tiers';
@@ -69,6 +70,38 @@ describe('the code name table joins every registration', () => {
     expect(plan.errorsTs).toContain("X_UI_PROBE_ONLY: { title: 't' }");
     expect(plan.names?.path).toBe('packages/ui/src/errors.ts');
     expect(plan.names?.text).toContain("  probeOnly: 'X_UI_PROBE_ONLY',\n} as const;");
+  });
+});
+
+describe('the code name table shapes the planner reads', () => {
+  const input = { code: 'X_ABC_NEW_THING', pkg: 'abc', title: 't', cause: 'c', fix: 'f' };
+  const table = (body: string): string => `export const ABC_ERROR_CODES = {${body}} as const;\n`;
+
+  test('an empty table takes its first name', () => {
+    expect(codeNameIn(table('\n'), 'p', input, false)).toBe(
+      table("\n  newThing: 'X_ABC_NEW_THING',\n"),
+    );
+    expect(codeNameIn(table(''), 'p', input, false)).toContain("newThing: 'X_ABC_NEW_THING'");
+  });
+
+  test('a table with a wrapped entry is read as a table, and the name is added', () => {
+    const wrapped = table(`\n  aVeryLongName:\n    'X_ABC_${'LONG_'.repeat(14)}CODE',\n`);
+    expect(codeNameIn(wrapped, 'p', input, false)).toContain("  newThing: 'X_ABC_NEW_THING',");
+  });
+
+  test('a table holding anything else is not one', () => {
+    expect(codeNameIn(table("\n  a: 'not a code',\n"), 'p', input, false)).toBeUndefined();
+  });
+
+  test('a taken name is refused with a fix that opens as a command', () => {
+    try {
+      codeNameIn(table("\n  newThing: 'X_ABC_OTHER',\n"), 'p', input, true);
+      expect.unreachable('the taken name was accepted');
+    } catch (error) {
+      if (!(error instanceof ScriptError)) throw error;
+      expect(error.code).toBe('X_NEW_ERROR_CODE_INVALID');
+      expect(error.fix).toStartWith('bun run scripts/new-error-code.ts');
+    }
   });
 });
 

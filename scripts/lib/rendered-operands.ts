@@ -26,7 +26,8 @@ function peeled(expr: string): string {
     if (wrapped(text)) text = text.slice(1, -1).trim();
     text = text
       .replace(/!+$/, '')
-      .replace(/\s+(?:as|satisfies)\s+[\w$.<>[\],\s|&]+$/, '')
+      // A union's single `|` belongs to the type; `||` never does — it is a fallback to split.
+      .replace(/\s+(?:as|satisfies)\s+(?:[\w$.<>[\],\s&]|(?<!\|)\|(?!\|))+$/, '')
       .trim();
   }
   return text;

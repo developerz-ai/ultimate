@@ -109,7 +109,7 @@ export function checkImage(dockerfile: string, file: string = DOCKERFILE): reado
     gaps.push({
       kind: 'libc',
       file,
-      // An external image has no line of its own; the stage that copies from it is where to look.
+      // A stage producer is its FROM line; an external image is the stage that copies from it.
       line: producer.line ?? runtime.line,
       detail: `${source} on ${producer.image} (${libc})`,
       runtime: `${runtimeImage} (${runtimeLibc})`,

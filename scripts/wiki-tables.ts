@@ -187,12 +187,16 @@ const unscanned = (pages: number): Finding => ({
 });
 
 /**
- * The verdict over a set of pages: every gap, or — when not one table was read — the floor. The
+ * The verdict over a set of pages: every gap, or — when neither a table nor a gap was read —
+ * the floor. The
  * wiki carries hundreds of tables, so zero means the glob or the root moved, never a clean wiki.
  */
 export function wikiTableReport(files: readonly MarkdownFile[]): readonly Finding[] {
   const { gaps, tables } = scanTables(files);
-  return tables === 0 ? [unscanned(files.length)] : gaps.map(tableGapFindingFor);
+  // A gap is something read, with its own repair: only a scan with neither is unscanned.
+  return tables === 0 && gaps.length === 0
+    ? [unscanned(files.length)]
+    : gaps.map(tableGapFindingFor);
 }
 
 /** What this repo contributes to `x verify`'s `manifest` step. */

@@ -146,6 +146,13 @@ describe('unit · a run over no table is unscanned, never green', () => {
     expect(wikiTableReport([])[0]?.fix).toMatch(/^bun run scripts\/wiki-tables\.ts --json/);
   });
 
+  test('a malformed row with no table read is reported as itself, not as unscanned', () => {
+    // `| a | b |` with no delimiter is an orphan: zero tables counted, one gap with its own fix.
+    expect(wikiTableReport(page('| a | b |\n')).map((one) => one.code)).toEqual([
+      'X_WIKI_TABLE_MALFORMED',
+    ]);
+  });
+
   test('one well-formed table is a verdict: no finding', () => {
     expect(wikiTableReport(page(table()))).toEqual([]);
   });

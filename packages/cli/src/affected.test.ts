@@ -263,11 +263,11 @@ describe('unit · affected resolves the checkout root git reports paths against'
     expect(await gitRoot(runner, '/home/me/repo/packages/cli', 'affected')).toBe('/home/me/repo');
   });
 
-  test('outside a checkout it refuses with a command that proves the diagnosis', async () => {
+  test('outside a checkout it refuses with a way INTO one, never the command that just failed', async () => {
     const { runner } = recorder({});
     await expect(gitRoot(runner, '/tmp/nowhere', 'affected')).rejects.toMatchObject({
       code: 'X_CLI_UNEXPECTED',
-      fix: 'git rev-parse --show-toplevel   # then run x affected inside the checkout it prints',
+      fix: expect.stringMatching(/^cd "\$\(git -C /),
     });
   });
 });
