@@ -17,7 +17,7 @@
  * in the page's outbox with the queued notice showing.
  */
 
-import { useConnection, useMutation, useQuery } from '@ultimat3/realtime';
+import { useConnection, useMutation, useOutbox, useQuery } from '@ultimat3/realtime';
 import { formatDate } from '@ultimat3/time';
 import {
   AsyncRegion,
@@ -41,7 +41,6 @@ import {
 import { render } from 'solid-js/web';
 import { postHref } from '../../shared/entities';
 import { type PluralForms, pluralText } from '../../shared/plural-text';
-import { trackQueued } from '../../shared/queued-writes';
 import { type UiStrings, uiTranslator } from '../../shared/ui-strings';
 import { LIKE_POST } from '../posts/like-mutation';
 import { type FeedRow, LIVE_FEED } from './live';
@@ -82,11 +81,12 @@ function Feed(props: FeedIslandProps): JSX.Element {
   const feed = useQuery<FeedRow>({ name: LIVE_FEED, live: true }, { orgId: props.orgId });
   const connection = useConnection();
   const like = useMutation(LIKE_POST);
-  const queued = trackQueued();
+  const outbox = useOutbox();
   onCleanup(() => {
     feed.release();
     connection.release();
     like.release();
+    outbox.release();
   });
   const shown = (): number => {
     const state = feed();
@@ -107,7 +107,7 @@ function Feed(props: FeedIslandProps): JSX.Element {
           </button>
         </p>
       </Show>
-      <Show when={queued.count() > 0}>
+      <Show when={outbox.size > 0}>
         <p data-role="queued">{props.labels.queued}</p>
       </Show>
       <AsyncRegion
@@ -127,7 +127,7 @@ function Feed(props: FeedIslandProps): JSX.Element {
                     data-like-button={post.id}
                     onClick={() => {
                       // A refusal has already taken its overlay back; the count IS the answer.
-                      void queued.track(like({ postId: post.id, orgId: props.orgId }));
+                      void like({ postId: post.id, orgId: props.orgId }).catch(() => undefined);
                     }}
                   >
                     {props.labels.like}

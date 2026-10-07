@@ -84,7 +84,7 @@ class — stay on `.`.
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `useQuery`, `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| hooks | `.` | `useQuery`, `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`: the boot's restore and the open outbox, capped (#506) |
@@ -196,6 +196,7 @@ import {
   useConnection,
   useMutation,
   useMutationQueue,
+  useOutbox,
   usePresence,
   useQuery,
   useRecord,
@@ -220,6 +221,7 @@ const runs = useRecords<Run>('runs', {                              // EVERY `ru
 const like = useMutation(LIKE_POST);                                // await like(input); like.pending
 const connection = useConnection();                                 // .offline .online .reconnectAt .updateAvailable
 const writes = useMutationQueue();                                  // .pending .failed
+const outbox = useOutbox();                                         // .size — queued, not yet sent
 const feedChannel = useChannel(orgFeed, { orgId }, { onEvent });   // records → the store; events → onEvent
 const room = usePresence(orgFeed, { orgId });                      // the channel's roster
 ```
@@ -227,7 +229,9 @@ const room = usePresence(orgFeed, { orgId });                      // the channe
 **One socket per origin and principal**: the page's socket lives in a `SharedWorker`
 (`@ultimat3/realtime/sync-worker`, bundled by `x build`) shared by every tab; with no worker the
 same engine runs in-page. Writes that find no network go to the page's outbox — overlay kept — and
-replay over HTTP, under their original idempotency keys, when the socket comes back. The outbox is
+replay over HTTP, under their original idempotency keys, when the socket comes back; `useOutbox().size`
+counts them until the server takes each one, so an island's "sent when you reconnect" notice reads
+the queue itself. The outbox is
 the page boot's (`@ultimat3/realtime/boot`): an island only reads it off the page. On a page the
 CLI renders no boot for (no scope tag, so nothing on it persists) the island's runtime chunk opens
 no outbox, and such a write is refused like any other — rejected, overlay taken back — never held

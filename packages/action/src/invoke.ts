@@ -274,6 +274,8 @@ async function perform(
   // re-evaluate the same policy per subscriber without a query per change event. An
   // action with no loader hands the rule `null` — unchanged, and never a silent allow,
   // because a rule that reads `row` has to decide what `null` means.
+  // The SAME `input` object reaches `def.row` here and `def.handle` below, by reference:
+  // `transition()` keys what its rule read on it (`transition-observe.ts`, #702).
   const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
   guardAction(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
 

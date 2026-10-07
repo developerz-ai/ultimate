@@ -96,8 +96,14 @@ export const config = defineRoute({
    * +318 B in the feed island for `holdFirstPaint` (its mount waits for the restored records and the
    * open outbox, capped at 1 s). The other +906 B is the page boot (68,980 → 69,531) and the feed
    * island's own growth from the rest of sweep 9, measured here and stated here.
+   * raised 150.5kb → 153.5kb (sweep 14, #648 row 19). measured: 155,900 B (2026-10-07; was 154,004).
+   * +1,896 B is real function: `useOutbox()` — the queued-writes notice reads the page outbox's own
+   * count and clears when the server takes the write — and the outbox's cross-tab sync (one
+   * `BroadcastChannel`, a read-only `refresh()`, so another tab's drain clears this tab's count and
+   * a write never overtakes one another tab queued): +321 B feed island, +1,575 B page boot.
+   * `shared/queued-writes.ts`, the app's workaround, is deleted.
    */
-  budget: { js: '150.5kb' },
+  budget: { js: '153.5kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

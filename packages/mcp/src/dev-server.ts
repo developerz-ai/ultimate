@@ -188,7 +188,7 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
   return [
     read(
       'routes.list',
-      'Route table: url, render mode, offline strategy, hydrate, budget.',
+      'Route table as `x routes --json` prints it: pages, then every action, query and runtime.ts route.',
       NO_ARGS,
       () => jsonResult(host.routes()),
     ),

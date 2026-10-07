@@ -3,7 +3,7 @@
 // `--dump-dom` — the expression runs in the page and writes its answer into it — because this
 // package may not import `@ultimat3/testing`'s launcher (same tier). Skips with no Chrome, and
 // refuses to skip under `E2E_BROWSER_REQUIRED=1`.
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no temp-directory or path-join primitive; the profile and page are files.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,9 +24,61 @@ const dir = mkdtempSync(join(tmpdir(), 'ultimate-snapshot-e2e-'));
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+/**
+ * `@ultimat3/testing`'s `chromeLaunchFlags`, restated because this package may not import it (same
+ * tier); each flag's measured reason is written there (`cdp-launch.ts`). The one this file lacked
+ * and most likely paid for on `ubuntu-latest`: without `--password-store=basic` a fresh profile
+ * asks the OS keyring over D-Bus — measured locally, it requests `org.freedesktop.secrets`
+ * activation — and testing measured that wait at 7-25 s on CI.
+ */
+const FLAGS = [
+  '--headless',
+  '--no-sandbox',
+  '--disable-dev-shm-usage',
+  '--disable-gpu',
+  '--password-store=basic',
+  '--use-mock-keychain',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-extensions',
+  '--window-size=800,600',
+];
+
+/**
+ * A COLD start is its own budget, never a test's: testing's `LAUNCH_TIMEOUT_MS`, restated. The first
+ * launch of a CI job measured 5-19 s more than a warm one, and the first test here used to pay it
+ * inside its own 20 s.
+ */
+const COLD_START_MS = 60_000;
+/** A warm `--dump-dom` of a two-element page answers in ~1 s; past this it is hung, and says so. */
+const RUN_DEADLINE_MS = 15_000;
+
+/** Chrome's dump of `url`, or a failure naming the deadline and Chrome's own last words. */
+async function dumpDom(url: string, deadlineMs: number): Promise<string> {
+  if (chrome === undefined) expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
+  const child = Bun.spawn(
+    [chrome, ...FLAGS, `--user-data-dir=${join(dir, 'profile')}`, '--dump-dom', url],
+    { stdout: 'pipe', stderr: 'pipe' },
+  );
+  let killed = false;
+  const timer = setTimeout(() => {
+    killed = true;
+    child.kill('SIGKILL');
+  }, deadlineMs);
+  const [dom, stderr] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  await child.exited;
+  clearTimeout(timer);
+  if (killed) {
+    expect.unreachable(`Chrome gave no DOM within ${deadlineMs} ms: ${stderr.slice(-600)}`);
+  }
+  return dom;
+}
+
 /** The page's answer to `expression`, run after `body` is parsed, read back out of the dump. */
 async function snapshotIn(body: string, expression: string): Promise<readonly ElementSnapshot[]> {
-  if (chrome === undefined) expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
   const page = join(dir, 'page.html');
   await Bun.write(
     page,
@@ -34,21 +86,7 @@ async function snapshotIn(body: string, expression: string): Promise<readonly El
 document.body.setAttribute('data-out', ${expression});
 </script></body></html>`,
   );
-  const child = Bun.spawn(
-    [
-      chrome,
-      '--headless',
-      '--no-sandbox',
-      '--disable-gpu',
-      `--user-data-dir=${join(dir, 'profile')}`,
-      '--window-size=800,600',
-      '--dump-dom',
-      `file://${page}`,
-    ],
-    { stdout: 'pipe', stderr: 'ignore' },
-  );
-  const dom = await new Response(child.stdout).text();
-  await child.exited;
+  const dom = await dumpDom(`file://${page}`, RUN_DEADLINE_MS);
   const match = /data-out="([^"]*)"/.exec(dom);
   if (match?.[1] === undefined) expect.unreachable(`no answer in the dump: ${dom.slice(0, 200)}`);
   const decoded = match[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&');
@@ -58,6 +96,12 @@ document.body.setAttribute('data-out', ${expression});
 const BELOW_FOLD = '<div style="height:3000px"></div><button id="go">Go</button>';
 
 describe.skipIf(chrome === undefined && !required)('snapshotExpression, in a real Chrome', () => {
+  // The binary's first start and the profile's creation, paid once here — so every test's 20 s
+  // measures a snapshot, and whichever test happens to run first no longer carries the machine.
+  beforeAll(async () => {
+    await dumpDom('about:blank', COLD_START_MS);
+  }, COLD_START_MS + 5_000);
+
   test('a button at y=3000 on a 600px viewport is the hit target once revealed', async () => {
     const [button] = await snapshotIn(BELOW_FOLD, snapshotExpression('#go', { reveal: true }));
     expect(button?.hitTarget).toBe(true);

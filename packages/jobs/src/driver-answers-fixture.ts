@@ -13,7 +13,28 @@ import { enqueueItem, itemJob, operatorOf, rowOf, TTL_MS } from './operator-surf
 const claimOne = (driver: JobDriver) =>
   driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: TTL_MS, workerId: 'w' });
 
-export function driverAnswerScenarios(label: string, harness: OperatorHarness): void {
+/** Live rows of `name` on `queue`, one per key — what a store holding a thousand keys looks like. */
+export type HoldKeys = (
+  driver: JobDriver,
+  hold: { readonly name: string; readonly queue: string; readonly keys: readonly string[] },
+) => Promise<void>;
+
+/**
+ * Through `enqueue`, one row at a time — fine in memory. A store where one statement is a
+ * millisecond or more passes its own one-statement writer instead: a thousand sequential enqueues
+ * on the embedded Postgres were 3.5 s of a 4 s test alone and past its timeout under a loaded gate.
+ */
+const holdByEnqueue: HoldKeys = async (driver, { name, queue, keys }) => {
+  for (const idempotencyKey of keys) {
+    await driver.enqueue({ name, queue, input: {}, idempotencyKey, maxAttempts: 1 });
+  }
+};
+
+export function driverAnswerScenarios(
+  label: string,
+  harness: OperatorHarness,
+  holdKeys: HoldKeys = holdByEnqueue,
+): void {
   test(`${label}: a failure recorded with no stack does not keep the previous failure's stack`, async () => {
     const driver = await harness.driver();
     const handle = itemJob({ run: () => Promise.resolve(), retry: { attempts: 5 } });
@@ -100,6 +121,7 @@ export function driverAnswerScenarios(label: string, harness: OperatorHarness): 
     // The one row a requeue CAN move is the newest, so a bound spent oldest-first never reaches it.
     await harness.seed(driver, { name: free.name, state: 'dead', count: 1, queue: 'bulk' });
     // A live job takes every one of the thousand keys.
+    const keys: string[] = [];
     let after: string | undefined;
     for (let page = 0; page < MAX_BULK_ROWS / MAX_JOB_PAGE; page += 1) {
       const rows = await operator.list({
@@ -107,18 +129,11 @@ export function driverAnswerScenarios(label: string, harness: OperatorHarness): 
         limit: MAX_JOB_PAGE,
         ...(after === undefined ? {} : { after }),
       });
-      for (const row of rows) {
-        await driver.enqueue({
-          name: row.name,
-          queue: 'holders',
-          input: {},
-          idempotencyKey: row.idempotencyKey,
-          maxAttempts: 1,
-        });
-      }
+      keys.push(...rows.map((row) => row.idempotencyKey));
       const last = rows[rows.length - 1];
       after = last === undefined ? undefined : `${last.createdAt}:${last.id}`;
     }
+    await holdKeys(driver, { name: held.name, queue: 'holders', keys });
     expect((await driver.stats()).find((row) => row.queue === 'holders')?.ready).toBe(
       MAX_BULK_ROWS,
     );

@@ -36,7 +36,6 @@ import type {
   VerifyStep,
 } from '@ultimat3/mcp';
 import { DEV_SCOPES, devHost, devMcpServer, frameworkIntrospection } from '@ultimat3/mcp';
-import { describePages } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
@@ -50,6 +49,7 @@ import { testRunOf } from './mcp-test-run';
 import { type UiCapabilities, uiCapabilities } from './mcp-ui';
 import { readMigrations } from './migrations';
 import { retryMemo } from './retry-memo';
+import { plainAppRoutes, routeRows } from './route-table';
 import type { DevServices, Env } from './runtime-bindings';
 import { resolveServices } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
@@ -346,10 +346,12 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
   // scratch boot re-imported the app after declaring — rendered. Idempotent; a set key stays.
   declareDevEnvironment(input.env);
   await Promise.all([loadApp(input.root), loadCodeFixes()]);
+  // The plain `runtime.ts` routes, read once: `routes.list` answers the table `x routes` prints.
+  const plain = await plainAppRoutes(input.root);
   const lazy = lazyServices(input);
   const ui = uiCapabilities({ root: input.root, env: input.env });
   const introspection = frameworkIntrospection({
-    routes: () => describePages(),
+    routes: () => routeRows(plain).map((row) => row.json),
     policies: () => policyFacts(),
   });
   const server = devMcpServer({ host: devHost(introspection, capabilities(input, lazy, ui)) });

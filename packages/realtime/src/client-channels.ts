@@ -292,8 +292,8 @@ export class ChannelBook {
     entry.disarm?.();
     entry.disarm = null;
     this.#set(entry, 'catching-up');
-    // Names no write (#507 pt 2: owner O-507, default none) — a pending write this read already
-    // reflects settles on its own HTTP answer. Where a catch-up names its writes, it goes here.
+    // Names no write, by decision (O-507, #648, 2026-10-07): a pending write this read already
+    // reflects settles on its own HTTP answer. Reopen only on an observed double paint.
     this.#deps.catchUp(entry.catchUp, entry.params).then(
       () => this.#drain(entry),
       (error: unknown) => {

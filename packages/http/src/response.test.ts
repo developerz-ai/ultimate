@@ -42,7 +42,7 @@ describe('problem()', () => {
     expect(body['code']).toBe('X_BODY_INVALID');
     expect(body['cause']).toContain('title: required');
     expect(body['fix']).toBe(
-      'x routes --json   # find /posts, then send a body matching its input schema',
+      'x routes --surface api --json   # find /posts, a runtime.ts route, then send a body its meta.input schema accepts',
     );
     expect(body['docs']).toBe(ERROR_DOCS_URL);
     expect(body['status']).toBe(422);

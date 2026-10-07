@@ -7,16 +7,27 @@ import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { notFound } from './errors';
 import type { IllegalTransition } from './feature-errors';
-import { stateConflict, stateTransitionIllegal, stateUndeclared } from './feature-errors';
+import {
+  stateConflict,
+  stateRowChanged,
+  stateTransitionIllegal,
+  stateUndeclared,
+} from './feature-errors';
 import { singleKeyOf } from './plan';
 import type { Repo, RepoOptions } from './repo';
 import { canMove, isState, isTerminal, movesFrom, type StateMachine } from './state-machine';
+import { changedPins, pinsOf, type TransitionObservation } from './transition-pins';
 import type { ColumnMap, IdOf, RowPatch } from './types';
 
-/** What a caller names: the state it believes the row is in, and the one it wants. */
+/**
+ * What a caller names: the state it believes the row is in, the one it wants, and — when the move
+ * was DECIDED about the row — what that decision read, so the statement refuses a row that has
+ * changed under it (`transition-pins.ts`).
+ */
 export interface Move<S extends string = string> {
   readonly from: S;
   readonly to: S;
+  readonly observed?: TransitionObservation;
 }
 
 /** Every property whose column declares a machine — what `X_STATE_UNDECLARED` lists back. */
@@ -57,12 +68,20 @@ const diagnose = async <Row>(
   property: string,
   id: IdOf<Row>,
   move: Move,
+  pinned: { readonly key: string; readonly pins: Readonly<Record<string, unknown>> },
   options: RepoOptions | undefined,
 ): Promise<Error> => {
   const row = await repo.findById(id, options);
   if (row === null) return notFound(entity.$name, String(id));
   const actual = (row as Readonly<Record<string, unknown>>)[property];
-  return stateConflict(entity.$name, property, String(id), move.from, String(actual));
+  if (String(actual) !== move.from) {
+    return stateConflict(entity.$name, property, String(id), move.from, String(actual));
+  }
+  // The state is still the one named, so a PIN refused it. A pin that reads equal again (changed
+  // and changed back after the statement) is still named: the statement is what decided.
+  const changed = changedPins(entity, row, pinned.pins);
+  const named = changed.length > 0 ? changed : Object.keys(pinned.pins);
+  return stateRowChanged(entity.$name, property, String(id), pinned.key, named);
 };
 
 const whyNot = (machine: StateMachine, move: Move): IllegalTransition => {
@@ -117,10 +136,17 @@ export const transitionRow = async <Row, C extends ColumnMap>(
   // value, so the predicate below would be the from-state alone and move every row in it.
   if (id === undefined || id === null) throw notFound(entity.$name, String(id));
   const key = singleKeyOf(entity, 'transition');
-  const filter = { [key]: id, [property]: move.from } as unknown as RowPatch<Row>;
+  // The pins FIRST and the key and state after, so nothing observed can widen the address. The
+  // columns the decision read ride in the same statement as `from`, so a reassignment committed
+  // before it matches nothing, and one in flight is waited on and then re-checked by Postgres on
+  // the row it left behind — the window between a policy's read and the move, closed (#702).
+  const pins = pinsOf(entity, key, property, id, move.observed);
+  const filter = { ...pins, [key]: id, [property]: move.from } as unknown as RowPatch<Row>;
   const values = { [property]: move.to } as unknown as RowPatch<Row>;
   const written = await repo.updateWhere(filter, patch(values), options);
-  if (written === 0) throw await diagnose(entity, repo, property, id, move, options);
+  if (written === 0) {
+    throw await diagnose(entity, repo, property, id, move, { key, pins }, options);
+  }
   const row = await repo.findById(id, options);
   if (row === null) throw notFound(entity.$name, String(id));
   return row;

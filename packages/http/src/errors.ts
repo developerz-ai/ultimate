@@ -129,11 +129,10 @@ export const bodyInvalid = (
     code: 'X_BODY_INVALID',
     cause: `${pathname} body rejected: ${issues.join('; ')}`,
     ...(meta === undefined ? {} : { meta }),
-    // `x schema show` is not a command — not in the registry and not in `PLANNED_COMMANDS`, so it
-    // exits `X_CLI_UNKNOWN_COMMAND`. The same axiom-4 inversion `x logs tail` had in `error-map`:
-    // the one instruction the reader is given fails when they run it. `x routes` ships, and
-    // `hasInputSchema` plus the route's name is what it prints.
-    fix: `x routes --json   # find ${pathname}, then send a body matching its input schema`,
+    // Only a route that declares `meta.input` reaches the body stage, and no action or query does
+    // (`invoke` and `runQuery` validate their own input, as `X_INPUT_INVALID`) — so this is a plain
+    // `runtime.ts` route, and `x routes --surface api` lists those by name since owner decision 2.
+    fix: `x routes --surface api --json   # find ${pathname}, a runtime.ts route, then send a body its meta.input schema accepts`,
   });
 
 /** At construction: a hole in a scope, or a prefix shadowing `/api` or `/_x`, never serves. */

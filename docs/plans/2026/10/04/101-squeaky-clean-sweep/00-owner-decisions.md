@@ -55,6 +55,64 @@ is given; otherwise the row's work waits and the slice says so in its PR.
 | O-win | Windows host deploys | axiom 7 vs `x build --target binary --platform bun-windows-x64` | binary-as-service supported (axiom-7 change) / Docker Desktop only (W8 = cross-compile for dev/CI) | Docker Desktop only — axiom 7 stands | 08 W8 docs |
 | O-10a | admin MCP tool names (`admin.action.<name>`) | `admin/src/mcp-tools.ts:199,234` | keep / rename | keep | 10 B14 |
 
+## Decisions (2026-10-07)
+
+The owner delegated every open row to the coordinator; each row below is the decision, recorded
+2026-10-07 against `d4842fae5` (25.1.0). Class: **a** resolved · **b** decide-only · **c** decide +
+small work (done in sweep 14) · **d** large or breaking work (its own issue). #709 is the
+26.0.0 breaking batch; #710 holds the decided features.
+
+### Carried
+
+| # | Class | Decision | Evidence / where |
+|---|---|---|---|
+| 1 | c + d | **Delete** the `api/**/route.ts` file kind: `api/` holds the action and query projections (`defineApi`) and nothing else; a wire format an action cannot speak goes in `runtime.routes`. Docs done in sweep 14; the type tail (`ROUTE_FILENAME.api`, the `api` branches in `cli/src/live-routes.ts`, `site-seo.ts`, `render/src/modes.ts`) built in #709 | `render/src/registry.ts:46-50`, `render/src/modes.ts:187-192` |
+| 2 | c + d | **`x routes` prints the served table**: pages, mounts and the `/api/*` action and query routes, so `--surface api` means something. Done in sweep 14; `ServerHandle.describe()` (no non-test caller) deleted in #709 | `cli/src/cmd-routes.ts:4-8`, `http/src/server.ts:145,309`, `http/src/errors.ts:136` |
+| 3 | c | **A written exception**, not a ninth primitive and not a `query` factory: a channel is realtime's delivery mechanism for entity change records and presence under a policy. Done in sweep 14 (`docs/history/primitive-factories.md`). notify's `channel` → `deliveryChannel` landed in 25.0.0 | `realtime/src/channel-decl.ts`, CHANGELOG 25.0.0 #32 |
+| 4 | b | **Keep "job handle" in axiom 2.** The bridge exists: `agentJob(action, { tenant, retry, actor })` takes any action, and `X_ACTION_JOB_UNBRIDGED`'s fix names it. No rename | `action/src/job-handle.ts:16-31`, `jobs/src/errors.ts:247-248` |
+| 5 | a + d | Stubs deleted in 25.0.0 (CHANGELOG #15). **Build the Redis job driver** (the Default) as a feature in #710 | `wiki/Known-Gaps.md` drift fixed in sweep 14 |
+| 6 | a | Deleted in 25.0.0 (CHANGELOG #2); refused by name | `core/src/config-removed.ts:33-42` |
+| 7 | d | **Delete `recover: 'agent'` and `AgentRecovery`; move `scraping` to tier 4** and drop its `FLOOR_ABOVE` row. A recover hook is a function; an app wraps `llm()` itself (axiom 8). Built in #709 | `scraping/src/recover.ts:28-45`, `scripts/lib/tiers.ts:82-86` |
+| 8 | c | **Shipped guards stay copies the app owns** (axiom 8); `x doctor` also lists a shipped guard whose content differs from the current template, with the command that refreshes it. Done in sweep 14 | `cli/src/doctor-guards.ts:17-23` |
+| 9 | c + d | **The demo adopts `@ultimat3/auth`** (needs a handle-keyed `login()`), built in #710. `DOMAIN.md` corrected in sweep 14 | `dummy/social-media-clone/apps/web/app/auth/` |
+| 10 | d | **The generator's directory form is the one layout** (`<slice>/actions/<name>.ts`), both apps migrated, a guard refusing a sibling `X.ts` + `X/`. Built in #710 | `cli/src/api-registration.ts:24`, `docs/architecture/12-generated-app.md:126` |
+| 11 | d | **Wire push**: a `pwa.vapid` key, a subscription action, a notify `deliveryChannel`, VAPID + RFC 8291 on WebCrypto (no dependency). Built in #710 | `pwa/src/service-worker.ts:163`, `cli/src/sw-artifacts.ts:222-228` |
+| 12 | a | One `Page`, core's — 25.0.0 (CHANGELOG #7, #11) | `core/src/cursor-page.ts:18` |
+| 13 | a | Adapter methods required — answered before this sweep | `auth/src/adapter.ts:75-79` |
+| 14 | d | **Remove `APPLE_PROVIDER` from the built-ins**: it cannot complete a sign-in (GET-only callback, Apple POSTs). An app registers its own with `registerOAuthProvider`. Built in #709 | `auth/src/oauth-builtins.ts:42-64`, `oauth-route.ts:407,414` |
+| 15 | a | Keep the 2026-09-05 decision | root `CLAUDE.md` |
+| 16 | c | **Accept one master key**, documented in `SECURITY.md` in sweep 14 | `core/src/seal-keys.ts:46-59` |
+| 17 | c | **Keep the org-wide lockout**, documented in `SECURITY.md` in sweep 14 | `auth/src/auth.ts:145-149` |
+| 18 | c | **Keep the purge drivers; amend the thesis**: an env-selected adapter to a vendor HTTP API is not a platform primitive (same as `sesMailDriver`). Done in sweep 14 | `cache/src/purge-*.ts`, `docs/idea/00-thesis.md` |
+| 19 | c + d | **The framework absorbs the workarounds.** Outbox count (replaces `shared/queued-writes.ts`) done in sweep 14; query date revival and the island catalog subset built in #710 | `examples/dummy/apps/web/shared/` |
+| 20 | d | **One verb each**: `list`, `show <one>` (replaces `describe`), `explain` only for "why", `delete` (replaces `rm`). No aliases. Built in #709 | `x jobs ls`/`rm`, `x actions describe` |
+| 21 | b | **No extraction now**: each has one consumer, and `Bun.sql` speaks no replication protocol. Revisit on a second consumer (axiom 9) | `realtime/src/pg-*.ts` (~10.1k LOC) |
+
+### New
+
+| # | Class | Decision | Evidence / where |
+|---|---|---|---|
+| O-591 | a | (a) redaction kept — 25.0.0 (CHANGELOG #13) | `action/src/errors-idempotency.ts:186` |
+| O-492 | a | (a) 4xx → app page, 5xx → overlay — 25.0.0 | `http/src/stages.ts:376-392` |
+| O-518 | a | Default taken — 25.0.0 | CHANGELOG 25.0.0 `cli` (#518) |
+| O-518b | a | Keep `subscribes:` as a checked declaration (Default); 25.0.0 shipped it | `query/src/subscribes.ts` |
+| O-506 | a | Hold paint (Default) — 25.0.0 | CHANGELOG 25.0.0 (#506) |
+| O-507 | b | **Skip**: a channel catch-up names no writes; a pending write settles on its own HTTP answer. Reopen on an observed repro | `realtime/src/client-channels.ts` `#read` |
+| O-491 | a | Closed wontfix (Default) | #491 |
+| O-355 | a | Closed (Default) | #355 |
+| O-513 | a | Closed, reopen on a hit (Default) | #513 |
+| O-615 | a | #615 closed; #648 holds this table | #648 |
+| O-tool | a | **Deleted `.tool()`** rather than the Default: `toolFrom` is the one projection — 25.0.0 (CHANGELOG #10) | `action/src/facade.ts:6-7` |
+| O-loc | a | Config keys deleted (Default) — 25.0.0 | `@ultimat3/i18n/app-catalogs` |
+| O-plans | a | Keep (Default); every tracker `complete`/`superseded`, held by `scripts/plan-status.ts` | `docs/plans/**/status.yml` |
+| O-13 | a | Stay reserved (Default) | `wiki/Error-Codes.md` "Not thrown yet" |
+| O-win | a | Docker Desktop only; axiom 7 stands (Default) | `wiki/Deployment.md` |
+| O-10a | a | Keep `admin.action.<name>` (Default) | `admin/src/mcp-tools.ts:210,247` |
+
+**#655 closed 2026-10-07** (dependabot's Postgres 18 bump): a Postgres major is a planned
+migration, never a bot bump — 18 moved `PGDATA`, so an existing dev volume needs `pg_upgrade`.
+Dependabot ignores Postgres majors.
+
 ## Step
 Coordinator opens one GitHub issue "Owner decisions (plan 2026/10/04/101)" holding this table, links it
 from #615, closes #615 (O-615). Each answer is recorded in the issue and in `status.yml` `notes`.

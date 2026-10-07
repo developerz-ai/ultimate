@@ -4,7 +4,7 @@
 
 import { afterAll, afterEach, describe } from 'bun:test';
 import type { JobDriver } from './driver';
-import { driverAnswerScenarios } from './driver-answers-fixture';
+import { driverAnswerScenarios, type HoldKeys } from './driver-answers-fixture';
 import { driverLifecycleScenarios } from './driver-lifecycle-fixture';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
@@ -39,6 +39,23 @@ const harness: OperatorHarness = {
   },
 };
 
+/**
+ * Live rows holding `keys`, in ONE statement — the shape `SEED` already uses. A thousand
+ * `enqueue`s cost ~5 ms each on the embedded Postgres (a round trip plus the ready-notify), which
+ * made the requeue scenario's SETUP 3.5 s alone and a timeout under a loaded gate; the verb under
+ * test, `requeueMany`, was 44 ms of it.
+ */
+const HOLD = `
+insert into x_jobs
+  (id, name, queue, input, idempotency_key, run_id, attempt, max_attempts, state)
+select gen_random_uuid(), $1, $2, '{}'::jsonb, key, gen_random_uuid(), 0, 1, 'ready'
+  from unnest($3::text[]) as key
+`;
+
+const holdKeys: HoldKeys = async (_driver, { name, queue, keys }) => {
+  await (await embeddedPg()).executor.query(HOLD, [name, queue, keys]);
+};
+
 afterEach(() => {
   resetJobs();
 });
@@ -52,7 +69,7 @@ describe('how a row ends, on the pg driver', () => {
 });
 
 describe('what a driver answers, on the pg driver', () => {
-  driverAnswerScenarios('pg', harness);
+  driverAnswerScenarios('pg', harness, holdKeys);
 });
 
 describe('what the worker does with a burial, on the pg driver', () => {

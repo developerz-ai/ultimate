@@ -99,6 +99,9 @@ export class OfflineQueue {
   #epoch = 0;
   /** Set by `abandon`, never cleared: this queue's principal is gone. */
   #abandoned = false;
+  /** Durable writes in progress, and every one ever started: what a `refresh` must not race. */
+  #writing = 0;
+  #written = 0;
 
   private constructor(store: QueueStore, state: QueueState) {
     this.#store = store;
@@ -134,6 +137,42 @@ export class OfflineQueue {
     this.#mutations = state.mutations.map((mutation) => ({ ...mutation }));
     this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
     await this.#reclaimInflight();
+  }
+
+  /**
+   * READ-ONLY re-read, safe without the drain lock: another tab queued, sent or refused writes this
+   * one holds a stale copy of. Unlike `reload` it reclaims nothing and claims nothing — an entry
+   * this tab has `inflight` keeps its state, an entry gone from the disk was settled elsewhere.
+   * A read that a write of this tab's raced is retried: its snapshot may predate that write.
+   */
+  async refresh(): Promise<void> {
+    for (let attempt = 0; attempt < 3 && !this.#abandoned; attempt += 1) {
+      const started = this.#written;
+      const state = await this.#store.load();
+      if (this.#abandoned) return;
+      if (this.#writing > 0 || this.#written !== started) continue;
+      this.#adopt(state);
+      return;
+    }
+  }
+
+  #adopt(state: QueueState): void {
+    const onDisk = new Map(state.mutations.map((mutation) => [mutation.key, mutation]));
+    const kept: QueuedMutation[] = [];
+    for (const mutation of this.#mutations) {
+      const disk = onDisk.get(mutation.key);
+      onDisk.delete(mutation.key);
+      // Gone from the disk: another tab's pass settled it. One on THIS tab's wire stays its own.
+      if (disk === undefined && mutation.status !== 'inflight') continue;
+      if (disk !== undefined && mutation.status !== 'inflight') {
+        mutation.status = disk.status;
+        mutation.error = disk.error;
+      }
+      kept.push(mutation);
+    }
+    for (const disk of onDisk.values()) kept.push({ ...disk });
+    this.#mutations = kept;
+    this.#nextSeq = Math.max(this.#nextSeq, state.nextSeq);
   }
 
   async #reclaimInflight(): Promise<void> {
@@ -371,9 +410,13 @@ export class OfflineQueue {
         mutation.error = null;
         sent += 1;
       } catch (error) {
-        mutation.status = 'pending';
-        mutation.error = toQueueError(error);
-        await this.#persist([mutation]);
+        // Settled inside `send` before it threw (the page outbox acks or fails it, then a merge may
+        // raise): writing it back as `pending` would replay what the server already decided.
+        if (this.#mutations.includes(mutation) && statusOf(mutation) !== 'failed') {
+          mutation.status = 'pending';
+          mutation.error = toQueueError(error);
+          await this.#persist([mutation]);
+        }
         return {
           sent,
           collapsed: this.#collapsed,
@@ -407,11 +450,17 @@ export class OfflineQueue {
    */
   async #persist(puts: readonly QueuedMutation[], deletes: readonly string[] = []): Promise<void> {
     if (this.#abandoned) return;
-    await this.#store.write({
-      puts: puts.map((mutation) => ({ ...mutation })),
-      deletes,
-      nextSeq: this.#nextSeq,
-    });
+    this.#writing += 1;
+    this.#written += 1;
+    try {
+      await this.#store.write({
+        puts: puts.map((mutation) => ({ ...mutation })),
+        deletes,
+        nextSeq: this.#nextSeq,
+      });
+    } finally {
+      this.#writing -= 1;
+    }
   }
 }
 

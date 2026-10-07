@@ -178,3 +178,35 @@ describe('a sender that settles the write itself', () => {
     expect(queue.size).toBe(0);
   });
 });
+
+// A sender that settles the write itself and THEN throws — the page outbox acks, then a custom
+// merge's `drop` raises. The catch that puts a failed send back to `pending` wrote the entry the
+// ack had just deleted back to disk, so the next load replayed a write the server already took.
+describe('a sender that acks and then throws', () => {
+  test('never writes the acked entry back', async () => {
+    const store = memoryQueueStore();
+    const queue = await OfflineQueue.open(store);
+    await queue.enqueue(like(1));
+    const report = await queue.drain(async (mutation) => {
+      await queue.ack(mutation.key);
+      throw new TypeError('a merge raised after the ack');
+    });
+    expect(report.stoppedAt).toBe('like:p1');
+    expect(queue.pending()).toEqual([]);
+    expect((await store.load()).mutations).toEqual([]);
+  });
+});
+
+describe('a sender that refuses and then throws', () => {
+  test('keeps the refusal: never back to pending, never resent', async () => {
+    const store = memoryQueueStore();
+    const queue = await OfflineQueue.open(store);
+    await queue.enqueue(like(1));
+    await queue.drain(async (mutation) => {
+      await queue.fail(mutation.key, { code: 'X_FORBIDDEN', cause: 'no', fix: 'ask for access' });
+      throw new TypeError('a drop raised after the refusal');
+    });
+    expect(queue.find('like:p1')?.status).toBe('failed');
+    expect((await store.load()).mutations.map((m) => m.status)).toEqual(['failed']);
+  });
+});

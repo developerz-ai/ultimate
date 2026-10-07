@@ -98,7 +98,7 @@ Each one is a permanent no, not a "later".
 | **Multiple CSS solutions** | Tailwind + modules + CSS-in-JS in one repo is three token systems. SCSS modules + design tokens, one way to theme. |
 | **React Server Components** | wrong runtime, and the mental model taxes the exact audience we optimize for. Solid streaming with `<Suspense>` gets the same payoff with no new component dialect. |
 | **A plugin API before v1** | plugins freeze internals. Ship the blessed path first; extension points earn their existence from real forks. |
-| **Vendor edge/KV primitives** | violates axiom 7. Cache tiers are ours (see [`05-caching.md`](./05-caching.md)); the CDN gets standard headers and a purge webhook, nothing more. |
+| **Vendor edge/KV primitives** | violates axiom 7. Cache tiers are ours (see [`05-caching.md`](./05-caching.md)); the CDN gets standard headers and a purge call, nothing more. The purge goes through the `PurgeDriver` interface; `@ultimat3/cache` ships Fastly and Cloudflare adapters, chosen by which credential is set (`selectPurgeDriver`). An adapter to a vendor's HTTP API is not a platform primitive: the app runs the same with no CDN, and nothing is deployed onto the vendor (owner decision 18, `As of 2026-10-07`; `sesMailDriver` is the same shape). |
 
 ## What "done" looks like
 

@@ -155,6 +155,18 @@ export function useMutation(mutator: MutatorLike): Mutate {
         throw error;
       }
     };
+    // Asked of the DURABLE queue, re-read now: another tab of this user may have queued writes this
+    // tab's copy has not heard of yet, and sending past them reorders the user's intent.
+    if (queued !== undefined) {
+      await queued.refresh().catch(() => undefined);
+      // That read is an await: a principal that left meanwhile must not have this write POSTed, or
+      // queued, as the next one. Refused by the code `enqueue` uses for the same departure.
+      if (pageClient().scope.epoch !== issued) {
+        page.store.drop(key);
+        count(writes, mutator.name, -1);
+        throw new OfflineQueueAbandonedError({ name: mutator.name });
+      }
+    }
     if (queued !== undefined && queued.pending().length > 0) {
       try {
         await enqueue(queued);

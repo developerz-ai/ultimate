@@ -98,8 +98,8 @@ export const resend = resendEventReceiver({ secret: Bun.env['RESEND_WEBHOOK_SECR
 | `resendEventReceiver` | Svix: HMAC-SHA256 under the `whsec_` secret, constant-time, within `toleranceMs` (5 min) |
 
 Mount `receive(request)` as a plain HTTP route in the `routes` runtime override
-([Configuration](Configuration)) — **not** in an `api/**/route.ts`, which cannot register today:
-whether that file kind is wired or deleted is an open owner decision ([Known gaps](Known-Gaps#awaiting-an-owner-decision)).
+([Configuration](Configuration)). `api/` holds no route file — it is actions and queries only, and a
+webhook body an action cannot parse is exactly what `routes` is for.
 `SES_CONFIGURATION_SET` names the SES configuration set sent on every message (`ConfigurationSetName`) — the set whose event destination publishes to that SNS topic.
 
 ## Framework mails

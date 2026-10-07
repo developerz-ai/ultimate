@@ -19,12 +19,18 @@
  * renders, so the two agree by construction.
  */
 
-import { useChannel, useConnection, useMutation, useQuery, useRecord } from '@ultimat3/realtime';
+import {
+  useChannel,
+  useConnection,
+  useMutation,
+  useOutbox,
+  useQuery,
+  useRecord,
+} from '@ultimat3/realtime';
 import type { JSX } from 'solid-js';
 import { onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { type PluralForms, pluralText } from '../../../shared/plural-text';
-import { trackQueued } from '../../../shared/queued-writes';
 import { ORG_POSTS, POST_RECORD_READ, type PostRecord } from '../channel-ref';
 import { LIKE_POST } from '../like-mutation';
 import styles from '../ui/like-button.module.scss';
@@ -60,10 +66,10 @@ function Like(props: LikeIslandProps): JSX.Element {
   const channel = useChannel(ORG_POSTS, { orgId: props.orgId });
   const post = useRecord<PostRecord>('posts', props.postId);
   const like = useMutation(LIKE_POST);
-  const queued = trackQueued();
+  const outbox = useOutbox();
   const connection = useConnection();
   onCleanup(() => {
-    for (const held of [seed, channel, post, like, connection]) held.release();
+    for (const held of [seed, channel, post, like, connection, outbox]) held.release();
   });
 
   const count = (): number => {
@@ -86,7 +92,7 @@ function Like(props: LikeIslandProps): JSX.Element {
           // A refusal has already taken its overlay back — the count on screen IS the answer, and
           // the page's `useMutationQueue().failed` counts it. Nothing is left to do with the error
           // here, and left unhandled it would be a rejection nobody awaits.
-          void queued.track(like({ postId: props.postId, orgId: props.orgId }));
+          void like({ postId: props.postId, orgId: props.orgId }).catch(() => undefined);
         }}
       >
         {props.labels.like}
@@ -103,7 +109,6 @@ function Like(props: LikeIslandProps): JSX.Element {
         {pluralText(props.labels.likes, count())}
       </span>
 
-      {/* Queued in the page's outbox while the network is gone: information, not an error. */}
       <Show when={connection.updateAvailable !== null}>
         <span role="status" data-role="update-available">
           {props.labels.update}{' '}
@@ -112,7 +117,8 @@ function Like(props: LikeIslandProps): JSX.Element {
           </button>
         </span>
       </Show>
-      <Show when={queued.count() > 0}>
+      {/* Queued in the page's outbox while the network is gone: information, not an error. */}
+      <Show when={outbox.size > 0}>
         <span class={styles.queued} data-role="queued">
           {props.labels.queued}
         </span>

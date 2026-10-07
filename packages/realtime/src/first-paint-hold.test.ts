@@ -49,6 +49,9 @@ const outbox = (ready: Promise<void>): void => {
     enqueue: async () => undefined,
     replay: async () => undefined,
     pending: () => [],
+    size: 0,
+    subscribe: () => () => undefined,
+    refresh: async () => undefined,
     ready,
   };
   Object.defineProperty(outboxHost, OUTBOX_KEY, { value: handle, configurable: true });

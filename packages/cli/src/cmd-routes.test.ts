@@ -10,6 +10,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { action, registerAction, resetActions } from '@ultimat3/action';
+import { allow, can } from '@ultimat3/policy';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import type { RouteDescriptor } from '@ultimat3/render';
 import {
   clearRoutes,
@@ -18,11 +21,13 @@ import {
   registerRoute,
   SURFACES,
 } from '@ultimat3/render';
+import { t } from '@ultimat3/schema';
 import { REQUIRED_BUN } from './app-root';
-import { readSurfaceFilter, renderRouteTable, routesCommand } from './cmd-routes';
+import { readSurfaceFilter, routesCommand } from './cmd-routes';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import { renderRouteTable } from './route-table';
 
 let root = '';
 
@@ -105,7 +110,7 @@ describe('unit · the route table renders one row per route', () => {
       descriptor({}),
       descriptor({ path: '/dashboard', surface: 'app', file: 'apps/web/app/dashboard/page.tsx' }),
     ]);
-    expect(lines[0]?.startsWith('path')).toBe(true);
+    expect(lines[0]?.startsWith('method  path')).toBe(true);
     // One width per column, computed across every row: two rows of one table have one length.
     expect(new Set(lines.map((line) => line.length)).size).toBe(1);
     expect(lines[1]).toContain('/pricing');
@@ -147,6 +152,7 @@ describe('unit · x routes --json projects every fact the table shows', () => {
     expect(result.data).toEqual({
       routes: [
         {
+          method: 'GET',
           path: '/',
           surface: 'site',
           file: 'apps/web/site/page.tsx',
@@ -218,5 +224,100 @@ describe('unit · x routes takes no positional', () => {
       expect([word, (thrown as { code?: string }).code]).toEqual([word, 'X_CLI_UNKNOWN_COMMAND']);
       expect([word, (thrown as { fix?: string }).fix]).toEqual([word, 'x routes --json']);
     }
+  });
+});
+
+// Owner decision 2 (#648): `x routes` printed the PAGE table only, so a caller sent there by a
+// route miss (`X_ROUTE_NOT_FOUND`'s fix is `x routes --json`) never saw one action or query URL.
+// The API half is `apiRoutes()` — the one builder `x dev` and the container mount — so the
+// listing and the served table cannot disagree.
+describe('unit · x routes lists the served API beside the pages', () => {
+  const Input = t.object({ orgId: t.uuid });
+
+  beforeEach(() => {
+    clearRoutes();
+    resetActions();
+    resetQueries();
+  });
+
+  afterEach(() => {
+    clearRoutes();
+    resetActions();
+    resetQueries();
+  });
+
+  const registerApi = (): void => {
+    registerAction(
+      'publishPost',
+      action({
+        input: Input,
+        output: t.object({ ok: t.boolean }),
+        policy: can('posts:publish'),
+        handle: () => ({ ok: true }),
+      }),
+    );
+    registerQuery(
+      'orgFeed',
+      query({
+        input: Input,
+        policy: allow(),
+        sql: ({ orgId }) => from('posts', []).where({ orgId }),
+      }),
+    );
+  };
+
+  test('every action and query route is a row on the api surface, named for its primitive', async () => {
+    registerApi();
+    const result = await routesCommand.run(contextFor(['routes', '--surface', 'api', '--json']));
+    const rows = (result.data as { routes: readonly Record<string, unknown>[] }).routes;
+    expect(rows).toEqual([
+      {
+        method: 'GET',
+        path: '/_x/query/org-feed',
+        surface: 'api',
+        primitive: 'query',
+        name: 'orgFeed',
+        auth: 'public',
+        policy: 'allow',
+      },
+      {
+        method: 'POST',
+        path: '/api/posts/publish',
+        surface: 'api',
+        primitive: 'action',
+        name: 'publishPost',
+        auth: 'required',
+        policy: 'posts:publish',
+      },
+    ]);
+    // The printed row names the primitive where a page names its file.
+    const printed = (result.lines ?? []).find((line) => line.includes('/api/posts/publish')) ?? '';
+    expect(printed).toContain('POST');
+    expect(printed).toContain('action publishPost · posts:publish');
+    expect(result.summary).toContain('2');
+  });
+
+  test('pages and the API are one listing, and each filter keeps only its own', async () => {
+    registerApi();
+    registerRoute({
+      file: 'apps/web/site/page.tsx',
+      config: defineRoute({
+        render: 'static',
+        hydrate: 'never',
+        offline: 'precache',
+        budget: { js: '0kb' },
+        meta: () => ({ title: 'Home', description: 'the landing page' }),
+      }),
+    });
+    const all = await routesCommand.run(contextFor(['routes', '--json']));
+    const rows = (all.data as { routes: readonly { path: string; surface: string }[] }).routes;
+    expect(rows.map((row) => `${row.surface} ${row.path}`)).toEqual([
+      'site /',
+      'api /_x/query/org-feed',
+      'api /api/posts/publish',
+    ]);
+    expect(all.lines).toHaveLength(rows.length + 1);
+    const site = await routesCommand.run(contextFor(['routes', '--surface', 'site', '--json']));
+    expect((site.data as { routes: readonly unknown[] }).routes).toHaveLength(1);
   });
 });

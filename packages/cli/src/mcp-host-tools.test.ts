@@ -9,15 +9,19 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import { resetPrompts } from '@ultimat3/ai';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type { JsonRpcResponse, ToolArgs } from '@ultimat3/mcp';
+import { allow } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
 import { resetAppLoad } from './app-load';
 import { VERIFY_STEPS } from './cmd-verify';
 import type { ExecResult, Runner } from './exec';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer } from './mcp-host';
 import { processRoot } from './process-root-fixture';
+import { routeRows } from './route-table';
 
 // Dot-prefixed and under `packages/cli/`, exactly as `cmd-mcp.test.ts`'s fixture: out of every
 // workspace glob, and resolving `@ultimat3/*` through the same tsconfig paths.
@@ -240,4 +244,31 @@ describe('verify.run is the gate, run through the injected runner', () => {
       cwd: ROOT,
     });
   }, 60_000);
+});
+
+// One route table (owner decision 2, #648): `routes.list` answered `describePages()` while
+// `x routes` lists the API too, so an agent asking the tool saw no action URL at all.
+describe('routes.list answers the table x routes prints', () => {
+  test('an action is a row, the same row x routes --json carries', async () => {
+    resetActions();
+    registerAction(
+      'publishPost',
+      action({
+        input: t.object({ id: t.uuid }),
+        output: t.object({ ok: t.boolean }),
+        policy: allow(),
+        handle: () => ({ ok: true }),
+      }),
+    );
+    try {
+      const { json, isError } = resultOf(await call('routes.list'));
+      expect(isError).toBe(false);
+      expect(json).toEqual(routeRows().map((row) => row.json));
+      expect(json).toContainEqual(
+        expect.objectContaining({ path: '/api/posts/publish', primitive: 'action' }),
+      );
+    } finally {
+      resetActions();
+    }
+  });
 });

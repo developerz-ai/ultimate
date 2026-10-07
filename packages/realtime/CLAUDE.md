@@ -170,9 +170,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A dropped `records` frame is counted AND repaired**: per-node `seq`/`epoch` per channel; a refused
   frame marks the socket gapped, and the `drain` handler sends `replay-gap`
   (`channel_replay_gaps_total`). The client re-runs `catchUp`, holding frames meanwhile.
-- **A channel is a DECLARATION**: `channel(name, { params, policy, catchUp, records?, events? })`.
-  Deny by default, and `policy` is REQUIRED (`X_CHANNEL_DECLARATION_INVALID`; a public channel says
-  `policy: allow('public')`). Presence rides `events: true` channels.
+- **A channel is a DECLARATION, no primitive** (docs/history/primitive-factories.md):
+  `channel(name, { params, policy, catchUp, records?, events? })`, deny by default; `policy`
+  REQUIRED (`X_CHANNEL_DECLARATION_INVALID`; public: `allow('public')`). Presence: `events`.
 - **A guard that FAILS on re-auth SUSPENDS the seat** (`guardFailures`): kept, silent until a pass.
   A `null` actor on a `row` channel and a tenancy refusal are DENIALS.
 - **A seat is decided for the actor ON the socket when the guard resolves** (`#settle`); a denied
@@ -287,9 +287,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The disk boot is ONE page script (`boot.ts`, `./boot`)**, served at `/_x/page-boot/<hash>.js`
   on a document with the scope tag and a realtime island; it installs the runtime, wipes every other
   principal's stored scope (read at the wipe), then restores. `booted` reads its promise off
-  `globalThis[Symbol.for('ultimate.page-boot')]`. No boot: islands load its chunk.
-- **An island never carries the outbox**: `boot.ts` builds it; `useMutation` and the page socket read
-  it through `outbox-slot.ts` after `page.booted`. No boot ⇒ a refused write is rejected, not queued.
+  `Symbol.for('ultimate.page-boot')`. No boot: islands load its chunk.
+- **An island never carries the outbox**: `boot.ts` builds it; `useMutation`, `useOutbox`, the page socket
+  read it through `outbox-slot.ts` after `page.booted`. No boot ⇒ a refused write is rejected, not queued.
 
 ## Map
 

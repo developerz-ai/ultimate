@@ -189,6 +189,7 @@ export {
   scopedPlan,
 } from './tenancy';
 export type { Move } from './transition';
+export type { TransitionObservation } from './transition-pins';
 export type {
   AnyColumn,
   Column,

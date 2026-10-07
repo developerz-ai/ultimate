@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type ConflictPolicy, type Row, rescope, UltimateError } from '@ultimat3/core';
 import { type FakeSocket, pageHarness, resetPage } from './hooks-fixture';
+import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle } from './outbox-slot';
 import { pageOutbox } from './page-outbox';
 import type { LocalTx } from './record-tx';
 import { type MutatorLike, useMutation, useMutationQueue } from './use-mutation';
@@ -418,5 +419,48 @@ describe('a write made while the outbox still holds older ones', () => {
     expect(order[0]).not.toContain('unlike');
     expect(order[1]).toContain('unlike');
     expect(outbox.size).toBe(0);
+  });
+});
+
+// The same ordering across TABS: another tab queued the like, and this tab's copy of the outbox —
+// refreshed only by its own drain — still read empty, so the unlike went straight to HTTP and the
+// like replayed after it. Queue-or-send is decided from a fresh read of the durable queue.
+describe('a write made while ANOTHER tab holds older ones in the outbox', () => {
+  test('re-reads the durable queue and queues behind them', async () => {
+    pageHarness();
+    const older: OutboxEntry = { key: 'likePost:other-tab', name: 'likePost', input: {} };
+    let onDisk: readonly OutboxEntry[] = [];
+    let seen: readonly OutboxEntry[] = [];
+    const queued: OutboxEntry[] = [];
+    const handle: OutboxHandle = {
+      enqueue: async (entry) => {
+        queued.push(entry);
+      },
+      replay: async () => undefined,
+      pending: () => seen,
+      get size() {
+        return seen.length;
+      },
+      subscribe: () => () => undefined,
+      refresh: async () => {
+        seen = onDisk;
+      },
+      ready: Promise.resolve(),
+    };
+    Object.defineProperty(globalThis, OUTBOX_KEY, { value: handle, configurable: true });
+    // The other tab's write reached the disk; this tab has not heard of it yet.
+    onDisk = [older];
+    const posted: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      posted.push(String(url));
+      return new Response(JSON.stringify({ data: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    await useMutation({ name: 'unlikePost' })({ postId: 'p1' });
+    expect(posted).toEqual([]);
+    expect(queued.map((entry) => entry.name)).toEqual(['unlikePost']);
   });
 });

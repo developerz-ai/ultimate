@@ -18,7 +18,7 @@ import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
-import { transitionRow } from './transition';
+import { type Move, transitionRow } from './transition';
 import type {
   ColumnMap,
   Filterable,
@@ -198,14 +198,14 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
    * of the concept and the only part of it the framework owns. Which state is terminal, what any
    * of them mean, who may make a move and what happens on arrival are the app's, every one.
    *
-   * Tenant-scoped exactly as `updateWhere` is, because it IS one: a row in another org matches no
-   * statement and reads back as absent, so the answer is `X_NOT_FOUND` rather than a conflict that
-   * would confirm it exists.
+   * `observed` (the row a decision read, and what it read) pins those columns in the same statement
+   * — a row changed under the decision is `X_STATE_CONFLICT` too (#702, `transition-pins.ts`).
+   * Tenant-scoped as `updateWhere` is: another org's row reads back absent, `X_NOT_FOUND`.
    */
   transition<K extends keyof Row & string>(
     column: K,
     id: IdOf<Row>,
-    move: { readonly from: Row[K] & string; readonly to: Row[K] & string },
+    move: Move<Row[K] & string>,
     options?: RepoOptions,
   ): Promise<Row>;
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;

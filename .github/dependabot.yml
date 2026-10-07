@@ -58,6 +58,11 @@ updates:
     labels: [dependencies, docker]
     commit-message:
       prefix: 'chore(docker)'
+    ignore:
+      # A Postgres MAJOR is a planned migration, never a weekly bump: 18 moves PGDATA and a dev
+      # volume written by 17 needs pg_upgrade (#655, closed 2026-10-07). Minors still flow.
+      - dependency-name: postgres
+        update-types: ['version-update:semver-major']
 
   # The `docker` ecosystem reads Dockerfiles only; the compose files pin their service images by
   # digest beside the tag too (scripts/test-services-shape.test.ts), and a pin nothing moves rots.
@@ -71,3 +76,7 @@ updates:
     labels: [dependencies, docker]
     commit-message:
       prefix: 'chore(docker)'
+    ignore:
+      # The same Postgres-major rule as the Dockerfile ecosystem above (#655).
+      - dependency-name: postgres
+        update-types: ['version-update:semver-major']
