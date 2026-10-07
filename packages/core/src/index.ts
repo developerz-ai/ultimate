@@ -680,7 +680,11 @@ export type { PgExecutor } from './pg-executor';
 export type { ProbeDatabaseEntropy } from './probe-database';
 export { PROBE_DATABASE_NAME_MAX, probeDatabaseName } from './probe-database';
 export type { ProbeDatabaseSweepOptions } from './probe-database-sweep';
-export { probeDatabaseAlive, sweepProbeDatabases } from './probe-database-sweep';
+export {
+  PROBE_DATABASE_MIN_AGE_MS,
+  probeDatabaseAlive,
+  sweepProbeDatabases,
+} from './probe-database-sweep';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
 export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';

@@ -5,7 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from './pg-executor';
 import { probeDatabaseName } from './probe-database';
-import { probeDatabaseAlive, sweepProbeDatabases } from './probe-database-sweep';
+import {
+  PROBE_DATABASE_MIN_AGE_MS,
+  probeDatabaseAlive,
+  sweepProbeDatabases,
+} from './probe-database-sweep';
 
 interface Row {
   readonly datname: string;
@@ -24,41 +28,60 @@ function fakeServer(rows: readonly Row[]): PgExecutor & { readonly sent: string[
   };
 }
 
-const MINE = 'x_suite_100_aaaaaaaa';
+/** The sweep's clock; `OLD` is 11 minutes before it, `YOUNG` one minute. */
+const NOW = 1_800_000_000_000;
+const clock = (): number => NOW;
+const OLD = 'tro8do';
+const YOUNG = 'tro8uc';
+const MINE = `x_suite_100_${OLD}_aaaaaaaa`;
+const SIBLING = `x_suite_200_${OLD}_bbbbbbbb`;
 const dead = (): boolean => false;
 
 describe('sweepProbeDatabases', () => {
   test('drops a sibling whose process is dead and which nothing is connected to', async () => {
     const server = fakeServer([
-      { datname: 'x_suite_200_bbbbbbbb', backends: 0 },
+      { datname: SIBLING, backends: 0 },
       { datname: MINE, backends: 0 },
     ]);
     // Every pid reads dead, so only the self-exclusion keeps its own database alive.
-    const swept = await sweepProbeDatabases(server, MINE, { isAlive: () => false });
-    expect(swept).toEqual(['x_suite_200_bbbbbbbb']);
-    expect(server.sent).toContain('drop database if exists "x_suite_200_bbbbbbbb" with (force)');
+    const swept = await sweepProbeDatabases(server, MINE, { isAlive: () => false, now: clock });
+    expect(swept).toEqual([SIBLING]);
+    expect(server.sent).toContain(`drop database if exists "${SIBLING}" with (force)`);
     // Its own database is never a candidate, whatever its liveness reads.
     expect(server.sent.some((text) => text.includes(`"${MINE}"`))).toBe(false);
   });
 
   test('keeps a sibling whose process is alive — a concurrent run on this host', async () => {
-    const server = fakeServer([{ datname: 'x_suite_200_bbbbbbbb', backends: 0 }]);
-    expect(await sweepProbeDatabases(server, MINE, { isAlive: () => true })).toEqual([]);
+    const server = fakeServer([{ datname: SIBLING, backends: 0 }]);
+    expect(await sweepProbeDatabases(server, MINE, { isAlive: () => true, now: clock })).toEqual(
+      [],
+    );
     expect(server.sent.some((text) => text.startsWith('drop'))).toBe(false);
   });
 
   test('keeps a sibling something is connected to — a run on ANOTHER host, pid unknowable', async () => {
-    const server = fakeServer([{ datname: 'x_suite_200_bbbbbbbb', backends: 1 }]);
-    expect(await sweepProbeDatabases(server, MINE, { isAlive: dead })).toEqual([]);
+    const server = fakeServer([{ datname: SIBLING, backends: 1 }]);
+    expect(await sweepProbeDatabases(server, MINE, { isAlive: dead, now: clock })).toEqual([]);
+  });
+
+  test('keeps a dead, idle sibling younger than the minimum age — created, not yet connected', async () => {
+    // Another host's run between its `create database` and its first query: its pid reads dead here
+    // and nothing is connected yet. Only its age tells it from a killed run's leftover.
+    const young = `x_suite_200_${YOUNG}_bbbbbbbb`;
+    const server = fakeServer([{ datname: young, backends: 0 }]);
+    expect(await sweepProbeDatabases(server, MINE, { isAlive: dead, now: clock })).toEqual([]);
+    expect(PROBE_DATABASE_MIN_AGE_MS).toBe(10 * 60 * 1000);
   });
 
   test('never touches a name that is not this prefix’s probe shape', async () => {
     const server = fakeServer([
       // A longer prefix sharing ours: `x_suite_extra`'s probe, not ours.
-      { datname: 'x_suite_extra_200_bbbbbbbb', backends: 0 },
+      { datname: `x_suite_extra_200_${OLD}_bbbbbbbb`, backends: 0 },
       { datname: 'x_suite_production', backends: 0 },
     ]);
-    expect(await sweepProbeDatabases(server, MINE, { isAlive: () => false })).toEqual([]);
+    expect(await sweepProbeDatabases(server, MINE, { isAlive: () => false, now: clock })).toEqual(
+      [],
+    );
   });
 
   test('asks the server only for this prefix, with LIKE wildcards escaped', async () => {
@@ -74,10 +97,16 @@ describe('sweepProbeDatabases', () => {
   });
 
   test('round-trips probeDatabaseName, truncated prefix included', async () => {
-    const name = probeDatabaseName('x'.repeat(80), { pid: 7, random: 'cafebabe' });
-    const sibling = name.replace('_7_cafebabe', '_8_deadbeef');
+    const name = probeDatabaseName('x'.repeat(80), {
+      pid: 7,
+      random: 'cafebabe',
+      now: NOW - 11 * 60_000,
+    });
+    const sibling = name.replace('_7_', '_8_').replace('_cafebabe', '_deadbeef');
     const server = fakeServer([{ datname: sibling, backends: 0 }]);
-    expect(await sweepProbeDatabases(server, name, { isAlive: () => false })).toEqual([sibling]);
+    expect(await sweepProbeDatabases(server, name, { isAlive: () => false, now: clock })).toEqual([
+      sibling,
+    ]);
   });
 });
 
