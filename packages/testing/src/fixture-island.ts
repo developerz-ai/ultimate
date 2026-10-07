@@ -243,7 +243,11 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     }
     const path = modulePathFor(scratch, chunk.code);
     await Bun.write(path, chunk.code);
-    const entry = entryOf(await import(path), chunk.file);
+    // By `file:` URL, never the bare path: Bun on macOS caches a directory's entries on its first
+    // resolution, and a bare-path import of a file written there afterwards is "Cannot find module"
+    // (#704, Bun 1.4.0 arm64). The per-mount directory already avoids it; the URL form holds even
+    // if a later change ever imports twice from one directory.
+    const entry = entryOf(await import(Bun.pathToFileURL(path).href), chunk.file);
     const el = new FakeElement('div');
     // Before the shell and before `mount`: nothing observes the host yet, so this is a write and
     // never a notification.
