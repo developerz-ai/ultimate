@@ -189,7 +189,7 @@ describe('a sender that acks and then throws', () => {
     await queue.enqueue(like(1));
     const report = await queue.drain(async (mutation) => {
       await queue.ack(mutation.key);
-      throw new TypeError('a merge raised after the ack');
+      return Promise.reject(new TypeError('a merge raised after the ack'));
     });
     expect(report.stoppedAt).toBe('like:p1');
     expect(queue.pending()).toEqual([]);
@@ -204,7 +204,7 @@ describe('a sender that refuses and then throws', () => {
     await queue.enqueue(like(1));
     await queue.drain(async (mutation) => {
       await queue.fail(mutation.key, { code: 'X_FORBIDDEN', cause: 'no', fix: 'ask for access' });
-      throw new TypeError('a drop raised after the refusal');
+      return Promise.reject(new TypeError('a drop raised after the refusal'));
     });
     expect(queue.find('like:p1')?.status).toBe('failed');
     expect((await store.load()).mutations.map((m) => m.status)).toEqual(['failed']);
