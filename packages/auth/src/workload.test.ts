@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { createJwksClient } from './jwks';
+import { jwksClient } from './jwks';
 import { actorFromService } from './policy-bridge';
 import { base64Url } from './tokens';
 import { verifyWorkloadToken } from './workload';
@@ -37,7 +37,7 @@ const sign = async (
 
 const jwksFor = async (keys: CryptoKeyPair) => {
   const jwk = { ...(await crypto.subtle.exportKey('jwk', keys.publicKey)), kid: 'k1' };
-  return createJwksClient({
+  return jwksClient({
     provider: 'https://kubernetes.default.svc',
     jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks',
     clock,

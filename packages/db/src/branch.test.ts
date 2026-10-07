@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createBranch, dropBranch, listBranches, reapBranches } from './branch';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 
 /** The marker as it is written now: the base this clone came from, then the instant, in UTC. */
 const marker = (base: string, createdAt: string): string => `ultimate:branch:${base}:${createdAt}`;
@@ -13,7 +13,7 @@ const staleIso = (): string => new Date(Date.now() - 10_000).toISOString();
 
 describe('createBranch', () => {
   test('omitting `now` still stamps createdAt with a valid, current timestamp', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const before = Date.now();
     const info = await createBranch('feature_x', { client, base: 'postgres' });
     const after = Date.now();
@@ -27,7 +27,7 @@ describe('createBranch', () => {
   test('the comment records what the branch was cloned FROM, and so does the answer', async () => {
     // `pg_database` records no template lineage and `datdba` is shared when both apps use one
     // role, so the base is written down at creation or it is not knowable afterwards at all.
-    const client = createRecordingClient();
+    const client = recordingClient();
     const info = await createBranch('feature_x', {
       client,
       base: 'shop',
@@ -43,7 +43,7 @@ describe('createBranch', () => {
 
 describe('listBranches', () => {
   test('reads the two segments apart, and an old one-segment comment as no base', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('pg_database', {
       rows: [
         { name: 'new', comment: marker('shop', '2026-08-19T10:00:00.000Z'), size_bytes: 0 },
@@ -72,7 +72,7 @@ describe('listBranches', () => {
 
 describe('reapBranches', () => {
   test('omitting `now` still measures age against the current time, not the epoch', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const oldIso = new Date(Date.now() - 10_000).toISOString();
     client.on('pg_database', {
       rows: [{ name: 'stale', comment: marker('postgres', oldIso), size_bytes: 0 }],
@@ -91,7 +91,7 @@ describe('reapBranches', () => {
    * next nightly sweep, `maxAgeMs` notwithstanding. An age nothing can read is not an old age.
    */
   test('an unparseable createdAt is skipped, not read as infinitely old', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('pg_database', {
       rows: [
         { name: 'truncated', comment: marker('postgres', '2026-01-0'), size_bytes: 0 },
@@ -116,7 +116,7 @@ describe('reapBranches', () => {
    * the reaper leaves it alone rather than acting on a date nobody wrote.
    */
   test('a finite but non-canonical createdAt is skipped too, not reaped on a date nobody wrote', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('pg_database', {
       rows: [
         // Both parse, both are finite, and both are far older than the cutoff — so the finite
@@ -144,7 +144,7 @@ describe('reapBranches is a sweep of THIS database, not of the server', () => {
    * app's branches dropped — a `DROP DATABASE` nothing recovers from and nobody asked for.
    */
   test('a branch of another database on the same server is never dropped', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'shop' }] });
     client.on('pg_database', {
       rows: [
@@ -165,7 +165,7 @@ describe('reapBranches is a sweep of THIS database, not of the server', () => {
    * branch of this database. The next `x db branch create` writes the two-segment form.
    */
   test('a pre-4.x one-segment marker is skipped, never dropped', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'shop' }] });
     client.on('pg_database', {
       rows: [{ name: 'legacy', comment: `ultimate:branch:${staleIso()}`, size_bytes: 0 }],
@@ -183,7 +183,7 @@ describe('reapBranches is a sweep of THIS database, not of the server', () => {
  */
 describe('dropBranch', () => {
   test('a branch that existed answers true; a name that was never a database answers false', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'postgres' }] });
 
     client.on('from pg_database where datname', { rows: [{ ok: 1 }] });
@@ -202,7 +202,7 @@ describe('reapBranches refuses a maxAgeMs that bounds nothing', () => {
   // `maxAgeMs: NaN` (an unset env var through `Number(…)`) dropped EVERY branch of this database.
   for (const maxAgeMs of [Number.NaN, -1, Number.POSITIVE_INFINITY, 1.5]) {
     test(`maxAgeMs ${String(maxAgeMs)} throws, and no drop database is issued`, async () => {
-      const client = createRecordingClient();
+      const client = recordingClient();
       client.on('pg_database', {
         rows: [{ name: 'fresh', comment: marker('postgres', staleIso()), size_bytes: 0 }],
       });

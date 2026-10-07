@@ -10,12 +10,11 @@
  * to — `queryHash(name, input)` — so one read's cursor cannot page another.
  */
 import type { CursorPayload, Page } from '@ultimat3/core';
-import { assert, decodeCursor, encodeCursor, pageOf } from '@ultimat3/core';
+import { assert, CursorInvalidError, decodeCursor, encodeCursor, pageOf } from '@ultimat3/core';
+import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { kindsOf } from './column-kinds';
 import { reviveSortKey, serializeSortValue } from './cursor-value';
-import { CursorInvalidError } from './errors';
-import { MAX_PAGE_SIZE } from './page-controls';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName } from './query';
 import { readCall } from './read';
@@ -78,7 +77,7 @@ async function pageFrom<TRow extends object>(
   // The whole of a declared limit is already served: there is no row to ask the source for.
   if (left === 0) return pageOf<TRow>([], null);
 
-  // `MAX_PAGE_SIZE` lives in `page-controls.ts`: the route checks the same bound at the wire, as
+  // `MAX_PAGE_SIZE` is `@ultimat3/entity`'s: `page-controls.ts` checks the same bound at the wire, as
   // a 400, before this `assert` — which is a 500 — can see the number.
   // Fetch one extra row: its presence *is* `hasMore`, with no count query. Never past what a
   // declared `.limit()` has left — `first` used to REPLACE that limit, so `?_first=10000` walked a

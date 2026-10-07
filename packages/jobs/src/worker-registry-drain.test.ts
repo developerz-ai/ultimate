@@ -4,15 +4,15 @@
 // BOTH runs have ended.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Ctx, configureLifecycle, createContext, drain, resetLifecycle } from '@ultimat3/core';
+import { type Ctx, configureLifecycle, ctxOf, drain, resetLifecycle } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { WorkerAnnouncement } from './introspection';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 const passthrough: StandardSchemaV1<unknown, Record<string, never>> = {
   '~standard': {
@@ -55,7 +55,7 @@ describe('the registry row in the teardown', () => {
       },
     };
     configureLifecycle({ deadlineMs: 80 });
-    const worker = createWorker({ driver, context, pollIntervalMs: 60_000 });
+    const worker = jobWorker({ driver, context, pollIntervalMs: 60_000 });
     worker.start();
 
     await drain('SIGTERM');
@@ -112,7 +112,7 @@ describe('the in-flight list of one job held twice', () => {
         }),
     });
     const ticks: (() => void)[] = [];
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       context,
       concurrency: 2,

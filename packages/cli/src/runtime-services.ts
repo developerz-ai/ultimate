@@ -87,7 +87,7 @@ export interface RunningServices {
    * `roles.web.replicas: 3` and `x new` scaffolds two.
    *
    * OPTIONAL because a `RunningServices` can be hand-built: a test's fixture runtime has a stub
-   * client and no shared store, which is `createServer`'s memory store and `scope: 'process'` —
+   * client and no shared store, which is `httpServer`'s memory store and `scope: 'process'` —
    * the honest answer for it, and the one `startWeb` derives.
    */
   readonly rateLimitStore?: RateLimitStore;
@@ -427,8 +427,8 @@ export async function startServices(
     started.push(() => resetMailDriver());
     const purge = overrides?.purge ?? cdn.driver;
     // Every tier this process reads through, plus the cross-instance invalidation hop, in one
-    // call. The CDN tier used to be the only one registered here — so `createRedisTier`,
-    // `createLruTier` and `createMemoTier` shipped with no caller at all and every replica
+    // call. The CDN tier used to be the only one registered here — so `redisTier`,
+    // `lruTier` and `memoTier` shipped with no caller at all and every replica
     // recomputed every cached read. Released with `resetTiers()`, which drops the whole registry:
     // this boot is the only thing that registers one, and a tier left behind would purge for a
     // process that has stopped.

@@ -6,9 +6,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 /** What a driver actually throws: the credential and the rejected row, in one string. */
 const LEAK =
@@ -41,13 +41,13 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/ok',
     meta: { name: 'ok', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
 ];
 
 const ask = async (path: string, accept: string, dev = false): Promise<Response> =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({ rateLimit: { enabled: false, scope: 'process' }, dev }),
     hooks: {},
   }).handle(new Request(`http://localhost${path}`, { headers: { accept } }), { role: 'web' });

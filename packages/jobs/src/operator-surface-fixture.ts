@@ -5,7 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import type { Clock, Ctx, UltimateError } from '@ultimat3/core';
-import { createContext, isUltimateError } from '@ultimat3/core';
+import { ctxOf, isUltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver, JobRecord, JobState } from './driver';
 import type { JobIntrospection } from './introspection';
@@ -15,7 +15,7 @@ import { job } from './job';
 import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
 import type { Worker } from './worker';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 export interface SeedOptions {
   readonly name: string;
@@ -38,7 +38,7 @@ export interface OperatorHarness {
 
 export const TTL_MS = 30_000;
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 export function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -77,7 +77,7 @@ export function workerOn(
   workerId: string,
   queues: readonly string[] = ['default'],
 ): Worker {
-  return createWorker({
+  return jobWorker({
     driver,
     workerId,
     queues,

@@ -22,7 +22,7 @@ export interface PgliteBranchOptions {
 }
 
 export interface PgliteBranchInfo extends BranchInfo {
-  /** Hand this straight to `createPgliteClient({ dataDir })`. */
+  /** Hand this straight to `pgliteClient({ dataDir })`. */
   readonly dataDir: string;
 }
 

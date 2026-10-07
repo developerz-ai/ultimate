@@ -3,11 +3,11 @@ import type { SqlRunner } from './template-db';
 import {
   acquireWorkerDatabase,
   cloneSql,
-  createTemplateSql,
   DEFAULT_TEMPLATE,
   databaseNameFor,
   dropSql,
   lockSql,
+  templateSql,
   unlockSql,
   urlFor,
   workerId,
@@ -86,7 +86,7 @@ describe('unit · template-db', () => {
       { connect, env: { BUN_TEST_WORKER_ID: '0' } },
     );
     expect(statements[0]).toBe(lockSql(DEFAULT_TEMPLATE));
-    expect(statements).toContain(createTemplateSql(DEFAULT_TEMPLATE));
+    expect(statements).toContain(templateSql(DEFAULT_TEMPLATE));
     expect(migrated).toEqual([urlFor(ADMIN, DEFAULT_TEMPLATE)]);
     expect(statements.some((sql) => sql.startsWith('SELECT pg_advisory_unlock'))).toBe(true);
   });
@@ -101,7 +101,7 @@ describe('unit · template-db', () => {
     );
     expect(statements).toEqual([
       lockSql(DEFAULT_TEMPLATE),
-      createTemplateSql(DEFAULT_TEMPLATE),
+      templateSql(DEFAULT_TEMPLATE),
       dropSql(db.database),
       cloneSql(DEFAULT_TEMPLATE, db.database),
       unlockSql(DEFAULT_TEMPLATE),
@@ -118,7 +118,7 @@ describe('unit · template-db', () => {
     const connect = (): SqlRunner => ({
       exec: async (sql: string) => {
         statements.push(sql);
-        if (sql === createTemplateSql(DEFAULT_TEMPLATE)) {
+        if (sql === templateSql(DEFAULT_TEMPLATE)) {
           throw new Error(`database "${DEFAULT_TEMPLATE}" already exists`);
         }
       },

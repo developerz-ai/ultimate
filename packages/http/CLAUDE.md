@@ -46,7 +46,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`asCtx` is a WIDENING the compiler checks, never a cast** (`RequestContext extends Ctx`;
   `_RequestContextIsACtx` in `type-pins.ts`). `ctx.buildId` is the process's build;
   `ctx.clientBuildId` is the client's claim, read only by `assertBuild()`.
-- **`createRequestContext` COMPOSES `createContext()`** — no assertion in this file, and
+- **`requestContext` COMPOSES `ctxOf()`** — no assertion in this file, and
   `defineService` factories and the service spread are core's. Services go on FIRST so a service
   named `actor` loses to the request's field (`context.test.ts`).
 - **A request's registered services are LAZY and bound to the authenticated actor**
@@ -148,7 +148,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   through `normalizePath`; `locationFor` hands over `http:`/`https:` only, else the requested path.
 - **A `cache-control` age is delta-seconds or DROPPED** (`finiteDeltaSeconds`, total, always the
   shorter direction; logs `http.cache_hint_not_delta_seconds`). Its boot half is `route-cache.ts`:
-  `createRouter` refuses a bad `Route.cache` with `X_CONFIG_INVALID`. Both accept the same set; zero
+  `httpRouter` refuses a bad `Route.cache` with `X_CONFIG_INVALID`. Both accept the same set; zero
   is legal. `ctx.cache` is not screened.
 - **A handler's own `Response.status` is never rewritten** (`pipeline-handler-status.test.ts`).
 - Health endpoints answer outside the pipeline, so their body is a stranger's: `{ state, ready,
@@ -200,10 +200,10 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN`. Headers report the bucket closest to refusing.
 - **The memory store is bounded** (`forgetAtMs` sweep, `DEFAULT_MAX_RATE_LIMIT_KEYS`, evicting the
   entries closest to FULL first — never LRU).
-- **The limiter takes a `Clock`** (`createRateLimiter({ clock })`); `deps.limiter` is the one seam.
+- **The limiter takes a `Clock`** (`rateLimiter({ clock })`); `deps.limiter` is the one seam.
 - **The scope is DECLARED, with no default**: an enabled limiter without `scope` is
-  `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `createPipeline`) refuses `'shared'` over a
-  per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `createServer({ rateLimitStore })`.
+  `X_RATE_LIMIT_SCOPE_UNSET`; `assertRateLimitScope` (in `httpPipeline`) refuses `'shared'` over a
+  per-process store (`X_RATE_LIMIT_NOT_SHARED`). Install through `httpServer({ rateLimitStore })`.
 - **A failed `auth: 'required'` is metered in the `auth` stage** (`spendUnauthenticated`,
   `rate-limit-stage.ts`): `defaultBucket` under `unauthenticated|ip:<address>`, not route-scoped,
   spent only on failure — the 401 leaves before `rate-limit`. Covers the bearer mount's bad tokens.
@@ -215,7 +215,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   refill expression is repeated inside `on conflict do update` on purpose; `spent` is a stored column;
   `purgeExpired(nowMs)` takes the caller's clock.
 - **A bucket a route names must be registered**: `withRouteBuckets` merges `meta.rateLimitBucket`
-  into the table in `createServer` and `createPipeline`; any disagreement is
+  into the table in `httpServer` and `httpPipeline`; any disagreement is
   `X_RATE_LIMIT_BUCKET_CONFLICT`. **The installed limiter must hold it too** — `RateLimiter.buckets`
   is declared and `assertRouteBuckets` refuses, never rebinds.
 
@@ -246,13 +246,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
 | `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
-| `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `createContext`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
+| `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `ctxOf`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `set-cookie.ts` | `setCookie`/`deleteCookie`: one line each onto `ctx.headers` |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
 | `error-log-level.ts` | the level of the `error-map` stage's one line: `error` for 5xx, `warn` for 401/403/429, `info` for the rest |
-| `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `createRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
+| `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
 | `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
 | `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling |
@@ -263,7 +263,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
-| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by `@ultimat3/core`'s `readCookie`, which `index.ts` re-exports |
+| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie`, imported, never re-exported |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
 | `health-disclosure.ts` | WHO the web role's `/healthz` and `/readyz` tell the detail to: the `healthDetailPeers` config key, its screen, and the trusted-proxy half. The body rule and the peer match are core's (`health-disclosure.ts` there), shared with the sync node |

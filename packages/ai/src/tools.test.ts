@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { action } from '@ultimat3/action';
 import {
   agentActor,
-  createContext,
+  ctxOf,
   resetPublicCauses,
   runWithContext,
   stringField,
@@ -15,7 +15,7 @@ import {
   resetErrorStatus,
   resetRateLimitStore,
 } from '@ultimat3/http';
-import { allow, forbidden } from '@ultimat3/policy';
+import { allow, policyForbidden } from '@ultimat3/policy';
 import { t, toWireSchema } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';
 import {
@@ -126,7 +126,7 @@ describe('runLlmToolCall renders a failure the model can act on', () => {
   // `{ code, cause, fix }` would keep passing after `PolicyError` stopped carrying one of them.
   test('a framework error keeps its code, cause and fix', async () => {
     const denied = projectable('publishPost', { expose: true }, async () => {
-      throw forbidden('post:publish', 'actor lacks post:publish');
+      throw policyForbidden('post:publish', 'actor lacks post:publish');
     });
     const result = await runLlmToolCall(
       [denied],
@@ -399,7 +399,7 @@ describe('an anonymous visitor’s tool calls', () => {
     }).named('askAgent');
     const visit = async (clientAddress: string) =>
       (
-        (await run({ id: 'p' }, { ctx: createContext({}), surface: 'http', clientAddress })) as {
+        (await run({ id: 'p' }, { ctx: ctxOf({}), surface: 'http', clientAddress })) as {
           refused: boolean;
         }
       ).refused;
@@ -461,7 +461,7 @@ describe('asProjectableAction', () => {
       },
     }).named('probe');
 
-    await runWithContext(createContext({}), async () => {
+    await runWithContext(ctxOf({}), async () => {
       const result = await runLlmToolCall(
         [asProjectableAction(probe)],
         // The model names an actor and an extra field. Neither survives the action's own parse.

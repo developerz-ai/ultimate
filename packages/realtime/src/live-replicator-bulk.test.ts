@@ -5,7 +5,7 @@
 // dropped it as stale, and the desynced subscriber was never re-snapshotted.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Actor, createContext, runWithContext, userActor } from '@ultimat3/core';
+import { type Actor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   database,
@@ -15,7 +15,7 @@ import {
   text,
   uuid,
 } from '@ultimat3/entity';
-import { from, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
@@ -54,7 +54,7 @@ class FakeWs implements WsLike {
 
 const member: Actor = userActor({ id: 'ada', orgId: ACME });
 const asMember = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: member }), run);
+  runWithContext(ctxOf({ actor: member }), run);
 const idOf = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 const insertEvent = (n: number, label: string): Promise<Event> =>
@@ -85,7 +85,7 @@ let replicator: LiveReplicator;
 let reads: { events: number; tags: number };
 
 beforeEach(async () => {
-  resetRegistry();
+  resetQueries();
   driver.reset?.();
   reads = { events: 0, tags: 0 };
   const liveEvents = query({
@@ -113,7 +113,7 @@ beforeEach(async () => {
         .limit(50),
   });
   registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
-  const ctx = createContext({ role: 'sync', buildId: 'b' });
+  const ctx = ctxOf({ role: 'sync', buildId: 'b' });
   // Wired as `role-sync.ts` wires it: a snapshot claims the newest change the node has received.
   // That claim is what made the refill's lsn EQUAL the change's, and the change look stale.
   const lsn = (): string => registry.lastLsn;
@@ -129,7 +129,7 @@ afterEach(() => {
 
 afterAll(() => {
   clearRegistry();
-  resetRegistry();
+  resetQueries();
 });
 
 const subscribe = async (name: string): Promise<FakeWs> => {

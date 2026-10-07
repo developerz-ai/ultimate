@@ -12,11 +12,11 @@
 //   apps/web/app/notes/*        a memory-backed entity and a live query, fed by the in-process bridge
 //   apps/web/app/posts/*        an action, a policy and a query, mounted as HTTP routes
 //   apps/web/site/pricing/*     a static page with its own stylesheet, under the CSP `x dev` sends
-import { resetRegistry as resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetQueries } from '@ultimat3/query';
 import type { Frame } from '@ultimat3/realtime';
 import { decode } from '@ultimat3/realtime';
 import type { WsLike } from '@ultimat3/realtime/server';
@@ -33,7 +33,8 @@ export const DEV_FIXTURE_FILES: Readonly<Record<string, string>> = {
   '.git/HEAD': 'ref: refs/heads/main\n',
 
   // The root marker a real `x dev` cannot start without, and where `ai.mcp` is declared — by
-  // default `{ expose: true, path: '/mcp' }`, which is what the MCP mount reads.
+  // default `{ expose: true }`, the switch the MCP mount reads. Where the endpoint mounts is its
+  // own `defineAppMcp({ path })` below (default `/mcp`), never this file.
   'app.config.ts': `import { defineConfig } from '@ultimat3/core';
 export const config = defineConfig({ name: 'dev-fixture' });
 `,

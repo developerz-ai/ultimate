@@ -14,9 +14,9 @@ import {
   resetHttpConfig,
 } from './app-config';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 import type { Schema } from './validate';
 
 const titleSchema: Schema<{ title: string }> = {
@@ -39,20 +39,20 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'POST',
     path: '/posts',
     meta: { name: 'posts.create', auth: 'public', input: titleSchema },
-    handler: (_request, ctx) => json({ input: ctx.input }),
+    handler: (_request, ctx) => jsonResponse({ input: ctx.input }),
   },
 ];
 
 /** Exactly what `startWeb` does: the app's declaration underneath, the boot's own facts on top. */
-const boot = (): ReturnType<typeof createPipeline> =>
-  createPipeline({
-    table: createRouter(routes),
+const boot = (): ReturnType<typeof httpPipeline> =>
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig(
       mergeHttpConfig(configuredHttp(), {
         dev: false,

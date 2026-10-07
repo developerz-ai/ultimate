@@ -4,13 +4,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { inflightCount, resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type RouteHandler } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type RouteHandler } from './router';
 
 const pipelineFor = (handler: RouteHandler, requestTimeoutMs = 20) =>
-  createPipeline({
-    table: createRouter([
+  httpPipeline({
+    table: httpRouter([
       { method: 'GET', path: '/slow', meta: { name: 'slow', auth: 'public' }, handler },
     ]),
     config: defineHttpConfig({
@@ -21,7 +21,7 @@ const pipelineFor = (handler: RouteHandler, requestTimeoutMs = 20) =>
     }),
   });
 
-const call = (pipeline: ReturnType<typeof createPipeline>): Promise<Response> =>
+const call = (pipeline: ReturnType<typeof httpPipeline>): Promise<Response> =>
   pipeline.handle(new Request('http://app.test/slow'), { role: 'web' });
 
 const gate = (): { readonly held: Promise<void>; open(): void; fail(): void } => {
@@ -42,7 +42,7 @@ describe('a handler that outlives its deadline is still in flight', () => {
     const work = gate();
     const pipeline = pipelineFor(async () => {
       await work.held;
-      return text('late');
+      return textResponse('late');
     });
     const response = await call(pipeline);
     expect(response.status).toBe(504);
@@ -56,7 +56,7 @@ describe('a handler that outlives its deadline is still in flight', () => {
     const work = gate();
     const pipeline = pipelineFor(async () => {
       await work.held;
-      return text('never');
+      return textResponse('never');
     });
     expect((await call(pipeline)).status).toBe(504);
     expect(inflightCount()).toBe(1);
@@ -66,7 +66,7 @@ describe('a handler that outlives its deadline is still in flight', () => {
   });
 
   test('a handler that finished in time, or threw in time, holds nothing afterwards', async () => {
-    expect((await call(pipelineFor(() => text('ok'), 1_000))).status).toBe(200);
+    expect((await call(pipelineFor(() => textResponse('ok'), 1_000))).status).toBe(200);
     expect(inflightCount()).toBe(0);
     const thrown = await call(
       pipelineFor(() => {

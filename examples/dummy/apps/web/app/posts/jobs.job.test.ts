@@ -9,9 +9,9 @@
  */
 
 import { expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StepRunner, StepStore } from '@ultimat3/jobs';
-import { createStepRunner, memoryStepStore } from '@ultimat3/jobs';
+import { memoryStepStore, stepRunner } from '@ultimat3/jobs';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
 import {
   driverUnavailable,
@@ -79,7 +79,7 @@ const noReads = (): Reads => ({ posts: 0, recipients: 0, orgs: 0 });
  * stub for a service nobody registers proves the stub works.
  */
 const contextFor = (reads: Reads): Ctx =>
-  createContext({
+  ctxOf({
     role: 'worker',
     services: {
       posts: {
@@ -135,7 +135,7 @@ const mailFailingOn = (nth: number): BlippingMail => {
 };
 
 const runnerOn = (store: StepStore): StepRunner =>
-  createStepRunner({ runId: RUN, jobName: 'notifySubscribers', store });
+  stepRunner({ runId: RUN, jobName: 'notifySubscribers', store });
 
 /** One attempt, over a store shared with the attempts before it — which is what makes it a replay. */
 const attempt = (runner: StepRunner, reads: Reads, nth: number): Promise<unknown> =>

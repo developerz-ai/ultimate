@@ -4,6 +4,7 @@
 // offline — is `e2e/service-worker.e2e.test.ts`, in a real Chrome.
 
 import { describe, expect, test } from 'bun:test';
+import { configureLocales, localeConfig } from '@ultimat3/i18n';
 import { contentHash } from '@ultimat3/render/server';
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
@@ -34,6 +35,7 @@ const pwa = (patch: Partial<PwaArtifacts> = {}): PwaArtifacts => ({
   },
   backgroundSync: false,
   push: false,
+  locales: { routed: ['en'], fallback: 'en' },
   ...patch,
 });
 
@@ -58,6 +60,21 @@ const build = (patch: Partial<PwaArtifacts> = {}): ServiceWorkerArtifacts => {
 };
 
 describe('serviceWorkerArtifacts', () => {
+  // One answer for the app's locales: the worker reads the set the manifests were built from, so
+  // a locale the manifest names can never be missing from the worker's prefixes, and the process's
+  // locale config — shared, and whatever an earlier import declared — is never read.
+  test("the worker's locales are the manifest's, never the ambient locale config", () => {
+    const before = { ...localeConfig() };
+    try {
+      configureLocales({ supported: ['fr', 'de'], fallback: 'fr' });
+      const built = build({ locales: { routed: ['es-co', 'en'], fallback: 'es-co' } });
+      expect(built.source).toContain('const OFFLINE_LOCALES=["en"];');
+      expect(build().source).toContain('const OFFLINE_LOCALES=[];');
+    } finally {
+      configureLocales(before);
+    }
+  });
+
   test('an app with no offline fallback gets no worker at all', () => {
     // Never a path the framework invented: offline, a cached 404 answers every navigation, and
     // the app has no way to tell that from a fallback that is simply empty.

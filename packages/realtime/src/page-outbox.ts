@@ -74,7 +74,7 @@ interface Held {
   readonly scope: string | undefined;
 }
 
-export function createOutbox(options: OutboxOptions): PageOutbox {
+export function localOutbox(options: OutboxOptions): PageOutbox {
   const principal =
     options.principal ?? ((): ClientScope['principal'] => pageClient().scope.principal);
   const send = options.send ?? sendOverHttp;
@@ -326,7 +326,7 @@ export function pageOutbox(options: Pick<OutboxOptions, 'beforeEnqueue'> = {}): 
   const existing = host[OUTBOX_KEY];
   // Only this function writes the slot, so what it holds is always a `PageOutbox`.
   if (existing !== undefined) return existing as PageOutbox;
-  const outbox = createOutbox({ local: pageLocalStore(), beforeEnqueue: options.beforeEnqueue });
+  const outbox = localOutbox({ local: pageLocalStore(), beforeEnqueue: options.beforeEnqueue });
   Object.defineProperty(host, OUTBOX_KEY, { value: outbox, configurable: true });
   if (Reflect.has(globalThis, 'document')) {
     listenForDrain(outbox);

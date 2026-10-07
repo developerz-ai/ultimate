@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
   configureTelemetry,
-  createContext,
+  ctxOf,
   currentSpan,
   memoryExporter,
   resetTelemetry,
@@ -29,7 +29,7 @@ const orders: readonly Order[] = [
   { id: 'b', orgId: ORG },
 ];
 const readerActor: Actor = { ...userActor({ id: 'u1' }), permissions: ['order:read'] };
-const reader = createContext({ actor: readerActor });
+const reader = ctxOf({ actor: readerActor });
 
 /**
  * Records which span was ACTIVE while the policy ran and while `sql()` built the source — the two
@@ -102,7 +102,7 @@ describe('the query span covers the whole read', () => {
 
   test('a denied read is still one span, and it records the refusal', async () => {
     const noGrants: Actor = { ...userActor({ id: 'u2' }), permissions: [] };
-    const stranger = createContext({ actor: noGrants });
+    const stranger = ctxOf({ actor: noGrants });
     const spans = await traced(() => listOrders({}, false)({ orgId: ORG }, { ctx: stranger }));
     expect(spans).toHaveLength(1);
     expect(spans[0]?.status.code).toBe('error');

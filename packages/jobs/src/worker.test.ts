@@ -7,7 +7,7 @@ import type { ErrorReport } from '@ultimat3/core';
 import {
   collectMetrics,
   configureErrorReporting,
-  createContext,
+  ctxOf,
   memoryErrorReporter,
   resetErrorReporting,
   resetMetrics,
@@ -16,8 +16,8 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createLimiter } from './limits';
-import { createWorker } from './worker';
+import { concurrencyLimiter } from './limits';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -72,7 +72,7 @@ const depthOf = (name: string): number | undefined =>
     ?.points.find((point) => point.attributes['queue'] === name)?.value;
 
 const worker = (driver: JobDriver) =>
-  createWorker({ driver, context: () => createContext({ role: 'worker', buildId: 'test' }) });
+  jobWorker({ driver, context: () => ctxOf({ role: 'worker', buildId: 'test' }) });
 
 beforeEach(() => {
   resetMetrics();
@@ -142,7 +142,7 @@ describe('a job the worker shed is still backlog', () => {
     const driver = memoryJobDriver();
     // The global slot is taken by the test itself, so every claimed job is shed and no job body
     // runs: the assertion is about the rows the tick leaves behind, and nothing else.
-    const limiter = createLimiter({ global: 1 });
+    const limiter = concurrencyLimiter({ global: 1 });
     expect(limiter.tryAcquire({ queue: 'default' })).toBeDefined();
     for (const name of ['shedA', 'shedB', 'shedC']) {
       shedJob(name);
@@ -155,14 +155,14 @@ describe('a job the worker shed is still backlog', () => {
       });
     }
 
-    const shedding = createWorker({
+    const shedding = jobWorker({
       driver,
       limiter,
       concurrency: 4,
       // The shed's own delay, so the row is claimable again the instant it lands and the bucket
       // under test is not `delayed` for a quarter of a second first.
       pollIntervalMs: 0,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
     expect(await shedding.tick()).toEqual([]);
@@ -175,7 +175,7 @@ describe('a job the worker shed is still backlog', () => {
 
   test('it carries no lastError, because nothing about it failed', async () => {
     const driver = memoryJobDriver();
-    const limiter = createLimiter({ global: 1 });
+    const limiter = concurrencyLimiter({ global: 1 });
     limiter.tryAcquire({ queue: 'default' });
     shedJob('shedQuiet');
     const { id } = await driver.enqueue({
@@ -186,12 +186,12 @@ describe('a job the worker shed is still backlog', () => {
       maxAttempts: 3,
     });
 
-    await createWorker({
+    await jobWorker({
       driver,
       limiter,
       concurrency: 4,
       pollIntervalMs: 0,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     }).tick();
 
@@ -236,10 +236,10 @@ describe('the worker counts what it finished', () => {
       idempotencyKey: handle.idempotencyKeyFor({ n: 1 }),
       maxAttempts: options.attempts,
     });
-    await createWorker({
+    await jobWorker({
       driver,
       drainOnShutdown: false,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
     }).tick();
   };
 

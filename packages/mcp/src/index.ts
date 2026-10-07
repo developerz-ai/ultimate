@@ -5,7 +5,7 @@
 export type { RequestFacts as McpRequestFacts } from '@ultimat3/http';
 /** Re-exported so a `defineAppMcp` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
-export { formatIssues, t } from '@ultimat3/schema';
+export { t } from '@ultimat3/schema';
 export type {
   AnyAppToolDefinition,
   AppToolArgs,
@@ -42,7 +42,7 @@ export {
 } from './confirmation-gate';
 export type { PostgresConfirmationStoreOptions } from './confirmation-postgres';
 export { postgresConfirmationStore } from './confirmation-postgres';
-export { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from './confirmation-schema';
+// The confirmation table's DDL is `@ultimat3/mcp/schema`'s alone — one import path for one statement.
 export type {
   McpConfirmation,
   McpConfirmationDraft,
@@ -56,8 +56,8 @@ export type {
   McpConfirmationsInput,
 } from './confirmations';
 export { DEFAULT_MCP_CONFIRMATION_TTL_MS, mcpConfirmations } from './confirmations';
-export type { CreateDevServerInput } from './dev-host';
-export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
+export type { DevMcpServerInput } from './dev-host';
+export { devHost, devMcpServer, frameworkIntrospection } from './dev-host';
 export type {
   DevCapabilities,
   DevHost,
@@ -125,7 +125,7 @@ export {
   McpRateLimitedError,
 } from './errors-transport';
 export { exposedPrimitives } from './exposed';
-export type { McpExposure, ProjectablePrimitive } from './from-action';
+export type { ProjectablePrimitive } from './from-action';
 export { deriveAnnotations, toolFrom, toolsFrom, toolsListed } from './from-action';
 export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
 export type { ListFilterOp, McpListParams } from './list-params';
@@ -211,8 +211,8 @@ export {
 } from './resources';
 export type { McpScopes } from './scopes';
 export { withScopes } from './scopes';
-export type { CreateMcpServerInput, McpWire } from './server';
-export { createMcpServer, McpServer } from './server';
+export type { McpServer, McpServerInput, McpWire } from './server';
+export { mcpServer } from './server';
 export type { McpInstructions, McpServerVoice } from './server-voice';
 export type { McpSurfaceBudget, McpSurfaceSize } from './surface-budget';
 export { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';

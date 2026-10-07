@@ -4,7 +4,7 @@
 // refused; never for a replay; and a job run never wears a visitor's address.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import { installRateLimitStore, memoryRateLimitStore, resetRateLimitStore } from '@ultimat3/http';
 import { allow, can } from '@ultimat3/policy';
@@ -41,7 +41,7 @@ const spying = (): { store: RateLimitStore; keys: string[] } => {
   };
 };
 
-const ctx = () => createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['p:w'] } });
+const ctx = () => ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['p:w'] } });
 
 describe('the bucket is spent before the parse and the row load', () => {
   test('a flood of invalid input is refused after the limit, not answered 400 forever', async () => {
@@ -144,9 +144,7 @@ describe('a job run never wears a visitor’s address', () => {
     const spy = spying();
     installRateLimitStore(spy.store);
     // What a `setTimeout` re-arm chain started inside a request carries into the worker loop.
-    await withCallerAddress('203.0.113.9', () =>
-      limited().job().invoke({ id: 'a' }, createContext({})),
-    );
+    await withCallerAddress('203.0.113.9', () => limited().job().invoke({ id: 'a' }, ctxOf({})));
     expect(spy.keys).toEqual(['action:summarize|job:unattributed']);
   });
 
@@ -163,7 +161,7 @@ describe('a job run never wears a visitor’s address', () => {
         return { ok: true };
       },
     }).named('askAgent');
-    await agentLike.job().invoke({ id: 'a' }, createContext({}));
+    await agentLike.job().invoke({ id: 'a' }, ctxOf({}));
     expect(spy.keys).toEqual(['action:summarize|job:unattributed']);
   });
 });

@@ -47,7 +47,7 @@ export function ackRefOf(frame: Frame | null, socketId: string): string {
   return socketId;
 }
 
-export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
+export function frameRouter(options: FrameRouterOptions): FrameRouter {
   const presence = options.presence;
   const channelSids = options.channelSids ?? new ChannelSids();
 

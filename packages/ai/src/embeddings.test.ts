@@ -12,12 +12,12 @@
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { Embedder } from './embeddings';
-import { cosine, embedBatched, HashEmbedder, normalize, tokenize } from './embeddings';
+import { cosine, embedBatched, hashEmbedder, normalizeVector, wordTokens } from './embeddings';
 
 describe('HashEmbedder dimension', () => {
   test('a dimension that is not a whole count is refused where it is declared', () => {
     for (const dimension of [...NOT_A_BOUND, 2.5, 0, -1]) {
-      const error = refusal(() => new HashEmbedder({ dimension }));
+      const error = refusal(() => hashEmbedder({ dimension }));
       expect(error.code).toBe('X_INVARIANT');
       expect(error.cause).toContain('dimension');
       expect(error.fix).toContain('HashEmbedder');
@@ -25,28 +25,28 @@ describe('HashEmbedder dimension', () => {
   });
 
   test('the default and a declared width both still embed — the non-vacuity half', async () => {
-    expect((await new HashEmbedder().embed(['alpha beta']))[0]?.length).toBe(256);
-    expect((await new HashEmbedder({ dimension: 32 }).embed(['alpha beta']))[0]?.length).toBe(32);
+    expect((await hashEmbedder().embed(['alpha beta']))[0]?.length).toBe(256);
+    expect((await hashEmbedder({ dimension: 32 }).embed(['alpha beta']))[0]?.length).toBe(32);
   });
 });
 
 describe('embedBatched size', () => {
   test('a stride of zero is refused, because it is the loop that never advances', async () => {
-    const error = await asyncRefusal(() => embedBatched(new HashEmbedder(), ['a', 'b'], 0));
+    const error = await asyncRefusal(() => embedBatched(hashEmbedder(), ['a', 'b'], 0));
     expect(error.cause).toContain('size');
     expect(error.fix).toContain('embedBatched');
   });
 
   test('a NaN stride is refused too — it sent ONE empty batch and answered zero vectors', async () => {
     for (const size of NOT_A_BOUND) {
-      expect((await asyncRefusal(() => embedBatched(new HashEmbedder(), ['a'], size))).code).toBe(
+      expect((await asyncRefusal(() => embedBatched(hashEmbedder(), ['a'], size))).code).toBe(
         'X_INVARIANT',
       );
     }
   });
 
   test('an honest stride returns one vector per text, in order', async () => {
-    const embedder = new HashEmbedder({ dimension: 16 });
+    const embedder = hashEmbedder({ dimension: 16 });
     const texts = ['alpha', 'beta', 'gamma'];
     const batched = await embedBatched(embedder, texts, 2);
     expect(batched).toHaveLength(3);
@@ -59,9 +59,9 @@ describe('embedBatched size', () => {
 
 describe('the maths the two bounds protect', () => {
   test('cosine of a normalised pair is a dot product, and tokenize keeps digits', () => {
-    const a = normalize(Float32Array.from([1, 0]));
+    const a = normalizeVector(Float32Array.from([1, 0]));
     expect(cosine(a, a)).toBeCloseTo(1);
-    expect(tokenize('X_DB_DRIFT v2!')).toEqual(['x', 'db', 'drift', 'v2']);
+    expect(wordTokens('X_DB_DRIFT v2!')).toEqual(['x', 'db', 'drift', 'v2']);
   });
 
   test('cosine ignores magnitude, and a zero vector has none: NaN, as pgvector answers', () => {
@@ -106,9 +106,7 @@ describe('an embedder that answers fewer vectors than it was given texts', () =>
   });
 
   test('an embedder answering one per text is untouched', async () => {
-    expect(await embedBatched(new HashEmbedder({ dimension: 8 }), ['a', 'b', 'c'], 2)).toHaveLength(
-      3,
-    );
+    expect(await embedBatched(hashEmbedder({ dimension: 8 }), ['a', 'b', 'c'], 2)).toHaveLength(3);
   });
 });
 
@@ -116,7 +114,7 @@ describe('an embedder that answers fewer vectors than it was given texts', () =>
 // words identically — cosine 1, and a semantic lookup for one answered with the other's entry.
 describe('HashEmbedder slots', () => {
   test('two words FNV-1a collides on are two different vectors', async () => {
-    const [a, b] = await new HashEmbedder().embed(['costarring', 'liquid']);
+    const [a, b] = await hashEmbedder().embed(['costarring', 'liquid']);
     if (a === undefined || b === undefined) expect.unreachable('two texts, two vectors');
     expect(cosine(a, b)).toBeLessThan(0.5);
   });

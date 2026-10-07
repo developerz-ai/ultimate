@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { markListening } from '@ultimat3/core';
-import { createCdnTier } from './cdn';
+import { cdnTier } from './cdn';
 import { FASTLY_MAX_KEYS_PER_REQUEST, fastlyPurgeDriver } from './purge-fastly';
 import type { PurgeFetch } from './purge-http';
 import { tag } from './tags';
@@ -255,7 +255,7 @@ describe('the cdn tier over a real driver', () => {
   // because the edge would answer 200 for a key nothing was ever tagged with.
   test('the keys the tier purges reach the provider unchanged', async () => {
     const { calls, fetch } = recorder();
-    const tier = createCdnTier({ purge: driverWith(fetch) });
+    const tier = cdnTier({ purge: driverWith(fetch) });
 
     const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
 

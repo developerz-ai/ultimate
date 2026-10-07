@@ -29,7 +29,7 @@
 
 - Never format without an explicit `timeZone`. No ambient default, no `toLocaleString()`.
 - **The ambient zone IS `Ctx.tz`**, core's own declared field. This package publishes no writer and
-  no field of its own: `createContext({ tz })` and `withChildContext({ tz })` are the way in,
+  no field of its own: `ctxOf({ tz })` and `withChildContext({ tz })` are the way in,
   `currentTimeZone()` the way out. It kept `attachTimeZone`/`timeZoneOf` over `ctx['timeZone']`
   until 1.3.0 — a second ambient store, with **zero** writers, while `@ultimat3/http` wrote `tz` —
   so `currentTimeZone()` answered `UTC` for every request and every `@ultimat3/ui` server render

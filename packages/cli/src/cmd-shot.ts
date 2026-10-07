@@ -8,6 +8,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
@@ -39,12 +40,7 @@ import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { shotBrowserChoice } from './shot-browser';
 import { readCookieFlag, type ShotCookiePair, shotCookies } from './shot-cookie';
-import {
-  acceptLanguageHeaders,
-  loadShotLocales,
-  localizedShotPath,
-  readLocaleFlag,
-} from './shot-locale';
+import { acceptLanguageHeaders, localizedShotPath, readLocaleFlag } from './shot-locale';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
@@ -63,15 +59,6 @@ import { parseViewports, refuseViewportWithComponent, runShotViewports } from '.
 
 /** Kernel-picked by default: :3000 is usually another project's dev server, not a free port. */
 const DEFAULT_PORT = 0;
-
-/**
- * How long the page is left alone after `load` before it is photographed: exactly the
- * `requestIdleCallback` deadline `@ultimat3/render`'s hydration runtime gives an `idle` island —
- * shoot sooner and the verdict reports `booted: 0` for a page that hydrates perfectly. READ from
- * that runtime rather than restated, because two copies of one number that must agree is the drift
- * axiom 2 refuses: the settle window is not "2 seconds", it is "the deadline the runtime uses".
- */
-export const DEFAULT_SETTLE_MS = IDLE_HYDRATE_TIMEOUT_MS;
 
 // Re-exported, not re-declared: a second declaration of a path or a host rule is a second answer.
 export type { BootDevServer, ShotServer };
@@ -379,7 +366,7 @@ export const shotCommand: CliCommand = {
     const matrix = flagBool(ctx.args, 'matrix');
     const cookies = readCookieFlag(flagString(ctx.args, 'cookie'));
     const viewports = parseViewports(flagString(ctx.args, 'viewport'));
-    const app = await loadShotLocales(root);
+    const app = await appLocaleSet(root);
     const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
     // subjects has a belief about which one runs, and half of them would be wrong.
@@ -416,7 +403,12 @@ export const shotCommand: CliCommand = {
     // `--matrix` alone is every site route; a route beside it narrows the matrix to that one.
     const route = component || (matrix && positional === undefined) ? '' : readRoute(positional);
     const port = intFlag(ctx.args, 'port', PORT_RANGE.min, DEFAULT_PORT, PORT_RANGE.max);
-    const settleMs = intFlag(ctx.args, 'settle', 0, DEFAULT_SETTLE_MS);
+    // How long the page is left alone after `load` before it is photographed: exactly the
+    // `requestIdleCallback` deadline `@ultimat3/render`'s hydration runtime gives an `idle` island —
+    // shoot sooner and the verdict reports `booted: 0` for a page that hydrates perfectly. The
+    // runtime's own constant, under its own name: the settle window is not "2 seconds", it is "the
+    // deadline the runtime uses", and a second name for it is a second import path.
+    const settleMs = intFlag(ctx.args, 'settle', 0, IDLE_HYDRATE_TIMEOUT_MS);
     const timeoutMs = intFlag(ctx.args, 'timeout', 1, DEFAULT_PAGE_TIMEOUT_MS);
     // Read only when given: its absence means "any 2xx", which no single default number can say.
     const expectStatus =

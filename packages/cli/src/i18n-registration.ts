@@ -18,12 +18,13 @@ import {
   pluralVariantsOf,
   registeredLocales,
 } from '@ultimat3/i18n';
+import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
 import { mountedAdminKeys } from './admin-catalog-keys';
+import type { LoadedApp } from './app-load';
 import { loadApp } from './app-load';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import { auditApp } from './i18n-audit';
-import { I18N_INDEX_PATH } from './i18n-index';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
@@ -37,10 +38,7 @@ const I18N_PKG = '@ultimat3/i18n';
  * can resolve `@ultimat3/*`. `loadApp` is the production value, and it is the same call
  * `serveApp` makes: asking a different loader than the server uses would prove nothing.
  */
-export type AppLoader = (root: string) => Promise<{
-  readonly findings: readonly Finding[];
-  readonly defaultLocale: string;
-}>;
+export type AppLoader = (root: string) => Promise<Pick<LoadedApp, 'findings' | 'locales'>>;
 
 export interface RegistrationInput {
   readonly root: string;
@@ -121,9 +119,9 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
   let locales = gaps.length;
 
   if (Object.keys(input.catalogs).length === 0) {
-    const unresolved = unresolvedUsedKeys(input, app.defaultLocale);
+    const unresolved = unresolvedUsedKeys(input, app.locales.defaultLocale);
     if (unresolved.length > 0) {
-      findings.push(findingFrom(catalogsNeverRegistered(app.defaultLocale, unresolved)));
+      findings.push(findingFrom(catalogsNeverRegistered(app.locales.defaultLocale, unresolved)));
       unregistered += unresolved.length;
       locales += 1;
     }
@@ -182,7 +180,7 @@ function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
  * the half that knows what an app's directories are.
  */
 async function indexSource(root: string): Promise<string | undefined> {
-  const file = Bun.file(join(root, I18N_INDEX_PATH));
+  const file = Bun.file(join(root, APP_CATALOGS_PATH));
   return (await file.exists()) ? file.text() : undefined;
 }
 
@@ -208,7 +206,7 @@ export function unregisteredFix(
   // report a registered locale as unregistered, which is the direction that costs trust.
   if (index.includes(`${CATALOG_ROOT.split('/').pop() ?? 'catalogs'}/${locale}.json`)) return {};
   return {
-    fix: `x i18n sync ${locale}   # re-derives ${I18N_INDEX_PATH} from the catalogs on disk`,
+    fix: `x i18n sync ${locale}   # re-derives ${APP_CATALOGS_PATH} from the catalogs on disk`,
   };
 }
 

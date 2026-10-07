@@ -4,7 +4,8 @@
 
 import type { RealtimeConfig } from '@ultimat3/core';
 import type { RateLimitStore, Route } from '@ultimat3/http';
-import { describeRoutes } from '@ultimat3/render';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
+import { describePages } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
@@ -19,7 +20,7 @@ import { islandRoutes } from './island-routes';
 import { loadIslandStates } from './island-states-load';
 import { loadNavigation, pageNavigation } from './page-navigation';
 import type { PageSpeculation } from './page-speculation';
-import { loadSpeculation, pageSpeculation } from './page-speculation';
+import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { adminMountRoutes } from './runtime-admin';
@@ -100,6 +101,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   const speculation = pageSpeculation({
     config: await loadSpeculation(input.root),
     client: declared.surfaces,
+    localeSegments: otherLocaleSegments(await appLocaleSet(input.root)),
   });
   const inlineStyles = [
     ...(await errorPageStyleBodies(input.root)),
@@ -113,7 +115,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       : serviceWorkerArtifacts({
           pwa,
           buildId: input.buildId,
-          routes: describeRoutes(),
+          routes: describePages(),
           islands: input.islands(),
           styles: styleBundle(),
           scripts: [

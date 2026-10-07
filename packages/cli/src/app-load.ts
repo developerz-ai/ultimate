@@ -7,7 +7,8 @@
 import { join, resolve } from 'node:path';
 import { isAction, isMutator, listActions, registerActions } from '@ultimat3/action';
 import { describeEntities, registeredEntities } from '@ultimat3/entity';
-import { localeConfig } from '@ultimat3/i18n';
+import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
+import { appLocaleSet, UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
 import { isJobHandle, isTaskHandle, registeredJobs, registeredTasks } from '@ultimat3/jobs';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { isQuery, listQueries, registerQueries } from '@ultimat3/query';
@@ -83,13 +84,13 @@ export interface LoadedApp {
   /** Every `X_*` code the app's source declares, by code — the one fact no registry holds. */
   readonly errorCodes: readonly ErrorCodeFact[];
   /**
-   * The locale the app falls back to. `packages/i18n/src/index.ts` is inside the import loop, and
-   * `defineCatalogs()` configures `@ultimat3/i18n` on its way through — so this is the framework's
-   * own answer, read back from `localeConfig()`, and never a regex over the app's source, which
-   * only ever matched the one `defineCatalogs({ default: '…' })` spelling it anticipated. An app
-   * whose i18n module would not import leaves the framework default (`en`) and a finding saying so.
+   * The app's locales, default first — `@ultimat3/i18n`'s `appLocaleSet`, the ONE reader of
+   * `defineCatalogs()`, asked once here so every step after the load reads one answer. Never
+   * `localeConfig()` read blind (it answers an earlier import's declaration for an app that made
+   * none) and never a regex over the source. An app with no catalogs, or whose catalog module would
+   * not import (the scan's finding already says so), is `UNDECLARED_LOCALES`.
    */
-  readonly defaultLocale: string;
+  readonly locales: AppLocaleSet;
   /** Modules that would not import, and primitives that would not register. */
   readonly findings: readonly Finding[];
 }
@@ -260,14 +261,26 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   ) {
     findings.push(emptyAppFinding(root));
   }
-  // Read after the loop, never before it: `configureLocales` runs on the app's own import.
   return {
     root,
     files: scan.files,
     errorCodes: await appErrorCodes(root),
-    defaultLocale: localeConfig().fallback,
+    locales: await loadedLocales(root),
     findings,
   };
+}
+
+/**
+ * After the scan, never before it: the scan imported the catalog module, so the set it exports is
+ * what `loadAppCatalogs` recognises. A module that would not import is the scan's finding, not a
+ * second one here.
+ */
+async function loadedLocales(root: string): Promise<AppLocaleSet> {
+  try {
+    return await appLocaleSet(root);
+  } catch {
+    return UNDECLARED_LOCALES;
+  }
 }
 
 /** No primitive in any registry this scan fills — a process that registered some itself is not empty. */

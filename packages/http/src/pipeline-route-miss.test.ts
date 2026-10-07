@@ -6,23 +6,23 @@ import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { ServerHooks } from './hooks';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
     method: 'POST',
     path: '/api/publish-post',
     meta: { name: 'publishPost', auth: 'public' },
-    handler: () => text('published'),
+    handler: () => textResponse('published'),
   },
 ];
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
 
 const pipelineWith = (hooks: ServerHooks) =>
-  createPipeline({ table: createRouter(routes), config, hooks });
+  httpPipeline({ table: httpRouter(routes), config, hooks });
 
 const request = (method: string, path: string): Request =>
   new Request(`http://app.test${path}`, { method });

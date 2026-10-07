@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
-import { createContext, runWithContext } from './context';
-import { traceId as newTraceId, spanId, uuid } from './ids';
+import { ctxOf, runWithContext } from './context';
+import { traceId as newTraceId, spanId, uuidV7 } from './ids';
 import {
   alwaysOffSampler,
   alwaysOnSampler,
@@ -65,7 +65,7 @@ describe('telemetry', () => {
   test('adopts the request traceId so HTTP -> job -> live query is one trace', () => {
     const exporter = memoryExporter();
     configureTelemetry({ exporter });
-    const ctx = createContext({});
+    const ctx = ctxOf({});
 
     runWithContext(ctx, () => {
       withSpan('action.publishPost', () => undefined);
@@ -203,7 +203,7 @@ describe('sampling', () => {
     const exporter = memoryExporter();
     configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
 
-    runWithContext(createContext({}), () => {
+    runWithContext(ctxOf({}), () => {
       withSpan('GET /posts', () => undefined);
     });
 
@@ -213,7 +213,7 @@ describe('sampling', () => {
   test('sampled inside a request context, the root span still has no parent span', () => {
     const exporter = memoryExporter();
     configureTelemetry({ exporter, sampler: parentBasedRatioSampler(1) });
-    const ctx = createContext({});
+    const ctx = ctxOf({});
 
     runWithContext(ctx, () => {
       withSpan('GET /posts', () => undefined);
@@ -229,7 +229,7 @@ describe('sampling', () => {
     configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
     const parent = { traceId: newTraceId(), spanId: spanId(), traceFlags: 1 } as const;
 
-    runWithContext(createContext({}), () => {
+    runWithContext(ctxOf({}), () => {
       withSpan('GET /posts', () => undefined, { parent });
     });
 
@@ -274,7 +274,7 @@ describe('traceparent', () => {
 
   test('rejects a header built from a UUID trace id', () => {
     expect(
-      parseTraceparent(traceparent({ traceId: uuid(), spanId: spanId(), traceFlags: 1 })),
+      parseTraceparent(traceparent({ traceId: uuidV7(), spanId: spanId(), traceFlags: 1 })),
     ).toBeUndefined();
   });
 
@@ -286,7 +286,7 @@ describe('traceparent', () => {
   // The synthetic context a request builds carries `spanId: ''`. Interpolated bare it rendered
   // `00-<trace>--01`, 39 characters, which this file's own regex — and every collector — rejects.
   test('substitutes a span id for the synthetic context a request builds', () => {
-    const ctx = createContext({ traceId: newTraceId() });
+    const ctx = ctxOf({ traceId: newTraceId() });
     const header = runWithContext(ctx, () => traceparent(currentSpanContext() as SpanContext));
 
     const parsed = parseTraceparent(header);

@@ -1,17 +1,17 @@
 // The read half of `@ultimat3/action`'s `invoke-context.test.ts`, and the twin it must stay equal
-// to: `asActor` honoured an explicit `ctx` as a PARAMETER and never installed it, so `guard()`
+// to: `asActor` honoured an explicit `ctx` as a PARAMETER and never installed it, so `guardQuery()`
 // decided about that actor while `sql()` — and every tenant-scoped repository call one frame
 // deeper, which derives from `tryUseContext()` — saw a different identity, or none at all.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { createContext, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
 import { runQuery, sourceFor } from './read';
-import { resetRegistry } from './registry';
+import { resetQueries } from './registry';
 import { from } from './source';
 
 const ORG = 'org-a';
@@ -27,7 +27,7 @@ interface Row {
 const label = (actor: Actor | null | undefined): string =>
   actor === null || actor === undefined ? 'NONE' : `${actor.id}@${actor.orgId ?? 'no-org'}`;
 
-/** `policyActor` is what `guard()` saw; the row carries what the AMBIENT context carried. */
+/** `policyActor` is what `guardQuery()` saw; the row carries what the AMBIENT context carried. */
 const build = () => {
   let policyActor = 'never evaluated';
   const target = query({
@@ -48,14 +48,14 @@ const build = () => {
 };
 
 afterEach(() => {
-  resetRegistry();
+  resetQueries();
 });
 
 describe('an explicit ctx is INSTALLED on the read path too', () => {
   test('the three spellings of one caller agree, policy and ambient alike', async () => {
     const { target, seenByPolicy } = build();
 
-    const ambient = await runWithContext(createContext({ actor: caller }), () =>
+    const ambient = await runWithContext(ctxOf({ actor: caller }), () =>
       runQuery(target, { noop: true }),
     );
     const ambientPolicy = seenByPolicy();
@@ -64,7 +64,7 @@ describe('an explicit ctx is INSTALLED on the read path too', () => {
     const byCtx = await runQuery(
       target,
       { noop: true },
-      { ctx: createContext({ actor: caller }), fresh: true },
+      { ctx: ctxOf({ actor: caller }), fresh: true },
     );
     const byCtxPolicy = seenByPolicy();
 
@@ -80,11 +80,7 @@ describe('an explicit ctx is INSTALLED on the read path too', () => {
 
   test('sourceFor installs it as well — every projection builds on that one path', async () => {
     const { target } = build();
-    const source = await sourceFor(
-      target,
-      { noop: true },
-      { ctx: createContext({ actor: caller }) },
-    );
+    const source = await sourceFor(target, { noop: true }, { ctx: ctxOf({ actor: caller }) });
     const rows = await source.execute();
 
     expect((rows[0] as Row).seenBy).toBe(`u1@${ORG}`);

@@ -10,7 +10,7 @@ import { fakeCdpBrowser } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ScrapeTarget } from './target';
 
 /** A page with NONE of the three optional members, and one frame. */
@@ -61,7 +61,7 @@ const targetOver = (page: CdpPageLike): Promise<ScrapeTarget> =>
     page,
     browser: browserOver(page),
     rules: { allowHosts: ['shop.test'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
   });
 
 const refusalOf = async (

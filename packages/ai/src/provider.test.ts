@@ -1,16 +1,16 @@
 // The Anthropic provider's request half: what it puts on the wire, and how the gateway retries it.
 // The streaming and parsing halves are `provider-stream.test.ts`.
 import { describe, expect, test } from 'bun:test';
-import { createGateway, isRetryable } from './gateway';
+import { isRetryable, providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { modelSpec } from './models';
-import { AnthropicProvider, estimateInputTokens, estimateTokens } from './provider';
+import { anthropicProvider, estimateInputTokens, estimateTokens } from './provider';
 import { type Call, collect, fakeFetch } from './provider-fixture';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const provider = new AnthropicProvider({ models: [FIXTURE_MODEL] });
+const provider = anthropicProvider({ models: [FIXTURE_MODEL] });
 
 describe('Anthropic request body', () => {
   test('never sends sampling parameters or a thinking budget', () => {
@@ -160,7 +160,7 @@ describe('Anthropic request body', () => {
 
   test('a remote call without a key throws X_AI_KEY_MISSING naming the env var', async () => {
     // An explicit empty key, so the result does not depend on the developer's own environment.
-    const keyless = new AnthropicProvider({ models: [FIXTURE_MODEL], apiKey: '' });
+    const keyless = anthropicProvider({ models: [FIXTURE_MODEL], apiKey: '' });
     await expect(
       keyless.generate({
         model: FIXTURE_MODEL,
@@ -183,7 +183,7 @@ describe('Anthropic request body', () => {
 describe('transport', () => {
   test('generate posts a non-streaming body to the Messages endpoint and parses the reply', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'sk-ant-test',
       fetch: fakeFetch(calls, () =>
@@ -212,7 +212,7 @@ describe('transport', () => {
 
   test('a non-2xx carries its status, so the gateway can tell momentary from permanent', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () =>
@@ -235,7 +235,7 @@ describe('transport', () => {
 
   test('a 400 is never retried — the same body earns the same rejection', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => new Response('max_tokens too large', { status: 400 })),
@@ -251,7 +251,7 @@ describe('transport', () => {
 
   test('the gateway retries a 429 and succeeds on the attempt that lands', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, (_call, index) =>
@@ -264,7 +264,7 @@ describe('transport', () => {
             }),
       ),
     });
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [remote],
       sleep: async () => undefined,

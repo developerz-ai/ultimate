@@ -24,10 +24,10 @@
 | `sns-signature.ts` | SNS message verification: topic allow-list, pinned cert URL, canonical string, RSA v1/v2 |
 | `sns-certificate-cache.ts` | the downloaded SNS certificates, bounded against forgery floods |
 | `x509-spki.ts` | the public key out of a PEM certificate (Web Crypto imports no certificate) |
-| `ses-event-receiver.ts` | `createSesEventReceiver`: body → verify → normalise; SubscriptionConfirmation |
+| `ses-event-receiver.ts` | `sesEventReceiver`: body → verify → normalise; SubscriptionConfirmation |
 | `delivery-event-ses.ts` | SES notification JSON (`notificationType` or `eventType`) → events |
 | `resend-signature.ts` | Svix verification: HMAC over `id.timestamp.body`, constant-time, then the window |
-| `resend-event-receiver.ts` | `createResendEventReceiver` + the Resend payload → events |
+| `resend-event-receiver.ts` | `resendEventReceiver` + the Resend payload → events |
 | `events.ts` | the `@ultimat3/mail/events` subpath: the receivers, kept off the barrel |
 | `smtp-client.ts` | the conversation: greeting → EHLO → STARTTLS → AUTH → envelope → DATA |
 | `smtp-protocol.ts` | pure protocol: reply framing, capabilities, AUTH payloads, dot-stuffing |
@@ -38,7 +38,7 @@
 | `transform.ts` | `setMailTransform`: the app's outbound hook, run once per `send()` before the key |
 | `idempotency.ts` | `mailIdempotencyKey` — apart from `job.ts` because the transports need it too |
 | `catalog.ts` | English source strings for `mail.*`. Data, not code |
-| `html.ts` | escaping + `safeUrl`. The only place that builds an attribute |
+| `html.ts` | escaping + `safeMailHref`. The only place that builds an attribute |
 
 ## Rules
 

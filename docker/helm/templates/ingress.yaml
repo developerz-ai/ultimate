@@ -18,7 +18,7 @@ spec:
       http:
         paths:
           {{- /*
-          The path the sync node actually serves — `/_x/sync`, the one `createSyncNode` matches on
+          The path the sync node actually serves — `/_x/sync`, the one `syncNode` matches on
           and 404s off. `/_sync` routed a path no client ever requests, so every websocket fell
           through to the `/` rule below and reached `web`, which answers no upgrade.
           */}}

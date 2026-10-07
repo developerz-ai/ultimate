@@ -4,14 +4,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { text } from './response';
-import { createRouter, type MatchResult, matchRoute, type Route } from './router';
-import { createServer } from './server';
+import { textResponse } from './response';
+import { httpRouter, type MatchResult, matchRoute, type Route } from './router';
+import { httpServer } from './server';
 
 const route = (method: Route['method'], path: string, name = path): Route => ({
   method,
   path,
-  handler: (request) => text(`${name} ${JSON.stringify(request.params)}`),
+  handler: (request) => textResponse(`${name} ${JSON.stringify(request.params)}`),
   meta: { name, auth: 'public' },
 });
 
@@ -20,7 +20,7 @@ const nameOf = (result: MatchResult): string =>
 const paramsOf = (result: MatchResult): unknown => (result.ok ? result.params : undefined);
 
 describe('a catch-all with an empty rest', () => {
-  const table = createRouter([route('GET', '/docs/*path', 'docs')]);
+  const table = httpRouter([route('GET', '/docs/*path', 'docs')]);
 
   test('matches the bare prefix, with the empty path the static build fills it with', () => {
     for (const path of ['/docs', '/docs/']) {
@@ -37,7 +37,7 @@ describe('a catch-all with an empty rest', () => {
   });
 
   test('a static route at the prefix wins it; a param beside it keeps its one segment', () => {
-    const both = createRouter([
+    const both = httpRouter([
       route('GET', '/docs/*path', 'docs'),
       route('GET', '/docs', 'docs.index'),
       route('GET', '/docs/:slug', 'docs.page'),
@@ -48,7 +48,7 @@ describe('a catch-all with an empty rest', () => {
   });
 
   test('a static route for another method still lets the catch-all answer GET', () => {
-    const split = createRouter([
+    const split = httpRouter([
       route('GET', '/docs/*path', 'docs'),
       route('POST', '/docs', 'docs.create'),
     ]);
@@ -57,13 +57,13 @@ describe('a catch-all with an empty rest', () => {
   });
 
   test('at the root, it answers the root', () => {
-    const root = createRouter([route('GET', '/*path', 'all')]);
+    const root = httpRouter([route('GET', '/*path', 'all')]);
     expect(paramsOf(matchRoute(root, 'GET', '/'))).toEqual({ path: '' });
   });
 });
 
 describe('a literal segment outside ASCII', () => {
-  const table = createRouter([
+  const table = httpRouter([
     route('GET', '/precios-españa', 'precios'),
     route('GET', '/precios-españa/:plan', 'plan'),
   ]);
@@ -88,7 +88,7 @@ describe('the live server', () => {
   afterEach(resetLifecycle);
 
   test('answers the bare catch-all prefix and the encoded literal over a real socket', async () => {
-    const handle = createServer({
+    const handle = httpServer({
       routes: [route('GET', '/docs/*path', 'docs'), route('GET', '/precios-españa', 'precios')],
       role: 'web',
       config: defineHttpConfig({

@@ -5,7 +5,7 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { finiteCount, renderCauseValue, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, renderCauseValue, systemClock, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { listedRunId } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -70,7 +70,7 @@ import type { StepStore } from './steps';
 /** How often `enqueue` sends its insert before it calls a refusal an index fault, not a race. */
 const ENQUEUE_ATTEMPTS = 2;
 
-export interface PgDriverOptions {
+export interface PostgresJobDriverOptions {
   readonly executor?: PgExecutor;
   readonly clock?: Clock;
 }
@@ -87,7 +87,7 @@ function resolveExecutor(injected: PgExecutor | undefined): PgExecutor {
   });
 }
 
-function pgStepStore(exec: () => PgExecutor): StepStore {
+function postgresStepStore(exec: () => PgExecutor): StepStore {
   return {
     async get(runId, name) {
       const rows = await exec().query<StepRow>(SQL_STEP_GET, [runId, name]);
@@ -129,7 +129,7 @@ function pgStepStore(exec: () => PgExecutor): StepStore {
   };
 }
 
-function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
+function postgresBackfillLedger(exec: () => PgExecutor): BackfillLedger {
   return {
     async start(run) {
       await exec().query(SQL_BACKFILL_START, [run.runId, run.name, run.checksum, run.appVersion]);
@@ -158,7 +158,7 @@ function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
  * Fleet-wide slots over `x_job_leases`. Every decision is ONE statement — the `(lease_key, slot)`
  * primary key is what serialises two workers, so nothing here reads a count and then acts on it.
  */
-function pgLeaseStore(exec: () => PgExecutor): LeaseStore {
+function postgresLeaseStore(exec: () => PgExecutor): LeaseStore {
   return {
     async acquire(key, limit, ttlMs, holder) {
       if (limit <= 0) return undefined;
@@ -197,7 +197,7 @@ function pgLeaseStore(exec: () => PgExecutor): LeaseStore {
   };
 }
 
-export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
+export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDriver {
   const clock = options.clock ?? systemClock;
   let executor: PgExecutor | undefined;
   const exec = (): PgExecutor => {
@@ -257,20 +257,20 @@ export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
 
   return {
     name: 'pg',
-    steps: pgStepStore(exec),
-    backfills: pgBackfillLedger(exec),
-    leases: pgLeaseStore(exec),
+    steps: postgresStepStore(exec),
+    backfills: postgresBackfillLedger(exec),
+    leases: postgresLeaseStore(exec),
     introspect,
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
       const params = [
-        request.id ?? uuid(),
+        request.id ?? uuidV7(),
         request.name,
         request.queue || DEFAULT_QUEUE,
         JSON.stringify(request.input ?? null),
         request.idempotencyKey,
-        request.runId ?? uuid(),
+        request.runId ?? uuidV7(),
         request.maxAttempts,
         runAt,
         request.tenantId ?? null,
@@ -363,7 +363,6 @@ export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
         by.workerId,
         Math.round(by.durationMs ?? 0),
         by.claim,
-        by.counted !== false,
       ]);
       return rows.length > 0;
     },
@@ -445,7 +444,7 @@ export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
  */
 export function postgresLeader(
   lockKey: number,
-  options: PgDriverOptions = {},
+  options: PostgresJobDriverOptions = {},
 ): { acquire(): Promise<boolean>; release(): Promise<void>; readonly renewEveryMs: number } {
   const exec = (): PgExecutor => resolveExecutor(options.executor);
   let held = false;

@@ -3,7 +3,7 @@
 // records and policy with `channel(ref, { … })`, so name and params are written once and a browser
 // chunk never carries `@ultimat3/entity`.
 
-import { invariant } from '@ultimat3/core/page';
+import { assertCoded } from '@ultimat3/core/page';
 import { TopicForbiddenError } from './errors';
 
 /** Branded so a raw string can never be published to; `topic()` is the only constructor. */
@@ -49,7 +49,7 @@ export interface ChannelHandle<K extends string = string> {
 }
 
 export function refuseChannel(name: string, detail: string, fix: string): never {
-  invariant(false, 'X_CHANNEL_DECLARATION_INVALID', `channel("${name}"): ${detail}`, fix);
+  assertCoded(false, 'X_CHANNEL_DECLARATION_INVALID', `channel("${name}"): ${detail}`, fix);
 }
 
 /** Refuses a bad name or a repeated param, and builds the ref. `channel()` is built on this. */

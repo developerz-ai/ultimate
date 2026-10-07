@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+  CursorInvalidError,
   configureCursorSigning,
-  createContext,
+  ctxOf,
   decodeCursor,
   encodeCursor,
   userActor,
 } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { CursorInvalidError } from './errors';
 import { paginate } from './pagination';
 import { query } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import type { Builder, SqlSource } from './source';
 import { from } from './source';
 
@@ -23,7 +23,7 @@ interface Post {
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const readerActor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
-const ctx = createContext({ actor: readerActor });
+const ctx = ctxOf({ actor: readerActor });
 
 const posts: readonly Post[] = [
   { id: 'a', orgId: ORG, createdAt: 10 },
@@ -41,7 +41,7 @@ const defineFeed = () =>
 
 describe('cursor pagination', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 
@@ -177,7 +177,7 @@ describe('cursor pagination under concurrent writes', () => {
     );
 
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
     live = [...posts];
   });
@@ -267,7 +267,7 @@ describe('a paged read is ordered totally', () => {
   ];
 
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 
@@ -321,7 +321,7 @@ describe('a paged read is ordered totally', () => {
  */
 describe('a page is bounded whether or not the caller bounded it', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 
@@ -369,7 +369,7 @@ describe('the fallback slices in the order its cut assumes', () => {
   };
 
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 

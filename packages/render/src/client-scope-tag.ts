@@ -9,9 +9,6 @@
 import { CLIENT_PERSIST_META, CLIENT_SCOPE_META } from '@ultimat3/core';
 import type { HeadTag } from './head';
 
-/** The `name` core's reader matches — core's constant, so the writer and the reader are one literal. */
-export { CLIENT_PERSIST_META, CLIENT_SCOPE_META };
-
 /** `scope` is opaque (`@ultimat3/auth`'s `clientScopeOf`), and `''` is the anonymous page. */
 export function clientScopeTag(scope: string): HeadTag {
   return {

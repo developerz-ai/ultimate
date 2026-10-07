@@ -5,7 +5,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
-import { type AdminActor, type AdminAuthz, type AdminDecision, allowed, denied } from './authz';
+import {
+  type AdminActor,
+  type AdminAuthz,
+  type AdminDecision,
+  adminAllowed,
+  adminDenied,
+} from './authz';
 import type { AdminField } from './fields';
 import {
   byComponent,
@@ -76,7 +82,7 @@ const resource = resourceWith([]);
 
 const ACTOR: AdminActor = { id: 'u_1', roles: ['viewer'], orgId: 'org_1' };
 const refuseAll: AdminAuthz = {
-  decide: (query): AdminDecision => denied(query.permission, 'probe.refused'),
+  decide: (query): AdminDecision => adminDenied(query.permission, 'probe.refused'),
 };
 
 const pageOf = (over: Partial<AdminPage<AdminRow>> = {}): AdminPage<AdminRow> =>
@@ -308,7 +314,7 @@ describe('row actions', () => {
 
   test('each row gets the action bar with ITS row as the subject, posting at its own URL', () => {
     const allowAll: AdminAuthz = {
-      decide: (query): AdminDecision => allowed(query.permission, 'probe.granted'),
+      decide: (query): AdminDecision => adminAllowed(query.permission, 'probe.granted'),
     };
     const columns = columnsOf(render({ resource: resourceWith([publish]), authz: allowAll }));
     const column = columns.find((candidate) => candidate.key === 'actions');

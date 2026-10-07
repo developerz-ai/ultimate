@@ -4,7 +4,7 @@
 // agree on, their shared refusals and the group bound are `count-by-parity.test.ts`'s subject.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { column } from './column';
 import { integer, money, text, timestamp, uuid } from './columns';
 import { MAX_GROUPS } from './count-by';
@@ -60,7 +60,7 @@ const POST_C = idAt('ccc');
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

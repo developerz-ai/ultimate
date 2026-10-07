@@ -3,10 +3,9 @@
 // many times the work ran.
 
 import { describe, expect, test } from 'bun:test';
-import { createSingleFlight as coreSingleFlight } from '@ultimat3/core';
-import { createSingleFlight } from './single-flight';
+import { singleFlight } from '@ultimat3/core';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
 /** Minimal, in-memory `CacheTier` that records every call it receives. */
 function fakeTier(name: CacheTier['name'], calls: string[]): CacheTier {
@@ -48,9 +47,9 @@ function deferred<T>(): {
   return { promise, resolve, reject };
 }
 
-describe('createSingleFlight', () => {
+describe('singleFlight', () => {
   test('N concurrent callers on one key run the work exactly ONCE', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const gate = deferred<string>();
     let runs = 0;
     const work = (): Promise<string> => {
@@ -69,7 +68,7 @@ describe('createSingleFlight', () => {
   });
 
   test('two different keys do not join each other', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const seen: string[] = [];
     const work = (key: string) => (): Promise<string> => {
       seen.push(key);
@@ -83,7 +82,7 @@ describe('createSingleFlight', () => {
   });
 
   test('the share ends when the load settles — a later caller loads again', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     let runs = 0;
     const work = (): Promise<number> => {
       runs += 1;
@@ -99,7 +98,7 @@ describe('createSingleFlight', () => {
   test('a rejected load rejects every joiner AND clears the entry', async () => {
     // The failure this guards: an entry left behind by a rejection is one failure cached as a
     // permanent rejection — every later reader of that key gets the first error, forever.
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const gate = deferred<string>();
     let runs = 0;
     const failing = (): Promise<string> => {
@@ -120,7 +119,7 @@ describe('createSingleFlight', () => {
   });
 
   test('work that throws synchronously rejects rather than escaping, and clears', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
 
     await expect(
       flight.run('k', () => {
@@ -133,7 +132,7 @@ describe('createSingleFlight', () => {
   test('a joiner contributes to the leader, which reads the merge LATE', async () => {
     // A joiner shares the leader's write as well as its load, so anything it declared about that
     // write is silently dropped unless it reaches the leader before the leader publishes.
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const gate = deferred<string>();
     const seen: string[][] = [];
     const work = (shared: () => string[] | undefined) => async (): Promise<string> => {
@@ -159,7 +158,7 @@ describe('createSingleFlight', () => {
   test('a late settle from a replaced load does not drop the live one', async () => {
     // `settled` compares identity before deleting: without that, the first load's callback would
     // evict the second load's entry and every joiner after it would start its own.
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const first = deferred<string>();
     const firstCall = flight.run('k', () => first.promise);
     first.resolve('one');
@@ -183,9 +182,9 @@ describe('createSingleFlight', () => {
   });
 });
 
-// And the same property one layer up, where it actually pays: `createCacheStack.read`. The
+// And the same property one layer up, where it actually pays: `cacheStack.read`. The
 // primitive above is only worth what the stack does with it.
-describe('createCacheStack read: concurrent misses share ONE load', () => {
+describe('cacheStack read: concurrent misses share ONE load', () => {
   /** Holds `load()` open so every reader is provably in flight before any of them resolves. */
   function gatedLoader(): {
     load: () => Promise<string>;
@@ -216,7 +215,7 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
     // ~200ms `load()` takes, because the write only lands after it resolves — ~1,600 identical
     // queries hit Postgres in one burst at every TTL boundary, forever.
     const calls: string[] = [];
-    const stack = createCacheStack([fakeTier('lru', calls), fakeTier('redis', calls)]);
+    const stack = cacheStack([fakeTier('lru', calls), fakeTier('redis', calls)]);
     const loader = gatedLoader();
 
     const readers = Array.from({ length: 200 }, () => stack.read('feed', loader.load));
@@ -234,7 +233,7 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
 
   test('a rejected load rejects every joiner and is not held as a permanent failure', async () => {
     const calls: string[] = [];
-    const stack = createCacheStack([fakeTier('lru', calls)]);
+    const stack = cacheStack([fakeTier('lru', calls)]);
     let attempts = 0;
     let fail = true;
     const load = (): Promise<string> => {
@@ -272,7 +271,7 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
       del: () => Promise.resolve(),
       invalidateTags: () => Promise.resolve({ tier: 'lru' as const, keys: [] }),
     };
-    const stack = createCacheStack([recorder]);
+    const stack = cacheStack([recorder]);
     const gate = deferred<string>();
 
     const leader = stack.read('post:1', () => gate.promise, {
@@ -295,8 +294,8 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
 
   test('two stacks are two ladders and never join each other loads', async () => {
     const calls: string[] = [];
-    const one = createCacheStack([fakeTier('lru', calls)]);
-    const two = createCacheStack([fakeTier('lru', calls)]);
+    const one = cacheStack([fakeTier('lru', calls)]);
+    const two = cacheStack([fakeTier('lru', calls)]);
     let runs = 0;
     const load = (): Promise<string> => {
       runs += 1;
@@ -309,20 +308,15 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
   });
 });
 
-// The mechanism moved down to tier 0 and this package publishes it unchanged. Identity, not
-// behaviour: four packages each had their own deduper and behavioural parity is what let them
-// drift — a copy that passes every test above is still a second thing to fix.
-describe("the mechanism is @ultimat3/core's, not a copy of it", () => {
-  test("createSingleFlight IS core's function", () => {
-    expect(createSingleFlight).toBe(coreSingleFlight);
-  });
-
+// The mechanism is tier 0's, imported by `tiers.ts`; this package neither copies nor re-exports it
+// (`X_HELPER_COPY`), so what these tests exercise is the one function the stack runs.
+describe("the mechanism is @ultimat3/core's", () => {
   // The one capability core adds over what this package shipped: a key held by a load that never
   // settles is freed, so later callers start a load of their own instead of joining a promise
   // nothing will ever resolve. The schedule is injected, so the deadline is provable without one.
   test("an injected deadline frees a wedged key, and the timer is a test's to fire", async () => {
     let fire = (): void => {};
-    const flight = createSingleFlight({
+    const flight = singleFlight({
       deadlineMs: 30_000,
       schedule: (fn) => {
         fire = fn;

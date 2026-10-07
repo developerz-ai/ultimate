@@ -16,7 +16,7 @@ import type {
 } from './channel-wire';
 import type { LiveCursor } from './cursor';
 import {
-  isJsonObject,
+  isParsedJsonObject,
   isRow,
   type JsonObject,
   type JsonValue,
@@ -214,7 +214,7 @@ export function decode(raw: string | Uint8Array): Frame {
   } catch {
     throw fail('frame is not JSON');
   }
-  if (!isJsonObject(parsed)) throw fail('frame is not an object');
+  if (!isParsedJsonObject(parsed)) throw fail('frame is not an object');
   const version = parsed['v'];
   if (version !== PROTOCOL_VERSION) {
     throw new ProtocolVersionError({ got: version, expected: PROTOCOL_VERSION });
@@ -324,7 +324,7 @@ export function toWireError(error: unknown): WireError {
 function retryHintOf(error: unknown): number | undefined {
   try {
     const meta: unknown = (error as { readonly meta?: unknown } | null)?.meta;
-    const held: unknown = isJsonObject(meta) ? meta['retryAfterSeconds'] : undefined;
+    const held: unknown = isParsedJsonObject(meta) ? meta['retryAfterSeconds'] : undefined;
     return typeof held === 'number' && Number.isFinite(held) && held > 0 ? held : undefined;
   } catch {
     return undefined;
@@ -351,7 +351,7 @@ function row(value: unknown): Row {
 }
 
 function cursor(value: unknown): LiveCursor {
-  if (!isJsonObject(value)) throw fail('cursor must be an object');
+  if (!isParsedJsonObject(value)) throw fail('cursor must be an object');
   return {
     qid: str(value, 'qid'),
     lsn: str(value, 'lsn'),
@@ -364,7 +364,7 @@ function cursor(value: unknown): LiveCursor {
 }
 
 function patch(value: unknown): RowPatch {
-  if (!isJsonObject(value)) throw fail('patch must be an object');
+  if (!isParsedJsonObject(value)) throw fail('patch must be an object');
   const base = {
     op: pick(value, 'op', ['insert', 'update', 'delete'] as const),
     id: str(value, 'id'),
@@ -377,7 +377,7 @@ function patch(value: unknown): RowPatch {
 }
 
 function target(value: unknown): SubscribeTarget {
-  if (!isJsonObject(value)) throw fail('subscribe.target must be an object');
+  if (!isParsedJsonObject(value)) throw fail('subscribe.target must be an object');
   const kind = pick(value, 'kind', ['query', 'channel'] as const);
   if (kind === 'channel') return channelTarget(value);
   return {
@@ -391,7 +391,7 @@ function target(value: unknown): SubscribeTarget {
 
 function wireError(value: unknown): WireError | null {
   if (value === null || value === undefined) return null;
-  if (!isJsonObject(value)) throw fail('ack.error must be an object or null');
+  if (!isParsedJsonObject(value)) throw fail('ack.error must be an object or null');
   const base = { code: str(value, 'code'), cause: str(value, 'cause'), fix: str(value, 'fix') };
   const documented = value['docs'] === undefined ? base : { ...base, docs: str(value, 'docs') };
   return value['retryAfterSeconds'] === undefined

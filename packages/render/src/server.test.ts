@@ -91,7 +91,7 @@ describe('the server barrel re-exports the modules themselves, never copies', ()
     const ssr = await import('./render-ssr');
     const staticMode = await import('./render-static');
     expect(barrel.renderToHtml).toBe(html.renderToHtml);
-    expect(barrel.createIsrController).toBe(isr.createIsrController);
+    expect(barrel.isrController).toBe(isr.isrController);
     expect(barrel.renderSsr).toBe(ssr.renderSsr);
     expect(barrel.renderStatic).toBe(staticMode.renderStatic);
     expect(barrel.ROOT_ELEMENT_ID).toBe(html.ROOT_ELEMENT_ID);
@@ -104,7 +104,7 @@ describe('the server barrel re-exports the modules themselves, never copies', ()
     const surface = Object.keys(barrel);
     expect(surface).not.toContain('renderSpa');
     expect(surface).not.toContain('renderSpaShell');
-    expect(surface).not.toContain('createRouter');
+    expect(surface).not.toContain('httpRouter');
   });
 
   test('nothing is exported as undefined — a re-export of a renamed symbol is silent', () => {

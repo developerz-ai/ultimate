@@ -3,7 +3,7 @@
 // handle makes to a table is one statement, and the ledger below records each of them.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   type Driver,
@@ -146,7 +146,7 @@ interface Answer {
 
 const ask = (role: string, path: string): Promise<Answer> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: userActor({ id: `u-${role}`, roles: [role] }),
       tz: 'UTC',
       locale: 'en',

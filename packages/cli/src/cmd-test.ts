@@ -5,6 +5,7 @@
 // there, because it is a fact about a git diff and not about a path: what the diff touches is
 // `affected.ts`, and this file only maps that answer onto the paths discovery yields.
 
+import { TEST_TYPES } from '@ultimat3/testing';
 import type { AffectedScope } from './affected';
 import { affectedScope, affectedScopeJson, DEFAULT_BASE, inScope } from './affected';
 import { testSpec } from './cmd-test-spec';
@@ -37,7 +38,6 @@ import {
 } from './test-workers';
 import { readVerifyFloor } from './verify-floor';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES } from './verify-tests';
 
 /**
  * `--workers`. `Number.parseInt` alone accepted `4abc` and `4.9` as four, while `cmd-verify.ts`'s

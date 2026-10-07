@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES, UiError } from '../errors';
 import type { ImageLoadingHints } from './image-source';
-import { assertNonEmptySrc, boxFor, loadingHints, ratioFor, srcsetFor } from './image-source';
+import { assertNonEmptySrc, boxFor, loadingHints, ratioFor, variantSrcset } from './image-source';
 
 /**
  * The thrown UiError itself, so a test can assert on `code` and `cause` together. Anything else
@@ -20,13 +20,13 @@ function rejected(run: () => unknown): UiError {
 
 describe('srcsetFor', () => {
   test('no variants means no attribute, not an empty one', () => {
-    expect(srcsetFor(undefined)).toBeUndefined();
-    expect(srcsetFor([])).toBeUndefined();
+    expect(variantSrcset(undefined)).toBeUndefined();
+    expect(variantSrcset([])).toBeUndefined();
   });
 
   test('width variants emit w descriptors, ascending whatever order they arrive in', () => {
     expect(
-      srcsetFor([
+      variantSrcset([
         { src: '/hero-1280.avif', width: 1280 },
         { src: '/hero-640.avif', width: 640 },
         { src: '/hero-960.avif', width: 960 },
@@ -36,7 +36,7 @@ describe('srcsetFor', () => {
 
   test('density variants emit x descriptors, fractions kept, integers not padded', () => {
     expect(
-      srcsetFor([
+      variantSrcset([
         { src: '/logo@2x.png', density: 2 },
         { src: '/logo.png', density: 1 },
         { src: '/logo@1.5x.png', density: 1.5 },
@@ -45,11 +45,11 @@ describe('srcsetFor', () => {
   });
 
   test('a single variant still carries its descriptor', () => {
-    expect(srcsetFor([{ src: '/a.webp', width: 800 }])).toBe('/a.webp 800w');
+    expect(variantSrcset([{ src: '/a.webp', width: 800 }])).toBe('/a.webp 800w');
   });
 
   test('surrounding whitespace is trimmed so the comma-separated list stays parseable', () => {
-    expect(srcsetFor([{ src: '  /a.webp\n', width: 800 }])).toBe('/a.webp 800w');
+    expect(variantSrcset([{ src: '  /a.webp\n', width: 800 }])).toBe('/a.webp 800w');
   });
 
   /**
@@ -66,7 +66,7 @@ describe('srcsetFor', () => {
     ['a trailing comma, which the parser strips', '/a.webp,'],
     ['a leading comma', ',/a.webp'],
   ])('a variant src carrying %s is rejected, not emitted', (_why, src) => {
-    const error = rejected(() => srcsetFor([{ src, width: 800 }]));
+    const error = rejected(() => variantSrcset([{ src, width: 800 }]));
     expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
     expect(String(error.cause)).toContain('srcset');
   });
@@ -74,12 +74,12 @@ describe('srcsetFor', () => {
   /** …and an interior comma is NOT rejected: the parser reads a URL up to whitespace, so a path
    *  with a comma in it round-trips. Refusing it would be a rule this microsyntax does not have. */
   test('an interior comma is left alone, because srcset splits on whitespace first', () => {
-    expect(srcsetFor([{ src: '/img/a,b.webp', width: 800 }])).toBe('/img/a,b.webp 800w');
+    expect(variantSrcset([{ src: '/img/a,b.webp', width: 800 }])).toBe('/img/a,b.webp 800w');
   });
 
   test('mixing w and x descriptors is rejected — HTML forbids it', () => {
     const error = rejected(() =>
-      srcsetFor([
+      variantSrcset([
         { src: '/a.webp', width: 800 },
         { src: '/a@2x.webp', density: 2 },
       ]),
@@ -90,7 +90,7 @@ describe('srcsetFor', () => {
 
   test('a repeated descriptor is rejected rather than silently shadowed', () => {
     const error = rejected(() =>
-      srcsetFor([
+      variantSrcset([
         { src: '/a.webp', width: 800 },
         { src: '/b.webp', width: 800 },
       ]),
@@ -100,34 +100,36 @@ describe('srcsetFor', () => {
   });
 
   test('a variant with no descriptor is rejected', () => {
-    expect(rejected(() => srcsetFor([{ src: '/a.webp' }])).code).toBe(UI_ERROR_CODES.invalidValue);
+    expect(rejected(() => variantSrcset([{ src: '/a.webp' }])).code).toBe(
+      UI_ERROR_CODES.invalidValue,
+    );
   });
 
   test('a variant with both descriptors is rejected', () => {
-    const error = rejected(() => srcsetFor([{ src: '/a.webp', width: 800, density: 2 }]));
+    const error = rejected(() => variantSrcset([{ src: '/a.webp', width: 800, density: 2 }]));
     expect(String(error.cause)).toContain('exactly one of width');
   });
 
   test('a fractional or non-positive width is rejected', () => {
-    expect(rejected(() => srcsetFor([{ src: '/a.webp', width: 800.5 }])).code).toBe(
+    expect(rejected(() => variantSrcset([{ src: '/a.webp', width: 800.5 }])).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
-    expect(rejected(() => srcsetFor([{ src: '/a.webp', width: 0 }])).code).toBe(
+    expect(rejected(() => variantSrcset([{ src: '/a.webp', width: 0 }])).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
   });
 
   test('a non-positive or non-finite density is rejected', () => {
-    expect(rejected(() => srcsetFor([{ src: '/a.webp', density: 0 }])).code).toBe(
+    expect(rejected(() => variantSrcset([{ src: '/a.webp', density: 0 }])).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
-    expect(rejected(() => srcsetFor([{ src: '/a.webp', density: Number.NaN }])).code).toBe(
+    expect(rejected(() => variantSrcset([{ src: '/a.webp', density: Number.NaN }])).code).toBe(
       UI_ERROR_CODES.invalidValue,
     );
   });
 
   test('an empty src is rejected', () => {
-    const error = rejected(() => srcsetFor([{ src: '   ', width: 800 }]));
+    const error = rejected(() => variantSrcset([{ src: '   ', width: 800 }]));
     expect(String(error.cause)).toContain('non-empty src');
   });
 });

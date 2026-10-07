@@ -51,7 +51,7 @@ describe('a REFUSED listing is a refusal on both disks, never an empty page', ()
     // `sweepOrphans` walks `list()`, so a swallowed refusal is a GDPR erasure report certifying a
     // prefix nothing could read as having no orphans — the exact false report `delete()`'s
     // `.catch(() => undefined)` used to make, one call to the left. The local driver caught every
-    // error and answered `{ objects: [], truncated: false }`; the s3 driver let a bare `S3Error`
+    // error and answered an empty, COMPLETE page; the s3 driver let a bare `S3Error`
     // escape with no code, no fix and nothing for the http error map to render but a 500.
     const file = `${root}/not-a-directory`;
     await Bun.write(file, 'x');
@@ -68,8 +68,8 @@ describe('a REFUSED listing is a refusal on both disks, never an empty page', ()
     // The other half, and the one the local driver's bare `catch` was there for: a root nobody has
     // written to has no directory yet. Losing this is a boot that fails on an empty disk.
     const unwritten = localDriver({ root: `${root}/never-created`, signingSecret: 's', clock });
-    expect(await unwritten.list()).toEqual({ objects: [], truncated: false });
-    expect(await s3.list()).toEqual({ objects: [], truncated: false });
+    expect(await unwritten.list()).toEqual({ rows: [], nextCursor: null, hasMore: false });
+    expect(await s3.list()).toEqual({ rows: [], nextCursor: null, hasMore: false });
   });
 });
 
@@ -84,22 +84,18 @@ describe('a listing returns every key the key rules allow, dot-prefixed ones inc
     // swallowed catch, which is the exact outcome `list()`'s error classification exists to stop.
     const keys = ['plain.txt', '.hidden.txt', 'org/o1/.hidden.txt', 'org/o1/pending/.x.png'];
     for (const key of keys) await local.put(key, bytesOf('x'));
-    expect((await local.list()).objects.map((object) => object.key).sort()).toEqual(
-      [...keys].sort(),
-    );
-    expect((await local.list({ prefix: 'org/o1/pending/' })).objects.map((o) => o.key)).toEqual([
+    expect((await local.list()).rows.map((object) => object.key).sort()).toEqual([...keys].sort());
+    expect((await local.list({ prefix: 'org/o1/pending/' })).rows.map((o) => o.key)).toEqual([
       'org/o1/pending/.x.png',
     ]);
 
     // The skip one line below the glob: `put()` writes `<root>/.meta/<key>.json` beside every
     // object, and with the glob finally yielding dot-prefixed entries that skip is the only thing
     // keeping the sidecar namespace out of the object namespace. It was unreachable until now.
-    expect((await local.list()).objects.some((object) => object.key.startsWith('.meta'))).toBe(
-      false,
-    );
+    expect((await local.list()).rows.some((object) => object.key.startsWith('.meta'))).toBe(false);
 
     fake.listResult = { contents: [{ key: 'org/o1/.hidden.txt', size: 1, eTag: 'e' }] };
-    expect((await s3.list()).objects.map((object) => object.key)).toEqual(['org/o1/.hidden.txt']);
+    expect((await s3.list()).rows.map((object) => object.key)).toEqual(['org/o1/.hidden.txt']);
   });
 });
 
@@ -115,7 +111,7 @@ describe('a list limit is a page size or a refusal, never a silently empty page'
       expect(anyCodeOf(await catchError(() => local.list({ limit })))).toBe('X_INVARIANT');
       expect(anyCodeOf(await catchError(() => s3.list({ limit })))).toBe('X_INVARIANT');
     }
-    expect(await local.list({ limit: 1 })).toMatchObject({ truncated: false });
+    expect(await local.list({ limit: 1 })).toMatchObject({ nextCursor: null, hasMore: false });
     expect(fake.listCalls.every((call) => (call.maxKeys ?? 1) > 0)).toBe(true);
   });
 });
@@ -131,12 +127,12 @@ describe('a listing reports only what a listing can know', () => {
     // file it lists: hashing a sidecar-less object meant one full buffered read per listed row,
     // sequentially, under a comment promising the opposite.
     await Bun.write(`${root}/loose.txt`, 'sidecar-less');
-    const listedLocal = (await local.list()).objects[0];
+    const listedLocal = (await local.list()).rows[0];
     expect(listedLocal?.contentType).toBeUndefined();
     expect(listedLocal?.etag).toBe('');
 
     fake.listResult = { contents: [{ key: KEY, size: 5, eTag: 'provider-etag' }] };
-    const listedS3 = (await s3.list()).objects[0];
+    const listedS3 = (await s3.list()).rows[0];
     expect(listedS3?.contentType).toBeUndefined();
 
     // A `get()` promises a type and an etag, because it has actually looked at the object — so the

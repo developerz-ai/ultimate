@@ -6,8 +6,7 @@
 // The threads are the route's `load`, resolved once per render inside the request's context and
 // handed to the page as `data`.
 
-import { actorOf } from '@ultimat3/action';
-import { useContext } from '@ultimat3/core';
+import { actorOf, useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';

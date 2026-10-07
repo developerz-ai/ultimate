@@ -4,7 +4,7 @@
 // never turn it into the fourteen `ICON_MATRIX` PNGs the generated web manifest declares.
 
 import type { Raster } from '@ultimat3/core';
-import { createRaster, encodeImage } from '@ultimat3/core';
+import { blankRaster, encodeImage } from '@ultimat3/core';
 
 /** `@ultimat3/pwa`'s own contract (`requireSourceIcon`'s fix line): square, 1024 or larger. */
 const ICON_SIZE = 1024;
@@ -48,7 +48,7 @@ function paintMark(raster: Raster, inset: number): void {
  * so `x new` output never depends on run order or the clock.
  */
 export function icon(): Uint8Array {
-  const raster = createRaster(ICON_SIZE, ICON_SIZE, 'scaffold-icon');
+  const raster = blankRaster(ICON_SIZE, ICON_SIZE, 'scaffold-icon');
   paintMark(raster, Math.round(ICON_SIZE * MASKABLE_PADDING));
   return encodeImage(raster, 'png');
 }

@@ -3,7 +3,7 @@
 // real claim/ack/nack paths rather than a mock that always succeeds.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, systemClock, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { memoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -30,7 +30,7 @@ import {
   nackState,
   REQUEUEABLE_STATES,
 } from './driver';
-import { createMemoryOperator } from './driver-memory-operator';
+import { memoryOperator } from './driver-memory-operator';
 import { signalEnqueued } from './enqueue-signal';
 import { JobDuplicateError, LeaseLostError } from './errors';
 import { JobNotFoundError, JobNotRequeueableError, requeueKeyTaken } from './errors-requeue';
@@ -42,7 +42,7 @@ import { isFinalAttempt } from './retry';
 import type { StepStore } from './steps';
 import { memoryStepStore } from './steps-memory';
 
-export interface MemoryDriverOptions {
+export interface MemoryJobDriverOptions {
   readonly clock?: Clock;
   readonly steps?: StepStore;
   /** Injectable for the same reason `steps` is: two drivers in one test sharing one ledger. */
@@ -62,7 +62,7 @@ export interface MemoryDriverOptions {
  */
 export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
 
-export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
+export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJobDriver {
   const clock = options.clock ?? systemClock;
   const stepStore = options.steps ?? memoryStepStore();
   // `SQL_STEP_PUT`'s fence: a write made under a claim lands only while that claim holds the row.
@@ -133,7 +133,7 @@ export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDri
     });
   };
 
-  const operator = createMemoryOperator({
+  const operator = memoryOperator({
     jobs,
     steps,
     clock,
@@ -251,7 +251,7 @@ export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDri
       const at = nowMs(clock);
       const runAt = request.runAt ?? at;
       const record: JobRecord = {
-        id: request.id ?? uuid(),
+        id: request.id ?? uuidV7(),
         name: request.name,
         queue: request.queue || DEFAULT_QUEUE,
         // Through JSON, exactly as the pg driver binds it (`JSON.stringify(request.input ?? null)`):
@@ -259,7 +259,7 @@ export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDri
         // queue in production never stores, so a job that read one passed here and failed there.
         input: JSON.parse(JSON.stringify(request.input ?? null)) as unknown,
         idempotencyKey: request.idempotencyKey,
-        runId: request.runId ?? uuid(),
+        runId: request.runId ?? uuidV7(),
         attempt: 0,
         maxAttempts: request.maxAttempts,
         state: runAt > at ? 'delayed' : 'ready',
@@ -340,9 +340,7 @@ export function memoryJobDriver(options: MemoryDriverOptions = {}): MemoryJobDri
       const record = heldBy(jobId, by);
       if (record === undefined) return Promise.resolve(false);
       settle(jobId, { state: 'done' });
-      if (by.counted !== false) {
-        operator.counters.add(record.name, 'done', by.durationMs ?? 0, nowMs(clock));
-      }
+      operator.counters.add(record.name, 'done', by.durationMs ?? 0, nowMs(clock));
       return Promise.resolve(true);
     },
 

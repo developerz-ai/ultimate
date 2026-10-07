@@ -2,8 +2,9 @@
 // threw a TypeError instead of unwinding, and a hung vendor call held its connection and its
 // pool slot until the process died. This is the timer that ends that.
 import { describe, expect, test } from 'bun:test';
+import { REQUEST_TIMEOUT_HEADER } from '@ultimat3/core';
 import { defineHttpConfig, MAX_TIMER_MS } from './config';
-import { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
+import { resolveTimeoutMs, startDeadline } from './deadline';
 
 const config = (requestTimeoutMs: number) =>
   defineHttpConfig({ rateLimit: { scope: 'process' }, requestTimeoutMs });

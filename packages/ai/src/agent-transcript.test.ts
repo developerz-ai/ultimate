@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
@@ -55,7 +55,7 @@ function scripted(...turns: readonly Turn[]): { provider: Provider; seen: Genera
         cost: costOf('claude-opus-5', USAGE),
       } satisfies GenerateResult);
     },
-    stream: (request) => new EchoProvider().stream(request),
+    stream: (request) => echoProvider().stream(request),
   };
   return { provider, seen };
 }
@@ -80,7 +80,7 @@ function promptFor(): Prompt<{ orderId: string }> {
 }
 
 function ctxAs(id: string) {
-  return createContext({ actor: userActor({ id }) });
+  return ctxOf({ actor: userActor({ id }) });
 }
 
 const blocksOf = (message: AiMessage | undefined) =>
@@ -122,7 +122,9 @@ describe('every tool_use the transcript replays is answered', () => {
       },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -158,7 +160,9 @@ describe('every tool_use the transcript replays is answered', () => {
       { calls: [{ name: 'respond', input: { answer: 42 } }] },
       { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
     );
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -200,9 +204,11 @@ describe('every tool_use the transcript replays is answered', () => {
           cost: costOf('claude-opus-5', USAGE),
         } satisfies GenerateResult);
       },
-      stream: (request) => new EchoProvider().stream(request),
+      stream: (request) => echoProvider().stream(request),
     };
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,

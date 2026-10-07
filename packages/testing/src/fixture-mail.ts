@@ -21,7 +21,7 @@ export interface TestMail extends Disposable {
 
 const idOf = (mail: MailRef): string => (typeof mail === 'string' ? mail : mail.id);
 
-export async function createTestMail(): Promise<TestMail> {
+export async function testMail(): Promise<TestMail> {
   const { memoryMailDriver, driverUnavailable, resetMailDriver, setMailDriver, tryMailDriver } =
     await import('@ultimat3/mail');
   const memory = memoryMailDriver();

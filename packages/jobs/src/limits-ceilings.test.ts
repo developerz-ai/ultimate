@@ -1,13 +1,13 @@
-// The four ceilings `createLimiter` ENFORCES, refused when the number is not one. Each is read as
+// The four ceilings `concurrencyLimiter` ENFORCES, refused when the number is not one. Each is read as
 // `config.x !== undefined && count >= config.x`, so the option is present and the comparison is
 // false forever: the ceiling stops existing while `snapshot().config` still reports the number an
-// operator configured. Measured before the screen, on `createLimiter({ global: Number(process.env
+// operator configured. Measured before the screen, on `concurrencyLimiter({ global: Number(process.env
 // .WORKER_GLOBAL_CONCURRENCY) })` with the variable unset — 1000 of 1000 acquires granted, where
 // `global: 2` grants 2.
 
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { createLimiter } from './limits';
+import { concurrencyLimiter } from './limits';
 
 /** Every shape `Number(...)` / `parseInt` / JSON hands a config reader that no `??` can catch. */
 const NOT_A_CEILING: readonly number[] = [
@@ -29,8 +29,8 @@ const thrownBy = (build: () => unknown): unknown => {
 };
 
 /** How many of `attempts` a limiter actually grants — the number the ceiling is supposed to cap. */
-const granted = (config: Parameters<typeof createLimiter>[0], attempts: number): number => {
-  const limiter = createLimiter(config);
+const granted = (config: Parameters<typeof concurrencyLimiter>[0], attempts: number): number => {
+  const limiter = concurrencyLimiter(config);
   let count = 0;
   for (let index = 0; index < attempts; index += 1) {
     if (limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' }) !== undefined) count += 1;
@@ -41,7 +41,7 @@ const granted = (config: Parameters<typeof createLimiter>[0], attempts: number):
 describe('a limiter built on a number that is not a ceiling', () => {
   test('a non-finite global is refused, not a process with no global ceiling at all', () => {
     for (const global of NOT_A_CEILING) {
-      const thrown = thrownBy(() => createLimiter({ global }));
+      const thrown = thrownBy(() => concurrencyLimiter({ global }));
       expect(thrown).toBeInstanceOf(UltimateError);
       // Names the knob the operator wrote, so the refusal is an instruction and not a riddle.
       expect(fixOf(thrown)).toContain('global');
@@ -51,7 +51,7 @@ describe('a limiter built on a number that is not a ceiling', () => {
 
   test('a non-finite perQueue is refused', () => {
     for (const perQueue of NOT_A_CEILING) {
-      const thrown = thrownBy(() => createLimiter({ perQueue }));
+      const thrown = thrownBy(() => concurrencyLimiter({ perQueue }));
       expect(thrown).toBeInstanceOf(UltimateError);
       expect(fixOf(thrown)).toContain('perQueue');
     }
@@ -59,7 +59,7 @@ describe('a limiter built on a number that is not a ceiling', () => {
 
   test('a non-finite perTenant is refused, not one tenant taking every slot in the pod', () => {
     for (const perTenant of NOT_A_CEILING) {
-      const thrown = thrownBy(() => createLimiter({ perTenant }));
+      const thrown = thrownBy(() => concurrencyLimiter({ perTenant }));
       expect(thrown).toBeInstanceOf(UltimateError);
       expect(fixOf(thrown)).toContain('perTenant');
     }
@@ -71,13 +71,13 @@ describe('a limiter built on a number that is not a ceiling', () => {
     // limit that is off with a `limit` an operator can read in `/_x`.
     for (const value of NOT_A_CEILING) {
       const onLimit = thrownBy(() =>
-        createLimiter({ ratePerTenant: { limit: value, windowMs: 1_000 } }),
+        concurrencyLimiter({ ratePerTenant: { limit: value, windowMs: 1_000 } }),
       );
       expect(fixOf(onLimit)).toContain('ratePerTenant.limit');
       expect(fixOf(onLimit)).not.toContain('windowMs');
 
       const onWindow = thrownBy(() =>
-        createLimiter({ ratePerTenant: { limit: 5, windowMs: value } }),
+        concurrencyLimiter({ ratePerTenant: { limit: 5, windowMs: value } }),
       );
       expect(fixOf(onWindow)).toContain('ratePerTenant.windowMs');
     }
@@ -86,8 +86,8 @@ describe('a limiter built on a number that is not a ceiling', () => {
   test('a fraction and a negative are refused too — a ceiling counts slots', () => {
     // `global: 2.5` granted 3 (the comparison rounds UP), and `global: -1` refused everything
     // while reading as a configured ceiling of minus one.
-    expect(thrownBy(() => createLimiter({ global: 2.5 }))).toBeInstanceOf(UltimateError);
-    expect(thrownBy(() => createLimiter({ perTenant: -1 }))).toBeInstanceOf(UltimateError);
+    expect(thrownBy(() => concurrencyLimiter({ global: 2.5 }))).toBeInstanceOf(UltimateError);
+    expect(thrownBy(() => concurrencyLimiter({ perTenant: -1 }))).toBeInstanceOf(UltimateError);
   });
 });
 

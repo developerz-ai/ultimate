@@ -9,7 +9,7 @@ import {
   resetTiers,
   tag,
 } from '@ultimat3/cache';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -17,7 +17,7 @@ import { action, describeAction, isAction } from './action';
 import { memoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 import type { Surface } from './policy-gate';
-import { listActions, registerActions, resetRegistry } from './registry';
+import { listActions, registerActions, resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -25,7 +25,7 @@ const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 
 const editorActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
 const readerActor = userActor({ id: 'u2' });
-const editor = createContext({ actor: editorActor });
+const editor = ctxOf({ actor: editorActor });
 const SURFACES: readonly Surface[] = ['server', 'http', 'mcp', 'job'];
 
 /** The two halves a row rule needs: what the surface parsed, and what it loaded. */
@@ -39,7 +39,7 @@ const ownDraft = can<Parsed, Draft>(
 );
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
 });
 
 describe('the invocation core', () => {
@@ -92,7 +92,7 @@ describe('the invocation core', () => {
       },
     }).named('publishPost');
 
-    const reader = createContext({ actor: readerActor });
+    const reader = ctxOf({ actor: readerActor });
     for (const surface of SURFACES) {
       expect(await invoke(target, { postId: POST_ID }, { ctx: editor, surface })).toEqual({
         id: POST_ID,

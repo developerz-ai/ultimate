@@ -58,9 +58,9 @@ export interface ThrowerPin {
  * existing, is itself a finding.
  */
 export const CORE_THROWER_PINS: Readonly<Record<string, ThrowerPin>> = Object.freeze({
-  createClientFlight: {
+  clientFlight: {
     reason:
-      'the opt-in `flight:` an app hands rpc() / queryClient(); re-exported by action and query, which hold its type only so a caller that never names it pays nothing',
+      'the opt-in `flight:` an app builds from @ultimat3/core and hands rpc() / queryClient(); action and query name only its `ClientFlight` type, so a caller that never builds one pays nothing, and neither tracked app builds one yet',
   },
   notImplemented: {
     reason:

@@ -4,18 +4,18 @@
 // this slot now — must stop the run rather than let two of them share one `job.concurrency`.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { type Ctx, createContext, isUltimateError, logger } from '@ultimat3/core';
+import { type Ctx, ctxOf, isUltimateError, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { memoryLeaseStore } from './leases';
-import { createLimiter } from './limits';
-import { createWorker } from './worker';
+import { concurrencyLimiter } from './limits';
+import { jobWorker } from './worker';
 import { createFleetSlots } from './worker-fleet-slots';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -67,8 +67,8 @@ describe('a fleet-slot acquire that rejects', () => {
           : backing.acquire(key, limit, ttlMs, holder),
     };
     const driver = memoryJobDriver({ leases });
-    const limiter = createLimiter({});
-    const worker = createWorker({
+    const limiter = concurrencyLimiter({});
+    const worker = jobWorker({
       driver,
       concurrency: 1,
       limiter,
@@ -136,7 +136,7 @@ describe('a fleet-slot renewal that answers false', () => {
       },
     };
     const driver = memoryJobDriver({ leases });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       concurrency: 1,
       visibilityTimeoutMs: 30_000,

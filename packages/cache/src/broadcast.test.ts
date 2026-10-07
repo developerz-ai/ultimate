@@ -11,7 +11,7 @@ import {
   registerTier,
   resetTiers,
 } from './invalidate';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import { declareTags, isolateDeclaredTags, resetDeclaredTags, tag } from './tags';
 
 // Module scope, so the baseline is whatever a neighbouring file registered before this one ran.
@@ -32,7 +32,7 @@ describe('cross-instance invalidation', () => {
   // `defaultTtlMs`. The user watches the edit vanish and re-submits.
   test('a local fan-out hands its wire tags to the registered broadcast, last', async () => {
     const order: string[] = [];
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier({
       ...lru,
       async invalidateTags(tags) {
@@ -51,7 +51,7 @@ describe('cross-instance invalidation', () => {
   });
 
   test('the INBOUND half applies the tags and cannot re-emit — a broadcast storm is structural', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await lru.set('feed', ['a'], { tags: [tag('post')] });
 
@@ -82,7 +82,7 @@ describe('cross-instance invalidation', () => {
   });
 
   test('a dead transport is reported, never thrown — the write that triggered it must not fail', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await lru.set('feed', ['a'], { tags: [tag('post')] });
     registerInvalidationBroadcast(() => Promise.reject(new Error('nats is down')));
@@ -112,7 +112,7 @@ describe('cross-instance invalidation', () => {
     // Mid-deploy the new pods know an entity the old ones do not. A throw here kills the
     // subscriber loop that delivered it, silently ending cross-instance invalidation.
     declareTags(['post']);
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await lru.set('feed', ['a'], { tags: [tag('post')] });
 

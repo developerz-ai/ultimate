@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { LogSink, PgExecutor } from '@ultimat3/core';
-import { createContext, frozenClock, setLogSink } from '@ultimat3/core';
+import { ctxOf, frozenClock, setLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
@@ -15,10 +15,10 @@ import {
   WOKEN_IDLE_POLL_CEILING_MS,
 } from './idle-backoff';
 import { memoryOutboxStore } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
+import { outboxRelay } from './outbox-relay';
 import type { PgListener } from './queue-wake';
 import { startQueueWake } from './queue-wake';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 interface Scripted {
   readonly listener: PgListener;
@@ -365,7 +365,7 @@ describe('an idle minute with a proven wake', () => {
     const clock = frozenClock('2026-10-01T12:00:00.000Z');
     const driver = memoryJobDriver({ clock });
     let claims = 0;
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: {
         ...driver,
         claim: (options) => {
@@ -375,7 +375,7 @@ describe('an idle minute with a proven wake', () => {
       },
       queues: ['default', 'mail'],
       clock,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
     const delays: number[] = [];
@@ -397,7 +397,7 @@ describe('an idle minute with a proven wake', () => {
     setWakeLive(true);
     let claims = 0;
     const store = memoryOutboxStore();
-    const relay = createOutboxRelay({
+    const relay = outboxRelay({
       driver: memoryJobDriver(),
       store: {
         ...store,
@@ -422,7 +422,7 @@ describe('an idle minute with a proven wake', () => {
 describe('the relay hears a COMMITTED stage', () => {
   const relayOver = (onClaim: () => void) => {
     const store = memoryOutboxStore();
-    return createOutboxRelay({
+    return outboxRelay({
       driver: memoryJobDriver(),
       store: {
         ...store,

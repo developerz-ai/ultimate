@@ -8,11 +8,11 @@
 
 import type { Clock, Scheduler } from '@ultimat3/core';
 import {
-  createFence,
-  createSingleFlight,
+  generationFence,
   isFixShellSafe,
   renderFixShellArg,
   renderThrowable,
+  singleFlight,
   systemClock,
 } from '@ultimat3/core';
 import { decodeJwtSegment, isRecord } from './json';
@@ -117,7 +117,7 @@ const algorithmOf = (jwk: Record<string, unknown>): JwtAlgorithm | null => {
  * become an unbounded outbound request per attempt, so the refresh is rate-limited by the same
  * TTL as the ordinary one.
  */
-export function createJwksClient(options: JwksClientOptions): JwksKeySource {
+export function jwksClient(options: JwksClientOptions): JwksKeySource {
   const clock = options.clock ?? systemClock;
   const ttlMs = options.ttlMs ?? DEFAULT_JWKS_TTL_MS;
   assertFiniteAuthCount(
@@ -144,7 +144,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   // already gave up on could drop a pre-rotation key set on top of the live one, and every login
   // against the new `kid` would start missing again. Read, never `guard`: a superseded refresh is
   // still the honest answer for the callers holding it, and only the shared cache is fenced.
-  const fence = createFence('the published jwks key set');
+  const fence = generationFence('the published jwks key set');
   // All three refusals below put this URI in a COMMAND position, and it came out of the ISSUER's
   // own discovery document — `jwks_uri` is remote text, and `new URL()` keeps `$`, `(`, `)` and a
   // backtick in a path. `renderFixLiteral` is the wrong tool here, because its double quotes leave
@@ -235,7 +235,7 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   // running, its own callers keep their promise, and the fence above stops its late answer from
   // landing in the cache. So the worst case is one duplicate JWKS fetch, never a failed
   // verification — which is what makes a deadline here a fix rather than a risk.
-  const flight = createSingleFlight({
+  const flight = singleFlight({
     deadlineMs: timeoutMs * JWKS_DEADLINE_FACTOR,
     schedule: options.schedule,
   });
@@ -295,7 +295,7 @@ const clients = new Map<string, JwksKeySource>();
  *
  * Not cached by option identity, deliberately: `fetch` and `clock` are functions and objects, so
  * any canonical key over them either collides (two different proxies, one entry) or never hits.
- * A bespoke client is a bespoke client; `createJwksClient` is what it is, and its own cache still
+ * A bespoke client is a bespoke client; `jwksClient` is what it is, and its own cache still
  * works for as long as the caller holds it.
  */
 export function providerJwks(
@@ -312,7 +312,7 @@ export function providerJwks(
   const bespoke = options !== undefined && Object.keys(options).length > 0;
   const existing = bespoke ? undefined : clients.get(provider.id);
   if (existing !== undefined) return existing;
-  const client = createJwksClient({ ...options, provider: provider.id, jwksUri: provider.jwksUri });
+  const client = jwksClient({ ...options, provider: provider.id, jwksUri: provider.jwksUri });
   if (!bespoke) clients.set(provider.id, client);
   return client;
 }

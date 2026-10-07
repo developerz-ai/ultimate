@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ULTIMATE_ERROR_BRAND, UltimateError } from '@ultimat3/core';
+import { UltimateError } from '@ultimat3/core';
 import { defineRoute } from './route';
 import { metaContextFor, routeDataFor } from './route-data';
 
@@ -22,13 +22,20 @@ function foreignEnoent(): Error {
 }
 
 /**
+ * `@ultimat3/schema`'s `ULTIMATE_ERROR_BRAND`, by its registry key: render does not depend on
+ * schema and core does not republish it, and the `Symbol.for` key is the cross-instance contract
+ * the brand exists for — a second copy of a package recognises exactly this.
+ */
+const BRAND = Symbol.for('ultimate.error');
+
+/**
  * What a tier-0 package throws. `@ultimat3/schema` cannot import `@ultimat3/core`, so its
  * errors carry the well-known symbol instead of extending the class — a full code, cause and
  * fix, and still never an `instanceof UltimateError`.
  */
 function tierZeroFailure(): Error {
   return Object.assign(new Error('expected a string'), {
-    [ULTIMATE_ERROR_BRAND]: true,
+    [BRAND]: true,
     code: 'X_VALIDATION_FAILED',
     cause: 'field "title": expected a string, received number',
     fix: 'x actions describe publishPost --json  # compare the value against `input:`',

@@ -7,7 +7,7 @@
 // copies of `hostile()`, and a fifth path added later inherits none of them.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
-import { createJwksClient } from './jwks';
+import { jwksClient } from './jwks';
 import { beginOAuth } from './oauth';
 import { discoverOAuthProvider } from './oauth-discovery';
 import { exchangeOAuthCode, type OAuthFetch, type OAuthTokens } from './oauth-exchange';
@@ -76,7 +76,7 @@ describe('a fetch rejection that fights being classified', () => {
   });
 
   test('the JWKS fetch still answers X_OAUTH_EXCHANGE_FAILED', async () => {
-    const client = createJwksClient({
+    const client = jwksClient({
       provider: 'bigco-sso',
       jwksUri: 'https://bigco.test/.well-known/jwks.json',
       fetch: rejecting(),

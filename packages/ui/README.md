@@ -145,16 +145,16 @@ review comment. Three properties are structural, not documented:
 
 ## Toasts
 
-`Toast` and `ToastRegion` render; `createToastStore()` is the queue behind them, and `<Toaster>` is
+`Toast` and `ToastRegion` render; `toastStore()` is the queue behind them, and `<Toaster>` is
 the one way to draw it.
 
 ```tsx
-import { createToastStore, Toaster } from '@ultimat3/ui';
+import { toastStore, Toaster } from '@ultimat3/ui';
 
 declare const t: (key: string) => string;
 declare const restore: () => void;
 
-const toasts = createToastStore();
+const toasts = toastStore();
 toasts.show({ message: t('post.saved'), tone: 'success' });
 toasts.show({ message: t('post.deleted'), action: { label: t('undo'), onAction: restore } });
 
@@ -440,7 +440,7 @@ import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@u
 
 ```tsx
 // A client entry — an island's `mount()`, or a hydrated app shell. In this order, once.
-import { createTranslator } from '@ultimat3/i18n';
+import { catalogTranslator } from '@ultimat3/i18n';
 import { setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import {
@@ -477,7 +477,7 @@ export function mount(el: HTMLElement, props: Props): void {
         locale={props.locale}
         timeZone={props.timeZone}
         currency={props.currency}
-        t={createTranslator(props.strings, props.locale)}
+        t={catalogTranslator(props.strings, props.locale)}
       >
         {props.tree}
       </UiProvider>
@@ -488,7 +488,7 @@ export function mount(el: HTMLElement, props: Props): void {
 ```
 
 **The prop is `t`, it takes a `Translator`, and omitting it is not neutral.** `<UiProvider>` with
-no `t` falls back to `fallbackTranslator(locale)` — `createTranslator({}, locale)`, an **empty**
+no `t` falls back to `fallbackTranslator(locale)` — `catalogTranslator({}, locale)`, an **empty**
 catalog — so every built-in string in the tree renders its key: `<Dialog>`'s close button reads
 `⟦ui.close⟧`, `<Field>`'s marker `⟦ui.required⟧`. The keys are `UI_KEYS`, and they live in the
 framework catalog the SERVER has registered; a browser chunk has none, which is why
@@ -544,7 +544,7 @@ is a type error rather than a review comment.
 
 | Prop | Emitted |
 |---|---|
-| `variants` | `srcset`, descriptors derived and ordered ascending (`srcsetFor`) |
+| `variants` | `srcset`, descriptors derived and ordered ascending (`variantSrcset`) |
 | `sources` | `{ avif?, webp? }` width lists → `<source type="image/avif">`, then `image/webp`, before the `<img>` (`sourceSetsFor`) |
 | `sizes` | `sizes`, verbatim, on the `<img>` and every `<source>` |
 | `priority` | `loading="eager"` + `fetchpriority="high"`; otherwise `lazy` + `auto`, always `decoding="async"` |

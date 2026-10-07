@@ -4,7 +4,7 @@
 // sealed value somewhere a read could find it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   database,
@@ -52,7 +52,7 @@ const ORG_A = '0190a000-0000-7000-8000-00000000000a';
 const ORG_B = '0190a000-0000-7000-8000-00000000000b';
 
 const as = <T>(orgId: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'op', roles: ['admin'], orgId }) }), run);
+  runWithContext(ctxOf({ actor: userActor({ id: 'op', roles: ['admin'], orgId }) }), run);
 
 const ids: string[] = [];
 

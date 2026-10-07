@@ -15,7 +15,7 @@
 import { describe, expect, test } from 'bun:test';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { memoryJobDriver } from './driver-memory';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 
 const TZ = 'Europe/Berlin';
 
@@ -66,7 +66,7 @@ describe('a daily cron across a DST transition', () => {
   });
 
   test('the scheduler resolves through the same path, so the answer is not test-only', () => {
-    const scheduler = createScheduler({ driver: memoryJobDriver() });
+    const scheduler = jobScheduler({ driver: memoryJobDriver() });
     const next = scheduler.nextRunFor(
       { cron: '0 2 * * *', tz: TZ } as Parameters<typeof scheduler.nextRunFor>[0],
       new Date('2026-03-28T12:00:00Z'),

@@ -88,7 +88,7 @@ export function parseLsn(pgLsn: string): string {
   return formatLsn((BigInt(`0x${high}`) << 32n) | BigInt(`0x${low}`));
 }
 
-export interface InMemoryChangeFeedOptions {
+export interface MemoryChangeFeedOptions {
   /** Retained events, so a `start({ from })` inside the window replays instead of skipping. */
   readonly retain?: number;
 }
@@ -98,7 +98,7 @@ export interface InMemoryChangeFeedOptions {
  * ordering is the guarantee the whole pipeline is built on, so it is enforced here rather than
  * assumed downstream.
  */
-export class InMemoryChangeFeed implements ChangeFeed {
+export class MemoryChangeFeed implements ChangeFeed {
   readonly source = 'in-memory';
   readonly #retained: ChangeEvent[] = [];
   readonly #retain: number;
@@ -107,7 +107,7 @@ export class InMemoryChangeFeed implements ChangeFeed {
   #position = 0n;
   #lastLsn: string | null = null;
 
-  constructor(options: InMemoryChangeFeedOptions = {}) {
+  constructor(options: MemoryChangeFeedOptions = {}) {
     this.#retain = finiteOption('the change feed', 'retain', options.retain ?? 1024);
   }
 
@@ -180,7 +180,7 @@ export class InMemoryChangeFeed implements ChangeFeed {
     // The lane chains on a SETTLED shadow, never on `result` — `window-lock.ts` solves the same
     // problem the same way. Chained on the live tail, one rejected link poisoned every link behind
     // it: later changes rejected with the FIRST error, the handler was never called again and
-    // `lastLsn()` froze. Reachable on any single-node deployment, because `createReplicator`'s
+    // `lastLsn()` froze. Reachable on any single-node deployment, because `changeFeedReplicator`'s
     // `onChange` awaits `transport.publish(...)` and a closed `InProcessTransport` refuses — one
     // transient publish failure ended change delivery for the life of the process. The rejection
     // still reaches the caller that pushed THAT event, and only it; `stop()` awaits the shadow, so
@@ -191,14 +191,14 @@ export class InMemoryChangeFeed implements ChangeFeed {
 }
 
 /** The one way to build the in-process feed — the twin of `postgresChangeFeed()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
-export function memoryChangeFeed(options: InMemoryChangeFeedOptions = {}): InMemoryChangeFeed {
-  return new InMemoryChangeFeed(options);
+export function memoryChangeFeed(options: MemoryChangeFeedOptions = {}): MemoryChangeFeed {
+  return new MemoryChangeFeed(options);
 }
 
 /** Settles the shadow lane whichever way the delivery went. Nothing observes the value. */
 const ignore = (): void => undefined;
 
-export interface PgLogicalReplicationOptions {
+export interface PostgresChangeFeedOptions {
   /** Connection string for a role with REPLICATION: `postgres://user:pass@host:5432/db`. */
   readonly url: string;
   /** Replication slot name. Exactly one `replicator` process may hold it. */
@@ -224,19 +224,19 @@ export interface PgLogicalReplicationOptions {
 /**
  * The production feed: `pgoutput` decoding off a logical replication slot. Everything about *how*
  * lives in `pg-replication.ts`; what this class adds is the `ChangeFeed` contract the matcher, the
- * replicator and the fanout are written against — so swapping it for `InMemoryChangeFeed` in `x dev`
+ * replicator and the fanout are written against — so swapping it for `MemoryChangeFeed` in `x dev`
  * changes nothing downstream.
  */
-export class PgLogicalReplicationFeed implements ChangeFeed {
+export class PostgresChangeFeed implements ChangeFeed {
   readonly source = 'pg-logical-replication';
   readonly #stream: PgReplicationStream;
 
-  constructor(options: PgLogicalReplicationOptions) {
+  constructor(options: PostgresChangeFeedOptions) {
     if (options.entities.length === 0) {
       throw new ReplicationFailedError({
         stage: 'preflight',
         detail: 'the feed was given an empty entity list, so no change could ever match',
-        fix: 'pass the entities the publication covers: new PgLogicalReplicationFeed({ entities: [...] })',
+        fix: 'pass the entities the publication covers: postgresChangeFeed({ entities: [...] })',
       });
     }
     this.#stream = new PgReplicationStream(options);
@@ -269,6 +269,6 @@ export class PgLogicalReplicationFeed implements ChangeFeed {
 }
 
 /** The one way to build the WAL-backed feed — the twin of `memoryChangeFeed()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
-export function postgresChangeFeed(options: PgLogicalReplicationOptions): PgLogicalReplicationFeed {
-  return new PgLogicalReplicationFeed(options);
+export function postgresChangeFeed(options: PostgresChangeFeedOptions): PostgresChangeFeed {
+  return new PostgresChangeFeed(options);
 }

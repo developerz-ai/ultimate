@@ -145,7 +145,7 @@ export function unsealNetwork(): void {
  *  `offline()` has teeth in a process that deliberately unsealed (`ULTIMATE_TEST_ALLOW_NET=1`). */
 export const isNetworkSealed = (): boolean => state.original !== undefined;
 
-/** The one writer of the offline gate — `createTestNetwork()`. Never call it from a test body. */
+/** The one writer of the offline gate — `testNetwork()`. Never call it from a test body. */
 export function setNetworkState(next: NetworkState): void {
   state.network = next;
 }

@@ -2,7 +2,7 @@
 // between them, Home/End jump to the ends, and arrow direction follows `dir`.
 
 import type { JSX } from 'solid-js';
-import { ariaBool, createRovingTabindex, useId } from '../a11y';
+import { ariaBool, rovingTabindex, useId } from '../a11y';
 import { cx } from '../cx';
 import { TAB_SELECTOR, tabStopIndex } from '../roving';
 import { useUi } from '../theme/context';
@@ -35,7 +35,7 @@ export function Tabs(props: TabsProps): JSX.Element {
   // A disabled tab is excluded from BOTH answers — the list arrows walk and the one tab that
   // carries the tab stop — because `focus()` on a disabled button silently does nothing, so a
   // disabled tab left in the list pins the reducer on its index and hides every tab after it.
-  const onKeyDown = createRovingTabindex(
+  const onKeyDown = rovingTabindex(
     () => (list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>(TAB_SELECTOR))),
     { orientation: props.orientation ?? 'horizontal', dir: ui.dir },
   );

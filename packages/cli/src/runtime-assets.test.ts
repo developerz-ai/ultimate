@@ -12,9 +12,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createRaster, encodeImage, probeImage, userActor } from '@ultimat3/core';
+import { blankRaster, encodeImage, probeImage, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { MAX_IMAGE_WIDTH, responsiveImage } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
@@ -33,11 +33,11 @@ const SOURCE_KEY = 'covers/hero.png';
 
 /**
  * A real PNG, so the pipeline decodes rather than refuses — the point of the whole change. The
- * raster keeps `createRaster`'s own bytes: every assertion below is about format and size, so
+ * raster keeps `blankRaster`'s own bytes: every assertion below is about format and size, so
  * painting channel values would only claim a colour the tests never read.
  */
 function png(width: number, height: number): Uint8Array {
-  return encodeImage(createRaster(width, height, 'fixture'), 'png');
+  return encodeImage(blankRaster(width, height, 'fixture'), 'png');
 }
 
 let root = '';
@@ -49,7 +49,7 @@ const call = async (routes: readonly Route[], path: string): Promise<Response> =
   expect(route).toBeDefined();
   if (route === undefined) return new Response(null, { status: 404 });
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+  const ctx = requestContext({ url, method: 'GET', role: 'web', config });
   ctx.params = params(route.path, url.pathname);
   // `/media` is `auth: 'required'` + `storage:read` — the icons are not, and pass regardless. The
   // guard itself is proved across both storage surfaces in `storage-surfaces.test.ts`; these cases
@@ -124,7 +124,7 @@ describe('unit · dev assets · pwa icons', () => {
 
     const url = new URL('http://dev.test/icons/apple-touch-icon.png');
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const route = assetRoutes({ root, storage }).find(
       (candidate) => candidate.path === '/icons/apple-touch-icon.png',
     );
@@ -136,7 +136,7 @@ describe('unit · dev assets · pwa icons', () => {
     expect(again.status).toBe(304);
 
     // A new source under the SAME URL — the case `immutable` could never serve.
-    const repainted = createRaster(1024, 1024, 'fixture');
+    const repainted = blankRaster(1024, 1024, 'fixture');
     repainted.pixels.fill(200);
     await Bun.write(join(root, ICON_SOURCE), encodeImage(repainted, 'png'));
     const replaced = await call(assetRoutes({ root, storage }), '/icons/apple-touch-icon.png');

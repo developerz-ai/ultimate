@@ -3,12 +3,12 @@
 // tied on the sort key after id 7 was never served.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, createContext, userActor } from '@ultimat3/core';
+import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { paginate } from './pagination';
 import { query } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
 
 interface Ranked {
@@ -16,7 +16,7 @@ interface Ranked {
   readonly rank: number;
 }
 
-const ctx = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['feed:read'] } });
+const ctx = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['feed:read'] } });
 
 const ranked = (rows: readonly Ranked[]) =>
   registerQuery(
@@ -46,7 +46,7 @@ const walk = async (read: ReturnType<typeof ranked>): Promise<readonly number[]>
 
 describe('integer ids tied on the sort key', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 

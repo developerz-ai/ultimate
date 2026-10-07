@@ -104,7 +104,7 @@ export interface TableDescription {
    * handed a catalog value by accident.
    *
    * `snapshotOf` never writes it and `parseSnapshot` never reads it, so a sidecar carries `checks`
-   * alone. `introspect()` always answers with it, `[]` included: absent therefore means "nobody
+   * alone. `introspectSchema()` always answers with it, `[]` included: absent therefore means "nobody
    * asked the catalog", which is what keeps `compareChecks` silent on a description that never
    * read one instead of reporting every declared constraint as missing.
    */
@@ -119,7 +119,7 @@ export interface TableDescription {
    * table an app has would rewrite every sidecar in the tree on the next `x db gen` for a fact that
    * was already true — the argument `IndexDescription.using` makes about `btree`.
    *
-   * `introspect()` never answers it. The catalog's half is `pg_class.relreplident`, which
+   * `introspectSchema()` never answers it. The catalog's half is `pg_class.relreplident`, which
    * `@ultimat3/realtime`'s preflight already reads at the only moment it matters; a second reader
    * here would let a `diffSchema` compare a declaration against a catalog value, which is the
    * mistake `checks` and `checkNames` exist as two fields to prevent.
@@ -128,14 +128,14 @@ export interface TableDescription {
   /**
    * That a migration gave this table the append-only trigger (`generate-append-only.ts`). The
    * SNAPSHOT's half: `true` or absent, never `false`, for the reason `replicaIdentityFull` gives.
-   * `introspect()` never writes it — the catalog's half is `triggerNames`.
+   * `introspectSchema()` never writes it — the catalog's half is `triggerNames`.
    */
   readonly appendOnly?: true | undefined;
   /**
    * The CATALOG's half of `appendOnly`: the names of the ENABLED, non-internal triggers on the
    * table (`tgenabled` `O` or `A` — a disabled or replica-only trigger refuses nothing in an
    * ordinary session, so it is not held). A separate field for the reason `checkNames` is one.
-   * Written by `introspect()` always, `[]` included; absent means nobody asked the catalog.
+   * Written by `introspectSchema()` always, `[]` included; absent means nobody asked the catalog.
    */
   readonly triggerNames?: readonly string[] | undefined;
 }
@@ -200,7 +200,9 @@ interface TriggerNameRow {
 
 const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : 1);
 
-export async function introspect(options: IntrospectOptions = {}): Promise<SchemaDescription> {
+export async function introspectSchema(
+  options: IntrospectOptions = {},
+): Promise<SchemaDescription> {
   const client = options.client ?? db();
   const schema = options.schema ?? 'public';
   // Asked first, and unconditionally: everything below reads `information_schema`, which admits a

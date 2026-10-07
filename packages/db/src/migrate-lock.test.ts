@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { renderThrowable } from '@ultimat3/core';
 import { type DbClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import {
   auditLedger,
   type LedgerRow,
@@ -37,7 +37,7 @@ const ledgerRow = (overrides: Partial<LedgerRow> = {}): LedgerRow => ({
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

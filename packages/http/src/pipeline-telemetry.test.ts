@@ -16,10 +16,10 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 import type { Schema } from './validate';
 
 const titleSchema: Schema<{ title: string }> = {
@@ -42,37 +42,37 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
     path: '/private',
     meta: { name: 'private', auth: 'required' },
-    handler: (_request, ctx) => json({ locale: ctx.locale, tz: ctx.tz }),
+    handler: (_request, ctx) => jsonResponse({ locale: ctx.locale, tz: ctx.tz }),
   },
   {
     method: 'POST',
     path: '/posts',
     meta: { name: 'posts.create', auth: 'public', input: titleSchema },
-    handler: (_request, ctx) => json({ input: ctx.input }),
+    handler: (_request, ctx) => jsonResponse({ input: ctx.input }),
   },
   {
     method: 'GET',
     path: '/guarded',
     meta: { name: 'guarded', auth: 'public', policy: 'post:publish' },
-    handler: () => text('never reached'),
+    handler: () => textResponse('never reached'),
   },
   {
     method: 'GET',
     path: '/self-guarded',
     meta: { name: 'self-guarded', auth: 'public', policy: 'post:publish', enforcedBy: 'handler' },
-    handler: () => text('the handler decided'),
+    handler: () => textResponse('the handler decided'),
   },
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: () => text('one post'),
+    handler: () => textResponse('one post'),
   },
   {
     method: 'GET',
@@ -112,10 +112,10 @@ const pipelineWith = (options: PipelineTestOptions) => {
     onAuthorize?.();
     return decision ?? { allowed: true };
   };
-  return createPipeline({
-    table: createRouter(routes),
+  return httpPipeline({
+    table: httpRouter(routes),
     config: active,
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',
@@ -163,8 +163,8 @@ describe('the request span', () => {
   });
 
   test('a parameterised route names the PATTERN, never the concrete URL and the token in it', async () => {
-    const pipeline = createPipeline({
-      table: createRouter([
+    const pipeline = httpPipeline({
+      table: httpRouter([
         {
           method: 'GET',
           path: '/r/:token',
@@ -320,8 +320,8 @@ describe('a server fault reaches the error reporter', () => {
 
   test('the app’s own onError hook still fires, alongside the framework’s report', async () => {
     const seen: string[] = [];
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config,
       hooks: { onError: (error) => seen.push((error as Error).name) },
     });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, useContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, useContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { FetchLike } from './client';
@@ -18,7 +18,7 @@ const Input = t.object({ orgId: t.uuid });
 
 const readerActor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
 const strangerActor = userActor({ id: 'u2' });
-const member = createContext({ actor: readerActor });
+const member = ctxOf({ actor: readerActor });
 
 const posts: readonly Post[] = [
   { id: 'a', orgId: ORG, createdAt: 10 },
@@ -71,7 +71,7 @@ describe('the fluent surface', () => {
 
   test('.as() keeps the surrounding context and swaps only the actor', async () => {
     const { target, seen } = defineFeed();
-    const ambient = createContext({ actor: strangerActor });
+    const ambient = ctxOf({ actor: strangerActor });
     const after = await runWithContext(ambient, async () => {
       await target.as(readerActor, { orgId: ORG });
       return useContext();

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Catalog } from './catalog';
 import { flattenCatalog } from './catalog';
-import { createTranslator, isMiss, type TranslationKey, type Translator } from './translator';
+import { catalogTranslator, isMiss, type TranslationKey, type Translator } from './translator';
 
 const en = flattenCatalog({
   nav: { home: 'Home', billing: 'Billing' },
@@ -24,9 +24,9 @@ const pl = flattenCatalog({
   },
 });
 
-describe('createTranslator', () => {
+describe('catalogTranslator', () => {
   test('renders a missing key loudly instead of falling back', () => {
-    const t = createTranslator(en, 'en');
+    const t = catalogTranslator(en, 'en');
     expect(t('nav.settings')).toBe('⟦nav.settings⟧');
     expect(isMiss(t('nav.settings'))).toBe(true);
     expect(t.has('nav.settings')).toBe(false);
@@ -38,7 +38,7 @@ describe('createTranslator', () => {
   test('an Object.prototype member is a miss, not the inherited value', () => {
     // A `{}`-literal catalog, because that is what a raw index would read through: the whole
     // point is that the translator no longer depends on who built the catalog.
-    const t = createTranslator({ greeting: 'Hi' }, 'en');
+    const t = catalogTranslator({ greeting: 'Hi' }, 'en');
 
     // Reached wherever a key travels as data — `t(row.labelKey)`, `t(titleKey)`. A raw index
     // returned `Object.prototype.valueOf` here and `interpolate` threw on a non-string.
@@ -60,26 +60,26 @@ describe('createTranslator', () => {
   });
 
   test('plural selection cannot resolve onto a prototype member either', () => {
-    const t = createTranslator(flattenCatalog({ greeting: 'Hi' }), 'en');
+    const t = catalogTranslator(flattenCatalog({ greeting: 'Hi' }), 'en');
     expect(t('valueOf', { count: 1 })).toBe('⟦valueOf⟧');
     expect(t('constructor', { count: 3 })).toBe('⟦constructor⟧');
   });
 
   test('interpolates and reports a missing variable loudly too', () => {
-    const t = createTranslator(en, 'en');
+    const t = catalogTranslator(en, 'en');
     expect(t('greeting', { name: 'Ada', count: 1 })).toBe('Hi Ada, you have 1 message');
     expect(t('greeting', { count: 1 })).toBe('Hi ⟦name⟧, you have 1 message');
   });
 
   test('two-form authoring: key / key_plural', () => {
-    const t = createTranslator(en, 'en');
+    const t = catalogTranslator(en, 'en');
     expect(t('approvals.pending', { count: 1 })).toBe('1 pending approval');
     expect(t('approvals.pending', { count: 4 })).toBe('4 pending approvals');
     expect(t('approvals.pending', { count: 0 })).toBe('0 pending approvals');
   });
 
   test('selects the CLDR plural form for a three-form locale', () => {
-    const t = createTranslator(pl, 'pl');
+    const t = catalogTranslator(pl, 'pl');
     expect(t('files.n', { count: 1 })).toBe('1 plik');
     expect(t('files.n', { count: 3 })).toBe('3 pliki');
     expect(t('files.n', { count: 5 })).toBe('5 plików');
@@ -89,14 +89,14 @@ describe('createTranslator', () => {
   });
 
   test('has() accepts a key that only exists in plural variants', () => {
-    const t = createTranslator(pl, 'pl');
+    const t = catalogTranslator(pl, 'pl');
     expect(t.has('files.n')).toBe(true);
     expect(t.raw('files.n')).toBeUndefined();
     expect(t.raw('files.n_one')).toBe('{count} plik');
   });
 
   test('exposes its locale and keys', () => {
-    const t = createTranslator(en, 'en');
+    const t = catalogTranslator(en, 'en');
     expect(t.locale).toBe('en');
     expect(t.keys()).toContain('approvals.empty');
   });
@@ -138,7 +138,7 @@ describe('createTranslator', () => {
       for (const [locale, count] of probes) {
         test(`{${keys.join(', ')}} @ ${locale}/${count}`, () => {
           const catalog: Catalog = Object.fromEntries(keys.map((key) => [key, `${key}: {count}`]));
-          const t = createTranslator(catalog, locale);
+          const t = catalogTranslator(catalog, locale);
 
           expect(t.has('items')).toBe(true);
           expect(isMiss(t('items', { count }))).toBe(false);
@@ -161,7 +161,7 @@ const sample = {
 };
 
 describe('t() interpolates whether or not vars were passed', () => {
-  const t = createTranslator(
+  const t = catalogTranslator(
     flattenCatalog({
       hello: 'Hello {name}',
       braces: 'Use {{name}} as the placeholder',

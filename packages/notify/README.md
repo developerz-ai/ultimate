@@ -141,8 +141,8 @@ a `DbClient` is the framework's own. `Bun.sql` does **not** satisfy it.
 All three tables grow with traffic, and the boot's hourly `x.purge` job sweeps them — but only
 against the **Postgres** stores. `postgresInboxStore` carries `purgeBefore`, `postgresDeliveryLedger`
 and `postgresDigestStore` carry `purgeExpired`; the memory ones do not, and a boot that installed a
-memory store sweeps nothing. The methods are on those stores' own wider types (`PgInboxStore`,
-`PgDeliveryLedger`, `PgDigestStore`), not on the seams, so an app that wrote its own implementation
+memory store sweeps nothing. The methods are on those stores' own wider types (`PostgresInboxStore`,
+`PostgresDeliveryLedger`, `PostgresDigestStore`), not on the seams, so an app that wrote its own implementation
 is unaffected.
 
 | Table | Window | Default |
@@ -168,7 +168,7 @@ A read row ages from `read_at` and an unread one from `created_at` — ageing a 
 ## Channels
 
 ```ts
-import { bulkChannel, channel } from '@ultimat3/notify';
+import { bulkChannel, deliveryChannel } from '@ultimat3/notify';
 
 // The app's push vendor and its Slack webhook — a channel is where an SDK belongs.
 declare const pushService: {
@@ -177,7 +177,7 @@ declare const pushService: {
 declare const SLACK_URL: string;
 
 // One call per recipient. The retry unit is one address.
-export const push = channel('push', async ({ recipient, event, signal }) => {
+export const push = deliveryChannel('push', async ({ recipient, event, signal }) => {
   await pushService.send(recipient.to ?? '', event.params, { signal });
 });
 

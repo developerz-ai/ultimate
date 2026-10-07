@@ -11,9 +11,8 @@
  * contains no interactive island costs literally zero JS.
  */
 
-import { finiteCount, logger, renderThrowable } from '@ultimat3/core';
+import { BUILD_ID_HEADER, escapeHtml, finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
-import { escapeHtml } from './html';
 import type { RenderResult } from './route';
 import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
 
@@ -225,7 +224,7 @@ export function streamResult(plan: StreamPlan, options: StreamOptions, status = 
       // Proxies that buffer defeat the entire mode.
       'x-accel-buffering': 'no',
       'transfer-encoding': 'chunked',
-      'x-ultimate-build': options.buildId,
+      [BUILD_ID_HEADER]: options.buildId,
     },
     body: renderStreamHtml(plan, options),
   };

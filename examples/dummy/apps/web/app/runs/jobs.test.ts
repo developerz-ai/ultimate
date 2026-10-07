@@ -4,7 +4,7 @@
 
 import { driver } from '@postly/db';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { answerPrompt, noWaitClock } from '@ultimat3/scraping';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
 import { askConsole, PROMPT_LABEL, recordedUsage, syncConnection } from './jobs';
@@ -15,7 +15,7 @@ const RUN = '00000000-0000-4000-8000-0000000000b1';
 const REQUEST = '00000000-0000-4000-8000-0000000000c1';
 const INPUT = { connectionId: ORG, orgId: ORG, requestId: REQUEST };
 
-const worker = (): Ctx => createContext({ actor: userActor({ id: 'worker', orgId: ORG }) });
+const worker = (): Ctx => ctxOf({ actor: userActor({ id: 'worker', orgId: ORG }) });
 const inOrg = <T>(run: () => Promise<T>): Promise<T> => runWithContext(worker(), run);
 
 type Asked = Parameters<typeof askConsole>[0];

@@ -13,7 +13,6 @@ import type {
   StepTrace,
   WorkerRecord,
 } from '@ultimat3/jobs';
-import type { DrainFailure, DrainSkip } from './jobs-drain';
 import type { JsonValue } from './output';
 
 function stepTraceToJson(step: StepTrace): JsonValue {
@@ -179,30 +178,5 @@ export function deadLetterToJson(entry: DeadLetterEntry): JsonValue {
     lastError: entry.lastError,
     failedAt: entry.failedAt,
     retryCommand: entry.retryCommand,
-  };
-}
-
-export function drainFailureToJson(failure: DrainFailure): JsonValue {
-  return {
-    id: failure.id,
-    name: failure.name,
-    finding: {
-      code: failure.finding.code,
-      cause: failure.finding.cause,
-      fix: failure.finding.fix,
-      docs: failure.finding.docs ?? null,
-      at: failure.finding.at ?? null,
-    },
-  };
-}
-
-/** A candidate the drain refused to touch, and why — the half of the outcome `moved` cannot show. */
-export function drainSkipToJson(skip: DrainSkip): JsonValue {
-  return {
-    id: skip.id,
-    name: skip.name,
-    queue: skip.queue,
-    state: skip.state,
-    reason: skip.reason,
   };
 }

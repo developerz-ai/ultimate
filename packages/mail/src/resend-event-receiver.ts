@@ -79,13 +79,13 @@ export function resendDeliveryEvents(raw: unknown, eventId: string): DeliveryOut
   return { type: 'events', events };
 }
 
-export function createResendEventReceiver(options: ResendEventReceiverOptions): DeliveryReceiver {
+export function resendEventReceiver(options: ResendEventReceiverOptions): DeliveryReceiver {
   // The shape is refused HERE, at boot; only the Web Crypto import waits for the first delivery.
   const secret = svixSecretBytes(options.secret);
   let key: Promise<CryptoKey> | undefined;
-  const maxBytes = resolveBodyLimit('createResendEventReceiver', options.maxBytes);
+  const maxBytes = resolveBodyLimit('resendEventReceiver', options.maxBytes);
   const toleranceMs = finiteCount(
-    'createResendEventReceiver',
+    'resendEventReceiver',
     'toleranceMs',
     options.toleranceMs ?? DEFAULT_SVIX_TOLERANCE_MS,
     1,

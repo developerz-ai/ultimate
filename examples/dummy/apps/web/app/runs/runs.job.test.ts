@@ -5,7 +5,7 @@
  */
 
 import { driver } from '@postly/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import { answerPrompt, noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
 import type { MemoryStorageDriver } from '@ultimat3/storage';
@@ -21,7 +21,7 @@ const EXIT = 'http://session-41:hunter2hunter2@exit-7.example:8080';
 
 /** What a request is to the handle: an actor, whose org every read and write runs under. */
 const inOrg = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'member', orgId: ORG }) }), run);
+  runWithContext(ctxOf({ actor: userActor({ id: 'member', orgId: ORG }) }), run);
 
 /** Macrotasks until `ready` answers: the run is in flight in this process, on its own awaits. */
 const until = async <T>(ready: () => Promise<T | null>): Promise<T> => {

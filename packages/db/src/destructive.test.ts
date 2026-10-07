@@ -7,7 +7,7 @@ import {
   DESTRUCTIVE_MARKER,
   destructiveStatements,
   hasDestructiveMarker,
-  isDestructive,
+  isDestructiveMigration,
 } from './destructive';
 import { migrationDestructive } from './migration-errors';
 
@@ -92,7 +92,7 @@ describe('unit · destructiveStatements', () => {
       'alter table "post" alter column "body" set not null;',
     ].join('\n');
     expect(destructiveStatements(up)).toEqual([]);
-    expect(isDestructive(up)).toBe(false);
+    expect(isDestructiveMigration(up)).toBe(false);
   });
 
   test('a keyword inside a comment or a literal is prose and data, not an operation', () => {

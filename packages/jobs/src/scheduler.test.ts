@@ -11,7 +11,7 @@ import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver } from './scheduler';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import { memorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
@@ -113,7 +113,7 @@ describe('scheduler', () => {
       tz: 'UTC',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver(),
       clock: fakeClock(T0),
       cron: dailyAt3,
@@ -132,7 +132,7 @@ describe('scheduler', () => {
     });
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3 });
+    const scheduler = jobScheduler({ driver, clock, cron: dailyAt3 });
 
     // First tick arms the task; it must not fire retroactively.
     expect(await scheduler.tick()).toEqual([]);
@@ -170,7 +170,7 @@ describe('scheduler', () => {
       catchUp: 'run-all',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       cron: dailyAt3,
@@ -207,7 +207,7 @@ describe('scheduler', () => {
       tz: 'UTC',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       state: memorySchedulerState(),
@@ -254,7 +254,7 @@ describe('scheduler', () => {
       catchUp: 'run-once',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       cron: hourly,
@@ -289,7 +289,7 @@ describe('scheduler', () => {
       catchUp: 'run-once',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       cron: hourly,
@@ -318,7 +318,7 @@ describe('scheduler', () => {
       catchUp: 'run-once',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       cron: hourly,
@@ -347,7 +347,7 @@ describe('scheduler', () => {
     });
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
+    const scheduler = jobScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
 
     await scheduler.tick(); // Arms it for 2026-07-26T03:00Z.
     // Down for 25 hours: the missed occurrence is still the 26th, but the worker's wall clock
@@ -378,7 +378,7 @@ describe('scheduler', () => {
     });
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
+    const scheduler = jobScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
 
     await scheduler.tick();
     clock.advance(3 * 86_400_000 + 4 * 3_600_000); // Down three days.
@@ -409,7 +409,7 @@ describe('scheduler', () => {
       release: () => Promise.resolve(),
     };
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3, leader: follower });
+    const scheduler = jobScheduler({ driver, clock, cron: dailyAt3, leader: follower });
 
     await scheduler.tick();
     clock.advance(4 * 3_600_000);
@@ -438,7 +438,7 @@ describe('leadership is re-asserted inside the round, not only on entry', () => 
       },
       release: () => Promise.resolve(),
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       cron: dailyAt3,

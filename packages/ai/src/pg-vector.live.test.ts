@@ -1,12 +1,12 @@
-// `PgVectorStore` against a real pgvector: ddl() -> a live server -> upsert -> cosine, FTS and
+// `PostgresVectorStore` against a real pgvector: ddl() -> a live server -> upsert -> cosine, FTS and
 // the RRF fusion -> decoded hit. `pg-vector.test.ts` asserts the statement text each method
 // compiles to, which cannot prove Postgres accepts it. Runs only when `TEST_DATABASE_URL` is set
 // — the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient, raw, sql, statementsOf } from '@ultimat3/db';
-import { normalize } from './embeddings';
-import { type PgVectorStore, postgresVectorStore } from './pg-vector';
+import { normalizeVector } from './embeddings';
+import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
 import { searchSql } from './pg-vector-sql';
 import { fuse, memoryVectorStore, type SearchHit, type VectorRecord } from './vector';
 
@@ -17,7 +17,7 @@ const TABLE = 'ai_live_docs';
 const DROP = `drop table if exists "${TABLE}" cascade`;
 const DIMENSION = 4;
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 const ids = (hits: readonly SearchHit[]): readonly string[] => hits.map((hit) => hit.id);
 
 /** For the reads whose order is not part of the claim. Copies — `sort` mutates, `ids` is readonly. */
@@ -56,11 +56,11 @@ const CORPUS: readonly VectorRecord[] = [
   },
 ];
 
-describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
+describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
   let client: PostgresClient;
   let available = false;
   let unavailable: unknown;
-  let store: PgVectorStore;
+  let store: PostgresVectorStore;
 
   beforeAll(async () => {
     client = postgresClient({ url: url ?? '' });
@@ -97,14 +97,14 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
     await client.close();
   });
 
-  const acme = (): PgVectorStore => store.scoped({ tenant: 'acme' });
+  const acme = (): PostgresVectorStore => store.scoped({ tenant: 'acme' });
 
   test('pgvector is installed, so the rest of this file is a real measurement', () => {
     // Deliberately a FAILURE and not a skip. A suite that quietly stands down when the extension
     // is absent reports green for the one store that runs in front of real traffic.
     if (!available) {
       throw new Error(
-        'TEST_DATABASE_URL names a Postgres without pgvector, so PgVectorStore is untested.\n' +
+        'TEST_DATABASE_URL names a Postgres without pgvector, so PostgresVectorStore is untested.\n' +
           'fix: docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17',
         { cause: unavailable },
       );

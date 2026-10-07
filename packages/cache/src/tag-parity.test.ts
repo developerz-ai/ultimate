@@ -4,11 +4,11 @@
 // through all four here, so no tier can keep a private reading of "does this bust reach that entry".
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
-import { cacheHeaders, createCdnTier } from './cdn';
-import { createLruTier } from './lru';
-import { createMemoTier } from './memo';
+import { cacheHeaders, cdnTier } from './cdn';
+import { lruTier } from './lru';
+import { memoTier } from './memo';
 import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
 import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import type { CacheTag } from './tags';
@@ -102,7 +102,7 @@ const purgedAtTheEdge = async (
     },
     purgeAll: () => Promise.resolve(),
   };
-  await createCdnTier({ purge: driver }).invalidateTags(bust);
+  await cdnTier({ purge: driver }).invalidateTags(bust);
   const separator = header === 'Surrogate-Key' ? ' ' : ',';
   return Object.entries(OWNED)
     .filter(([, tags]) => overlaps(cacheHeaders({ tags })[header]?.split(separator) ?? [], purged))
@@ -125,13 +125,13 @@ describe('the fixture table is `tagMatches`, not a second opinion', () => {
 describe('one bust, one answer, on every tier', () => {
   for (const { name, bust, reaches } of CASES) {
     test(`request-memo: busting ${name}`, async () => {
-      await runWithContext(createContext(), async () => {
-        expect(await clearedFrom(createMemoTier(), bust)).toEqual([...reaches]);
+      await runWithContext(ctxOf(), async () => {
+        expect(await clearedFrom(memoTier(), bust)).toEqual([...reaches]);
       });
     });
 
     test(`lru: busting ${name}`, async () => {
-      expect(await clearedFrom(createLruTier({ rng: () => 0 }), bust)).toEqual([...reaches]);
+      expect(await clearedFrom(lruTier({ rng: () => 0 }), bust)).toEqual([...reaches]);
     });
 
     test(`redis: busting ${name}`, async () => {

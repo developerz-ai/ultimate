@@ -1,13 +1,13 @@
 /**
  * The bound, and the honesty about it. Every other memory implementation in this framework is
- * capped and says so — `memoryRateLimitStore`, `memoryIdempotencyStore`, `createLimiter`,
- * `createTotpReplayGuard`, `memoryEventBus` — and this sink was the outlier: a plain array
+ * capped and says so — `memoryRateLimitStore`, `memoryIdempotencyStore`, `concurrencyLimiter`,
+ * `memoryTotpReplayGuard`, `memoryEventBus` — and this sink was the outlier: a plain array
  * with a `push`, retaining a whole `Ctx` per record. 50 audited writes a second is 4.3M immortal
  * records a day, and the pod OOMs holding the trail it was retaining.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
 import { DEFAULT_MAX_AUDIT_RECORDS, memoryAuditSink } from './audit-memory';
 
@@ -18,7 +18,7 @@ const recordAt = (n: number): AuditRecord => ({
   mutator: false,
   surface: 'http',
   // A fresh context per record, so an evicted one is identifiable by IDENTITY.
-  ctx: createContext({ actor: userActor({ id: `u${n}` }) }),
+  ctx: ctxOf({ actor: userActor({ id: `u${n}` }) }),
   input: { n },
   idempotencyKey: null,
   replayed: false,

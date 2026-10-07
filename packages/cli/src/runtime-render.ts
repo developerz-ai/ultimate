@@ -6,7 +6,7 @@
 import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Actor, Ctx } from '@ultimat3/core';
-import { CLIENT_SCOPE_HEADER, createSingleFlight } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER, singleFlight } from '@ultimat3/core';
 import type {
   RouteMeta as HttpRouteMeta,
   RedirectIntent,
@@ -16,7 +16,7 @@ import type {
   UltimateRequest,
 } from '@ultimat3/http';
 import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
-import { currentLocale, localeConfig } from '@ultimat3/i18n';
+import { currentLocale } from '@ultimat3/i18n';
 import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
   clientPathStyleTags,
@@ -113,9 +113,11 @@ const headFor = async (
         seoRenderers({
           path: url.pathname,
           baseUrl: options.origin ?? url.origin,
+          // The default is the cluster's own head (`alternates` is default-first by contract), so
+          // `x-default` comes from the list the hreflang tags do — never a second locale read.
           localization: {
             locale: meta.locale,
-            defaultLocale: localeConfig().fallback,
+            defaultLocale: meta.alternates[0]?.locale ?? meta.locale,
             alternates: meta.alternates,
           },
         }),
@@ -406,7 +408,7 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
   const memo = createStaticMemo();
   // A cold static key is ONE render however many requests arrive during it: the memo alone was
   // check-then-act, so a burst at boot ran `load` and the render once per request.
-  const firstRender = createSingleFlight();
+  const firstRender = singleFlight();
   return routeEntries().map((registered) => ({
     method: 'GET' as const,
     path: registered.path,

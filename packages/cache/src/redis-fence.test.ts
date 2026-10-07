@@ -6,13 +6,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import { REDIS_INVALIDATE_SCRIPT } from './redis';
 import type { FakeRedis } from './redis-fake-fixture';
 import { fakeRedis, tierFor } from './redis-fake-fixture';
 import type { CacheTag } from './tags';
 import { tag } from './tags';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void;
@@ -34,9 +34,9 @@ const bustFromAnotherReplica = async (client: FakeRedis, tags: readonly CacheTag
 
 /** Replica A: its own LRU, the shared Redis, and a `load()` the test holds open. */
 const replicaA = (client: FakeRedis, clock?: Clock) => {
-  const lru = createLruTier({ rng: () => 0 });
+  const lru = lruTier({ rng: () => 0 });
   const redis = tierFor(client, clock === undefined ? {} : { clock });
-  return { lru, stack: createCacheStack([lru, redis]) };
+  return { lru, stack: cacheStack([lru, redis]) };
 };
 
 const raceABust = async (

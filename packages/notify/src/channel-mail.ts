@@ -11,7 +11,7 @@
 //   }) } })
 
 import type { NotifyChannel } from './channel';
-import { channel } from './channel';
+import { deliveryChannel } from './channel';
 import type { NotifyEvent, Recipient } from './notification';
 
 /** What a mailer is handed. Everything a template needs to render, and nothing about transport. */
@@ -55,7 +55,7 @@ export function mailChannel<Params = unknown>(
   options: MailChannelOptions<Params>,
 ): NotifyChannel<Params> {
   const addressOf = options.addressOf ?? ((recipient: Recipient) => recipient.to);
-  return channel<Params>(
+  return deliveryChannel<Params>(
     options.name ?? MAIL_CHANNEL,
     async ({ recipient, batch, ctx, signal }) => {
       const to = addressOf(recipient);

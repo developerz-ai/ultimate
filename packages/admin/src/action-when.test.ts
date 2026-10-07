@@ -4,7 +4,7 @@
 // with none is a confirm only. One declaration, and it is still one MCP tool.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
 import {
   boolean,
   clearRegistry,
@@ -129,7 +129,7 @@ const ask = (
   form: Readonly<Record<string, unknown>> | null = null,
 ): Promise<{ response: AdminRouteResponse; html: string }> =>
   runWithContext(
-    createContext({ actor: userActor({ id: OPERATOR.id, roles: [...(OPERATOR.roles ?? [])] }) }),
+    ctxOf({ actor: userActor({ id: OPERATOR.id, roles: [...(OPERATOR.roles ?? [])] }) }),
     async () => {
       const url = `http://localhost${path}`;
       const matched = adminRouteMatch(admin, new URL(url).pathname);

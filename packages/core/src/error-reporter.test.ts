@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from './actor';
 import { frozenClock } from './clock';
-import { createContext, runWithContext } from './context';
+import { ctxOf, runWithContext } from './context';
 import { ERROR_DOCS_URL } from './error-codes';
 import {
   configureErrorReporting,
@@ -70,7 +70,7 @@ describe('reportError', () => {
 
   test('the ambient context fills the scope the caller did not name', () => {
     const reporter = install();
-    const ctx = createContext({
+    const ctx = ctxOf({
       requestId: 'req-1',
       traceId: 'trace-1',
       role: 'worker',
@@ -92,7 +92,7 @@ describe('reportError', () => {
 
   test('an explicit scope wins over the ambient one', () => {
     const reporter = install();
-    runWithContext(createContext({ requestId: 'ambient' }), () => {
+    runWithContext(ctxOf({ requestId: 'ambient' }), () => {
       reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), {
         source: 'http',
         severity: 'warning',
@@ -109,7 +109,7 @@ describe('reportError', () => {
   test('a configured release is the one every report carries', () => {
     const reporter = install();
     configureErrorReporting({ release: 'build-from-serve' });
-    runWithContext(createContext({ buildId: 'build-from-ctx' }), () => {
+    runWithContext(ctxOf({ buildId: 'build-from-ctx' }), () => {
       reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), { source: 'http' });
     });
 

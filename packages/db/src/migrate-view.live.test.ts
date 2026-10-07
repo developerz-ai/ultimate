@@ -1,7 +1,7 @@
 // Single responsibility: a retype whose column a VIEW is written against, run through `migrate()`
 // against a real server. Postgres refuses it outright — `0A000 cannot alter type of a column used
 // by a view or rule`, with the view named only in the DETAIL — and nothing in `x db gen` can see
-// it coming: `SchemaDescription` has no field for a view, `introspect()` reads none by
+// it coming: `SchemaDescription` has no field for a view, `introspectSchema()` reads none by
 // construction (`app-relation.ts`), and no entity can declare one. So the refusal has to come from
 // the one place in this package that has a connection open while the statement is still unsent.
 //

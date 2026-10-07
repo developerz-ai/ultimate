@@ -10,14 +10,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import type { AnyJobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 interface Watched {
@@ -66,7 +66,7 @@ describe('unit · the step runner never composes onto the run signal permanently
   test('a declared stepTimeoutMs composes through the seam and hands every one back', async () => {
     const run = new AbortController();
     const watched = watch(run);
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-1',
       jobName: 'backfillPrices',
       store: memoryStepStore(),
@@ -89,7 +89,7 @@ describe('unit · the step runner never composes onto the run signal permanently
   test('a step that THREW still hands its composition back', async () => {
     const run = new AbortController();
     const watched = watch(run);
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-2',
       jobName: 'backfillPrices',
       store: memoryStepStore(),
@@ -110,7 +110,7 @@ describe('unit · the step runner never composes onto the run signal permanently
   test('no declared ceiling composes nothing at all', async () => {
     const run = new AbortController();
     const watched = watch(run);
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-3',
       jobName: 'backfillPrices',
       store: memoryStepStore(),
@@ -166,7 +166,7 @@ describe('unit · executeJob never composes onto the caller ctx permanently', ()
     const process = new AbortController();
     const watched = watch(process);
     const ctx: Ctx = Object.freeze({
-      ...createContext({ role: 'worker', buildId: 'test' }),
+      ...ctxOf({ role: 'worker', buildId: 'test' }),
       signal: watched.signal,
     });
 

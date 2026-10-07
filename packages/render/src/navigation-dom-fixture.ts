@@ -7,6 +7,8 @@
  * (`packages/cli/e2e/client-navigation-*.e2e.test.ts`); this is the branch coverage beside it.
  */
 
+import { CLIENT_BUILD_META } from '@ultimat3/core';
+
 type Attrs = Readonly<Record<string, string>>;
 
 /** One compound selector: a tag and attribute conditions, optionally excluding a `src`. */
@@ -292,7 +294,7 @@ export const routerHead = (
 ): FakeElement[] => [
   h('title', {}, title),
   h('meta', { name: 'ultimate-navigation', content: meta.surface ?? 'web:app' }),
-  h('meta', { name: 'x-ultimate-build', content: meta.build ?? 'b1' }),
+  h('meta', { name: CLIENT_BUILD_META, content: meta.build ?? 'b1' }),
   ...(meta.scope === undefined ? [] : [h('meta', { name: 'ultimate-scope', content: meta.scope })]),
   ...extra,
 ];

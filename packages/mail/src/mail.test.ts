@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import {
-  createJobsFacade,
   memoryJobDriver,
   memoryOutboxStore,
+  outboxJobsFacade,
   resetJobDriver,
   resetJobsFacade,
   setJobDriver,
@@ -75,7 +75,7 @@ defineMail<{ name: string }>({
 });
 
 /** The facade's transaction token, named without importing `@ultimat3/entity` into this package. */
-type Tx = NonNullable<ReturnType<Parameters<typeof createJobsFacade>[1]>>;
+type Tx = NonNullable<ReturnType<Parameters<typeof outboxJobsFacade>[1]>>;
 
 let memory: MemoryMailDriver;
 
@@ -313,7 +313,7 @@ describe('the queue path', () => {
     setJobDriver(queue);
     const store = memoryOutboxStore();
     const tx = { id: 'request-tx' } as unknown as Tx;
-    setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver: queue }, () => tx));
     try {
       const result = await send(
         basicMail,

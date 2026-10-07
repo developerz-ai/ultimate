@@ -10,9 +10,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -63,9 +63,9 @@ afterAll(async () => {
 const open = (driver: ScrapeDriver): Promise<ScrapeSession> =>
   driver.open({
     name: 'orders',
-    logger: createLogger({ writer: () => undefined }),
+    logger: structuredLogger({ writer: () => undefined }),
     rules: { allowHosts: ['shop.test'], block: ['image'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
     timeoutMs: 5_000,
   });
 
@@ -262,9 +262,9 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
     const withRestore = (driver: ScrapeDriver): Promise<ScrapeSession> =>
       driver.open({
         name: 'orders',
-        logger: createLogger({ writer: () => undefined }),
+        logger: structuredLogger({ writer: () => undefined }),
         rules: { allowHosts: ['shop.test'], block: ['image'] },
-        clock: testClock(),
+        clock: testScrapeClock(),
         timeoutMs: 5_000,
         restore,
       });

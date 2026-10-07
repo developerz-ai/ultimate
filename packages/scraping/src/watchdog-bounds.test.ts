@@ -8,7 +8,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { createWedgeGuard } from './watchdog';
 
 const NOT_A_BOUND: readonly number[] = [
@@ -32,7 +32,7 @@ const guardWith = (over: { idleMs?: number; graceMs?: number }): (() => unknown)
   const kills: number[] = [];
   return () =>
     createWedgeGuard({
-      clock: testClock(),
+      clock: testScrapeClock(),
       what: 'scrape "orders"',
       ...over,
       quit: () => Promise.resolve(),
@@ -64,7 +64,7 @@ describe('unit · a watchdog budget that is not a number', () => {
     let quit = 0;
     let killed = 0;
     const guard = createWedgeGuard({
-      clock: testClock(),
+      clock: testScrapeClock(),
       what: 'scrape "orders"',
       idleMs: 60_000,
       graceMs: 0,
@@ -83,7 +83,7 @@ describe('unit · a watchdog budget that is not a number', () => {
 
   test('the ordinary budgets are still accepted', () => {
     const guard = createWedgeGuard({
-      clock: testClock(),
+      clock: testScrapeClock(),
       what: 'scrape "orders"',
       idleMs: 1,
       graceMs: 5_000,

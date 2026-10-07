@@ -11,9 +11,9 @@ import {
   purgeAuthLimits,
   resetAuthLimiters,
 } from './limiter-install';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
-import { createAuthLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
+import { DEFAULT_AUTH_RATE_LIMIT, memoryAuthLimiter } from './rate-limit';
 
 /** A limiter that answers nothing and counts its sweeps — the store behind it is not the subject. */
 function tableLimiter(
@@ -36,7 +36,7 @@ function tableLimiter(
   };
 }
 
-const adapter = (): MemoryAdapter => memoryAuthAdapter();
+const adapter = (): MemoryAuthAdapter => memoryAuthAdapter();
 
 /** Rows a sweep of that window would remove — distinct per window, so the count names the sweeper. */
 const rowsFor = (windowMs: number): number =>
@@ -107,7 +107,7 @@ describe('configureAuthLimiters', () => {
 
   test('the LOCAL fallback is the one arm the tenant bucket still exempts', () => {
     // A shared LOCKOUT with no factory installed: the tenant bucket falls back to
-    // `createAuthLimiter`, which always reports `'process'`. Comparing that arm would refuse an
+    // `memoryAuthLimiter`, which always reports `'process'`. Comparing that arm would refuse an
     // app whose only claim is about the lockout — a per-replica `orgMaxAttempts` is a throughput
     // ceiling and discloses nothing — so the exemption is the fallback's, never a supplied
     // limiter's.
@@ -126,7 +126,7 @@ describe('configureAuthLimiters', () => {
       calls += 1;
       return tableLimiter(policy, 0);
     });
-    const mine = createAuthLimiter({ now: () => new Date(0), monotonic: () => 0 });
+    const mine = memoryAuthLimiter({ now: () => new Date(0), monotonic: () => 0 });
     const auth = defineAuth({ adapter: adapter(), limiter: mine });
     expect(auth.limiter).toBe(mine);
     // The tenant bucket was NOT passed, so the factory still built that one and only that one.
@@ -147,7 +147,7 @@ describe('purgeAuthLimits', () => {
 
   test('skips a limiter that bounds itself', async () => {
     configureAuthLimiters((policy) =>
-      createAuthLimiter({ now: () => new Date(0), monotonic: () => 0 }, policy),
+      memoryAuthLimiter({ now: () => new Date(0), monotonic: () => 0 }, policy),
     );
     defineAuth({ adapter: adapter() });
     expect(await purgeAuthLimits()).toBe(0);

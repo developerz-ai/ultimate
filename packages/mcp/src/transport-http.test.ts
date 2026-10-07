@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor, frozenClock, userActor } from '@ultimat3/core';
 import { memoryRateLimitStore } from '@ultimat3/http';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import {
   bearerToken,
   DEFAULT_MCP_BODY_LIMIT_BYTES,
@@ -14,7 +14,7 @@ import {
   mcpHttpRoute,
 } from './transport-http';
 
-const server = createMcpServer({
+const server = mcpServer({
   tools: [
     {
       name: 'echo',

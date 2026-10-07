@@ -42,7 +42,7 @@ export async function authRequest(init: AuthRequestInit = {}): Promise<Parameter
     );
   }
   if (init.bearer !== undefined) headers.set('authorization', `Bearer ${init.bearer}`);
-  const ctx = http.createRequestContext({
+  const ctx = http.requestContext({
     url,
     method,
     role: 'web',

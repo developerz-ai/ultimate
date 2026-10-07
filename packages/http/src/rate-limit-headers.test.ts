@@ -4,8 +4,8 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
-import { createRateLimiter, DEFAULT_RATE_LIMIT, type RateLimitDecision } from './rate-limit';
+import { requestContext } from './context';
+import { DEFAULT_RATE_LIMIT, type RateLimitDecision, rateLimiter } from './rate-limit';
 import { publishRateLimit, rateLimitHeaders } from './rate-limit-headers';
 
 const decision: RateLimitDecision = {
@@ -30,7 +30,7 @@ describe('rateLimitHeaders', () => {
   });
 
   test('the limiter answers through it', () => {
-    const limiter = createRateLimiter({
+    const limiter = rateLimiter({
       config: { ...DEFAULT_RATE_LIMIT, scope: 'process' },
       clock: frozenClock(10_000),
     });
@@ -40,7 +40,7 @@ describe('rateLimitHeaders', () => {
 
 describe('publishRateLimit', () => {
   const ctx = () =>
-    createRequestContext({
+    requestContext({
       url: new URL('https://app.test/api/x'),
       method: 'POST',
       role: 'web',

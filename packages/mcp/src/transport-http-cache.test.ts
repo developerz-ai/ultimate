@@ -4,10 +4,10 @@
 import { describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
-const server = createMcpServer({
+const server = mcpServer({
   tools: [
     {
       name: 'echo',

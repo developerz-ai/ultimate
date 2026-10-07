@@ -3,7 +3,8 @@
 // keeps capturing dark with a seed nobody consults (issue #489).
 
 import { describe, expect, test } from 'bun:test';
-import { THEME_STORAGE_KEY, themeScriptBody } from '@ultimat3/render';
+import { THEME_STORAGE_KEY } from '@ultimat3/core';
+import { themeScriptBody } from '@ultimat3/render';
 import { readThemeFlag, themeChoiceExpression } from './shot-theme';
 
 describe('unit · themeChoiceExpression', () => {

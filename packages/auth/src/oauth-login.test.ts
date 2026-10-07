@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { MemoryAuthAdapter } from './memory-adapter';
 import { totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
@@ -14,7 +14,7 @@ import { signInWithOAuth } from './oauth-login';
 import { codeOf, freshAuth, NOW, profile, tokens } from './oauth-login-fixture';
 import { loginFailed } from './rate-limit';
 
-let adapter: MemoryAdapter;
+let adapter: MemoryAuthAdapter;
 let auth: Auth;
 
 beforeEach(() => {
@@ -26,7 +26,7 @@ beforeEach(() => {
  * does not return what it wrote. `emailVerifiedAt` is not in `CreateUserInput`, so this is the
  * one path where a lost patch would leave a signed-in user that no later login can link.
  */
-class StampLosingAdapter extends MemoryAdapter {
+class StampLosingAdapter extends MemoryAuthAdapter {
   override async updateUser(): Promise<AuthUser | null> {
     return null;
   }

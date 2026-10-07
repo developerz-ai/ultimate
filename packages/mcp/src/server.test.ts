@@ -4,7 +4,7 @@ import { UltimateError } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { textResult } from './registry';
 import { frameworkResources } from './resources';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { INTERNAL_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
 const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
@@ -53,7 +53,7 @@ const scopeGated: AnyMcpTool = {
   },
 };
 
-const server = createMcpServer({
+const server = mcpServer({
   tools: [openTool, adminOnly, scopeGated],
   resources: frameworkResources({ manifest: () => '{"version":1}' }),
 });
@@ -267,7 +267,7 @@ describe('a framework error reaches the model in the shape the terminal prints',
     },
   };
 
-  const guarded = createMcpServer({ tools: [throwing, untitled, unfixed] });
+  const guarded = mcpServer({ tools: [throwing, untitled, unfixed] });
 
   const textOf = async (name: string): Promise<string> => {
     const response = await guarded.handle(
@@ -310,7 +310,7 @@ describe('a framework error reaches the model in the shape the terminal prints',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         handle: () => Promise.reject({ code, cause: 'a package that is not core threw' }),
       };
-      const server = createMcpServer({ tools: [rogue] });
+      const server = mcpServer({ tools: [rogue] });
       const response = await server.handle(
         call('tools/call', { name: 'orders.rogue', arguments: {} }),
         caller(undefined, []),
@@ -368,7 +368,7 @@ describe('a throw that fights being read is still an answer, never an escape', (
     ],
     ['a symbol', Symbol('thrown') as unknown],
   ])('%s becomes -32603, with the tool named and nothing leaked', async (_label, value) => {
-    const server = createMcpServer({ tools: [hostile(value)] });
+    const server = mcpServer({ tools: [hostile(value)] });
     const response = await server.handle(
       call('tools/call', { name: 'orders.hostile', arguments: {} }),
       caller(undefined, []),
@@ -386,7 +386,7 @@ describe('a throw that fights being read is still an answer, never an escape', (
       cause: 'a worker sent this back',
       fix: 'x doctor',
     });
-    const server = createMcpServer({ tools: [hostile(flattened)] });
+    const server = mcpServer({ tools: [hostile(flattened)] });
     const response = await server.handle(
       call('tools/call', { name: 'orders.hostile', arguments: {} }),
       caller(undefined, []),
@@ -422,7 +422,7 @@ describe('a self-rendered refusal names its code for the audit, never for the ca
   };
 
   test('the result carries content and isError, and no third key', async () => {
-    const self = createMcpServer({ tools: [selfRefusing] });
+    const self = mcpServer({ tools: [selfRefusing] });
     const response = await self.handle(
       call('tools/call', { name: 'admin.create', arguments: {} }),
       caller(undefined, []),

@@ -5,9 +5,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
-describe('createCacheStack read: a null load can carry its own TTL', () => {
+describe('cacheStack read: a null load can carry its own TTL', () => {
   test('negativeTtlMs is selected for null and undefined, and ignored for a real value', async () => {
     // A row that has not replicated yet answers `null` 40ms before it lands. Held for the
     // positive TTL, every reader is told "does not exist" for five minutes.
@@ -28,7 +28,7 @@ describe('createCacheStack read: a null load can carry its own TTL', () => {
         return Promise.resolve({ tier: 'lru' as const, keys: [] });
       },
     };
-    const stack = createCacheStack([tier]);
+    const stack = cacheStack([tier]);
     const options = { ttlMs: 300_000, negativeTtlMs: 5_000 };
 
     await stack.read('a', () => Promise.resolve(null), options);
@@ -40,7 +40,7 @@ describe('createCacheStack read: a null load can carry its own TTL', () => {
 
   test('with no negativeTtlMs a null is written on the positive ttl, unchanged', async () => {
     const writes: CacheSetOptions[] = [];
-    const stack = createCacheStack([
+    const stack = cacheStack([
       {
         name: 'lru',
         get: () => Promise.resolve(undefined),

@@ -16,12 +16,12 @@ import { isUltimateError, renderThrowable } from '@ultimat3/core';
 import {
   advanceClock,
   captureDeterminism,
-  frozenClock,
   frozenNow,
   installDeterminism,
   restoreCapturedDeterminism,
   seededRandom,
   setFrozenClock,
+  withFrozenClock,
 } from './determinism';
 
 const NOT_AN_INSTANT: readonly (string | number)[] = [
@@ -49,7 +49,7 @@ afterEach(() => {
   restoreCapturedDeterminism(captured);
 });
 
-/** The same, for `frozenClock`, which is `async` and so REJECTS rather than throwing. */
+/** The same, for `withFrozenClock`, which is `async` and so REJECTS rather than throwing. */
 async function asyncRefusal(run: () => Promise<unknown>): Promise<{ code: string; cause: string }> {
   try {
     await run();
@@ -92,12 +92,12 @@ describe('unit · the frozen clock, bounded', () => {
     });
   }
 
-  test('frozenClock refuses an unreadable instant and leaves the outer one alone', async () => {
+  test('withFrozenClock refuses an unreadable instant and leaves the outer one alone', async () => {
     installDeterminism({ now: '2026-01-01T00:00:00.000Z' });
     const before = Date.now();
     let ran = false;
     const error = await asyncRefusal(() =>
-      frozenClock('the day before', () => {
+      withFrozenClock('the day before', () => {
         ran = true;
       }),
     );

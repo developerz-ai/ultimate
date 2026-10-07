@@ -10,7 +10,7 @@
 import type { RecordRows, Row } from '@ultimat3/core';
 import { encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { hasEntityRows, rowsOf } from '@ultimat3/entity';
-import { json } from '@ultimat3/http';
+import { jsonResponse } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Page } from './pagination';
 
@@ -23,10 +23,12 @@ export type RecordAnswer = (answer: readonly object[] | Page<object>) => Respons
  * `Page` — is the route's, not the declaration's.
  */
 export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswer {
-  if (!answersRecords(rows)) return (answer) => json(answer);
+  if (!answersRecords(rows)) return (answer) => jsonResponse(answer);
   return (answer) => {
     const records = collect(rows, isPage(answer) ? answer.rows : answer);
-    return json(encodeRecordEnvelope(answer, records), { headers: { [RECORDS_HEADER]: '1' } });
+    return jsonResponse(encodeRecordEnvelope(answer, records), {
+      headers: { [RECORDS_HEADER]: '1' },
+    });
   };
 }
 
@@ -36,9 +38,11 @@ export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswe
  * answers for a single output, so the transport unwraps both the same way.
  */
 export function recordRowAnswerFor(rows: StandardSchemaV1 | undefined): (row: object) => Response {
-  if (!answersRecords(rows)) return (row) => json(row);
+  if (!answersRecords(rows)) return (row) => jsonResponse(row);
   return (row) =>
-    json(encodeRecordEnvelope(row, collect(rows, [row])), { headers: { [RECORDS_HEADER]: '1' } });
+    jsonResponse(encodeRecordEnvelope(row, collect(rows, [row])), {
+      headers: { [RECORDS_HEADER]: '1' },
+    });
 }
 
 /** The one predicate the route and the OpenAPI projection both ask: can this read answer records? */

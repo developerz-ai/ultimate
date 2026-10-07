@@ -27,7 +27,7 @@ export const FIXTURE_ANTHROPIC_IDS = [
 /** The OpenAI-format family, the other ladder: `moreCapableThan` must never cross into it. */
 export const FIXTURE_OPENAI_IDS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const;
 
-/** The model a suite's gateway falls back to: `createGateway({ defaultModel: FIXTURE_MODEL })`. */
+/** The model a suite's gateway falls back to: `providerGateway({ defaultModel: FIXTURE_MODEL })`. */
 export const FIXTURE_MODEL = 'claude-opus-5';
 
 const ANTHROPIC = { family: 'anthropic', input: ['image', 'document'] } as const;

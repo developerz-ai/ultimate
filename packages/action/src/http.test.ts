@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import {
-  createContext,
+  ctxOf,
   currentWriteOrigin,
   isUltimateError,
   runWithContext,
@@ -14,7 +14,7 @@ import {
   writeDigest,
 } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { allow, and, can, or } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -61,7 +61,7 @@ const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'pro
 const editor = (id: string): PolicyActor => userActor({ id, permissions: ['post:publish'] });
 
 function serve(target: ReturnType<typeof publisher>, actor: Actor | null) {
-  return createServer({
+  return httpServer({
     routes: [toRoute(target)],
     config: oneProcess(),
     // No `authorize` hook. An action route must not need one: wiring a second opinion is how a
@@ -189,7 +189,7 @@ describe('an idempotent action over the pipeline', () => {
     }).named('countPost');
 
   const call = (target: AnyAction, key: string | null) =>
-    createServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
+    httpServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
       new Request('http://dev.test/api/posts/count', {
         method: 'POST',
         headers: {
@@ -247,7 +247,7 @@ describe('the write a request names', () => {
   }).named('likePost');
 
   const call = (key: string | null) =>
-    createServer({ routes: [toRoute(likes)], config: oneProcess() }).fetch(
+    httpServer({ routes: [toRoute(likes)], config: oneProcess() }).fetch(
       new Request('http://dev.test/api/posts/like', {
         method: 'POST',
         headers: {
@@ -286,7 +286,7 @@ describe('an action answering a form post', () => {
     }).named('createSession');
 
   const post = (target: AnyAction) =>
-    createServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
+    httpServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
       new Request('http://dev.test/api/sessions/create', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -314,7 +314,7 @@ describe('an action answering a form post', () => {
   // what keeps a second call on the same context from inheriting the first one's destination.
   test('the redirect does not leak into the next request', async () => {
     const target = signIn('/feed');
-    const server = createServer({ routes: [toRoute(target)], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(target)], config: oneProcess() });
     const call = () =>
       server.fetch(
         new Request('http://dev.test/api/sessions/create', {
@@ -337,7 +337,7 @@ describe('the published operation and the live response are one contract', () =>
   const target = publisher('u1', { count: 0 });
 
   const badBody = (body: string): Promise<Response> =>
-    createServer({
+    httpServer({
       routes: [toRoute(target)],
       config: oneProcess(),
       hooks: { authenticate: () => editor('u1') },
@@ -395,7 +395,7 @@ describe('the published operation and the live response are one contract', () =>
     try {
       // In a context, because `invoke` needs one before it validates anything — the point here is
       // the CODE the same input produces off the wire, not what an unhosted call does.
-      await runWithContext(createContext({ actor: editor('u1') }), () =>
+      await runWithContext(ctxOf({ actor: editor('u1') }), () =>
         invoke(target, { postId: 'nope' }, { surface: 'http' }),
       );
     } catch (error) {
@@ -426,7 +426,7 @@ describe('an action error reaches the error-map stage', () => {
   }).named('breakPost');
 
   const post = (onError: (error: unknown) => void, accept: string) =>
-    createServer({
+    httpServer({
       routes: [toRoute(failing)],
       config: oneProcess(),
       hooks: { onError },

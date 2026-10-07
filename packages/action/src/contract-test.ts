@@ -5,7 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
-import { createContext, isUltimateError, logger, renderFixShellArg } from '@ultimat3/core';
+import { ctxOf, isJsonObject, isUltimateError, logger, renderFixShellArg } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { ActionDeniedError, ContractDriftError } from './errors';
 import { toOpenApiOperation } from './http';
@@ -14,7 +14,6 @@ import { actionName, invoke } from './invoke';
 import { buildOpenApi } from './openapi';
 import { listActions } from './registry';
 import { describeSampleGap, sampleGaps, sampleInput } from './sample-input';
-import { isJsonObject } from './stable';
 import { validateInput } from './validate';
 
 export interface ContractTest {
@@ -37,7 +36,7 @@ export interface ContractTestOptions {
 
 /** A context whose actor is core's anonymous actor — what a signed-out caller has. */
 export function anonymousCtx(): Ctx {
-  return createContext({});
+  return ctxOf({});
 }
 
 export function contractTestsFor(
@@ -189,7 +188,7 @@ async function expectDenied(
     if (error instanceof ActionDeniedError) return;
     // `invoke` runs the policy's actor half → parse input → row → policy → handle → parse
     // output, and every stage lands here identically. Only `X_INPUT_INVALID` is attributable: it
-    // is what `validateInput` raises before `guard()` is reached (for a policy whose actor half
+    // is what `validateInput` raises before `guardAction()` is reached (for a policy whose actor half
     // could not decide), and `input:` is the knob that answers it. Any other
     // code — `X_TENANCY_UNSCOPED` from a `row:` loader, `X_DB_CONFLICT` from a handler,
     // `X_OUTPUT_INVALID` from the parse after it — keeps its own code and its own fix rather

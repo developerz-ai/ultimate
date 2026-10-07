@@ -3,7 +3,7 @@
 // happened to name, and `verifyScope` could not hold the read to the subscriber's own tenant.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import type { QueryPolicy } from '@ultimat3/query';
 import { authorizeChannel } from './channel-authz';
@@ -52,7 +52,7 @@ describe('a channel row loader runs as the subscriber', () => {
   test('an unscoped repository read inside it returns only the subscriber’s tenant', async () => {
     await db.notes.insert({ id: '00000000-0000-4000-8000-000000000001', orgId: O1, label: 'a' });
     await db.notes.insert({ id: '00000000-0000-4000-8000-000000000002', orgId: O2, label: 'b' });
-    const node = createContext({ role: 'sync', buildId: 'b' });
+    const node = ctxOf({ role: 'sync', buildId: 'b' });
 
     await authorizeChannel(
       notesChannel,

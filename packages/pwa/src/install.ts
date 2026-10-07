@@ -77,13 +77,13 @@ export interface InstallController {
   dispose(): void;
 }
 
-export function createInstallController(options: InstallOptions): InstallController {
+export function installController(options: InstallOptions): InstallController {
   const host = options.host;
   // `now() - startedAt < NaN` is false at every instant, so a threshold that arrived non-finite
   // does not shorten the wait — it deletes it, and the prompt fires on first paint. `0` stays
   // legal: "ask as soon as the browser offers" is a decision, and it is a comparison that works.
   const minEngagementMs = finiteCount(
-    'createInstallController',
+    'installController',
     'minEngagementMs',
     options.minEngagementMs ?? MIN_ENGAGEMENT_MS,
   );

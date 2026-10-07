@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { UltimateError } from '@ultimat3/core';
-import { isUltimateError } from '@ultimat3/core';
+import { isRetryableStatus, isUltimateError } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
 import {
   assertPurgeableKeys,
@@ -12,7 +12,6 @@ import {
   defaultPurgeFetch,
   detailFrom,
   isRecord,
-  isRetryableStatus,
   purgeBody,
   purgePost,
 } from './purge-http';

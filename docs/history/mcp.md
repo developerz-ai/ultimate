@@ -162,3 +162,10 @@ install graph and made the edge readable.
   2-space JSON; the model is its only reader and pays for every indent for the rest of the session.
   `describe_resource` stays JSON because a schema is JSON. The budget is a test an app writes
   (`assertMcpSurfaceBudget`), not a framework ceiling: the right number is the app's measurement.
+
+## Moved 2026-10-07 — `Object.hasOwn` for a declared key
+
+The inherited-key defect in `validate-args.ts` (`constructor`, `toString`, `hasOwnProperty`,
+`__proto__` read as declared) was the third instance of the class in the framework, after
+`@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`. The rule itself stays in
+[`packages/mcp/CLAUDE.md`](../../packages/mcp/CLAUDE.md).

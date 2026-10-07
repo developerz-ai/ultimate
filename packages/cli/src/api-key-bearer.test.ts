@@ -18,10 +18,10 @@ import { frozenClock } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import {
   bearerMount,
-  createPipeline,
-  createRouter,
   defineHttpConfig,
-  json,
+  httpPipeline,
+  httpRouter,
+  jsonResponse,
   memoryRateLimitStore,
   useRequestContext,
 } from '@ultimat3/http';
@@ -34,7 +34,7 @@ const api: readonly Route[] = [
     method: 'GET',
     path: '/_x/query/case-list',
     meta: { name: 'caseList', auth: 'required', enforcedBy: 'handler' },
-    handler: () => json({ actor: useRequestContext()?.actor.id ?? null }),
+    handler: () => jsonResponse({ actor: useRequestContext()?.actor.id ?? null }),
   },
 ];
 
@@ -57,8 +57,8 @@ const setup = async () => {
   };
   const owned = await issue(owner.id);
   const service = await issue();
-  const pipeline = createPipeline({
-    table: createRouter([
+  const pipeline = httpPipeline({
+    table: httpRouter([
       ...api,
       ...bearerMount({
         prefix: '/v1',

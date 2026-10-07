@@ -4,7 +4,7 @@
 // image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
 import type { StyleBundle } from './style-bundle';
 import { STYLE_BASE_PATH } from './style-bundle';
 
@@ -32,7 +32,7 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
       handler: (request: UltimateRequest): Response => {
         const chunk = source().chunkAt(request.pathname);
         if (chunk === undefined) {
-          const missing = json(
+          const missing = jsonResponse(
             {
               ok: false,
               error: {

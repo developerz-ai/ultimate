@@ -12,12 +12,9 @@ import { requestTimedOut } from './errors';
  * A caller may SHORTEN this request's deadline, never lengthen it. Honoured without trusting the
  * proxy, because the only thing it can buy an attacker is a faster 504 for their own request.
  *
- * The name is core's, re-exported rather than declared twice: this package READS the header and
- * `@ultimat3/core`'s typed-client wire path WRITES it, and a second literal is a propagation that
- * stops working the day one of the two strings is edited. Same shape as `logger.ts` re-exporting
- * `REDACTED` — one definition, one public path.
+ * The header name is core's `REQUEST_TIMEOUT_HEADER`, imported: this package READS it and core's
+ * typed-client wire path WRITES it, so one literal, at the tier both reach, with one import path.
  */
-export { REQUEST_TIMEOUT_HEADER };
 
 export interface Deadline {
   /** Aborted when the deadline passes. Handed to the context as `ctx.signal`. */

@@ -9,7 +9,7 @@
 // the account. So this file is a FACTORY over `job()`, and a scrape inherits `.enqueue()`, the
 // worker's cancellation, the dead-letter path, `x jobs show` and its manifest row for free.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, HostRule } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import type {
   JobCompleted,
@@ -31,7 +31,6 @@ import type { ScrapeDriver } from './driver';
 import { yieldHistoryMissing } from './error-throws';
 import type { YieldExpectation, YieldHistory } from './expect';
 import { maxDropFraction } from './expect';
-import type { HostRule } from './hosts';
 import type { ScrapeHttp } from './http';
 import type { ScrapePage } from './page';
 import type { Recovery } from './recover';

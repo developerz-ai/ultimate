@@ -175,7 +175,7 @@ function trace(into: string[], name: string): void {
   if (into.length > MAX_TRACE_NAMES) into.shift();
 }
 
-export function createStepRunner(options: StepRunnerOptions): StepRunner {
+export function stepRunner(options: StepRunnerOptions): StepRunner {
   const { runId, jobName, store } = options;
   /** Every name this attempt has claimed. Membership only — the trace is `used`. */
   const claimed = new Set<string>();

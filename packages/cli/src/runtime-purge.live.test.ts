@@ -18,9 +18,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { accountKey, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
-import { createContext, systemClock } from '@ultimat3/core';
+import { ctxOf, systemClock } from '@ultimat3/core';
 import type { PurgeReport } from '@ultimat3/jobs';
-import { createStepRunner, getJob, memoryStepStore, resetJobs, resetTasks } from '@ultimat3/jobs';
+import { getJob, memoryStepStore, resetJobs, resetTasks, stepRunner } from '@ultimat3/jobs';
 import {
   postgresDeliveryLedger,
   postgresDigestStore,
@@ -96,7 +96,7 @@ async function boot(config?: string): Promise<RunningServices> {
 async function runSweep(): Promise<PurgeReport> {
   const handle = getJob(PURGE_JOB_NAME);
   if (handle === undefined) expect.unreachable(`${PURGE_JOB_NAME} was never declared by the boot`);
-  const runner = createStepRunner({
+  const runner = stepRunner({
     runId: crypto.randomUUID(),
     jobName: handle.name,
     store: memoryStepStore(),
@@ -104,7 +104,7 @@ async function runSweep(): Promise<PurgeReport> {
   const result = await handle.run({
     input: {},
     step: runner.step,
-    ctx: createContext({ role: 'worker' }),
+    ctx: ctxOf({ role: 'worker' }),
     attempt: 1,
     finalAttempt: false,
     progress: () => undefined,
@@ -362,7 +362,7 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       await started.stop();
       runtime = undefined;
 
-      // Back to `createAuthLimiter`: a limiter over a pool this process has closed is worse than
+      // Back to `memoryAuthLimiter`: a limiter over a pool this process has closed is worse than
       // a per-process one, because every sign-in then fails instead of being counted narrowly.
       expect(defineAuth({ adapter: memoryAuthAdapter() }).limiter.policy.scope).toBe('process');
       expect(await runSweep()).toEqual({ swept: [], removed: 0 });

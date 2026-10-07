@@ -7,7 +7,7 @@
  * see `summarize.evals.ts`, which is where the cases live.
  */
 
-import { createGateway, EchoProvider } from '@ultimat3/ai';
+import { echoProvider, providerGateway } from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
 import { summarizePrompt } from './summarize';
 import { summarizeCases, summarizeEval } from './summarize.evals';
@@ -51,9 +51,9 @@ const REGRESSED: Readonly<Record<string, string>> = {
 
 /** Answers keyed by the rendered prompt — the fixture set, so the eval is a test, not a sample. */
 const gatewayServing = (answers: Readonly<Record<string, string>>) =>
-  createGateway({
+  providerGateway({
     providers: [
-      new EchoProvider({
+      echoProvider({
         replies: Object.fromEntries(
           summarizeCases.map((testCase) => [
             summarizePrompt.render(testCase.vars),

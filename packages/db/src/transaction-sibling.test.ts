@@ -3,7 +3,7 @@
 // a cycle — and with no deadline on the turn it was a silent, permanent hang.
 
 import { describe, expect, test } from 'bun:test';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { withTransaction } from './transaction';
 
 interface Caught {
@@ -19,7 +19,7 @@ const within = <T>(work: Promise<T>, ms: number): Promise<T | typeof HUNG> =>
 
 describe('sibling nested scopes', () => {
   test('a body awaiting a sibling queued behind it is refused by name, never a hang', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     let waiter: Caught | undefined;
 
     const outcome = await within(
@@ -61,7 +61,7 @@ describe('sibling nested scopes', () => {
   });
 
   test('a sibling that simply takes a while is waited for, inside the deadline', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await withTransaction(
       () =>
         Promise.all([
@@ -81,7 +81,7 @@ describe('sibling nested scopes', () => {
   });
 
   test('an abandoned wait gives its place back: the next sibling still gets a turn', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await withTransaction(
       async () => {
         const slow = withTransaction(() => Bun.sleep(60));
@@ -99,7 +99,7 @@ describe('sibling nested scopes', () => {
   });
 
   test('siblingWaitMs: 0 waits without a deadline; a value that is not a count is refused', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await withTransaction(
       () =>
         Promise.all([

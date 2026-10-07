@@ -4,10 +4,10 @@
 // asked of three implementations.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -23,7 +23,7 @@ describe('unit · the CDP forward', () => {
   test('reaches evaluateOnNewDocument with the exact string, before the navigation', async () => {
     const browser = fakeCdpBrowser({ url: URL, html: HTML });
     const page = await browser.newPage();
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: testClock() });
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: testScrapeClock() });
 
     await target.prepare(SEED);
     expect(browser.prepared).toEqual([SEED]);
@@ -41,7 +41,7 @@ describe('unit · the CDP forward', () => {
     const { evaluateOnNewDocument: _dropped, ...page } = rich as typeof rich & {
       evaluateOnNewDocument?: unknown;
     };
-    const target = await cdpTarget({ page, browser, rules: RULES, clock: testClock() });
+    const target = await cdpTarget({ page, browser, rules: RULES, clock: testScrapeClock() });
 
     let thrown: { code?: string; fix?: string } = {};
     try {
@@ -63,7 +63,7 @@ describe('unit · the offline drivers', () => {
       source: 'test',
       lookup: (url) => Promise.resolve(url === URL ? RECORDING : undefined),
       rules: RULES,
-      clock: testClock(),
+      clock: testScrapeClock(),
       start: RECORDING,
     });
 
@@ -97,9 +97,9 @@ describe('unit · every driver accepts the verb through the page vocabulary', ()
     for (const [name, driver] of drivers()) {
       const session = await driver.open({
         name: 'prepare',
-        logger: createLogger({ writer: () => undefined }),
+        logger: structuredLogger({ writer: () => undefined }),
         rules: RULES,
-        clock: testClock(),
+        clock: testScrapeClock(),
         timeoutMs: 5_000,
       });
       try {

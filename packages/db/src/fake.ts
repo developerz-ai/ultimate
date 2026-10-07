@@ -49,7 +49,7 @@ const DEFAULT_STUBS: readonly Stub[] = [
   { match: /pg_try_advisory_lock/, response: { rows: [{ locked: true }] } },
 ];
 
-export function createRecordingClient(): RecordingClient {
+export function recordingClient(): RecordingClient {
   const statements: RecordedStatement[] = [];
   const stubs: Stub[] = [...DEFAULT_STUBS];
 

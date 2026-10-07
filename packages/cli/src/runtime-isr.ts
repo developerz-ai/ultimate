@@ -3,7 +3,7 @@
 // container, so neither can build a controller `invalidateTags` never reaches (plan 101, s2-con #1).
 
 import type { IsrController, IsrStore } from '@ultimat3/render/server';
-import { createIsrController } from '@ultimat3/render/server';
+import { isrController } from '@ultimat3/render/server';
 
 export interface AttachedIsr {
   readonly isr: IsrController;
@@ -19,7 +19,7 @@ export function attachedIsr(options: {
   readonly buildId: string;
   readonly store?: IsrStore;
 }): AttachedIsr {
-  const isr = createIsrController({
+  const isr = isrController({
     buildId: options.buildId,
     ...(options.store === undefined ? {} : { store: options.store }),
   });

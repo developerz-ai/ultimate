@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { RecordRows, RecordSink, Row } from '@ultimat3/core';
-import { ERROR_DOCS_URL, pageClient, RECORDS_HEADER } from '@ultimat3/core';
+import { BUILD_ID_HEADER, ERROR_DOCS_URL, pageClient, RECORDS_HEADER } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { type FetchLike, rpc } from './client';
 import { RemoteActionError } from './errors';
-import { BUILD_ID_HEADER } from './http';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });

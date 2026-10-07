@@ -96,7 +96,6 @@ export {
   captureDeterminism,
   DEFAULT_NOW,
   DEFAULT_SEED,
-  frozenClock,
   frozenNow,
   installDeterminism,
   isDeterminismInstalled,
@@ -105,6 +104,7 @@ export {
   seededRandom,
   seededUuid,
   setFrozenClock,
+  withFrozenClock,
 } from './determinism';
 export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
 export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
@@ -164,7 +164,7 @@ export { clearPersister, persisterInstalled, usePersister } from './factory-pers
 export type { EntityRegistry, FactoryRegistry } from './factory-registry';
 export { factoriesFor } from './factory-registry';
 export type { TestClock, TestDuration } from './fixture-clock';
-export { createTestClock } from './fixture-clock';
+export { testClock } from './fixture-clock';
 export type {
   DriverFixtureName,
   DriverFixtures,
@@ -197,13 +197,13 @@ export type {
   RunJobsOptions,
   StepTally,
 } from './fixture-jobs';
-export { createRunJobs } from './fixture-jobs';
+export { testJobs } from './fixture-jobs';
 export type { MailRef, TestMail } from './fixture-mail';
-export { createTestMail } from './fixture-mail';
+export { testMail } from './fixture-mail';
 export type { TestNetwork } from './fixture-network';
-export { createTestNetwork } from './fixture-network';
+export { testNetwork } from './fixture-network';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
-export { createTestStatements } from './fixture-statements';
+export { testStatements } from './fixture-statements';
 export type { SubscribeDriver } from './fixture-subscribe';
 export { subscribeDriver } from './fixture-subscribe';
 export { fixtureTest as test } from './fixtures';
@@ -291,7 +291,7 @@ export {
 export { ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
 export { jobDriverConformance } from './job-driver-conformance';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
-export { createLiveNode } from './live-node';
+export { liveNode } from './live-node';
 // The store a mutator's `local()` half writes into under test — the Map every app hand-rolled.
 export type { LocalRows, MemoryLocalTx } from './local-tx';
 export { memoryLocalTx } from './local-tx';
@@ -342,11 +342,11 @@ export type { SqlRunner, TemplateDbConfig, WorkerDatabase } from './template-db'
 export {
   acquireWorkerDatabase,
   cloneSql,
-  createTemplateSql,
   DEFAULT_TEMPLATE,
   databaseNameFor,
   dropSql,
   lockSql,
+  templateSql,
   unlockSql,
   urlFor,
   workerId,

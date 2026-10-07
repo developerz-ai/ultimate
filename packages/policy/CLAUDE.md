@@ -66,7 +66,7 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   `definePolicy` `check` returning anything else — `undefined`, `1`, `{ allowed: 'yes' }` — DENIES;
   it used to reach `decision.allowed` as a bare `TypeError`, and a truthy `allowed` read as ALLOWED.
 - **A denial keeps its code everywhere.** `assertAllowed` throws `codeOf(decision)` (`denialError`:
-  `X_FORBIDDEN` through `forbidden()`, any other code as a `PolicyDenialError`) and
+  `X_FORBIDDEN` through `policyForbidden()`, any other code as a `PolicyDenialError`) and
   `HttpDenial.status` follows it — 401 for `X_UNAUTHENTICATED`, 403 otherwise. `X_UNAUTHENTICATED`
   is `@ultimat3/auth`'s (`POLICY_BORROWED_ERROR_CODES`): named here, titled there.
 - **`definePermissions()` merges, and an EMPTY registry is permissive.** It only ever `add`s, so a
@@ -177,7 +177,7 @@ reappearing there is a failing test.
 | `roles.ts` | the role map: merge, conflict, inheritance, wildcards |
 | `declaration-site.ts` | the caller's stack frame a role or permission declaration records |
 | `grant-index.ts` | the per-actor flattened grant set, memoised against the role generation |
-| `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` — whose `.actor` is typed `Actor`, never `null`, so it goes straight into `createContext({ actor })` |
+| `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` — whose `.actor` is typed `Actor`, never `null`, so it goes straight into `ctxOf({ actor })` |
 
 ## The hot path
 

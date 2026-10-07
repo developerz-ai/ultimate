@@ -6,13 +6,13 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Auth } from './auth';
 import type { IdTokenClaims } from './id-token';
 import { unsignedJwt } from './id-token-fixture';
-import type { MemoryAdapter } from './memory-adapter';
+import type { MemoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import type { OAuthFetch } from './oauth-exchange';
 import { completeOAuthLogin } from './oauth-login';
 import { credentials, freshAuth, json, NOW } from './oauth-login-fixture';
 
-let adapter: MemoryAdapter;
+let adapter: MemoryAuthAdapter;
 let auth: Auth;
 
 beforeEach(() => {

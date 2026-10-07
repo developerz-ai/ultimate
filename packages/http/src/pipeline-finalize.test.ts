@@ -16,10 +16,10 @@ import type { RequestContext } from './context';
 import { problemTypeFor } from './error-facts';
 import { recoverWith } from './finalize';
 import type { ServerHooks } from './hooks';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import type { UltimateRequest } from './request';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 /**
  * A response the finalize stages cannot finish. Per spec a `Response.redirect()` carries immutable
@@ -70,7 +70,7 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/unfinishable',
     meta: { name: 'unfinishable', auth: 'public' },
-    handler: () => refusesHeaders(text('ok'), 0),
+    handler: () => refusesHeaders(textResponse('ok'), 0),
   },
   {
     method: 'GET',
@@ -78,7 +78,8 @@ const routes: readonly Route[] = [
     meta: { name: 'unfinishable.last', auth: 'public' },
     // `cache-control` is already set, so `cache-headers` reads the headers once and returns; the
     // refusal lands on `response`, after which no stage remains to put anything on the answer.
-    handler: () => refusesHeaders(text('ok', { headers: { 'cache-control': 'no-store' } }), 1),
+    handler: () =>
+      refusesHeaders(textResponse('ok', { headers: { 'cache-control': 'no-store' } }), 1),
   },
   {
     method: 'GET',
@@ -92,14 +93,14 @@ const routes: readonly Route[] = [
           throw new TypeError('immutable headers');
         },
       });
-      return text('ok');
+      return textResponse('ok');
     },
   },
   {
     method: 'GET',
     path: '/ok',
     meta: { name: 'ok', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
@@ -128,7 +129,7 @@ const config = defineHttpConfig({
   hostname: '127.0.0.1',
 });
 const pipelineWith = (hooks: ServerHooks = {}) =>
-  createPipeline({ table: createRouter(routes), config, hooks });
+  httpPipeline({ table: httpRouter(routes), config, hooks });
 const get = (path: string) => new Request(`http://localhost${path}`);
 const bodyOf = async (response: Response): Promise<Record<string, unknown>> =>
   (await response.json()) as Record<string, unknown>;
@@ -283,8 +284,8 @@ describe('a recover stage that throws', () => {
       buildId: null,
       hostname: '127.0.0.1',
     });
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config: dev,
       hooks: {
         devNotices: () => {

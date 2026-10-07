@@ -5,14 +5,14 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AgentTurn } from './agent';
 import { agent } from './agent';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
@@ -62,7 +62,7 @@ function scripted(
         cost: costOf('claude-opus-5', USAGE),
       } satisfies GenerateResult);
     },
-    stream: (request) => new EchoProvider().stream(request),
+    stream: (request) => echoProvider().stream(request),
   };
   return { provider, seen };
 }
@@ -96,7 +96,9 @@ describe('cancellation reaches the loop', () => {
     const controller = new AbortController();
     const effects: string[] = [];
     const { provider, seen } = scripted([{ calls: [{ name: 'sideEffect', input: {} }] }]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -116,7 +118,7 @@ describe('cancellation reaches the loop', () => {
       policy: allow(),
     }).named('abortedAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
     await expect(support({ orderId: 'o-1' }, { ctx })).rejects.toMatchObject({
       code: 'X_ABORTED',
     });
@@ -131,7 +133,9 @@ describe('cancellation reaches the loop', () => {
     controller.abort();
     const effects: string[] = [];
     const { provider, seen } = scripted([{ calls: [{ name: 'sideEffect', input: {} }] }]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -147,7 +151,7 @@ describe('cancellation reaches the loop', () => {
       policy: allow(),
     }).named('deadAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
     await expect(support({ orderId: 'o-1' }, { ctx })).rejects.toMatchObject({
       code: 'X_ABORTED',
     });
@@ -159,7 +163,9 @@ describe('cancellation reaches the loop', () => {
     resetAiRuntime();
     const controller = new AbortController();
     const { provider, seen } = scripted([{ calls: [{ name: 'respond', input: { answer: 'x' } }] }]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -170,7 +176,7 @@ describe('cancellation reaches the loop', () => {
       policy: allow(),
     }).named('signalAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }), signal: controller.signal });
     await support({ orderId: 'o-1' }, { ctx });
     expect(seen[0]?.signal).toBe(controller.signal);
   });
@@ -198,7 +204,9 @@ describe('the tools of one turn run concurrently', () => {
         ],
       },
     ]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -221,7 +229,7 @@ describe('the tools of one turn run concurrently', () => {
       policy: allow(),
     }).named('concurrentAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }) });
     await expect(support({ orderId: 'o-1' }, { ctx })).rejects.toMatchObject({
       code: 'X_AGENT_MAX_TURNS',
     });
@@ -245,7 +253,9 @@ describe('a run reports its turns while it is still running', () => {
       { calls: [{ name: 'ping', input: {} }] },
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -259,7 +269,7 @@ describe('a run reports its turns while it is still running', () => {
       },
     }).named('observedAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }) });
     expect(await support({ orderId: 'o-1' }, { ctx })).toEqual({ answer: 'done' });
     expect(events.map((event) => event.turn)).toEqual([1, 2]);
     // `respond` is the answer, not a tool call — an observer counting work must not see it.
@@ -274,7 +284,9 @@ describe('a run reports its turns while it is still running', () => {
     const { provider, seen } = scripted([
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
 
     const support = agent({
       input: Input,
@@ -288,7 +300,7 @@ describe('a run reports its turns while it is still running', () => {
       },
     }).named('noisyAgent');
 
-    const ctx = createContext({ actor: userActor({ id: 'user-7' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'user-7' }) });
     await expect(support({ orderId: 'o-1' }, { ctx })).rejects.toThrow('sink is down');
     expect(seen.length).toBe(1);
   });
@@ -304,7 +316,7 @@ describe('the app redactor runs over tool results too', () => {
       { calls: [{ name: 'respond', input: { answer: 'done' } }] },
     ]);
     configureAi({
-      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       redact: (text) => text.replaceAll('patient-4411', '[removed]'),
     });
     const support = agent({
@@ -317,7 +329,7 @@ describe('the app redactor runs over tool results too', () => {
       policy: allow(),
     }).named('redactingAgent');
 
-    await support({ orderId: 'o-1' }, { ctx: createContext({ actor: userActor({ id: 'u-1' }) }) });
+    await support({ orderId: 'o-1' }, { ctx: ctxOf({ actor: userActor({ id: 'u-1' }) }) });
     const sent = pairs(seen[1]).map(([, content]) => content);
     expect(sent).toEqual([JSON.stringify('record of [removed]')]);
     expect(JSON.stringify(seen)).not.toContain('patient-4411');
@@ -333,7 +345,9 @@ describe('a tool that fails at the database', () => {
       { calls: [{ name: 'lookup', input: {} }] },
       { calls: [{ name: 'respond', input: { answer: 'sorry' } }] },
     ]);
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const support = agent({
       input: Input,
       output: Output,
@@ -352,7 +366,7 @@ describe('a tool that fails at the database', () => {
       policy: allow(),
     }).named('dbFailAgent');
 
-    await support({ orderId: 'o-1' }, { ctx: createContext({ actor: userActor({ id: 'u-1' }) }) });
+    await support({ orderId: 'o-1' }, { ctx: ctxOf({ actor: userActor({ id: 'u-1' }) }) });
     expect(pairs(seen[1])).toEqual([['call-1-0', `X_DB_STATEMENT_FAILED: ${HIDDEN_TOOL_CAUSE}`]]);
     expect(JSON.stringify(seen[1]?.messages)).not.toContain('password_hash');
   });

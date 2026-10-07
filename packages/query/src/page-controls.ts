@@ -11,21 +11,17 @@
 // the framework's own namespace mark — the route lives under `/_x/` for the same reason — and
 // `input-shape.ts` refuses a declaration that reaches for it, so the two names can never collide.
 
+import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { QueryInputInvalidError } from './errors';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
 
 export { PAGE_AFTER_KEY, PAGE_FIRST_KEY };
 export const PAGE_CONTROL_KEYS: readonly string[] = [PAGE_FIRST_KEY, PAGE_AFTER_KEY];
 
-/**
- * The largest page a read will serve. A TWIN of `@ultimat3/entity`'s `MAX_PAGE_SIZE` — this
- * package holds no dependency on that one, the same compromise `naming.ts` and `deprecation.ts`
- * are ported under — and it exists for the same reason: `first` reaches `paginate` straight from
- * an action's input or a route parameter, so `args.first + 1` bound whatever a client sent and one
- * request could ask for five million rows. Lives here rather than in `pagination.ts` because the
- * route validates against it BEFORE `paginate` runs — see `pageControlsOf`.
- */
-export const MAX_PAGE_SIZE = 10_000;
+// The largest page a read will serve is `@ultimat3/entity`'s `MAX_PAGE_SIZE`, imported — a batch
+// and a page are one memory bound, and this package already depends on entity. `first` reaches
+// `paginate` straight from a route parameter, so the route judges it against that bound BEFORE
+// `paginate` runs (`pageControlsOf`), and one request can never ask for five million rows.
 
 /** What the route hands `query.page()` — `PaginateArgs` minus the server-side options. */
 export interface PageControls {

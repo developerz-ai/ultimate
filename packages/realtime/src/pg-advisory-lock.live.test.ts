@@ -11,7 +11,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { selectChangeFeed } from './changefeed-env';
-import { type PgAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
+import { type PostgresAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 
@@ -20,9 +20,9 @@ const url =
 
 const KEY = 'x:replicator:x_live_lock_slot';
 
-const held: PgAdvisoryLock[] = [];
+const held: PostgresAdvisoryLock[] = [];
 
-const lock = (key = KEY): PgAdvisoryLock => {
+const lock = (key = KEY): PostgresAdvisoryLock => {
   const made = postgresAdvisoryLock({ url: url ?? '', key });
   held.push(made);
   return made;
@@ -88,7 +88,7 @@ describeLive('live · pg advisory lock', () => {
   });
 
   test('the lock exists in pg_locks, not just in this process', async () => {
-    // The assertion that an in-memory lock cannot satisfy. `InMemoryAdvisoryLock` refuses a second
+    // The assertion that an in-memory lock cannot satisfy. `MemoryAdvisoryLock` refuses a second
     // caller in *this* process and nowhere else, which is precisely the failure two replicator
     // containers would hit — so the proof has to be the server's own lock table.
     const target = parsePgUrl(url ?? '');

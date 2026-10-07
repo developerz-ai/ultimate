@@ -4,8 +4,8 @@
 // declared, and per-caller `instructions`. Failure and edge cases first.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { action, registerAction, resetActions } from '@ultimat3/action';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -13,12 +13,12 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller, ToolListEntry } from './registry';
 import type { McpServer } from './server';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 
 const owner: McpCaller = {
   actor: agentActor({ id: 'a1', orgId: 'o1', roles: ['owner'] }),
@@ -27,7 +27,7 @@ const owner: McpCaller = {
 };
 const customer: McpCaller = { ...owner, role: 'customer' };
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 const listed = async (server: McpServer, who: McpCaller = owner) => {
   const response = await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, who);
@@ -220,7 +220,7 @@ describe('outputSchema + structuredContent', () => {
 
 describe('initialize — instructions', () => {
   test('none declared: the handshake is exactly what it was', async () => {
-    const result = await initialize(createMcpServer(), owner);
+    const result = await initialize(mcpServer(), owner);
     expect(result).not.toHaveProperty('instructions');
   });
 
@@ -233,14 +233,14 @@ describe('initialize — instructions', () => {
       () => 42 as unknown as string,
       () => undefined,
     ]) {
-      const result = await initialize(createMcpServer({ instructions }), owner);
+      const result = await initialize(mcpServer({ instructions }), owner);
       expect(result).not.toHaveProperty('instructions');
       expect(result['protocolVersion']).toBeDefined();
     }
   });
 
   test('a string is sent to every caller', async () => {
-    const server = createMcpServer({ instructions: 'Start with docs({}).' });
+    const server = mcpServer({ instructions: 'Start with docs({}).' });
     expect((await initialize(server, customer))['instructions']).toBe('Start with docs({}).');
   });
 

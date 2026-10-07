@@ -27,9 +27,9 @@ that one is re-derived, and it finds a copy the header does not name.
 | `backoff.ts` | `backoffDelay(options)` | the one curve. `exponential \| linear \| fixed`, `full \| equal \| none` jitter, `random` injected |
 | `retry.ts` | `retryDecision(policy, attempt, error, random?)`, `retry(work, policy, deps)` | the executor `error-retry.ts`'s vocabulary never had |
 | `retryable-status.ts` | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `{408, 409, 425, 429}` ∪ `{>= 500}` |
-| `single-flight.ts` | `createSingleFlight(options?)` | N concurrent callers on one key are ONE run |
-| `flight-gate.ts` | `createFlightGate(limits, options?)`, `gateOverloaded(state)` | a ceiling, a bounded queue, and a refusal past it |
-| `generation-fence.ts` | `createFence(subject)`, `isSuperseded(error)` | refusing a late answer whose world has moved on |
+| `single-flight.ts` | `singleFlight(options?)` | N concurrent callers on one key are ONE run |
+| `flight-gate.ts` | `flightGate(limits, options?)`, `gateOverloaded(state)` | a ceiling, a bounded queue, and a refusal past it |
+| `generation-fence.ts` | `generationFence(subject)`, `isSuperseded(error)` | refusing a late answer whose world has moved on |
 
 `classifyThrown` and `statedDelayMs` moved **down** from `@ultimat3/jobs` into
 `packages/core/src/error-retry.ts`, verbatim. `@ultimat3/jobs`' `retry-classification.ts` re-exports
@@ -61,7 +61,7 @@ Every row is behaviour-preserving unless the next section names it.
 | `jobs` | `backoffDelayMs` (`retry.ts`) | the curve | `DurationInput` (`'30s'`), `DEFAULT_RETRY`, and the public `jitter: boolean` — `true` maps to `equal`, never `full` |
 | `realtime` | `policyDelay` (`thundering-herd.ts`, internal) | the curve | maps a realtime `BackoffPolicy` onto core's 1-based `backoffDelay`; realtime exports no `backoffDelay` of its own since 2026-09-23; `JitterMode` is re-exported, never re-declared |
 | `db` | `serializationRetryDelayMs` (`transaction-backoff.ts`) | the curve | the two constants and the case for them — `base: 10`, `max: 500`, `full` |
-| `ai` | `backoffMs` (`gateway.ts`) | the curve **and** the status table | `RetryPolicy`'s own field names (`baseDelayMs`/`maxDelayMs`), because they are what an app writes in `createGateway({ retry })` |
+| `ai` | `backoffMs` (`gateway.ts`) | the curve **and** the status table | `RetryPolicy`'s own field names (`baseDelayMs`/`maxDelayMs`), because they are what an app writes in `providerGateway({ retry })` |
 | `cache` | `purge-http.ts`, `purge-fastly.ts`, `purge-cloudflare.ts` | the status table | the shared HTTP half — one POST with a deadline, and the per-provider key batching. `purge-http.ts` re-exports `isRetryableStatus` rather than importing it twice, so both drivers still read "what a failure means" off one door |
 | `mail` | `driver-resend.ts` | the status table | its own transport |
 | `cache` | `single-flight.ts` | the whole function | nothing — the module is two `export` lines, kept as the door this package has always published through, so no call site moves |
@@ -77,7 +77,7 @@ Every row is behaviour-preserving unless the next section names it.
 | `ai`'s jitter rounding `floor` → `round` | a shift of at most 1 ms | the same rounding `jobs` and `realtime` already used |
 | `db`'s `withTransaction` re-run **waits** | exponential from 10 ms, cap 500 ms, full jitter, between attempts only | **the default is unchanged**: `retry` absent or `0` waits nothing. Re-running instantly was the deadlock reproduced rather than resolved — both losers wake in the same microsecond and one loses again |
 | `auth`'s JWKS refresh gained a deadline | twice its own transport timeout | a refresh that never settles used to hold the shared slot for the life of the process. Worst case is now one duplicate JWKS fetch, and the fence stops the late answer landing in the cache |
-| `createCacheStack`'s load gained a deadline | `DEFAULT_LOAD_DEADLINE_MS = 30_000` | anchored to `@ultimat3/http`'s own `requestTimeoutMs`: a `load()` still running at 30 s has no reader left to serve. Written as a literal because `cache` is tier 1 and `http` is tier 2, so the number cannot be imported |
+| `cacheStack`'s load gained a deadline | `DEFAULT_LOAD_DEADLINE_MS = 30_000` | anchored to `@ultimat3/http`'s own `requestTimeoutMs`: a `load()` still running at 30 s has no reader left to serve. Written as a literal because `cache` is tier 1 and `http` is tier 2, so the number cannot be imported |
 
 ## Refused, with the evidence
 

@@ -3,14 +3,14 @@
 // resumes a window it already held, a re-seat, or the re-auth retry inside one subscribe.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type Actor, createContext, frozenClock, userActor } from '@ultimat3/core';
+import { type Actor, ctxOf, frozenClock, userActor } from '@ultimat3/core';
 import {
   from,
   type QueryPolicy,
   query,
   queryHash,
   registerQuery,
-  resetRegistry,
+  resetQueries,
   t,
 } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
@@ -82,7 +82,7 @@ const limited = (clock = frozenClock('2026-10-04T00:00:00.000Z'), limit = LIMIT)
     }),
   );
   const definition = liveQueryDefinition(target, {
-    ctx: createContext({ role: 'sync', buildId: 'b' }),
+    ctx: ctxOf({ role: 'sync', buildId: 'b' }),
   });
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer(), clock });
   return { name, definition, registry, clock };
@@ -91,7 +91,7 @@ const limited = (clock = frozenClock('2026-10-04T00:00:00.000Z'), limit = LIMIT)
 const alice = (): Actor => userActor({ id: 'alice', orgId: 'o1' });
 
 describe('the live subscribe charges once per new subscription', () => {
-  beforeEach(() => resetRegistry());
+  beforeEach(() => resetQueries());
 
   test('a query limited to 2 refuses the third subscribe with X_RATE_LIMITED', async () => {
     const { name, definition, registry } = limited();

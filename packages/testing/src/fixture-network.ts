@@ -30,7 +30,7 @@ export interface TestNetwork extends Disposable {
  * no subsystem to import on demand. The test bodies rely on it — `network.offline()` is followed
  * on the next line by the mutation that has to observe it.
  */
-export function createTestNetwork(): TestNetwork {
+export function testNetwork(): TestNetwork {
   // A process that unsealed on purpose (ULTIMATE_TEST_ALLOW_NET=1) still gets a working
   // `offline()`, and gets its unsealed fetch back on disposal rather than keeping ours.
   const sealedBefore = isNetworkSealed();

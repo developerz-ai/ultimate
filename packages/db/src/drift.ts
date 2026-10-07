@@ -23,7 +23,12 @@ import {
 import { DbError } from './errors';
 import { foreignKeyTarget, onDeleteRule } from './foreign-key';
 import { indexMethodOf } from './index-method';
-import { findTable, introspect, type SchemaDescription, type TableDescription } from './introspect';
+import {
+  findTable,
+  introspectSchema,
+  type SchemaDescription,
+  type TableDescription,
+} from './introspect';
 import { type LedgerRow, type Migration, readLedger } from './migrate';
 import { sameColumns } from './primary-key';
 
@@ -163,7 +168,7 @@ function compareForeignKeys(live: TableDescription, expected: TableDescription):
  * before constraints were recorded: it declares nothing, so nothing can be missing. `live.checkNames`
  * absent is a description that never asked the catalog — a stub, a fake client's rows, a
  * `TableDescription` built by hand — and reading that as "the database holds none" is one finding
- * per declared constraint against a database nobody looked at. `introspect()` always answers with
+ * per declared constraint against a database nobody looked at. `introspectSchema()` always answers with
  * the field, `[]` included, so a real read is never mistaken for an unread one.
  *
  * Only the declared side is judged, the rule `compareIndexes` and `compareForeignKeys` both state:
@@ -263,7 +268,7 @@ export function driftError(difference: DriftDifference): DbError {
  * (`driftFindings`), and `x verify`'s `drift` step is the *source* detector (`checkSourceDrift`),
  * which never reaches this function. There is no `x db drift` command.
  */
-export function assertNoDrift(report: DriftReport): void {
+export function assertNoSchemaDrift(report: DriftReport): void {
   const first = report.differences[0];
   if (first !== undefined) throw driftError(first);
 }
@@ -314,7 +319,7 @@ export function expectedSchema(
  * schema that is in fact correct. The `x_` prefix is the convention every framework table already
  * follows, so a table a future package adds needs no second list here.
  *
- * `introspect()` keeps its own narrower default (`x_migrations` alone) on purpose: the admin
+ * `introspectSchema()` keeps its own narrower default (`x_migrations` alone) on purpose: the admin
  * dashboard's schema view and the MCP `schema.describe` tool legitimately show `x_users`. Only
  * drift wants the whole namespace gone, so only drift declares it.
  */
@@ -351,7 +356,7 @@ export async function checkDrift(options: DriftOptions): Promise<DriftReport> {
   // and a wrong `ok: true` is the failure this check exists to prevent.
   if (expected === undefined)
     return { ok: false, differences: [unknownSchema(options.migrations)] };
-  const live = await introspect({
+  const live = await introspectSchema({
     client,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });

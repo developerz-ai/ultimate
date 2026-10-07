@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createContext, resolveConflict, userActor } from '@ultimat3/core';
+import { ctxOf, resolveConflict, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import * as barrel from './index';
@@ -12,8 +12,8 @@ const Output = t.object({ id: t.uuid, likes: t.number });
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 const likerActor = { ...userActor({ id: 'u1' }), permissions: ['post:like'] };
 const strangerActor = userActor({ id: 'u2' });
-const ctx = createContext({ actor: likerActor });
-const stranger = createContext({ actor: strangerActor });
+const ctx = ctxOf({ actor: likerActor });
+const stranger = ctxOf({ actor: strangerActor });
 
 interface PostRow {
   readonly id: string;
@@ -103,7 +103,7 @@ describe('mutator', () => {
     expect((denial as { code?: string }).code).toBe('X_FORBIDDEN');
 
     const anonymous = await likePost
-      .server(createContext({}), { postId: POST_ID })
+      .server(ctxOf({}), { postId: POST_ID })
       .catch((e: unknown) => e);
     expect((anonymous as { code?: string }).code).toBe('X_UNAUTHENTICATED');
     expect(serverRuns).toBe(before);
@@ -231,7 +231,7 @@ describe('a mutator carries the action fields it was missing', () => {
     }).named('likeOwnPost');
 
   test('the row reaches the policy, so the owner is allowed', async () => {
-    const owner = createContext({
+    const owner = ctxOf({
       actor: { ...userActor({ id: 'u1' }), permissions: ['post:like'] },
     });
     const liked = await invoke(owned('u1'), { postId: POST_ID }, { ctx: owner });

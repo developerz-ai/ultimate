@@ -11,10 +11,10 @@
 //   bun test packages/scraping/src/session.job.test.ts
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, createLogger, isSealed } from '@ultimat3/core';
+import { ctxOf, isSealed, structuredLogger } from '@ultimat3/core';
 import type { JobDriver, JobRecord, PgExecutor, Worker } from '@ultimat3/jobs';
 import {
-  createWorker,
+  jobWorker,
   postgresEventBus,
   postgresJobDriver,
   resetJobs,
@@ -109,7 +109,7 @@ afterAll(async () => {
 }, 60_000);
 
 const workerOn = (driver: JobDriver, workerId: string): Worker =>
-  createWorker({
+  jobWorker({
     driver,
     workerId,
     concurrency: 1,
@@ -118,10 +118,10 @@ const workerOn = (driver: JobDriver, workerId: string): Worker =>
     heartbeatIntervalMs: 100,
     pollIntervalMs: 0,
     context: () =>
-      createContext({
+      ctxOf({
         role: 'worker',
         buildId: 'test',
-        logger: createLogger({ writer: () => undefined }),
+        logger: structuredLogger({ writer: () => undefined }),
       }),
     drainOnShutdown: false,
   });

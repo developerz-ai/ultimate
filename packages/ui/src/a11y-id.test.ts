@@ -2,11 +2,11 @@
 // one process, or each island's own bundle.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { resetIdCounter, useId } from './a11y';
+import { resetUseIdCounter, useId } from './a11y';
 import { FakeElement, installFakeDom } from './fake-dom-fixture';
 
 describe('useId', () => {
-  beforeEach(resetIdCounter);
+  beforeEach(resetUseIdCounter);
 
   test('is unique and prefixed for label wiring', () => {
     const a = useId('field');
@@ -24,7 +24,7 @@ describe('useId', () => {
    * Each island is its own bundle by default (`islands.sharedChunks` off), so each carries its own
    * copy of this module and its own counter from zero: two islands both minted `field-1`, and
    * `for` / `aria-describedby` resolved to whichever came first. A second copy is modelled by
-   * `resetIdCounter`, which puts this one back exactly where a freshly evaluated copy starts —
+   * `resetUseIdCounter`, which puts this one back exactly where a freshly evaluated copy starts —
    * counter at zero, no scope drawn. (Importing the module again under a query string would do it
    * too, but Bun then reports that copy's coverage for this file instead of this one's.)
    */
@@ -32,7 +32,7 @@ describe('useId', () => {
     const dom = installFakeDom(new FakeElement('div'));
     try {
       const first = [useId('field'), useId('field')];
-      resetIdCounter();
+      resetUseIdCounter();
       const second = [useId('field'), useId('field')];
       expect(new Set([...first, ...second]).size).toBe(4);
       // Same counter value, different copy: only the scope tells them apart.

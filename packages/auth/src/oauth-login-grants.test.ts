@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter } from './memory-adapter';
+import { MemoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import type { OAuthFetch } from './oauth-exchange';
 import { completeOAuthLogin, signInWithOAuth } from './oauth-login';
 import { credentials, freshAuth, json, NOW, profile, tokens } from './oauth-login-fixture';
 
-let adapter: MemoryAdapter;
+let adapter: MemoryAuthAdapter;
 let auth: Auth;
 
 beforeEach(() => {
@@ -90,10 +90,10 @@ describe('the grant seam', () => {
 
   test('a seam that returns the stored answer writes nothing', async () => {
     let writes = 0;
-    class CountingAdapter extends MemoryAdapter {
+    class CountingAdapter extends MemoryAuthAdapter {
       override async updateUser(
         id: string,
-        patch: Parameters<MemoryAdapter['updateUser']>[1],
+        patch: Parameters<MemoryAuthAdapter['updateUser']>[1],
       ): Promise<AuthUser | null> {
         writes += 1;
         return await super.updateUser(id, patch);

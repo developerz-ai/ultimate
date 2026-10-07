@@ -10,16 +10,16 @@
 
 import { expect, test } from 'bun:test';
 import { localDateIn } from '@postly/core';
-import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import { applyFlagSnapshot } from '@ultimat3/flags';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
 import {
   memoryJobDriver as createQueue,
-  createStepRunner,
   jobDriver,
   memoryStepStore,
   resetJobDriver,
   setJobDriver,
+  stepRunner,
 } from '@ultimat3/jobs';
 import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/mail';
 import {
@@ -99,7 +99,7 @@ const contextFor = (
   posts: readonly ReturnType<typeof summary>[],
   now?: string,
 ): Ctx =>
-  createContext({
+  ctxOf({
     role: 'worker',
     ...(now === undefined ? {} : { clock: frozenClock(now) }),
     services: {
@@ -158,7 +158,7 @@ const mailFailingOn = (nth: number): BlippingMail => {
 };
 
 const runnerOn = (store: StepStore, jobName: string): StepRunner =>
-  createStepRunner({ runId: RUN, jobName, store });
+  stepRunner({ runId: RUN, jobName, store });
 
 /** One attempt, over a store shared with the attempts before it — which is what makes it a replay. */
 const deliver = (runner: StepRunner, reads: Reads, posts: readonly ReturnType<typeof summary>[]) =>

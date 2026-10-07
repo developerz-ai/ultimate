@@ -6,8 +6,8 @@
 // policy refusal and an awaiting-confirmation write alike. Failure cases first.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { action, registerAction, resetActions } from '@ultimat3/action';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -15,13 +15,13 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import { renderCatalog } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult } from './registry';
-import { createMcpServer, type McpServer } from './server';
+import { type McpServer, mcpServer } from './server';
 import type { JsonRpcResponse } from './wire';
 import { INVALID_REQUEST, METHOD_NOT_FOUND, NO_ARGS } from './wire';
 
@@ -57,7 +57,7 @@ const refusedArgs = (response: JsonRpcResponse | null): boolean =>
   (response?.result as { isError?: boolean } | undefined)?.isError === true &&
   resultText(response).startsWith('X_INPUT_INVALID: ');
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 const owner = agentActor({ id: 'agent-owner', orgId: 'o1', roles: ['owner'] });
 const member = agentActor({ id: 'agent-member', orgId: 'o1', roles: ['member'] });
@@ -280,7 +280,7 @@ describe('meta surface — refusals first', () => {
       inputSchema: { type: 'object', properties: { limit: { type: 'integer' } } },
       listParams: { filters: { status: ['_eq'] } },
     };
-    expect(() => createMcpServer({ tools: [tool] })).toThrow('X_MCP_LIST_PARAMS_INVALID');
+    expect(() => mcpServer({ tools: [tool] })).toThrow('X_MCP_LIST_PARAMS_INVALID');
   });
 
   test('a surface function that throws serves the flat surface', async () => {
@@ -341,7 +341,7 @@ describe('meta surface — the constant catalog', () => {
         tool.name === 'publishPost' ? { ...tool, confirms: true } : tool,
       ),
     ];
-    const server = createMcpServer({
+    const server = mcpServer({
       tools,
       surface: 'meta',
       groups: GROUPS,

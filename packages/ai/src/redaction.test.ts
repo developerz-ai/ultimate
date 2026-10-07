@@ -8,8 +8,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, t } from '@ultimat3/action';
 import { secret } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
@@ -28,7 +28,7 @@ const PATIENT = '00000000-0000-4000-8000-0000000000aa';
 /** Records what was actually sent, and answers through `respond` so the output schema is met. */
 function recorder(): { provider: Provider; seen: GenerateRequest[] } {
   const seen: GenerateRequest[] = [];
-  const echo = new EchoProvider();
+  const echo = echoProvider();
   const usage = { inputTokens: 4, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const provider: Provider = {
     name: 'recorder',
@@ -87,7 +87,9 @@ describe('a Secret never reaches a prompt', () => {
 
   test('an llm() whose vars() returns a Secret refuses before the provider is touched', async () => {
     const { provider, seen } = recorder();
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Output,
@@ -112,7 +114,7 @@ describe('the declared redactor is the last thing to touch a prompt', () => {
   test('it rewrites the rendered prompt AND the system prompt before either is sent', async () => {
     const { provider, seen } = recorder();
     configureAi({
-      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       redact: (text) => text.replaceAll('clinical', '[removed]').replaceAll(PATIENT, '[removed]'),
     });
     const summarize = llm({

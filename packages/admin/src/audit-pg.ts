@@ -2,7 +2,7 @@
 // `defineAdmin({ audit: postgresAuditLog() })` names — the memory log is a ring that forgets at
 // every restart, and a row's history that ends at the last deploy is not a history.
 
-import { isUltimateError, uuid } from '@ultimat3/core';
+import { isUltimateError, uuidV7 } from '@ultimat3/core';
 import { type DbClient, db, withTransaction } from '@ultimat3/db';
 import {
   AUDIT_READ_OPERATIONS,
@@ -149,7 +149,7 @@ export interface PostgresAuditLogOptions {
  */
 export function postgresAuditLog(options: PostgresAuditLogOptions = {}): AuditLog {
   const now = options.now ?? ((): Date => new Date());
-  const nextId = options.nextId ?? uuid;
+  const nextId = options.nextId ?? uuidV7;
   const sinks = options.sinks ?? [];
   const reads = options.reads === true;
   // Resolved per statement, never captured: inside `atomic` it is the open transaction.

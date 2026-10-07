@@ -101,7 +101,7 @@ export function resolveTimeZone(
  * It used to be a `ctx['timeZone']` key nothing in the framework ever set, while the HTTP pipeline
  * wrote `ctx.tz`: two ambient answers to one question, and the one every `@ultimat3/ui` component
  * reads on a server render was the empty one, so every date rendered in UTC however the request
- * arrived. `withChildContext({ tz })` and `createContext({ tz })` are therefore the only writers,
+ * arrived. `withChildContext({ tz })` and `ctxOf({ tz })` are therefore the only writers,
  * which is what makes a subtree's zone a core concept rather than this package's.
  */
 export function currentTimeZone(): TimeZone {

@@ -14,7 +14,7 @@ import { LiveQueryRegistry } from './live-query';
 import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
 import type { SyncGrant } from './sync-auth';
-import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-node';
+import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
@@ -94,7 +94,7 @@ function rig(
   const hub = new ChannelHub({ transport, sockets });
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(orgFeed);
   const presence = new PresenceRegistry({ transport, hub, clock });
-  const node = createSyncNode({
+  const node = syncNode({
     hub,
     registry,
     transport,

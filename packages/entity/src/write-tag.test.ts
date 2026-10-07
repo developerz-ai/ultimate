@@ -3,13 +3,13 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
-  createContext,
+  ctxOf,
   runWithContext,
   userActor,
   WRITE_ORIGIN_WAL_PREFIX,
   withWriteOrigin,
 } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
@@ -30,7 +30,7 @@ let client: RecordingClient;
 
 beforeEach(() => {
   resetWriteTag();
-  client = createRecordingClient();
+  client = recordingClient();
   client.on('insert into', { rows: [{ id: ONE, org_id: ORG, title: 't' }] });
   setDbClient(client);
 });
@@ -41,7 +41,7 @@ afterAll(() => {
 });
 
 const asMember = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
 
 const insert = (id: string, repo = postgresRepo(notes)) =>
   repo.insert({ id, orgId: ORG, title: 't' });
@@ -103,7 +103,7 @@ describe('a keyed write, named in the WAL', () => {
 
   test('a repository pinned to its own client is never wrapped', async () => {
     grants(true);
-    const shard = createRecordingClient();
+    const shard = recordingClient();
     shard.on('insert into', { rows: [{ id: ONE, org_id: ORG, title: 't' }] });
     await asMember(() =>
       withWriteOrigin(WRITE, () => insert(ONE, postgresRepo(notes, { client: shard }))),

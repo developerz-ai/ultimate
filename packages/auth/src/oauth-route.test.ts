@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, setLogSink } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { oauthCallbackPath, oauthStartPath } from './oauth-paths';
 import { registerOAuthProvider } from './oauth-registry';
@@ -15,7 +15,7 @@ const NOW = new Date('2026-08-15T12:00:00.000Z');
 const SECRET = 'a'.repeat(32);
 const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
 
-let adapter: MemoryAdapter;
+let adapter: MemoryAuthAdapter;
 let auth: Auth;
 let logged: string[];
 let previousSink: ReturnType<typeof setLogSink>;

@@ -9,7 +9,7 @@
  */
 
 import type { RunEvent } from '@postly/db';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
 import { liveRunEvents } from './live';
 import * as repo from './repo';
@@ -28,7 +28,7 @@ test('a subscriber’s snapshot is the run’s events so far, in seq order', asy
 }) => {
   const { ada, acme } = await seed('dev').pick({ ada: 'member:ada', acme: 'org:acme' });
   const asAda = <T>(run: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: actorFor(ada) }), run);
+    runWithContext(ctxOf({ actor: actorFor(ada) }), run);
   const event = { orgId: acme.id, runId: RUN, message: 'one-time code' };
   await asAda(() => started(acme.id));
   await asAda(() => repo.appendEvent({ ...event, kind: 'prompt', prompt: 1 }));
@@ -54,7 +54,7 @@ test('an event the job writes arrives as one insert, never a re-read', async ({
 }) => {
   const { ada, acme } = await seed('dev').pick({ ada: 'member:ada', acme: 'org:acme' });
   const asAda = <T>(run: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: actorFor(ada) }), run);
+    runWithContext(ctxOf({ actor: actorFor(ada) }), run);
   const events = await subscribe<RunEvent>(
     liveRunEvents,
     { orgId: acme.id, runId: RUN },
@@ -77,7 +77,7 @@ test('an event the job writes arrives as one insert, never a re-read', async ({
 test('an event of another run is not this subscriber’s', async ({ seed, actorFor, subscribe }) => {
   const { ada, acme } = await seed('dev').pick({ ada: 'member:ada', acme: 'org:acme' });
   const asAda = <T>(run: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: actorFor(ada) }), run);
+    runWithContext(ctxOf({ actor: actorFor(ada) }), run);
   const events = await subscribe<RunEvent>(
     liveRunEvents,
     { orgId: acme.id, runId: RUN },
@@ -118,7 +118,7 @@ test('two orgs never share a window: each sees its own events, in snapshot and i
     tinta: 'org:tinta',
   });
   const as = <T>(member: Parameters<typeof actorFor>[0], run: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: actorFor(member) }), run);
+    runWithContext(ctxOf({ actor: actorFor(member) }), run);
   // One run in each org, each with its own id: a run's row is keyed by it, across tenants.
   const theirs = '00000000-0000-4000-8000-0000000000b9';
   await as(ada, () => started(acme.id));

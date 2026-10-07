@@ -4,12 +4,12 @@
 // stop it. A rejected `{"password":"…"}` was written verbatim, at 4xx, which is logged and not
 // reported and therefore kept for the full retention.
 import { describe, expect, test } from 'bun:test';
-import { createLogger, UltimateError } from '@ultimat3/core';
+import { structuredLogger, UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
+import { requestContext } from './context';
 import { bodyInvalid } from './errors';
 import { UltimateRequest } from './request';
-import { createRouter } from './router';
+import { httpRouter } from './router';
 import { stageRunners } from './stages';
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
@@ -17,19 +17,19 @@ const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, b
 const runErrorMap = async (error: unknown): Promise<Record<string, unknown>[]> => {
   const lines: Record<string, unknown>[] = [];
   const url = new URL('http://app.test/login');
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: 'POST',
     role: 'web',
     config,
-    logger: createLogger({
+    logger: structuredLogger({
       level: 'trace',
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     }),
   });
   ctx.error = error;
   const run = stageRunners({
-    table: createRouter([]),
+    table: httpRouter([]),
     config,
     limiter: {
       scope: 'process',
@@ -73,7 +73,7 @@ describe('the error-map log line', () => {
     expect(String(line?.['msg'])).not.toContain('password');
   });
 
-  // The line goes through `ctx.logger`, the child `createRequestContext` builds — which is the
+  // The line goes through `ctx.logger`, the child `requestContext` builds — which is the
   // member `asCtx` used to assert and never set.
   test('the line carries the request and trace ids without being told', async () => {
     const [line] = await runErrorMap(bodyInvalid('/login', ['nope']));

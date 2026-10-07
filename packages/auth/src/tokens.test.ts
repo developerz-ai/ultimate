@@ -2,15 +2,7 @@
 // despite being the base every credential comparison in `verify.ts`/`session.ts` builds on.
 
 import { describe, expect, test } from 'bun:test';
-import {
-  base64Url,
-  matchesHash,
-  randomBytes,
-  randomToken,
-  sha256Bytes,
-  sha256Hex,
-  timingSafeEqual,
-} from './tokens';
+import { base64Url, matchesHash, randomBytes, randomToken, sha256Bytes, sha256Hex } from './tokens';
 
 describe('randomBytes', () => {
   test('returns the requested length, and two calls differ', () => {
@@ -92,10 +84,5 @@ describe('matchesHash', () => {
   });
 });
 
-describe('timingSafeEqual re-export', () => {
-  test('is the same function identity core exports, and behaves correctly', () => {
-    expect(timingSafeEqual('abc', 'abc')).toBe(true);
-    expect(timingSafeEqual('abc', 'abd')).toBe(false);
-    expect(timingSafeEqual('abc', 'abcd')).toBe(false);
-  });
-});
+// `timingSafeEqual` is core's, imported by every comparison here and tested in core — 25.0.0
+// dropped the `tokens.ts` re-export (`X_HELPER_COPY`).

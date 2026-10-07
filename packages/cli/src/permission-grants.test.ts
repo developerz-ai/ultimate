@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AnyAction } from '@ultimat3/action';
-import { action, listActions, registerAction, resetRegistry, t } from '@ultimat3/action';
+import { action, listActions, registerAction, resetActions, t } from '@ultimat3/action';
 import {
   allow,
   and,
@@ -39,11 +39,11 @@ beforeEach(() => {
   clearRoles();
   clearRoutes();
   actions = listActions();
-  resetRegistry();
+  resetActions();
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   for (const target of actions) registerAction(target.name, target);
   clearRoutes();
   restorePermissions(permissions, permissionSites);

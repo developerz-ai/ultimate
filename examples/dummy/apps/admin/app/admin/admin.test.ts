@@ -15,7 +15,7 @@ import {
   relatedOf,
   runAdminBatch,
 } from '@ultimat3/admin';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { roleDefinitions, rolesGranting } from '@ultimat3/policy';
 import { afterEach, describe, expect, type RunJobs, test } from '@ultimat3/testing';
 import { admin, adminAgents } from './admin';
@@ -35,7 +35,7 @@ const APP_OWNER = userActor({ id: OPERATOR.id, orgId: ORG, roles: ['owner'] });
 
 /** The request the dashboard serves, with the operator as its actor. */
 const asOperator = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: APP_OWNER }), run);
+  runWithContext(ctxOf({ actor: APP_OWNER }), run);
 
 /** The resources this app declares, in the order it declares them. */
 const APP_RESOURCES = ['orgs', 'members', 'posts', 'comments', 'connections', 'runs', 'run_events'];

@@ -537,9 +537,11 @@ x-ultimate-webhook-signature: t=1700000000,v1=<hex hmac-sha256>
 
 The receiving half is `verifyWebhookSignature(request, { secret })` in `@ultimat3/http`. The format
 itself — the canonical string, the mac and the header names — is **one module in `@ultimat3/core`**
-(`webhook-signature.ts`), re-exported by both packages and re-declared by neither: this package
-signs, `http` verifies, and neither may import the other, so the one copy lives at the tier both
-can reach. Same argument `timing-safe-equal.ts` makes for itself.
+(`webhook-signature.ts`), imported from `@ultimat3/core` by both packages and re-declared by
+neither: this package signs, `http` verifies, and neither may import the other, so the one copy
+lives at the tier both can reach. A receiver or a test imports `WEBHOOK_SIGNATURE_HEADER`,
+`webhookSignature` and the rest from `@ultimat3/core` — 25.0.0 dropped this package's
+re-exports (`X_HELPER_COPY`). Same argument `timing-safe-equal.ts` makes for itself.
 
 | Rule | Why |
 |---|---|
@@ -681,10 +683,10 @@ things have to be true in a process:
 | Step | Call |
 |---|---|
 | the table exists | ships in `SQL_JOBS_TABLE` — applying the queue DDL is enough |
-| the facade is installed | `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` |
-| the relay is running | `createOutboxRelay({ store, driver }).start()` |
+| the facade is installed | `setJobsFacade(outboxJobsFacade({ store, driver }, currentTx))` |
+| the relay is running | `outboxRelay({ store, driver }).start()` |
 
-`start()` registers the same two shutdown hooks `createWorker` does — `accept` stops polling
+`start()` registers the same two shutdown hooks `jobWorker` does — `accept` stops polling
 (the worker's also aborts every held job's `ctx.signal`), `close` waits out the pass in flight
 under the drain's deadline — and `stop()` hands both back.
 `drainOnShutdown: false` opts out, for a caller that drives its own teardown.
@@ -769,7 +771,7 @@ the job's `onSettled`, and the worker's claim round does exactly that. The row c
 `maxAttempts` and not the policy, so the CALLER names the jobs declaring `retry.deadLetter: false`
 (`ClaimOptions.dropExhausted` — the worker reads them off its registry): those rows are buried
 `failed` and announced `dropped`, every other one `dead` / `dead-lettered`. A caller that names
-none (`x jobs drain`) buries every such row `dead`.
+none buries every such row `dead`.
 
 A driver you write reads a nack's target state through `nackState(options)` — `dead`
 (`deadLetter`), `failed` (`fail`, terminal and out of the dead-letter queue), `suspended` (`park`)
@@ -780,8 +782,8 @@ or `ready` — so a new branch cannot land in one driver and not another. Its le
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `createWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
-| `scheduler` | `createScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
+| `worker` | `jobWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
+| `scheduler` | `jobScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
 Both roles register the same **pair** of hooks and bound the `close` half the same way. The
 scheduler's abandoned case differs in one respect: a round still enqueueing keeps the lease rather
@@ -814,7 +816,7 @@ update runs two leaders.
 ```ts
 import {
   postgresLeaseLeader,
-  createScheduler,
+  jobScheduler,
   type JobDriver,
   type PgExecutor,
   postgresSchedulerState,
@@ -823,7 +825,7 @@ import {
 declare const driver: JobDriver;
 declare const executor: PgExecutor;   // see "A `PgExecutor`" below
 
-createScheduler({
+jobScheduler({
   driver,
   state: postgresSchedulerState(executor),
   leader: postgresLeaseLeader({ executor }),
@@ -1005,7 +1007,7 @@ contractual rate.
 `job.concurrency` is the one that is fleet-wide, and it is enforced by a row every replica can
 see — one per held slot, keyed `job:<name>`, renewed by the same heartbeat that renews the
 visibility lease and reclaimed by TTL when a worker is SIGKILLed. A driver with no lease store
-cannot hold the cap, so `createWorker().start()` **refuses to boot**
+cannot hold the cap, so `jobWorker().start()` **refuses to boot**
 (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than let a documented guarantee do nothing.
 
 Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
@@ -1043,7 +1045,7 @@ export const syncAccount = job({
 |---|---|---|
 | a cap of `0`, negative, fractional, `NaN` or `Infinity` — `concurrency: 0` and `limit: 0` alike; a `key` that is not a function; a `whenBusy` outside the two | where the job is declared | `X_JOB_DECLARATION_INVALID` |
 | `key(input)` answering `''`, a non-string, or more than 200 characters | at that **enqueue** — the facade and the scheduler both ask | `X_JOB_DECLARATION_INVALID` |
-| a driver with no lease store, for any `concurrency` | `createWorker().start()` | `X_JOB_CONCURRENCY_UNENFORCEABLE` |
+| a driver with no lease store, for any `concurrency` | `jobWorker().start()` | `X_JOB_CONCURRENCY_UNENFORCEABLE` |
 | a `LeaseStore` with no `holders(key)` | the build — the member is required | `TS2741` |
 
 What `'fail'` decides, exactly:
@@ -1131,7 +1133,6 @@ the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing
 | the counter moves in the statement that settles the row | a count that can disagree with the rows is worse than none — and no second round trip per job |
 | a shed, a suspension and a drained attempt add nothing | they are handed back uncounted; counted, every `step.sleep` would read as a failure |
 | `ack` / `nack` / `heartbeat` / `recordProgress` are fenced on the CLAIM | `{ workerId, claim }`: a body whose lease lapsed must not settle, renew or report on the run that replaced it — claimed by another worker, or by the SAME one, whose id did not change. A miss answers `false` and logs `jobs.settle.unowned` |
-| `ack(id, { …, counted: false })` adds nothing to the counters | `x jobs drain` settles the row it moved: `done` here, and not a completed run |
 | a pause is a row the claim reads | never a column on every queued row: pausing a million-row queue takes effect within one poll |
 | an occurrence fires in one statement | the watermark and its jobs move together (`SchedulerState.fire`), so a crash between them cannot fire it twice |
 

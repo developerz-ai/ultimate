@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { text } from './response';
-import { createRouter, describeRoutes, matchRoute, type Route } from './router';
+import { textResponse } from './response';
+import { describeRoutes, httpRouter, matchRoute, type Route } from './router';
 
 const route = (method: Route['method'], path: string, name = path): Route => ({
   method,
   path,
-  handler: () => text(name),
+  handler: () => textResponse(name),
   meta: { name, auth: 'public' },
 });
 
-const table = createRouter([
+const table = httpRouter([
   route('GET', '/posts', 'posts.list'),
   route('POST', '/posts', 'posts.create'),
   route('GET', '/posts/new', 'posts.new'),
@@ -90,7 +90,7 @@ describe('invalid percent-encoding', () => {
   });
 
   test('a matching branch wins over a sibling that could not decode', () => {
-    const both = createRouter([
+    const both = httpRouter([
       route('GET', '/posts/%ZZ', 'posts.literal'),
       route('GET', '/posts/:id'),
     ]);
@@ -120,19 +120,19 @@ describe('methods', () => {
 
 describe('conflicts', () => {
   test('two routes for the same method and path throw X_ROUTE_CONFLICT', () => {
-    expect(() => createRouter([route('GET', '/a'), route('GET', '/a')])).toThrow(
+    expect(() => httpRouter([route('GET', '/a'), route('GET', '/a')])).toThrow(
       /X_ROUTE_CONFLICT|already handled/,
     );
   });
 
   test('two different param names at the same position conflict', () => {
-    expect(() => createRouter([route('GET', '/a/:id'), route('GET', '/a/:slug')])).toThrow(
+    expect(() => httpRouter([route('GET', '/a/:id'), route('GET', '/a/:slug')])).toThrow(
       /X_ROUTE_CONFLICT|:id/,
     );
   });
 
   test('a wildcard must be the last segment', () => {
-    expect(() => createRouter([route('GET', '/a/*rest/b')])).toThrow(/last segment/);
+    expect(() => httpRouter([route('GET', '/a/*rest/b')])).toThrow(/last segment/);
   });
 });
 

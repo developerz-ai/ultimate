@@ -16,7 +16,7 @@ const keyed = (
   ...overrides,
 });
 
-/** The live side as `introspect()` answers it: the key is the primary index's columns. */
+/** The live side as `introspectSchema()` answers it: the key is the primary index's columns. */
 const held = (primaryKey: readonly string[], name = 'posts_pkey'): TableDescription =>
   keyed(primaryKey, {
     indexes:

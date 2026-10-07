@@ -3,7 +3,7 @@
 // Five assertions, one per projection, over the same two actors and the same four rows.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
@@ -67,7 +67,7 @@ registerCatalog('en', {
 
 const EU: AdminActor = { id: 'u-eu', roles: ['regional'], locale: 'eu' };
 const US: AdminActor = { id: 'u-us', roles: ['regional'], locale: 'us' };
-const ctxOf = (actor: AdminActor) => admin.ctx({ actor, requestId: 'row-scope' });
+const adminCtx = (actor: AdminActor) => admin.ctx({ actor, requestId: 'row-scope' });
 
 const ids = { eu: '', us: '' };
 
@@ -95,24 +95,28 @@ const titles = (rows: readonly AdminRow[]): readonly string[] =>
 
 describe('unit · an actor sees only rows(actor), on every projection', () => {
   test('1 · the list', async () => {
-    const eu = await adminList(resource, ctxOf(EU));
-    const us = await adminList(resource, ctxOf(US));
+    const eu = await adminList(resource, adminCtx(EU));
+    const us = await adminList(resource, adminCtx(US));
     expect(eu.ok && titles(eu.page.rows)).toEqual(['Alpha case', 'Beta case']);
     expect(us.ok && titles(us.page.rows)).toEqual(['Delta case', 'Gamma case']);
   });
 
   test('2 · the search', async () => {
-    const found = await adminSearch({ term: 'case', resources: admin.resources, ctx: ctxOf(EU) });
+    const found = await adminSearch({
+      term: 'case',
+      resources: admin.resources,
+      ctx: adminCtx(EU),
+    });
     expect(found.hits.map((hit) => hit.label).sort()).toEqual(['Alpha case', 'Beta case']);
   });
 
   test('3 · the detail read — another audience’s row is not found, exactly as a missing one', async () => {
-    const own = await adminDetail(resource, ctxOf(EU), ids.eu);
+    const own = await adminDetail(resource, adminCtx(EU), ids.eu);
     expect(own.ok && own.row?.['title']).toBe('Alpha case');
-    const other = await adminDetail(resource, ctxOf(EU), ids.us);
+    const other = await adminDetail(resource, adminCtx(EU), ids.us);
     expect(other.ok && other.row).toBeNull();
     // And a write cannot reach it either: the row the update would load is the same read.
-    const write = await adminUpdate(resource, ctxOf(EU), ids.us, { title: 'Taken' });
+    const write = await adminUpdate(resource, adminCtx(EU), ids.us, { title: 'Taken' });
     expect(write.ok === false && write.kind).toBe('missing');
     // The attempt is on the log: a write that did not happen is still something that was tried.
     expect(write.audit).toMatchObject({ outcome: 'failed', reason: 'admin.error.row-missing' });
@@ -120,7 +124,7 @@ describe('unit · an actor sees only rows(actor), on every projection', () => {
   });
 
   test('4 · the lookup', async () => {
-    const looked = await adminLookup(resource, ctxOf(US), { term: 'case' });
+    const looked = await adminLookup(resource, adminCtx(US), { term: 'case' });
     expect(looked.ok && looked.options.map((option) => option.label).sort()).toEqual([
       'Delta case',
       'Gamma case',
@@ -128,15 +132,15 @@ describe('unit · an actor sees only rows(actor), on every projection', () => {
   });
 
   test('5 · the MCP list tool — and a `where` the agent sends narrows inside the scope, never out of it', async () => {
-    const listed = await callAdminTool(admin, ctxOf(EU), 'admin.admin_scope_cases.list', {});
+    const listed = await callAdminTool(admin, adminCtx(EU), 'admin.admin_scope_cases.list', {});
     const page = listed.ok ? (listed.data as { rows: readonly AdminRow[] }) : { rows: [] };
     expect(titles(page.rows)).toEqual(['Alpha case', 'Beta case']);
 
-    const asked = await callAdminTool(admin, ctxOf(EU), 'admin.admin_scope_cases.list', {
+    const asked = await callAdminTool(admin, adminCtx(EU), 'admin.admin_scope_cases.list', {
       where: [{ field: 'title', value: 'Gamma' }],
     });
     expect(asked.ok && (asked.data as { rows: readonly AdminRow[] }).rows).toEqual([]);
-    const read = await callAdminTool(admin, ctxOf(EU), 'admin.admin_scope_cases.read', {
+    const read = await callAdminTool(admin, adminCtx(EU), 'admin.admin_scope_cases.read', {
       id: ids.us,
     });
     expect(read.ok && read.data).toBeNull();
@@ -149,13 +153,13 @@ describe('unit · the mounted screens read through the same scope', () => {
     path: string,
   ): Promise<{ response: AdminRouteResponse; html: string }> =>
     runWithContext(
-      createContext({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
+      ctxOf({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
       async () => {
         const url = `http://localhost${path}`;
         const matched = adminRouteMatch(admin, new URL(url).pathname);
         if (matched === null) return expect.unreachable(`no admin route matches ${path}`);
         const response = await matched.route.respond({
-          ctx: ctxOf(actor),
+          ctx: adminCtx(actor),
           params: matched.params,
           url,
           method: 'GET',
@@ -195,7 +199,7 @@ describe('unit · a row scope is declared against real, readable columns', () =>
       db,
       resources: { admin_scope_cases: { rows: () => [{ field: 'token', op: 'eq', value: 'x' }] } },
     });
-    await expect(adminList(sealed.resource('admin_scope_cases'), ctxOf(EU))).rejects.toThrow(
+    await expect(adminList(sealed.resource('admin_scope_cases'), adminCtx(EU))).rejects.toThrow(
       /rows: token eq" names a sealed column/,
     );
   });
@@ -207,7 +211,7 @@ describe('unit · a row scope is declared against real, readable columns', () =>
       db,
       resources: { admin_scope_cases: { rows: () => [{ field: 'nope', op: 'eq', value: 'x' }] } },
     });
-    await expect(adminList(wrong.resource('admin_scope_cases'), ctxOf(EU))).rejects.toThrow(
+    await expect(adminList(wrong.resource('admin_scope_cases'), adminCtx(EU))).rejects.toThrow(
       /names a field that is not a column \(this list answers: id, title, region\)/,
     );
   });

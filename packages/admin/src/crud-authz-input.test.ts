@@ -6,7 +6,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, newId, text, uuid } from '@ultimat3/entity';
 import { memoryAuditLog } from './audit';
-import { type AdminAuthz, type AdminSubject, allowed, denied } from './authz';
+import { type AdminAuthz, type AdminSubject, adminAllowed, adminDenied } from './authz';
 import { adminCreate, adminUpdate, type CrudCtx } from './crud';
 import type { AdminRow } from './registry';
 import { adminResource } from './resource';
@@ -24,8 +24,8 @@ const noPaid: AdminAuthz = {
     if (subject !== undefined) seen.push(subject);
     const input = subject?.input as Readonly<Record<string, unknown>> | undefined;
     return input?.['state'] === 'paid'
-      ? denied(permission, 'probe.no-paid')
-      : allowed(permission, 'probe.granted');
+      ? adminDenied(permission, 'probe.no-paid')
+      : adminAllowed(permission, 'probe.granted');
   },
 };
 

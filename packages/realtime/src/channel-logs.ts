@@ -2,7 +2,7 @@
 // the change → frame path, and the resume a resubscribe `since` asks for. One per `ChannelHub`.
 // Records never cross the bus — each node reads every change itself — so seq is minted here.
 
-import { logger, renderThrowable, uuid } from '@ultimat3/core';
+import { logger, renderThrowable, uuidV7 } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import type { Channel } from './channel-decl';
 import { carriesTable, updatesFor } from './channel-records';
@@ -22,7 +22,7 @@ export class ChannelLogs {
   readonly #sockets: SocketRegistry;
   readonly #ringSize: number | undefined;
   /** This hub's mark on every epoch it mints: a restarted node can never reuse one. */
-  readonly #hubId = uuid();
+  readonly #hubId = uuidV7();
   #rings = 0;
   readonly #byTopic = new Map<
     string,

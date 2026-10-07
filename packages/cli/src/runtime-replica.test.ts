@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { DbClient } from '@ultimat3/db';
-import { createRecordingClient, REPLICA_URL_ENV, replicatedClient, sql } from '@ultimat3/db';
+import { REPLICA_URL_ENV, recordingClient, replicatedClient, sql } from '@ultimat3/db';
 import type { Middleware, RequestContext, UltimateRequest } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
 import {
@@ -51,12 +51,12 @@ const runThrough = async (
 };
 
 const routed = (): {
-  primary: ReturnType<typeof createRecordingClient>;
-  replica: ReturnType<typeof createRecordingClient>;
+  primary: ReturnType<typeof recordingClient>;
+  replica: ReturnType<typeof recordingClient>;
   client: DbClient;
 } => {
-  const primary = createRecordingClient();
-  const replica = createRecordingClient();
+  const primary = recordingClient();
+  const replica = recordingClient();
   return { primary, replica, client: replicatedClient(primary, replica) };
 };
 
@@ -79,7 +79,7 @@ describe('unit · which boots get a standby at all', () => {
 
 describe('unit · with no replica configured, nothing changes', () => {
   test('the ambient client IS the primary — the same object, not a wrapper', () => {
-    const primary = createRecordingClient();
+    const primary = recordingClient();
     const attached = attachReplica(primary, undefined);
     expect(attached.client).toBe(primary);
     expect(attached.replica).toBeUndefined();

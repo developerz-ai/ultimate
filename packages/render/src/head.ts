@@ -7,11 +7,12 @@
  * catalog and so the tag vocabulary keeps exactly one owner (`@ultimat3/seo`).
  */
 
-import { finiteCount } from '@ultimat3/core';
+import { escapeHtml, finiteCount, THEME_STORAGE_KEY } from '@ultimat3/core';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
-// `html.ts` is this package's one escaper — a second one is how a character ends up missing.
-import { escapeHtml, escapeJsonContent, escapeRawTextContent, isAttributeName } from './html';
+// The raw-text escapers are `html.ts`'s and the text/attribute table is core's `escapeHtml` — a
+// second one is how a character ends up missing.
+import { escapeJsonContent, escapeRawTextContent, isAttributeName } from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -171,14 +172,6 @@ export interface ThemeScriptOptions {
 }
 
 export const THEME_SCRIPT_MAX_BYTES = 512;
-
-/**
- * The storage key `@ultimat3/ui`'s `ThemeToggle` reads (`THEME_STORAGE_KEY` there). One literal on
- * each side, pinned equal by a test in `@ultimat3/cli`: render sits below ui in the tier table and
- * cannot import it, and the two keys disagreeing was exactly the bug — the boot stamped one key,
- * the toggle wrote another, and a visitor's choice never survived a reload.
- */
-export const THEME_STORAGE_KEY = 'ultimate.theme';
 
 /**
  * The script's text alone, so the CSP hash and the tag come from one string: a policy hashed from

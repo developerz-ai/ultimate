@@ -147,6 +147,28 @@ disk answered `exists()` true and `list()` nothing for the same object. **`limit
 integer or a refusal** (`X_INVARIANT`, at the `ListOptions` seam): `limit: 0` used to read back as
 a complete, empty page on the local disk and as `maxKeys: 0` on s3.
 
+**A listing is core's ONE `Page`** — `Page<StorageListEntry>`, the shape an entity `findMany` and
+a query `.page()` answer: `{ rows, nextCursor, hasMore }`, `nextCursor` a string exactly when
+`hasMore` is true. The cursor exists only when another object does — the local and memory disks
+look one key past the page, s3 reads `IsTruncated` and takes `NextContinuationToken` — so a full
+last page answers `hasMore: false`, never a cursor to an empty page. `cursor: null` is the first
+page, so a walk threads `nextCursor` straight back:
+
+```ts
+import type { Page } from '@ultimat3/core';
+import { disk, type StorageListEntry } from '@ultimat3/storage';
+
+const keys: string[] = [];
+let cursor: string | null = null;
+do {
+  const page: Page<StorageListEntry> = await disk('uploads').list({ prefix: 'org/o1/', cursor });
+  keys.push(...page.rows.map((object) => object.key));
+  cursor = page.nextCursor;
+} while (cursor !== null);
+```
+
+Before 25.0.0 it was `ListPage { objects, truncated, cursor? }`, its own shape beside core's.
+
 ## `put()` is for objects that fit in memory
 
 `put()` buffers the whole body — size and checksum have to be known before the object exists —

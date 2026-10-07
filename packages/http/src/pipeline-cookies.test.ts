@@ -3,9 +3,9 @@
 // beside a preference cookie reached the browser alone, or not at all.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { redirect, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { redirect, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const SESSION = 'session=abc; Path=/; HttpOnly';
 const THEME = 'theme=dark; Path=/';
@@ -19,7 +19,7 @@ const routes: readonly Route[] = [
     handler: (_request, ctx) => {
       ctx.headers.append('set-cookie', SESSION);
       ctx.headers.append('set-cookie', THEME);
-      return text('ok');
+      return textResponse('ok');
     },
   },
   {
@@ -29,7 +29,7 @@ const routes: readonly Route[] = [
     handler: (_request, ctx) => {
       ctx.headers.append('set-cookie', SESSION);
       ctx.headers.append('set-cookie', THEME);
-      const response = text('ok');
+      const response = textResponse('ok');
       response.headers.append('set-cookie', SEEN);
       return response;
     },
@@ -56,8 +56,8 @@ const routes: readonly Route[] = [
   },
 ];
 
-const pipeline = createPipeline({
-  table: createRouter(routes),
+const pipeline = httpPipeline({
+  table: httpRouter(routes),
   config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null }),
 });
 

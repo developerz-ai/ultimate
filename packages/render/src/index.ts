@@ -5,26 +5,21 @@
  */
 
 /**
- * The route vocabulary is declared once, at tier 0 (`@ultimat3/core`), and re-exported here
- * because `defineRoute`, `MODE_SPECS`, `surfaceAllows` and `RouteDescriptor` all take these types
- * in their signatures: a consumer calling this package's API should not need a second import to
- * name its arguments. A re-export is not a declaration — `scripts/render-modes.test.ts` refuses a
- * second declaration, which is what makes re-exporting safe where copying was not.
+ * The route vocabulary is declared once, at tier 0 (`@ultimat3/core`). Its TYPES are re-exported
+ * here because `defineRoute`, `MODE_SPECS`, `surfaceAllows` and `RouteDescriptor` take them in
+ * their signatures; its VALUES (`RENDER_MODES`, `HYDRATE_STRATEGIES`, `OFFLINE_STRATEGIES`) and
+ * `formatBytes` are imported from core by every caller — a value re-export is a second import path
+ * (`X_HELPER_COPY`, `bun run flight-copies`). Nor are core's page-meta names (`CLIENT_*_META`)
+ * re-published beside the tag writers below.
  */
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-// `formatBytes` moved to `@ultimat3/core` (one formatter, with the `mb` branch this package's copy
-// never had); still named here because `@ultimat3/cli`'s budget reporter reads it beside the route
-// table it prints against.
-export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 /** `asset('assets/x.avif')` → the content-hashed URL the site asset surface serves it at. */
 export type { AssetExtension, AssetPath, AssetResolver } from './asset';
 export { ASSET_DIR, ASSET_EXTENSIONS, asset, assetPathProblem, setAssetResolver } from './asset';
 /** The `<meta name="ultimate-path-style">` core's `actionPath` reads — a non-default style only. */
-export { CLIENT_PATH_STYLE_META, clientPathStyleTags } from './client-path-style-tag';
+export { clientPathStyleTags } from './client-path-style-tag';
 /** The `<meta name="ultimate-scope">` core's `pageClient()` reads, on private documents only. */
 export {
-  CLIENT_PERSIST_META,
-  CLIENT_SCOPE_META,
   clientPersistTags,
   clientScopeTag,
   documentCarriesScope,
@@ -32,9 +27,6 @@ export {
 /** Where the page's one socket dials, and the worker that hosts it (plan 101, slice 11). */
 export type { ClientSyncHead } from './client-sync-tags';
 export {
-  CLIENT_BUILD_META,
-  CLIENT_SYNC_META,
-  CLIENT_SYNC_WORKER_META,
   clientBootTags,
   clientSyncTags,
 } from './client-sync-tags';
@@ -75,7 +67,6 @@ export {
   headFromMeta,
   mergeHead,
   renderHead,
-  THEME_STORAGE_KEY,
   themeScript,
   themeScriptBody,
 } from './head';
@@ -99,7 +90,7 @@ export {
   islandModuleId,
 } from './island';
 export type { IslandCollector, IslandCollectorInput } from './island-collector';
-export { createIslandCollector, islandModuleIds } from './island-collector';
+export { islandCollector, islandModuleIds } from './island-collector';
 export { ISLAND_HOLD_ATTRIBUTE, ISLAND_HOLD_MS, ISLAND_HOLD_REVEAL } from './island-hold';
 export type { IslandProps, JsonValue } from './island-props';
 export { ISLAND_PROPS_MAX_BYTES } from './island-props';
@@ -138,8 +129,6 @@ export {
   NAVIGATING_ATTRIBUTE,
   NAVIGATION_CACHE_TTL_MS,
   NAVIGATION_ERROR_EVENT,
-  NAVIGATION_HEADER,
-  NAVIGATION_LOCATION_HEADER,
   NAVIGATION_MAX_HOPS,
   NAVIGATION_META,
   NAVIGATION_NO_PREFETCH_ATTRIBUTE,
@@ -148,8 +137,6 @@ export {
   NAVIGATION_PREFETCH_DELAY_MS,
   NAVIGATION_PROGRESS_DELAY_MS,
   NAVIGATION_RELOAD_ATTRIBUTE,
-  NAVIGATION_SCOPE_HEADER,
-  NAVIGATION_SURFACE_HEADER,
   responseVerdict,
   reusable,
 } from './navigation-rules';
@@ -165,7 +152,7 @@ export type {
 } from './registry';
 export {
   clearRoutes,
-  describeRoutes,
+  describePages,
   ROUTE_FILENAME,
   registerMountedRoutes,
   registerRoute,
@@ -199,7 +186,6 @@ export {
   defineRoute,
   isRouteConfig,
   ROUTE_NAVIGATION_MODES,
-  tagKeys,
 } from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';

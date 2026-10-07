@@ -43,7 +43,7 @@ const serviceTest = (
 ): string => `// The ${feature.kebab} service against the in-memory driver, and its failure, pinned: a code an
 // agent can match on, a cause naming the row, and a fix that is an instruction.
 ${sortedImports([
-  "import { createContext, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
   `import { driver } from '${dbModule}';`,
@@ -57,7 +57,7 @@ const draft = { orgId, title: 'First', price: { minor: 1200, currency: 'USD' } }
 
 /** What a request is to the repo underneath: an actor, whose org every statement runs under. */
 const inOrg = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: testActor('member', { orgId }).actor }), run);
+  runWithContext(ctxOf({ actor: testActor('member', { orgId }).actor }), run);
 
 // One store per process: without this, one test's rows are the next test's fixtures.
 afterEach(() => {

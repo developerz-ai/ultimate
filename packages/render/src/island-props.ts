@@ -173,7 +173,7 @@ export function checkIslandProps(
         'and every one of them ships inside the HTML on every request — ' +
         heaviest.map(([key, size]) => `props.${key} is ${size} B of the ${bytes}`).join(', '),
       `in ${file}, pass ${heaviest.map(([key]) => `\`${key}: []\``).join(' and ')} beside ` +
-        `\`${first}Endpoint: derivePath('<queryName>')\` (@ultimat3/query) and fetch the rows inside ` +
+        `\`${first}Endpoint: queryPath('<queryName>')\` (@ultimat3/core) and fetch the rows inside ` +
         'the island after mount — a list that is the same on every request is a dataset, not a ' +
         'prop; an id, a count and a URL are',
     );

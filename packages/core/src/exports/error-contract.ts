@@ -63,7 +63,6 @@ export {
   NotImplementedError,
   notImplemented,
   toUltimateError,
-  ULTIMATE_ERROR_BRAND,
   UltimateError,
 } from '../errors';
 export { SCHEMA_ERROR_CODE_TITLES } from '../schema-error-codes';

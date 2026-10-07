@@ -3,7 +3,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { StorageDriver } from '@ultimat3/storage';
-import { contentTypeFor, createArtifactWriter, DEFAULT_CONTENT_TYPE } from './artifacts';
+import { DEFAULT_CONTENT_TYPE } from '@ultimat3/storage';
+import { artifactWriter, contentTypeFor } from './artifacts';
 
 interface Put {
   readonly key: string;
@@ -45,7 +46,7 @@ describe('unit · contentTypeFor answers a string for every name a site can pick
 describe('unit · what reaches storage.put is always a string content type', () => {
   test("a site-chosen filename cannot put a function on the object's header", async () => {
     const storage = recordingStorage();
-    const writer = createArtifactWriter({
+    const writer = artifactWriter({
       storage: () => storage,
       scrape: 'orders',
       runId: 'run-1',
@@ -59,7 +60,7 @@ describe('unit · what reaches storage.put is always a string content type', () 
 
   test('an explicit content type still wins, and the key carries the run prefix', async () => {
     const storage = recordingStorage();
-    const writer = createArtifactWriter({
+    const writer = artifactWriter({
       storage: () => storage,
       scrape: 'orders',
       runId: 'run-1',
@@ -72,7 +73,7 @@ describe('unit · what reaches storage.put is always a string content type', () 
   });
 
   test('no storage driver is a no-op that still answers a key — never a throw', async () => {
-    const writer = createArtifactWriter({ storage: undefined, scrape: 'orders', runId: 'run-1' });
+    const writer = artifactWriter({ storage: undefined, scrape: 'orders', runId: 'run-1' });
     const ref = await writer.save('page.html', '<p>hi</p>');
     expect(ref.key).toBe('scrape/orders/run-1/page.html');
     expect(writer.saved).toHaveLength(1);

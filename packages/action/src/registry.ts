@@ -154,7 +154,7 @@ export function describeActions(): readonly ActionDescriptor[] {
 }
 
 /** Test-only. Production registers once at boot and never unregisters. */
-export function resetRegistry(): void {
+export function resetActions(): void {
   registry.clear();
   paths.clear();
   resetActionPathStyle();

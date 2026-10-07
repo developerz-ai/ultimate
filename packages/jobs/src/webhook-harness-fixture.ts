@@ -2,8 +2,8 @@
 // answers, a memory ledger, a frozen clock, and a resolver that maps every host to a public address
 // unless a test says otherwise. Test-only (`-fixture.ts` is outside the published `files`).
 
-import { type Ctx, createContext, frozenClock, isUltimateError } from '@ultimat3/core';
-import { createStepRunner } from './steps';
+import { type Ctx, ctxOf, frozenClock, isUltimateError } from '@ultimat3/core';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 import { type WebhookDefinition, type WebhookEndpoint, webhook } from './webhook';
 import { type MemoryWebhookLedger, memoryWebhookLedger } from './webhook-ledger';
@@ -11,7 +11,7 @@ import { type MemoryWebhookLedger, memoryWebhookLedger } from './webhook-ledger'
 export const SECRET = 'whsec_never_leaks';
 const NOW_MS = 1_700_000_000_000;
 
-export const ctx: Ctx = createContext();
+export const ctx: Ctx = ctxOf();
 
 export const ENDPOINT: WebhookEndpoint = {
   id: 'ep_1',
@@ -91,7 +91,7 @@ export const harness = (
     run: (attempt = 1, over: Ctx = ctx): Promise<unknown> =>
       handle.run({
         input: { endpointId: 'ep_1', eventId: 'evt_1' },
-        step: createStepRunner({
+        step: stepRunner({
           runId: `run-${sequence}`,
           jobName: definition.name,
           store: memoryStepStore(),

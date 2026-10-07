@@ -6,6 +6,7 @@
 // the locale it is written in and no other.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import { flattenCatalog } from './catalog';
 import {
   catalogFor,
@@ -15,7 +16,6 @@ import {
   t,
   translatorFor,
 } from './context';
-import { FRAMEWORK_CATALOG_LOCALE } from './framework';
 import { isMiss } from './translator';
 
 const appOverride = flattenCatalog({ errors: { notFound: { title: 'Nothing here' } } });
@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe('the framework catalog is not an app responsibility', () => {
   test('framework strings resolve in a process that never called defineCatalogs', () => {
-    expect(translatorFor(FRAMEWORK_CATALOG_LOCALE)('errors.notFound.title')).toBe('Page not found');
+    expect(translatorFor(DEFAULT_LOCALE)('errors.notFound.title')).toBe('Page not found');
     expect(t('common.save')).toBe('Save');
   });
 

@@ -11,7 +11,7 @@ import type { AuditRecord, AuditSink } from './audit';
  * input — so its cost is the request's, not a row's: at 50 audited writes a second an unbounded
  * array is 4.3M immortal records a day and the pod dies holding the trail it was retaining. This
  * sink was the one memory implementation in the framework with no cap, beside five that have one
- * (`memoryRateLimitStore`, `memoryIdempotencyStore`, `createLimiter`, `createTotpReplayGuard`,
+ * (`memoryRateLimitStore`, `memoryIdempotencyStore`, `concurrencyLimiter`, `memoryTotpReplayGuard`,
  * `memoryEventBus`).
  */
 export const DEFAULT_MAX_AUDIT_RECORDS = 1_000;

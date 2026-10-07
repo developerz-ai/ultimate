@@ -3,7 +3,7 @@
 // that takes input, is a server round trip through its form before it runs.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   database,
@@ -133,7 +133,7 @@ const ask = (
   form: Readonly<Record<string, unknown>> | null = null,
 ): Promise<{ status: number | string; html: string }> =>
   runWithContext(
-    createContext({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
+    ctxOf({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
     async () => {
       const url = `http://localhost${path}`;
       const matched = adminRouteMatch(admin, new URL(url).pathname);

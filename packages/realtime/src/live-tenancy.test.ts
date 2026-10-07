@@ -8,7 +8,7 @@
 // the generated suite passed while every real subscriber got `X_TENANCY_UNSCOPED`.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Actor, createContext, runWithContext, userActor } from '@ultimat3/core';
+import { type Actor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   database,
@@ -18,7 +18,7 @@ import {
   text,
   uuid,
 } from '@ultimat3/entity';
-import { from, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { liveQueryDefinition } from './live-definition';
 import { LiveQueryRegistry } from './live-query';
@@ -70,7 +70,7 @@ const socketFor = (id: string, actor: Actor | null): { socket: SyncSocket; ws: F
 const member = (id: string, orgId: string): Actor => userActor({ id, orgId });
 
 const asMember = <T>(orgId: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: member('writer', orgId) }), run);
+  runWithContext(ctxOf({ actor: member('writer', orgId) }), run);
 
 const insert = (id: number, orgId: string, label: string): Promise<Note> =>
   asMember(orgId, () =>
@@ -103,7 +103,7 @@ let registry: LiveQueryRegistry;
 let replicator: LiveReplicator;
 
 beforeEach(async () => {
-  resetRegistry();
+  resetQueries();
   driver.reset?.();
   // The generated shape: an `orgId` in the input the policy decides on, a repo that names none.
   const generated = query({
@@ -117,7 +117,7 @@ beforeEach(async () => {
         .limit(limit),
   });
   registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
-  const ctx = createContext({ role: 'sync', buildId: 'b' });
+  const ctx = ctxOf({ role: 'sync', buildId: 'b' });
   registry.register(liveQueryDefinition(registerQuery('liveNotes', generated), { ctx }));
   registry.register(liveQueryDefinition(registerQuery('liveAllNotes', unnamedNotes()), { ctx }));
   replicator = await startLiveReplicator({ registry });
@@ -130,7 +130,7 @@ afterEach(() => {
 
 afterAll(() => {
   clearRegistry();
-  resetRegistry();
+  resetQueries();
 });
 
 describe('a live source is read for the subscriber’s tenant', () => {
@@ -254,7 +254,7 @@ describe('a re-seat that cannot complete is refused to the client, never lost', 
   const flaky = (script: ('ok' | 'fail')[]): { calls: () => number } => {
     let calls = 0;
     const base = liveQueryDefinition(registerQuery('liveFlakyNotes', unnamedNotes()), {
-      ctx: createContext({ role: 'sync', buildId: 'b' }),
+      ctx: ctxOf({ role: 'sync', buildId: 'b' }),
     });
     registry.register({
       ...base,

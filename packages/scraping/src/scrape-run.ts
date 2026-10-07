@@ -12,15 +12,15 @@
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
 import { parse } from '@ultimat3/schema';
-import { createArtifactWriter } from './artifacts';
+import { artifactWriter } from './artifacts';
 import type { AuthPlanInput } from './auth';
 import {
   burnSession,
-  createPrompt,
   ensureAuthenticated,
   markRefused,
   observeSession,
   persistSession,
+  scrapePrompt,
 } from './auth';
 import { scrapeClock } from './clock';
 import type { ScrapeSession } from './driver';
@@ -31,16 +31,16 @@ import type { ScrapeEventFields } from './events';
 import { scrapeLogger, withStepEvent } from './events';
 import { guardYield } from './expect';
 import { burnsSession, errorCode, neverRetried } from './failures';
-import { createPacer, DEFAULT_NAVIGATION_RATE } from './rate';
+import { DEFAULT_NAVIGATION_RATE, scrapePacer } from './rate';
 import { runRecovery } from './recover';
-import { createRobotsGate } from './robots';
+import { robotsGate } from './robots';
 import type { ScrapeDefinition, ScrapeReport } from './scrape';
 import { containsSecret } from './secret-scan';
-import { createSecretBag, MIN_REDACTABLE_LENGTH } from './secrets';
+import { MIN_REDACTABLE_LENGTH, secretBag } from './secrets';
 import { sessionKeyFor } from './session-state';
 import { hasCredentials, splitCredentials, urlSecretValues } from './url-secrets';
 import type { ScrapeUsage } from './usage';
-import { createUsageMeter, rememberFailedUsage } from './usage';
+import { rememberFailedUsage, usageMeter } from './usage';
 
 /** `ctx.actor` is a structural read: this package never imports the auth types (tier 2). */
 const orgOf = (ctx: unknown): string | undefined => {
@@ -99,7 +99,7 @@ export async function runScrape<I, Row>(
     attempt: args.attempt,
     driver: driver.name,
   });
-  const secrets = createSecretBag(definition.secrets ?? []);
+  const secrets = secretBag(definition.secrets ?? []);
   // The run's exit, resolved HERE — in the worker, under the job's tenant — so what the queue row
   // carries is the id of whatever holds it. An empty answer is "none", the same as absent: a
   // driver handed `''` would dial `--proxy-server=` and call that a decision.
@@ -120,11 +120,11 @@ export async function runScrape<I, Row>(
   // refuses the DECLARATION and never sees a definition assembled by hand, which `runScrape` is
   // exported to accept. `finiteOption` and not `finiteCount` — a rate of 0.5 is one navigation
   // every two seconds, and `scrape()` owns the "greater than zero" half.
-  const pace = createPacer(
+  const pace = scrapePacer(
     finiteOption('the scrape definition', 'rate', definition.rate ?? DEFAULT_NAVIGATION_RATE),
     clock,
   );
-  const artifact = createArtifactWriter({
+  const artifact = artifactWriter({
     storage: definition.artifacts?.storage,
     scrape: definition.name,
     runId: args.runId,
@@ -156,7 +156,7 @@ export async function runScrape<I, Row>(
   // during a navigation, which is after this is assigned.
   let sessionProxy: string | undefined;
   // Before `open()`: the time a rented browser takes to arrive is time it was held.
-  const usage = createUsageMeter(clock);
+  const usage = usageMeter(clock);
   const session = await driver.open({
     name: definition.name,
     logger,
@@ -173,7 +173,7 @@ export async function runScrape<I, Row>(
     // unreachable by `ctx.signal`; without the third the read leaves from a different IP than
     // every page load, and an origin reachable only through the proxy answers nothing — which
     // this gate reads as "no restrictions".
-    robots: createRobotsGate({
+    robots: robotsGate({
       policy: definition.robots ?? 'obey',
       // Every hop of the read screened by the run's own host rule, as the HTTP leg's are.
       allowHosts: rules.allowHosts,
@@ -205,7 +205,7 @@ export async function runScrape<I, Row>(
             page: session.page,
             secrets,
             restored,
-            prompt: createPrompt({
+            prompt: scrapePrompt({
               scrape: definition.name,
               handler: definition.prompt,
               input: args.input,
@@ -323,8 +323,8 @@ async function bodyWithRecovery<I, Row>(
   args: JobRunArgs<I>,
   session: ScrapeSession,
   logger: ReturnType<typeof scrapeLogger>,
-  artifact: ReturnType<typeof createArtifactWriter>,
-  secrets: ReturnType<typeof createSecretBag>,
+  artifact: ReturnType<typeof artifactWriter>,
+  secrets: ReturnType<typeof secretBag>,
 ): Promise<readonly unknown[]> {
   const body = (): Promise<readonly unknown[]> =>
     definition.run({
@@ -365,7 +365,7 @@ async function bodyWithRecovery<I, Row>(
  */
 async function saveFailureArtifact(
   session: ScrapeSession,
-  artifact: ReturnType<typeof createArtifactWriter>,
+  artifact: ReturnType<typeof artifactWriter>,
 ): Promise<void> {
   try {
     await artifact.save('page.html', await session.page.html());

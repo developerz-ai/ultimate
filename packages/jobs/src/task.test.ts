@@ -10,7 +10,7 @@ import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver } from './scheduler';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import { getTask, registeredTasks, resetTasks, restoreTasks, task } from './task';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -144,7 +144,7 @@ describe('task', () => {
    * The one knob of this family left unguarded. `occurrencesSince` is
    * `for (let i = 0; i < handle.maxCatchUp; i += 1)`, so a declared `0` returns no occurrence on
    * every round and the task NEVER fires — no error, no log line, no queue row. The same shape
-   * `job()` refuses `concurrency: 0` in and `createPacer` refuses `rate: 0` in.
+   * `job()` refuses `concurrency: 0` in and `backfillPacer` refuses `rate: 0` in.
    */
   test('a maxCatchUp no occurrence can fit through is refused where it is written', () => {
     for (const maxCatchUp of [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
@@ -227,7 +227,7 @@ describe('task', () => {
       tz: 'UTC',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3 });
+    const scheduler = jobScheduler({ driver, clock, cron: dailyAt3 });
 
     await nightly.enqueue();
     expect(((await driver.introspect?.list()) ?? []).map((row) => row.idempotencyKey)).toEqual([
@@ -277,7 +277,7 @@ describe('a task is refused at declaration, never at the first tick', () => {
     });
     task({ name: 'zGoodDigest', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
     const clock = fakeClock(T0);
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver({ clock }),
       clock,
       cron: dailyAt3,

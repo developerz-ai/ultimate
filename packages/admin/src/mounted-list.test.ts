@@ -4,7 +4,7 @@
 // a tenant column drawn as an input, and a mistyped id answered as an invariant violation.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   boolean,
   clearRegistry,
@@ -138,7 +138,7 @@ let vendorId = '';
 
 const asOrg = <T>(run: () => Promise<T>, role = 'clerk'): Promise<T> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: userActor({ id: `u-${role}`, roles: [role], orgId: ORG }),
       tz: 'UTC',
       locale: 'en',

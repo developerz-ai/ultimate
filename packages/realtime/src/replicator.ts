@@ -11,7 +11,7 @@
 // its feed and reports `/readyz` false. A stream that ENDS — or a lock that is LOST — is this file's
 // to answer: `running` goes false, everything is let go, and the process asks again on a backoff.
 
-import { logger, renderThrowable, uuid, withSpan } from '@ultimat3/core';
+import { logger, renderThrowable, uuidV7, withSpan } from '@ultimat3/core';
 import type { AdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
@@ -107,7 +107,7 @@ const fencedOut = (reason: string): ReplicationFailedError =>
     fix: 'x doctor --json',
   });
 
-export function createReplicator(options: ReplicatorOptions): Replicator {
+export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   const subjectOf = options.subjectOf ?? changeSubject;
   const backoff = options.backoff ?? defaultBackoff;
   /** A stream is pumping under a lock this process holds. Internal: `running` is stricter. */
@@ -119,7 +119,7 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
   // One id per run, not per process: a replicator that took the lock back after a crash publishes
   // from its persisted lsn, and a consumer must read that as a new stream rather than as a gap in
   // the old one.
-  let producer = uuid();
+  let producer = uuidV7();
   let seq = 0;
   /** The start in flight, if any — see `start()` on why `pumping` cannot answer that question. */
   let starting: Promise<boolean> | undefined;
@@ -246,7 +246,7 @@ export function createReplicator(options: ReplicatorOptions): Replicator {
       logger.warn('replicator standby: advisory lock held elsewhere', { key: options.lock.key });
       return false;
     }
-    producer = uuid();
+    producer = uuidV7();
     seq = 0;
     const run: Run = { over: null };
     current = run;

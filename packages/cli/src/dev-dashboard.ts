@@ -24,7 +24,7 @@ import {
 import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { json as jsonResponse } from '@ultimat3/http';
+import { jsonResponse } from '@ultimat3/http';
 import type { MemoryMailDriver } from '@ultimat3/mail';
 import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';

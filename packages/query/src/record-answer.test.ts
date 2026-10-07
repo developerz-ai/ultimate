@@ -10,7 +10,7 @@ import {
   recordEnvelopeSchema,
 } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
@@ -50,7 +50,7 @@ function feed(rows: readonly PostRow[], declared: boolean): AnyQuery {
 }
 
 async function read(target: AnyQuery, search = `?orgId=${ORG}`): Promise<Response> {
-  const server = createServer({
+  const server = httpServer({
     routes: [toQueryRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => null },

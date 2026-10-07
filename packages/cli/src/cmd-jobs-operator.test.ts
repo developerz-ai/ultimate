@@ -18,7 +18,7 @@ import {
 } from '@ultimat3/jobs';
 import { jobsCommand } from './cmd-jobs';
 import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
-import { BadFlagError, MissingPositionalError } from './errors';
+import { MissingPositionalError } from './errors';
 import { msg } from './messages';
 import { flagString, parseArgs } from './parse';
 
@@ -201,39 +201,5 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
       code: 'X_JOB_NOT_PROMOTABLE',
       fix: `x jobs show ${due} --json`,
     });
-  });
-});
-
-describe('unit · x jobs ls paging', () => {
-  test('a full page answers the cursor of the next, and the last page answers null', async () => {
-    const driver = memoryJobDriver();
-    const ids: string[] = [];
-    for (let index = 0; index < 5; index += 1) ids.push(await enqueue(driver, 'send-email'));
-
-    const first = await runJobs(driver, { subcommand: 'ls', flags: { limit: '2' } });
-    const page = first.data as { rows: { id: string }[]; next: string | null };
-    expect(page.rows).toHaveLength(2);
-    expect(typeof page.next).toBe('string');
-    expect(first.lines?.join('\n')).toContain(`x jobs ls --after ${page.next}`);
-
-    const seen = page.rows.map((row) => row.id);
-    let after = page.next;
-    while (after !== null) {
-      const result = await runJobs(driver, { subcommand: 'ls', flags: { limit: '2', after } });
-      const next = result.data as { rows: { id: string }[]; next: string | null };
-      seen.push(...next.rows.map((row) => row.id));
-      after = next.next;
-    }
-    expect([...seen].sort()).toEqual([...ids].sort());
-    expect(new Set(seen).size).toBe(5);
-  });
-
-  test('a page past the queue`s bound is a flag error naming the walk', async () => {
-    const driver = memoryJobDriver();
-    const refusal = await runJobs(driver, { subcommand: 'ls', flags: { limit: '201' } }).catch(
-      (error: unknown) => error,
-    );
-    expect(refusal).toBeInstanceOf(BadFlagError);
-    expect((refusal as { fix: string }).fix).toContain('x jobs ls --limit 200 --json');
   });
 });

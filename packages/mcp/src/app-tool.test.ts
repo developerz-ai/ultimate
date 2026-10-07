@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { agentActor, createContext, isUltimateError, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, isUltimateError, runWithContext } from '@ultimat3/core';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAppToolDefinition } from './app-tool';
@@ -33,9 +33,7 @@ const definition = (overrides: Partial<AnyAppToolDefinition> = {}): AnyAppToolDe
 });
 
 const run = (def: AnyAppToolDefinition, input: unknown, actor = owner): Promise<unknown> =>
-  runWithContext(createContext({}), () =>
-    appToolPrimitive('archivePost', def).run({ input, actor }),
-  );
+  runWithContext(ctxOf({}), () => appToolPrimitive('archivePost', def).run({ input, actor }));
 
 const codeOf = (error: unknown): string => (isUltimateError(error) ? error.code : 'not-an-error');
 

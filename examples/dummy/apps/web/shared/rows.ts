@@ -4,11 +4,11 @@
  * than in every `load`. Kept in `shared/` because both surfaces have such a route.
  */
 
-import { invariant } from '@ultimat3/core';
+import { assertCoded } from '@ultimat3/core';
 
 export function oneRow<TRow>(rows: readonly TRow[], reference: string): TRow {
   const [row] = rows;
-  invariant(
+  assertCoded(
     row !== undefined,
     'X_NOT_FOUND',
     `no row for ${JSON.stringify(reference)} — the read backing this route answered no rows, ` +

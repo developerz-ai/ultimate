@@ -102,6 +102,18 @@ describe('a second implementation of a helper with one home is refused', () => {
     ]);
   });
 
+  test('BUILD_ID_HEADER, as the literal in any quote — a header name or a meta name', () => {
+    expect(helpersIn("headers.set('x-ultimate-build', id);")).toEqual(['BUILD_ID_HEADER']);
+    expect(helpersIn('const H = "x-ultimate-build";')).toEqual(['BUILD_ID_HEADER']);
+    expect(helpersIn("const o = { 'x-ultimate-build': id };")).toEqual(['BUILD_ID_HEADER']);
+    expect(helpersIn('const t = `x-ultimate-build`;')).toEqual(['BUILD_ID_HEADER']);
+  });
+
+  test('a build-id header named in prose, or a longer name, is not a copy', () => {
+    expect(helpersIn('/** sent as `x-ultimate-build` */')).toEqual([]);
+    expect(helpersIn("const n = 'x-ultimate-build-hash';")).toEqual([]);
+  });
+
   test('a successor-version link named in prose is not a copy', () => {
     expect(helpersIn('/** projected to a `rel="successor-version"` link */')).toEqual([]);
   });
@@ -113,12 +125,26 @@ describe('a RE-EXPORT of a core helper from another package is a second home', (
   test('every client-flight and audit-sink value, re-exported from @ultimat3/core', () => {
     expect(
       helpersIn(
-        "export {\n  createClientFlight,\n  DEFAULT_CLIENT_RETRY,\n  isSuperseded,\n  isTransientFailure,\n} from '@ultimat3/core';",
+        "export {\n  clientFlight,\n  DEFAULT_CLIENT_RETRY,\n  isSuperseded,\n  isTransientFailure,\n} from '@ultimat3/core';",
       ),
-    ).toEqual(['createClientFlight', 'DEFAULT_CLIENT_RETRY', 'isSuperseded', 'isTransientFailure']);
+    ).toEqual(['clientFlight', 'DEFAULT_CLIENT_RETRY', 'isSuperseded', 'isTransientFailure']);
     expect(
       helpersIn('export { getAuditSink, resetAuditSink, setAuditSink } from "@ultimat3/core";'),
     ).toEqual(['getAuditSink', 'resetAuditSink', 'setAuditSink']);
+  });
+
+  // Widened 2026-10-06: the rule was a seven-name list matching one spelling, so `fnv1a`,
+  // `escapeHtml`, `IDEMPOTENCY_HEADER` and fifty more were republished by tier 1–4 barrels unseen.
+  test('ANY core value, in every spelling: re-export, import-then-export, alias binding', () => {
+    expect(helpersIn("export { escapeHtml, fnv1a } from '@ultimat3/core';")).toEqual([
+      'escapeHtml',
+      'fnv1a',
+    ]);
+    expect(
+      helpersIn(
+        "import { IDEMPOTENCY_HEADER, formatBytes } from '@ultimat3/core';\nexport { IDEMPOTENCY_HEADER };\nexport const bytes = formatBytes;",
+      ),
+    ).toEqual(['IDEMPOTENCY_HEADER', 'formatBytes']);
   });
 
   test('an alias is still the helper', () => {
@@ -132,8 +158,8 @@ describe('a RE-EXPORT of a core helper from another package is a second home', (
       helpersIn(
         [
           "export type { AuditRecord, AuditSink, ClientFlight } from '@ultimat3/core';",
-          "export { type ClientRetry, renderFixShellArg } from '@ultimat3/core';",
-          "import { createClientFlight, setAuditSink } from '@ultimat3/core';",
+          "export { type ClientRetry } from '@ultimat3/core';",
+          "import { clientFlight, setAuditSink } from '@ultimat3/core';",
           "export { isSupersededBy } from '@ultimat3/core';",
           "export { getAuditSink } from './audit';",
           "// export { setAuditSink } from '@ultimat3/core';",
@@ -165,13 +191,7 @@ describe('what is never a copy', () => {
       PgExecutor: 'export interface PgExecutor {}',
       storeMode: "resolveEnvironment({ env }) === 'test' ? 'memory' : 'database'",
       renderDeprecation: 'const link = \'</v2>; rel="successor-version"\';',
-      createClientFlight: "export { createClientFlight } from '@ultimat3/core';",
-      DEFAULT_CLIENT_RETRY: "export { DEFAULT_CLIENT_RETRY } from '@ultimat3/core';",
-      isTransientFailure: "export { isTransientFailure } from '@ultimat3/core';",
-      isSuperseded: "export { isSuperseded } from '@ultimat3/core';",
-      getAuditSink: "export { getAuditSink } from '@ultimat3/core';",
-      setAuditSink: "export { setAuditSink } from '@ultimat3/core';",
-      resetAuditSink: "export { resetAuditSink } from '@ultimat3/core';",
+      BUILD_ID_HEADER: "export const CLIENT_BUILD_META = 'x-ultimate-build';",
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

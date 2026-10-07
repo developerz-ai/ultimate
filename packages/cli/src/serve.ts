@@ -5,7 +5,7 @@
 // interface — every one by default, because a container is reached through a port mapping.
 
 import { assertNoDevSecretsOutsideLocal, logger } from '@ultimat3/core';
-import { assertNoDrift, checkDrift, migrate } from '@ultimat3/db';
+import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
 import { holdWhileBooting } from './hold';
@@ -174,7 +174,7 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
     // returned. `x db migrate` calls the same `runMigrations` and renders every difference as a
     // finding before exiting non-zero; a container that logged one and exited 0 would let the
     // deploy roll on over a schema nobody can reconstruct, which is the failure drift exists for.
-    assertNoDrift(migrated.drift);
+    assertNoSchemaDrift(migrated.drift);
     return migrated;
   }
   // The drain's handlers BEFORE the boot (`holdWhileBooting`): the worker claims inside

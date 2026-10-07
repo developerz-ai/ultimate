@@ -29,8 +29,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts — and NO row of its own |
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`), as an app's `models.ts` would. Not shipped (`!src/**/*-fixture.ts`) |
-| `provider.ts` | `Provider` interface, the request half, the money arithmetic, `AnthropicProvider` |
-| `echo-provider.ts` | `EchoProvider`, the deterministic double — split from `provider.ts` at its line ceiling |
+| `provider.ts` | `Provider` interface, the request half, the money arithmetic, `anthropicProvider()` |
+| `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
 | `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `errors.ts` |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
@@ -43,8 +43,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `gateway.ts` | routing, retries, cache, budget wiring |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
-| `embeddings.ts` | `Embedder`, `HashEmbedder`, cosine helpers |
-| `remote-embedder.ts` | `RemoteEmbedder` — the production `/v1/embeddings` client |
+| `embeddings.ts` | `Embedder`, `hashEmbedder()`, cosine helpers |
+| `remote-embedder.ts` | `remoteEmbedder()` — the production `/v1/embeddings` client |
 | `evals.ts` | `defineEval`, the run, the baseline gate, prompt coverage |
 | `eval-baseline.ts` | the recorded scores: path, read/write, what counts as a regression |
 | `scorers.ts` | what a `Scorer` is, the built-in ones, and `llmJudge` |
@@ -85,7 +85,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   off. `Gateway.generate`/`stream` screen it at the one seam, `registerModel` screens `maxOutput`, and
   `llm()`/`agent()` screen theirs at DECLARATION.
 - **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
-  before the ledger's `request`; `retrieve()`'s own `k`; `RemoteEmbedder`'s `maxResponseBytes`).
+  before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
 - A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
   back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
   STORE is written once, by the ledger the call was made on.
@@ -102,7 +102,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   org — the `orgless` test `query`'s cache uses). `callLedger` is required on
   `Gateway`; `hive()` asks `installedGateway()` so a hive of plain actions needs none.
 - **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
-  (`createGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
+  (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
   clamps at zero leaks the ceiling.
 - Cost is `Money` (integer minor units), rounded **up**. A budget throws `X_AI_BUDGET_EXCEEDED`
   **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
@@ -124,7 +124,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   `ctx.locale` (in the unconditional half). **The default scope is the calling ACTOR**
   (`JSON.stringify([actor.kind, actor.id, actor.orgId ?? null])`); `scope` receives
   `{ input, ctx }`; widening is `scope: () => 'global'`. The instance map is bounded
-  (`MAX_SEMANTIC_CACHE_SCOPES`).
+  (core's `MAX_CACHED_FORMATTERS`).
 - `cache.invalidates` is not on `llm()`: a `SemanticCache` is not a `CacheTier`. Version bump + `ttl`
   is the invalidation.
 - The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`, never a
@@ -159,7 +159,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   stays UNREGISTERED on purpose.
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, and every value here is an app `Provider`'s plain
-  object, so it would retry a 400. `gateway-backoff.test.ts`. `RetryPolicy`/`DEFAULT_RETRY` keep the
+  object, so it would retry a 400. `gateway-backoff.test.ts`. `RetryPolicy`/`DEFAULT_GATEWAY_RETRY` keep the
   field names an app writes.
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
 - **Both wire formats answer the same question the same way** (`provider-parity.test.ts`): an in-band
@@ -183,9 +183,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
   its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
   `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
-- **Every provider serves the app's list**: `new AnthropicProvider({ models })` and
+- **Every provider serves the app's list**: `anthropicProvider({ models })` and
   `openAiProvider({ models })` require a non-empty one (`X_AI_REQUEST_INVALID`, a missing config
-  too); `EchoProvider.models` reads the registry. **No provider has a model of its own**: a direct
+  too); `echoProvider().models` reads the registry. **No provider has a model of its own**: a direct
   call naming none is `X_AI_MODEL_UNRESOLVED` from all three — the list is what it serves, never a
   fourth place (`vendor-neutral.test.ts`, one parity case).
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
@@ -197,6 +197,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   malformed is `X_AI_REQUEST_INVALID`, untakeable (role, the row's `input`, the wire) is
   `X_AI_CONTENT_UNSUPPORTED`; never dropped, never approximated (`provider-parity-content.test.ts`).
 - `generate()` above `STREAM_ONLY_MAX_TOKENS` runs the streaming transport.
+- **Every provider and embedder is built by its factory** (`anthropicProvider()`, `echoProvider()`,
+  `hashEmbedder()`, `remoteEmbedder()`); the classes are type exports only (`bun run factory-names`).
 - **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
   differences; never a second class per vendor:
   - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
@@ -210,12 +212,12 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
     `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
 - **`embedBatched` enforces the `Embedder` arity per batch** (`X_AI_EMBEDDER_INVALID` with both
-  counts). One `RemoteEmbedder` for every vendor; vectors L2-normalised; a wrong width is
+  counts). One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
   `X_VECTOR_DIM_MISMATCH`.
 - **A caught value is read with `renderThrowable`** (`remote-embedder.ts`, `wire.ts`,
   `openai-wire.ts`) — `scripts/error-render.ts` cannot see `catch` bindings.
 - **A caller's string is never an object KEY**: the wire tables are `Map`s; `prompt.render` and
-  `EchoProvider`'s `replies` use `Object.hasOwn`.
+  `echoProvider()`'s `replies` use `Object.hasOwn`.
 
 ## Invariants — `agent()`, `hive()`, `agentJob()`
 

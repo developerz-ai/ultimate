@@ -11,9 +11,6 @@
 
 import { isJsonObject } from '@ultimat3/core';
 
-/** Re-exported, not re-declared: `./stable` stays this package's one import path for it. */
-export { isJsonObject };
-
 /** Column read that works for interfaces without an index signature. */
 export function columnOf(row: object, column: string): unknown {
   const record: unknown = row;

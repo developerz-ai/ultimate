@@ -6,7 +6,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { assert, finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
-import type { ListPage, StorageDriver, StorageListEntry, StorageObject } from './driver';
+import type { StorageDriver, StorageListEntry, StorageObject } from './driver';
 import { notPending, objectNotFound, orgMismatch, quarantined, tooLarge } from './errors';
 import { isWithinOrg, orgPrefix, scopedKey } from './path';
 import type { UploadPolicy } from './upload';
@@ -229,13 +229,10 @@ export async function sweepOrphans(input: SweepOrphansInput): Promise<SweepResul
   const prefix = pendingPrefix(input.orgId);
   const deleted: string[] = [];
   const failed: SweepFailure[] = [];
-  let cursor: string | undefined;
+  let cursor: string | null = null;
   do {
-    const page: ListPage = await input.disk.list({
-      prefix,
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    for (const object of page.objects) {
+    const page = await input.disk.list({ prefix, cursor });
+    for (const object of page.rows) {
       // An object whose age the provider did not report is SPARED: only a proven age is swept.
       if (object.lastModified === undefined || object.lastModified.getTime() > cutoff) continue;
       if ((await input.keep?.(object)) === true) continue;
@@ -246,7 +243,7 @@ export async function sweepOrphans(input: SweepOrphansInput): Promise<SweepResul
         failed.push({ key: object.key, reason: renderThrowable(error) });
       }
     }
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor !== undefined);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
   return { deleted, failed };
 }

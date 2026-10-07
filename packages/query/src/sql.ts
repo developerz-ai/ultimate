@@ -1,7 +1,7 @@
 /**
  * SQL transparency. An agent that can read the SQL a query generates can fix a
  * slow or wrong read by itself; a query builder that hides its output forces it
- * to guess. `explain` is the read path for `/_x` and for `x db explain`.
+ * to guess. `explainQuery` is the read path for `/_x` and for `x db explain`.
  */
 import type { Ctx } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -18,10 +18,10 @@ export interface ExplainResult extends SqlText {
 }
 
 /**
- * Policy is deliberately NOT enforced here: `explain` never returns rows, and the
+ * Policy is deliberately NOT enforced here: `explainQuery` never returns rows, and the
  * surfaces that expose it (`/_x`, the CLI) are admin-gated in their own right.
  */
-export async function explain<TInput extends StandardSchemaV1, TRow extends object>(
+export async function explainQuery<TInput extends StandardSchemaV1, TRow extends object>(
   target: Query<TInput, TRow, boolean>,
   input: unknown,
   ctx?: Ctx,

@@ -1,11 +1,11 @@
 // The fixtures the three `oauth-login` suites share: the frozen instant, a fresh
-// `MemoryAdapter`-backed `Auth`, the two request bodies, the code of a rejection and a JSON
+// `MemoryAuthAdapter`-backed `Auth`, the two request bodies, the code of a rejection and a JSON
 // `Response`. Shared rather than copied — three suites building their own `Auth` would be three
 // flows that agree only by construction, the same reason `backfill-pass-fixture.ts` exists.
 
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import type { OAuthTokens } from './oauth-exchange';
 import type { OAuthProfile } from './oauth-profile';
 
@@ -14,7 +14,7 @@ export const NOW = new Date('2026-08-09T12:00:00.000Z');
 export const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
 
 /** One adapter and the `Auth` over it, minted per `beforeEach` — never shared between tests. */
-export const freshAuth = (): { adapter: MemoryAdapter; auth: Auth } => {
+export const freshAuth = (): { adapter: MemoryAuthAdapter; auth: Auth } => {
   const adapter = memoryAuthAdapter();
   return {
     adapter,

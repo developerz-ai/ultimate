@@ -3,13 +3,16 @@
 // logged as facts that cannot carry PII: the code, the error's name, and the frames.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger, UltimateError } from '@ultimat3/core';
+import { structuredLogger, UltimateError } from '@ultimat3/core';
 import { discloseFailure } from './failure-disclosure';
 
 /** A logger whose lines land in `lines`, at the level the withheld half is logged on. */
 const capture = () => {
   const lines: string[] = [];
-  return { lines, logger: createLogger({ level: 'error', writer: (line) => lines.push(line) }) };
+  return {
+    lines,
+    logger: structuredLogger({ level: 'error', writer: (line) => lines.push(line) }),
+  };
 };
 
 describe('a withheld failure is logged without its content', () => {

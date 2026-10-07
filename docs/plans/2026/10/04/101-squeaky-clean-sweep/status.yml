@@ -144,7 +144,7 @@ slices:                    # one row per independently merged sweep; `sweep` is 
     sweep: "12a"
     status: complete
     percent: 100
-    evidence: ["#696"]
+    evidence: ["#696", "#697"]
   - file: 12-major-25.md
     tier: 0
     sweep: "12b"

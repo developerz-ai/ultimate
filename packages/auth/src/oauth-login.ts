@@ -3,7 +3,7 @@
 // matter which door the user came through. `completeOAuthLogin` is the blessed entry point;
 // the three steps under it are exported because a custom flow needs the seams, not a second path.
 
-import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
+import { ConfigInvalidError, logger, uuidV7 } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
@@ -65,7 +65,7 @@ export const emailVerifiedNotStored = (provider: string, userId: string): AuthEr
     // implements `updateUser` and lost a write it accepted.
     code: 'X_AUTH_WRITE_FAILED',
     cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
-    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
+    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAuthAdapter.updateUser is the reference implementation',
     meta: { provider, userId },
   });
 
@@ -149,7 +149,7 @@ async function applyGrants(auth: Auth, user: AuthUser, grants: OAuthGrants): Pro
  * display casing (`Ada@Example.com`) and change it between logins, and `x_users.email` is a plain
  * case-sensitive `unique` column — so unnormalised, the lookup below missed the account the user
  * registered and `createUserFor` minted a second one at the same address, which `login()` could
- * then never reach. `MemoryAdapter` used to fold case itself, which is why no test saw it.
+ * then never reach. `MemoryAuthAdapter` used to fold case itself, which is why no test saw it.
  */
 const profileEmail = (profile: OAuthProfile): string | null =>
   profile.email === null ? null : normaliseEmail(profile.email);
@@ -183,7 +183,7 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
     });
   }
   const created = await auth.adapter.createUser({
-    id: uuid(auth.clock),
+    id: uuidV7(auth.clock),
     email,
     // An OAuth-only account has no password to store, and must never be given a random one:
     // a hash nobody knows the input to is still a credential a reset flow could hand over.
@@ -241,7 +241,7 @@ async function resolveUser(
 
 function accountFor(auth: Auth, user: AuthUser, input: OAuthSignInInput): AuthAccount {
   return {
-    id: uuid(auth.clock),
+    id: uuidV7(auth.clock),
     userId: user.id,
     provider: input.profile.provider,
     providerAccountId: input.profile.providerAccountId,

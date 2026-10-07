@@ -74,7 +74,7 @@ export interface PromptCache {
  * writing its own `scope`, and the locale has to survive that — so it lives in the unconditional
  * half of the store key, beside the prompt hash.
  *
- * `ctx.actor` is never absent (`createContext` defaults it to `anonymousActor()`), so every
+ * `ctx.actor` is never absent (`ctxOf` defaults it to `anonymousActor()`), so every
  * anonymous caller shares one partition — which is what the anonymous actor already means
  * everywhere else in the framework.
  */

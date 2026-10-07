@@ -3,7 +3,7 @@
 // And the one thing it refuses: a resource with nothing to read rows through.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import {
   can,
@@ -116,7 +116,7 @@ describe('unit · defineAdmin’s auth defaults', () => {
       'anonymous',
     );
 
-    const context = createContext({
+    const context = ctxOf({
       actor: userActor({ id: 'u_3', roles: ['viewer'], orgId: 'o' }),
     });
     const ctx = await runWithContext(context, () =>

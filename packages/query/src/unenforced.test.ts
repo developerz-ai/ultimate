@@ -4,12 +4,12 @@
 // "reads exactly like forgetting the tenant". The same is true of a forgotten policy.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
 import { sourceFor } from './read';
-import { resetRegistry } from './registry';
+import { resetQueries } from './registry';
 import { from } from './source';
 
 interface Row {
@@ -24,10 +24,10 @@ const denied = () =>
   }).named('guardedRead');
 
 /** No permission at all: every enforced build has to refuse this caller. */
-const stranger = createContext({ actor: userActor({ id: 'u9' }) });
+const stranger = ctxOf({ actor: userActor({ id: 'u9' }) });
 
 afterEach(() => {
-  resetRegistry();
+  resetQueries();
 });
 
 describe('skipping a read policy costs a written reason', () => {

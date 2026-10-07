@@ -64,6 +64,23 @@ describe('@ultimat3/action public surface', () => {
     expect(exported).toContain('derivePath');
   });
 
+  // 25.0.0, one name one meaning (`scripts/factory-names.ts`): each of these was a second
+  // declaration of a name `@ultimat3/query`, `@ultimat3/policy` or `@ultimat3/core` also declares.
+  test('no twin of a sibling or lower-tier name — each renamed or imported from its one home', () => {
+    for (const name of [
+      'actorOf',
+      'guard',
+      'guardBeforeInput',
+      'policyCapability',
+      'resetRegistry',
+    ]) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    for (const name of ['guardAction', 'guardActionBeforeInput', 'resetActions']) {
+      expect(typeof Reflect.get(surface, name)).toBe('function');
+    }
+  });
+
   test('the deprecation helpers are core’s alone — 25.0.0 dropped the re-exports', () => {
     // `@ultimat3/core` is their one home (`HELPER_HOMES`); a re-export here is a second import
     // path to the same function, which is how an app ends up with two spellings in one file.
@@ -100,6 +117,16 @@ describe('@ultimat3/action public surface', () => {
       // still reachable by whoever holds the projection, and a key list would not see it.
       expect(projection).not.toHaveProperty('handle');
       expect(projection).not.toHaveProperty('def');
+    }
+  });
+
+  // 25.0.0: a value whose home is a lower tier is imported from that tier, never re-published here
+  // — `admitsAnonymous`/`policyPermissions` are `@ultimat3/policy`'s, `toBucket` is
+  // `@ultimat3/http`'s. Core's values are `bun run flight-copies`' (`X_HELPER_COPY`); these are not
+  // core's, so the absence is pinned where the export could come back.
+  test('no value of a lower-tier package is re-published on the barrel', () => {
+    for (const name of ['admitsAnonymous', 'policyPermissions', 'toBucket']) {
+      expect(surface).not.toHaveProperty(name);
     }
   });
 });

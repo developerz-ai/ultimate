@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { userActor } from '@ultimat3/core';
 import type { RequestContext, Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { Storage } from '@ultimat3/storage';
 import {
@@ -57,7 +57,7 @@ async function call(routes: readonly Route[], init: CallInit = {}): Promise<Resp
   if (route === undefined) throw new Error('no route');
   const key = init.key ?? KEY;
   const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/${init.disk ?? 'local'}/${key}`);
-  const ctx: RequestContext = createRequestContext({
+  const ctx: RequestContext = requestContext({
     url,
     method: 'GET',
     role: 'web',
@@ -197,7 +197,7 @@ describe('unit · dev storage · authorization', () => {
     // flattened 403 — so the guarantee does not depend on which surface called it.
     const route = storageRoutes({ storage })[0];
     const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/local/${KEY}`);
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url,
       method: 'GET',
       role: 'web',

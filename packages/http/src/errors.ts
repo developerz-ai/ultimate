@@ -194,7 +194,7 @@ export const serverNotStarted = (member: string): HttpError =>
   new HttpError({
     code: 'X_SERVER_NOT_STARTED',
     cause: `${member} was read before start() bound a socket`,
-    fix: 'call createServer({ ... }).start() before reading url()',
+    fix: 'call httpServer({ ... }).start() before reading url()',
   });
 
 export const pipelineNoResponse = (stage: string): HttpError =>
@@ -217,7 +217,7 @@ export const finalizeFailed = (stage: string, cause: unknown): HttpError =>
     // runs a `Proxy`'s `getPrototypeOf` trap and `.message` runs a getter, so both reads go
     // through core's total `renderThrowable` — the fast path was the last unguarded one here.
     cause: `the "${stage}" stage threw while finishing the response: ${renderThrowable(cause)}`,
-    fix: 'return a Response built here — json(), text(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
+    fix: 'return a Response built here — jsonResponse(), textResponse(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
   });
 
 /**
@@ -312,6 +312,21 @@ export const drainTimeoutDeleted = (): HttpError =>
       'http.drainTimeoutMs was deleted in 25.0.0: drain.deadlineMs is the one drain budget, for every role, and a second key for the web role alone is two answers to how long SIGTERM waits',
     fix: 'drain: { deadlineMs: 25_000 }   # in app.config.ts: drain.deadlineMs is the one budget every role, web included, drains on — and delete drainTimeoutMs from configureHttp({ … })',
     meta: { option: 'drainTimeoutMs', replacement: 'drain.deadlineMs' },
+  });
+
+/**
+ * `http.buildIdHeader`, deleted in 25.0.0. The pipeline read the client's build claim from it and
+ * stamped its own back under it, while the typed client, the service worker and `DEFAULT_CORS`
+ * all spelled core's `BUILD_ID_HEADER` — so a renamed header was a server listening for a header
+ * no client of it sent, and skew detection off in silence. Refused by key PRESENCE.
+ */
+export const buildIdHeaderDeleted = (): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'http.buildIdHeader was deleted in 25.0.0: the build-id header is core BUILD_ID_HEADER (x-ultimate-build), which every client sends, and a renamed one is a header no client of this server sends',
+    fix: "import { BUILD_ID_HEADER } from '@ultimat3/core'   # the one build-id header, not configurable — and delete buildIdHeader from configureHttp({ … })",
+    meta: { option: 'buildIdHeader', replacement: 'BUILD_ID_HEADER' },
   });
 
 /**

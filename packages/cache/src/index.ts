@@ -3,7 +3,7 @@
 export type { CacheHeaderOptions, CdnTierOptions, PurgeDriver } from './cdn';
 export {
   cacheHeaders,
-  createCdnTier,
+  cdnTier,
   isNoopPurgeDriver,
   noopPurgeDriver,
   surrogateKeys,
@@ -53,8 +53,8 @@ export {
 } from './invalidate';
 export type { LruOptions, LruStats } from './lru';
 
-export { createLruTier, estimateBytes, LruCache } from './lru';
-export { clearMemo, createMemoTier, memoSize } from './memo';
+export { estimateBytes, LruCache, lruTier } from './lru';
+export { clearMemo, memoSize, memoTier } from './memo';
 export type { CloudflarePurgeOptions } from './purge-cloudflare';
 export {
   CLOUDFLARE_API_URL,
@@ -69,10 +69,10 @@ export type { PurgeFetch } from './purge-http';
 export { DEFAULT_PURGE_TIMEOUT_MS } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
 export {
-  createRedisTier,
   namespaceFor,
   REDIS_INVALIDATE_SCRIPT,
   REDIS_TAG_MEMBER_SCRIPT,
+  redisTier,
 } from './redis';
 export type {
   Embedding,
@@ -82,8 +82,6 @@ export type {
   SemanticRememberOptions,
 } from './semantic';
 export { cosineSimilarity, memorySemanticCache } from './semantic';
-export type { FlightJoin, SingleFlight } from './single-flight';
-export { createSingleFlight } from './single-flight';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
   assertKnownTags,
@@ -121,11 +119,10 @@ export {
   assertFiniteDurationMs,
   assertFiniteSimilarityFloor,
   assertTtl,
-  createCacheStack,
+  cacheStack,
   DEFAULT_LOAD_DEADLINE_MS,
   DEFAULT_TTL_JITTER_FRACTION,
   isExpired,
   nowMs,
   sortTiers,
-  TIER_ORDER,
 } from './tiers';

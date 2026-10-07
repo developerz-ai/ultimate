@@ -4,9 +4,10 @@
  * visible in dev and in review screenshots instead of invisible in production.
  */
 
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import type { Catalog } from './catalog';
 import { type InterpolationVars, interpolate, selectPluralKey } from './interpolate';
-import { DEFAULT_LOCALE, type Locale } from './locales';
+import type { Locale } from './locales';
 
 export interface TranslateVars extends InterpolationVars {
   /** Present ⇒ plural selection runs against the locale's CLDR categories. */
@@ -52,7 +53,7 @@ export interface Translator<TCatalog = Catalog> {
   readonly locale: Locale;
 }
 
-export function createTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCALE): Translator {
+export function catalogTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCALE): Translator {
   const hasExact = (key: string): boolean => Object.hasOwn(catalog, key);
 
   const resolveKey = (key: string, vars?: TranslateVars): string => {

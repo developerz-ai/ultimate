@@ -3,14 +3,14 @@
 // no socket) so the authz stage is the same one production runs.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import { RENDER_MODES } from '@ultimat3/core';
+import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
 import {
   clearRoutes,
   defineRoute,
   h,
-  RENDER_MODES,
   registerRoute,
   SURFACE_SPECS,
   withStatus,
@@ -52,8 +52,8 @@ function register(fixture: RouteFixture): void {
   registerRoute(input);
 }
 
-const serve = (pwaHead?: string, themeHead?: string): ReturnType<typeof createServer> =>
-  createServer({
+const serve = (pwaHead?: string, themeHead?: string): ReturnType<typeof httpServer> =>
+  httpServer({
     routes: appRoutes({
       buildId: BUILD_ID,
       ...(pwaHead === undefined ? {} : { pwaHead }),

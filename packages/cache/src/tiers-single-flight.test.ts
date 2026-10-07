@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Scheduler } from '@ultimat3/core';
 import { tag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack, DEFAULT_LOAD_DEADLINE_MS } from './tiers';
+import { cacheStack, DEFAULT_LOAD_DEADLINE_MS } from './tiers';
 
 /**
  * A tier that keeps the tags it was written with and evicts on them. `tiers.test.ts`'s `fakeTier`
@@ -61,7 +61,7 @@ describe('a single-flight joiner that arrives during the FILL', () => {
     // `invalidateTags(['feed'])` then never reaches it, and the joiner's own invalidation — the
     // entire reason for declaring a tag — is silently a no-op for the whole TTL.
     const tier = taggingTier('lru');
-    const stack = createCacheStack([tier]);
+    const stack = cacheStack([tier]);
     const writes: string[][] = [];
     let joiner: Promise<string> | undefined;
 
@@ -136,7 +136,7 @@ describe('a wedged load does not hold its key for ever', () => {
 
   test('the default deadline is the one an abandoned request already gave up at', async () => {
     const timer = controlledTimer();
-    const stack = createCacheStack([taggingTier('lru')], { schedule: timer.schedule });
+    const stack = cacheStack([taggingTier('lru')], { schedule: timer.schedule });
     void stack.read('feed', () => new Promise<string>(() => {}));
     // `read` walks the ladder before it ever reaches the flight, so the timer is armed an await
     // later than the call.
@@ -150,7 +150,7 @@ describe('a wedged load does not hold its key for ever', () => {
 
   test('loadDeadlineMs overrides it without a new config key', async () => {
     const timer = controlledTimer();
-    const stack = createCacheStack([taggingTier('lru')], {
+    const stack = cacheStack([taggingTier('lru')], {
       schedule: timer.schedule,
       loadDeadlineMs: 2_500,
     });
@@ -161,7 +161,7 @@ describe('a wedged load does not hold its key for ever', () => {
 
   test('past the deadline the key is free, so the next reader loads instead of joining', async () => {
     const timer = controlledTimer();
-    const stack = createCacheStack([taggingTier('lru')], { schedule: timer.schedule });
+    const stack = cacheStack([taggingTier('lru')], { schedule: timer.schedule });
     let loads = 0;
     const wedged = (): Promise<string> => {
       loads += 1;

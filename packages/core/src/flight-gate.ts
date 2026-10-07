@@ -51,23 +51,20 @@ export interface FlightGate {
  * A slot is HANDED OVER on release rather than released and re-acquired: decrementing first would
  * let a caller arriving in the same tick past the ceiling while a waiter's continuation is still a
  * queued microtask, which is how a "bounded" pool goes over its bound under exactly the load it
- * exists for. `@ultimat3/auth`'s `createKdfGate` states the same rule; this is that function with
+ * exists for. `@ultimat3/auth`'s `boundedKdfGate` states the same rule; this is that function with
  * the refusal made injectable.
  */
-export function createFlightGate(
-  limits: FlightGateLimits,
-  options?: FlightGateOptions,
-): FlightGate {
+export function flightGate(limits: FlightGateLimits, options?: FlightGateOptions): FlightGate {
   const subject = options?.subject ?? 'in-flight work';
   // Refused at CONSTRUCTION, because this pair wedges rather than fails: `active < NaN` and
   // `waiters.length >= NaN` are both false, so every caller parks in a queue with no bound. Zero
   // is a real value at both — "never wait" and, at the width, "refuse everything".
   const maxConcurrent = finiteCount(
-    `createFlightGate (${subject})`,
+    `flightGate (${subject})`,
     'maxConcurrent',
     limits.maxConcurrent,
   );
-  const maxQueued = finiteCount(`createFlightGate (${subject})`, 'maxQueued', limits.maxQueued);
+  const maxQueued = finiteCount(`flightGate (${subject})`, 'maxQueued', limits.maxQueued);
   const waiters: Array<() => void> = [];
   let active = 0;
 
@@ -142,7 +139,7 @@ export function gateOverloaded(state: FlightGateState): UltimateError {
   return new UltimateError({
     code: 'X_FLIGHT_GATE_OVERLOADED',
     cause: `${state.active} of ${state.subject} are running at the ceiling of ${state.maxConcurrent} and ${state.queued} more are queued at the limit of ${state.maxQueued}`,
-    fix: 'retry after the Retry-After header, or widen the ceiling at the createFlightGate({ maxConcurrent, maxQueued }) call site — only if the box has the capacity the extra slots buy',
+    fix: 'retry after the Retry-After header, or widen the ceiling at the flightGate({ maxConcurrent, maxQueued }) call site — only if the box has the capacity the extra slots buy',
     meta: {
       active: state.active,
       queued: state.queued,

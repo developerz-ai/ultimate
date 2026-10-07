@@ -5,12 +5,12 @@
 // closed.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
+import { type Ctx, ctxOf, drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 interface ClosingDriver {
   readonly driver: JobDriver;
@@ -47,7 +47,7 @@ afterEach(() => {
 
 describe('the worker holds its two shutdown hooks, and only while it runs', () => {
   test('start registers the pair, stop hands both back', async () => {
-    const worker = createWorker({ driver: closingDriver().driver, context });
+    const worker = jobWorker({ driver: closingDriver().driver, context });
 
     worker.start();
     // Two, in two phases, for the reason `sync-listen.ts` registers two: one hook doing both
@@ -62,7 +62,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
   });
 
   test('a restarted worker still holds one pair, not one per start', async () => {
-    const worker = createWorker({ driver: closingDriver().driver, context });
+    const worker = jobWorker({ driver: closingDriver().driver, context });
 
     worker.start();
     await worker.stop();
@@ -76,7 +76,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
   });
 
   test('drainOnShutdown: false registers nothing to leak', async () => {
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: closingDriver().driver,
       context,
       drainOnShutdown: false,
@@ -90,7 +90,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
   });
 
   test('a close that throws still hands the hook back', async () => {
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: closingDriver(() => Promise.reject(new Error('connection reset'))).driver,
       context,
     });
@@ -103,7 +103,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
 
   test('the hook drains the worker, then is gone', async () => {
     const closing = closingDriver();
-    const worker = createWorker({ driver: closing.driver, context });
+    const worker = jobWorker({ driver: closing.driver, context });
 
     worker.start();
     await drain('SIGTERM');
@@ -119,7 +119,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
       release = resolve;
     });
     const closing = closingDriver(() => held);
-    const worker = createWorker({ driver: closing.driver, context });
+    const worker = jobWorker({ driver: closing.driver, context });
 
     worker.start();
     const manual = worker.stop('deploy');
@@ -139,7 +139,7 @@ describe('the worker holds its two shutdown hooks, and only while it runs', () =
       release = resolve;
     });
     const closing = closingDriver(() => held);
-    const worker = createWorker({ driver: closing.driver, context });
+    const worker = jobWorker({ driver: closing.driver, context });
 
     worker.start();
     const stopped = worker.stop('deploy');

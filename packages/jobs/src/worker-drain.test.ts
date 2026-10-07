@@ -4,14 +4,14 @@
 // a dead connection — the ack never lands, the lease expires, and the queue delivers it twice.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, ClaimOptions, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 /** Minimal Standard Schema, so this file does not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -85,7 +85,7 @@ describe('stop() waits out the round it races', () => {
       maxAttempts: 1,
     });
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false });
     const round = worker.tick();
     await entered.passed;
 
@@ -119,7 +119,7 @@ describe('stop() waits out the round it races', () => {
       },
     };
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       queues: ['alpha', 'beta'],
       context,
@@ -152,7 +152,7 @@ describe('stop() waits out the round it races', () => {
       },
     };
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false });
     const stopped = worker.stop('deploy');
     expect(await worker.tick()).toEqual([]);
 
@@ -172,7 +172,7 @@ describe('stop() waits out the round it races', () => {
       },
     };
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false });
     worker.start();
     await Promise.all([worker.stop('deploy'), worker.stop('SIGTERM')]);
 
@@ -192,7 +192,7 @@ describe('a close that throws stops the worker rather than pinning it', () => {
   };
 
   test('the state settles at stopped, and the failure still reaches the caller', async () => {
-    const worker = createWorker({ driver: failing(), context, drainOnShutdown: false });
+    const worker = jobWorker({ driver: failing(), context, drainOnShutdown: false });
 
     worker.start();
     await expect(worker.stop('deploy')).rejects.toThrow('connection reset');
@@ -203,7 +203,7 @@ describe('a close that throws stops the worker rather than pinning it', () => {
   });
 
   test('the worker starts again — a failed close does not brick it', async () => {
-    const worker = createWorker({ driver: failing(), context, drainOnShutdown: false });
+    const worker = jobWorker({ driver: failing(), context, drainOnShutdown: false });
 
     worker.start();
     await worker.stop('deploy').catch(() => undefined);

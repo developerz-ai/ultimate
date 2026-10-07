@@ -3,7 +3,7 @@ import { isUltimateError } from '@ultimat3/core';
 import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import { cosine } from './embeddings';
 import type { AiFetch } from './fetch-seam';
-import { RemoteEmbedder } from './remote-embedder';
+import { type RemoteEmbedder, remoteEmbedder } from './remote-embedder';
 
 interface Call {
   readonly url: string;
@@ -35,7 +35,7 @@ function embeddingsFor(inputs: readonly string[], start: number): Response {
 }
 
 function embedder(calls: Call[], reply: (call: Call, index: number) => Response, dimension = 2) {
-  return new RemoteEmbedder({
+  return remoteEmbedder({
     name: 'voyage-3',
     dimension,
     apiKey: 'key-1',
@@ -163,7 +163,7 @@ describe('RemoteEmbedder', () => {
 
   test('no key names the env var instead of reaching the network', async () => {
     const calls: Call[] = [];
-    const keyless = new RemoteEmbedder({
+    const keyless = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: '',
@@ -197,7 +197,7 @@ describe('RemoteEmbedder outbound safety', () => {
       seen = init.signal;
       return embeddingsFor(['a'], 0);
     };
-    const remote = new RemoteEmbedder({
+    const remote = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: 'key-1',
@@ -215,7 +215,7 @@ describe('RemoteEmbedder outbound safety', () => {
           reject(init.signal?.reason ?? new Error('aborted'));
         });
       });
-    const remote = new RemoteEmbedder({
+    const remote = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: 'key-1',
@@ -231,7 +231,7 @@ describe('RemoteEmbedder outbound safety', () => {
       new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array(4096).fill(1) }] }), {
         headers: { 'content-type': 'application/json' },
       });
-    const remote = new RemoteEmbedder({
+    const remote = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: 'key-1',
@@ -265,7 +265,7 @@ describe('RemoteEmbedder: a hostile rejection still comes back coded', () => {
     );
 
   const embedderRejecting = (value: unknown): RemoteEmbedder =>
-    new RemoteEmbedder({
+    remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: 'key-1',
@@ -313,13 +313,12 @@ describe('RemoteEmbedder screens its bounds at construction', () => {
   /** One builder per option, written out rather than spread, so each is the real constructor call. */
   const BUILD = {
     batchSize: (batchSize: number) =>
-      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', batchSize }),
+      remoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', batchSize }),
     timeoutMs: (timeoutMs: number) =>
-      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', timeoutMs }),
+      remoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', timeoutMs }),
     maxResponseBytes: (maxResponseBytes: number) =>
-      new RemoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', maxResponseBytes }),
-    dimension: (dimension: number) =>
-      new RemoteEmbedder({ name: 'voyage-3', dimension, apiKey: 'k' }),
+      remoteEmbedder({ name: 'voyage-3', dimension: 2, apiKey: 'k', maxResponseBytes }),
+    dimension: (dimension: number) => remoteEmbedder({ name: 'voyage-3', dimension, apiKey: 'k' }),
   };
 
   test('each option is refused under its own name, before any request exists', () => {

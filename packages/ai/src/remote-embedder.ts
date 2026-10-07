@@ -8,7 +8,7 @@
 
 import { finiteCount, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
-import { normalize } from './embeddings';
+import { normalizeVector } from './embeddings';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
 import type { AiFetch } from './fetch-seam';
@@ -48,6 +48,11 @@ export interface RemoteEmbedderInput {
   readonly maxResponseBytes?: number;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
   readonly fetch?: AiFetch;
+}
+
+/** An HTTP embeddings endpoint — the one way to build one; the class is a type only. */
+export function remoteEmbedder(input: RemoteEmbedderInput): RemoteEmbedder {
+  return new RemoteEmbedder(input);
 }
 
 export class RemoteEmbedder implements Embedder {
@@ -204,7 +209,7 @@ export class RemoteEmbedder implements Embedder {
       }
       vector[i] = value;
     }
-    return normalize(vector);
+    return normalizeVector(vector);
   }
 
   private malformed(detail: string): AiTransportError {

@@ -4,13 +4,13 @@
 // provider API told to end a session that now belongs to another run.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger, UltimateError } from '@ultimat3/core';
+import { ctxOf, structuredLogger, UltimateError } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
 import type { CdpResolverRequest } from './cdp-resolver';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { SessionInit } from './driver';
 import { remoteBrowser } from './driver-cdp';
 import type { ScrapeDefinition } from './scrape';
@@ -70,9 +70,9 @@ const rental = (
 const init = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
   rules: { allowHosts: ['shop.test'] },
-  clock: testClock(),
+  clock: testScrapeClock(),
   timeoutMs: 1_000,
-  logger: createLogger({ writer: () => undefined }),
+  logger: structuredLogger({ writer: () => undefined }),
   ...over,
 });
 
@@ -81,8 +81,8 @@ const runArgs = (signal?: AbortSignal): JobRunArgs<Record<string, never>> => ({
   step: {
     run: <T>(_name: string, fn: () => Promise<T> | T) => Promise.resolve(fn()),
   } as unknown as StepApi,
-  ctx: createContext({
-    logger: createLogger({ writer: () => undefined }),
+  ctx: ctxOf({
+    logger: structuredLogger({ writer: () => undefined }),
     ...(signal === undefined ? {} : { signal }),
   }),
   attempt: 1,
@@ -103,7 +103,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'a fake browser: there is no origin to ask' },
-  clock: testClock(),
+  clock: testScrapeClock(),
   egress: () => 'http://exit-7.test:8080',
   driver: remoteBrowser({ launcher: held.launcher, cdpUrl: held.resolve }),
   run,
@@ -269,7 +269,7 @@ describe('unit · release() runs exactly once', () => {
 
   test('a release() that rejects is WARNED, once, with the code and the endpoint`s host — never its path', async () => {
     const lines: string[] = [];
-    const logger = createLogger({ level: 'debug', writer: (line) => lines.push(line) });
+    const logger = structuredLogger({ level: 'debug', writer: (line) => lines.push(line) });
     // The provider's own failure text quotes the connect URL — which is its access token.
     const held = rental({
       release: () =>
@@ -304,7 +304,7 @@ describe('unit · release() runs exactly once', () => {
 
   test('an uncoded rejection still warns — with the host, and none of its message', async () => {
     const lines: string[] = [];
-    const logger = createLogger({ level: 'debug', writer: (line) => lines.push(line) });
+    const logger = structuredLogger({ level: 'debug', writer: (line) => lines.push(line) });
     const held = rental({ release: () => Promise.reject({ message: `gone: ${CDP_URL}` }) });
     await (
       await remoteBrowser({ launcher: held.launcher, cdpUrl: held.resolve }).open(init({ logger }))
@@ -317,7 +317,7 @@ describe('unit · release() runs exactly once', () => {
 
   test('a release() that resolves warns nothing', async () => {
     const lines: string[] = [];
-    const logger = createLogger({ level: 'debug', writer: (line) => lines.push(line) });
+    const logger = structuredLogger({ level: 'debug', writer: (line) => lines.push(line) });
     const held = rental();
     const session = await remoteBrowser({ launcher: held.launcher, cdpUrl: held.resolve }).open(
       init({ logger }),

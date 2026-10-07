@@ -7,7 +7,7 @@ import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ulti
 import { knownPermissions, permissionDeclarationSites, restorePermissions } from '@ultimat3/policy';
 import type { AdminApp } from './admin';
 import { staticAuthz } from './authz';
-import { relationsFor } from './relations';
+import { relationDataFor } from './relations';
 
 const { defineAdmin } = await import('./admin');
 
@@ -41,7 +41,7 @@ afterAll(() => {
 describe('unit · a page’s labels', () => {
   test('300 referenced ids are 300 labels — the `in` read is chunked, never truncated', async () => {
     const ctx = admin.ctx({ actor: { id: 'u' }, requestId: 'labels' });
-    const read = await relationsFor(
+    const read = await relationDataFor(
       admin.resources,
       ctx,
       new Map([['admin_labels_authors', { ids: new Set(ids), pick: false }]]),

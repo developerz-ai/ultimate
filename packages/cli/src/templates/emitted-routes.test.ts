@@ -5,15 +5,9 @@
 // scaffolded URL that 404s, reported by nothing.
 
 import { describe, expect, test } from 'bun:test';
+import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from '@ultimat3/render';
-import {
-  assertModeInvariants,
-  defineRoute,
-  HYDRATE_STRATEGIES,
-  hydrateRuntimeBytes,
-  OFFLINE_STRATEGIES,
-  RENDER_MODES,
-} from '@ultimat3/render';
+import { assertModeInvariants, defineRoute, hydrateRuntimeBytes } from '@ultimat3/render';
 import { scaffoldVariants } from '../scaffold-fixture';
 
 /** One `key: 'value'` out of an emitted `defineRoute({ … })`. Absent is `undefined`, never a guess. */

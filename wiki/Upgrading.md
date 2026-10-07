@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 24.x → 25.0.0 | **31** so far, and **unreleased** — Bun 1.4.2 as the floor; seven deleted `app.config.ts` keys refused by name, the locales in `defineCatalogs()`; `assertEnvExample`, `resolveSpeculation` and `normalizeAuditRecord` removed, `AuditRecord.name` / `.primitive` required, the deprecation helpers from core only; one `memoryX` / `postgresX` spelling per factory; `entity`'s `Page` and `http.drainTimeoutMs` removed, a `bearerMount` catch-all; one MCP projection (`toolFrom`), one page shape (`nextCursor`, `hasMore`), a per-action rate limit that is the action's own, a redaction-keeping `IdempotencyStore`, `SQL_*` statements off the barrels, the NATS job driver stub deleted, required `WebhookLedger.isDisabled` and `ChangeEvent.write`; `McpExposure.name` and `contentHash` removed, a scopes map that names every tool, a required `DigestAppend.appender`; **no model chosen for an app — it registers its own and names one**; a widened `Menu` `aria-controls`, a private `FakeElement.listeners`, offline scrapes that state their robots reason, `nearest` removed, a `--cdp-url` capture that fails closed, a page that may not import a repo, and ai's `contentHash` renamed `promptHash` | the `24.x → 25.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 24.x → 25.0.0 | **33** so far, and **unreleased** — Bun 1.4.2 as the floor; a closed `app.config.ts` that refuses an undeclared key and every deleted one by name, the locales in `defineCatalogs()`; `assertEnvExample`, `resolveSpeculation` and `normalizeAuditRecord` removed, `AuditRecord.name` / `.primitive` required, every value imported from the package that declares it; one spelling per factory, never `create<Thing>`; one `Page` (`entity`'s `Page` and `storage`'s `ListPage` removed), `http.drainTimeoutMs` and `http.buildIdHeader` removed, a `bearerMount` catch-all; one MCP projection (`toolFrom`), one page shape (`nextCursor`, `hasMore`), a per-action rate limit that is the action's own, a redaction-keeping `IdempotencyStore`, `SQL_*` statements off the barrels, the NATS job driver stub deleted, required `WebhookLedger.isDisabled` and `ChangeEvent.write`; one MCP block in core with `McpExposure` and its `name` removed, `contentHash` removed, a scopes map that names every tool, a required `DigestAppend.appender`; **no model chosen for an app — it registers its own and names one**; a widened `Menu` `aria-controls`, a private `FakeElement.listeners`, offline scrapes that state their robots reason, `nearest` removed, a `--cdp-url` capture that fails closed, a page that may not import a repo, ai's `contentHash` renamed `promptHash`, one meaning per value name, and every job ack counted | the `24.x → 25.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 23.x → 24.0.0 | **202** — a calendar check on `t.date`, `t.url` refusing what the parser would cut, plain objects only, a default its own schema must accept, decimal-only coercion, a stricter `defineConfig`, an unknown `LOG_LEVEL` refused, `retry` and `createFlightGate` refusing a bound that is not one, a child context that aborts with its parent, compound credential names redacted, error `meta` under `extra.meta` in the monitor envelope, per-signal OTLP headers, a sampler that ignores a leftover ratio, wildcard host rules that stop at the network edge, an empty cursor secret counted as unset; then tier 1 — `t()` always interpolating, interval crons through both passes of a fall-back hour, exact cron names, `formatRelative` requiring a zone, a transaction that rejects when its body swallowed a failed statement, `X_DB_COMMIT_UNKNOWN`, nested transaction options refused, sibling nested scopes run in turn under a 30 s wait, a `changed-primary-key` drift kind, `introspect()` reporting catalog types, flag expiries that must be ISO; then an `e:<entity>` purge key on every tagged response, WebP-only `responsiveImage()` by default, `promoteAttachment` requiring its policy, a required `StorageDriver.stat()`, an optional `lastModified`, a `get()` ceiling, image variant keys that keep the source extension, `v2` signed URLs that name their disk; then a required `Driver.transactor()`, `dbDrift` leaving entity, a preload ceiling, `assertAllowed` throwing the decision's own code, a 401 for a denial with no actor, a malformed policy decision that denies; then `ctx.peer` behind its own switch, anonymous browser writes held to same-origin, failed sign-ins metered to a 429, health bodies trimmed for strangers, a `max-age` treated as a shared-cache offer, a body refused without a `content-type`, an awaited browser `close()`; then auth — **a sealed MFA secret that needs `x auth seal-mfa` run once**, a retired `x_auth_failures` table, a reservation-shaped `AuthLimiter`, API keys bound to their owner and its grants, `X_MFA_REQUIRED` carrying a challenge, eight more required `AuthAdapter` members, `oauthLogin` requiring `APP_URL`, an e2e `offline()` that rejects when a page refuses the switch; then `compareValues` removed from query, a `.limit()` that bounds every page, a `single` read answering one row over MCP, `admin:*` declared by `defineAdmin()` rather than by import; then `mutator()` requiring `idempotent: true`, a regenerated `openapi.json` and schema dump, idempotent actions and cache busts that settle with the commit, a `manifest` step that fails on a stale `openapi.json`; then jobs — a final-attempt lapse buried instead of re-claimed, `cancel` refusing finished jobs, step writes fenced on the claim, a uuid-only `runId`, an awaited `purgeExpired()`, `x_job_events` swept; then realtime — **three operator steps: `APP_URL` on the `sync` role as the whole origin allow-list, `REPLICA IDENTITY FULL` for channels with params, and a replication connection that refuses a weak password without TLS** — rows revived across the bus, five interfaces with new required members, stricter channel re-authorization, and an offline queue abandoned when the principal changes; then a catch-all route that answers its bare prefix, a zero-length ISR `ttl` refused, `NativeReason` gaining `'unparsable'`, CSS-module classes scoped in selectors only with every scoped name changed once, a positional `CompiledPattern.specificity`, and a notification tap that opens this app only; then ui — two required `ThemeEnv` members, a fixed `theme.defaultMode` that a "System" pick and an OS change no longer override, the deprecated theme inline script removed, a `Popover` trigger whose `aria-controls` can be absent, and file controls that post only the files they accepted; then a required `peek` on every rate-limit store and an address refused on required routes once its failed credentials are spent; then mcp — a 5xx cause hidden from a remote caller, `db.query` refusing SQL run as text, a meta tool without `destructive` listed as a query, list calls held to their whitelist, failed tokens metered per address; then a `send()` that waits for its transaction's commit and one recipient rule on every mail driver; then `x_notify_digests` in the schema dump, queries publishing `input`, a non-finite manifest fact refused, and a dropped NOT NULL default classed as breaking; then ai — an atomic `BudgetStore.take`, a required `Gateway.callLedger(keys)`, **gateway `actor` and `org` ceilings that count every model call's caller**, a 5xx tool cause hidden from the model, `fnv1a` removed and `HashEmbedder` vectors changed, an unknown finish reason read as truncated, an unscoped vector read refused inside an org's request, a required `VectorStore.prune`, `chunk()` owning `source`, and `numericTolerance` refusing a bound that is not one; then testing — a coded `app()` before boot, `assertDeterministic` by canonical form, `frozenClock` announcing its moves, one module instance per island mount; then scraping — a proxy switch in launch args refused, a required browser-level `target()`, a jar-less browser refused, `burnSession` comparing `savedAt`, `maxDrop` held to a fraction, credential-shaped URL redaction, a declared header that replaces the session's, wildcard hosts resolved and pinned, robots redirects screened per hop, and an undated recording read as stale; then admin — a nullable keyset bound, **edit forms that post `_version` and a 409 for a stale edit**, a required `AdminFormProps.version`, a `'stale'` `CrudResult`, creates and updates decided on what they write, tenant-scoped audit screens, actions and batches that commit with their audit entry, `?scope=*` for no scope, and stricter list filters; then a split sitemap's parts under `/sitemaps/`, a permission's declaration site restored with it, then cli — an export directory a build must prove is its own, a static build that fails on a module that does not load, unread build flags refused, a `--dry-run` that is the write plan, generator names and API bindings refused before writing, an unowned path read as root-wide, test discovery anchored at the root, guards and app entry files under `filesize` and `errors`, SEO answers kept an hour, a scaffold pinned to the repository's `solid-js` and typechecking the root program, **a permission only `defineAdmin()` declared refused by the `policy` step**, **an unrecorded `REPLICA IDENTITY FULL` refused by the `drift` step**, and a registry snapshot that carries permission sites; then a handler's own CSP kept beside the app's, `x routes --json` in every route fix, **serving roles that leave the framework schema to `ROLE=migrate`**, decimal-only ports and proxy hops, stored files served as sandboxed downloads, no readiness grace off the listening roles, a replicator ready only while its stream runs, and cli commands that exit 1 on an unknown name or any finding, a `/_x` SQL panel that runs only a same-origin POST from this machine, and stricter `x doctor`, `x jobs`, `x shot`, `x dev`, `x verify merge`, `tests.run`, `x mcp serve` and `x routes`; then `checkErrorCodesThrown` waiving only the codes a list names; then **a chart that renders a NetworkPolicy per role, a bounded `/tmp` and a Secret every role must have**, and a sync listener on its own port at port 0 | the `24.0.0` section, in order |
 | 22.x → 23.0.0 | **66** — an image line that prebuilds the island store, a worker that imports less of the app, a committed schema dump, a stated coverage floor, step deadlines, raw browser requests refused by the gate, a typed-handle repo with `list(limit)` and a generated query with no `orgId` input, admin label keys the `i18n` step now checks, every hand-written job driver and store fenced on its claim, `runJobs` through a real worker, a framework-served admin that replaces the host's pages and now serves the jobs dashboard, an async `AuditLog`, admin writes held to the row scope, and sealed scraping sessions that discard what was stored before | the `23.0.0` section, in order |
 | 21.x → 22.0.0 | **23** — two date readers that refuse a non-ISO string instead of reading it in the host's zone, a `helm` release named after the app, `channel()` requiring a policy, a per-mutation outbox, a `sync` role that refuses to boot with nothing to deliver, boot-owned auth tables, `x shot` on raw CDP with no `puppeteer-core`, `realtime.transport` deciding the bus, and removed exports: `Result`, realtime's `backoffDelay`, the e2e driver's move to `@ultimat3/testing`, `startLiveReplicator` leaving it, unreferenced package internals and 236 of the CLI's, a one-time `x db gen` for a re-stamped schema hash, and a query that filters on a column its loader never selected refusing instead of answering `[]` | the `22.0.0` section, in order |
@@ -73,15 +73,15 @@ Each entry changes a surface the table below covers.
 
 ## 24.x → 25.0.0, entry by entry — **unreleased**
 
-**Thirty-one entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order: Bun
+**Thirty-three entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order: Bun
 first, then grouped by package, lowest tier first. No legacy path, no codemod, no compatibility
 shim — every break is a build error or an `X_*` error naming the rewrite. Most of the major is
 deletion: a second spelling, a second projection or a second page shape removed, and the keys and
 re-exports a deprecation promised to remove. **Entries 2 and 8 refuse the boot** of an app that
-still writes a deleted key. **Entry 12 is silent:** a per-action bucket in `configureHttp` stops
+still writes a deleted or an undeclared key. **Entry 12 is silent:** a per-action bucket in `configureHttp` stops
 limiting anything, so move it before the deploy — upgrade step 9. **Entries 22–24 refuse every AI
-call** until the app registers its own models and names one — upgrade step 8. Entry 31 landed
-after the cut, so it sits below 30 rather than with ai's 22–24. A later slice
+call** until the app registers its own models and names one — upgrade step 8. Entries 31–33 landed
+after the cut, so they sit below 30 rather than with their packages. A later slice
 appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it
 as `(#N)` after the dash.
 
@@ -91,16 +91,16 @@ as `(#N)` after the dash.
 |---|---|---|---|
 | 1 | `bun upgrade` to 1.4.2 and move the app's own image to a 1.4.2 base | `X_BUN_VERSION` from `x` and `x doctor` | 1 |
 | 2 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
-| 3 | delete the removed keys from `app.config.ts` and each overlay; declare the locales in `defineCatalogs` (`packages/i18n/src/index.ts`); move a non-`/mcp` `ai.mcp.path` to the first `defineAppMcp({ path })` in `apps/<app>/mcp.ts`; move `drainTimeoutMs` to `drain: { deadlineMs }` | TS2353 in a typed config; `X_CONFIG_INVALID` naming the key and its replacement at the first import | 2, 8 |
-| 4 | `bun run typecheck` for the renames and removed exports: factory spellings, `checkEnvExample`, the core deprecation, client-flight and audit-sink helpers, `fingerprint`, `nearestName`, `promptHash`, `entity`'s `Page`, `SQL_*`, `createNatsDriver` and `createRedisDriver` imports | TS2305 / TS2724 at each import; TS1485 / TS1362 at a class now exported as a type | 3, 5–7, 14, 15, 20, 28, 31 |
-| 5 | `bun run typecheck` for the MCP projection and the page shape: `.tool()` and `toolFromAction` → `toolFrom`, `endCursor` / `hasNextPage` → `nextCursor` / `hasMore`, `mcp.name` → the primitive's `name` | TS2339 / TS2305 / TS2353 at each site | 10, 11, 18 |
-| 6 | `bun run typecheck` for the members a custom implementation owes: `AuditRecord.name` / `.primitive`, `IdempotencyStore.keepsRedaction` and `settle(…, redacted)`, `WebhookLedger.isDisabled`, `ChangeEvent.write`, `DigestAppend.appender`; widen a `Menu` trigger's `aria-controls`; read `listenerFor` instead of `listeners` | TS2741 / TS2554 / TS2322 / TS2341 at each site | 4, 13, 16, 17, 21, 25, 26 |
-| 7 | `bun run typecheck` for ai: pass `models` to each `new AnthropicProvider(…)`, replace `OPENAI_MODEL_IDS` with the app's ids | TS2554 / TS2305 at each site | 23 |
-| 8 | **before the deploy, where the app calls a model:** `registerModel` every model it names (by convention in its own `models.ts`), and name one on each declaration or as `createGateway({ defaultModel })`; a test registers its rows in `beforeEach` and passes `model` to `EchoProvider` | `X_AI_MODEL_UNKNOWN` before any provider call; `X_AI_MODEL_UNRESOLVED` at a call that names none | 22–24 |
+| 3 | delete the removed keys from `app.config.ts` and each overlay — the seven of 25.0.0, the ten of earlier majors, and any key the refusal says is not one (fix the typo it suggests); declare the locales in `defineCatalogs` (`packages/i18n/src/index.ts`); move a non-`/mcp` `ai.mcp.path` to the first `defineAppMcp({ path })` in `apps/<app>/mcp.ts`; move `drainTimeoutMs` to `drain: { deadlineMs }` and delete `buildIdHeader` from `configureHttp` | TS2353 in a typed config; `X_CONFIG_INVALID` naming the key and its replacement, or the nearest real key, at the first import | 2, 8 |
+| 4 | `bun run typecheck` for the renames and removed exports: factory spellings (every `create<Thing>` and `new` of a class now a type), every value a second package re-exported, the renamed value names, `checkEnvExample`, `fingerprint`, `nearestName`, `promptHash`, `entity`'s `Page`, `SQL_*`, `createNatsDriver` and `createRedisDriver` imports | TS2305 / TS2724 at each import; TS1485 / TS1362 at a class now exported as a type | 3, 5–7, 14, 15, 20, 28, 31, 32 |
+| 5 | `bun run typecheck` for the MCP projection, the MCP block and the page shape: `.tool()` and `toolFromAction` → `toolFrom`, `QueryMcp` / `McpExposure` / `McpAnnotationHints` → core's `McpExposureDeclaration` family, `mcp.name` → the primitive's `name`, `endCursor` / `hasNextPage` → `nextCursor` / `hasMore`, a storage page's `objects` / `truncated` / `cursor` → `rows` / `hasMore` / `nextCursor` | TS2339 / TS2305 / TS2353 at each site | 7, 10, 11, 18 |
+| 6 | `bun run typecheck` for the members a custom implementation owes: `AuditRecord.name` / `.primitive`, `IdempotencyStore.keepsRedaction` and `settle(…, redacted)`, `WebhookLedger.isDisabled`, `ChangeEvent.write`, `DigestAppend.appender`, a `StorageDriver.list()` that answers `Page<StorageListEntry>`; drop `counted` from every `ack`; widen a `Menu` trigger's `aria-controls`; read `listenerFor` instead of `listeners` | TS2741 / TS2554 / TS2322 / TS2339 / TS2353 at each site | 4, 7, 13, 16, 17, 21, 25, 26, 33 |
+| 7 | `bun run typecheck` for ai: pass `models` to each `anthropicProvider(…)`, replace `OPENAI_MODEL_IDS` with the app's ids | TS2554 / TS2305 at each site | 23 |
+| 8 | **before the deploy, where the app calls a model:** `registerModel` every model it names (by convention in its own `models.ts`), and name one on each declaration or as `providerGateway({ defaultModel })`; a test registers its rows in `beforeEach` and passes `model` to `echoProvider()`'s requests | `X_AI_MODEL_UNKNOWN` before any provider call; `X_AI_MODEL_UNRESOLVED` at a call that names none | 22–24 |
 | 9 | **before the deploy:** move each `rateLimit.buckets.<actionName>` from `configureHttp` to that action's `rateLimit: { limit, windowMs }` | `X_CONFIG_INVALID` at boot, naming the bucket and the action | 12 |
 | 10 | `x manifest`, commit `x.manifest.json` and `openapi.json` | `X_MANIFEST_STALE` from the `manifest` step | 11 |
 | 11 | `x verify --only boundaries,unit,contract,e2e` and fix what it fails: move an app wildcard off a `bearerMount` prefix, list every projected tool under a scope, give each offline scrape a `robots: { ignore }` reason, move a page's repo read into a query | `X_ROUTE_CONFLICT`; `X_MCP_SCOPE_UNCOVERED` at boot; `X_SCRAPE_ROBOTS_DISALLOWED`; `X_BOUNDARY_ROUTE_TO_DB` | 9, 19, 27, 30 |
-| 12 | read each script or CI job that runs `x shot --cdp-url` against a hosted browser | `X_CDP_CALL_FAILED` where a capture used to proceed | 29 |
+| 12 | read each script or CI job that runs `x shot --cdp-url` against a hosted browser, passes `--to` or `--dry-run` to `x jobs drain`, or reads `data.next` from `x jobs ls --json` | `X_CDP_CALL_FAILED` where a capture used to proceed; `X_CLI_BAD_FLAG`; `undefined` where a cursor was | 7, 15, 29 |
 | 13 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
 ### Entry by entry
@@ -112,33 +112,33 @@ Every package (1). Tier 0 — `@ultimat3/core` (2–5). Tier 1 and up — the fa
 `@ultimat3/jobs` (15–16), `@ultimat3/realtime` (17). Tier 4 — `@ultimat3/mcp` (18–19),
 `@ultimat3/manifest` (20), `@ultimat3/notify` (21), `@ultimat3/ai` (22–24), `@ultimat3/ui` (25).
 Tier 5 — `@ultimat3/testing` (26), `@ultimat3/scraping` (27), `@ultimat3/cli` (28–30). After
-the cut — `@ultimat3/ai` (31).
+the cut — `@ultimat3/ai` (31), the value names of every package (32), `@ultimat3/jobs` (33).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
 | 1 | `engines.bun`, `x`, `x doctor` | you run Bun 1.4.0 or 1.4.1. `X_BUN_VERSION`; `bun upgrade`, and a 1.4.2 base image in the app's own Dockerfile |
-| 2 | `app.config.ts`, keys removed: `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme.tokens`, `jobs.driver`, `ai.mcp.path` | a layer writes one. `X_CONFIG_INVALID` naming the key and its replacement; TS2353 in a typed config; TS2339 where code reads `config.locales`. The locales and their default are `defineCatalogs({ default, locales })` in `packages/i18n/src/index.ts`; the zone is passed per call, the currency per `Money`; the theme is `defineTheme` in `apps/web/shared/theme.ts`; the driver is `setJobDriver(postgresJobDriver({ executor }))`. Delete `ai.mcp.path`: every MCP endpoint, #0 included, mounts at its own `defineAppMcp({ path })` (default `/mcp`) — if yours was not `/mcp`, pass it as `path` to the first `defineAppMcp` in `apps/<app>/mcp.ts`. `McpConfig` is `{ expose }` |
+| 2 | `app.config.ts`: any key it does not declare, at any depth; keys removed: `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme.tokens`, `jobs.driver`, `ai.mcp.path`, and from earlier majors `realtime.heartbeatMs`, `database.urlEnv`, `database.poolSize`, `database.schema`, `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv`, `cache.driver`, `cache.urlEnv`, `realtime.tier` | a layer writes one. `X_CONFIG_INVALID` naming the path and either its replacement or, for a key that never existed, the nearest real one (`did you mean drain?`); TS2353 in a typed config; TS2339 where code reads `config.locales`. The locales and their default are `defineCatalogs({ default, locales })` in `packages/i18n/src/index.ts`; the zone is passed per call, the currency per `Money`; the theme is `defineTheme` in `apps/web/shared/theme.ts`; the driver is `setJobDriver(postgresJobDriver({ executor }))`. Delete `ai.mcp.path`: every MCP endpoint, #0 included, mounts at its own `defineAppMcp({ path })` (default `/mcp`) — if yours was not `/mcp`, pass it as `path` to the first `defineAppMcp` in `apps/<app>/mcp.ts`. `McpConfig` is `{ expose }`. Of the ten older keys only `cache.driver` was read (→ `cache: { tiers: [...] }`); the rest were read by nothing — delete the line, and the `fix:` names what does the job (`REMOVED_CONFIG_KEYS`, `packages/core/src/config-removed.ts`) |
 | 3 | `assertEnvExample`, `EnvExampleDriftError`, `resolveSpeculation` | you import one. `checkEnvExample(…)` returns findings instead of throwing — or let `x verify --only manifest` run it; speculation is `defineConfig({ navigation: { speculation } })` |
 | 4 | `AuditRecord`, `normalizeAuditRecord`, `NormalizedAuditRecord` | a sink or test reads `record.action` or builds a record without `name` and `primitive`. TS2339 / TS2741. Read and write `name` and `primitive`; no DDL changed |
-| 5 | `Deprecation`, `DeprecationField`, `DeprecationRender`, `recordDeprecatedCall`, `renderDeprecation`; the values `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isSuperseded`, `isTransientFailure`, `getAuditSink`, `setAuditSink`, `resetAuditSink` | you import one from `@ultimat3/action` or `@ultimat3/query`. Import it from `@ultimat3/core`; `action` and `query` re-export types only |
-| 6 | every `createMemory*`, `createPg*`, `pgSchedulerState`, `createPostgresClient`; a `Memory*` / `InMemory*` / `Pg*` / `BuiltinAdapter` class `new`-ed as a value; every `create<Vendor>Driver`; storage's `memoryDriver` | you call one. TS2305 / TS2724; TS1485 / TS1362 where the class is now a type only. Rename per the table below. Arguments and return types are unchanged; option type names too, but storage's `MemoryDriverOptions` → `MemoryStorageDriverOptions` |
-| 7 | `Page` from `@ultimat3/entity` | you annotate a `findMany` or `.page()` result with it. Import `Page` from `@ultimat3/core` (or `@ultimat3/query`): `findMany` answers it, so the page now carries `hasMore` too. A hand-written `Repo` builds its page with core's `pageOf(rows, nextCursor)` (TS2741 / TS2322 at a `{ rows, nextCursor }` literal) |
-| 8 | `configureHttp({ drainTimeoutMs })`, `defineHttpConfig({ drainTimeoutMs })` | you pass it. `X_CONFIG_INVALID` naming `drain.deadlineMs`, refused by key so a spread is caught too. Declare `drain: { deadlineMs }` in `app.config.ts` — every role, web included, drains on it |
+| 5 | `Deprecation`, `DeprecationField`, `DeprecationRender`, `recordDeprecatedCall`, `renderDeprecation`; the values `createClientFlight` (now `clientFlight`), `DEFAULT_CLIENT_RETRY`, `isSuperseded`, `isTransientFailure`, `getAuditSink`, `setAuditSink`, `resetAuditSink`; every other value a second package re-exported — the Entry 5 table below, including `formatIssues` (`mcp`), `MAX_MONEY_SCALE` (`money`), `ULTIMATE_ERROR_BRAND` (`core`), `JOB_STATES` and `TEST_TYPES` (`cli`) | you import one from a package that is not its home. TS2305; change the module specifier per the table — `@ultimat3/core` unless the row names another, and under core's own name where the row gives one. `action` and `query` re-export types only; scraping's `throwIfAborted(signal)` is `signal.throwIfAborted()` |
+| 6 | every `createMemory*`, `createPg*`, `pgSchedulerState`, `createPostgresClient`; a `Memory*` / `InMemory*` / `Pg*` / `BuiltinAdapter` class `new`-ed as a value; every `create<Vendor>Driver`; storage's `memoryDriver`; every other `create<Thing>` factory; ai's `new AnthropicProvider` / `EchoProvider` / `HashEmbedder` / `RemoteEmbedder` / `BudgetLedger`, mcp's `new McpServer`, query's `new Builder` | you call one. TS2305 / TS2724; TS1485 / TS1362 where the class is now a type only. Rename per the table below. Arguments are unchanged; a type a factory takes or builds is renamed to the factory's spelling (TS2724 at the old name — the type-renames table below), so `import type { BuiltinAdapter }` is `PostgresAuthAdapter` and `MemoryAdapter` is `MemoryAuthAdapter`. A budget ledger is the gateway's (`gateway.callLedger(keys)`, `gateway.scope(…)`); a query builder is `from(…)`'s. `createBranch`, `createSession` and `createApp` keep their names: they are verbs |
+| 7 | `Page` from `@ultimat3/entity` | you annotate a `findMany` or `.page()` result with it. Import `Page` from `@ultimat3/core` (or `@ultimat3/query`): `findMany` answers it, so the page now carries `hasMore` too. A hand-written `Repo` builds its page with core's `pageOf(rows, nextCursor)` (TS2741 / TS2322 at a `{ rows, nextCursor }` literal). **And** `ListPage` from `@ultimat3/storage`: `list()` answers `Page<StorageListEntry>` — read `rows` / `hasMore` / `nextCursor` for `objects` / `truncated` / `cursor` (`null` on the last page), pass `cursor: page.nextCursor`; a custom driver returns `pageOf(entries, nextCursor)`. **And** a script reading `x jobs ls --json`: `data.next` is `data.nextCursor`, beside `data.hasMore` |
+| 8 | `configureHttp({ drainTimeoutMs })`, `defineHttpConfig({ drainTimeoutMs })`; the same two with `buildIdHeader` | you pass one. `X_CONFIG_INVALID`, refused by key so a spread is caught too. `drainTimeoutMs`: declare `drain: { deadlineMs }` in `app.config.ts` — every role, web included, drains on it. `buildIdHeader`: delete it; the header is core's `BUILD_ID_HEADER` (`x-ultimate-build`), the only one any client sends |
 | 9 | `bearerMount` | the app declares a wildcard at the mount's own `<prefix>/*rest`. `X_ROUTE_CONFLICT` at registration; the mount answers every method under its prefix |
 | 10 | `.tool()`, `toMcpTool(s)`, `toQueryTool(s)`, `isExposed`, `toolFromAction`, `toolFromQuery`, `McpToolDescriptor`, `McpInvokeOptions`, `QueryTool*` | you project or call a tool by hand. `toolFrom(x)` for an action or a query (`toolFromAction` renamed, no alias), `toolListEntry(tool)` for the `tools/list` entry, `invoke(x, input, { ctx, surface: 'mcp' })` to call, `(await sourceFor(q, input, { surface: 'mcp' })).execute()` to read, `isMcpExposed(x.mcp)` from `@ultimat3/core` |
 | 11 | query `Page`, the `?_first=` envelope, `openapi.json` | a client reads `endCursor` or `hasNextPage`. Read `nextCursor` and `hasMore`; pass `nextCursor` as `after` (`_after=` on the wire). Run `x manifest`. **And** a client keeps the LAST page's cursor — to poll for rows appended after it, or because it reads `nextCursor` without `hasMore`: the last page's `nextCursor` is now `null` (it is `null` exactly when `hasMore` is false, on every surface), so a `while (page.nextCursor)` loop no longer fetches an empty page past the end. To tail a listing, keep the cursor of the last page that had one, or re-read the first page |
 | 12 | `http.rateLimit.buckets.<actionName>` | you limited an action through a named bucket. It is refused at boot with `X_CONFIG_INVALID` (a bucket keyed by a mounted action's or query's name): delete it from `configureHttp` and declare `rateLimit: { limit, windowMs }` on the action |
 | 13 | `IdempotencyStore` | you wrote your own. Declare `keepsRedaction: true`, keep `settle`'s 4th argument `redacted` and return it as `IdempotencyRecord.redacted` |
 | 14 | `SQL_*` exports of `action`, `jobs`, `notify`, `admin` | you import a statement other than a table DDL (`SQL_AUDIT_TABLE`, `SQL_IDEMPOTENCY_TABLE`, `SQL_JOBS_TABLE`, `SQL_NOTIFY_*_TABLE`, `SQL_ADMIN_AUDIT_TABLE`) — `SQL_CLAIM`, `SQL_OUTBOX_RELEASE` and `SQL_NOTIFY_INBOX_MARK_READ` included. Call the store that runs it, or copy the text into the app |
-| 15 | `createNatsDriver`, `NatsDriverOptions`, `createRedisDriver`, `RedisDriverOptions` | you import one — every method threw `X_NOT_IMPLEMENTED`. Postgres is the durable driver: `postgresJobDriver({ executor })` |
+| 15 | `createNatsDriver`, `NatsDriverOptions`, `createRedisDriver`, `RedisDriverOptions`; the `--to` and `--dry-run` flags of `x jobs drain` | you import one — every method threw `X_NOT_IMPLEMENTED`. Postgres is the durable driver: `postgresJobDriver({ executor })`. Or a script passes either flag: `X_CLI_BAD_FLAG`; `x jobs drain` is still planned (`X_NOT_IMPLEMENTED`), so delete the call |
 | 16 | `WebhookLedger` | you wrote your own. Add `isDisabled(endpointId): Promise<boolean>` |
 | 17 | `ChangeEvent` | a custom change feed builds one. Pass `write: null` where it has no write name |
-| 18 | `McpExposure.name` | a hand-built primitive handed to `toolFrom` sets `mcp: { name }`. Rename the primitive instead |
+| 18 | `McpExposure` and its `name`; `QueryMcp`, `QueryMcpAnnotations`, `QueryListParams`, `QueryListFilterOp` (`query`); `McpAnnotationHints` (`action`) | a hand-built primitive handed to `toolFrom` sets `mcp: { name }` — rename the primitive instead. Or you name one of the types: import `McpExposureDeclaration`, `McpAnnotationHints`, `McpListParams`, `McpListFilterOp` from `@ultimat3/core`. An action's block is `ActionMcp`, `Omit<McpExposureDeclaration, 'listParams'>` |
 | 19 | `defineAppMcp({ scopes })` | the map leaves a projected tool out — `include: 'exposed'` and hand-written tools such as `whoami` included. `X_MCP_SCOPE_UNCOVERED` at boot; list each tool under a scope |
 | 20 | `contentHash` from `@ultimat3/manifest` | you import it. `fingerprint(body)` from `@ultimat3/core`, the same 16 hex characters |
 | 21 | `DigestAppend`, `DigestStore` | you wrote a store. Key its replay on the required `appender` |
-| 22 | `DEFAULT_MODEL`, a call with no model | a declaration, its prompt and the gateway all leave the model out. `X_AI_MODEL_UNRESOLVED` naming the three places; `EchoProvider` needs `model` too, and so does a request to a provider called directly (`AnthropicProvider`, `openAiProvider`), which runs `request.model` and nothing else. `describeAgents()` answers `model: null` there |
-| 23 | `new AnthropicProvider()`, `ANTHROPIC_MODEL_IDS`, `OPENAI_MODEL_IDS` | you construct a provider without `models` or with the built-in list. TS2554 / TS2305; an empty list is `X_AI_REQUEST_INVALID`. Pass the ids the app registered |
+| 22 | `DEFAULT_MODEL`, a call with no model | a declaration, its prompt and the gateway all leave the model out. `X_AI_MODEL_UNRESOLVED` naming the three places; `echoProvider()` needs `model` too, and so does a request to a provider called directly (`anthropicProvider`, `openAiProvider`), which runs `request.model` and nothing else. `describeAgents()` answers `model: null` there |
+| 23 | `anthropicProvider()` (24.x: `new AnthropicProvider()`), `ANTHROPIC_MODEL_IDS`, `OPENAI_MODEL_IDS` | you construct a provider without `models` or with the built-in list. TS2554 / TS2305; an empty list is `X_AI_REQUEST_INVALID`. Pass the ids the app registered |
 | 24 | the built-in catalogue, `registerOpenAiModels()` | the app names a model it never `registerModel`-ed. `X_AI_MODEL_UNKNOWN` before any provider call. Register each model at boot, with its source and date beside each number |
 | 25 | `Menu` trigger props | you type `aria-controls` as `string`. It is `string \| undefined`; a closed menu carries none |
 | 26 | `FakeElement.listeners` | a test reads it. `element.listenerFor(name)`, or `island.fire(selector, type)` |
@@ -147,6 +147,8 @@ the cut — `@ultimat3/ai` (31).
 | 29 | `x shot --cdp-url` | the provider refuses the browser-target attach. `X_CDP_CALL_FAILED`; point at a browser that allows it, or drop the flag |
 | 30 | the `boundaries` step | a `page`, `layout` or `route` imports a slice's `repo`. `X_BOUNDARY_ROUTE_TO_DB`; read through a query |
 | 31 | `contentHash` from `@ultimat3/ai` | you import it. `promptHash(input)`, the same argument and the same hash; `contentHash` is `@ultimat3/render/server`'s byte hash only |
+| 32 | a value name two packages declared: `forbidden`, `unauthenticated`, `json`, `text`, `validate`, `money`, `isEnabled`, `describeRoutes`, `channel`, `guard`, `guardBeforeInput`, `resetRegistry`, `explain`, `actorLabel`, `allowed`, `denied`, `relationsFor`, `invariant`, `uuid`, `cacheKeyFor`, `DEFAULT_RETRY`, `NO_TENANT`, `chunk`, `normalize`, `tokenize`, `introspect`, `isDestructive`, `assertNoDrift`, `safeUrl`, `formatBytes` (ui), `resetIdCounter`, `srcsetFor`, `frozenClock`, `testClock` (scraping), `sessionExpired` | you import one. TS2305 / TS2724; rename per the Entry 32 table below — same arguments, same answer, no alias. Scraping's `testClock` is `testScrapeClock`: `@ultimat3/testing`'s `testClock` is the former `createTestClock`, a different clock |
+| 33 | `AckOptions.counted` | a custom `JobDriver.ack` reads it, or a caller passes it. TS2353 at a literal; delete it — every ack counts |
 
 Entry 6, the renames:
 
@@ -171,8 +173,102 @@ Entry 6, the renames:
 | `mail` | `createSmtpDriver`, `createResendDriver`, `createLogDriver`, `createUnconfiguredDriver` | `smtpMailDriver`, `resendMailDriver`, `logMailDriver`, `unconfiguredMailDriver` |
 | `ai` | `new PgVectorStore(…)`, `new MemoryVectorStore(…)`, `new MemoryBudgetStore()` | `postgresVectorStore(…)`, `memoryVectorStore(…)`, `memoryBudgetStore()` |
 | `testing` | `createSubscribeDriver()` | `subscribeDriver()` |
+| `auth` | `createAuthLimiter`, `createJwksClient`, `createKdfGate`, `createPkce`, `createTotpReplayGuard` | `memoryAuthLimiter`, `jwksClient`, `boundedKdfGate`, `pkcePair`, `memoryTotpReplayGuard` |
+| `cache` | `createCacheStack`, `createCdnTier`, `createLruTier`, `createMemoTier`, `createRedisTier` | `cacheStack`, `cdnTier`, `lruTier`, `memoTier`, `redisTier` |
+| `core` | `createClientFlight`, `createContext`, `createFence`, `createFlightGate` | `clientFlight`, `ctxOf`, `generationFence`, `flightGate` |
+| `core` | `createLogger`, `createRaster`, `createSingleFlight` | `structuredLogger`, `blankRaster`, `singleFlight` |
+| `db` | `createPgliteClient`, `createRecordingClient` | `pgliteClient`, `recordingClient` |
+| `http` | `createPipeline`, `createRateLimiter`, `createRequestContext`, `createRouter`, `createServer` | `httpPipeline`, `rateLimiter`, `requestContext`, `httpRouter`, `httpServer` |
+| `i18n` | `createTranslator` | `catalogTranslator` |
+| `jobs` | `createJobsFacade`, `createLimiter`, `createOutboxRelay`, `createPacer` | `outboxJobsFacade`, `concurrencyLimiter`, `outboxRelay`, `backfillPacer` |
+| `jobs` | `createScheduler`, `createStepRunner`, `createWorker` | `jobScheduler`, `stepRunner`, `jobWorker` |
+| `realtime` | `createOutbox`, `createSyncNode` | `localOutbox`, `syncNode` |
+| `realtime/server` | `createEntry`, `createFrameRouter`, `createReplicator` | `queryEntry`, `frameRouter`, `changeFeedReplicator` |
+| `mcp` | `createDevServer`, `createMcpServer`, `new McpServer(…)` | `devMcpServer`, `mcpServer`, `mcpServer(…)` |
+| `pwa` | `createInstallController` | `installController` |
+| `render` | `createIslandCollector`, `createIsrController` | `islandCollector`, `isrController` |
+| `ai` | `new AnthropicProvider(…)`, `new EchoProvider(…)`, `new HashEmbedder(…)`, `new RemoteEmbedder(…)` | `anthropicProvider(…)`, `echoProvider(…)`, `hashEmbedder(…)`, `remoteEmbedder(…)` |
+| `ai` | `createGateway`, `CreateGatewayInput`; `new BudgetLedger(…)` | `providerGateway`, `ProviderGatewayInput`; `gateway.callLedger(keys)` or `gateway.scope(…)` |
+| `ui` | `createFocusTrap`, `createFormBinding`, `createRovingTabindex`, `createToastStore` | `focusTrap`, `formBinding`, `rovingTabindex`, `toastStore` |
+| `testing` | `createTestClock`, `createTestMail`, `createTestNetwork`, `createTestStatements` | `testClock`, `testMail`, `testNetwork`, `testStatements` |
+| `testing` | `createRunJobs`, `createLiveNode`, `createTemplateSql` | `testJobs`, `liveNode`, `templateSql` |
+| `scraping` | `createArtifactWriter`, `createPacer`, `createPrompt`, `createRing` | `artifactWriter`, `scrapePacer`, `scrapePrompt`, `boundedRing` |
+| `scraping` | `createRobotsGate`, `createSecretBag`, `createUsageMeter` | `robotsGate`, `secretBag`, `usageMeter` |
+| `query` | `new Builder(…)` | `from(…)` |
 
-Each class above stays nameable as a type (`import type { MemoryVectorStore }`).
+Each class above stays nameable as a type (`import type { MemoryVectorStore }`) — under the
+factory's spelling where the two differed. Entry 6, the type renames (TS2724 at the old name):
+
+| Package | Was | Is |
+|---|---|---|
+| `jobs` | `PgDriverOptions`, `MemoryDriverOptions`, `PgEventBusOptions` | `PostgresJobDriverOptions`, `MemoryJobDriverOptions`, `PostgresEventBusOptions` |
+| `jobs` | `PgOutboxOptions`, `MemoryOutboxOptions`, `PgLeaseLeaderOptions` | `PostgresOutboxStoreOptions`, `MemoryOutboxStoreOptions`, `PostgresLeaseLeaderOptions` |
+| `mcp` | `CreateMcpServerInput`, `CreateDevServerInput` | `McpServerInput`, `DevMcpServerInput` |
+| `ai` | `PgVectorStore`, `PgVectorStoreInput`, `CreateGatewayInput` | `PostgresVectorStore`, `PostgresVectorStoreInput`, `ProviderGatewayInput` |
+| `auth` | `BuiltinAdapter`, `MemoryAdapter` | `PostgresAuthAdapter`, `MemoryAuthAdapter` |
+| `notify` | `PgDigestStore`, `PgDigestStoreOptions`, `PgInboxStore`, `PgInboxStoreOptions` | `PostgresDigestStore`, `PostgresDigestStoreOptions`, `PostgresInboxStore`, `PostgresInboxStoreOptions` |
+| `notify` | `PgDeliveryLedger`, `PgDeliveryLedgerOptions`, `MemoryLedgerOptions` | `PostgresDeliveryLedger`, `PostgresDeliveryLedgerOptions`, `MemoryDeliveryLedgerOptions` |
+| `realtime/server` | `InMemoryAdvisoryLock`, `PgAdvisoryLock`, `PgAdvisoryLockOptions` | `MemoryAdvisoryLock`, `PostgresAdvisoryLock`, `PostgresAdvisoryLockOptions` |
+| `realtime/server` | `InMemoryChangeFeed`, `InMemoryChangeFeedOptions`, `PgLogicalReplicationFeed`, `PgLogicalReplicationOptions` | `MemoryChangeFeed`, `MemoryChangeFeedOptions`, `PostgresChangeFeed`, `PostgresChangeFeedOptions` |
+| `storage` | `MemoryDriverOptions` | `MemoryStorageDriverOptions` |
+
+Entry 5, each value at its home — `@ultimat3/core` unless the right-hand column names another:
+
+| Was imported from | Values | Import from |
+|---|---|---|
+| `action` | `BUILD_ID_HEADER`, `IDEMPOTENCY_HEADER`, `pluralize`, `actorOf` | `@ultimat3/core` |
+| `action` | `toBucket` | `@ultimat3/http` |
+| `action`, `query` | `admitsAnonymous`, `policyPermissions`, `policyCapability` | `@ultimat3/policy` |
+| `query` | `CursorInvalidError`, `actorOf`; `derivePath` | `@ultimat3/core`; as `queryPath` |
+| `query` | `MAX_PAGE_SIZE` | `@ultimat3/entity` |
+| `http` | `escapeHtml`, `readCookie`, `REQUEST_TIMEOUT_HEADER`, `isCanonicalWebhookField`, `WEBHOOK_ID_HEADER`, `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_SIGNATURE_VERSION`, `WEBHOOK_TOPIC_HEADER` | `@ultimat3/core` |
+| `jobs` | `WEBHOOK_FIELD_MAX`, `webhookHeaders`, `webhookMac`, `webhookSignature`, `webhookSigningString`, `classifyThrown`; types `WebhookMacInput`, `WebhookSigningInput` | `@ultimat3/core` |
+| `flags` · `time` · `auth`, `storage` | `fnv1a` · `localeInvalid` · `timingSafeEqual` | `@ultimat3/core` |
+| `i18n` | `DEFAULT_LOCALE`, `directionOf`, `isRtl`, `localeSegment`; `FRAMEWORK_CATALOG_LOCALE` | `@ultimat3/core`; as `DEFAULT_LOCALE` |
+| `mail` | `escapeHtml`; `MAIL_CATALOG_LOCALE` | `@ultimat3/core`; as `DEFAULT_LOCALE` |
+| `ai` | `MAX_SEMANTIC_CACHE_SCOPES` | `@ultimat3/core`, as `MAX_CACHED_FORMATTERS` |
+| `cache` | `TIER_ORDER`; `createSingleFlight`, types `FlightJoin`, `SingleFlight` | `@ultimat3/core`, as `CACHE_TIERS`; as `singleFlight` |
+| `render` | `formatBytes`, `RENDER_MODES`, `HYDRATE_STRATEGIES`, `OFFLINE_STRATEGIES`, `THEME_STORAGE_KEY`, `CLIENT_PATH_STYLE_META`, `CLIENT_PERSIST_META`, `CLIENT_SCOPE_META`, `CLIENT_BUILD_META`, `CLIENT_SYNC_META`, `CLIENT_SYNC_WORKER_META` | `@ultimat3/core` |
+| `render` | `NAVIGATION_HEADER`, `NAVIGATION_SURFACE_HEADER`, `NAVIGATION_SCOPE_HEADER`, `NAVIGATION_LOCATION_HEADER` | `@ultimat3/core`, as `CLIENT_NAVIGATION_HEADER`, `CLIENT_NAVIGATION_SURFACE_HEADER`, `CLIENT_NAVIGATION_SCOPE_HEADER`, `CLIENT_NAVIGATION_LOCATION_HEADER` |
+| `render` | `tagKeys` | `@ultimat3/cache` |
+| `pwa` | `formatBytes`, `BUILD_ID_HEADER`; `BUILD_ID_META`; `APP_UPDATE_AVAILABLE` | `@ultimat3/core`; as `CLIENT_BUILD_META`; as `APP_UPDATE_MESSAGE` |
+| `ui` | `THEME_STORAGE_KEY` | `@ultimat3/core` |
+| `admin` | `REDACTED`; `ADMIN_AUDIT_TABLE`, `SQL_ADMIN_AUDIT_TABLE` | `@ultimat3/core`; `@ultimat3/admin/schema` |
+| `realtime` | `isJsonObject` | `@ultimat3/core` |
+| `scraping` | `ANY_HOST`, `hostDecision`, `hostMatches`; types `HostRule`, `HostDecision` | `@ultimat3/core` |
+| `scraping` | `DEFAULT_CONTENT_TYPE` | `@ultimat3/storage` |
+| `scraping` | `throwIfAborted(signal)` | nowhere: `signal.throwIfAborted()` |
+| `mcp` · `money` · `core` | `formatIssues` · `MAX_MONEY_SCALE` · `ULTIMATE_ERROR_BRAND` | `@ultimat3/schema` |
+| `cli` | `JOB_STATES` | `@ultimat3/jobs` |
+| `cli` | `TEST_TYPES` | `@ultimat3/testing` |
+
+Two re-exports stay, pinned in `scripts/lib/package-reexports.ts`: schema's `t` through the eight
+primitive barrels (`action`, `ai`, `entity`, `jobs`, `mail`, `mcp`, `notify`, `query`), and core's
+`describeValue` and `isIsoDateTime` over the declared `core → schema` edge. `bun run flight-copies`
+refuses any other (`X_HELPER_COPY`), and a blind `export *` in shipped package source.
+
+Entry 32, one name per meaning:
+
+| Package | Was | Is |
+|---|---|---|
+| `auth` | `forbidden`, `unauthenticated` | `authForbidden`, `authUnauthenticated` |
+| `policy` | `forbidden` | `policyForbidden` |
+| `http` | `json`, `text`, `validate` | `jsonResponse`, `textResponse`, `validateBody` |
+| `money` · `pwa` · `render` · `notify` | `money()` · `isEnabled` · `describeRoutes` · `channel` | `fromMinor()` · `hasCapability` · `describePages` · `deliveryChannel` |
+| `action` | `guard`, `guardBeforeInput`, `resetRegistry` | `guardAction`, `guardActionBeforeInput`, `resetActions` |
+| `query` | `guard`, `guardBeforeInput`, `resetRegistry`, `explain` | `guardQuery`, `guardQueryBeforeInput`, `resetQueries`, `explainQuery` |
+| `admin` | `actorLabel`, `allowed`, `denied`, `relationsFor` | `adminActorLabel`, `adminAllowed`, `adminDenied`, `relationDataFor` |
+| `core` | `invariant`, `InvariantOptions`, `uuid` | `assertCoded`, `AssertCodedOptions`, `uuidV7` |
+| `ai` | `cacheKeyFor`, `DEFAULT_RETRY`, `NO_TENANT` | `promptCacheKey`, `DEFAULT_GATEWAY_RETRY`, `NO_VECTOR_TENANT` |
+| `ai` | `chunk`, `normalize`, `tokenize` | `chunkDocument`, `normalizeVector`, `wordTokens` |
+| `db` | `introspect`, `isDestructive`, `assertNoDrift` | `introspectSchema`, `isDestructiveMigration`, `assertNoSchemaDrift` |
+| `mail` | `safeUrl` | `safeMailHref` |
+| `ui` | `formatBytes`, `resetIdCounter`, `srcsetFor` | `formatFileSize`, `resetUseIdCounter`, `variantSrcset` |
+| `testing` | `frozenClock(now, body)` | `withFrozenClock(now, body)` |
+| `scraping` | `testClock`, `sessionExpired` | `testScrapeClock`, `scrapeSessionExpired` |
+
+`@ultimat3/i18n`'s `t('key')` and `@ultimat3/schema`'s `t` keep one name on purpose: no file imports
+both (`scripts/factory-names-pins.ts` holds the measurement).
 
 ### Before → after
 
@@ -268,7 +364,7 @@ published limits and prices into the app's own `models.ts`, with the source and 
 each, as `examples/dummy/apps/web/app/models.ts` does.
 
 ```ts
-import { AnthropicProvider, configureAi, createGateway, registerModel } from '@ultimat3/ai';
+import { anthropicProvider, configureAi, providerGateway, registerModel } from '@ultimat3/ai';
 
 const usd = (minor: number) => ({ minor, currency: 'USD' }) as const;
 
@@ -284,8 +380,8 @@ export const appModel = registerModel({
 });
 
 configureAi({
-  gateway: createGateway({
-    providers: [new AnthropicProvider({ models: [appModel.id] })],
+  gateway: providerGateway({
+    providers: [anthropicProvider({ models: [appModel.id] })],
     defaultModel: appModel.id,
   }),
 });
@@ -293,22 +389,58 @@ configureAi({
 
 ```diff
 -new AnthropicProvider()
-+new AnthropicProvider({ models: [appModel.id] })
++anthropicProvider({ models: [appModel.id] })                 // entry 6: a factory, not a class
 -openAiProvider({ apiKey, models: [...OPENAI_MODEL_IDS] })
 +openAiProvider({ apiKey, models: [appModel.id] })
 -beforeEach(() => registerOpenAiModels());
 +beforeEach(() => registerModel(testModelRow));
 -new EchoProvider().generate({ prompt })
-+new EchoProvider().generate({ prompt, model: appModel.id })
++echoProvider().generate({ prompt, model: appModel.id })
+-createGateway({ providers, defaultModel })
++providerGateway({ providers, defaultModel })
+```
+
+Entries 6 and 32 — a factory name and three value names, after the edit:
+
+```ts
+import { structuredLogger, uuidV7 } from '@ultimat3/core';
+import { jsonResponse } from '@ultimat3/http';
+import { fromMinor } from '@ultimat3/money';
+
+const log = structuredLogger(); // was createLogger()
+
+export function quote(): Response {
+  const id = uuidV7(); // was uuid()
+  const price = fromMinor(1_999, 'USD'); // was money(1_999, 'USD')
+  log.info('quoted', { id, minor: price.minor });
+  return jsonResponse({ id, price }); // was json({ id, price })
+}
+```
+
+Entry 7 — a storage page and the `x jobs ls --json` page:
+
+```diff
+ let cursor: string | null = null;
+ do {
+   const page = await disk.list({ prefix: 'avatars/', cursor });
+-  for (const entry of page.objects) seen.push(entry.key);
+-  cursor = page.truncated ? page.cursor : null;
++  for (const entry of page.rows) seen.push(entry.key);
++  cursor = page.nextCursor; // null exactly when !page.hasMore
+ } while (cursor !== null);
+
+-x jobs ls --json | jq -r '.data.next'
++x jobs ls --json | jq -r 'select(.data.hasMore) | .data.nextCursor'
 ```
 
 ### Not breaking, but you will see it
 
 | Surface | What changed |
 |---|---|
-| `x shot`, the PWA manifests, `x g --locales`, `x i18n`, the e2e default locale | read the locales from the app's `defineCatalogs()`, never `app.config.ts` — an app with no `packages/i18n/src/index.ts` has none declared |
+| `x shot`, the PWA manifests, the service worker, the prerender, the speculation rules, the sitemap, `x g --locales`, `x i18n`, the e2e default locale | read the locales from the app's `defineCatalogs()` through one reader, `appLocaleSet(root)` (`@ultimat3/i18n/app-catalogs`), never `app.config.ts` — an app with no `packages/i18n/src/index.ts` is `en` alone on every one of them (`UNDECLARED_LOCALES`) |
+| `x jobs ls` | a full last page no longer prints `--after <cursor>` to an empty page |
 | Helm grace periods | sized from `drain.deadlineMs` alone, which `x deploy --method helm` passes on every upgrade |
-| `x jobs drain` | still planned: `X_NOT_IMPLEMENTED` before it boots the queue or leases a job; `--to` accepts no value, since no durable second driver ships |
+| `x jobs drain` | still planned: `X_NOT_IMPLEMENTED` before it boots the queue or leases a job; it takes no `--to` or `--dry-run` (entry 15), since no durable second driver ships |
 | `describeAgents()` | `model` and `modelFrom` are `null` where nothing names a model; `'built-in-default'` is gone |
 | fix lines | no `fix:` names a vendor's model as the default |
 | `pwa.offline.fallback`, `.image`, `.font` | must be paths on this origin: `//host`, `/\host` and absolute URLs are `X_CONFIG_INVALID` at config load |
@@ -320,24 +452,31 @@ configureAi({
 ### Where the sites are
 
 ```sh
-grep -rnwE "locales|defaultLocale|defaultTimeZone|defaultCurrency|tokens|driver|drainTimeoutMs" app.config.ts apps packages --include=*.ts
+grep -rnwE "locales|defaultLocale|defaultTimeZone|defaultCurrency|tokens|driver|drainTimeoutMs|buildIdHeader|heartbeatMs|urlEnv|poolSize|schema|installPrompt|afterSignInPath|modelEnv|tier" app.config.ts apps packages --include=*.ts
 grep -n "mcp" app.config.ts
 grep -rnwE "createMemory[A-Z]\w*|createPg[A-Z]\w*|pgSchedulerState|createPostgresClient|create[A-Z]\w*Driver|(Nats|Redis|Memory)DriverOptions|memoryDriver|MemoryIdempotencyStore|(Pg|Memory)VectorStore|MemoryBudgetStore|(Builtin|Memory)Adapter|Memory(Local|Queue)Store|(InMemory|Pg)AdvisoryLock|InMemoryChangeFeed|PgLogicalReplicationFeed|PgOutputDecoder" apps packages --include=*.ts --include=*.tsx
 grep -rnwE "assertEnvExample|EnvExampleDriftError|resolveSpeculation|normalizeAuditRecord|NormalizedAuditRecord|contentHash|nearest" apps packages scripts --include=*.ts --include=*.tsx
+grep -rnwE "create(AuthLimiter|JwksClient|KdfGate|Pkce|TotpReplayGuard|CacheStack|CdnTier|LruTier|MemoTier|RedisTier|ClientFlight|Context|Fence|FlightGate|Logger|Raster|SingleFlight|Pipeline|RateLimiter|RequestContext|Router|Server|Translator|JobsFacade|Limiter|OutboxRelay|Pacer|Scheduler|StepRunner|Worker|Outbox|SyncNode|Entry|FrameRouter|Replicator|DevServer|McpServer|InstallController|IslandCollector|IsrController|Gateway|PgliteClient|RecordingClient|FocusTrap|FormBinding|RovingTabindex|ToastStore|TestClock|TestMail|TestNetwork|TestStatements|RunJobs|LiveNode|TemplateSql|ArtifactWriter|Prompt|Ring|RobotsGate|SecretBag|UsageMeter)|CreateGatewayInput|AnthropicProvider|EchoProvider|HashEmbedder|RemoteEmbedder|BudgetLedger|McpServer|Builder|authLimiter|totpReplayGuard" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "PgDriverOptions|MemoryDriverOptions|PgEventBusOptions|PgOutboxOptions|MemoryOutboxOptions|PgLeaseLeaderOptions|CreateMcpServerInput|CreateDevServerInput|PgVectorStore(Input)?|BuiltinAdapter|MemoryAdapter|Pg(DigestStore|InboxStore|DeliveryLedger)(Options)?|MemoryLedgerOptions|InMemoryAdvisoryLock|InMemoryChangeFeed(Options)?|PgAdvisoryLock(Options)?|PgLogicalReplication(Feed|Options)" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "BUILD_ID_HEADER|IDEMPOTENCY_HEADER|pluralize|toBucket|admitsAnonymous|policyPermissions|policyCapability|actorOf|CursorInvalidError|MAX_PAGE_SIZE|derivePath|escapeHtml|readCookie|REQUEST_TIMEOUT_HEADER|isCanonicalWebhookField|WEBHOOK_[A-Z_]+|webhook(Headers|Mac|Signature|SigningString)|Webhook(Mac|Signing)Input|classifyThrown|fnv1a|localeInvalid|timingSafeEqual|DEFAULT_LOCALE|directionOf|isRtl|localeSegment|FRAMEWORK_CATALOG_LOCALE|MAIL_CATALOG_LOCALE|MAX_SEMANTIC_CACHE_SCOPES|FlightJoin|SingleFlight|TIER_ORDER|formatBytes|RENDER_MODES|HYDRATE_STRATEGIES|OFFLINE_STRATEGIES|THEME_STORAGE_KEY|CLIENT_[A-Z_]+_META|NAVIGATION_(SURFACE_|SCOPE_|LOCATION_)?HEADER|tagKeys|BUILD_ID_META|APP_UPDATE_AVAILABLE|REDACTED|(SQL_)?ADMIN_AUDIT_TABLE|isJsonObject|ANY_HOST|host(Decision|Matches)|Host(Rule|Decision)|throwIfAborted|DEFAULT_CONTENT_TYPE|formatIssues|MAX_MONEY_SCALE|ULTIMATE_ERROR_BRAND|JOB_STATES|TEST_TYPES" apps packages --include=*.ts --include=*.tsx
+grep -rnwE "forbidden|unauthenticated|json|text|validate|money|isEnabled|describeRoutes|channel|guard|guardBeforeInput|resetRegistry|explain|actorLabel|allowed|denied|relationsFor|invariant|InvariantOptions|uuid|cacheKeyFor|DEFAULT_RETRY|NO_TENANT|chunk|normalize|tokenize|introspect|isDestructive|assertNoDrift|safeUrl|resetIdCounter|srcsetFor|frozenClock|testClock|sessionExpired" apps packages --include=*.ts --include=*.tsx | grep "@ultimat3/"
+grep -rnwE "McpExposure|QueryMcp|QueryMcpAnnotations|QueryListParams|QueryListFilterOp|McpAnnotationHints|ListPage|truncated|counted" apps packages --include=*.ts --include=*.tsx
 grep -rnE "(Deprecation\w*|recordDeprecatedCall|renderDeprecation|createClientFlight|DEFAULT_CLIENT_RETRY|isSuperseded|isTransientFailure|(get|set|reset)AuditSink).*from '@ultimat3/(action|query)'" apps packages --include=*.ts --include=*.tsx
 grep -rnE "\.tool\(\)|toMcpTools?\b|toQueryTools?\b|isExposed\b|toolFromAction|toolFromQuery|McpToolDescriptor|McpInvokeOptions|QueryTool(Descriptor|ReadOptions|Answer)" apps packages --include=*.ts --include=*.tsx
 grep -rnwE "endCursor|hasNextPage|SQL_[A-Z_]+|AuditRecord|IdempotencyStore|WebhookLedger|ChangeEvent|DigestAppend|DigestStore|FakeElement" apps packages --include=*.ts --include=*.tsx
 grep -rnE "Page\b.*from '@ultimat3/entity'|bearerMount\(|scopes:|buckets:|aria-controls|robots:|fakeBrowser\(|fixtureBrowser\(" apps packages --include=*.ts --include=*.tsx
 grep -rnwE "DEFAULT_MODEL|ANTHROPIC_MODEL_IDS|OPENAI_MODEL_IDS|registerOpenAiModels|AnthropicProvider|EchoProvider|defaultModel|registerModel" apps packages --include=*.ts --include=*.tsx
-grep -rnE "cdp-url|x shot" .github scripts package.json bin
+grep -rnE "cdp-url|x shot|jobs drain|jobs ls|data\.next\b" .github scripts package.json bin
 ```
 
-The `typecheck` step finds 3–7, 10, 11, 13–18, 20, 21, 23, 25–28 and 31 at the import or the member,
-and 2 in a typed `app.config.ts`. Entries 2 and 8 also refuse at the first import of the config
-(`X_CONFIG_INVALID`), 19 at boot, 9 at route registration and 22 and 24 at the first model call.
-The `manifest` step finds 11's stale `openapi.json`, `boundaries` finds 30, and the unit and e2e
-suites find 27. Nothing finds 12 — a bucket keyed by an action's name is read by nobody — or 29
+The `typecheck` step finds 3–7, 10, 11, 13–18, 20, 21, 23, 25–28 and 31–33 at the import or the
+member, and 2 in a typed `app.config.ts`. Entries 2 and 8 also refuse at the first import of the
+config (`X_CONFIG_INVALID`), 19 at boot, 9 at route registration and 22 and 24 at the first model
+call. The `manifest` step finds 11's stale `openapi.json`, `boundaries` finds 30, and the unit and
+e2e suites find 27. Nothing finds 12 — a bucket keyed by an action's name is read by nobody — or 29
 until a capture runs; read each `configureHttp` for 12 and each `x shot --cdp-url` caller for 29.
+A shell script that parses `x jobs ls --json` (7) or passes `--to` to `x jobs drain` (15) fails only
+when it runs: the last grep above finds it.
 Entry 1 is `x doctor`'s first line.
 
 ## 23.x → 24.0.0, entry by entry
@@ -2621,7 +2760,7 @@ Twenty-five `BREAKING —` entries. Most are one of two shapes: a **declaration 
 | `ScrapeTarget.click`'s `index` parameter | delete it. It was unreachable from the public vocabulary — `ScrapeFrame.click` takes `(selector, options?)` and has no index — and the two drivers disagreed on it |
 | `PrecacheAsset.critical` (`@ultimat3/pwa`) | delete it. `buildPrecacheManifest` never copied it, and the documented promise ("critical assets are precached even if large") was vacuous — there is no size filter at all |
 | `PERIODIC_SYNC_TAG`, `BackgroundSyncOptions.periodicMinIntervalMs` (`@ultimat3/pwa`) | delete them. Periodic Background Sync was never implemented in any sense: no listener, no registration, no capability flag |
-| `realtime.heartbeatMs` (`RealtimeConfig`) | delete the key — `RealtimeConfig` is now `{ enabled, tier, transport, urlEnv }`. The socket beat is `new LiveClient({ heartbeatMs })` (browser code, which cannot read server config) and the presence beat is derived. **There is no runtime refusal**: `section()` copies unknown keys through, so a stale key is silently inert |
+| `realtime.heartbeatMs` (`RealtimeConfig`) | delete the key — `RealtimeConfig` is now `{ enabled, tier, transport, urlEnv }`. The socket beat is `new LiveClient({ heartbeatMs })` (browser code, which cannot read server config) and the presence beat is derived. **There is no runtime refusal**: `section()` copies unknown keys through, so a stale key is silently inert (25.0.0 refuses it at boot) |
 | `@ultimat3/seo` no longer exports `extensionOf` | delete the import; `parseImageQuery` reads the format off the query |
 | `@ultimat3/realtime` no longer exports `qidOf` or `canonicalJson` | change the import: `queryHash` from `@ultimat3/query`, `canonicalJson`/`fingerprint` from `@ultimat3/core`. **No live subscription re-keys** — the two spellings differed only on values JSON cannot carry |
 
@@ -3041,23 +3180,18 @@ Full detail: [PWA and offline](PWA-And-Offline).
 
 ## Migrating jobs between drivers — **still nowhere to migrate to**
 
-**There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` gave you Postgres in silence. Which driver runs is `setJobDriver(driver)` at boot, and only that.
+**There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` gave you Postgres in silence; since 25.0.0 the key is refused by name (`X_CONFIG_INVALID`). Which driver runs is `setJobDriver(driver)` at boot, and only that.
 
-`x jobs drain --to` takes **`redis` \| `nats`**, and neither lands a job: both are interface-complete stubs that throw `X_NOT_IMPLEMENTED` on the first enqueue, having moved nothing. So **there is no driver migration to perform** `As of 2026-09`. Postgres is the source, never a `--to` value.
+**There is no driver migration to perform**, `As of 2026-10`. Postgres is the only durable driver — 25.0.0 deleted the NATS and Redis stubs, whose every method threw `X_NOT_IMPLEMENTED` — and `x jobs drain` is planned: it exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs ls --json`. Its `--to` and `--dry-run` flags went with the drain body in 25.0.0 and are now `X_CLI_BAD_FLAG`. Before that a drain onto either stub leased the pending batch for five minutes, failed every enqueue and nacked it back; and the `memory` target, refused by name since 2026-09, acked every durable row off the source and lost the copy when the command exited — a target that dies with the command is not a migration.
 
-**`x jobs drain` is planned since 2026-10** — correction to the paragraph above and the table below: it now exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs ls --json`. Until then a drain onto either stub leased the pending batch for five minutes, failed every enqueue and nacked it back. The procedure below stands for the day a durable driver ships; steps 2 and 3 answer planned until then.
-
-**`memory` is refused by name** (`X_CLI_BAD_FLAG`), `As of 2026-09`. It was a target until then, and it was the one that appeared to work: a `Map` inside the command's own process, so the drain acked every durable row off the source, reported `ok: true`, and lost the copy when the command exited. A target that dies with the command is not a migration.
-
-Nothing rehearses the procedure below today. It is written against the interface that already ships and applies unchanged the moment a driver does:
+The procedure for the day a second durable driver ships, with the drain itself **planned** — no invocation of it ships, so none is written here:
 
 | Order | Step |
 |---|---|
 | 1 | deploy with the old driver still installed |
-| 2 | `x jobs drain --to <driver> --dry-run --json` — read the plan; a skipped candidate is a job whose `runAt` has not arrived, not an error |
-| 3 | `x jobs drain --to <driver>` — leases the batch off the old queue, copies steps, enqueues, then acks |
-| 4 | change the `setJobDriver(…)` call at boot, `x verify`, deploy |
-| 5 | confirm with `x jobs ls --json` that the old queue is empty before removing its infra |
+| 2 | drain the old queue onto the new driver — **planned** (`X_NOT_IMPLEMENTED` today) |
+| 3 | change the `setJobDriver(…)` call at boot, `x verify`, deploy |
+| 4 | confirm with `x jobs ls --json` that the old queue is empty before removing its infra |
 
 Job code never changes across a driver: `steps` is a driver member, so step persistence is identical on all of them. The outbox table stays the transactional record. At-least-once delivery is preserved; atomicity is not negotiable ([Jobs and workflows](Jobs-And-Workflows)).
 

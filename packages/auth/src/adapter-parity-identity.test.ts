@@ -4,13 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import {
-  createPgliteClient,
-  type DbClient,
-  driverError,
-  raw,
-  type SqlFragment,
-} from '@ultimat3/db';
+import { type DbClient, driverError, pgliteClient, raw, type SqlFragment } from '@ultimat3/db';
 import type { AuthAdapter, CreateUserInput } from './adapter';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
@@ -20,7 +14,7 @@ import { AUTH_TABLES } from './tables';
 const PGLITE_BOOT_MS = 30_000;
 const REDEEMED_AT = new Date('2031-03-04T05:06:07.000Z');
 const clock = frozenClock(REDEEMED_AT);
-const client = createPgliteClient();
+const client = pgliteClient();
 
 const ADA = '00000000-0000-7000-8000-000000000301';
 const GRACE = '00000000-0000-7000-8000-000000000302';
@@ -60,9 +54,9 @@ const refusal = async (attempt: Promise<unknown>): Promise<string> => {
 };
 
 const ADAPTERS: readonly (readonly [string, () => Promise<AuthAdapter>])[] = [
-  ['MemoryAdapter', async () => memoryAuthAdapter(clock)],
+  ['MemoryAuthAdapter', async () => memoryAuthAdapter(clock)],
   [
-    'BuiltinAdapter on PGlite',
+    'PostgresAuthAdapter on PGlite',
     async () => {
       await client.execute(raw('delete from x_verifications'));
       await client.execute(raw('delete from x_users'));
@@ -159,7 +153,7 @@ const bunSqlError = (errno: string, constraint: string | undefined): unknown =>
     ...(constraint === undefined ? {} : { constraint }),
   });
 
-describe('BuiltinAdapter reads the violation off the driver error, wrapped or not', () => {
+describe('PostgresAuthAdapter reads the violation off the driver error, wrapped or not', () => {
   test.each([
     ['x_users_email_key', 'email'],
     ['x_users_external_id_key', 'external_id'],

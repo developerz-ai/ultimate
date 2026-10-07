@@ -25,11 +25,11 @@ with `git show v20.2.2:<path>`. Four of the files no longer exist at all (`ident
 | Concern | 20.x | Where |
 |---|---|---|
 | HTTP | four page seams, two raw `fetch` in app islands, one raw `fetch` the scaffolder writes | `packages/action/src/client.ts:100`, `packages/query/src/client.ts:129`, `packages/storage/src/upload-client.ts:63` (XHR) and `:115`, `examples/dummy/apps/web/app/settings/settings.island.tsx:116`, `examples/dummy/apps/web/site/pricing/contact-sales.island.tsx:52`, `packages/cli/src/templates/resource-form-island.ts:87` |
-| shared flight control | exported, **no shipped caller constructs one** — `createClientFlight` is imported from `@ultimat3/core` (`action` and `query` re-export only its types since 25.0.0) and both accept one injected | `packages/core/src/client-flight.ts` |
+| shared flight control | exported, **no shipped caller constructs one** — `clientFlight` is imported from `@ultimat3/core` (`action` and `query` re-export only its types since 25.0.0) and both accept one injected | `packages/core/src/client-flight.ts` |
 | record store | `IdentityMap`, **one per `LiveClient`** (`client.ts:105`), keyed `privateScope(query)` until a snapshot names the entity; HTTP responses never reach it | `packages/realtime/src/identity-map.ts:24`, `packages/realtime/src/client.ts:250` |
 | state per page | a module singleton — `let registered` — and every island is its own `Bun.build` with `splitting: false`, so there is one singleton **per island** | `packages/realtime/src/hooks.ts:23`, `packages/cli/src/island-bundle.ts:84` |
 | sockets | the framework never constructs one; the app does, once per island that mounts a client | `examples/dummy/apps/web/shared/live-socket.ts:19` |
-| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `createSyncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/dev-sync.ts` (renamed `role-sync.ts` in 22.0.0) |
+| optimistic writes | the socket `mutate` frame answers `X_NOT_IMPLEMENTED` unless `syncNode({ onMutate })` is passed, and no host passes it | `packages/realtime/src/sync-frames.ts:144-155`, `packages/cli/src/dev-sync.ts` (renamed `role-sync.ts` in 22.0.0) |
 | offline | `createOpfsLocalStore()` throws; the service worker posts to `/_x/outbox/flush`, which nothing mounts | `packages/realtime/src/local-store.ts:237`, `packages/pwa/src/background-sync.ts:38` |
 
 ## The one path

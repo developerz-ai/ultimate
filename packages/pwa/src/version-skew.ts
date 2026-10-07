@@ -10,12 +10,13 @@
  * The app decides what to do with that message. This package never navigates a client.
  */
 
-import { APP_UPDATE_MESSAGE, CLIENT_BUILD_META, finiteCount } from '@ultimat3/core';
+import type { APP_UPDATE_MESSAGE } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 
-export const BUILD_ID_HEADER = 'x-ultimate-build';
-/** Shipped name for core's `CLIENT_BUILD_META` — the meta render writes, one literal for both. */
-export const BUILD_ID_META = CLIENT_BUILD_META;
+// The header every proxied request carries is core's `BUILD_ID_HEADER`, the document meta core's
+// `CLIENT_BUILD_META` and the worker's message type core's `APP_UPDATE_MESSAGE` — imported where
+// they are used, never re-published under this package's names (25.0.0, `X_HELPER_COPY`).
 
 export type DeployChannel = 'production' | 'preview' | 'branch';
 
@@ -125,8 +126,8 @@ export function detectSkew(
 
 /**
  * The client-side contract, and the whole of it: what the generated worker posts to every page it
- * controls on activation. The page compares `to` against its own `BUILD_ID_META` — `detectSkew`
- * is that comparison — and renders its own "refresh to update" affordance.
+ * controls on activation. The page compares `to` against its own `CLIENT_BUILD_META` meta (core's)
+ * — `detectSkew` is that comparison — and renders its own "refresh to update" affordance.
  *
  * It declared `from`, `forced` and `deadlineAt` too, for a forced reload after a grace period that
  * NOTHING performed: `updateSignal`/`updatePolicy` computed the three and had no runtime caller,
@@ -141,6 +142,3 @@ export interface AppUpdateAvailable {
   /** The build the worker that posted this was generated for. */
   readonly to: string;
 }
-
-/** Shipped name for core's `APP_UPDATE_MESSAGE` — one literal for the worker and the page. */
-export const APP_UPDATE_AVAILABLE = APP_UPDATE_MESSAGE;

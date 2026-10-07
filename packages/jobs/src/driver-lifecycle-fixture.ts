@@ -5,7 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import type { Ctx, UltimateError } from '@ultimat3/core';
-import { createContext, frozenClock, isUltimateError } from '@ultimat3/core';
+import { ctxOf, frozenClock, isUltimateError } from '@ultimat3/core';
 import { announceExhausted } from './claim-exhausted';
 import type { ClaimedJob, JobDriver, JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
@@ -16,7 +16,7 @@ import { enqueueItem, itemJob, operatorOf, rowOf, TTL_MS } from './operator-surf
 import { memorySchedulerState } from './scheduler-state';
 import type { JobSettled } from './settled';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 /** An id of the right shape that nobody queued. */
 export const NO_SUCH_JOB = '019ff1c5-0000-7000-8000-00000000dead';

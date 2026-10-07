@@ -69,14 +69,14 @@ function timerSleep(ms: number, signal: AbortSignal): Promise<void> {
  * rate is a property of the table being swept and the pool it is swept through, not of whichever
  * attempt happens to hold the run.
  */
-export function createPacer(options: PacerOptions): Pacer {
+export function backfillPacer(options: PacerOptions): Pacer {
   // Refused HERE and not only at `backfill()`: `rate: 0` makes `intervalMs` Infinity, which the
   // timer clamps to about a millisecond — so an unvalidated zero reads as "no throttle at all",
   // which is the one setting this module exists to make unreachable. A negative rate is the same
   // bug with a negative wait.
   assert(
     Number.isFinite(options.rate) && options.rate > 0,
-    `createPacer({ rate: ${String(options.rate)} }) for "${options.job}" — a rate is batches per second, greater than zero`,
+    `backfillPacer({ rate: ${String(options.rate)} }) for "${options.job}" — a rate is batches per second, greater than zero`,
     `pass rate: ${DEFAULT_BACKFILL_RATE} — to sweep faster raise the number, there is no unthrottled mode`,
   );
   const clock = options.clock ?? systemClock;

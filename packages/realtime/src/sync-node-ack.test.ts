@@ -9,7 +9,7 @@ import { ChannelHub } from './channel';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, type WsLike } from './socket';
-import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-node';
+import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 class FakeWs implements WsLike {
@@ -35,7 +35,7 @@ function flush(): Promise<void> {
 function node(): { sync: SyncNode; ws: SyncWs & FakeWs } {
   const transport = new InProcessTransport();
   const sockets = new SocketRegistry();
-  const sync = createSyncNode({
+  const sync = syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,

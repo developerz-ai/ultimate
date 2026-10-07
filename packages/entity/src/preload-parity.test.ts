@@ -5,7 +5,7 @@
 // driver, `toEqual` across the pair.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -91,7 +91,7 @@ beforeEach(async () => {
   await mem.posts.insert({ id: P2, orgId: ORG, authorId: ANA, reviewerId: BEN, title: 'Second' });
   await mem.posts.insert({ id: P3, orgId: ORG, authorId: BEN, reviewerId: GHOST, title: 'Third' });
 
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
   client.on('preload_parity_posts', {
     rows: [

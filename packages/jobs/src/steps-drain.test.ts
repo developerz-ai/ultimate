@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { JobAbortedError, JobDrainedError } from './errors';
 import type { StepFence, StepRecord, StepStore } from './steps';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 const FENCE: StepFence = { job: 'charge', jobId: 'job-1', workerId: 'w-1', claim: 1 };
@@ -35,7 +35,7 @@ async function stepAbortedMidway(
 ): Promise<{ readonly store: ReturnType<typeof fencedStore>; readonly outcome: unknown }> {
   const store = fencedStore();
   const run = new AbortController();
-  const runner = createStepRunner({
+  const runner = stepRunner({
     runId: 'run-1',
     jobName: 'charge',
     store,

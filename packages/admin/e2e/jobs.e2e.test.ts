@@ -6,8 +6,8 @@
 //   bun test packages/admin/e2e
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, markListening, runWithContext } from '@ultimat3/core';
-import { createWorker, resetJobDriver, type Worker } from '@ultimat3/jobs';
+import { ctxOf, markListening, runWithContext } from '@ultimat3/core';
+import { jobWorker, resetJobDriver, type Worker } from '@ultimat3/jobs';
 import { clearRoutes } from '@ultimat3/render';
 import type { AdminApp } from '../src/admin';
 import { MANAGER, type Seeded, seedQueue } from '../src/jobs/jobs-fixture';
@@ -40,7 +40,7 @@ async function serve(request: Request): Promise<Response> {
   const matched = adminRouteMatch(admin, url.pathname);
   if (matched === null) return new Response('not found', { status: 404 });
   const post = request.method === 'POST';
-  return runWithContext(createContext({ tz: 'UTC', locale: 'en' }), async () => {
+  return runWithContext(ctxOf({ tz: 'UTC', locale: 'en' }), async () => {
     const answer = await matched.route.respond({
       ctx: await admin.requestCtx(request),
       params: matched.params,
@@ -68,7 +68,7 @@ beforeAll(async () => {
     auth: { actor: () => ({ id: 'u-operator' }), authz: staticAuthz(MANAGER) },
   });
   seeded = await seedQueue();
-  worker = createWorker({
+  worker = jobWorker({
     driver: seeded.driver,
     workerId: 'e2e-worker',
     queues: ['default'],
@@ -77,7 +77,7 @@ beforeAll(async () => {
     heartbeatIntervalMs: 3_600_000,
     pollIntervalMs: 0,
     drainOnShutdown: false,
-    context: () => createContext({ role: 'worker', buildId: 'e2e' }),
+    context: () => ctxOf({ role: 'worker', buildId: 'e2e' }),
   });
 });
 

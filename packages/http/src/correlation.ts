@@ -3,7 +3,7 @@
 // frozen the span's context: the caller's trace was discarded, the root span carried a fresh
 // UUIDv7 no collector accepts as a trace id, and the log lines quoted a third value.
 
-import { traceId as newTraceId, parseTraceparent, type SpanContext, uuid } from '@ultimat3/core';
+import { traceId as newTraceId, parseTraceparent, type SpanContext, uuidV7 } from '@ultimat3/core';
 import type { HttpConfig } from './config';
 
 /**
@@ -33,7 +33,7 @@ export interface InboundCorrelation {
  */
 export const readCorrelation = (headers: Headers, config: HttpConfig): InboundCorrelation => {
   const inboundId = config.trustProxy ? headers.get('x-request-id') : null;
-  const requestId = inboundId !== null && REQUEST_ID.test(inboundId) ? inboundId : uuid();
+  const requestId = inboundId !== null && REQUEST_ID.test(inboundId) ? inboundId : uuidV7();
   // Deliberately NOT gated on `trustProxy`, unlike the id above, and the asymmetry is the rule:
   // `x-request-id` is ECHOED back as this response's identity, so an untrusted caller choosing it
   // poisons log correlation for everyone — while `traceparent` is W3C context continuation, which

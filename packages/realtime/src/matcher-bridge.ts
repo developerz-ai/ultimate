@@ -6,7 +6,13 @@
 
 import { type LiveQuery, match, type Patch } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
-import { changedColumns, isJsonObject, type JsonObject, type Row, type RowPatch } from './json';
+import {
+  changedColumns,
+  isParsedJsonObject,
+  type JsonObject,
+  type Row,
+  type RowPatch,
+} from './json';
 
 export interface SubscriptionShape {
   readonly qid: string;
@@ -200,7 +206,7 @@ export function applyToWindow(rows: readonly Row[], patches: readonly RowPatch[]
 export function normalizePatch(candidate: unknown, change: ChangeEvent): RowPatch | null {
   if (candidate === null || candidate === undefined || candidate === false) return null;
   if (candidate === true) return patchFromChange(change);
-  if (!isJsonObject(candidate)) return null;
+  if (!isParsedJsonObject(candidate)) return null;
   const op = candidate['op'];
   if (op !== 'insert' && op !== 'update' && op !== 'delete') return patchFromChange(change);
   const id = candidate['id'];
@@ -209,7 +215,7 @@ export function normalizePatch(candidate: unknown, change: ChangeEvent): RowPatc
   const base: RowPatch = {
     op,
     id: typeof id === 'string' ? id : (change.after?.id ?? change.before?.id ?? ''),
-    row: op === 'delete' ? null : isJsonObject(rowValue) ? rowValue : (change.after ?? null),
+    row: op === 'delete' ? null : isParsedJsonObject(rowValue) ? rowValue : (change.after ?? null),
     lsn: typeof candidate['lsn'] === 'string' ? candidate['lsn'] : change.lsn,
   };
   if (base.id === '') return null;

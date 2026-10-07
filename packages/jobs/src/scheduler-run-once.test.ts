@@ -11,7 +11,7 @@ import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import type { CronResolver } from './scheduler';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import type { ScheduledFire, SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
 import type { TaskHandle } from './task';
@@ -96,7 +96,7 @@ describe('run-once is one write', () => {
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
     const { state, fires, marks } = watched(memorySchedulerState());
-    const scheduler = createScheduler({ driver, clock, cron: hourly, state, tasks: [once] });
+    const scheduler = jobScheduler({ driver, clock, cron: hourly, state, tasks: [once] });
 
     await scheduler.tick(); // Arms: the one legitimate `markFired`.
     expect(marks).toHaveLength(1);
@@ -118,7 +118,7 @@ describe('run-once is one write', () => {
     const driver = memoryJobDriver({ clock });
     const durable = memorySchedulerState();
     const first = watched(durable);
-    const dying = createScheduler({
+    const dying = jobScheduler({
       driver,
       clock,
       cron: hourly,
@@ -142,7 +142,7 @@ describe('run-once is one write', () => {
     if (claimed === undefined) return expect.unreachable('the catch-up was not claimable');
     await driver.ack(claimed.id, { workerId: 'w1', claim: claimed.claim });
 
-    const successor = createScheduler({
+    const successor = jobScheduler({
       driver,
       clock,
       cron: hourly,

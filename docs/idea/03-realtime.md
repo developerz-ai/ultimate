@@ -14,7 +14,7 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps (21.0.0).
 
-**Tiers 1–2 became multi-tenant-safe in this branch, and were not before.** Until it, the socket upgrade hardcoded `actorId: null`, so there was no way to authenticate a WebSocket at all: every channel guard, live-query gate, presence entry and tenant cap ran correctly against an actor that was always anonymous. The idiomatic guard `actor?.orgId === segments[1]` therefore denied everyone, and the only way to ship was `hub.guard('org.>', () => true)` — which is what this repo's own benchmark server does. `createSyncNode({ authenticate })` closes it, and re-authorization on a timer closes the second half: a socket is no longer authorized forever once accepted.
+**Tiers 1–2 became multi-tenant-safe in this branch, and were not before.** Until it, the socket upgrade hardcoded `actorId: null`, so there was no way to authenticate a WebSocket at all: every channel guard, live-query gate, presence entry and tenant cap ran correctly against an actor that was always anonymous. The idiomatic guard `actor?.orgId === segments[1]` therefore denied everyone, and the only way to ship was `hub.guard('org.>', () => true)` — which is what this repo's own benchmark server does. `syncNode({ authenticate })` closes it, and re-authorization on a timer closes the second half: a socket is no longer authorized forever once accepted.
 
 Two things stay **open**, and they are one plan rather than two: JetStream-backed durable fanout, and an **entity**-keyed resume window that would revive the delta path across nodes. Both are a `ResumeSource` shape change fed from the change stream every node already subscribes to, so "later" means one piece of work, not two.
 
@@ -108,7 +108,7 @@ Solid signal patch — fine-grained, no re-render of the list
 | matcher | `replicator` | a change touching no registered query costs one predicate check |
 | fanout | NATS | subject = hash(query, params, tenant); no per-socket state on the bus |
 | socket | `sync` (stateless, no sticky sessions) | client re-subscribes anywhere; scales on connection count |
-| authz | `policy` on the `query` | evaluated at subscribe **and** re-checked on row delivery — a row that fails the policy is dropped, never sent. True `As of 2026-08`, and newly so: the socket carries a real actor via `createSyncNode({ authenticate })`, and re-authorization runs on a timer, so a revoked role closes the socket instead of leaving it authorized for its lifetime |
+| authz | `policy` on the `query` | evaluated at subscribe **and** re-checked on row delivery — a row that fails the policy is dropped, never sent. True `As of 2026-08`, and newly so: the socket carries a real actor via `syncNode({ authenticate })`, and re-authorization runs on a timer, so a revoked role closes the socket instead of leaving it authorized for its lifetime |
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a delta instead of a refetch.
 

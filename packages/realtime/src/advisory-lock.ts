@@ -22,7 +22,7 @@ export interface AdvisoryLock {
 }
 
 /** Single-process default: correct for `x dev` and tests, useless across containers (by design). */
-export class InMemoryAdvisoryLock implements AdvisoryLock {
+export class MemoryAdvisoryLock implements AdvisoryLock {
   static readonly #held = new Set<string>();
   readonly key: string;
   #mine = false;
@@ -32,21 +32,21 @@ export class InMemoryAdvisoryLock implements AdvisoryLock {
   }
 
   async tryAcquire(): Promise<boolean> {
-    if (InMemoryAdvisoryLock.#held.has(this.key)) return false;
-    InMemoryAdvisoryLock.#held.add(this.key);
+    if (MemoryAdvisoryLock.#held.has(this.key)) return false;
+    MemoryAdvisoryLock.#held.add(this.key);
     this.#mine = true;
     return true;
   }
 
   async release(): Promise<void> {
     if (!this.#mine) return;
-    InMemoryAdvisoryLock.#held.delete(this.key);
+    MemoryAdvisoryLock.#held.delete(this.key);
     this.#mine = false;
   }
 
   abandon(): void {
     if (!this.#mine) return;
-    InMemoryAdvisoryLock.#held.delete(this.key);
+    MemoryAdvisoryLock.#held.delete(this.key);
     this.#mine = false;
   }
 
@@ -57,6 +57,6 @@ export class InMemoryAdvisoryLock implements AdvisoryLock {
 }
 
 /** The one way to build the in-process lock — the twin of `postgresAdvisoryLock()`; the class is a type in the barrel only (`X_FACTORY_NAME_SPELLING`). */
-export function memoryAdvisoryLock(key: string): InMemoryAdvisoryLock {
-  return new InMemoryAdvisoryLock(key);
+export function memoryAdvisoryLock(key: string): MemoryAdvisoryLock {
+  return new MemoryAdvisoryLock(key);
 }

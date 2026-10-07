@@ -7,7 +7,7 @@
  * fails this test, not just a downstream consumer.
  */
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -174,7 +174,7 @@ describe('the mutator DSL surface', () => {
 
   test('.server() delegates through the action own callable — never the declared half directly', async () => {
     const target = defineMutatorTarget();
-    const ctx = createContext({ actor: likerActor });
+    const ctx = ctxOf({ actor: likerActor });
     const viaServer = await target.server(ctx, { postId: POST_ID });
     const viaCallable = await target({ postId: POST_ID }, { ctx });
     expect(viaServer).toEqual(viaCallable);
@@ -183,7 +183,7 @@ describe('the mutator DSL surface', () => {
     // half directly, because both return the same value. The declared `server` ignores its ctx
     // entirely, so it would answer an anonymous caller happily — only a call routed through
     // `invoke` reaches the policy. This denial is what proves the route taken.
-    const denied = await target.server(createContext(), { postId: POST_ID }).then(
+    const denied = await target.server(ctxOf(), { postId: POST_ID }).then(
       (value) => value,
       (error: unknown) => error,
     );

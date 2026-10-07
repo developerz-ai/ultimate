@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from './errors';
-import { createSingleFlight } from './single-flight';
+import { singleFlight } from './single-flight';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -47,9 +47,9 @@ const manualTimers = (): {
   };
 };
 
-describe('createSingleFlight', () => {
+describe('singleFlight', () => {
   test('N callers on one key are ONE run of work', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const held = deferred<string>();
     let runs = 0;
     const work = async (): Promise<string> => {
@@ -69,7 +69,7 @@ describe('createSingleFlight', () => {
   });
 
   test('different keys never share', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     let runs = 0;
     const work = async (): Promise<number> => {
       runs += 1;
@@ -79,7 +79,7 @@ describe('createSingleFlight', () => {
   });
 
   test('a REJECTED load clears its key — one failure is not cached forever', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     let runs = 0;
     const failing = async (): Promise<never> => {
       runs += 1;
@@ -92,7 +92,7 @@ describe('createSingleFlight', () => {
   });
 
   test('work that throws SYNCHRONOUSLY still rejects its joiners and clears', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const boom = (): Promise<never> => {
       throw new UltimateError({ code: 'X_INTERNAL', cause: 'sync throw', fix: 'x doctor --json' });
     };
@@ -101,7 +101,7 @@ describe('createSingleFlight', () => {
   });
 
   test('joiners fold their context in, and the leader reads it LATE', async () => {
-    const flight = createSingleFlight();
+    const flight = singleFlight();
     const gate = deferred<void>();
     const seen: string[] = [];
     const leader = flight.run<string, string>(
@@ -124,7 +124,7 @@ describe('createSingleFlight', () => {
 
   test('with no deadline configured, nothing is ever scheduled', async () => {
     const timers = manualTimers();
-    const flight = createSingleFlight({ schedule: timers.schedule });
+    const flight = singleFlight({ schedule: timers.schedule });
     await flight.run('k', async () => 'done');
     expect(timers.pending()).toBe(0);
     expect(timers.delays()).toEqual([]);
@@ -132,7 +132,7 @@ describe('createSingleFlight', () => {
 
   test('a deadline evicts a wedged key, and its own joiners still get its answer', async () => {
     const timers = manualTimers();
-    const flight = createSingleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
+    const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
     const wedged = deferred<string>();
     const first = flight.run('k', async () => await wedged.promise);
     expect(flight.size).toBe(1);
@@ -151,7 +151,7 @@ describe('createSingleFlight', () => {
 
   test('a late settle evicts only ITS OWN entry, never the key', async () => {
     const timers = manualTimers();
-    const flight = createSingleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
+    const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
     const wedged = deferred<string>();
     const held = deferred<string>();
     const first = flight.run('k', async () => await wedged.promise);
@@ -170,7 +170,7 @@ describe('createSingleFlight', () => {
 
   test('the deadline timer is cancelled when the load settles', async () => {
     const timers = manualTimers();
-    const flight = createSingleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
+    const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
     await flight.run('k', async () => 'done');
     expect(timers.pending()).toBe(0);
   });

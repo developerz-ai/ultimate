@@ -138,19 +138,19 @@ decision rather than a failure.
 
 | Table | Window | Named where |
 |---|---|---|
-| `x_notify_deliveries` | `PgDeliveryLedgerOptions.windowMs`, default 24 h | beside the statement that reads it. **Never shorter than the app's idempotency window** — a job replayed inside that window against a purged claim claims cleanly and sends twice. Pass `idempotency.windowMs` |
-| `x_notify_digests` | `PgDigestStoreOptions.retentionMs`, default 7 days after the window closed | beside the statement that reads it, like the ledger's |
+| `x_notify_deliveries` | `PostgresDeliveryLedgerOptions.windowMs`, default 24 h | beside the statement that reads it. **Never shorter than the app's idempotency window** — a job replayed inside that window against a purged claim claims cleanly and sends twice. Pass `idempotency.windowMs` |
+| `x_notify_digests` | `PostgresDigestStoreOptions.retentionMs`, default 7 days after the window closed | beside the statement that reads it, like the ledger's |
 | `x_notify_inbox` | `notify.inboxReadRetentionMs` / `notify.inboxUnreadRetentionMs` in `AppConfig`, **both absent by default** | the app's `app.config.ts`, because an inbox row is a message a person has not read yet and when it disappears is a product decision (axiom 8) |
 
 `purgeBefore` and `purgeExpired` live on the **Postgres stores' own wider types**
-(`PgInboxStore`, `PgDeliveryLedger`, `PgDigestStore`), never on the seams: adding a method to
+(`PostgresInboxStore`, `PostgresDeliveryLedger`, `PostgresDigestStore`), never on the seams: adding a method to
 the seam every implementation must satisfy is a breaking change for an app that wrote its own, and a
 heap map bounded by process life has nothing to delete. Exactly the shape `PostgresIdempotencyStore`
 already has.
 
 `x_notify_digests`: every window is deleted by its own flush's `drain`, or by the next window's
 drain of the same slot (`ends_at <=`). The one neither reaches — a flush that dead-lettered, on a
-slot that never digests again — is the sweep's (`purgeNotifyDigests` → `PgDigestStore.purgeExpired`,
+slot that never digests again — is the sweep's (`purgeNotifyDigests` → `PostgresDigestStore.purgeExpired`,
 `As of 2026-10-02`): windows CLOSED more than `retentionMs` before the job's clock, default
 `DEFAULT_DIGEST_RETENTION_MS` (7 days, longer than any flush's retries), deleted in batches of
 `DIGEST_PURGE_BATCH` and at most `DIGEST_PURGE_MAX_BATCHES` statements per pass.

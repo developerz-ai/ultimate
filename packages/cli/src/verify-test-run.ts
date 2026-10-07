@@ -4,13 +4,14 @@
 
 // why: Bun ships no path-join primitive; the timings cache lives under the run's root.
 import { join } from 'node:path';
+import { ISOLATED_ENV } from '@ultimat3/testing';
 import type { Runner } from './exec';
 import type { Finding } from './output';
 import { runBatches, testBatches } from './test-batches';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
-import { failureOf, ISOLATED_TEST_ENV, TEST_TIMINGS_FILE, testArgs } from './test-shards';
+import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { StepOutcome } from './verify-step';
 // Type-only, so nothing here evaluates verify-tests.ts and the two files cannot form a cycle.
@@ -53,7 +54,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   const workers = Math.max(1, Math.min(Math.trunc(options.workers), files.length || 1));
   const envOverrides = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
-    ...(options.isolate === true ? { [ISOLATED_TEST_ENV]: '1' } : {}),
+    ...(options.isolate === true ? { [ISOLATED_ENV]: '1' } : {}),
   };
   // Batched exactly as `x test` batches the same selection at the same width, so the gate's
   // `fix:` line — `x test <type> --workers N` — reruns the very processes that failed.

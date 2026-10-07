@@ -5,8 +5,8 @@
 // differently — `driver-parity.test.ts` asserts the same refusal on all three, and a rule
 // re-implemented per driver is a rule that holds only on the driver nobody ships.
 
-import type { HostRule } from './hosts';
-import { hostDecision } from './hosts';
+import type { HostRule } from '@ultimat3/core';
+import { hostDecision } from '@ultimat3/core';
 import type { NetworkEntry, ResourceType } from './rings';
 
 export interface InterceptRules {

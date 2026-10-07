@@ -3,7 +3,7 @@
  * a wrong reset is a wrong `<html lang>` in every later file of the same `bun test` process.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, MAX_CACHED_FORMATTERS, runWithContext } from '@ultimat3/core';
+import { ctxOf, DEFAULT_LOCALE, MAX_CACHED_FORMATTERS, runWithContext } from '@ultimat3/core';
 import { flattenCatalog } from './catalog';
 import {
   configureLocales,
@@ -19,7 +19,7 @@ import {
   translatorFor,
   useI18n,
 } from './context';
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from './locales';
+import { SUPPORTED_LOCALES } from './locales';
 
 const supported = ['en', 'es', 'de'] as const;
 
@@ -147,21 +147,21 @@ describe('currentLocale', () => {
   // distinct spelling a request carried bought a permanent `Translator` and a permanent
   // `PluralRules` — an unbounded cache keyed by user input, on the ambient read path.
   test('normalises the ambient locale, the same call `resolveLocale` makes for its sources', () => {
-    runWithContext(createContext({ locale: 'pt-BR' }), () => {
+    runWithContext(ctxOf({ locale: 'pt-BR' }), () => {
       expect(currentLocale()).toBe('pt');
     });
   });
 
   test('an unsupported tag falls back instead of becoming a cache key of its own', () => {
     configureLocales({ supported: ['en', 'es'], fallback: 'es' });
-    runWithContext(createContext({ locale: 'zz-ZZ' }), () => {
+    runWithContext(ctxOf({ locale: 'zz-ZZ' }), () => {
       expect(currentLocale()).toBe('es');
     });
   });
 
   test('two spellings of one locale share ONE memoized translator', () => {
-    const first = runWithContext(createContext({ locale: 'en-US' }), () => useI18n());
-    const second = runWithContext(createContext({ locale: 'EN-gb' }), () => useI18n());
+    const first = runWithContext(ctxOf({ locale: 'en-US' }), () => useI18n());
+    const second = runWithContext(ctxOf({ locale: 'EN-gb' }), () => useI18n());
 
     expect(second).toBe(first);
     expect(first.locale).toBe('en');
@@ -280,14 +280,14 @@ describe('currentDirection', () => {
 
   test('is the direction of the locale the context carries, normalised first', () => {
     configureLocales({ supported: ['en', 'ar', 'he'], fallback: 'en' });
-    runWithContext(createContext({ locale: 'ar-EG' }), () => {
+    runWithContext(ctxOf({ locale: 'ar-EG' }), () => {
       expect(currentLocale()).toBe('ar');
       expect(currentDirection()).toBe('rtl');
     });
-    runWithContext(createContext({ locale: 'he' }), () => {
+    runWithContext(ctxOf({ locale: 'he' }), () => {
       expect(currentDirection()).toBe('rtl');
     });
-    runWithContext(createContext({ locale: 'en-GB' }), () => {
+    runWithContext(ctxOf({ locale: 'en-GB' }), () => {
       expect(currentDirection()).toBe('ltr');
     });
   });
@@ -296,12 +296,12 @@ describe('currentDirection', () => {
     // `fa` is RTL, but an app that does not support it renders the fallback — and `dir` must
     // agree with the copy that is actually on the page.
     configureLocales({ supported: ['en'], fallback: 'en' });
-    runWithContext(createContext({ locale: 'fa-IR' }), () => {
+    runWithContext(ctxOf({ locale: 'fa-IR' }), () => {
       expect(currentLocale()).toBe('en');
       expect(currentDirection()).toBe('ltr');
     });
     configureLocales({ supported: ['ar'], fallback: 'ar' });
-    runWithContext(createContext({ locale: 'kl-GL' }), () => {
+    runWithContext(ctxOf({ locale: 'kl-GL' }), () => {
       expect(currentDirection()).toBe('rtl');
     });
   });

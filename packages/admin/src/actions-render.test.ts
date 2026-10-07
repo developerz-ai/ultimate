@@ -14,8 +14,8 @@ import {
   type AdminAuthz,
   type AdminAuthzQuery,
   type AdminDecision,
-  allowed,
-  denied,
+  adminAllowed,
+  adminDenied,
 } from './authz';
 import type { AdminAction } from './registry';
 
@@ -60,8 +60,8 @@ function recordingAuthz(grant: ReadonlySet<string>): AdminAuthz & {
     decide(query): AdminDecision {
       asked.push(query);
       return grant.has(query.permission)
-        ? allowed(query.permission, 'probe.granted')
-        : denied(query.permission, 'probe.refused');
+        ? adminAllowed(query.permission, 'probe.granted')
+        : adminDenied(query.permission, 'probe.refused');
     },
   };
 }

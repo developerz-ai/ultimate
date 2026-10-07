@@ -25,7 +25,7 @@ import {
   permissionDeclarationSites,
   restorePermissions,
 } from '@ultimat3/policy';
-import { from, query, registerQueries, resetRegistry, runQuery, t } from '@ultimat3/query';
+import { from, query, registerQueries, resetQueries, runQuery, t } from '@ultimat3/query';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { readBuildStats } from './budgets';
 import { prerenderSite } from './prerender';
@@ -112,7 +112,7 @@ describe('the actor a measurement render runs as', () => {
       // Still not written: measuring and prerendering are two questions, and this answered one.
       expect(await Bun.file(join(out, 'things/index.html')).exists()).toBe(false);
     } finally {
-      resetRegistry();
+      resetQueries();
       restorePermissions(before, beforeSites);
     }
   });
@@ -189,7 +189,7 @@ describe('the actor a measurement render runs as', () => {
       // Restored: the build borrowed `APP_URL` for the render and hands the process back as found.
       expect(process.env['APP_URL']).toBeUndefined();
     } finally {
-      resetRegistry();
+      resetQueries();
       restorePermissions(before, beforeSites);
     }
   });

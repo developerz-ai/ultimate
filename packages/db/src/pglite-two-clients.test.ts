@@ -6,15 +6,15 @@
 // one session's transaction from another's.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
 const PGLITE_BOOT_MS = 60_000;
 
 describe('two embedded clients', () => {
-  const a = createPgliteClient();
-  const b = createPgliteClient();
+  const a = pgliteClient();
+  const b = pgliteClient();
 
   afterAll(async () => {
     await a.close();

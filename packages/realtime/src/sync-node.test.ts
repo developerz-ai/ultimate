@@ -10,7 +10,7 @@ import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry } from './socket';
 import { listenSyncNode } from './sync-listen';
-import { createSyncNode, type SyncNode } from './sync-node';
+import { type SyncNode, syncNode } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
@@ -18,7 +18,7 @@ const BUILD_ID = 'build-1';
 function node(): SyncNode {
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
-  return createSyncNode({
+  return syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,

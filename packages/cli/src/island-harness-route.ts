@@ -4,7 +4,7 @@
 // can only be one of those per checkout.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { html, json } from '@ultimat3/http';
+import { html, jsonResponse } from '@ultimat3/http';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import {
   islandShotFile,
@@ -27,7 +27,7 @@ import { quoteArg } from './shell-quote';
 export type IslandStatesSource = () => Promise<readonly IslandStatesManifest[]>;
 
 const refused = (cause: string, fix: string): Response =>
-  json(
+  jsonResponse(
     { ok: false, error: { code: 'X_SHOT_ISLAND_UNPHOTOGRAPHABLE', cause, fix } },
     { status: 404 },
   );

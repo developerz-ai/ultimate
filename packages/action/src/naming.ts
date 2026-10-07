@@ -11,10 +11,9 @@ import { resolveActionRoute } from './http-path';
 
 /**
  * The path rule is `@ultimat3/core`'s `client-paths.ts` — the typed client, the route and the
- * spec derive one URL from one function. Re-exported by name so `@ultimat3/action`'s public
- * `derivePath` / `pluralize` / `splitWords` / `ActionPath` keep resolving; never re-declared here.
+ * spec derive one URL from one function; `pluralize` and `splitWords` are imported from core by
+ * whoever needs them, never re-exported here (`X_HELPER_COPY`).
  */
-export { pluralize, splitWords } from '@ultimat3/core';
 
 export type ActionPath = ActionRoute;
 

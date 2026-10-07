@@ -12,10 +12,10 @@
 // makes every wait unbounded, in a run that reports nothing about either.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger, isUltimateError, renderThrowable } from '@ultimat3/core';
+import { ctxOf, isUltimateError, renderThrowable, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { fakeBrowser } from './driver-fake';
 import type { ScrapeDefinition } from './scrape';
 import { runScrape } from './scrape-run';
@@ -37,7 +37,7 @@ const passThroughStep = (): StepApi =>
 const runArgs = (): JobRunArgs<{ page: number }> => ({
   input: { page: 1 },
   step: passThroughStep(),
-  ctx: createContext({ logger: createLogger({ writer: () => undefined }) }),
+  ctx: ctxOf({ logger: structuredLogger({ writer: () => undefined }) }),
   attempt: 1,
   finalAttempt: false,
   progress: () => undefined,
@@ -54,7 +54,7 @@ const define = (
   idempotencyKey: (input) => `orders:${String(input.page)}`,
   tenant: 'none',
   allowHosts: ['shop.test'],
-  clock: testClock(),
+  clock: testScrapeClock(),
   driver: fakeBrowser([{ url: URL_A, html: HTML }]),
   // Declared so no test here fires the default `/robots.txt` read at a host it does not own.
   robots: { ignore: 'the fixture site is this suite' },

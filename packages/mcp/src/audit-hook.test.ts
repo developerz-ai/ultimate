@@ -6,14 +6,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Logger } from '@ultimat3/core';
-import { agentActor, createLogger, frozenClock, userActor } from '@ultimat3/core';
+import { agentActor, frozenClock, structuredLogger, userActor } from '@ultimat3/core';
 import { memoryRateLimitStore } from '@ultimat3/http';
 import { defineAppMcp } from './app-tools';
 import type { McpAuditEvent } from './audit-hook';
 import { mcpAuditor } from './audit-hook';
 import type { McpCaller } from './registry';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
 const AT = '2026-10-06T09:00:00.000Z';
@@ -22,7 +22,7 @@ const caller: McpCaller = { actor: agentActor({ id: 'agent-1' }), scopes: new Se
 
 function capture(): { logger: Logger; lines: Record<string, unknown>[] } {
   const lines: Record<string, unknown>[] = [];
-  const logger = createLogger({
+  const logger = structuredLogger({
     level: 'trace',
     clock,
     writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
@@ -61,7 +61,7 @@ const tools = [
 describe('onAudit on the server: every tools/call and resources/read decision', () => {
   test('ok, hidden and scope-denied reach the hook, stamped from the clock', async () => {
     const events: McpAuditEvent[] = [];
-    const server = createMcpServer({ tools, clock, onAudit: (event) => void events.push(event) });
+    const server = mcpServer({ tools, clock, onAudit: (event) => void events.push(event) });
     await server.handle(call('echo'), caller);
     await server.handle(call('nope'), caller);
     await server.handle(call('refund'), caller);
@@ -76,7 +76,7 @@ describe('onAudit on the server: every tools/call and resources/read decision', 
 
   test('a resources/read is its own event kind, addressed by URI', async () => {
     const events: McpAuditEvent[] = [];
-    const server = createMcpServer({
+    const server = mcpServer({
       resources: [
         {
           uri: 'ultimate://doc',
@@ -102,7 +102,7 @@ describe('onAudit on the server: every tools/call and resources/read decision', 
 
   test('tools/list is silent here exactly as it is in the log', async () => {
     const events: McpAuditEvent[] = [];
-    const server = createMcpServer({ tools, onAudit: (event) => void events.push(event) });
+    const server = mcpServer({ tools, onAudit: (event) => void events.push(event) });
     await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, caller);
     expect(events).toEqual([]);
   });
@@ -122,7 +122,7 @@ describe('onAudit on the route: the refusals before any caller exists', () => {
 
   const routeWith = (events: McpAuditEvent[], unauthenticated = 20) =>
     mcpHttpRoute({
-      server: createMcpServer({ clock, onAudit: (event) => void events.push(event) }),
+      server: mcpServer({ clock, onAudit: (event) => void events.push(event) }),
       clock,
       rateLimitStore: memoryRateLimitStore(),
       rateLimits: { read: 100, write: 100, unauthenticated },

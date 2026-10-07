@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { decodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { FetchLike, QueryClient, QueryClientMethod, QuerySingleClientMethod } from './client';
@@ -44,7 +44,7 @@ function postById(records = false) {
 }
 
 function serve(target: AnyQuery) {
-  return createServer({
+  return httpServer({
     routes: [toQueryRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => null },

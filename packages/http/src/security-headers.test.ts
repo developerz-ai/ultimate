@@ -125,7 +125,7 @@ describe('buildCsp() over a caller-supplied directive name', () => {
 
   // `directives[name]` is a computed read of an object literal keyed by DATA, so every name on
   // `Object.prototype` answered a function: `[...(directives['toString'] ?? []), ...sources]`
-  // spread a function and threw a bare `TypeError` — out of `createServer`, at boot, with no code
+  // spread a function and threw a bare `TypeError` — out of `httpServer`, at boot, with no code
   // and no fix. `proto-index` cannot see it: `directives` comes from `baseline()`.
   test('a prototype member is an ordinary directive name, never a function', () => {
     const csp = buildCsp(withExtend({ toString: ["'none'"] }));

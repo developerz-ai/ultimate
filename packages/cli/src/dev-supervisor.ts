@@ -16,6 +16,7 @@ import {
   supervisorPid,
 } from './dev-child-watch';
 import { devPortFor } from './dev-port';
+import { PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { parseArgs } from './parse';
@@ -53,11 +54,42 @@ export function devSupervision(
   }
 }
 
-/** A port nothing holds right now, asked of the OS — what `--port 0` is pinned to. */
-export function freeDevPort(): number {
+/** A port the OS hands out for `0`, released at once — the candidate `freeDevPort` checks. */
+const kernelPort = (): number => {
   const probe = Bun.serve({ port: 0, fetch: () => new Response() });
   const port = probe.port ?? 0;
   probe.stop(true);
+  return port;
+};
+
+/** Whether `port` can be bound right now: `Bun.serve` refusing it is the answer, not an error. */
+const portBindable = (port: number): boolean => {
+  try {
+    Bun.serve({ port, fetch: () => new Response() }).stop(true);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Kernel candidates tried for a free PAIR before the last one is handed back unchecked. */
+const PAIR_ATTEMPTS = 16;
+
+/**
+ * A port whose PAIR nothing holds right now — what `--port 0` is pinned to. `x dev` binds the web
+ * role on `port` and the sync role on `port + 1` (`syncPortFor`), so a port the kernel says is
+ * free proves nothing about its neighbour: asking for one alone failed the boot `X_PORT_IN_USE`
+ * on a busy box whenever the neighbour was taken (`cmd-dev-orphan.live.test.ts`, 2026-10-07).
+ */
+export function freeDevPort(
+  pick: () => number = kernelPort,
+  bindable: (port: number) => boolean = portBindable,
+): number {
+  let port = 0;
+  for (let attempt = 0; attempt < PAIR_ATTEMPTS; attempt += 1) {
+    port = pick();
+    if (port > 0 && port < PORT_RANGE.max && bindable(port + 1)) return port;
+  }
   return port;
 }
 

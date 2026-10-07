@@ -31,7 +31,7 @@ const DELTA_SECONDS_FIELDS = [
  * CLI's authorized-object hint all carry `maxAgeSeconds: 0`, so a floor of 1 would refuse the
  * framework at its own boot.
  *
- * Called once per route by `createRouter`, which is the one way a `Route` becomes matchable — so
+ * Called once per route by `httpRouter`, which is the one way a `Route` becomes matchable — so
  * every hint an app can serve has been through here, including the ones `@ultimat3/cli` mints for
  * favicons, dev assets and storage objects.
  */

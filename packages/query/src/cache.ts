@@ -6,7 +6,7 @@
  */
 
 import type { CacheStack, CacheTag, CacheTier } from '@ultimat3/cache';
-import { createCacheStack, registeredTiers, tagKeys } from '@ultimat3/cache';
+import { cacheStack, registeredTiers, tagKeys } from '@ultimat3/cache';
 import type { Actor, Clock, Ctx } from '@ultimat3/core';
 import { assertNever, fingerprint } from '@ultimat3/core';
 
@@ -164,7 +164,7 @@ async function publish<T>(
 /**
  * One stack per (registry, clock) — never one per read.
  *
- * `createCacheStack` owns a single-flight map, so a stack built per call joins nothing and the
+ * `cacheStack` owns a single-flight map, so a stack built per call joins nothing and the
  * cross-request stampede guard would be a no-op. Keyed on the clock because the stack's expiry
  * decision and the tiers' own have to agree: a tier registered with a frozen clock under a stack
  * reading the wall clock calls every entry expired, which is the shape that made the old read
@@ -182,7 +182,7 @@ function stackFor(clock: Clock): CacheStack {
   // read, and `resetTiers()` between suites. Compared element-wise by identity: a tier object is
   // registered once and never mutated, so two equal lists are the same ladder.
   if (held !== undefined && sameTiers(held.tiers, tiers)) return held.stack;
-  const stack = createCacheStack(tiers, { clock });
+  const stack = cacheStack(tiers, { clock });
   stacks.set(clock, { tiers, stack });
   return stack;
 }
@@ -208,7 +208,7 @@ export function readThrough<T>(
  * package's own. Runs once per key per request; the rest join it at the memo above.
  *
  * Everything this used to do by hand — the fence sampled before the load, `bestEffort` around
- * every tier call, the expiry — is `createCacheStack`'s, which is the point: there was one read
+ * every tier call, the expiry — is `cacheStack`'s, which is the point: there was one read
  * cache too many, and the one that lived here was in no registry, so `invalidateTags` could not
  * reach it. A relative `ttlMs` and never an absolute expiry: the tier's own clock decides when
  * the entry dies, so a tier registered with a frozen clock is drivable end to end.

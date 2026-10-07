@@ -9,13 +9,6 @@
  * published. Ordinary payloads are byte-identical between the two; `stable.test.ts` pins that.
  */
 
-/**
- * `@ultimat3/core`'s, re-exported so `./stable` stays this package's one import path for the JSON
- * helpers. It was declared here AND identically in `@ultimat3/query`'s own `stable.ts`, which is
- * the duplication `client-wire.ts` moving to tier 0 made unnecessary.
- */
-export { isJsonObject } from '@ultimat3/core';
-
 export type JsonObject = Record<string, unknown>;
 
 /** JSON with object keys sorted at every depth. No timestamps, no insertion-order leaks. */

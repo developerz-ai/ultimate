@@ -1,13 +1,12 @@
 // Single responsibility: the public API of @ultimat3/mail. Explicit named exports only —
 // other packages call `defineMail`, `send` and the driver seam, and nothing else.
 
-export { escapeHtml } from '@ultimat3/core';
 /** Re-exported so a `defineMail` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
-export { MAIL_CATALOG, MAIL_CATALOG_LOCALE } from './catalog';
+export { MAIL_CATALOG } from './catalog';
 // Type-only, so a sender can name an event without loading a receiver; the receivers are
 // `@ultimat3/mail/events`, kept off the barrel every serving role evaluates.
 export type {
@@ -71,7 +70,7 @@ export {
   transformFailed,
 } from './errors';
 export { assertHeaderSafe } from './header-safety';
-export { safeUrl } from './html';
+export { safeMailHref } from './html';
 
 export { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 export { mailMessageSchema, sendMailJob } from './job';

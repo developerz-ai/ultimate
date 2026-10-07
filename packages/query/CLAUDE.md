@@ -20,7 +20,6 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `client-scale-pins.ts` | compile-time pin: `queryClient<Api['queries']>` over 100 reads in 50 modules — list, `.page` and `single: true` |
 | `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
 | — | flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported. No local copy |
-| `naming.ts` | export name → `/_x/query/<kebab>` — `derivePath` IS core's `queryPath`. **Paths only** |
 | `registry.ts` | export-name registration, `describeQueries()`, the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic + `spendQueryLimit` (a live subscribe's spend) |
 | `rate-limit-gate.ts` | **the one place** a read's declared `rateLimit:` is spent |
@@ -30,7 +29,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and back |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
-| `sql.ts` | `explain()` / `describeSql()` |
+| `sql.ts` | `explainQuery()` / `describeSql()` |
 | `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
 | `search.ts` | `search()` — the query FACTORY over an entity's `.searchable()` columns |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
@@ -42,11 +41,11 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 ## Invariants — the read path
 
-- Every surface goes through `sourceFor`: the policy's actor half (`guardBeforeInput`), parse input,
+- Every surface goes through `sourceFor`: the policy's actor half (`guardQueryBeforeInput`), parse input,
   evaluate policy, build the source. A second
   read path is the one unforgivable change here.
 - **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
-  `@ultimat3/entity`'s tenant guard reads) must be the identity `guard()` decided about.
+  `@ultimat3/entity`'s tenant guard reads) must be the identity `guardQuery()` decided about.
   `read-context.test.ts` asserts ambient, `options.actor` and `options.ctx` are one caller.
 - **Skipping a read's policy costs a WRITTEN REASON** (`unenforced?: string`; blank refused).
   `ToLiveOptions.enforce` stays a boolean, translated into `SHARED_WINDOW_REASON`.
@@ -66,7 +65,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A read has ONE tool name, the export name verbatim.** `toToolName` is deleted.
   `index.test.ts` asserts the barrel exports nothing matching `/tool_?name/i`.
 - **`queryClient` is the map-wide read client (mirror of `rpc`)**; both spellings run
-  `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from `naming.ts`.**
+  `queryClientMethodFor`. **`toQueryRoute` and `client()` derive the same URL from core's `queryPath`.**
 - **`QueryClient` typechecks at any app size, and a `.test.ts` cannot say so** (`tsconfig.json`
   excludes them): `client-scale-pins.ts` is source, so a regression is a `typecheck` error. The map
   it pins is the intersection `@ultimat3/action`'s `Merge` hands over; that package pins `Merge`.
@@ -90,14 +89,15 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **The span wraps the whole read** (`readRows` holds it, `readRowsIn` is the body); bounded
   attributes only — never the input or an actor id. `telemetry.test.ts` asserts the extent through
   `currentSpan()`.
-- **`policyCapability` is a display label; `policyPermissions` (`QueryDescriptor.permissions`) is what
-  a report matches on.**
+- **`policyCapability` is a display label; `policyPermissions` (`QueryDescriptor.permissions`) is
+  what a report matches on.** Both are `@ultimat3/policy`'s, imported from there.
 - **`client.ts` injects `traceparent`** before the caller's headers; an incomplete span context sends
   nothing.
 - **A read is `no-store`, and its policy is `enforcedBy: 'handler'`** — `runQuery` is the one
   evaluation (`http.test.ts` counts exactly one).
-- **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, via
-  `policy-gate.ts`), never the root combinator.
+- **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, imported
+  from `@ultimat3/policy` by `http.ts`), never the root combinator. 25.0.0 dropped this package's
+  re-export; `index.test.ts` pins the absence.
 - `registry.ts` announces `registerQueries` in core's registrar table at import; `defineApi` in
   `@ultimat3/action` depends on it (`X_REGISTRAR_MISSING` otherwise).
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })`; a live denial keeps its 4403
@@ -129,7 +129,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 ## Invariants — the client
 
-- **Flight control is `@ultimat3/core`'s, and NOT re-exported** (`createClientFlight`,
+- **Flight control is `@ultimat3/core`'s, and NOT re-exported** (`clientFlight`,
   `DEFAULT_CLIENT_RETRY`, `isTransientFailure`, `isSuperseded` — `X_HELPER_COPY` refuses a value
   re-export; only the types `ClientFlight`/`ClientRetry` the options name). Fix the pipeline in `packages/core/src/client-flight.ts`. No new error
   code, curve, fence or retry loop here; `bun run flight-copies` says so.
@@ -140,8 +140,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   transport owns `Accept`, trace/budget headers, the principal fence, the error decode and the record
   envelope; the flight handed to it dedups concurrent identical reads. `bun run browser-transport`
   is the guard.
-- **`@ultimat3/query/client` is the read client without the barrel** — `client.ts` and `naming.ts`
-  import core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
+- **`@ultimat3/query/client` is the read client without the barrel** — `client.ts`
+  imports core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
   titles table in the graph or past 12 kB; `client-subpath.test.ts` pins the specifier. Byte figures
   (browser, minified): barrel `queryClient` 25,237 B (`As of 2026-10-02`); `./client` 11,983 B
@@ -176,7 +176,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` and never grows one; it is reachable only as
   `query.page(input, { first, after })`. **A page is bounded**: `first` is 1…`MAX_PAGE_SIZE`
-  (10,000, a twin of `@ultimat3/entity`'s).
+  (10,000 — `@ultimat3/entity`'s, imported; this package never re-publishes it).
 - **A declared `.limit()` bounds the LISTING, on every page**: the window is
   `min(rowsLeft, first + 1)`, and a limited read's cursor carries the rows served so far at the
   tail of its key (after the typed id). A cursor without it is `X_CURSOR_INVALID` on a limited
@@ -211,13 +211,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A position is decided against the rows the WINDOW holds**: `unprojectedOrderKey` — a held row
   missing an ordering column (`Object.hasOwn`, never a value check) gets a `refill` rather than a
   guess. A delete is addressed by index and still patches.
-- **`tagKeys` is `@ultimat3/cache`'s.** `@ultimat3/render` exports a different `tagKeys`; never import
-  that one here.
+- **`tagKeys` is `@ultimat3/cache`'s** — the only public one; never restore a local copy.
 - **A fingerprint is `@ultimat3/core`'s** (`canonicalJson` + SHA-256/16 `fingerprint`), tagging `Date`,
   `Map`, `Set`. `query-hash.test.ts` pins it at `queryHash` and `cacheKeyFor`. `stable.ts` keeps
-  `columnOf` and re-exports core's `isJsonObject`.
+  `columnOf`; core's `isJsonObject` is imported from core (`X_HELPER_COPY` refuses a re-export).
 - The cursor codec is `@ultimat3/core`'s; this package supplies only the scope (`queryHash(name,
-  input)`). An unverified cursor is `X_CURSOR_INVALID` (`CursorInvalidError`, re-exported).
+  input)`). An unverified cursor is `X_CURSOR_INVALID` (`CursorInvalidError`, core's — imported from `@ultimat3/core`, never re-exported).
 
 ## Invariants — caching
 
@@ -231,10 +230,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **`cache.ttlMs` is judged at `query()`** (`X_QUERY_CACHE_TTL_INVALID`). A `cache:` read always
   expires: `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` (60 s); an unset TTL is OMITTED so the tier
   defaults.
-- **A fill is FENCED, by `@ultimat3/cache`'s fence inside `createCacheStack.read`** — never a second
+- **A fill is FENCED, by `@ultimat3/cache`'s fence inside `cacheStack.read`** — never a second
   one here (`cache-fence.test.ts`).
 - **This package owns NO cache store**: a `cache:` read fills
-  `createCacheStack(registeredTiers(), { clock })`. Never reintroduce a store, never call
+  `cacheStack(registeredTiers(), { clock })`. Never reintroduce a store, never call
   `tier.invalidateTags()` here. A tier refusal degrades the cache, never the read.
 - **The read path reads NO clock** — it hands the stack a relative `ttlMs` (`read-tier.test.ts`).
 - **A process that registered no tier reads uncached** — correct, and slower.

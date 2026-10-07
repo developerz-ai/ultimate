@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { ImageDecodeFailedError, ImageTooLargeError } from './errors';
 import {
   assertPixelBudget,
-  createRaster,
+  blankRaster,
   cropRaster,
   hasAlpha,
   MAX_IMAGE_PIXELS,
@@ -27,7 +27,7 @@ const thrown = (run: () => unknown): { code: string; cause: string; meta: unknow
 };
 
 const opaque = (width: number, height: number): Raster => {
-  const raster = createRaster(width, height, 'test');
+  const raster = blankRaster(width, height, 'test');
   for (let i = 3; i < raster.pixels.length; i += 4) raster.pixels[i] = 255;
   return raster;
 };
@@ -67,25 +67,25 @@ describe('assertPixelBudget', () => {
   });
 });
 
-describe('createRaster', () => {
+describe('blankRaster', () => {
   test('allocates exactly width * height * 4 bytes', () => {
-    expect(createRaster(7, 3).pixels.length).toBe(7 * 3 * 4);
+    expect(blankRaster(7, 3).pixels.length).toBe(7 * 3 * 4);
   });
 
   test('starts fully transparent — an unfilled canvas must not read as black', () => {
-    expect([...createRaster(2, 1).pixels]).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+    expect([...blankRaster(2, 1).pixels]).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
   });
 
   test('refuses a bomb before it allocates a single byte', () => {
-    expect(thrown(() => createRaster(40_000, 40_000)).code).toBe('X_IMAGE_TOO_LARGE');
+    expect(thrown(() => blankRaster(40_000, 40_000)).code).toBe('X_IMAGE_TOO_LARGE');
   });
 
   test('carries the caller-supplied source label into the error', () => {
-    expect(thrown(() => createRaster(0, 0, 'icon canvas')).cause).toContain('icon canvas');
+    expect(thrown(() => blankRaster(0, 0, 'icon canvas')).cause).toContain('icon canvas');
   });
 
   test('pixels are clamped, not wrapped — 300 stays 255 and -20 stays 0', () => {
-    const raster = createRaster(1, 1);
+    const raster = blankRaster(1, 1);
     raster.pixels[0] = 300;
     raster.pixels[1] = -20;
     expect([raster.pixels[0], raster.pixels[1]]).toEqual([255, 0]);
@@ -122,7 +122,7 @@ describe('hasAlpha', () => {
   });
 
   test('a fresh canvas is entirely transparent, so it has alpha', () => {
-    expect(hasAlpha(createRaster(4, 4))).toBe(true);
+    expect(hasAlpha(blankRaster(4, 4))).toBe(true);
   });
 
   test('one partially transparent pixel anywhere is enough', () => {
@@ -140,7 +140,7 @@ describe('hasAlpha', () => {
 
 describe('cropRaster', () => {
   test('copies exactly the region, row by row', () => {
-    const raster = createRaster(3, 3, 'test');
+    const raster = blankRaster(3, 3, 'test');
     for (let i = 0; i < 9; i += 1) raster.pixels[i * 4] = i;
     const out = cropRaster(raster, { x: 1, y: 1, width: 2, height: 2 });
     expect([out.width, out.height]).toEqual([2, 2]);
@@ -148,7 +148,7 @@ describe('cropRaster', () => {
   });
 
   test('a region outside the raster is inconsistent geometry, refused by code', () => {
-    const raster = createRaster(2, 2, 'test');
+    const raster = blankRaster(2, 2, 'test');
     expect(() => cropRaster(raster, { x: 1, y: 0, width: 2, height: 1 })).toThrow(
       ImageDecodeFailedError,
     );

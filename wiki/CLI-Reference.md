@@ -271,7 +271,7 @@ of the default set — `x dev` with no `--role` still runs `web,sync,worker,sche
 replicator takes a slot on a shared database. With `DATABASE_URL` unset the embedded PGlite still
 serves no logical replication, so the role is refused, but `X_CLI_BAD_FLAG` now names the fix: set
 `DATABASE_URL` to a Postgres with `wal_level=logical`. With `DATABASE_URL` set, the role starts for
-real: advisory lock → `postgresChangeFeed()` → `createReplicator` → publish to the transport.
+real: advisory lock → `postgresChangeFeed()` → `changeFeedReplicator` → publish to the transport.
 Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x g
@@ -903,7 +903,7 @@ onto sealed second-factor secrets owes — `completeMfa` refuses a plaintext val
 | Needs | the master key: `ULTIMATE_SECRETS_KEY` or `.secrets.key`. With neither it is `X_SEAL_KEY_MISSING` and no row is written |
 | Idempotent | a sealed value is counted and never rewritten, so an interrupted run is finished by running it again |
 | Safe under traffic | each write is a compare-and-set on the value read: a user who re-enrolled mid-run keeps the new secret, and the row is counted `skipped` |
-| Reaches | `BuiltinAdapter`'s `x_users`. An app on its own `AuthAdapter` calls `sealMfaSecrets({ adapter })` from `@ultimat3/auth` |
+| Reaches | `PostgresAuthAdapter`'s `x_users`. An app on its own `AuthAdapter` calls `sealMfaSecrets({ adapter })` from `@ultimat3/auth` |
 
 ```bash
 $ x auth seal-mfa --json
@@ -1079,21 +1079,21 @@ A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the near
 
 ```bash
 x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|resume <queue>
-       |drain --to <driver>] [--queue q] [--state s] [--name n] [--limit n] [--after cursor]
-       [--from-step name] [--reason text] [--to driver] [--dry-run] [--json]
+       |drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor]
+       [--from-step name] [--reason text] [--json]
 ```
 
 | Subcommand | Does |
 |---|---|
-| `ls` | queue depth (with a `failed` bucket), ONE page of matching rows, the dead-letter list — a dead job is never filtered out of view — the `backfill()` passes **in flight**, the paused queues and the live workers. `--limit` is 1 to 200 (default 100); a full page prints `next`, the cursor `--after` takes for the page that follows, and `next: null` is the last page |
+| `ls` | queue depth (with a `failed` bucket), ONE page of matching rows, the dead-letter list — a dead job is never filtered out of view — the `backfill()` passes **in flight**, the paused queues and the live workers. `--limit` is 1 to 200 (default 100). `--json` answers the framework's one page shape — `data.rows`, `data.nextCursor`, `data.hasMore` — and `nextCursor` is a string **exactly when another row exists**: the command reads one row past the page (at 200, one probe after it), so a full last page is `hasMore: false` with no cursor, never one that fetches an empty page. Pass `nextCursor` as `--after` while `hasMore` is true. Until 25.0.0 it was `data.next`, guessed from the row count |
 | `show <id>` | state, attempt, every step's result, the payload (`input`, with every key the app declared secret redacted), the failure's `stack`, the last `progress` the body reported, the remaining retry delays, the concurrency key the run counts under (`concurrencyKey` — `concurrency.key(input)`, `null` unless the job declares a keyed cap), and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue a job that has FINISHED; a job still `ready`, `delayed` or running is refused with `X_JOB_NOT_REQUEUEABLE`. `--from-step <name>` drops that step and every step that started after it, so they re-execute while everything before it replays from storage |
-| `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` (the redis and nats stubs) all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
+| `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
 | `rm <id>` | delete one job and its step records. An unknown id is `X_JOB_UNKNOWN`; a **running** job is refused with `X_JOB_NOT_REMOVABLE`, whose fix is `x jobs cancel <id> --json` — deleting the row under a body does not stop the body |
 | `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
-| `drain --to <driver>` | **planned**, `As of 2026-10`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. No `--to` value ships: its two, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs in `@ultimat3/jobs` on every method, deleted in 25.0.0, so a drain leased the whole pending batch off the production queue for five minutes, failed every enqueue and nacked it back — nothing moved, and no worker could claim those jobs meanwhile. The subcommand, `--to` and `--dry-run` still parse, so every spelling reaches the planned answer. It returns when a durable second driver ships; `--to memory` stays refused by name then (`X_CLI_BAD_FLAG`) — it built a `Map` inside the command's own process and acked the durable rows into it |
+| `drain` | **planned**, `As of 25.0.0`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. Postgres is the one durable job driver, so there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method — a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — and 25.0.0 deleted both stubs and the unreachable drain body. 25.0.0 also deleted the `--to` and `--dry-run` flags: the parser refuses them as unknown |
 
 `show`, `retry`, `cancel`, `rm` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `ls` only.
 

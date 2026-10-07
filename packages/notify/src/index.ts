@@ -16,7 +16,7 @@ export type {
   DeliveryArgs,
   NotifyChannel,
 } from './channel';
-export { bulkChannel, channel, isBulkChannel } from './channel';
+export { bulkChannel, deliveryChannel, isBulkChannel } from './channel';
 export type { InAppChannelOptions } from './channel-in-app';
 export { IN_APP_CHANNEL, inAppChannel } from './channel-in-app';
 export type { MailChannelOptions, Mailer, NotifyMail } from './channel-mail';
@@ -29,7 +29,7 @@ export type {
   MemoryDigestStore,
 } from './digest';
 export { memoryDigestStore } from './digest';
-export type { PgDigestStore, PgDigestStoreOptions } from './digest-pg';
+export type { PostgresDigestStore, PostgresDigestStoreOptions } from './digest-pg';
 export {
   DEFAULT_DIGEST_RETENTION_MS,
   postgresDigestStore,
@@ -50,7 +50,7 @@ export {
 // with it the retry policy, the cancellation and the manifest row.
 export type { InboxQuery, InboxRow, InboxStore, InboxWrite, MemoryInboxStore } from './inbox';
 export { DEFAULT_INBOX_PAGE, memoryInboxStore } from './inbox';
-export type { InboxPurgeBefore, PgInboxStore, PgInboxStoreOptions } from './inbox-pg';
+export type { InboxPurgeBefore, PostgresInboxStore, PostgresInboxStoreOptions } from './inbox-pg';
 export {
   postgresInboxStore,
   SQL_NOTIFY_INBOX_TABLE,
@@ -61,14 +61,14 @@ export type {
   DeliveryRecord,
   DeliveryStatus,
   MemoryDeliveryLedger,
-  MemoryLedgerOptions,
+  MemoryDeliveryLedgerOptions,
 } from './ledger';
 export {
   DELIVERY_STATUSES,
   isDeliveryStatus,
   memoryDeliveryLedger,
 } from './ledger';
-export type { PgDeliveryLedger, PgDeliveryLedgerOptions } from './ledger-pg';
+export type { PostgresDeliveryLedger, PostgresDeliveryLedgerOptions } from './ledger-pg';
 export {
   postgresDeliveryLedger,
   SQL_NOTIFY_DELIVERIES_TABLE,

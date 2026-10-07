@@ -7,7 +7,7 @@
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteOption, logger, uuid } from '@ultimat3/core';
+import { finiteOption, logger, uuidV7 } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
 import {
@@ -28,7 +28,7 @@ interface EventRow {
   readonly expires_at: number | string;
 }
 
-export interface PgEventBusOptions {
+export interface PostgresEventBusOptions {
   /**
    * The only thing this bus is built from. There is no `clock`: every instant it writes or
    * compares is the database's (`SQL_EVENT_PUBLISH`), and a process clock here was the defect.
@@ -40,7 +40,7 @@ export interface PgEventBusOptions {
   readonly listLimit?: number;
 }
 
-export function postgresEventBus(options: PgEventBusOptions): EventBus {
+export function postgresEventBus(options: PostgresEventBusOptions): EventBus {
   // TWO screens, for the reason `events.ts` states: `defaultTtl` is the constructor's knob and
   // `ttl` is the publish call's, so one screen over `ttl ?? defaultTtl` names the wrong one for
   // whichever value actually arrived.
@@ -67,7 +67,7 @@ export function postgresEventBus(options: PgEventBusOptions): EventBus {
     },
 
     async publish(name, payload, publishOptions = {}) {
-      const id = uuid();
+      const id = uuidV7();
       const ttlMs =
         publishOptions.ttl === undefined
           ? defaultTtlMs

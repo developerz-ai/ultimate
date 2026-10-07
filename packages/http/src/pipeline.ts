@@ -5,7 +5,7 @@
 // `finalize.ts` owns the promise that the tail always answers rather than rejecting.
 import { beginWork, recordRequest, runWithContext, withSpan } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig } from './config';
-import { asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
+import { asCtx, elapsedMs, type RequestContext, requestContext } from './context';
 import { readCorrelation } from './correlation';
 import { type Deadline, startDeadline } from './deadline';
 import { pipelineNoResponse } from './errors';
@@ -14,7 +14,7 @@ import { clientAddress, clientUsedHttps } from './forwarded';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { peerIdentity } from './peer-identity';
-import { assertRateLimitScope, createRateLimiter, type RateLimiter } from './rate-limit';
+import { assertRateLimitScope, type RateLimiter, rateLimiter } from './rate-limit';
 import { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
 import { assertInstalledRateLimitScope } from './rate-limit-installed';
 import { UltimateRequest } from './request';
@@ -110,7 +110,7 @@ export interface PipelineDeps {
   readonly hooks?: ServerHooks;
   readonly middleware?: readonly Middleware[];
   /**
-   * A limiter built elsewhere — `createServer({ rateLimitStore })` is the one supported way, and
+   * A limiter built elsewhere — `httpServer({ rateLimitStore })` is the one supported way, and
    * it hands over a limiter built from the SAME merged config this constructor would have built.
    * One passed from anywhere else resolves bucket names against the table IT closed over, which
    * is why `assertRouteBuckets` compares that table against the routes' declarations and refuses
@@ -136,13 +136,13 @@ export interface Pipeline {
   handle(request: Request, init: HandleInit): Promise<Response>;
 }
 
-export const createPipeline = (deps: PipelineDeps): Pipeline => {
+export const httpPipeline = (deps: PipelineDeps): Pipeline => {
   // Routes first, config second, and the merge here: `defineHttpConfig` cannot see a route, so a
   // bucket a route declares only becomes real at the construction that holds both. Idempotent, so
-  // a config `createServer` already merged passes through unchanged.
+  // a config `httpServer` already merged passes through unchanged.
   const config = withRouteBuckets(deps.config ?? defineHttpConfig(), deps.table.routes);
-  const limiter = deps.limiter ?? createRateLimiter({ config: config.rateLimit });
-  // Here rather than in `createServer`: this is the one construction path every server, test and
+  const limiter = deps.limiter ?? rateLimiter({ config: config.rateLimit });
+  // Here rather than in `httpServer`: this is the one construction path every server, test and
   // embedder shares, so a limiter that cannot keep the app's declaration is refused exactly once.
   // Two halves of one question — where the counters live, and which buckets the limiter holds.
   assertRateLimitScope(config.rateLimit, limiter);
@@ -247,7 +247,7 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         socketAddress: init.ip ?? null,
         urlProtocol: url.protocol,
       };
-      const ctx = createRequestContext({
+      const ctx = requestContext({
         url,
         method: raw.method,
         role: init.role,

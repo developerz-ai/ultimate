@@ -4,6 +4,7 @@
 // matches off a segment boundary hands one route's traffic to another.
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
+import { type AppHttpConfig, configureHttp } from './app-config';
 import { defineHttpConfig, type HttpConfigInput, stripBasePath } from './config';
 import { DEFAULT_CORS } from './cors';
 import { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG } from './locale';
@@ -47,7 +48,6 @@ describe('defineHttpConfig', () => {
       hostname: 'localhost',
       basePath: '/api',
       buildId: 'build-1',
-      buildIdHeader: 'x-my-build',
       dev: false,
       trustProxy: false,
       bodyLimitBytes: 2_048,
@@ -57,17 +57,15 @@ describe('defineHttpConfig', () => {
     expect(config.hostname).toBe('localhost');
     expect(config.basePath).toBe('/api');
     expect(config.buildId).toBe('build-1');
-    expect(config.buildIdHeader).toBe('x-my-build');
     expect(config.dev).toBe(false);
     expect(config.trustProxy).toBe(false);
     expect(config.bodyLimitBytes).toBe(2_048);
   });
 
-  test('defaults not overridden by env: basePath, buildIdHeader, trustProxy, bodyLimitBytes', () => {
+  test('defaults not overridden by env: basePath, trustProxy, bodyLimitBytes', () => {
     const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
 
     expect(config.basePath).toBe('/');
-    expect(config.buildIdHeader).toBe('x-ultimate-build');
     // `false`, and it USED to be `true`: trusting x-forwarded-* and x-request-id is a claim
     // about the deployment, and a direct caller could otherwise choose its own request id.
     expect(config.trustProxy).toBe(false);
@@ -427,5 +425,39 @@ describe('the drain budget has one key, and it is drain.deadlineMs', () => {
   test('a null drainTimeoutMs is still the deleted key written', () => {
     const legacy: unknown = { ...SCOPED, drainTimeoutMs: null };
     expect(() => defineHttpConfig(legacy as HttpConfigInput)).toThrow(/drain\.deadlineMs/);
+  });
+});
+
+describe('the build-id header has one spelling, and it is core BUILD_ID_HEADER', () => {
+  // `http.buildIdHeader` let a server listen for a header no client of it sent: the typed client,
+  // the service worker and the CORS defaults all spell core's, and none of them read this config.
+  test('the resolved config carries no header name of its own', () => {
+    expect(Object.hasOwn(defineHttpConfig({ ...SCOPED }), 'buildIdHeader')).toBe(false);
+  });
+
+  test('a config still passing buildIdHeader is refused, naming BUILD_ID_HEADER', () => {
+    const legacy: unknown = { ...SCOPED, buildIdHeader: 'x-my-build' };
+    let thrown: unknown;
+    try {
+      defineHttpConfig(legacy as HttpConfigInput);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UltimateError);
+    const error = thrown as UltimateError;
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain('http.buildIdHeader');
+    expect(error.fix).toContain('BUILD_ID_HEADER');
+    expect(error.meta).toEqual({ option: 'buildIdHeader', replacement: 'BUILD_ID_HEADER' });
+  });
+
+  test('an undefined buildIdHeader is a layer not saying', () => {
+    const spread: unknown = { ...SCOPED, buildIdHeader: undefined };
+    expect(() => defineHttpConfig(spread as HttpConfigInput)).not.toThrow();
+  });
+
+  test('configureHttp refuses it at the declaration too', () => {
+    const legacy: unknown = { buildIdHeader: 'x-my-build' };
+    expect(() => configureHttp(legacy as AppHttpConfig)).toThrow(/http\.buildIdHeader/);
   });
 });

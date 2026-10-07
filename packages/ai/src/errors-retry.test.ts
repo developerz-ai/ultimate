@@ -13,7 +13,7 @@ import {
   LlmTruncatedError,
 } from './errors';
 import { AI_ERROR_RETRY } from './errors-retry';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
 
@@ -73,7 +73,7 @@ describe('the same code is terminal where the throw site knows better', () => {
   });
 
   test('the gateway raises the terminal one when no provider serves the model', async () => {
-    const gateway = createGateway({ providers: [] });
+    const gateway = providerGateway({ providers: [] });
     let thrown: unknown;
     try {
       await gateway.generate({ messages: [{ role: 'user', content: 'x' }], maxTokens: 8 });
@@ -94,7 +94,7 @@ describe('the same code is terminal where the throw site knows better', () => {
         throw new AiTransportError({ provider: 'down', status: 503, detail: 'oh' });
       },
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       providers: [down],
       retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
       sleep: async () => undefined,

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { FetchLike } from './client';
-import { resetRegistry } from './registry';
+import { resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid, notify: t.boolean.default(true) });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -66,7 +66,7 @@ describe('the fluent surface', () => {
 
   test('.as() keeps the surrounding context and swaps only the actor', async () => {
     const { target, seen } = definePublish();
-    const ambient = createContext({ actor: readerActor });
+    const ambient = ctxOf({ actor: readerActor });
     await runWithContext(ambient, () => target.as(editorActor, { postId: POST_ID }));
     // Same request, a different actor: impersonation, not a second context.
     expect(seen.requestId).toBe(ambient.requestId);
@@ -88,7 +88,7 @@ describe('the fluent surface', () => {
     expect(handle.idempotencyKey({ postId: POST_ID })).toBe(
       handle.idempotencyKey({ postId: POST_ID }),
     );
-    const ran = await handle.invoke({ postId: POST_ID }, createContext({ actor: editorActor }));
+    const ran = await handle.invoke({ postId: POST_ID }, ctxOf({ actor: editorActor }));
     expect(ran).toEqual({ id: POST_ID, published: true });
   });
 
@@ -110,7 +110,7 @@ describe('the fluent surface', () => {
   });
 
   test('.contract() emits the three assertions and they hold', async () => {
-    resetRegistry();
+    resetActions();
     const { target } = definePublish();
     const contracts = target.contract();
     expect(contracts.map((contract) => contract.name)).toEqual([

@@ -4,7 +4,7 @@
 // and a live test found in three rows, so this one counts winners against a real server.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, UltimateError, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, UltimateError, userActor } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -51,7 +51,7 @@ const OTHER = '00000000-0000-7000-8000-00000000bbbb';
 const id = (n: number): string => `00000000-0000-7000-8000-0000000007${String(n).padStart(2, '0')}`;
 
 const inOrg = <T>(orgId: string, work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'live-mover', orgId }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: 'live-mover', orgId }) }), work);
 
 /** The repo call `Table.transition` makes, with the same `touch` the table applies. */
 const move = (rowId: string, from: State, to: State): Promise<Order> =>

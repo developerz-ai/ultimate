@@ -14,7 +14,7 @@ import type { ContractTest, ContractTestOptions } from './contract-test';
 import { contractTestsFor, documentedDrift, policyTestStubFor } from './contract-test';
 import { ContractDriftError } from './errors';
 import type { ActionPolicy } from './policy-gate';
-import { registerAction, resetRegistry } from './registry';
+import { registerAction, resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid, notify: t.boolean.default(true) });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -258,7 +258,7 @@ describe('the garbage assertion', () => {
 
 describe('the OpenAPI assertion', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetActions();
   });
 
   const order = () =>

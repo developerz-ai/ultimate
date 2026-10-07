@@ -34,6 +34,8 @@ Everything derivable from code is **not** in this file — routes, actions, poli
 
 `AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
+**The shape is closed**, `As of 25.0.0`: a key `defineConfig` does not declare — at any depth, in `app.config.ts` or any `config/*.ts` overlay — is refused at boot with `X_CONFIG_INVALID`, naming the full path and the nearest real key (`drian is not an app.config.ts key — did you mean drain?`, fix `rename drian to drain in app.config.ts`). Before 25.0.0 `section()` copied an unknown key through and nothing read it, so a typo or a JS config that skipped the compiler was a switch with no wire. A key an earlier major **deleted** gets its own refusal first, naming the major and the replacement (`REMOVED_CONFIG_KEYS` in [`packages/core/src/config-removed.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-removed.ts)). The known keys are the defaults' own plus `SECTION_KEYS` in [`packages/core/src/config-keys.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-keys.ts) — the members with no default (`pwa.id`, `pwa.shortcuts[]`, `pwa.colors`, `mail.retainMime`, `navigation`), each row checked against its interface by `tsc`. The only positions whose keys an app chooses are `OPEN_CONFIG_PATHS`: the locale-keyed manifest texts (`pwa.description`, a shortcut's `name`/`shortName`/`description`, a screenshot's `src`/`label`). A key written as `undefined` is a layer not saying, and is never refused.
+
 ## Top level
 
 | field | type | default | notes |
@@ -55,9 +57,9 @@ There is no `url` field. The canonical origin is an env key the app reads at its
 |---|---|---|---|
 | `database.driver` | `'postgres'` | `'postgres'` | one driver; `postgresDriver()` from `@ultimat3/entity` is its only implementation |
 | `database.ssl` | `boolean` | `false` | `true` on managed Postgres |
-| ~~`database.urlEnv`~~ | — | — | **Deleted 2026-08.** `@ultimat3/db`'s `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a different key here could never be honoured. Migration: delete the key; the connection string is `DATABASE_URL` |
-| ~~`database.poolSize`~~ | — | — | **Deleted 2026-08.** A second, non-functioning spelling of `DATABASE_POOL_MAX`, which `baseClient()` layers over the role profile and which works. Migration: delete the key; set `DATABASE_POOL_MAX`. The sizing rule is unchanged — the pool is per PROCESS, so keep `replicas × poolMax` under Postgres `max_connections` |
-| ~~`database.schema`~~ | — | — | **Deleted 2026-08.** Nothing emits `SET search_path`. Migration: delete the key; there is no replacement, and `entity()` tables live in `public` |
+| ~~`database.urlEnv`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). `@ultimat3/db`'s `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a different key here could never be honoured. Migration: delete the key; the connection string is `DATABASE_URL` |
+| ~~`database.poolSize`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). A second, non-functioning spelling of `DATABASE_POOL_MAX`, which `baseClient()` layers over the role profile and which works. Migration: delete the key; set `DATABASE_POOL_MAX`. The sizing rule is unchanged — the pool is per PROCESS, so keep `replicas × poolMax` under Postgres `max_connections` |
+| ~~`database.schema`~~ | — | — | **Deleted 2026-08.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Nothing emits `SET search_path`. Migration: delete the key; there is no replacement, and `entity()` tables live in `public` |
 
 Wiring the three instead would have needed a tier-0 → tier-1 read the tier table forbids. Deleting is axiom 3 applied to configuration: a value that produces neither a build error nor a runtime effect is worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
 
@@ -102,7 +104,7 @@ await withReplicaReads(async () => {
 | field | type | default | notes |
 |---|---|---|---|
 | `auth.signInPath` | `string \| null` | `null` | where a browser that failed `auth: 'required'` is sent. **`null` keeps the redirect off**, and that is the default on purpose: the framework may not invent one of its app's routes, and guessing `/login` would send every unauthenticated visitor to a 404. Null means the visitor gets the problem document — right for an agent, and what a browser got in production until this existed |
-| ~~`auth.afterSignInPath`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by no file — an app that set `/dashboard` got whatever its own sign-in route already did. Migration: delete the key, and send the visitor where you mean from the sign-in route itself, which is the only code that can honour it |
+| ~~`auth.afterSignInPath`~~ | — | — | **Deleted in 8.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Declared, defaulted and merged, and read by no file — an app that set `/dashboard` got whatever its own sign-in route already did. Migration: delete the key, and send the visitor where you mean from the sign-in route itself, which is the only code that can honour it |
 
 **The rest of authentication is `defineAuth()`, not `app.config.ts`** ([`packages/auth/src/auth.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/src/auth.ts)). It takes an adapter and the policies, because each of them needs a value — a session store, a limiter, a clock — that a serialisable config field cannot carry:
 
@@ -114,7 +116,7 @@ await withReplicaReads(async () => {
 | `rateLimit` | `Partial<AuthRateLimitPolicy>` | `scope: 'shared'` must be matched by a `limiter` that says the same, or `defineAuth` refuses at boot rather than at 3am on the first spray |
 | `limiter` / `orgLimiter` | `AuthLimiter` | omitted means one process' worth of state, i.e. `maxAttempts × N` for N replicas. An attempt is reserved before the KDF (`reserve` / `refund`), never checked and recorded after it |
 | `mfa` | `Partial<AuthMfaPolicy>` | `required` is typed `false` and cannot be set true: both credential paths branch on `user.mfaSecret`, so a user who never enrolled would be locked out for good |
-| `totpReplay` | `TotpReplayGuard` | which TOTP steps are spent, read by `completeMfa`. Omitted means `createTotpReplayGuard()`: in-process, so a code is single-use per replica |
+| `totpReplay` | `TotpReplayGuard` | which TOTP steps are spent, read by `completeMfa`. Omitted means `memoryTotpReplayGuard()`: in-process, so a code is single-use per replica |
 | `providers` | `OAuthProviderId[]` | **defaults to `[]`**, `As of 2026-08-23` — an empty list is "no OAuth", and every `/auth/oauth/<id>` answers `X_OAUTH_PROVIDER_UNKNOWN`. Never the live registry: that would let any dependency that calls `registerOAuthProvider` turn on a login route this app never enabled |
 | `link` | `OAuthLinkPolicy` | defaults to `'verified-email'` |
 
@@ -165,21 +167,20 @@ that touches `config.realtime` reads `.transport` and `.urlEnv`. So an app decla
 documented per-value semantics the framework never had. Which realtime tier you are on is decided
 by what you **declare** — a `channel()` topic, a `live: true` query, a local store — never by a
 config key → [Realtime](Realtime). **Delete `tier:` from the `realtime` block in `app.config.ts`**;
-that is the whole migration, and it is a typecheck fix rather than a runtime one, for the reason
-the `heartbeatMs` paragraph below gives. `bun run scripts/config-readers.ts` is the ratchet that
+that is the whole migration. Since 25.0.0 a stale `tier:` is also refused at boot
+(`realtime.tier was removed in 10.0.0`), where before it was a typecheck error only. `bun run scripts/config-readers.ts` is the ratchet that
 now refuses the next one.
 
 **`realtime.heartbeatMs` is gone**, `As of 2026-08-19`. It was declared here with a default of
 15 000 and read by nothing; the socket beat is the page socket's own 10 s,
 fixed in browser code, which cannot read server config, and the presence beat is derived
-(`PresenceRegistry.heartbeatMs` is `max(1000, floor(ttlMs / 3))`). **Removing the key from your
-config is a typecheck fix, not a runtime one**: `section()` copies every own key of the patch and
-`validate()` checks only the fields it names, so a leftover `heartbeatMs` is silently kept at
-runtime. It fails at `x verify`'s `typecheck` step as `TS2353`, excess property on
-`Input<RealtimeConfig>` — and an app that builds its config into a variable before passing it loses
-excess-property checking and gets **no error at all** → [Known gaps](Known-Gaps).
+(`PresenceRegistry.heartbeatMs` is `max(1000, floor(ttlMs / 3))`). **A config still writing the key
+is refused at boot since 25.0.0** (`realtime.heartbeatMs was removed in 4.0.0`,
+`X_CONFIG_INVALID`). Before 25.0.0 `section()` copied every own key of the patch, so a leftover
+`heartbeatMs` was silently kept at runtime and only `TS2353` caught it — never for an app that built
+its config into a variable first.
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, transport, urlEnv, maxSubscriptionsPerActor, maxSocketsPerActor }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure (`TS2353`, excess property on `Input<RealtimeConfig>`) and, since 25.0.0, a boot refusal (`X_CONFIG_INVALID`, the closed shape above) for a config the compiler never saw. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|
@@ -190,8 +191,8 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 | `maxEntries` | same | `10000` | distinct `(query, input)` pairs this node will hold — a `qid` derives from client-chosen input, so each one is a matcher and a row window. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
 | `maxTopicsPerSocket` | `new ChannelHub({ … })` | `64` | channel topics one socket may join. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `socket` |
 | `maxTopicsPerNode` | same | `10000` | distinct topics this node bridges, one transport subscription each. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
-| `maxSocketsPerActor` | `createSyncNode({ … })` | `16` | sockets per actor at the upgrade; an anonymous network gets 8 × it (`ANONYMOUS_SOCKET_MULTIPLIER`). Exceeded → `429 X_SOCKET_LIMIT`. **Always applies**; the boot passes `realtime.maxSocketsPerActor` |
-| `maxBufferedBytes` | `createSyncNode({ … })` | `1 MiB`, exported as `DEFAULT_MAX_BUFFERED_BYTES` | outbound bytes queued on one socket before this node starts **dropping** its frames. A live-query patch is re-snapshotted; a channel frame is lost → [Realtime](Realtime) |
+| `maxSocketsPerActor` | `syncNode({ … })` | `16` | sockets per actor at the upgrade; an anonymous network gets 8 × it (`ANONYMOUS_SOCKET_MULTIPLIER`). Exceeded → `429 X_SOCKET_LIMIT`. **Always applies**; the boot passes `realtime.maxSocketsPerActor` |
+| `maxBufferedBytes` | `syncNode({ … })` | `1 MiB`, exported as `DEFAULT_MAX_BUFFERED_BYTES` | outbound bytes queued on one socket before this node starts **dropping** its frames. A live-query patch is re-snapshotted; a channel frame is lost → [Realtime](Realtime) |
 | `maxDroppedFrames` | same | `32` | drops one socket may take before it is closed with `1013` (`overloaded`), reason `backpressure` |
 | `capacity` | `new RingChangeBuffer({ … })` | `1024` | retained patches per query hash; a reconnect inside the window is a delta, not a snapshot |
 | `maxQueries` | same | `4096` | retained query hashes, least-recently-written dropped first |
@@ -206,21 +207,21 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 |---|---|---|---|
 | `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
 | `cache.tiers` | `CacheTierName[]` | `['request-memo', 'lru']` | `'request-memo' \| 'lru' \| 'redis' \| 'cdn'`; order is fixed regardless of listing order, an EMPTY list is refused (`X_CONFIG_INVALID`), and a rung the environment cannot supply refuses the boot |
-| ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
-| ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0**, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
+| ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
+| ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0** and refused at boot since 25.0.0, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
 
-**The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`.
+**The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`, and `X_CONFIG_INVALID` at boot.
 
 | Option | Where | Default | Effect |
 |---|---|---|---|
-| `maxBytes` | `createLruTier({ … })` | 64 MiB | byte budget for the whole tier; a single value over it is `X_CACHE_TOO_LARGE` rather than a silent drop |
+| `maxBytes` | `lruTier({ … })` | 64 MiB | byte budget for the whole tier; a single value over it is `X_CACHE_TOO_LARGE` rather than a silent drop |
 | `defaultTtlMs` | same | `60_000` | applied when a `set` omits `ttlMs` |
 | `jitterFraction` | same | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
 | `clock` / `rng` | same | system | injected so a jittered expiry is deterministic |
-| `loadDeadlineMs` | `createCacheStack(tiers, { … })` | `30_000` | how long one `load()` may hold its key before a later reader starts its own. Frees the KEY, never the load — the wedged call runs on. Anchored to `http`'s own request timeout: a load still running at 30 s has no reader left to serve |
+| `loadDeadlineMs` | `cacheStack(tiers, { … })` | `30_000` | how long one `load()` may hold its key before a later reader starts its own. Frees the KEY, never the load — the wedged call runs on. Anchored to `http`'s own request timeout: a load still running at 30 s has no reader left to serve |
 | `schedule` | same | `setTimeout` | injected so the deadline above is provable without a test waiting one out |
 
-**One vocabulary names the tiers, `As of 2026-08-23`.** `CACHE_TIERS` in [`packages/core/src/cache-vocabulary.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/cache-vocabulary.ts) is `request-memo | lru | redis | cdn`, in ladder order — it **is** `TIER_ORDER`, which is what `sortTiers` orders a stack by, not a second list that agrees with it. Until 9.0.0 there were two: the config accepted `memo | lru | shared | isr | cdn` while the ladder built `request-memo | lru | redis | cdn`, so `memo`/`request-memo` and `shared`/`redis` were one rung spelled twice and **`isr` named a rung that did not exist** — it is a `RenderMode`, not a cache tier. `bun run render-modes` refuses a second declaration on the member set, so the two cannot re-diverge.
+**One vocabulary names the tiers, `As of 2026-08-23`.** `CACHE_TIERS` in [`packages/core/src/cache-vocabulary.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/cache-vocabulary.ts) is `request-memo | lru | redis | cdn`, in ladder order — it is what `@ultimat3/cache`'s `sortTiers` orders a stack by, imported, not a second list that agrees with it (the `TIER_ORDER` alias was deleted in 25.0.0). Until 9.0.0 there were two: the config accepted `memo | lru | shared | isr | cdn` while the ladder built `request-memo | lru | redis | cdn`, so `memo`/`request-memo` and `shared`/`redis` were one rung spelled twice and **`isr` named a rung that did not exist** — it is a `RenderMode`, not a cache tier. `bun run render-modes` refuses a second declaration on the member set, so the two cannot re-diverge.
 
 ### CDN purge
 
@@ -298,7 +299,7 @@ pwa: {
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
 | `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0) |
 | `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
-| ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
+| ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `installController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `installController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `navigation`
 
@@ -383,7 +384,7 @@ configureHttp({
 | `trustProxy` / `trustedProxyHops` | `TRUSTED_PROXY_HOPS` in the environment — one image runs behind an ingress in one cluster and behind nothing on a laptop, so an app that hardcoded it would be wrong in one of the two |
 | `rateLimit.scope` | the store the boot installed. A literal here would be a second declaration quietly contradicting it, and `assertRateLimitScope` compares exactly those two halves |
 
-An **embedder** that builds its own server — `createServer({ routes, config: defineHttpConfig({ … }) })` — passes the whole `HttpConfigInput`, boot-owned keys included, and owns every consequence: that is the one path on which `X_RATE_LIMIT_SCOPE_UNSET` and `X_TRUST_PROXY_UNSET` are reachable.
+An **embedder** that builds its own server — `httpServer({ routes, config: defineHttpConfig({ … }) })` — passes the whole `HttpConfigInput`, boot-owned keys included, and owns every consequence: that is the one path on which `X_RATE_LIMIT_SCOPE_UNSET` and `X_TRUST_PROXY_UNSET` are reachable.
 
 ## `seo`
 
@@ -530,7 +531,7 @@ One live field, and `ai.mcp` is where the app's own MCP surface is configured �
 |---|---|---|---|
 | `ai.mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per action `mcp.expose` |
 | ~~`ai.mcp.path`~~ | — | — | **Deleted in 25.0.0**, refused with `X_CONFIG_INVALID`. Endpoint #0 mounted here while every other endpoint mounted at its own `defineAppMcp({ path })`, so the two could disagree. Now every endpoint, #0 included, mounts at its own `defineAppMcp({ path })` (default `/mcp`). Migration: delete the key; if it wasn't `/mcp`, move it to the first `defineAppMcp({ path })` in `apps/<app>/mcp.ts` |
-| ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only and the model is `request.model ?? DEFAULT_MODEL (itself deleted in 25.0.0: apps name their own models)`, a compile-time constant. The one thing the key existed to prevent is what it delivered. Migration: delete the key and pass `model` on the request, reading your own env key if you want one |
+| ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only, and the model was a compile-time default (`DEFAULT_MODEL`, itself deleted in 25.0.0 — an app names its model on the prompt or on `llm({ model })`). The one thing the key existed to prevent is what it delivered. Refused at boot since 25.0.0 (`ai.modelEnv was removed in 8.0.0`). Migration: delete the key and pass `model`, reading your own env key if you want one |
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: `defineCatalogs({ default, locales })` is the whole surface.
 

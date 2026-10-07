@@ -4,19 +4,13 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
-import {
-  configureTelemetry,
-  createContext,
-  resetTelemetry,
-  traceparent,
-  withSpan,
-} from '@ultimat3/core';
+import { configureTelemetry, ctxOf, resetTelemetry, traceparent, withSpan } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -96,9 +90,9 @@ describe('the trace link across the queue', () => {
       });
     });
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     await worker.tick();

@@ -9,9 +9,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
-import { createPgliteClient, type PgliteClient, raw } from '@ultimat3/db';
-import { type AuditDraft, auditCursorOf, memoryAuditLog, REDACTED } from './audit';
+import { REDACTED, UltimateError } from '@ultimat3/core';
+import { type PgliteClient, pgliteClient, raw } from '@ultimat3/db';
+import { type AuditDraft, auditCursorOf, memoryAuditLog } from './audit';
 import { postgresAuditLog } from './audit-pg';
 import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
 
@@ -19,7 +19,7 @@ import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
 const PGLITE_BOOT_MS = 60_000;
 
 const dataDir = mkdtempSync(join(tmpdir(), 'ultimate-admin-audit-'));
-let client: PgliteClient = createPgliteClient({ dataDir });
+let client: PgliteClient = pgliteClient({ dataDir });
 
 const statements = SQL_ADMIN_AUDIT_TABLE.split(';').filter((one) => one.trim().length > 0);
 
@@ -69,7 +69,7 @@ describe('contract · the Postgres audit log', () => {
 
       // The restart: the process that wrote is gone, and a new one opens the same database.
       await client.close();
-      client = createPgliteClient({ dataDir });
+      client = pgliteClient({ dataDir });
       const second = postgresAuditLog({ client });
 
       const trail = { entity: 'posts', entityId: 'p1', changes: true, limit: 2 } as const;

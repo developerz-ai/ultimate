@@ -4,7 +4,7 @@
  * the precache revision in `sw.js`, and the asset filename suffix.
  */
 
-import { renderCauseValue, renderThrowable, useContext } from '@ultimat3/core';
+import { BUILD_ID_HEADER, renderCauseValue, renderThrowable, useContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
@@ -161,7 +161,7 @@ export function staticHeaders(hash: string, buildId: string): Readonly<Record<st
     // Revalidate cheaply: the HTML URL is stable, its content hash is not.
     'cache-control': 'public, max-age=0, must-revalidate',
     etag: `"${hash}"`,
-    'x-ultimate-build': buildId,
+    [BUILD_ID_HEADER]: buildId,
   };
 }
 

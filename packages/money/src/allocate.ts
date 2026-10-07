@@ -11,7 +11,7 @@
 import { assertSameCurrency } from './arithmetic';
 import { allocationInvalid } from './errors';
 import { factorFraction } from './factor';
-import { formatMoneyDebug, type Money, money } from './money';
+import { formatMoneyDebug, fromMinor, type Money } from './money';
 import { minorAt, moneyScale } from './scale';
 
 /**
@@ -22,7 +22,7 @@ import { minorAt, moneyScale } from './scale';
  */
 export const MAX_ALLOCATION_PARTS = 1_000_000;
 
-/** Split into `parts` equal shares. `allocate(money(100,'USD'), 3)` → 34, 33, 33. */
+/** Split into `parts` equal shares. `allocate(fromMinor(100,'USD'), 3)` → 34, 33, 33. */
 export function allocate(amount: Money, parts: number): Money[] {
   if (!Number.isSafeInteger(parts) || parts <= 0) {
     throw allocationInvalid(`part count must be a positive integer, got ${String(parts)}`);
@@ -36,7 +36,7 @@ export function allocate(amount: Money, parts: number): Money[] {
 }
 
 /**
- * Split by weights. `allocateByRatios(money(1000,'USD'), [70, 20, 10])` → 700, 200, 100;
+ * Split by weights. `allocateByRatios(fromMinor(1000,'USD'), [70, 20, 10])` → 700, 200, 100;
  * `[1, 1, 1]` over 100 → 34, 33, 33. Weights need not sum to anything in particular.
  */
 export function allocateByRatios(amount: Money, ratios: readonly number[]): Money[] {
@@ -74,7 +74,7 @@ export function allocateByRatios(amount: Money, ratios: readonly number[]): Mone
     leftover -= 1n;
   }
 
-  return floors.map((minor) => money(sign * Number(minor), amount.currency, amount.scale));
+  return floors.map((minor) => fromMinor(sign * Number(minor), amount.currency, amount.scale));
 }
 
 /**

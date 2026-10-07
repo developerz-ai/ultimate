@@ -4,19 +4,19 @@ import { bodyInvalid } from './errors';
 import {
   applyCacheHeaders,
   cacheControl,
-  json,
+  jsonResponse,
   noContent,
   problem,
   redirect,
-  text,
+  textResponse,
 } from './response';
 
 describe('constructors', () => {
   test('json and text set a charset', async () => {
-    const response = json({ ok: true });
+    const response = jsonResponse({ ok: true });
     expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(await response.json()).toEqual({ ok: true });
-    expect(text('hi').headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect(textResponse('hi').headers.get('content-type')).toBe('text/plain; charset=utf-8');
   });
 
   test('noContent and redirect have no body', () => {
@@ -74,7 +74,7 @@ describe('cache headers', () => {
   });
 
   test('tags travel with the response so a purge can target them', () => {
-    const response = applyCacheHeaders(text('body'), {
+    const response = applyCacheHeaders(textResponse('body'), {
       mode: 'public',
       sMaxAgeSeconds: 10,
       tags: ['post:1', 'feed'],
@@ -91,7 +91,7 @@ describe('cache headers', () => {
   });
 
   test('a per-user response carries no surrogate keys, since no CDN holds it', () => {
-    const response = applyCacheHeaders(text('body'), { mode: 'private', tags: ['post:1'] });
+    const response = applyCacheHeaders(textResponse('body'), { mode: 'private', tags: ['post:1'] });
     expect(response.headers.get('surrogate-key')).toBeNull();
     expect(response.headers.get('cache-tag')).toBeNull();
   });
@@ -101,7 +101,7 @@ describe('cache headers', () => {
   // document's — stayed on what is now a per-user document.
   test('rewriting a response to private or no-store strips the purge keys it already carried', () => {
     for (const hint of [{ mode: 'private', maxAgeSeconds: 0 }, { mode: 'no-store' }] as const) {
-      const keyed = text('body');
+      const keyed = textResponse('body');
       keyed.headers.set('surrogate-key', 'post e:post');
       keyed.headers.set('cache-tag', 'post,e:post');
       const response = applyCacheHeaders(keyed, hint);
@@ -111,7 +111,7 @@ describe('cache headers', () => {
   });
 
   test('a shared hint with no tags of its own leaves a handler’s keys alone', () => {
-    const keyed = text('body');
+    const keyed = textResponse('body');
     keyed.headers.set('surrogate-key', 'post e:post');
     const response = applyCacheHeaders(keyed, { mode: 'public', sMaxAgeSeconds: 60 });
     expect(response.headers.get('surrogate-key')).toBe('post e:post');
@@ -120,16 +120,23 @@ describe('cache headers', () => {
   // Without `cookie` in the key, a shared cache stores one visitor's signed-in render of a public
   // page under the URL alone and hands it to the next visitor.
   test('a shared-cacheable response is keyed on the cookie by default', () => {
-    const response = applyCacheHeaders(text('body'), { mode: 'public', sMaxAgeSeconds: 60 });
+    const response = applyCacheHeaders(textResponse('body'), {
+      mode: 'public',
+      sMaxAgeSeconds: 60,
+    });
     expect(response.headers.get('vary')?.split(', ')).toContain('cookie');
   });
 
   test("an explicit vary is the caller's to own, and private needs no cookie key", () => {
     expect(
-      applyCacheHeaders(text('body'), { mode: 'public', vary: ['accept'] }).headers.get('vary'),
+      applyCacheHeaders(textResponse('body'), { mode: 'public', vary: ['accept'] }).headers.get(
+        'vary',
+      ),
     ).toBe('accept');
     expect(
-      applyCacheHeaders(text('body'), { mode: 'private', maxAgeSeconds: 0 }).headers.get('vary'),
+      applyCacheHeaders(textResponse('body'), { mode: 'private', maxAgeSeconds: 0 }).headers.get(
+        'vary',
+      ),
     ).toBeNull();
   });
 });
@@ -186,7 +193,7 @@ describe('cacheControl never emits a directive a cache cannot parse', () => {
   });
 
   test('the response that carries it is still built, never a 500', () => {
-    const response = applyCacheHeaders(text('body'), {
+    const response = applyCacheHeaders(textResponse('body'), {
       mode: 'public',
       maxAgeSeconds: Number.NaN,
     });

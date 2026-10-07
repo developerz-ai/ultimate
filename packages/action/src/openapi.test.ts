@@ -3,7 +3,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { buildOpenApi, serializeOpenApi } from './openapi';
-import { registerActions, resetRegistry } from './registry';
+import { registerActions, resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -20,7 +20,7 @@ const define = (idempotent: boolean) =>
 
 describe('openapi', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetActions();
   });
 
   test('same registry twice produces an identical string', () => {
@@ -33,7 +33,7 @@ describe('openapi', () => {
   test('declaration order does not change the bytes', () => {
     registerActions({ publishPost: define(true), archivePost: define(false) });
     const forward = serializeOpenApi(buildOpenApi());
-    resetRegistry();
+    resetActions();
     registerActions({ archivePost: define(false), publishPost: define(true) });
     const reverse = serializeOpenApi(buildOpenApi());
     expect(reverse).toBe(forward);

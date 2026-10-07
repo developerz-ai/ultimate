@@ -1,4 +1,4 @@
-// `InMemoryChangeFeed`'s one guarantee is ORDER, and the promise chain that enforces it is the
+// `MemoryChangeFeed`'s one guarantee is ORDER, and the promise chain that enforces it is the
 // thing that can end delivery for the life of the process. A handler that throws must take its own
 // push down with it and nothing else — the rule `window-lock.ts` states for the same shape.
 
@@ -26,12 +26,12 @@ describe('lsn', () => {
   });
 });
 
-describe('InMemoryChangeFeed', () => {
+describe('MemoryChangeFeed', () => {
   /**
    * The failure this suite exists for. `#deliver` chained the next delivery on the LIVE tail, so
    * one rejected link poisoned every link after it: later changes rejected with the FIRST error,
    * the handler was never called again, and `lastLsn()` froze — silently, on a healthy process.
-   * Reachable under `x dev` and any single-node deployment, because `createReplicator`'s `onChange`
+   * Reachable under `x dev` and any single-node deployment, because `changeFeedReplicator`'s `onChange`
    * awaits `transport.publish(...)` and a closed `InProcessTransport` refuses with
    * `X_TRANSPORT_UNAVAILABLE`. One transient publish failure ended change delivery for good.
    */

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NotImplementedError } from '@ultimat3/core';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { branchPglite, pgliteBranchDir } from './pglite-branch';
 import { sql } from './sql';
 
@@ -124,13 +124,13 @@ describe('branchPglite', () => {
   test(
     'the branch is a real database carrying the rows the source committed',
     async () => {
-      const source = createPgliteClient({ dataDir: from });
+      const source = pgliteClient({ dataDir: from });
       await source.execute(sql`create table posts (id int primary key, title text)`);
       await source.execute(sql`insert into posts values (${1}, ${'shipped'})`);
       await source.close();
 
       const info = await branchPglite('feature_x', { from });
-      const branch = createPgliteClient({ dataDir: info.dataDir });
+      const branch = pgliteClient({ dataDir: info.dataDir });
       try {
         expect(
           await branch.one<{ title: string }>(sql`select title from posts where id = ${1}`),
@@ -140,7 +140,7 @@ describe('branchPglite', () => {
         await branch.close();
       }
 
-      const reopened = createPgliteClient({ dataDir: from });
+      const reopened = pgliteClient({ dataDir: from });
       try {
         expect(await reopened.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
       } finally {

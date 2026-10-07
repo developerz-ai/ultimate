@@ -23,7 +23,7 @@ import {
   scaleNotWidening,
   scaleOverflow,
 } from './errors';
-import { fromDecimal, money } from './money';
+import { fromDecimal, fromMinor } from './money';
 
 describe('MONEY_ERROR_TITLES', () => {
   test('has exactly one entry per code in MONEY_ERROR_CODES, and no others', () => {
@@ -186,7 +186,7 @@ describe('a fix line that a caller can paste', () => {
 });
 
 /**
- * Every arrival `money()` can hand `moneyNotInteger`: a fractional minor, a magnitude past a safe
+ * Every arrival `fromMinor()` can hand `moneyNotInteger`: a fractional minor, a magnitude past a safe
  * integer, float drift, an exponent spelling with no plain decimal form, and a non-finite.
  */
 const NOT_INTEGER_ARRIVALS: readonly number[] = [
@@ -206,11 +206,11 @@ describe('the fix line for X_MONEY_NOT_INTEGER', () => {
    * re-implement the line instead of executing it.
    */
   function run(call: string): void {
-    const built = new Function('money', 'fromDecimal', `return ${call};`) as (
-      moneyFn: typeof money,
+    const built = new Function('fromMinor', 'fromDecimal', `return ${call};`) as (
+      fromMinorFn: typeof fromMinor,
       fromDecimalFn: typeof fromDecimal,
     ) => unknown;
-    built(money, fromDecimal);
+    built(fromMinor, fromDecimal);
   }
 
   test('names only calls that RUN — a fix raising the code it answers is not an instruction', () => {

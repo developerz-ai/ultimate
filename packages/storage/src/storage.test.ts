@@ -22,7 +22,7 @@ function stubDriver(name: string): StorageDriver {
     copy: () => unused('copy'),
     delete: () => Promise.resolve(),
     exists: () => Promise.resolve(false),
-    list: () => Promise.resolve({ objects: [], truncated: false }),
+    list: () => Promise.resolve({ rows: [], nextCursor: null, hasMore: false } as const),
     signedUrl: () => Promise.resolve(''),
   };
 }

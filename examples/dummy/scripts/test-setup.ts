@@ -20,10 +20,10 @@ import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
 import { seedId } from '@ultimat3/entity';
 import type { E2eSession, SignIn, TestBudget, TestNetwork } from '@ultimat3/testing';
 import {
-  createTestNetwork,
   defineFixtures,
   e2eBaseUrl,
   e2eBrowser,
+  testNetwork,
   unavailableFixture,
 } from '@ultimat3/testing';
 
@@ -313,7 +313,7 @@ export const browserNetwork = (
 };
 
 const network = async (): Promise<TestNetwork> => {
-  const own = createTestNetwork();
+  const own = testNetwork();
   return e2eBaseUrl() === undefined ? own : browserNetwork(own, e2eBrowser().session);
 };
 

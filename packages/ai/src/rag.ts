@@ -31,7 +31,7 @@ export interface ChunkInput {
  * Token-aware chunker. Splits on paragraph, then sentence, then hard-wraps — so a chunk
  * boundary lands at a meaning boundary whenever one is available within the budget.
  */
-export function chunk(input: ChunkInput): readonly Chunk[] {
+export function chunkDocument(input: ChunkInput): readonly Chunk[] {
   // Floored at one token: `size: 0` makes every comparison below meaningless and the wrap's cut
   // point zero-width, which is a loop that never advances rather than a chunker that produces
   // nothing. A budget under one token is not a budget.
@@ -172,7 +172,7 @@ export async function indexDocument(input: {
   readonly embedder: Embedder;
   readonly document: ChunkInput;
 }): Promise<readonly Chunk[]> {
-  const chunks = chunk(input.document);
+  const chunks = chunkDocument(input.document);
   const vectors = await embedBatched(
     input.embedder,
     chunks.map((c) => c.text),
@@ -188,7 +188,7 @@ export async function indexDocument(input: {
       metadata: c.metadata,
     })),
   );
-  // `source` is the chunker's own stamp (`chunk()`), so only THIS document's rows are touched.
+  // `source` is the chunker's own stamp (`chunkDocument()`), so only THIS document's rows are touched.
   await input.store.prune(
     { source: input.document.id },
     chunks.map((c) => c.id),

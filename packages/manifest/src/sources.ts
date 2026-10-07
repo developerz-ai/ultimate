@@ -23,7 +23,7 @@ import { declaredAdmins } from './sources-admin';
 
 export interface FrameworkSourcesInput {
   readonly app: { readonly name: string; readonly version: string };
-  /** From `@ultimat3/render`'s `describeRoutes()`. */
+  /** From `@ultimat3/render`'s `describePages()`. */
   readonly routes?: readonly RouteFact[];
   /** Assembled per app from its policy modules. */
   readonly policies?: readonly PolicyFact[];

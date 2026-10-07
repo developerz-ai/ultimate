@@ -4,13 +4,8 @@
 // preloaded row is served to a lookup the preload statement WAS, and to no other.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, serviceActor, userActor } from '@ultimat3/core';
-import {
-  createRecordingClient,
-  type DbClient,
-  type RecordingClient,
-  setDbClient,
-} from '@ultimat3/db';
+import { ctxOf, runWithContext, serviceActor, userActor } from '@ultimat3/core';
+import { type DbClient, type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { text, timestamp, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
@@ -68,7 +63,7 @@ const userRow = (id: string, over: Record<string, unknown> = {}): unknown => ({
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 
@@ -80,12 +75,12 @@ afterAll(() => {
 const postRepo = () => postgresRepo(posts);
 const userRepo = () => postgresRepo(users);
 const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
 
 /** A support-tool request: the one shape that may read two tenants, and it says so out loud. */
 const acrossTenants = <T>(work: () => Promise<T>): Promise<T> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: serviceActor({ id: idAt(91), orgId: ORG, scopes: [CROSS_TENANT_SCOPE] }),
     }),
     () => crossTenant('a support tool reads two tenants in one request', work),
@@ -289,7 +284,7 @@ describe('the scope a preloaded row may be served to', () => {
 
   test('another client is another place to read from', async () => {
     aPageOfThree();
-    const pinned = createRecordingClient();
+    const pinned = recordingClient();
     pinned.on('from "jit_test_users"', { rows: [userRow(idAt(20))] });
     await inRequest(async () => {
       await postRepo().findMany({ orgId: ORG });
@@ -356,7 +351,7 @@ describe('the store a page leaves behind is bounded', () => {
     );
 
   test('many pages hold a few pages’ worth of keys, never every page’s', async () => {
-    const ctx = createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) });
+    const ctx = ctxOf({ actor: userActor({ id: idAt(90), orgId: ORG }) });
     client.on('from "jit_test_users"', { rows: [] });
 
     await runWithContext(ctx, async () => {

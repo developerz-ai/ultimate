@@ -5,7 +5,7 @@
 
 import { escapeHtml } from '@ultimat3/core';
 import { mailLayoutDuplicate } from './errors';
-import { safeUrl, styleAttr } from './html';
+import { safeMailHref, styleAttr } from './html';
 
 export type ColorScheme = 'light' | 'dark';
 
@@ -200,7 +200,7 @@ function footerHtml(input: LayoutInput): string {
   const lines = input.footer.map((line) => `<div>${escapeHtml(line)}</div>`);
   const slot = input.unsubscribe;
   if (slot !== undefined) {
-    const href = escapeHtml(safeUrl(slot.url));
+    const href = escapeHtml(safeMailHref(slot.url));
     const label = escapeHtml(slot.label);
     lines.push(`<div><a data-x="a" href="${href}" ${UNSUBSCRIBE_STYLE}>${label}</a></div>`);
   }

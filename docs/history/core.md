@@ -572,3 +572,13 @@ code is the one way to have it honoured.
   from it, so the list and the type cannot drift. A ninth entry fails `registrar.test.ts`, which
   is the point: a new capability arrives as a factory over an existing primitive (`llm()` returns
   an `action`), never as a new kind.
+
+## Moved 2026-10-07 — out of the agent notes, for the size ceiling
+
+- **`core → schema` replaced five copies**: `describeValue`, `charCount`, `CURRENCY_CODE_PATTERN`,
+  `SCHEMA_ERROR_CODES` and `isIanaZoneName` each lived in both packages until the edge was declared.
+- **`Ctx`'s one `as Ctx`**: four alternatives were measured and refused; they are listed in the
+  header of the file holding `ctxOf`. The structural repair is a major, landed alongside the
+  deletion of `Ctx`'s string index signature.
+- **The whole `./page` subpath measured 16,975 B** (`As of 2026-10-05`, `page-bundle.test.ts`);
+  `rpc`'s figure is in `packages/action/CLAUDE.md`, `queryClient`'s in `packages/query/CLAUDE.md`.

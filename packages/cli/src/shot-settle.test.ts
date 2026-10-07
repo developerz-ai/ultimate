@@ -67,7 +67,7 @@ describe('unit · the probe is read until the page settles', () => {
   };
 
   /**
-   * The defect this replaces: `DEFAULT_SETTLE_MS` is the deadline at which the runtime CALLS
+   * The defect this replaces: `IDLE_HYDRATE_TIMEOUT_MS` is the deadline at which the runtime CALLS
    * `import()`, so a single read at that instant sees `mounted: 0` on a page that mounts
    * perfectly — the verdict was taken one tick before the outcome existed.
    */

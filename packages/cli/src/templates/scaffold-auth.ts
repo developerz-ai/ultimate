@@ -26,8 +26,7 @@ const devActor = (
 // a viewer that followed this to staging would sign every visitor in as an admin.
 //
 // Delete it the day sign-in exists, and the fallback line in \`authenticator.ts\` with it.
-import { type Actor, logger } from '@ultimat3/core';
-import { readCookie } from '@ultimat3/http';
+import { type Actor, logger, readCookie } from '@ultimat3/core';
 import { DEMO_ORG_ID } from '../../shared/demo-org';
 import { roles } from '../../shared/roles';
 

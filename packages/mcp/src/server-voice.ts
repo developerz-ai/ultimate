@@ -8,7 +8,7 @@ import { formatIssues } from '@ultimat3/schema';
 import type { McpCaller, McpToolResult } from './registry';
 import type { ArgIssue } from './validate-args';
 
-/** See `CreateMcpServerInput.instructions`. */
+/** See `McpServerInput.instructions`. */
 export type McpInstructions = string | ((caller: McpCaller) => string | undefined);
 
 /** The server's per-caller wording: `initialize`'s advice and the audience of every `fix:` line. */

@@ -6,25 +6,19 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createLruTier, isolateTiers, registerTier } from '@ultimat3/cache';
+import { isolateTiers, lruTier, registerTier } from '@ultimat3/cache';
 import type { AuditRecord, AuditSink } from '@ultimat3/core';
-import {
-  createContext,
-  isUltimateError,
-  resetAuditSink,
-  setAuditSink,
-  userActor,
-} from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { ctxOf, isUltimateError, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
 import { query } from './query';
 import { runQuery, sourceFor } from './read';
-import { resetRegistry } from './registry';
+import { resetQueries } from './registry';
 import { from } from './source';
-import { explain } from './sql';
+import { explainQuery } from './sql';
 
 interface Row {
   readonly id: string;
@@ -59,7 +53,7 @@ const postList = (cached = false) =>
 let restoreTiers: (() => void) | undefined;
 
 afterEach(() => {
-  resetRegistry();
+  resetQueries();
   resetAuditSink();
   restoreTiers?.();
   restoreTiers = undefined;
@@ -70,7 +64,7 @@ describe('unit · every surface records once, under its own name', () => {
   test('over HTTP, through the real pipeline: surface http', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const server = createServer({
+    const server = httpServer({
       routes: [toQueryRoute(postList())],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
       hooks: { authenticate: () => reader },
@@ -89,7 +83,7 @@ describe('unit · every surface records once, under its own name', () => {
   test('a denied HTTP read is recorded too — the 403 still reaches the caller', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const server = createServer({
+    const server = httpServer({
       routes: [toQueryRoute(postList())],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
       hooks: { authenticate: () => stranger },
@@ -114,7 +108,7 @@ describe('unit · every surface records once, under its own name', () => {
       { limit: 2 },
       {
         surface: 'mcp',
-        ctx: createContext({ actor: reader }),
+        ctx: ctxOf({ actor: reader }),
       },
     );
     expect(sink.records).toEqual([]);
@@ -135,7 +129,7 @@ describe('unit · every surface records once, under its own name', () => {
         { limit: 2 },
         {
           surface: 'mcp',
-          ctx: createContext({ actor: stranger }),
+          ctx: ctxOf({ actor: stranger }),
         },
       ),
     ).rejects.toThrow();
@@ -148,7 +142,7 @@ describe('unit · every surface records once, under its own name', () => {
   test('.page() is one call and one record, its seek push-down included', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const ctx = createContext({ actor: reader });
+    const ctx = ctxOf({ actor: reader });
 
     const page = await postList().page({ limit: 2 }, { first: 2, ctx });
     await postList().page(
@@ -175,8 +169,8 @@ describe('unit · every surface records once, under its own name', () => {
     expect(sink.records[0]?.ctx.actor.id).toBe('u1');
   });
 
-  test('explain() is unenforced and reads no row: not recorded, and needs no sink', async () => {
-    const plan = await explain(postList(), { limit: 2 }, createContext({ actor: reader }));
+  test('explainQuery() is unenforced and reads no row: not recorded, and needs no sink', async () => {
+    const plan = await explainQuery(postList(), { limit: 2 }, ctxOf({ actor: reader }));
     expect(plan.query).toBe('postList');
   });
 });
@@ -185,7 +179,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
   test('the request memo: two records, one execution, the second replayed', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const ctx = createContext({ actor: reader });
+    const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 2 }, { ctx });
     await runQuery(postList(), { limit: 2 }, { ctx });
@@ -197,7 +191,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
   test('two concurrent identical reads join one execution and are two records', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const ctx = createContext({ actor: reader });
+    const ctx = ctxOf({ actor: reader });
 
     await Promise.all([
       runQuery(postList(), { limit: 2 }, { ctx }),
@@ -210,12 +204,12 @@ describe('unit · a memo or cache hit is still a sighting', () => {
 
   test('a cache tier hit in a second request: recorded, replayed', async () => {
     restoreTiers = isolateTiers();
-    registerTier(createLruTier());
+    registerTier(lruTier());
     const sink = collecting();
     setAuditSink(sink);
 
-    await runQuery(postList(true), { limit: 2 }, { ctx: createContext({ actor: reader }) });
-    await runQuery(postList(true), { limit: 2 }, { ctx: createContext({ actor: reader }) });
+    await runQuery(postList(true), { limit: 2 }, { ctx: ctxOf({ actor: reader }) });
+    await runQuery(postList(true), { limit: 2 }, { ctx: ctxOf({ actor: reader }) });
 
     expect(executed).toBe(1);
     expect(sink.records.map((record) => record.replayed)).toEqual([false, true]);
@@ -225,7 +219,7 @@ describe('unit · a memo or cache hit is still a sighting', () => {
   test('fresh: true executes, so it is not replayed', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const ctx = createContext({ actor: reader });
+    const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 2 }, { ctx });
     await runQuery(postList(), { limit: 2 }, { ctx, fresh: true });
@@ -250,7 +244,7 @@ describe('unit · a sink that refuses is never swallowed', () => {
       postList(),
       { limit: 2 },
       {
-        ctx: createContext({ actor: reader }),
+        ctx: ctxOf({ actor: reader }),
       },
     ).then(
       () => expect.unreachable('rows nobody recorded were handed back'),
@@ -267,7 +261,7 @@ describe('unit · a sink that refuses is never swallowed', () => {
       postList(),
       { limit: 2 },
       {
-        ctx: createContext({ actor: stranger }),
+        ctx: ctxOf({ actor: stranger }),
       },
     ).then(
       () => expect.unreachable('a stranger was answered'),

@@ -4,8 +4,8 @@ import type { JobDefinition, JobHandle } from '@ultimat3/jobs';
 import { job, jobDriver, resetJobDriver } from '@ultimat3/jobs';
 import { mailDriver, resetMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { frozenNow, setFrozenClock } from './determinism';
-import { createRunJobs } from './fixture-jobs';
-import { createTestMail } from './fixture-mail';
+import { testJobs } from './fixture-jobs';
+import { testMail } from './fixture-mail';
 import { fixtureTest, registeredFixtures } from './fixtures';
 import {
   ALL_FIXTURE_NAMES,
@@ -86,7 +86,7 @@ describe(testName('unit', 'the framework fixture bag'), () => {
 
 describe(testName('unit', 'the mail fixture'), () => {
   bunTest('failOnce rejects the next send of that mail and only that one', async () => {
-    const mail = await createTestMail();
+    const mail = await testMail();
     mail.failOnce('welcome');
 
     await expect(mailDriver().send(message('welcome'))).rejects.toBeUltimateError(
@@ -99,7 +99,7 @@ describe(testName('unit', 'the mail fixture'), () => {
   });
 
   bunTest('failOnce takes a mail definition, not only an id', async () => {
-    const mail = await createTestMail();
+    const mail = await testMail();
     mail.failOnce({ id: 'invite' });
 
     await expect(mailDriver().send(message('invite'))).rejects.toBeUltimateError();
@@ -131,7 +131,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
       nudges += 1;
       return nudges === 1;
     });
-    const runJobs = await createRunJobs();
+    const runJobs = await testJobs();
 
     await runJobs(handle, { id: 'a' });
     setFrozenClock(frozenNow().getTime() + 2_000);
@@ -144,7 +144,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
 
   bunTest('a duplicate enqueue with a live key returns the same job', async () => {
     const handle = flakyJob('fixture-dedupe', () => false);
-    const runJobs = await createRunJobs();
+    const runJobs = await testJobs();
 
     const first = await runJobs.enqueue(handle, { id: 'b' });
     const second = await runJobs.enqueue(handle, { id: 'b' });
@@ -165,7 +165,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
         await step.sleep('3d');
       },
     });
-    const runJobs = await createRunJobs();
+    const runJobs = await testJobs();
 
     await runJobs(sleeper, { id: 'c' });
     expect(await runJobs.inFlight()).toBe(0);
@@ -177,10 +177,10 @@ describe(testName('unit', 'the runJobs fixture'), () => {
 
   bunTest('each build gets its own queue, so one test cannot see another test’s jobs', async () => {
     const handle = flakyJob('fixture-isolated', () => false);
-    const first = await createRunJobs();
+    const first = await testJobs();
     await first.enqueue(handle, { id: 'e' });
 
-    const second = await createRunJobs();
+    const second = await testJobs();
 
     expect(await first.depth()).toBe(1);
     expect(await second.depth()).toBe(0);
@@ -193,7 +193,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
 describe(testName('unit', 'a fixture that installs process-global state hands it back'), () => {
   bunTest('runJobs restores the driver the process had before it', async () => {
     resetJobDriver();
-    const runJobs = await createRunJobs();
+    const runJobs = await testJobs();
     expect(jobDriver()).toBeDefined();
 
     await runJobs[Symbol.asyncDispose]();
@@ -202,9 +202,9 @@ describe(testName('unit', 'a fixture that installs process-global state hands it
   });
 
   bunTest('and restores an outer driver rather than clearing it', async () => {
-    const outer = await createRunJobs();
+    const outer = await testJobs();
     const outerDriver = jobDriver();
-    const inner = await createRunJobs();
+    const inner = await testJobs();
     expect(jobDriver()).not.toBe(outerDriver);
 
     await inner[Symbol.asyncDispose]();
@@ -215,7 +215,7 @@ describe(testName('unit', 'a fixture that installs process-global state hands it
 
   bunTest('the mail fixture restores the ambient mail driver too', async () => {
     resetMailDriver();
-    const mail = await createTestMail();
+    const mail = await testMail();
     expect(tryMailDriver()?.name).toBe('test');
 
     mail[Symbol.dispose]();

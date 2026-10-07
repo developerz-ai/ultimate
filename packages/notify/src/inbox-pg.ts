@@ -2,7 +2,7 @@
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteCount, isUuid, uuid } from '@ultimat3/core';
+import { finiteCount, isUuid, uuidV7 } from '@ultimat3/core';
 import type { InboxRow, InboxStore, InboxWrite } from './inbox';
 import { DEFAULT_INBOX_PAGE } from './inbox';
 
@@ -130,7 +130,7 @@ const toRow = (row: InboxDbRow): InboxRow => ({
   readAt: row.read_at === null ? null : asDate(row.read_at),
 });
 
-export interface PgInboxStoreOptions {
+export interface PostgresInboxStoreOptions {
   readonly executor: PgExecutor;
   /**
    * Ids for new rows. A `random = Math.random` default parameter is this repo's injectable seam
@@ -153,16 +153,16 @@ export interface InboxPurgeBefore {
 
 /**
  * The Postgres inbox's own wider type. `purgeBefore` is HERE and not on `InboxStore` for the
- * reason `PgDeliveryLedger.purgeExpired` is not on `DeliveryLedger`: adding a method to the seam
+ * reason `PostgresDeliveryLedger.purgeExpired` is not on `DeliveryLedger`: adding a method to the seam
  * every implementation must satisfy is a breaking change for an app that wrote its own.
  */
-export interface PgInboxStore extends InboxStore {
+export interface PostgresInboxStore extends InboxStore {
   purgeBefore(before: InboxPurgeBefore): Promise<number>;
 }
 
-export function postgresInboxStore(options: PgInboxStoreOptions): PgInboxStore {
+export function postgresInboxStore(options: PostgresInboxStoreOptions): PostgresInboxStore {
   const { executor } = options;
-  const newId = options.newId ?? uuid;
+  const newId = options.newId ?? uuidV7;
   return {
     async add(write: InboxWrite) {
       const rows = await executor.query<InboxDbRow>(SQL_NOTIFY_INBOX_ADD, [

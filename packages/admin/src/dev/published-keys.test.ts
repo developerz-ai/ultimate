@@ -24,7 +24,7 @@ import type { RouteDescriptor } from '@ultimat3/render';
 import {
   clearRoutes,
   defineRoute,
-  describeRoutes,
+  describePages,
   registerMountedRoutes,
   registerRoute,
 } from '@ultimat3/render';
@@ -124,7 +124,7 @@ const published = (descriptor: object, key: string): boolean =>
 
 describe('every key /_x reads is a key the registry publishes', () => {
   test('the route table publishes all eight fields the routes panel is built from', () => {
-    const descriptor = describeRoutes().find(
+    const descriptor = describePages().find(
       (route) => route.file === 'apps/web/app/published-keys/page.tsx',
     );
     expect(descriptor).toBeDefined();
@@ -138,7 +138,7 @@ describe('every key /_x reads is a key the registry publishes', () => {
   });
 
   test('a mounted route publishes `mount` with the two fields the panel copies, and a file route none', () => {
-    const routes = describeRoutes();
+    const routes = describePages();
     const mounted = routes.find((route) => route.path === '/published-keys/mounted');
     expect(mounted?.mount).toEqual({
       by: 'defineAdmin',

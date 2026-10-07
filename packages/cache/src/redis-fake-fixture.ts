@@ -4,7 +4,7 @@
 // it is a test double shaped around this package's own assertions, not public API.
 
 import type { RedisLike, RedisTierOptions } from './redis';
-import { createRedisTier, REDIS_TAG_MEMBER_SCRIPT } from './redis';
+import { REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
 import type { CacheTier } from './tiers';
 
 export interface FakeRedis extends RedisLike {
@@ -95,7 +95,7 @@ export function fakeRedis(): FakeRedis {
  * namespace carries the build id by default, and the lease is spread by default.
  */
 export function tierFor(client: RedisLike, extra: RedisTierOptions = {}): CacheTier {
-  return createRedisTier({ client, buildId: null, rng: () => 0, ...extra });
+  return redisTier({ client, buildId: null, rng: () => 0, ...extra });
 }
 
 /** The `{...}` hash tag of a key, which is what Redis Cluster hashes to a slot. */

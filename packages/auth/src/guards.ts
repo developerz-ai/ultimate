@@ -5,14 +5,14 @@
 
 import type { Actor } from '@ultimat3/core';
 import { isAnonymous, useContext } from '@ultimat3/core';
-import { unauthenticated } from './errors';
+import { authUnauthenticated } from './errors';
 
 const DEFAULT_SURFACE = 'this request';
 
 /** Throws `X_UNAUTHENTICATED` when the ambient actor is anonymous. */
 export function requireActor(surface: string = DEFAULT_SURFACE): Actor {
   const { actor } = useContext();
-  if (isAnonymous(actor)) throw unauthenticated(surface);
+  if (isAnonymous(actor)) throw authUnauthenticated(surface);
   return actor;
 }
 

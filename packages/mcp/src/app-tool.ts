@@ -5,14 +5,14 @@
 // registry runs, so this file is the mapping to `ProjectablePrimitive`, which `toolsFrom` then
 // projects exactly as it projects an action. One projection, not two.
 //
-// The load-bearing line is `guard(...)` in `run` below: it is the SAME function `invoke` calls
+// The load-bearing line is `guardAction(...)` in `run` below: it is the SAME function `invoke` calls
 // for an HTTP request, reached through the same `@ultimat3/action` policy gate. A hand-written
 // tool therefore has no authz of its own — it borrows the action tier's, so a rule change cannot
 // apply to routes and miss tools.
 
-import { actorOf, guard, guardBeforeInput, InputInvalidError } from '@ultimat3/action';
+import { guardAction, guardActionBeforeInput, InputInvalidError } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { useContext } from '@ultimat3/core';
+import { actorOf, useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -105,7 +105,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
     admit: (actor) =>
       asCallerContext(actor, () => {
         const ctx = useContext();
-        guardBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+        guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
       }),
     run: ({ input, actor }) =>
       // The caller is the actor for the WHOLE call. A child context is how the framework
@@ -115,7 +115,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
         const ctx = useContext();
         // The policy's actor half first, as in `invoke`: a caller refused whatever they send is
         // told X_FORBIDDEN, never the tool's argument schema.
-        guardBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+        guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
         // The AUTHORITATIVE parse, in the same slot `invoke` puts it: before the full policy,
         // before the handler. A projected action re-parses inside `invoke`; a hand-written tool has no
         // second parse, so `handle` was typed `InferOutput<TInput>` and handed whatever
@@ -123,7 +123,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
         // arrived as any string at all. `InputInvalidError` because a tool argument is an action
         // input by another name: one code, X_INPUT_INVALID, whichever surface the call came in on.
         const parsed = await parseInput(def.input, input, name);
-        guard(policy, { actor: actorOf(ctx), input: parsed, ctx, action: name }, 'mcp');
+        guardAction(policy, { actor: actorOf(ctx), input: parsed, ctx, action: name }, 'mcp');
         return def.handle({ input: parsed, ctx });
       }),
   };

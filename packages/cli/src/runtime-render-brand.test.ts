@@ -3,7 +3,7 @@
 // document rendered with no brand carries no `<style>` at all.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
@@ -32,7 +32,7 @@ const register = (render: RenderMode): void => {
 };
 
 const documentOf = async (render: RenderMode, brandHead?: string): Promise<string> => {
-  const server = createServer({
+  const server = httpServer({
     routes: appRoutes({ buildId: BUILD_ID, ...(brandHead === undefined ? {} : { brandHead }) }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

@@ -7,15 +7,14 @@
 
 import { tagKeys } from '@ultimat3/cache';
 import type { Deprecation } from '@ultimat3/core';
-import { recordDeprecatedCall, renderDeprecation, useContext } from '@ultimat3/core';
+import { queryPath, recordDeprecatedCall, renderDeprecation, useContext } from '@ultimat3/core';
 import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { publishRateLimit, toBucket } from '@ultimat3/http';
+import { admitsAnonymous, policyCapability } from '@ultimat3/policy';
 import { coerceQuery } from '@ultimat3/schema';
 import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
 import { absentArraysOf } from './input-shape';
-import { derivePath } from './naming';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
-import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery, QueryRateLimit } from './query';
 import { queryName, runQuery } from './read';
 import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
@@ -134,7 +133,7 @@ export function toQueryRoute(target: AnyQuery): Route {
     ...(target.mcp?.description === undefined ? {} : { description: target.mcp.description }),
   };
 
-  return { method: 'GET', path: derivePath(name), handler, meta };
+  return { method: 'GET', path: queryPath(name), handler, meta };
 }
 
 /** Validates the declaration through the limiter's own conversion, then hands the route its flag. */
@@ -145,7 +144,7 @@ function rateLimitedByHandler(name: string, limit: QueryRateLimit): 'handler' {
 
 /**
  * The headers this read's `deprecated:` block renders to, or nothing. The successor's URL comes
- * from `derivePath` — the same derivation `client()` uses, never a second one.
+ * from `queryPath` — the same derivation `client()` uses, never a second one.
  */
 function deprecationHeadersFor(
   name: string,
@@ -153,7 +152,7 @@ function deprecationHeadersFor(
 ): Readonly<Record<string, string>> | undefined {
   if (deprecated === undefined) return undefined;
   const successor =
-    deprecated.replacedBy === undefined ? undefined : derivePath(deprecated.replacedBy);
+    deprecated.replacedBy === undefined ? undefined : queryPath(deprecated.replacedBy);
   const rendered = renderDeprecation(deprecated, successor);
   if (!rendered.ok) throw new QueryDeprecationInvalidError(name, rendered.field, rendered.value);
   return rendered.headers;

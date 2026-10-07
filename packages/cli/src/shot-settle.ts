@@ -32,9 +32,9 @@ export interface SettleOptions {
 /**
  * Read the probe until every booted island has settled, or the window runs out.
  *
- * `DEFAULT_SETTLE_MS` is the deadline at which the hydration runtime CALLS `import()` — `mounted`
- * and `failed` land after it — so a single read at that instant reports `mounted: 0` for a page
- * that hydrates perfectly and the verdict was taken one tick before the outcome existed. Polling
+ * The default window, `IDLE_HYDRATE_TIMEOUT_MS`, is the deadline at which the hydration runtime
+ * CALLS `import()` — `mounted` and `failed` land after it — so a single read at that instant
+ * reports `mounted: 0` for a page that hydrates perfectly and the verdict was taken one tick before the outcome existed. Polling
  * is the only shape that ends EARLY on a fast page and still bounds a slow one.
  *
  * A `null` answer never overwrites a real count: `null` means "not counted", and a probe that

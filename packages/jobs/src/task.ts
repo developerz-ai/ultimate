@@ -141,7 +141,7 @@ export function task(definition: TaskDefinition): TaskHandle {
   // `for (let i = 0; i < handle.maxCatchUp; i += 1)`, so zero (and any negative, and any fraction
   // below one) returns an empty list on every round and the task NEVER fires: no error, no log
   // line, no queue row, forever. Refused where it is written, exactly as `job()` refuses
-  // `concurrency: 0` and `createPacer` refuses `rate: 0`. `Number.isInteger` covers `NaN` and
+  // `concurrency: 0` and `backfillPacer` refuses `rate: 0`. `Number.isInteger` covers `NaN` and
   // `Infinity` in the same predicate — an unbounded catch-up is a burst nobody declared.
   assert(
     definition.maxCatchUp === undefined ||

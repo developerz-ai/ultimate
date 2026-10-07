@@ -115,7 +115,6 @@ export { ICON_BASE_PATH, ICON_SOURCE } from './icon-assets';
 // `x build`'s and `x dev`'s wiring, and every name here is a semver promise forever.
 export type { IslandChunk, SharedChunk } from './island-bundle';
 export { buildIslands } from './island-bundle';
-export { JOB_STATES } from './jobs-report';
 export { renderJobTable } from './jobs-table';
 export { msg } from './messages';
 export { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
@@ -169,7 +168,6 @@ export { readVerifyFloor, skippedSuiteFinding, VERIFY_FLOOR_FILE } from './verif
 export type { HostCheck, StepOutcome, VerifyStep, VerifyStepName } from './verify-step';
 export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
-export { TEST_TYPES } from './verify-tests';
 export {
   checkFileSizes,
   checkLockstep,

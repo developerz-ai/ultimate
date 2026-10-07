@@ -43,7 +43,7 @@ export function assertPixelBudget(width: number, height: number, source: string)
 }
 
 /** A transparent canvas of the given size, budget already checked. */
-export function createRaster(width: number, height: number, source = 'raster'): Raster {
+export function blankRaster(width: number, height: number, source = 'raster'): Raster {
   assertPixelBudget(width, height, source);
   return { width, height, pixels: new Uint8ClampedArray(width * height * 4) };
 }
@@ -78,7 +78,7 @@ export function cropRaster(raster: Raster, region: ImageRegion): Raster {
       { x, y, width, height, rasterWidth: raster.width, rasterHeight: raster.height },
     );
   }
-  const out = createRaster(width, height, 'crop');
+  const out = blankRaster(width, height, 'crop');
   for (let row = 0; row < height; row += 1) {
     const from = ((y + row) * raster.width + x) * 4;
     out.pixels.set(raster.pixels.subarray(from, from + width * 4), row * width * 4);

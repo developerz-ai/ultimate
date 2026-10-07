@@ -6,13 +6,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { DbClient } from './client';
 import { dbUnavailable } from './errors';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
 
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
 });
 
 /** Statement texts with runs of whitespace collapsed — what the assertions match on. */

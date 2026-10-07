@@ -5,7 +5,7 @@
 // own arrow keys, so making the strip a single stop would strand every control past it.
 
 import type { JSX } from 'solid-js';
-import { createRovingTabindex, focusableWithin } from '../a11y';
+import { focusableWithin, rovingTabindex } from '../a11y';
 import { cx } from '../cx';
 import { useUi } from '../theme/context';
 import styles from './Toolbar.module.scss';
@@ -27,12 +27,13 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
   let strip: HTMLDivElement | undefined;
 
   // Arrows follow the writing direction; `focusableWithin` skips anything hidden or disabled, and
-  // `createRovingTabindex` declines outright while a control that answers arrows itself — the
+  // `rovingTabindex` declines outright while a control that answers arrows itself — the
   // search Input this strip exists to hold — has focus.
-  const onKeyDown = createRovingTabindex(
-    () => (strip === undefined ? [] : focusableWithin(strip)),
-    { orientation: 'horizontal', dir: ui.dir, loop: false },
-  );
+  const onKeyDown = rovingTabindex(() => (strip === undefined ? [] : focusableWithin(strip)), {
+    orientation: 'horizontal',
+    dir: ui.dir,
+    loop: false,
+  });
 
   return (
     <div

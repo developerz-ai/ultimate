@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { NO_ARGS } from './wire';
 
 const tool = (name: string, destructive: boolean | undefined): AnyMcpTool => ({
@@ -23,7 +23,7 @@ const caller: McpCaller = { actor: agentActor({ id: 'a1' }), scopes: new Set<str
 describe('the meta catalog kind', () => {
   test('agrees with the metering class for true, false and an omitted destructive — omitted may write', () => {
     const tools = [tool('omitted', undefined), tool('reads', false), tool('writes', true)];
-    const server = createMcpServer({
+    const server = mcpServer({
       tools,
       surface: 'meta',
       groups: { things: { description: 'Things', tools: tools.map((t) => t.name) } },

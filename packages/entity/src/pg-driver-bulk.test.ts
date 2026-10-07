@@ -4,8 +4,8 @@
 // chunking that keeps a wide batch inside Postgres's bind count.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { MAX_BIND_PARAMETERS } from './bulk-write';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
@@ -109,7 +109,7 @@ const COLUMNS = `(${cellsOf(ROW)
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 
@@ -398,15 +398,12 @@ describe('a bulk write drops what the request preloaded', () => {
     });
     client.on('from "pg_bulk_orgs"', { rows: [{ id: ORG, slug: 'acme' }] });
     client.on('insert into "pg_bulk_orgs"', { rows: newOrg });
-    await runWithContext(
-      createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }),
-      async () => {
-        await repo().findMany({ orgId: ORG, limit: 2 });
-        await postgresRepo(orgs).findById(ORG);
-        await write();
-        await postgresRepo(orgs).findById(ORG);
-      },
-    );
+    await runWithContext(ctxOf({ actor: userActor({ id: idAt(90), orgId: ORG }) }), async () => {
+      await repo().findMany({ orgId: ORG, limit: 2 });
+      await postgresRepo(orgs).findById(ORG);
+      await write();
+      await postgresRepo(orgs).findById(ORG);
+    });
     return client.statements.length;
   };
 

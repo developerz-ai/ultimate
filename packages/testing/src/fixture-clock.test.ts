@@ -3,12 +3,12 @@
 import { expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { frozenNow } from './determinism';
-import { createTestClock } from './fixture-clock';
+import { testClock } from './fixture-clock';
 import { runWithFixtures } from './fixtures';
 
 test('clock.advance is undone when the fixture is disposed', async () => {
   const before = frozenNow().getTime();
-  const clock = await createTestClock();
+  const clock = await testClock();
   clock.advance('3d');
   expect(frozenNow().getTime()).toBe(before + 3 * 24 * 60 * 60 * 1000);
   await clock[Symbol.asyncDispose]?.();
@@ -17,7 +17,7 @@ test('clock.advance is undone when the fixture is disposed', async () => {
 
 test('clock.set is undone when the fixture is disposed', async () => {
   const before = frozenNow().getTime();
-  const clock = await createTestClock();
+  const clock = await testClock();
   clock.set('2030-06-01T00:00:00.000Z');
   expect(frozenNow().getTime()).not.toBe(before);
   await clock[Symbol.asyncDispose]?.();
@@ -38,7 +38,7 @@ test('a fixtureTest body that advances time leaves the clock where it found it',
 // The refusal names `clock.advance`, the knob the test author actually wrote — not `toMs`, which
 // is a `@ultimat3/time` internal they never typed and cannot find in their own file (issue #376).
 test('a non-finite advance names clock.advance, not the conversion behind it', async () => {
-  const clock = await createTestClock();
+  const clock = await testClock();
   try {
     clock.advance(Number.NaN);
     expect.unreachable('advance(NaN) must be refused');

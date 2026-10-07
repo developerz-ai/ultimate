@@ -15,7 +15,7 @@ import { finiteCount, isLocal, isSealed, openText, seal } from '@ultimat3/core';
 import type { EventBus, JobEvent } from '@ultimat3/jobs';
 import { DriverUnavailableError, eventBus } from '@ultimat3/jobs';
 import type { PromptHandler, PromptRequest } from './auth';
-import { deadline, throwIfAborted } from './clock';
+import { deadline } from './clock';
 import { promptAnswerInvalid, promptTimedOut } from './error-throws-session';
 
 /** How often the bus is asked. One indexed read and one browser round trip per interval. */
@@ -83,7 +83,7 @@ export function eventPrompt(options: EventPromptOptions): PromptHandler {
     const askedAt = await bus.now();
     const budget = deadline(request.clock, timeoutMs, 'eventPrompt');
     for (;;) {
-      if (request.signal !== undefined) throwIfAborted(request.signal);
+      request.signal?.throwIfAborted();
       const found = await bus.find(event, undefined, askedAt);
       if (found !== undefined) {
         if (!isSealed(found.payload)) {

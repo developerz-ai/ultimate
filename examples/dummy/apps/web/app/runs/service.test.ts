@@ -1,7 +1,7 @@
 // The runs service below its actions: the one refusal no action reaches, because `cancelRun`'s
 // policy already denies a run with no row before the handler runs.
 import { driver } from '@postly/db';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
 import { runsService } from './service';
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 unitTest('cancelling a run that has no row is refused by name, not by an undefined', async () => {
-  const ctx = createContext({ actor: writer });
+  const ctx = ctxOf({ actor: writer });
   const refused = await runWithContext(ctx, () =>
     runsService(ctx).cancel('00000000-0000-4000-8000-0000000000fe'),
   ).catch((error: unknown) => error);

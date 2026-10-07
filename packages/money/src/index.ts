@@ -80,9 +80,9 @@ export {
   type FromDecimalOptions,
   formatMoneyDebug,
   fromDecimal,
+  fromMinor,
   isMoney,
   type Money,
-  money,
   toDecimalNumber,
   toDecimalString,
   zero,
@@ -95,4 +95,4 @@ export {
   roundToDigits,
   roundToInteger,
 } from './rounding';
-export { assertScale, commonScale, MAX_MONEY_SCALE, minorAt, moneyScale } from './scale';
+export { assertScale, commonScale, minorAt, moneyScale } from './scale';

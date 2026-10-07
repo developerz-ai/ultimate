@@ -10,7 +10,7 @@
  * preload — this file imports `./live`, never `api/`.
  */
 
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
 import type { PostSummary } from './entity';
@@ -27,7 +27,7 @@ test('the feed pages over GET /_x/query/live-feed with _first and _after', async
   actorFor,
 }) => {
   const { ada } = await seed('dev').pick({ ada: 'member:ada' });
-  const server = createServer({
+  const server = httpServer({
     routes: [toQueryRoute(liveFeed)],
     // One process, said out loud — `defineHttpConfig` refuses to guess a rate-limit scope.
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),

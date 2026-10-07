@@ -11,11 +11,11 @@ import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import {
-  createEntry,
   DEFAULT_READ_DEADLINE_MS,
   type EntryOptions,
   fillWindow,
   type QueryEntry,
+  queryEntry,
   refillWindowInLane,
 } from './query-window';
 import { SyncSocket, type WsLike } from './socket';
@@ -38,7 +38,7 @@ function entryWith(snapshot: () => Promise<SnapshotResult>, options?: EntryOptio
     visible: () => true,
     matcher: () => ({ entities: ['posts'], match: () => ({ patches: [], refill: false }) }),
   };
-  return createEntry('liveFeed:1', definition, input, definition.matcher(input), options);
+  return queryEntry('liveFeed:1', definition, input, definition.matcher(input), options);
 }
 
 /**

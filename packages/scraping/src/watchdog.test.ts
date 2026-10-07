@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { ScrapeClock } from './clock';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { createWedgeGuard } from './watchdog';
 
 const settled = (): Promise<void> => new Promise((resolve) => queueMicrotask(() => resolve()));
@@ -19,7 +19,7 @@ const untilFired = async (guard: { readonly fired: boolean }): Promise<void> => 
  * this is INPUT to the code under test and not a verdict thrown by the test.
  */
 const brittleClock = (failures: number): ScrapeClock => {
-  const base = testClock();
+  const base = testScrapeClock();
   let calls = 0;
   return {
     now: () => base.now(),
@@ -36,7 +36,7 @@ const brittleClock = (failures: number): ScrapeClock => {
 
 describe('unit · the inactivity watchdog', () => {
   test('silence past idleMs KILLS the process and aborts with X_SCRAPE_WEDGED', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -55,7 +55,7 @@ describe('unit · the inactivity watchdog', () => {
   });
 
   test('a run that keeps touching is never killed', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -78,7 +78,7 @@ describe('unit · the inactivity watchdog', () => {
 
 describe('unit · the graceful-quit ceiling', () => {
   test('a quit that returns in time is not followed by a kill', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -95,7 +95,7 @@ describe('unit · the graceful-quit ceiling', () => {
   });
 
   test('a quit that never returns is killed at the ceiling — the zombie incident', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -113,7 +113,7 @@ describe('unit · the graceful-quit ceiling', () => {
   });
 
   test('a quit that THROWS is still killed — a failed close is not a closed browser', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -139,7 +139,7 @@ describe('unit · the graceful-quit ceiling', () => {
  */
 describe('unit · shutdown AFTER the watchdog fired', () => {
   test('the graceful quit still runs — the remote session is not left billing', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let quits = 0;
     let killed = 0;
     const guard = createWedgeGuard({
@@ -162,7 +162,7 @@ describe('unit · shutdown AFTER the watchdog fired', () => {
   });
 
   test('a quit that never returns is killed at the ceiling after a fire too', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let killed = 0;
     const guard = createWedgeGuard({
       clock,
@@ -180,7 +180,7 @@ describe('unit · shutdown AFTER the watchdog fired', () => {
   });
 
   test('shutdown stays idempotent — two calls are one quit', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let quits = 0;
     const guard = createWedgeGuard({
       clock,

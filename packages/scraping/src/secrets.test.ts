@@ -3,15 +3,15 @@ import { secret } from '@ultimat3/core';
 import { fakePage } from './driver-fake';
 import {
   blankPasswordFields,
-  createSecretBag,
   MIN_REDACTABLE_LENGTH,
   redactSecrets,
   SECRET_PLACEHOLDER,
   safeHtml,
+  secretBag,
 } from './secrets';
 
 const bag = (values: Record<string, string>) =>
-  createSecretBag(Object.keys(values), (name) => values[name]);
+  secretBag(Object.keys(values), (name) => values[name]);
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
   try {
@@ -26,7 +26,7 @@ describe('unit · secrets are names in the definition and values in the worker',
   test('a declared name with no value refuses the run, naming the file to edit', () => {
     let thrown: { code?: string; fix?: string } = {};
     try {
-      createSecretBag(['BANK_PASSWORD'], () => undefined);
+      secretBag(['BANK_PASSWORD'], () => undefined);
     } catch (error) {
       thrown = error as { code?: string; fix?: string };
     }

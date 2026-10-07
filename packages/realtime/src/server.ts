@@ -4,7 +4,7 @@
 // island realtime promises unbuildable. Every name here has exactly one home; the shared
 // vocabulary (the wire, the errors, `Row`, the backoff) stays on `@ultimat3/realtime`.
 
-export { type AdvisoryLock, type InMemoryAdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
+export { type AdvisoryLock, type MemoryAdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
 // ---- the retained change window one node fans out from ------------------------------------------
 export {
   type ChangeBufferOptions,
@@ -19,11 +19,11 @@ export {
   type ChangeFeedStartOptions,
   type ChangeOp,
   formatLsn,
-  type InMemoryChangeFeed,
-  type InMemoryChangeFeedOptions,
+  type MemoryChangeFeed,
+  type MemoryChangeFeedOptions,
   memoryChangeFeed,
-  type PgLogicalReplicationFeed,
-  type PgLogicalReplicationOptions,
+  type PostgresChangeFeed,
+  type PostgresChangeFeedOptions,
   parseLsn,
   postgresChangeFeed,
 } from './changefeed';
@@ -117,8 +117,8 @@ export { decodeToken, encodeToken, NatsKvSet, type NatsKvSetOptions } from './na
 export { openNatsClient } from './nats-open';
 export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export {
-  type PgAdvisoryLock,
-  type PgAdvisoryLockOptions,
+  type PostgresAdvisoryLock,
+  type PostgresAdvisoryLockOptions,
   postgresAdvisoryLock,
 } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
@@ -154,19 +154,19 @@ export {
 } from './presence';
 export { ANONYMOUS_SOCKET_MULTIPLIER, DEFAULT_MAX_SOCKETS_PER_ACTOR } from './principal-sockets';
 export {
-  createEntry,
   DEFAULT_READ_DEADLINE_MS,
   type EntryOptions,
   fillWindow,
   orgIdOf,
   type PendingRead,
   type QueryEntry,
+  queryEntry,
   refillWindowInLane,
 } from './query-window';
 export {
   CHANGE_SUBJECT_PREFIX,
+  changeFeedReplicator,
   changeSubject,
-  createReplicator,
   normalize,
   type Replicator,
   type ReplicatorOptions,
@@ -210,9 +210,9 @@ export {
   sweepGrants,
 } from './sync-auth';
 export {
-  createFrameRouter,
   type FrameRouter,
   type FrameRouterOptions,
+  frameRouter,
 } from './sync-frames';
 export {
   type ListenOptions,
@@ -220,13 +220,13 @@ export {
   type SyncListener,
 } from './sync-listen';
 export {
-  createSyncNode,
   DEFAULT_MAX_CONNECTIONS,
   DEFAULT_MAX_FRAME_BYTES,
   DEFAULT_REAUTH_INTERVAL_MS,
   type SyncNode,
   type SyncNodeOptions,
   type SyncWs,
+  syncNode,
   type UpgradeTarget,
   type WsData,
 } from './sync-node';

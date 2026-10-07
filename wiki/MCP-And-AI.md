@@ -166,7 +166,7 @@ agent can do — where the framework's own `fix` names a command only the app's 
 `X_FORBIDDEN` says to ask the account owner for the permission, not `x policy explain`; a missing
 scope says to ask for a token that carries it; an invalid argument says to correct the field
 against the published schema. The developer's `fix` stays in the log line, `--json`, and on
-`createMcpServer` (the dev server), whose default is `errorAudience: 'developer'`;
+`mcpServer` (the dev server), whose default is `errorAudience: 'developer'`;
 `defineAppMcp({ errorAudience: 'developer' })` restores it for an app. **A 5xx cause is the
 server's own business** (`As of 2026-10`): for the caller audience, a thrown 5xx code core's
 `hasPublicCause` does not list (`X_DB_STATEMENT_FAILED` carries the Postgres message and the

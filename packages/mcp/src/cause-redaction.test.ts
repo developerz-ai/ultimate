@@ -4,10 +4,10 @@
 // (audience `'developer'`) keeps it, as HTTP's `dev: true` does.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import {
   agentActor,
-  createContext,
+  ctxOf,
   registerPublicCause,
   resetPublicCauses,
   runWithContext,
@@ -24,7 +24,7 @@ import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 
 /** What a driver error carries: the rejected row and the statement, in one cause. */
 const LEAK =
@@ -40,7 +40,7 @@ const caller: McpCaller = {
   scopes: new Set<string>(),
 };
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 const callTool = async (server: McpServer, name: string): Promise<string> => {
   const response = await inRequest(() =>
@@ -64,7 +64,7 @@ const readResource = async (server: McpServer): Promise<string> => {
 };
 
 const resourceServer = (audience: 'caller' | 'developer', thrown: () => unknown): McpServer =>
-  createMcpServer({
+  mcpServer({
     errorAudience: audience,
     resources: [
       {

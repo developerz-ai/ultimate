@@ -143,9 +143,6 @@ const CATALOG = {
   'cli.jobs.deadLetters': '{count} dead letter(s):',
   'cli.jobs.depth':
     '{ready} ready · {running} running · {delayed} delayed · {dead} dead across {queues} queue(s)',
-  'cli.jobs.drained': 'drained {count} job(s) from {from} to {to}',
-  'cli.jobs.drainedPartial':
-    'drained {count} job(s) from {from} to {to} — {skipped} left on {from}',
   'cli.jobs.listed': '{count} job(s)',
   'cli.jobs.nextPage': 'more — next page: x jobs ls --after {cursor}',
   'cli.jobs.noError': 'no error recorded',
@@ -156,7 +153,6 @@ const CATALOG = {
   'cli.jobs.resumed': 'queue {queue} resumed',
   'cli.jobs.retried': 'job {id} re-queued — {state}',
   'cli.jobs.shown': 'job {id} — {state}, attempt {attempt} of {attempts}',
-  'cli.jobs.skipped': '{count} job(s) left on {from} — re-run the drain once each is claimable:',
   'cli.manifest.blocked': 'manifest not written — {count} module(s) did not load',
   'cli.manifest.fresh': 'manifest is fresh',
   'cli.manifest.stale': 'manifest is stale',
@@ -315,7 +311,7 @@ const CATALOG = {
   // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped
   // ones are named, because "which suite has nothing to run here?" is the question a green gate
   // over a missing suite has to answer on its own line. Whole sentences per case rather than a
-  // clause the caller glues on, the same shape `cli.jobs.drained`/`drainedPartial` already uses.
+  // clause the caller glues on: a catalog clause cannot know the sentence it lands in.
   'cli.verify.passSkipped':
     '{passed} of {count} steps passed in {ms}ms — {skipped} skipped: {names}',
   'cli.verify.failSkipped': '{failed} of {count} steps failed — {skipped} skipped: {names}',

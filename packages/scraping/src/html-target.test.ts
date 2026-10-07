@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { NotImplementedError } from '@ultimat3/core';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { htmlTarget } from './html-target';
 import type { PageRecording } from './recording';
 
@@ -15,7 +15,7 @@ const targetOver = (recording: PageRecording) =>
     driver: 'fixture',
     lookup: (url) => Promise.resolve(url === recording.url ? recording : undefined),
     rules: { allowHosts: ['shop.test'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
     source: 'test/fixtures',
     start: recording,
   });

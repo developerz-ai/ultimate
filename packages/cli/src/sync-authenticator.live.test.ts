@@ -16,13 +16,13 @@ import { resetListeners, userActor } from '@ultimat3/core';
 import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import {
   ChannelHub,
-  createSyncNode,
   InProcessTransport,
   LiveQueryRegistry,
   listenSyncNode,
   RingChangeBuffer,
   SocketRegistry,
   type SyncNode,
+  syncNode,
 } from '@ultimat3/realtime/server';
 import { advanceClock } from '@ultimat3/testing';
 import { syncAuthenticator } from './sync-authenticator';
@@ -78,7 +78,7 @@ afterEach(() => {
 function node(): SyncNode {
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
-  return createSyncNode({
+  return syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,

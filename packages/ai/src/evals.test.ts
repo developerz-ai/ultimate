@@ -3,11 +3,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asyncRefusal } from './bounds-fixture';
-import { EchoProvider } from './echo-provider';
+import { echoProvider } from './echo-provider';
 import type { EvalBaseline } from './eval-baseline';
 import { RECORD_ENV, writeBaseline } from './eval-baseline';
 import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, resetPrompts } from './prompt';
 import type { GenerateRequest, Provider } from './provider';
@@ -28,7 +28,7 @@ afterEach(async () => {
 
 /** Answers keyed by the rendered prompt — a fixture, so the eval is a real test. */
 function gatewayWith(replies: Record<string, string>) {
-  return createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider({ replies })] });
+  return providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider({ replies })] });
 }
 
 const classify = () =>
@@ -221,7 +221,7 @@ describe('unit · the eval sends the whole prompt configuration', () => {
       thinking: 'disabled',
     });
     const seen: GenerateRequest[] = [];
-    const echo = new EchoProvider();
+    const echo = echoProvider();
     const recording: Provider = {
       name: 'recording',
       get models() {
@@ -242,7 +242,7 @@ describe('unit · the eval sends the whole prompt configuration', () => {
       scorers: [exact],
       cases: [{ name: 'one', vars: { text: 'great' }, expected: 'Classify: great' }],
     });
-    await evaluation.run(createGateway({ defaultModel: FIXTURE_MODEL, providers: [recording] }));
+    await evaluation.run(providerGateway({ defaultModel: FIXTURE_MODEL, providers: [recording] }));
 
     expect(seen.length).toBe(1);
     expect(seen[0]?.effort).toBe('low');

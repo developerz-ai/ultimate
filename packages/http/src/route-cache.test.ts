@@ -6,17 +6,17 @@ import { describe, expect, test } from 'bun:test';
 import { anonymousActor } from '@ultimat3/core';
 import { defaultCache, PRIVATE_CACHE } from './cache-policy';
 import type { CacheHint } from './response';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const withCache = (cache: CacheHint): Route => ({
   method: 'GET',
   path: '/posts/:id',
-  handler: () => text('ok'),
+  handler: () => textResponse('ok'),
   meta: { name: 'posts.show', auth: 'public', cache },
 });
 
-const register = (cache: CacheHint) => () => createRouter([withCache(cache)]);
+const register = (cache: CacheHint) => () => httpRouter([withCache(cache)]);
 
 const NOT_DELTA_SECONDS = [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5, 2 ** 53];
 
@@ -59,9 +59,9 @@ describe('a cache age that is not delta-seconds is refused where it is written',
 describe('what stays legal, checked against the framework’s own hints', () => {
   test('zero is a declaration — "revalidate every time" — and every default uses it', () => {
     expect(register({ mode: 'public', maxAgeSeconds: 0 })).not.toThrow();
-    expect(() => createRouter([withCache(PRIVATE_CACHE)])).not.toThrow();
+    expect(() => httpRouter([withCache(PRIVATE_CACHE)])).not.toThrow();
     expect(() =>
-      createRouter([withCache(defaultCache(withCache(PRIVATE_CACHE), anonymousActor()))]),
+      httpRouter([withCache(defaultCache(withCache(PRIVATE_CACHE), anonymousActor()))]),
     ).not.toThrow();
   });
 
@@ -84,11 +84,11 @@ describe('what stays legal, checked against the framework’s own hints', () => 
 
   test('a route with no cache hint at all is untouched', () => {
     expect(() =>
-      createRouter([
+      httpRouter([
         {
           method: 'GET',
           path: '/',
-          handler: () => text('ok'),
+          handler: () => textResponse('ok'),
           meta: { name: 'home', auth: 'public' },
         },
       ]),

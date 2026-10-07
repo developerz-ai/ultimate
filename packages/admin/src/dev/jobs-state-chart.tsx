@@ -2,7 +2,7 @@
 // `DonutChart`, server markup with a hidden data table. Only ever reached by `panel-jobs.ts`'s
 // dynamic `import()`, so `/_x`'s mount graph loads no Solid until the jobs tab is opened.
 
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { renderToHtml } from '@ultimat3/render/server';
 import { DonutChart } from '@ultimat3/ui';
 import { t } from './dev-t';
@@ -23,7 +23,7 @@ export async function jobsStateHtml(data: JobsPanelData): Promise<string> {
     label: t(`dev.panel.jobs.state.${state}`),
     value: data.runs.filter((run) => run.status === state).length,
   }));
-  return runWithContext(createContext({ locale: 'en', tz: 'UTC' }), () =>
+  return runWithContext(ctxOf({ locale: 'en', tz: 'UTC' }), () =>
     renderToHtml(
       <DonutChart
         label={t('dev.panel.jobs.chart.label')}

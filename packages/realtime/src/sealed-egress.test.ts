@@ -5,9 +5,9 @@
 // slice says omitted. Asserted on the raw bytes each frame is sent as.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, seal, userActor } from '@ultimat3/core';
+import { ctxOf, seal, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { from, type QueryPolicy, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
+import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { Row } from './json';
@@ -47,7 +47,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  resetRegistry();
+  resetQueries();
   clearRegistry();
 });
 
@@ -126,7 +126,7 @@ describe('unit · a sealed column reaches no socket and no bus', () => {
       }),
     );
     const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
-      liveQueryDefinition(target, { ctx: createContext({ role: 'sync', buildId: 'build-1' }) }),
+      liveQueryDefinition(target, { ctx: ctxOf({ role: 'sync', buildId: 'build-1' }) }),
     );
     const ws = new RawWs();
     const socket = new SyncSocket({

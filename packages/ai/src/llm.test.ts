@@ -7,10 +7,10 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, isAction } from '@ultimat3/action';
-import { createContext, PRIMITIVE_KINDS } from '@ultimat3/core';
+import { ctxOf, PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
-import { EchoProvider } from './echo-provider';
+import { echoProvider } from './echo-provider';
 import { llm } from './llm';
 import {
   ANSWER,
@@ -219,7 +219,7 @@ describe('a response that is not an answer', () => {
           cost: costOf(request.model ?? FIXTURE_MODEL, USAGE),
         });
       },
-      stream: () => new EchoProvider().stream({ messages: [], maxTokens: 1 }),
+      stream: () => echoProvider().stream({ messages: [], maxTokens: 1 }),
     };
     return { provider, seen };
   }
@@ -367,7 +367,7 @@ describe('cancellation', () => {
     const summarize = declare(promptFor());
     const controller = new AbortController();
 
-    await summarize({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) });
+    await summarize({ postId: POST_ID }, { ctx: ctxOf({ signal: controller.signal }) });
 
     expect(seen[0]?.signal).toBe(controller.signal);
   });
@@ -378,7 +378,7 @@ describe('cancellation', () => {
     const summarize = declare(promptFor());
     const controller = new AbortController();
 
-    await summarize({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) });
+    await summarize({ postId: POST_ID }, { ctx: ctxOf({ signal: controller.signal }) });
 
     expect(seen.length).toBe(2);
     expect(seen[1]?.signal).toBe(controller.signal);
@@ -420,7 +420,7 @@ describe('llm() screens its completion ceiling where the app writes it', () => {
   test('a declared token budget is screened under the key the declaration uses', async () => {
     const bounded = declare(promptFor('budget-bound'), { budget: { tokensIn: Number.NaN } });
     install(stub(ANSWER).provider);
-    const error = await asyncRefusal(() => bounded({ postId: POST_ID }, { ctx: createContext() }));
+    const error = await asyncRefusal(() => bounded({ postId: POST_ID }, { ctx: ctxOf() }));
     expect(error.code).toBe('X_INVARIANT');
     // `tokensIn`, not the ledger's own field name: a fix has to name what the app wrote.
     expect(error.cause).toContain('tokensIn');
@@ -434,9 +434,7 @@ describe('llm() screens its completion ceiling where the app writes it', () => {
       });
       const { provider, seen } = stub(ANSWER);
       install(provider);
-      const error = await asyncRefusal(() =>
-        bounded({ postId: POST_ID }, { ctx: createContext() }),
-      );
+      const error = await asyncRefusal(() => bounded({ postId: POST_ID }, { ctx: ctxOf() }));
       expect(error.code).toBe('X_INVARIANT');
       expect(error.cause).toContain('budget.costPerCall.minor');
       expect(seen.length).toBe(0);
@@ -447,7 +445,7 @@ describe('llm() screens its completion ceiling where the app writes it', () => {
     const bounded = declare(promptFor('budget-ok'), { maxTokens: 512 });
     const { provider, seen } = stub(ANSWER);
     install(provider);
-    expect(await bounded({ postId: POST_ID }, { ctx: createContext() })).toEqual(ANSWER);
+    expect(await bounded({ postId: POST_ID }, { ctx: ctxOf() })).toEqual(ANSWER);
     expect(seen[0]?.maxTokens).toBe(512);
   });
 });

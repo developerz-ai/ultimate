@@ -14,7 +14,7 @@ import {
   logger,
   recordConnection,
   systemClock,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import { GapRepairs } from './channel-gaps';
 import type { ChannelRecordsFrame } from './channel-wire';
@@ -157,7 +157,7 @@ export class SyncSocket {
   constructor(options: SyncSocketOptions) {
     this.#ws = options.ws;
     this.#clock = options.clock ?? systemClock;
-    this.id = options.id ?? uuid();
+    this.id = options.id ?? uuidV7();
     this.#clientBuildId = options.clientBuildId;
     this.serverBuildId = options.serverBuildId;
     this.actor = options.actor ?? null;

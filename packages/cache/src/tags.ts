@@ -65,10 +65,9 @@ export function serializeTags(tags: readonly CacheTag[]): string[] {
  * both are tier 3, so neither can import the other and a copy in either is a second answer for the
  * other. The same move `toBucket` made into `@ultimat3/http`.
  *
- * NOT the same function as `@ultimat3/render`'s same-named `tagKeys`, which is `serializeTags`
- * over an optional list and deliberately preserves declaration order for a route descriptor
- * (`dsl.test.ts` pins it). Two behaviours under one name, in two packages an app imports together:
- * naming it here is where a reader can see both.
+ * NOT `@ultimat3/render`'s internal `routeTagKeys`, which is `serializeTags` over an optional list
+ * and deliberately preserves declaration order for a route descriptor (`dsl.test.ts` pins it). It
+ * was a second public `tagKeys` until 25.0.0: two behaviours under one name.
  */
 export function tagKeys(tags: readonly CacheTag[]): readonly string[] {
   return [...new Set(serializeTags(tags))].sort();

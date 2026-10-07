@@ -12,18 +12,18 @@ import { UltimateError } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
 import { retryAfterOf } from './error-facts';
 import { HttpError } from './errors';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import { rateLimited } from './rate-limit-errors';
-import { text } from './response';
-import { createRouter, type Route, type RouteHandler } from './router';
+import { textResponse } from './response';
+import { httpRouter, type Route, type RouteHandler } from './router';
 
 const routeWith = (handler: RouteHandler): readonly Route[] => [
   { method: 'GET', path: '/probe', meta: { name: 'probe', auth: 'public' }, handler },
 ];
 
 const pipelineFor = (handler: RouteHandler, input: HttpConfigInput = {}) =>
-  createPipeline({
-    table: createRouter(routeWith(handler)),
+  httpPipeline({
+    table: httpRouter(routeWith(handler)),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,
@@ -33,7 +33,7 @@ const pipelineFor = (handler: RouteHandler, input: HttpConfigInput = {}) =>
     hooks: { authenticate: () => ({ id: 'u1' }) as never },
   });
 
-const call = (pipeline: ReturnType<typeof createPipeline>): Promise<Response> =>
+const call = (pipeline: ReturnType<typeof httpPipeline>): Promise<Response> =>
   pipeline.handle(new Request('http://app.test/probe'), { role: 'web' });
 
 /**
@@ -116,7 +116,7 @@ describe('the recover stage', () => {
   });
 
   test('a 200 is untouched', async () => {
-    const pipeline = pipelineFor(() => text('ok'));
+    const pipeline = pipelineFor(() => textResponse('ok'));
     const response = await call(pipeline);
     expect(response.status).toBe(200);
     expect(response.headers.get('retry-after')).toBeNull();

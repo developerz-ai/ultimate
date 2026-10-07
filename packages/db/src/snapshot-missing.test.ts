@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkDrift } from './drift';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { migrationSnapshotMissing } from './migration-errors';
 
 const FILE = 'packages/db/migrations/0000_initial.snapshot.json';
@@ -71,7 +71,7 @@ describe('unit · the drift difference points the same way', () => {
   test('unknown-schema does not answer with the command that raises the other error', async () => {
     // Before: `x db gen "snapshot initial"   # or restore its .snapshot.json sidecar`. Running the
     // command it leads with is X_MIGRATION_SNAPSHOT_MISSING, whose own fix pointed back here.
-    const client = createRecordingClient().on('from x_migrations', {
+    const client = recordingClient().on('from x_migrations', {
       rows: [
         {
           id: '0000_initial',

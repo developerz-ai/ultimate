@@ -13,20 +13,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { Actor } from '@ultimat3/core';
-import {
-  anonymousActor,
-  createRaster,
-  encodeImage,
-  UltimateError,
-  userActor,
-} from '@ultimat3/core';
+import { anonymousActor, blankRaster, encodeImage, UltimateError, userActor } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route } from '@ultimat3/http';
-import {
-  cacheControl,
-  createRequestContext,
-  defineHttpConfig,
-  UltimateRequest,
-} from '@ultimat3/http';
+import { cacheControl, defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { Storage } from '@ultimat3/storage';
 import {
@@ -41,7 +30,7 @@ import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
 import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
 
 /** A real PNG, because the `?w=` cases below decode it rather than refusing it as a bad image. */
-const BYTES = encodeImage(createRaster(64, 64, 'tenant-a-private'), 'png');
+const BYTES = encodeImage(blankRaster(64, 64, 'tenant-a-private'), 'png');
 const SCOPED_KEY = scopedKey('org-a', 'private', 'secret.png');
 const UNSCOPED_KEY = 'brand/logo.png';
 
@@ -78,7 +67,7 @@ async function verdictOf(
 }
 
 function contextFor(url: URL, params: Record<string, string>, actor: Actor): RequestContext {
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: 'GET',
     role: 'web',

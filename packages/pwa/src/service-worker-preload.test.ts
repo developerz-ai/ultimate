@@ -3,11 +3,11 @@
 // filled a few entries at a time so it does not compete with the visitor's first click.
 
 import { describe, expect, test } from 'bun:test';
+import { APP_UPDATE_MESSAGE } from '@ultimat3/core';
 import { generateServiceWorker, PRECACHE_CONCURRENCY } from './service-worker';
 import { config, swHarness } from './service-worker-harness-fixture';
 import type { PwaRoute, StrategyEnv } from './strategies';
 import { fromNetwork, networkFirst } from './strategies';
-import { APP_UPDATE_AVAILABLE } from './version-skew';
 
 const routes: readonly PwaRoute[] = [
   { path: '/about', surface: 'site', mode: 'static', offline: 'precache' },
@@ -79,7 +79,7 @@ describe('navigation preload', () => {
     const sw = worker('build-1');
     await sw.respondNavigate('/news', preloaded('new', { 'x-ultimate-build': 'build-2' }));
     await Bun.sleep(0);
-    expect(sw.messages).toContainEqual({ type: APP_UPDATE_AVAILABLE, to: 'build-2' });
+    expect(sw.messages).toContainEqual({ type: APP_UPDATE_MESSAGE, to: 'build-2' });
     await sw.respondNavigate('/news');
     expect(sw.stamps).toEqual([null]);
   });

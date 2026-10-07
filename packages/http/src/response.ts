@@ -14,13 +14,13 @@ const withDefaults = (init: HeaderSource, defaults: Record<string, string>): Hea
   return headers;
 };
 
-export const json = <T>(body: T, init?: ResponseInit): Response =>
+export const jsonResponse = <T>(body: T, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
     ...init,
     headers: withDefaults(init, { 'content-type': 'application/json; charset=utf-8' }),
   });
 
-export const text = (body: string, init?: ResponseInit): Response =>
+export const textResponse = (body: string, init?: ResponseInit): Response =>
   new Response(body, {
     ...init,
     headers: withDefaults(init, { 'content-type': 'text/plain; charset=utf-8' }),

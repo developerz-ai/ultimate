@@ -22,7 +22,7 @@ const upgrade = (headers: HeadersInit = {}): Request =>
 
 describe('the sync node reads the app’s own authenticator', () => {
   test('no authenticator is UNDEFINED, never an anonymous stub', () => {
-    // `createSyncNode` logs that it is anonymous when `authenticate` is absent. A stub answering
+    // `syncNode` logs that it is anonymous when `authenticate` is absent. A stub answering
     // `{ actor: anonymous }` would look configured and silence that line — which is the state the
     // whole framework was in.
     expect(syncAuthenticator('test')).toBeUndefined();

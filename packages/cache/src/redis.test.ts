@@ -7,18 +7,13 @@
 import { describe, expect, test } from 'bun:test';
 import { appVersion, frozenClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
-import { createLruTier } from './lru';
-import {
-  createRedisTier,
-  namespaceFor,
-  REDIS_INVALIDATE_SCRIPT,
-  REDIS_TAG_MEMBER_SCRIPT,
-} from './redis';
+import { lruTier } from './lru';
+import { namespaceFor, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
 import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
-describe('createRedisTier', () => {
+describe('redisTier', () => {
   test('is named "redis"', () => {
     const tier = tierFor(fakeRedis());
     expect(tier.name).toBe('redis');
@@ -107,7 +102,7 @@ describe('createRedisTier', () => {
     expect(setCall?.[4]).toBe('300000');
   });
 
-  test('a custom defaultTtlMs passed to createRedisTier is honoured', async () => {
+  test('a custom defaultTtlMs passed to redisTier is honoured', async () => {
     const client = fakeRedis();
     const tier = tierFor(client, { defaultTtlMs: 5_000 });
     await tier.set('k', 'v');
@@ -225,8 +220,8 @@ describe('createRedisTier', () => {
     // minutes in the LRU on every read and the closer tier outlives the entry it copied.
     const client = fakeRedis();
     const clock = frozenClock(10_000);
-    const lru = createLruTier({ clock, rng: () => 0 });
-    const stack = createCacheStack([lru, tierFor(client, { clock })], { clock });
+    const lru = lruTier({ clock, rng: () => 0 });
+    const stack = cacheStack([lru, tierFor(client, { clock })], { clock });
     await tierFor(client, { clock }).set('k', 'v', { ttlMs: 5_000 });
 
     expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
@@ -242,7 +237,7 @@ describe('createRedisTier', () => {
     const original = bunWithRedis.redis;
     bunWithRedis.redis = undefined;
     try {
-      const tier = createRedisTier();
+      const tier = redisTier();
       await expect(tier.get('k')).rejects.toThrow(CacheDriverUnavailableError);
     } finally {
       bunWithRedis.redis = original;
@@ -255,7 +250,7 @@ describe('the shared tier is namespaced per build', () => {
     // Rename a field and deploy: old and new pods share one Redis, `JSON.parse` does not
     // validate, and the old pod hands the new shape to a renderer expecting the old one.
     const client = fakeRedis();
-    const tier = createRedisTier({ client, rng: () => 0 });
+    const tier = redisTier({ client, rng: () => 0 });
     await tier.set('feed', ['a'], { tags: [tag('post')] });
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
@@ -265,8 +260,8 @@ describe('the shared tier is namespaced per build', () => {
   test('an explicit buildId is used verbatim, and two of them never collide', async () => {
     const one = fakeRedis();
     const two = fakeRedis();
-    await createRedisTier({ client: one, buildId: 'v1', rng: () => 0 }).set('feed', ['a']);
-    await createRedisTier({ client: two, buildId: 'v2', rng: () => 0 }).set('feed', ['b']);
+    await redisTier({ client: one, buildId: 'v1', rng: () => 0 }).set('feed', ['a']);
+    await redisTier({ client: two, buildId: 'v2', rng: () => 0 }).set('feed', ['b']);
 
     expect(one.sent.find((entry) => entry[0] === 'SET')?.[1]).toBe('x:v1:c:feed');
     expect(two.sent.find((entry) => entry[0] === 'SET')?.[1]).toBe('x:v2:c:feed');
@@ -281,7 +276,7 @@ describe('the shared tier is namespaced per build', () => {
 
   test('invalidateTags strips the whole namespace, not just the prefix', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client, buildId: 'v1', prefix: 'app', rng: () => 0 });
+    const tier = redisTier({ client, buildId: 'v1', prefix: 'app', rng: () => 0 });
     await tier.set('feed', ['a'], { tags: [tag('post')] });
     client.answerEval(REDIS_INVALIDATE_SCRIPT, ['app:v1:c:feed']);
 
@@ -293,8 +288,8 @@ describe('the redis lease is spread', () => {
   test('the default jitter shortens PX, and rng() === 0 is the full lease', async () => {
     const full = fakeRedis();
     const shaved = fakeRedis();
-    await createRedisTier({ client: full, buildId: null, rng: () => 0 }).set('k', 'v');
-    await createRedisTier({ client: shaved, buildId: null, rng: () => 1 }).set('k', 'v');
+    await redisTier({ client: full, buildId: null, rng: () => 0 }).set('k', 'v');
+    await redisTier({ client: shaved, buildId: null, rng: () => 1 }).set('k', 'v');
 
     expect(full.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300000');
     // 5% of 300s, in the milliseconds the spread was computed in — a whole-second `EX` could not
@@ -304,7 +299,7 @@ describe('the redis lease is spread', () => {
 
   test('jitterFraction: 0 turns it off', async () => {
     const client = fakeRedis();
-    await createRedisTier({ client, buildId: null, jitterFraction: 0, rng: () => 1 }).set('k', 'v');
+    await redisTier({ client, buildId: null, jitterFraction: 0, rng: () => 1 }).set('k', 'v');
     expect(client.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300000');
   });
 });

@@ -4,7 +4,7 @@
 // before the overlay goes — no flicker — and a refusal takes the overlay back. No socket writes.
 
 import type { ConflictPolicy } from '@ultimat3/core/page';
-import { actionPath, isSuperseded, isUltimateError, pageClient, uuid } from '@ultimat3/core/page';
+import { actionPath, isSuperseded, isUltimateError, pageClient, uuidV7 } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
 import { type OutboxHandle, peekOutbox } from './outbox-slot';
 import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
@@ -122,7 +122,7 @@ export function useMutation(mutator: MutatorLike): Mutate {
     if (writes === undefined) throw new ServerRenderLiveError({ operation: 'useMutation()' });
     const page = installedPage('useMutation');
     const issued = pageClient().scope.epoch;
-    const key = `${mutator.name}:${uuid()}`;
+    const key = `${mutator.name}:${uuidV7()}`;
     const local = mutator.local;
     // Called back through the mutator: `local` may be a method, and an unbound one loses `this`.
     if (local !== undefined) {

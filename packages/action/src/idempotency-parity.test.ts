@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgliteClient } from '@ultimat3/db';
-import { createPgliteClient, withTransaction } from '@ultimat3/db';
+import { pgliteClient, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
 import {
   memoryUnderTest,
@@ -22,7 +22,7 @@ const codeOf = (error: unknown): unknown => (error as { code?: unknown }).code;
 let client: PgliteClient;
 
 beforeAll(() => {
-  client = createPgliteClient();
+  client = pgliteClient();
 });
 
 afterAll(async () => {

@@ -2,7 +2,8 @@
 // tenant column taken out of the caller's hands, and the audit diff of what the write changed.
 // Pure over the resource — `crud.ts` decides and writes, this file only shapes the input.
 
-import { type AuditFieldDiff, diffRows, REDACTED } from './audit';
+import { REDACTED } from '@ultimat3/core';
+import { type AuditFieldDiff, diffRows } from './audit';
 import type { CrudCtx } from './crud';
 import type { AdminRow } from './registry';
 import type { AdminResource } from './resource';

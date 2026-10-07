@@ -9,7 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { catalogLocales, I18N_INDEX_PATH, syncI18nIndex } from './i18n-index';
+import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
+import { catalogLocales, syncI18nIndex } from './i18n-index';
 import { unregisteredFix } from './i18n-registration';
 import { i18nIndex } from './templates';
 
@@ -19,7 +20,7 @@ const appRoot = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), 'x-i18n-index-'));
   roots.push(dir);
   await Bun.write(join(dir, 'packages/i18n/catalogs/en.json'), '{"nav":{"home":"Home"}}\n');
-  await Bun.write(join(dir, I18N_INDEX_PATH), i18nIndex(['en']));
+  await Bun.write(join(dir, APP_CATALOGS_PATH), i18nIndex(['en']));
   return dir;
 };
 
@@ -30,13 +31,13 @@ afterEach(async () => {
 describe('unit · adding a locale registers it', () => {
   test('a catalog on disk that the index does not name is what syncI18nIndex closes', async () => {
     const root = await appRoot();
-    const before = await Bun.file(join(root, I18N_INDEX_PATH)).text();
+    const before = await Bun.file(join(root, APP_CATALOGS_PATH)).text();
     expect(before).not.toContain('catalogs/fr.json');
 
     await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{"nav":{"home":"Accueil"}}\n');
     expect((await syncI18nIndex(root)).registered).toBe(true);
 
-    const after = await Bun.file(join(root, I18N_INDEX_PATH)).text();
+    const after = await Bun.file(join(root, APP_CATALOGS_PATH)).text();
     expect(after).toContain("import fr from '../catalogs/fr.json';");
     expect(after).toContain('locales: { en, fr }');
   });
@@ -47,7 +48,9 @@ describe('unit · adding a locale registers it', () => {
     await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
     expect(await catalogLocales(root)).toEqual(['en', 'es', 'fr']);
     await syncI18nIndex(root);
-    expect(await Bun.file(join(root, I18N_INDEX_PATH)).text()).toContain('locales: { en, es, fr }');
+    expect(await Bun.file(join(root, APP_CATALOGS_PATH)).text()).toContain(
+      'locales: { en, es, fr }',
+    );
   });
 
   test('an app with no i18n package is left alone and says so', async () => {
@@ -75,12 +78,12 @@ describe('unit · a hand-edited index is edited, never replaced', () => {
     await rm(join(root, 'packages/i18n/catalogs/en.json'));
     await Bun.write(join(root, 'packages/i18n/catalogs/es.json'), '{}\n');
     await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
-    await Bun.write(join(root, I18N_INDEX_PATH), HAND);
+    await Bun.write(join(root, APP_CATALOGS_PATH), HAND);
 
     const sync = await syncI18nIndex(root);
 
     expect(sync).toEqual({ registered: true, findings: [] });
-    const after = await Bun.file(join(root, I18N_INDEX_PATH)).text();
+    const after = await Bun.file(join(root, APP_CATALOGS_PATH)).text();
     expect(after).toContain("import fr from '../catalogs/fr.json';");
     expect(after).toContain("defineCatalogs({ default: 'es', locales: { es, fr } })");
     expect(after).toContain('export const mine = 1; // the author wrote this');
@@ -90,7 +93,7 @@ describe('unit · a hand-edited index is edited, never replaced', () => {
   test('a shape this writer cannot edit is refused with the edit named, and left untouched', async () => {
     const root = await appRoot();
     const odd = "export { catalogs } from './elsewhere';\n";
-    await Bun.write(join(root, I18N_INDEX_PATH), odd);
+    await Bun.write(join(root, APP_CATALOGS_PATH), odd);
     await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
 
     const sync = await syncI18nIndex(root);
@@ -98,7 +101,7 @@ describe('unit · a hand-edited index is edited, never replaced', () => {
     expect(sync.registered).toBe(false);
     expect(sync.findings.map((finding) => finding.code)).toEqual(['X_CATALOG_UNREGISTERED']);
     expect(sync.findings[0]?.fix).toContain("import fr from '../catalogs/fr.json'");
-    expect(await Bun.file(join(root, I18N_INDEX_PATH)).text()).toBe(odd);
+    expect(await Bun.file(join(root, APP_CATALOGS_PATH)).text()).toBe(odd);
   });
 
   test('the template never imports an en.json the catalogs do not hold', () => {

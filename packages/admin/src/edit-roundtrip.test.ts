@@ -4,7 +4,7 @@
 // refused with a 409 instead of being overwritten with the stale copy.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   database,
@@ -71,7 +71,7 @@ const respond = (
   form?: Readonly<Record<string, unknown>>,
 ): Promise<{ readonly response: AdminRouteResponse; readonly html: string }> =>
   runWithContext(
-    createContext({ actor: userActor({ id: 'u-ed', roles: ['editor'] }), tz: 'UTC', locale: 'en' }),
+    ctxOf({ actor: userActor({ id: 'u-ed', roles: ['editor'] }), tz: 'UTC', locale: 'en' }),
     async () => {
       const url = `http://localhost${path}`;
       const matched = adminRouteMatch(admin, new URL(url).pathname);

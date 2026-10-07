@@ -31,7 +31,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "Agents: import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';": 1,
   "Agents: import { t } from '@ultimat3/action';": 2,
   'Agents: onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {': 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   "Auth: import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';": 1,
   'Batching-And-Preloading: await db.tags.insertAll(names.map((name) => ({ orgId, name })));         // one statement, n rows': 1,
   "Batching-And-Preloading: await using batches = db.posts.where({ orgId }).preload('author').inBatches(500);": 1,
@@ -105,7 +104,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Migrations-And-Backfills: const first = await normalizePostTitles.enqueue({});': 1,
   'Migrations-And-Backfills: export const normalizePostTitles = backfill({': 1,
   'Money: export const summarize = llm({': 1,
-  "Money: money(1999, 'USD');            // $19.99      — no scale key, the currency's own minor unit": 1,
   "Money: total: money({ columns: { minor: 'amount_cents', currency: 'currency', scale: null } }),": 1,
   'N-Plus-One-Detection: // naive: one statement per row': 1,
   'N-Plus-One-Detection: // one indexed lookup per search field beats one unindexed OR across all of them': 1,
@@ -198,4 +196,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Upgrading: mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });': 1,
   'Upgrading: registerErrorStatus({ X_PAYMENTS_UNREACHABLE: 502 });   // from @ultimat3/http, once at boot': 1,
   'Upgrading: setJobDriver(createPgDriver({ executor }))   // production': 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "Money: fromMinor(1999, 'USD');            // $19.99      — no scale key, the currency's own minor unit": 1,
 };

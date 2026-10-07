@@ -15,7 +15,7 @@ import type { ReadBuilder } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { backfillChecksum } from './backfill-ledger';
 import { backfillPass } from './backfill-pass';
-import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 import type { BackfillCount } from './backfill-registry';
 import { stampBackfill } from './backfill-registry';
 import type { DurationInput } from './clock';
@@ -176,7 +176,7 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
   const checksum = backfillChecksum(definition.source, definition.handle);
   // Built here rather than per attempt: the interval belongs to the table and the pool, not to
   // whichever attempt holds the run, so a retrying pass keeps the pace it was declared with.
-  const pace = createPacer({ rate, job: definition.name });
+  const pace = backfillPacer({ rate, job: definition.name });
 
   // Bound to the definition rather than passed bare: `count` is declared as a method, so a
   // reference torn off the object literal would run with `this` undefined the first time an

@@ -9,12 +9,10 @@
 // why: Bun has no synchronous existence check — `Bun.file(p).exists()` is async, and this decides
 // whether to write at all, before any await the caller could interleave with.
 import { existsSync } from 'node:fs';
-import { APP_CATALOGS_PATH as I18N_INDEX_PATH } from '@ultimat3/i18n/app-catalogs';
+import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
 import { containedPath } from './generate-write';
 import type { Finding } from './output';
 import { CATALOG_ROOT, i18nIndex, localeEntry, localeImport } from './templates';
-
-export { I18N_INDEX_PATH };
 
 /** Every locale with a catalog on disk, sorted — the file names are the tags. */
 export async function catalogLocales(root: string): Promise<readonly string[]> {
@@ -51,7 +49,7 @@ const importedLocales = (source: string): readonly string[] =>
  * overwritten: it was, on every `x g`, with a template hard-coding `default: 'en'`.
  */
 export async function syncI18nIndex(root: string): Promise<IndexSync> {
-  const indexAbsolute = containedPath(root, I18N_INDEX_PATH);
+  const indexAbsolute = containedPath(root, APP_CATALOGS_PATH);
   if (!existsSync(indexAbsolute)) return { registered: false, findings: [] };
   const current = await Bun.file(indexAbsolute).text();
   const onDisk = await catalogLocales(root);
@@ -84,7 +82,7 @@ function withLocales(source: string, locales: readonly string[]): string | undef
 
 const refusal = (locales: readonly string[]): Finding => ({
   code: 'X_CATALOG_UNREGISTERED',
-  cause: `${I18N_INDEX_PATH} is hand-written in a shape this writer cannot add ${locales.join(', ')} to, so those catalogs are on disk and not selectable`,
-  fix: `edit ${I18N_INDEX_PATH} — add ${locales.map(localeImport).join(' ')} and ${locales.map(localeEntry).join(', ')} to the locales passed to defineCatalogs`,
-  at: I18N_INDEX_PATH,
+  cause: `${APP_CATALOGS_PATH} is hand-written in a shape this writer cannot add ${locales.join(', ')} to, so those catalogs are on disk and not selectable`,
+  fix: `edit ${APP_CATALOGS_PATH} — add ${locales.map(localeImport).join(' ')} and ${locales.map(localeEntry).join(', ')} to the locales passed to defineCatalogs`,
+  at: APP_CATALOGS_PATH,
 });

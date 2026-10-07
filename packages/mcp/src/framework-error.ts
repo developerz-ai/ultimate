@@ -98,7 +98,7 @@ export function forAudience(error: FrameworkError, audience: ErrorAudience): Fra
  * second one here. Dropping the title would be a second rendering of the same contract, and the two
  * would drift.
  *
- * `audience` is the server's (`createMcpServer({ errorAudience })`): an app's server answers remote
+ * `audience` is the server's (`mcpServer({ errorAudience })`): an app's server answers remote
  * agents, who cannot run `x policy explain`, so it renders `callerFix` where the error has one.
  *
  * The bare-`code` head is the fallback for a foreign thrown object that carries `code`/`cause`

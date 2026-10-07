@@ -1,27 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { asyncRefusal } from './bounds-fixture';
-import { normalize } from './embeddings';
-import { type PgVectorStore, postgresVectorStore } from './pg-vector';
+import { normalizeVector } from './embeddings';
+import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
 import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
 import { memoryVectorStore } from './vector';
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 
 interface Harness {
   readonly client: RecordingClient;
-  readonly store: PgVectorStore;
+  readonly store: PostgresVectorStore;
 }
 
 function harness(): Harness {
-  const client = createRecordingClient();
+  const client = recordingClient();
   return { client, store: postgresVectorStore({ name: 'docs', dimension: 4, client }) };
 }
 
 const codeOf = (error: unknown): string =>
   (error as { code?: string } | undefined)?.code ?? String(error);
 
-describe('PgVectorStore ddl', () => {
+describe('PostgresVectorStore ddl', () => {
   test('one table, a composite tenant key and both indexes the queries need', () => {
     const ddl = postgresVectorStore({ name: 'docs', dimension: 1536 }).ddl();
     expect(ddl).toContain('create extension if not exists vector;');
@@ -34,7 +34,7 @@ describe('PgVectorStore ddl', () => {
   });
 
   test('the FTS language is the one the queries bind, not a second default', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const store = postgresVectorStore({ name: 'docs', dimension: 4, client, language: 'simple' });
     expect(store.ddl()).toContain("to_tsvector('simple', content)");
     await store.searchText('x_db_drift', 5);
@@ -42,7 +42,7 @@ describe('PgVectorStore ddl', () => {
   });
 });
 
-describe('PgVectorStore writes', () => {
+describe('PostgresVectorStore writes', () => {
   test('upsert is one multi-row statement that stamps the scope tenant', async () => {
     const { client, store } = harness();
     await store.scoped({ tenant: 'acme' }).upsert([
@@ -95,7 +95,7 @@ describe('PgVectorStore writes', () => {
   });
 });
 
-describe('PgVectorStore reads', () => {
+describe('PostgresVectorStore reads', () => {
   test('search orders by raw cosine distance ascending, so hnsw can answer it', async () => {
     const { client, store } = harness();
     await store.search(vec(1, 0, 0, 0), 5);
@@ -192,7 +192,7 @@ describe('PgVectorStore reads', () => {
   });
 
   test('with no client the ambient db() is used, so a store joins the caller’s transaction', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     setDbClient(client);
     try {
       await postgresVectorStore({ name: 'docs', dimension: 4 }).searchText('drift', 1);
@@ -203,7 +203,7 @@ describe('PgVectorStore reads', () => {
   });
 });
 
-describe('PgVectorStore scope', () => {
+describe('PostgresVectorStore scope', () => {
   test('the tenant and the policy allow-list land in SQL, never in the text', async () => {
     const { client, store } = harness();
     const scoped = store.scoped({
@@ -271,7 +271,7 @@ describe('PgVectorStore scope', () => {
  * Postgres float8 HAS a `NaN`, it sorts as the largest value, so every fused score ties and the
  * ranking collapses to the id tiebreak with a full result list still coming back.
  */
-describe('PgVectorStore refuses a bound before it opens a connection', () => {
+describe('PostgresVectorStore refuses a bound before it opens a connection', () => {
   test('k, candidates and rrfK are named, and no statement is issued', async () => {
     const { client, store } = harness();
     const query = { query: 'drift', vector: vec(1, 0, 0, 0) };
@@ -301,7 +301,7 @@ describe('PgVectorStore refuses a bound before it opens a connection', () => {
 });
 
 /**
- * `deleteSql` is exported from `index.ts`, so `PgVectorStore.delete`'s own `ids.length === 0`
+ * `deleteSql` is exported from `index.ts`, so `PostgresVectorStore.delete`'s own `ids.length === 0`
  * guard is not the only caller: an app building the statement itself got `"id" in ()`, which is a
  * syntax error Postgres refuses at parse time rather than an empty delete. The module already has
  * the constant for it — an empty allow-list takes the same branch, for the same reason.
@@ -326,7 +326,7 @@ describe('deleteSql with no ids', () => {
 });
 
 // Row g: a re-index prunes the document's rows it no longer produced, within the scope.
-describe('PgVectorStore.prune', () => {
+describe('PostgresVectorStore.prune', () => {
   test('deletes what the filter matches except the kept ids, inside the scope', async () => {
     const { client, store } = harness();
     await store.scoped({ tenant: 'acme' }).prune?.({ source: 'doc' }, ['doc#0']);
@@ -341,7 +341,7 @@ describe('PgVectorStore.prune', () => {
 
 // Row h: two records with one id in ONE statement is `ON CONFLICT DO UPDATE command cannot affect
 // row a second time` in Postgres, while memory kept the last. The last one wins in both.
-describe('PgVectorStore.upsert with a repeated id', () => {
+describe('PostgresVectorStore.upsert with a repeated id', () => {
   test('sends the id once, carrying the LAST record', async () => {
     const { client, store } = harness();
     await store.upsert([

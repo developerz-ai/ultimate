@@ -89,10 +89,10 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `cors.origins: ['*']` with `credentials: true` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, because a browser accepts that pair from nobody |
 | `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test`, and any other control character. `nextAfterSignIn` takes the value its caller's parser already decoded and never decodes it again, `As of 2026-10`: `?q=a%26b` lands as `?q=a%26b`, not `?q=a&b`. A code point above U+007F is percent-encoded so a `Location` header can carry it. The answer is the normalised path (`/a/../b` → `/b`), and one whose pathname starts `//` (`/.//evil.test`) is refused; `x-ultimate-location` never carries a same-origin pathname starting `//` either |
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
-| `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
-| a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `createServer`, because the loser would be a number someone read and nothing applied |
+| `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `httpServer`, because N replicas each holding their own counters enforce N × every configured number |
+| a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `httpServer`, because the loser would be a number someone read and nothing applied |
 | a `rateLimit.tenantBucket` naming a bucket nothing declares | `X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN` at `defineHttpConfig`, because the name would fall through to `default` and a whole tenant's cap would silently be the 120-burst read bucket |
-| an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `createPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
+| an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `httpPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
 | a config that never declared `rateLimit.scope` | `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `'process'` used to be the default, so "nobody asked" and "the app said one replica" were the same value while the chart runs three |
 | `trustProxy: true` with no `trustedProxyHops` | `X_TRUST_PROXY_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `trustProxy` now defaults to `false`, and `x-forwarded-for` is read at `entries.length - hops` — never at `[0]`, which is whatever the client typed |
 | an unsafe method from a browser — signed in, or anonymous with `Origin`/`sec-fetch-site` — that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an EXACT listing in `cors.origins` — anything else is refused before the body is read. `origins: ['*']` lists nobody here: `'*'` is a value for the response header, not a per-origin allowance |
@@ -100,7 +100,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | a budget above `2_147_483_647` ms | no timer holds it: `requestTimeoutMs` past it is `X_CONFIG_INVALID`, and an `x-request-timeout-ms` past it is ignored — it used to arm a ~1 ms timer |
 | the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal (`AbortSignal.any`), and `requestTimeoutMs: 0` still delivers the caller's |
 | a request while the process is draining | SERVED, with `connection: close` so the client's next request lands on another pod, `As of 2026-09-23` — refusing it failed 598 of 7,690 requests across one helm upgrade on kind, every one on a kept-alive connection inside the readiness grace. Only a STOPPED process (resources closed) answers `X_DRAINING` (503) + `retry-after` |
-| SIGTERM | `/readyz` answers 503 at once, the listener stays open for `drain.readinessGraceMs` (core; 5000 ms outside development/test, 0 inside), then closes and the drain runs. Pass `createServer({ …, drain: appConfig.drain })` so `app.config.ts`'s value is the one applied; omitted, core's default holds and a `configureLifecycle({ readinessGraceMs })` stands |
+| SIGTERM | `/readyz` answers 503 at once, the listener stays open for `drain.readinessGraceMs` (core; 5000 ms outside development/test, 0 inside), then closes and the drain runs. Pass `httpServer({ …, drain: appConfig.drain })` so `app.config.ts`'s value is the one applied; omitted, core's default holds and a `configureLifecycle({ readinessGraceMs })` stands |
 | `?locale=es` | the locale source that outranks the cookie and the header (`resolveLocale`'s order), `As of 2026-09-23` — documented in `wiki/I18n.md` and never read before |
 | a 4xx | logged at `warn` (401, 403, 429) or `info` (every other 4xx); only a 5xx is an `error` line |
 | `x-forwarded-client-cert` without `trustClientCertHeader: true` | `ctx.peer` is `null`. **Breaking**: `trustProxy` alone used to read it, and an ingress that appends to `x-forwarded-for` need not strip a certificate header the client sent |
@@ -134,7 +134,7 @@ reads (refill applied, **no write and no row** — a key never taken is full; `r
 
 ```ts
 import {
-  createServer,
+  httpServer,
   defineHttpConfig,
   type RateLimitStore,
   type Route,
@@ -143,7 +143,7 @@ import {
 declare const routes: readonly Route[];
 declare const myStore: RateLimitStore;   // postgresRateLimitStore({ executor }), say
 
-createServer({
+httpServer({
   routes,
   config: defineHttpConfig({ rateLimit: { scope: 'shared' } }), // this limit is the fleet's
   rateLimitStore: myStore,                                      // whose own scope is 'shared'
@@ -164,7 +164,7 @@ the one nobody declared. A limiter with `enabled: false` owes no declaration: no
 so nothing can be wrong.
 
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
-maths stays in `createRateLimiter`, so every driver agrees on the numbers.
+maths stays in `rateLimiter`, so every driver agrees on the numbers.
 
 **One request spends a LIST of keys, `As of 2026-08-24`** — the caller's (`actor`, else `org`,
 else `ip`) and, when the app declared `rateLimit.tenantBucket`, that caller's tenant. The key
@@ -187,7 +187,7 @@ line over the client the boot already opened; **never `Bun.sql`**, whose `.query
 ```ts
 import { db, type SqlFragment } from '@ultimat3/db';
 import {
-  createServer,
+  httpServer,
   defineHttpConfig,
   type PgExecutor,
   postgresRateLimitStore,
@@ -204,7 +204,7 @@ const executor: PgExecutor = {
     client.query<R>({ text, values } satisfies SqlFragment),
 };
 
-createServer({
+httpServer({
   routes,
   config: defineHttpConfig({ rateLimit: { scope: 'shared' } }),
   rateLimitStore: postgresRateLimitStore({ executor }),
@@ -217,7 +217,7 @@ rule. `nowMs` is required and must come from the same clock the takes use — me
 server's clock instead, the offset between the two reads as refill and deletes buckets a throttled
 caller is still sitting in.
 
-The maths reads an injected `Clock`, defaulting to `systemClock`: `createRateLimiter({ config,
+The maths reads an injected `Clock`, defaulting to `systemClock`: `rateLimiter({ config,
 clock })`. **Breaking, `As of 2026-08-19`** — it took `now?: () => number` before and read
 `Date.now()` when nothing passed one, which both production call sites did, so the limiter that
 actually throttles a request could not be frozen. Replace `now: () => t` with
@@ -227,7 +227,7 @@ actually throttles a request could not be frozen. Replace `now: () => t` with
 ### A route may bring its own bucket
 
 `meta.rateLimit` names a bucket; `meta.rateLimitBucket` is the numbers that bucket must hold.
-`withRouteBuckets` registers them at construction — `createServer` and `createPipeline` both apply
+`withRouteBuckets` registers them at construction — `httpServer` and `httpPipeline` both apply
 it, idempotently — because `defineHttpConfig` runs before any route exists and cannot have them.
 Without that half, a name nothing defined fell through `bucketFor` to `default`: an action
 declaring `limit: 5` ran on 120 burst, and the number reached the OpenAPI document all the same.
@@ -253,7 +253,7 @@ the same rule as `RateLimitStore.scope` — and `assertRouteBuckets` compares it
 at construction. A limiter passed to `PipelineDeps.limiter` that cannot enforce a declared bucket
 is refused rather than rebound: a `RateLimiter` is opaque, so rebinding would mean discarding the
 store it carries, and a caller who built their own limiter may have meant their own numbers. Pass
-the **store** — `createServer({ routes, rateLimitStore })` — and the pipeline builds the limiter
+the **store** — `httpServer({ routes, rateLimitStore })` — and the pipeline builds the limiter
 from the merged table for you.
 
 ## Routing
@@ -264,11 +264,11 @@ flip. `HEAD` falls back to the `GET` route. `meta.auth` is **required** — a ro
 cannot forget to declare its auth posture.
 
 ```ts
-import { createServer, defineHttpConfig, json } from '@ultimat3/http';
+import { httpServer, defineHttpConfig, jsonResponse } from '@ultimat3/http';
 
-const handle = createServer({
+const handle = httpServer({
   routes: [{ method: 'GET', path: '/posts/:id', meta: { name: 'posts.show', auth: 'public' },
-             handler: (req) => json({ id: req.param('id') }) }],
+             handler: (req) => jsonResponse({ id: req.param('id') }) }],
   config: defineHttpConfig({ port: 3000 }),
   role: 'web',
 }).start();
@@ -375,7 +375,10 @@ well formed and carried a credential, and the credential is what failed. Neither
 sign-in redirect, which keys on `X_UNAUTHENTICATED` alone.
 
 The sending half is `webhook()` in `@ultimat3/jobs`. Neither package may import the other, so the
-canonical string is stated in both and pinned by one literal vector asserted in both test files.
+wire format — the canonical string, `WEBHOOK_ID_HEADER`, `WEBHOOK_SIGNATURE_HEADER`,
+`WEBHOOK_TOPIC_HEADER`, `WEBHOOK_SIGNATURE_VERSION` — is `@ultimat3/core`'s
+(`webhook-signature.ts`), and a receiver imports the names from there: 25.0.0 dropped this
+package's re-exports of them, and of `escapeHtml` and `readCookie` (`X_HELPER_COPY`).
 
 ## The exact body bytes
 

@@ -20,7 +20,7 @@ import {
 } from './backfill-pass-fixture';
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
-import { createStepRunner, StepSuspension } from './steps';
+import { StepSuspension, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 beforeEach(() => {
@@ -170,7 +170,7 @@ describe('the x_backfills ledger', () => {
       source: () => table.where({ orgId: ORG }),
       handle: () => expect.unreachable('a completed name is a no-op until it is forced'),
     });
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-edited',
       jobName: 'backfill',
       store: first.store,
@@ -211,7 +211,7 @@ describe('the x_backfills ledger', () => {
         throw new StepSuspension({ step: 'batch:0', resumeAt: 1, reason: 'sleep' });
       },
     });
-    const runner = createStepRunner({ runId: 'run-parked', jobName: 'backfill', store });
+    const runner = stepRunner({ runId: 'run-parked', jobName: 'backfill', store });
 
     await expect(
       parked.run({

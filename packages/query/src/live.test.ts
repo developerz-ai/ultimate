@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toLiveQuery } from './live';
 import { match } from './matcher';
 import { query } from './query';
 import { sourceFor } from './read';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
 
 interface Post {
@@ -17,8 +17,8 @@ interface Post {
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const readerActor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
-const member = createContext({ actor: readerActor });
-const anonymous = createContext({});
+const member = ctxOf({ actor: readerActor });
+const anonymous = ctxOf({});
 
 const posts: readonly Post[] = [
   { id: 'a', orgId: ORG, createdAt: 10 },
@@ -35,7 +35,7 @@ const defineFeed = () =>
 
 describe('live query descriptor', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   test('carries the shape, the dependency set and the generated SQL', async () => {
@@ -107,7 +107,7 @@ describe('live query descriptor', () => {
  */
 describe('a live window is served in the order its patches are placed in', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   /** Tied on the only declared key, and handed over in the opposite order to their ids. */

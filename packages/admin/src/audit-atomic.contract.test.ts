@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { createPgliteClient, db, raw, setDbClient } from '@ultimat3/db';
+import { db, pgliteClient, raw, setDbClient } from '@ultimat3/db';
 import { invokeAdminAction } from './action-gate';
 import { postgresAuditLog } from './audit-pg';
 import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
@@ -14,7 +14,7 @@ import type { AdminAction } from './registry';
 // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
 const PGLITE_BOOT_MS = 60_000;
 
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   setDbClient(client);

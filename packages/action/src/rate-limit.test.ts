@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig, resetRateLimitStore } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, resetRateLimitStore } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -44,7 +44,7 @@ const openContact = () =>
  */
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
-const call = (server: ReturnType<typeof createServer>): Promise<Response> =>
+const call = (server: ReturnType<typeof httpServer>): Promise<Response> =>
   server.fetch(
     new Request('http://dev.test/api/sales/contact', {
       method: 'POST',
@@ -55,7 +55,7 @@ const call = (server: ReturnType<typeof createServer>): Promise<Response> =>
 
 /** Statuses for `count` sequential calls — sequential, because a bucket is order-dependent. */
 async function drain(
-  server: ReturnType<typeof createServer>,
+  server: ReturnType<typeof httpServer>,
   count: number,
 ): Promise<readonly number[]> {
   const out: number[] = [];
@@ -65,14 +65,14 @@ async function drain(
 
 describe('an action rate limit is enforced, not only published', () => {
   test('the sixth call to a limit: 5 action is refused', async () => {
-    const server = createServer({ routes: [toRoute(contactSales())], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(contactSales())], config: oneProcess() });
     const statuses = await drain(server, 6);
     expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
     expect(statuses[5]).toBe(429);
   });
 
   test('the limit header states the declared number, so a client reads what is enforced', async () => {
-    const server = createServer({ routes: [toRoute(contactSales())], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(contactSales())], config: oneProcess() });
     const response = await call(server);
     expect(response.headers.get('ratelimit-limit')).toBe('5');
   });
@@ -84,13 +84,13 @@ describe('an action rate limit is enforced, not only published', () => {
       windowMs: number;
     };
     expect(published).toEqual({ limit: 5, windowMs: 600_000 });
-    const server = createServer({ routes: [toRoute(target)], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(target)], config: oneProcess() });
     const statuses = await drain(server, published.limit + 1);
     expect(statuses.filter((status) => status === 200)).toHaveLength(published.limit);
   });
 
   test('an action that declares nothing keeps the default bucket', async () => {
-    const server = createServer({ routes: [toRoute(openContact())], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(openContact())], config: oneProcess() });
     const statuses = await drain(server, 10);
     expect(statuses.every((status) => status === 200)).toBe(true);
   });
@@ -107,7 +107,7 @@ describe('an action rate limit is enforced, not only published', () => {
         },
       },
     });
-    expect(() => createServer({ routes: [toRoute(contactSales())], config })).toThrow(
+    expect(() => httpServer({ routes: [toRoute(contactSales())], config })).toThrow(
       /X_CONFIG_INVALID/,
     );
   });

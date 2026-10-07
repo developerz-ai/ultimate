@@ -6,13 +6,12 @@
 // default is what silently makes the second door as trusting as the first.
 
 import type { Clock } from '@ultimat3/core';
-import { renderCauseValue } from '@ultimat3/core';
+import { renderCauseValue, timingSafeEqual } from '@ultimat3/core';
 import { decodeJwtSegment } from './json';
 import { type IdTokenKeys, verifyJwtSignature } from './jwks';
 import type { OAuthProvider, OAuthProviderId } from './oauth';
 import { oauthStateInvalid, oauthTokenInvalid, restartAt } from './oauth-errors';
 import { providerFor } from './oauth-registry';
-import { timingSafeEqual } from './tokens';
 
 /** The subset of OIDC claims this package acts on. Provider-specific extras are ignored. */
 export interface IdTokenClaims {
@@ -128,7 +127,7 @@ export interface VerifyIdTokenInput {
    * Required, and there is deliberately no default. `'token-endpoint-tls'` asserts this token was
    * read off a TLS response from the provider's own token endpoint — the OIDC Core 3.1.3.7 case,
    * and the only one where an unverified JWT is safe. Every other channel passes a key source:
-   * `providerJwks(providerFor(id))`, or a `createJwksClient({ jwksUri })` of its own.
+   * `providerJwks(providerFor(id))`, or a `jwksClient({ jwksUri })` of its own.
    */
   readonly keys: IdTokenKeys;
 }

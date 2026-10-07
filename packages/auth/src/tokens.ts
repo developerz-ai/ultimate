@@ -1,13 +1,10 @@
 // Single responsibility: the secret primitives every other file in this package shares —
 // CSPRNG tokens and SHA-256 hashing. Centralised so no call site can quietly reach for `===` on
 // a secret, which leaks the shared prefix length one request at a time. The constant-time
-// comparison itself lives in `@ultimat3/core` (`timingSafeEqual`) — `@ultimat3/storage` needs the
-// exact same one, and re-exporting it here keeps every existing `from '@ultimat3/auth'` import
-// working.
+// comparison itself is `@ultimat3/core`'s `timingSafeEqual` — `@ultimat3/storage` needs the exact
+// same one — imported from core by every caller, never re-exported here (`X_HELPER_COPY`).
 
 import { finiteCount, timingSafeEqual } from '@ultimat3/core';
-
-export { timingSafeEqual };
 
 const BASE64URL_UNSAFE = /[+/=]/g;
 const BASE64URL_REPLACEMENTS: Readonly<Record<string, string>> = { '+': '-', '/': '_', '=': '' };

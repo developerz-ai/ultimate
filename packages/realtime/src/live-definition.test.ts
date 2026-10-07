@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type Actor, createContext, userActor } from '@ultimat3/core';
-import { from, type QueryPolicy, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
+import { type Actor, ctxOf, userActor } from '@ultimat3/core';
+import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
@@ -99,8 +99,7 @@ function socketFor(id: string, actor: Actor | null): { socket: SyncSocket; ws: F
 const INPUT: JsonValue = { orgId: 'o1' };
 
 /** The node's own context: services and a clock, and deliberately nobody's authority. */
-const nodeCtx = (): ReturnType<typeof createContext> =>
-  createContext({ role: 'sync', buildId: 'build-1' });
+const nodeCtx = (): ReturnType<typeof ctxOf> => ctxOf({ role: 'sync', buildId: 'build-1' });
 
 function registryFor(
   policy: QueryPolicy = ownRowsOnly,
@@ -166,7 +165,7 @@ function declareDrifting(): ReturnType<typeof registerQuery> {
 
 describe('a declared live query is subscribable, per subscriber', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     reads = 0;
     visibleCalls = 0;
     builds = 0;

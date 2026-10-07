@@ -4,13 +4,13 @@
 // log line and no artifact — and the host still does, because a reader has to know which endpoint.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger } from '@ultimat3/core';
+import { ctxOf, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { StorageDriver, StorageObject } from '@ultimat3/storage';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpLauncherLike } from './cdp-port';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { remoteBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
 import { cdpAttachFailed } from './error-throws';
@@ -83,8 +83,8 @@ const capture = (): Captured => {
       step: {
         run: <T>(_name: string, fn: () => Promise<T> | T) => Promise.resolve(fn()),
       } as unknown as StepApi,
-      ctx: createContext({
-        logger: createLogger({ level: 'debug', writer: (line) => lines.push(line) }),
+      ctx: ctxOf({
+        logger: structuredLogger({ level: 'debug', writer: (line) => lines.push(line) }),
       }),
       attempt: 1,
       finalAttempt: false,
@@ -105,7 +105,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'a fake browser: there is no origin to ask' },
-  clock: testClock(),
+  clock: testScrapeClock(),
   run: () => Promise.resolve([]),
   ...over,
 });

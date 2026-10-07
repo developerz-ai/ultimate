@@ -1,7 +1,7 @@
 // The store a PRIMITIVE's declared `rateLimit:` is counted in — `@ultimat3/action`'s `invoke` and
 // `@ultimat3/query`'s read path both spend from it, on every surface. One slot, here, so the two
 // tier-3 packages (which cannot import each other) count in one place, and the boot fills it with
-// the same instance it hands `createServer({ rateLimitStore })`.
+// the same instance it hands `httpServer({ rateLimitStore })`.
 
 import type { RateLimitConfig, RateLimitStore } from './rate-limit';
 import { memoryRateLimitStore } from './rate-limit';
@@ -43,7 +43,7 @@ export const resetRateLimitStore = (): void => {
 
 export interface AdoptRateLimitStoreOptions {
   /**
-   * `createServer`'s rule: never over a store something already CHOSE. The boot installs its own
+   * `httpServer`'s rule: never over a store something already CHOSE. The boot installs its own
    * before any server exists, and a server handed a different one must not move every action's
    * counters out from under it — the chosen one stands, and `assertInstalledRateLimitScope` still
    * holds it to the declaration.
@@ -54,7 +54,7 @@ export interface AdoptRateLimitStoreOptions {
 /**
  * Push `store` as the one primitives spend from, and answer the undo that removes THIS frame and
  * no other — whatever order the adopters stop in. The boot (`startServices`, `startRoles`) and
- * `createServer` all go through it, so every install has a matching, order-proof release.
+ * `httpServer` all go through it, so every install has a matching, order-proof release.
  */
 export const adoptRateLimitStore = (
   store: RateLimitStore,

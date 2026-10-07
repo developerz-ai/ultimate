@@ -9,13 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { createRaster, encodeImage, userActor } from '@ultimat3/core';
-import {
-  createRequestContext,
-  createServer,
-  defineHttpConfig,
-  UltimateRequest,
-} from '@ultimat3/http';
+import { blankRaster, encodeImage, userActor } from '@ultimat3/core';
+import { defineHttpConfig, httpServer, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import type { ImageTransformDriver } from '@ultimat3/seo';
@@ -49,7 +44,7 @@ afterEach(async () => {
 describe('unit · x dev route table', () => {
   test("the app's runtime images driver reaches /media", async () => {
     const storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.s') }) } });
-    await storage.disk().put(SOURCE_KEY, encodeImage(createRaster(64, 32, 'fixture'), 'png'), {
+    await storage.disk().put(SOURCE_KEY, encodeImage(blankRaster(64, 32, 'fixture'), 'png'), {
       contentType: 'image/png',
     });
     const asked: string[] = [];
@@ -86,7 +81,7 @@ describe('unit · x dev route table', () => {
     expect(media).toBeDefined();
     if (media === undefined) return;
     const url = new URL(`http://dev.test${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=16`);
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url,
       method: 'GET',
       role: 'web',
@@ -118,7 +113,7 @@ const pageTable = () =>
   });
 
 const pageOf = async (routes: Awaited<ReturnType<typeof pageTable>>['routes']) => {
-  const server = createServer({
+  const server = httpServer({
     routes,
     role: 'web',
     config: defineHttpConfig({

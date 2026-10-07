@@ -4,11 +4,11 @@
 // cases the steps that already finished must not run again.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -20,7 +20,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 /** Polls a real worker's own loop rather than a fake timer, so this proves the shipped path. */
 async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
@@ -71,7 +71,7 @@ describe('a completed step survives a real retry', () => {
       maxAttempts: handle.retry.attempts,
     });
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       context,
       clock,
@@ -141,7 +141,7 @@ describe('a suspended step resumes without re-running what already ran', () => {
       maxAttempts: handle.retry.attempts,
     });
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       context,
       clock,

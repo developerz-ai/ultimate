@@ -5,10 +5,10 @@
 
 import {
   type Actor,
+  assertCoded,
   type Ctx,
-  createContext,
+  ctxOf,
   finiteOption,
-  invariant,
   logger,
   renderThrowable,
 } from '@ultimat3/core';
@@ -109,7 +109,7 @@ export class ChannelHub {
       options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE,
     );
     this.#latched = new DenialLatch(this.#maxTopicsPerSocket, 'maxTopicsPerSocket');
-    this.#ctx = options.ctx ?? createContext();
+    this.#ctx = options.ctx ?? ctxOf();
     this.#logs = new ChannelLogs(options.sockets, options.ringSize);
     this.#only =
       options.channels === undefined ? null : new Map(options.channels.map((c) => [c.name, c]));
@@ -235,7 +235,7 @@ export class ChannelHub {
     params: Readonly<Record<K, string>>,
     event: JsonObject,
   ): Promise<void> {
-    invariant(
+    assertCoded(
       declared.events,
       'X_CHANNEL_DECLARATION_INVALID',
       `channel("${declared.name}") declares no events, so nothing may publish one on it`,

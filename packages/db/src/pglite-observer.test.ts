@@ -10,7 +10,7 @@ import { expectedQueryLoop } from './expected-loop';
 import { fakeDriver } from './fake-pglite-fixture';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
@@ -45,7 +45,7 @@ describe('the statement observer', () => {
   // exactly the reads that happen inside a transaction.
   test('sees every statement once, whichever of the three paths it took', async () => {
     const driver = fakeDriver({ rows: [{ id: 1 }, { id: 2 }], affectedRows: 0 });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     setDbClient(client);
     const observer = recorder();
     setStatementObserver(observer);
@@ -74,7 +74,7 @@ describe('the statement observer', () => {
   // The same count `execute()` answers with, from the same helper — a report saying 0 rows for
   // every write while `execute` said 3 would make the two disagree about the same statement.
   test('counts rows the way execute does: the command tag for a write', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [], affectedRows: 3 }) });
+    const client = pgliteClient({ driver: fakeDriver({ rows: [], affectedRows: 3 }) });
     const observer = recorder();
     setStatementObserver(observer);
 
@@ -83,7 +83,7 @@ describe('the statement observer', () => {
   });
 
   test('reports a failed statement with the error the caller is about to be thrown', async () => {
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: {
         query: () => Promise.reject(new Error('syntax error')),
         close: async () => undefined,
@@ -103,7 +103,7 @@ describe('the statement observer', () => {
   // Strict test mode is an observer that throws, and the throw must arrive as itself. Notifying
   // inside the statement's own `try` would report a statement that succeeded as X_DB_UNAVAILABLE.
   test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
     setStatementObserver({
       onStatement(): void {
         throw new Error('n+1 in a strict test');
@@ -115,7 +115,7 @@ describe('the statement observer', () => {
 
   test('booting, reserving and closing are not statements', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const observer = recorder();
     setStatementObserver(observer);
 
@@ -131,13 +131,13 @@ describe('the statement observer', () => {
     setStatementObserver(observer);
     setStatementObserver(undefined);
 
-    await createPgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
+    await pgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
 
     expect(observer.seen).toEqual([]);
   });
 
   test('carries the attribution declared by the scope, undefined outside every scope', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
     const observer = recorder();
     setStatementObserver(observer);
 
@@ -151,7 +151,7 @@ describe('the statement observer', () => {
   });
 
   test('the failing statement path still carries the attribution', async () => {
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: { query: () => Promise.reject(new Error('boom')), close: async () => undefined },
     });
     const observer = recorder();
@@ -167,7 +167,7 @@ describe('the statement observer', () => {
 
   // Two independent scopes: an expected-loop reason does not crowd out the attribution.
   test('attribution and an expected-loop reason are stamped together, independently', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    const client = pgliteClient({ driver: fakeDriver({ rows: [] }) });
     const observer = recorder();
     setStatementObserver(observer);
 
@@ -183,7 +183,7 @@ describe('the statement observer', () => {
   // `RangeError` for an Invalid Date, and `driverError` read that as an unreachable database.
   test('an Invalid Date is refused with X_INVARIANT before the driver is reached', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const error = await failure(() => client.query(sql`select ${new Date(Number.NaN)}`));
     expect(error.code).toBe('X_INVARIANT');
     expect(driver.calls).toEqual([]);
@@ -191,7 +191,7 @@ describe('the statement observer', () => {
 
   test('a ragged array is refused with X_INVARIANT before the driver, as the pooled funnel does', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const ragged = { text: 'select $1::text[][]', values: [[['a', 'b'], ['c']]] };
     const error = await failure(() => client.query(ragged));
     expect(error.code).toBe('X_INVARIANT');
@@ -200,7 +200,7 @@ describe('the statement observer', () => {
 
   test('a rectangular array still reaches the driver untouched: PGlite encodes its own', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const values = [
       [
         ['a', 'b'],

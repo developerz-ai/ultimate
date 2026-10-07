@@ -6,7 +6,7 @@
  */
 
 import { driver } from '@postly/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from '@ultimat3/jobs';
 import { jobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
@@ -224,5 +224,5 @@ describe(testName('unit', 'one run per connection'), () => {
 
 /** A read as the org's own member: the handle scopes every statement to the acting actor. */
 function connectedAs<T>(read: () => Promise<T>): Promise<T> {
-  return runWithContext(createContext({ actor: userActor({ id: 'writer', orgId: ORG }) }), read);
+  return runWithContext(ctxOf({ actor: userActor({ id: 'writer', orgId: ORG }) }), read);
 }

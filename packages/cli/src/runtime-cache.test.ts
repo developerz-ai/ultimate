@@ -19,7 +19,7 @@ import {
   registeredTiers,
 } from '@ultimat3/cache';
 import type { UltimateError } from '@ultimat3/core';
-import { createContext, isUltimateError, logger } from '@ultimat3/core';
+import { ctxOf, isUltimateError, logger } from '@ultimat3/core';
 import { readThrough } from '@ultimat3/query';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
@@ -140,7 +140,7 @@ describe('which tiers a boot registers', () => {
       transport: new InProcessTransport(),
       tiers: ['request-memo', 'lru', 'redis'],
     });
-    // Registered, never dialled: `createRedisTier` resolves `Bun.redis` lazily, so selection is
+    // Registered, never dialled: `redisTier` resolves `Bun.redis` lazily, so selection is
     // pure here exactly as the mail and transport selections are.
     expect(registeredTiers().map((tier) => tier.name)).toContain('redis');
   });
@@ -402,7 +402,7 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
     });
     const key = 'query:feed:actor:fingerprint:post';
     const read = (answer: string): Promise<string> =>
-      readThrough(createContext({}), key, 60_000, cachedRead(answer), [{ entity: 'post' }]);
+      readThrough(ctxOf({}), key, 60_000, cachedRead(answer), [{ entity: 'post' }]);
 
     expect(await read('pre-write')).toBe('pre-write');
     // A second request: the per-request memo is a different object, so only the registered ladder
@@ -432,8 +432,8 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
       executed += 1;
       return executed;
     };
-    await readThrough(createContext({}), key, 60_000, run, []);
-    await readThrough(createContext({}), key, 60_000, run, []);
+    await readThrough(ctxOf({}), key, 60_000, run, []);
+    await readThrough(ctxOf({}), key, 60_000, run, []);
     expect(executed).toBe(2);
   });
 });

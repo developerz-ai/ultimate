@@ -61,8 +61,8 @@ half reaches the other; `barrel-split.test.ts` fails if one name is exported fro
 Migrating from 7.x: an import of a **server** name changes its specifier and nothing else.
 
 ```
-- import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime';
-+ import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime/server';
+- import { ChannelHub, syncNode, LiveQueryRegistry } from '@ultimat3/realtime';
++ import { ChannelHub, syncNode, LiveQueryRegistry } from '@ultimat3/realtime/server';
 ```
 
 Client names — the hooks, `RecordStore`, `OfflineQueue`, `encode`/`decode`, every `X_*` error
@@ -73,7 +73,7 @@ class — stay on `.`.
 | Concern | Entry | Export |
 |---|---|---|
 | tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
-| tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `createReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
+| tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
@@ -82,7 +82,7 @@ class — stay on `.`.
 | the page's record store | `.` | `RecordStore` — one record per `type:key`, synced truth plus the optimistic overlay — `recordKey`, `LocalTx`, `RowWindows`, `applyPatches`/`orderAfterPatches` |
 | the outbox | `.` | `OfflineQueue`, `memoryQueueStore()` — replayed over HTTP from plan 101 slice 12. The conflict vocabulary is `ConflictPolicy` from `@ultimat3/core`; realtime declares none |
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
-| the node | `./server` | `createSyncNode` / `listenSyncNode` (`sync` role) |
+| the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `.` | `useQuery`, `useRecord`, `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
@@ -190,7 +190,7 @@ asks.
 
 ## Who a socket is
 
-`createSyncNode({ authenticate })` is the one place a websocket gets an identity. It runs on the
+`syncNode({ authenticate })` is the one place a websocket gets an identity. It runs on the
 upgrade **before** `server.upgrade`, so a refused credential never costs a socket, and the actor it
 resolves is what every policy downstream decides against — the topic guard, `authorize`, `visible`,
 the per-tenant subscription cap.
@@ -204,7 +204,7 @@ declare function sessionFrom(
 ): Promise<{ actor: Actor; expiresAt: number; token: string } | null>;
 declare function renew(token: string): Promise<SyncGrant | null>;
 
-// The one option this section is about; `createSyncNode({ …, authenticate })` takes it.
+// The one option this section is about; `syncNode({ …, authenticate })` takes it.
 const options: Pick<SyncNodeOptions, 'authenticate'> = {
   // From @ultimat3/auth, or anywhere else: `sync` imports no authenticator, exactly as it owns no
   // business logic. `refresh` is yours too, so the framework retains no credential of its own.
@@ -235,7 +235,7 @@ the socket and retries next pass — a token service timing out is not a revocat
 `hub.guard('org.*.feed', ({ actor }) => actor?.orgId === …)` denies everyone and the only guard that
 lets anything through is one that reads no actor at all.
 
-Authz goes through `@ultimat3/query`'s `guard`, which is the only contact with `@ultimat3/policy`.
+Authz goes through `@ultimat3/query`'s `guardQuery`, which is the only contact with `@ultimat3/policy`.
 One authz system, never two: `policy` is evaluated **once per subscriber**, never once per query.
 Two actors on one live query get two different result sets, and a row that leaves an actor's policy
 is delivered to them as a `delete` — never as silence.
@@ -274,21 +274,21 @@ wire.
 
 | Ceiling | Default | Option | Refused with |
 |---|---|---|---|
-| concurrent sockets on this node | 250,000 | `createSyncNode({ maxConnections })` | `503` + `retry-after-ms`, the same shed as the accept budget |
-| inbound bytes per frame | 256 KiB | `createSyncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
-| inbound frames per socket | 64/s, burst 256 | `createSyncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
+| concurrent sockets on this node | 250,000 | `syncNode({ maxConnections })` | `503` + `retry-after-ms`, the same shed as the accept budget |
+| inbound bytes per frame | 256 KiB | `syncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
+| inbound frames per socket | 64/s, burst 256 | `syncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
 | live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | live subscriptions per actor (anonymous: per resolved client address), across its sockets | 1,000 (`DEFAULT_MAX_PER_ACTOR`) | `new LiveQueryRegistry({ maxPerActor })`; the boot passes `realtime.maxSubscriptionsPerActor` | `X_SUBSCRIPTION_LIMIT` |
-| sockets per actor; an anonymous network (IPv4 exact, IPv6 /64) gets 8 × (`ANONYMOUS_SOCKET_MULTIPLIER`) — one NAT is many people | 16 (`DEFAULT_MAX_SOCKETS_PER_ACTOR`); 128 per anonymous network | `createSyncNode({ maxSocketsPerActor })`; the boot passes `realtime.maxSocketsPerActor` | `429 X_SOCKET_LIMIT` |
+| sockets per actor; an anonymous network (IPv4 exact, IPv6 /64) gets 8 × (`ANONYMOUS_SOCKET_MULTIPLIER`) — one NAT is many people | 16 (`DEFAULT_MAX_SOCKETS_PER_ACTOR`); 128 per anonymous network | `syncNode({ maxSocketsPerActor })`; the boot passes `realtime.maxSocketsPerActor` | `429 X_SOCKET_LIMIT` |
 | live subscriptions per tenant | unset | `new LiveQueryRegistry({ maxPerTenant, tenantOf })` — **both**, or it arms nothing | `X_SUBSCRIPTION_LIMIT` |
 | distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
 | how long one entry's SHARED snapshot read may hold its slot | 30s | `new LiveQueryRegistry({ readDeadlineMs })` | `X_TIMEOUT`, to that read's caller AND every subscriber joined to it |
 | channel topics per socket | 64 | `new ChannelHub({ maxTopicsPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
-| outbound bytes buffered on one socket | 1 MiB | `createSyncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
-| dropped frames before that socket is closed | 32 | `createSyncNode({ maxDroppedFrames })` | close `1013` (`overloaded`), reason `backpressure` |
-| time one socket may route no frame | 120s | `createSyncNode({ idleTimeoutMs })` | close `4001` (`idle`), reason `idle timeout` |
-| time one grant's `refresh()` may hold the re-auth pass | 10s (10 000 ms) | `createSyncNode({ grantRefreshDeadlineMs })` | reported and skipped: the grant stays expired and is asked again next pass |
+| outbound bytes buffered on one socket | 1 MiB | `syncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
+| dropped frames before that socket is closed | 32 | `syncNode({ maxDroppedFrames })` | close `1013` (`overloaded`), reason `backpressure` |
+| time one socket may route no frame | 120s | `syncNode({ idleTimeoutMs })` | close `4001` (`idle`), reason `idle timeout` |
+| time one grant's `refresh()` may hold the re-auth pass | 10s (10 000 ms) | `syncNode({ grantRefreshDeadlineMs })` | reported and skipped: the grant stays expired and is asked again next pass |
 | retained patch bytes per node | 64 MiB | `new RingChangeBuffer({ maxBytes, maxBytesPerQuery })` | eviction, then a re-snapshot on resume |
 | array lengths and `input` nesting in a frame | `FRAME_LIMITS` | none — a hard ceiling | `X_PROTOCOL_VERSION` |
 
@@ -371,7 +371,7 @@ is admitted is decided in `sync-origin.ts`:
 | Admitted | When |
 |---|---|
 | no `Origin` header | always — RFC 6455 has every browser send one, so its absence is not a browser |
-| `createSyncNode({ allowedOrigins })`, compared exactly (scheme, host, port) | when any is declared. The declaration is the WHOLE list (24.0.0): the origin the node was reached on is no longer admitted beside it, because that origin is read off the `Host` header and a sibling subdomain pointed at the node would be "its own" |
+| `syncNode({ allowedOrigins })`, compared exactly (scheme, host, port) | when any is declared. The declaration is the WHOLE list (24.0.0): the origin the node was reached on is no longer admitted beside it, because that origin is read off the `Host` header and a sibling subdomain pointed at the node would be "its own" |
 | the origin the node was reached on | only when nothing is declared. A node reached over plain `http` also admits the `https` spelling of that host and port: TLS ended at a proxy, the scheme is not knowable there, and a browser sends no `sec-fetch-site` on a websocket handshake |
 
 The CLI passes `APP_URL`'s origin, which the Compose rung (`:3000` / `:3001`) requires on `sync`
@@ -384,7 +384,7 @@ there refuses. The refusal's cause names the origin that asked and every origin 
 its fix is the `export APP_URL=…` that admits the asker.
 
 **The node's `/healthz` and `/readyz` tell the detail to a listed peer only**
-(`createSyncNode({ healthDetailPeers })`, default the box itself). A request carrying `Forwarded`,
+(`syncNode({ healthDetailPeers })`, default the box itself). A request carrying `Forwarded`,
 `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`, `X-Real-IP` or `Via` is told the
 verdict only. A proxy that adds none of them is indistinguishable from a direct peer: a
 header-less proxy must not route the health paths.
@@ -442,7 +442,7 @@ wire twice by a reconnect that raced an ack.
 | The store is handed **snapshots, by key**, never the live entries or the whole queue | `QueueStore.write` is a durable write and may await before it reads; given an entry itself it persists a status that was never true when it was called. By key, because two tabs of one user share the store and a whole-queue save let the last tab erase the other's write |
 | One tab drains at a time, and drains what every tab queued | the outbox's replay runs under the Web Lock `ultimate-outbox:<principal>` and re-reads the queue first, so a write another tab queued is sent, in order, and a stored `inflight` from a closed page goes back to `pending` |
 
-`createOutbox({ warn })` — where a disk that refused the queue is said
+`localOutbox({ warn })` — where a disk that refused the queue is said
 (`X_LOCAL_STORE_UNAVAILABLE`, default `console.warn`); the outbox then queues in memory for that
 principal.
 
@@ -606,7 +606,7 @@ principal.
   **Postgres ≥ 14**.
 - **A replication stream that ends is restarted** (24.0.0). `ChangeFeed.start` takes
   `onEnd(reason)`, called when the pump dies on its own — the walsender ended the copy, a decode
-  failed, the handler rejected — and never for a `stop()`. `createReplicator` answers it: `running`
+  failed, the handler rejected — and never for a `stop()`. `changeFeedReplicator` answers it: `running`
   goes `false`, the feed is stopped, the advisory lock is released so a standby may take the slot,
   and the same process redials on `retryDelayMs(attempt)` (through `ReplicatorOptions.schedule`)
   until it holds the stream again or `stop()` is called. The restart resumes from the last lsn this
@@ -668,7 +668,7 @@ principal.
   asks, and a holder that kept streaming would be one of two replicators. `AdvisoryLock.onLost(
   listener)` (required) reports it: `postgresAdvisoryLock()` watches its idle session through
   `PgConnection.watchIdle` (EOF, a read error or a server `FATAL`; no polling), and
-  `createReplicator` answers exactly as it does a dead stream — `running` false, feed stopped,
+  `changeFeedReplicator` answers exactly as it does a dead stream — `running` false, feed stopped,
   back into the takeover loop to compete for the lock again.
 - **A recovery asks nothing, and a stop waits a bounded time** (24.0.0). A dead stream or a lost
   lock calls `ChangeFeed.abandon()` and then `AdvisoryLock.abandon()` (both required, both
@@ -725,7 +725,7 @@ principal.
   holds no window: a DELETE is routed to the topic the OLD row's params name, and under the default
   identity that image is the key alone — no topic, no `remove`, and members keep the deleted
   record. Preflight asks the catalog about exactly those tables (`paramsChannelTables()`, or
-  `PgLogicalReplicationOptions.fullIdentityTables`) and logs `replication.channel_identity_partial`
+  `PostgresChangeFeedOptions.fullIdentityTables`) and logs `replication.channel_identity_partial`
   with the fix `x db gen "replica identity full"`: `x db gen` grants FULL to those tables beside
   the live queries' `subscribes:` ones, so an app that declares a params channel owes one migration.
 - **For a live query, a keyed table does not need `REPLICA IDENTITY FULL`; a table with NO identity is warned**

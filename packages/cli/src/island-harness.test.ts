@@ -4,7 +4,7 @@
 // can tell the two apart.
 
 import { describe, expect, test } from 'bun:test';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
 import { islandBundle } from './island-bundle';
 import { harnessPage, ISLAND_HARNESS_PATH, surfaceOf } from './island-harness';
@@ -181,7 +181,7 @@ describe('unit · the harness route serves one address and refuses only what it 
     const url = new URL(`http://localhost:3000${ISLAND_HARNESS_PATH}${query}`);
     const route = routes[0] as (typeof routes)[number];
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     return route.handler(new UltimateRequest(new Request(url), ctx), ctx);
   };
 
@@ -228,7 +228,7 @@ describe('unit · the harness route serves one address and refuses only what it 
     });
     const url = new URL(`http://localhost:3000${ISLAND_HARNESS_PATH}${target.query}`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const response = await (empty[0] as (typeof empty)[number]).handler(
       new UltimateRequest(new Request(url), ctx),
       ctx,

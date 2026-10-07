@@ -7,10 +7,15 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
-import { resetLocaleConfig } from '@ultimat3/i18n';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
+import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
+import { appLocaleSet, UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
+import { islandBundle } from './island-bundle';
+import { otherLocaleSegments } from './page-speculation';
 import type { PwaArtifacts } from './pwa-artifacts';
 import { loadPwaArtifacts, pwaManifestRoute } from './pwa-artifacts';
+import { styleBundleOf } from './style-bundle';
+import { serviceWorkerArtifacts } from './sw-artifacts';
 
 let root = '';
 
@@ -100,7 +105,7 @@ describe('a manifest per routed locale', () => {
     expect(route.meta.localeSource).toBe('path');
     const url = new URL('http://dev.test/manifest.webmanifest');
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     ctx.locale = 'en';
     const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
     expect(parse(await response.text())['lang']).toBe('en');
@@ -229,5 +234,33 @@ describe('the install sheet members an app declares', () => {
     for (const key of ['description', 'categories', 'shortcuts', 'screenshots']) {
       expect(manifest).not.toHaveProperty(key);
     }
+  });
+});
+
+// One answer for an app with no catalogs, from every consumer: the manifests, the worker built off
+// them, and the speculation rules' locale segments. The process's locale config is set to another
+// app's declaration first — the shape that leaked through a blind `localeConfig()` read.
+describe('an app with no catalogs', () => {
+  test('the manifest, the worker and the speculation rules all name the default alone', async () => {
+    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    await Bun.write(
+      join(root, 'app.config.ts'),
+      `export const config = { name: 'probe', pwa: { enabled: true, name: 'Probe', ` +
+        `offline: { fallback: '/offline' }, colors: ${COLORS} } };\n`,
+    );
+    const artifacts = await loadPwaArtifacts(root);
+    if (artifacts === undefined) return expect.unreachable('the config was refused');
+    expect(artifacts.manifests.map((manifest) => manifest.locale)).toEqual(['en']);
+    expect(artifacts.locales).toEqual({ routed: ['en'], fallback: 'en' });
+    const worker = serviceWorkerArtifacts({
+      pwa: artifacts,
+      buildId: 'b1',
+      routes: [],
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+    });
+    expect(worker?.source).toContain('const OFFLINE_LOCALES=[];');
+    expect(await appLocaleSet(root)).toBe(UNDECLARED_LOCALES);
+    expect(otherLocaleSegments(await appLocaleSet(root))).toEqual([]);
   });
 });

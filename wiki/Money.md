@@ -15,11 +15,11 @@ Integer minor units + a three-letter uppercase code — the ISO-4217 rows the fr
 
 `minor` is a JavaScript `number`, so the largest amount a `Money` can carry is **`Number.MAX_SAFE_INTEGER` — 9,007,199,254,740,991 minor units**. In USD cents that is roughly $90 trillion; in JPY, ¥9 quadrillion.
 
-**Past it, refused. Never truncated, never widened, never rounded into the row.** `money(2 ** 53, 'USD')` throws `X_MONEY_NOT_INTEGER`, and `t.money` fails the same value at the HTTP boundary with the field path attached — the same refusal twice, so a body that would have failed at the row write fails at the door instead.
+**Past it, refused. Never truncated, never widened, never rounded into the row.** `fromMinor(2 ** 53, 'USD')` throws `X_MONEY_NOT_INTEGER`, and `t.money` fails the same value at the HTTP boundary with the field path attached — the same refusal twice, so a body that would have failed at the row write fails at the door instead.
 
 | Where the refusal fires | Code |
 |---|---|
-| a value built in code — `money()`, arithmetic, `fromDecimal` | `X_MONEY_NOT_INTEGER` |
+| a value built in code — `fromMinor()`, arithmetic, `fromDecimal` | `X_MONEY_NOT_INTEGER` |
 | a value off the wire — `t.money`, and therefore the OpenAPI contract | the boundary's own issue, with the field path |
 | a value read back off a `bigint` column past ±2^53 | `X_INVARIANT_VIOLATED`, naming the value |
 
@@ -30,9 +30,9 @@ That is deliberate. `minor` is not a `bigint` because money is projected onto ev
 `scale` names the decimal places `minor` counts, **when they are not the currency's own**. Absent — the shape every value and every row already had — means the currency's natural minor unit: 2 for USD, 0 for JPY, 3 for KWD.
 
 ```ts
-money(1999, 'USD');            // $19.99      — no scale key, the currency's own minor unit
-money(2, 'USD', 6);            // $0.000002   — minor counts millionths
-toDecimalString(money(2, 'USD', 6));   // '0.000002'
+fromMinor(1999, 'USD');            // $19.99      — no scale key, the currency's own minor unit
+fromMinor(2, 'USD', 6);            // $0.000002   — minor counts millionths
+toDecimalString(fromMinor(2, 'USD', 6));   // '0.000002'
 ```
 
 | Rule | Detail |
@@ -155,9 +155,9 @@ Total across a currency boundary requires a conversion first. Silent coercion is
 A tie — an exact `.5` fractional minor unit — is where the modes disagree, and they disagree by exactly one minor unit every time. Under `half-up` the shift is **systematic** (always away from zero); under `half-even` it is **balanced** (half the ties go each way). That is why the two diverge with row count instead of cancelling, and why a migrating app that silently changes mode moves a reconciled ledger.
 
 ```ts
-import { money, multiply } from '@ultimat3/money';
+import { fromMinor, multiply } from '@ultimat3/money';
 
-const one = money(100, 'USD');                  // $1.00
+const one = fromMinor(100, 'USD');                  // $1.00
 
 multiply(one, 0.125);                           // { minor: 13, currency: 'USD' } — the default, half-up
 multiply(one, 0.125, 'half-up');                // { minor: 13, … }   $0.13
@@ -207,12 +207,12 @@ The exponent table is data, not an assumption. `As of 2026-08` it ships **53 ISO
 `As of 2026-08` the table is open, and it is opened by a call — not by config, not by a fork. 53 of roughly 180 ISO codes is a *convention*, and axiom 8 says an app encodes its own by calling a function.
 
 ```ts
-import { money, registerCurrency, toDecimalString } from '@ultimat3/money';
+import { fromMinor, registerCurrency, toDecimalString } from '@ultimat3/money';
 
 // Once at boot, before any XBT amount is built.
 registerCurrency({ code: 'XBT', exponent: 8, name: 'Bitcoin' });
 
-const dust = money(1, 'XBT');
+const dust = fromMinor(1, 'XBT');
 toDecimalString(dust); // '0.00000001'
 ```
 
@@ -223,7 +223,7 @@ A local currency, a scrip, a loyalty point, a token — anything the shipped row
 | Refused, never defaulted | no exponent is guessable, so a bad declaration throws `X_CURRENCY_INVALID` rather than assuming 2 — a silent 2 reads `1.23456789 XBT` as `1.23` and shifts a stored `minor` by a power of ten |
 | One code, one declaration | a second, *different* declaration of a code already in force throws `X_CURRENCY_REDEFINED`. An identical one returns the row in force, so a module imported twice is not a crash |
 | A shipped ISO row is closed | `registerCurrency({ code: 'USD', exponent: 3, … })` throws `X_CURRENCY_REDEFINED`; registrations live beside `CURRENCIES`, never over it |
-| Before the first amount | `money()`, `fromDecimal()` and every arithmetic call resolve the exponent at the call, so an amount built before the registration throws `X_CURRENCY_UNKNOWN` |
+| Before the first amount | `fromMinor()`, `fromDecimal()` and every arithmetic call resolve the exponent at the call, so an amount built before the registration throws `X_CURRENCY_UNKNOWN` |
 | Per process, not per row | a registration is in-memory. Every process that reads an amount in that currency must make the same call — the DB `CHECK` is `^[A-Z]{3}$`, so the row is already writable without it |
 
 | Enumeration | Answers |

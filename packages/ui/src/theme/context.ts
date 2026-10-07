@@ -36,7 +36,7 @@ export const UI_DEFAULT_CURRENCY = 'USD';
 /**
  * Loud-miss translator: a forgotten catalog key renders ⟦key⟧, never blank.
  *
- * Written here rather than as `createTranslator({}, locale)`, and behaviourally the same call: an
+ * Written here rather than as `catalogTranslator({}, locale)`, and behaviourally the same call: an
  * empty catalog has no key, so every lookup is a miss, `has` is false, `raw` is undefined and
  * `keys` is empty — `context.test.ts` holds each of those against `@ultimat3/i18n`'s own. What
  * the spelling buys is that a browser chunk with a `UiProvider` in it no longer reaches the i18n

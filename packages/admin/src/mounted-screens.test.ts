@@ -4,7 +4,7 @@
 // the HTTP pipeline carries it. An actor without the grant gets the refusal, and a 403.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, generateMasterKey, runWithContext, userActor } from '@ultimat3/core';
 import {
   boolean,
   clearRegistry,
@@ -172,7 +172,7 @@ const askOf = (
   form?: Readonly<Record<string, unknown>>,
 ): Promise<Answer> =>
   runWithContext(
-    createContext({
+    ctxOf({
       ...(role === null ? {} : { actor: userActor({ id: `u-${role}`, roles: [role] }) }),
       tz: 'UTC',
       locale: 'en',

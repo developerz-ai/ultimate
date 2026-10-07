@@ -5,23 +5,23 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRateLimiter, memoryRateLimitStore, type RateLimitStore } from './rate-limit';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { memoryRateLimitStore, type RateLimitStore, rateLimiter } from './rate-limit';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
     method: 'GET',
     path: '/private',
     meta: { name: 'private', auth: 'required' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
 ];
 
@@ -34,10 +34,10 @@ const metered = () => {
     buildId: null,
     rateLimit: { scope: 'process', buckets: { default: { capacity: 3, refillPerSecond: 0.1 } } },
   });
-  const pipeline = createPipeline({
-    table: createRouter(routes),
+  const pipeline = httpPipeline({
+    table: httpRouter(routes),
     config,
-    limiter: createRateLimiter({ config: config.rateLimit, clock }),
+    limiter: rateLimiter({ config: config.rateLimit, clock }),
     hooks: {
       authenticate: (request) => {
         counter.lookups += 1;
@@ -49,7 +49,7 @@ const metered = () => {
 };
 
 const ask = (
-  pipeline: ReturnType<typeof createPipeline>,
+  pipeline: ReturnType<typeof httpPipeline>,
   token: string,
   ip: string | null = '203.0.113.9',
   path = '/private',
@@ -126,10 +126,10 @@ describe('the gate reads, it never writes', () => {
       buildId: null,
       rateLimit: { scope: 'process', buckets: { default: { capacity: 100, refillPerSecond: 1 } } },
     });
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config,
-      limiter: createRateLimiter({ config: config.rateLimit, store: counting }),
+      limiter: rateLimiter({ config: config.rateLimit, store: counting }),
       hooks: { authenticate: () => ({ id: 'u1' }) as never },
     });
     for (let index = 0; index < 10; index += 1) {

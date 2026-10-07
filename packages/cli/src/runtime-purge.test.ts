@@ -15,19 +15,19 @@ import {
   memoryAuthAdapter,
   resetAuthLimiters,
 } from '@ultimat3/auth';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { PostgresRateLimitStore, RateLimitDecision, RateLimitPeek } from '@ultimat3/http';
 import type { EventBus, PurgeReport } from '@ultimat3/jobs';
 import {
-  createStepRunner,
   getJob,
   getTask,
   memoryEventBus,
   memoryStepStore,
   resetJobs,
   resetTasks,
+  stepRunner,
 } from '@ultimat3/jobs';
-import type { InboxPurgeBefore, PgInboxStore } from '@ultimat3/notify';
+import type { InboxPurgeBefore, PostgresInboxStore } from '@ultimat3/notify';
 import { memoryInboxStore, resetNotifyStores, setNotifyStores } from '@ultimat3/notify';
 import type { RetentionStores } from './runtime-purge';
 import { installRetentionSweep, PURGE_JOB_NAME, PURGE_TASK_NAME } from './runtime-purge';
@@ -85,7 +85,7 @@ const installAuthLimiter = (removed: number): void => {
 async function runSweep(): Promise<PurgeReport> {
   const handle = getJob(PURGE_JOB_NAME);
   if (handle === undefined) expect.unreachable(`${PURGE_JOB_NAME} was never declared`);
-  const runner = createStepRunner({
+  const runner = stepRunner({
     runId: crypto.randomUUID(),
     jobName: handle.name,
     store: memoryStepStore(),
@@ -93,7 +93,7 @@ async function runSweep(): Promise<PurgeReport> {
   const result = await handle.run({
     input: {},
     step: runner.step,
-    ctx: createContext({ role: 'worker' }),
+    ctx: ctxOf({ role: 'worker' }),
     attempt: 1,
     finalAttempt: false,
     progress: () => undefined,
@@ -199,7 +199,7 @@ describe('installRetentionSweep', () => {
           seen.push(before);
           return Promise.resolve(5);
         },
-      } as PgInboxStore,
+      } as PostgresInboxStore,
     });
     installAuthLimiter(4);
     installRetentionSweep({
@@ -230,7 +230,7 @@ describe('installRetentionSweep', () => {
           seen.push(before);
           return Promise.resolve(0);
         },
-      } as PgInboxStore,
+      } as PostgresInboxStore,
     });
     installAuthLimiter(4);
     installRetentionSweep({

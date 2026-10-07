@@ -105,7 +105,7 @@ describe('a CHECK migrations declare, against the ones the catalog holds', () =>
   });
 
   test('a live description that never READ the catalog reports none, and says so by absence', () => {
-    // `introspect()` always answers with the field, `[]` included, so absent can only mean the
+    // `introspectSchema()` always answers with the field, `[]` included, so absent can only mean the
     // description came from somewhere that did not ask. Reading that as "the database holds none"
     // is a finding per declared constraint against a database nobody has looked at.
     expect(diffSchema(schema(posts()), schema(posts({ checks: [DECLARED] }))).ok).toBe(true);

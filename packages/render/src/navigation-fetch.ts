@@ -5,14 +5,15 @@
  * page's text, or a non-page's bytes to hand over (a prefetch's are dropped unread).
  */
 
-import { CLIENT_BUILD_META, CLIENT_SCOPE_META } from '@ultimat3/core/page';
 import {
-  NAVIGATION_HEADER,
-  NAVIGATION_LOCATION_HEADER,
-  NAVIGATION_META,
-  NAVIGATION_SCOPE_HEADER,
-  NAVIGATION_SURFACE_HEADER,
-} from './navigation-rules';
+  CLIENT_BUILD_META,
+  CLIENT_NAVIGATION_HEADER,
+  CLIENT_NAVIGATION_LOCATION_HEADER,
+  CLIENT_NAVIGATION_SCOPE_HEADER,
+  CLIENT_NAVIGATION_SURFACE_HEADER,
+  CLIENT_SCOPE_META,
+} from '@ultimat3/core/page';
+import { NAVIGATION_META } from './navigation-rules';
 
 /** One fetched answer, read once — a prefetch and the click after it share it. */
 export interface Answer {
@@ -41,11 +42,11 @@ export function fetchDocument(
 ): Promise<Answer> {
   const headers: Record<string, string> = {
     accept: 'text/html,application/xhtml+xml',
-    [NAVIGATION_HEADER]: purpose,
-    [NAVIGATION_SURFACE_HEADER]: metaOf(doc, NAVIGATION_META) ?? '',
+    [CLIENT_NAVIGATION_HEADER]: purpose,
+    [CLIENT_NAVIGATION_SURFACE_HEADER]: metaOf(doc, NAVIGATION_META) ?? '',
   };
   const scope = metaOf(doc, CLIENT_SCOPE_META);
-  if (scope !== null) headers[NAVIGATION_SCOPE_HEADER] = scope;
+  if (scope !== null) headers[CLIENT_NAVIGATION_SCOPE_HEADER] = scope;
   // GET only: a skewed GET is refused before any route runs; a POST is never refused mid-submit.
   const build = metaOf(doc, CLIENT_BUILD_META);
   if ((init.method ?? 'GET') === 'GET' && build !== null) headers[CLIENT_BUILD_META] = build;
@@ -61,7 +62,7 @@ export function fetchDocument(
         if (purpose === 'prefetch') await response.body?.cancel();
         else body = await response.blob();
       }
-      const location = response.headers.get(NAVIGATION_LOCATION_HEADER);
+      const location = response.headers.get(CLIENT_NAVIGATION_LOCATION_HEADER);
       return {
         status: response.status,
         opaqueRedirect,

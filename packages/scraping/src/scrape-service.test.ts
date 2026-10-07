@@ -5,10 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { JobDriver, JobHandle } from '@ultimat3/jobs';
 import {
-  createWorker,
+  jobWorker,
   memoryEventBus,
   memoryJobDriver,
   resetEventBus,
@@ -82,9 +82,9 @@ const define = (over: Partial<ScrapeDefinition<Input, Row>> = {}): JobHandle<Inp
   });
 };
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 const workerOn = (queue: JobDriver, workerId = 'worker-a') =>
-  createWorker({
+  jobWorker({
     driver: queue,
     workerId,
     concurrency: 1,

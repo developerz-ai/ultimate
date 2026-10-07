@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { Actor } from '@ultimat3/core';
-import type { McpExposure, ProjectablePrimitive } from './from-action';
+import type { Actor, McpExposureDeclaration } from '@ultimat3/core';
+import type { ProjectablePrimitive } from './from-action';
 import { toolFrom, toolsFrom, toolsListed } from './from-action';
 import type { McpCaller } from './registry';
 
@@ -157,14 +157,14 @@ describe('a list the author wrote out is refused, not filtered', () => {
   });
 
   /**
-   * 25.0.0 (plan 101, M4): a tool has ONE name field. `McpExposure.name` was an override no
+   * 25.0.0 (plan 101, M4): a tool has ONE name field. `mcp.name` was an override no
    * `action()` or `query()` could set, and the one primitive that could — a hand-built
    * `ProjectablePrimitive` — already writes `name` itself, so it was a second way to say the same
    * thing. A stale object still carrying the key is ignored rather than obeyed: the primitive's
    * own name is the tool, which is also the name `X_MCP_TOOL_UNDECLARED` reports.
    */
   test('a hand-authored primitive names its tool with its own `name`, and nothing else', () => {
-    const stale = { expose: true, name: 'catalog.reindex' } as unknown as McpExposure;
+    const stale = { expose: true, name: 'catalog.reindex' } as unknown as McpExposureDeclaration;
     const primitive: ProjectablePrimitive = {
       name: 'catalogReindex',
       mcp: stale,

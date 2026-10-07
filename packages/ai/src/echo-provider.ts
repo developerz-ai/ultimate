@@ -23,6 +23,11 @@ export interface EchoProviderInput {
   readonly tokensPerCall?: number;
 }
 
+/** The deterministic test provider — the one way to build one; the class is a type only. */
+export function echoProvider(config: EchoProviderInput = {}): EchoProvider {
+  return new EchoProvider(config);
+}
+
 /**
  * Deterministic provider. Same input, same output, same usage — which is what makes an eval
  * suite a test rather than a sample. Token counts are derived from length, so a budget test

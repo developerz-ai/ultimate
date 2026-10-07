@@ -7,9 +7,9 @@ import { describe, expect, test } from 'bun:test';
 import { currentLocale } from '@ultimat3/i18n';
 import { currentTimeZone, formatDateTime, fromIso } from '@ultimat3/time';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 /** Fixed, so the assertion is a value — never a wall-clock comparison that drifts with the run. */
 const AT = fromIso('2026-01-15T23:30:00Z');
@@ -21,7 +21,7 @@ const routes: readonly Route[] = [
     meta: { name: 'ambient', auth: 'public' },
     // Exactly what `@ultimat3/ui`'s `ambientUiContext()` does on every server render.
     handler: (_request, ctx) =>
-      json({
+      jsonResponse({
         // Both halves: `ctx` is what the stage wrote, the ambient readers are what a renderer
         // asks. A test that read only one cannot tell "never written" from "written wrong".
         ctxTz: ctx.tz,
@@ -44,7 +44,7 @@ const config = defineHttpConfig({
   buildId: null,
 });
 
-const pipeline = createPipeline({ table: createRouter(routes), config, hooks: {} });
+const pipeline = httpPipeline({ table: httpRouter(routes), config, hooks: {} });
 
 const ask = async (
   headers: Record<string, string>,

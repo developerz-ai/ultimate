@@ -3,14 +3,8 @@
 // are registered after this one and therefore win). Translating a framework mail means
 // shipping `mail.*` in an app catalog — never editing a template.
 
-import {
-  type Catalog,
-  DEFAULT_LOCALE,
-  type Locale,
-  loadCatalog,
-  type NestedCatalog,
-  registerBaseCatalog,
-} from '@ultimat3/i18n';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
+import { type Catalog, loadCatalog, type NestedCatalog, registerBaseCatalog } from '@ultimat3/i18n';
 
 export const MAIL_CATALOG_SOURCE: NestedCatalog = {
   mail: {
@@ -82,9 +76,6 @@ export const MAIL_CATALOG_SOURCE: NestedCatalog = {
 
 export const MAIL_CATALOG: Catalog = loadCatalog(MAIL_CATALOG_SOURCE);
 
-/** The one locale these strings are written in. */
-export const MAIL_CATALOG_LOCALE: Locale = DEFAULT_LOCALE;
-
 // At module scope, and that is the whole point: importing `@ultimat3/mail` is what installs these
 // strings, so no app and no boot can forget them. `registerMailCatalog()` was the alternative and
 // it had **zero** production callers — only this package's own tests — so every `mail.*` string in
@@ -99,4 +90,4 @@ export const MAIL_CATALOG_LOCALE: Locale = DEFAULT_LOCALE;
 // Under the ONE locale these strings are written in. Seating English under `es` made `isMiss` read
 // FALSE for a subject nobody had translated — a fallback locale chain wearing registration as a
 // disguise. A non-`en` app translates the `mail.*` keys it renders into its own catalog.
-registerBaseCatalog(MAIL_CATALOG_LOCALE, MAIL_CATALOG);
+registerBaseCatalog(DEFAULT_LOCALE, MAIL_CATALOG);

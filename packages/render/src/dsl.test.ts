@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { assertModeInvariants, assertModeShape } from './modes';
 import { clearRoutes, registerRoute, routeFor } from './registry';
 import type { RouteConfig, RouteData, RouteDefinition, RouteMetaContext } from './route';
-import { defineRoute, isRouteConfig, tagKeys } from './route';
+import { defineRoute, isRouteConfig, routeTagKeys } from './route';
 import { metaContextFor } from './route-data';
 
 /**
@@ -131,7 +131,7 @@ describe('the route DSL surface', () => {
     expect(entry.config).toBe(config);
     expect(entry.config.budget).toEqual({});
     // The author's own object carries no normalized `budget`, so registering it would seat a
-    // route the descriptor's readers cannot read — `describeRoutes()` reaches `budget.js`.
+    // route the descriptor's readers cannot read — `describePages()` reaches `budget.js`.
     const raw = minimal as unknown as RouteConfig;
     expect(codeOf(() => registerRoute({ file: 'app/drafts/page.tsx', config: raw }))).toBe(
       'X_ROUTE_UNNORMALIZED',
@@ -146,7 +146,7 @@ describe('the route DSL surface', () => {
       render: 'isr',
       revalidate: { tags: [{ entity: 'post', id: '123' }, { entity: 'feed' }] },
     });
-    expect(tagKeys(config.revalidate?.tags)).toEqual(['post:123', 'feed']);
-    expect(tagKeys(undefined)).toEqual([]);
+    expect(routeTagKeys(config.revalidate?.tags)).toEqual(['post:123', 'feed']);
+    expect(routeTagKeys(undefined)).toEqual([]);
   });
 });

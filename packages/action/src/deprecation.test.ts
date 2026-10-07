@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -25,7 +25,7 @@ const retiring = (deprecated: { since: string; sunset: string; replacedBy?: stri
     handle: () => ({ ok: true }),
   }).named('listOrders');
 
-const call = (server: ReturnType<typeof createServer>, body: unknown = { orgId: 'o1' }) =>
+const call = (server: ReturnType<typeof httpServer>, body: unknown = { orgId: 'o1' }) =>
   server.fetch(
     new Request('http://dev.test/api/orders/list', {
       method: 'POST',
@@ -39,7 +39,7 @@ const SUNSET = '2026-12-31T23:59:59Z';
 
 describe('a deprecated action announces itself on every response', () => {
   test('Deprecation and Sunset ride the 200', async () => {
-    const server = createServer({
+    const server = httpServer({
       routes: [toRoute(retiring({ since: SINCE, sunset: SUNSET }))],
       config: oneProcess(),
     });
@@ -62,14 +62,14 @@ describe('a deprecated action announces itself on every response', () => {
       deprecated: { since: SINCE, sunset: SUNSET },
       handle: () => ({ ok: 'yes' }) as unknown as { ok: boolean },
     }).named('listOrders');
-    const server = createServer({ routes: [toRoute(drifting)], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(drifting)], config: oneProcess() });
     const response = await call(server);
     expect(response.status).toBe(500);
     expect(response.headers.get('sunset')).toBe('Thu, 31 Dec 2026 23:59:59 GMT');
   });
 
   test('replacedBy becomes a successor link at the URL the client already derives', async () => {
-    const server = createServer({
+    const server = httpServer({
       routes: [toRoute(retiring({ since: SINCE, sunset: SUNSET, replacedBy: 'searchOrders' }))],
       config: oneProcess(),
     });
@@ -84,7 +84,7 @@ describe('a deprecated action announces itself on every response', () => {
       policy: allow(),
       handle: () => ({ ok: true }),
     }).named('listOrders');
-    const server = createServer({ routes: [toRoute(plain)], config: oneProcess() });
+    const server = httpServer({ routes: [toRoute(plain)], config: oneProcess() });
     const response = await call(server);
     expect(response.headers.get('deprecation')).toBeNull();
     expect(response.headers.get('sunset')).toBeNull();

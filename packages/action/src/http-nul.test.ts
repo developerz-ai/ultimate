@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -22,7 +22,7 @@ describe('an action input carrying U+0000', () => {
         return { title: input.title };
       },
     }).named('renamePost');
-    const server = createServer({
+    const server = httpServer({
       routes: [toRoute(rename)],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
       hooks: { authenticate: () => userActor({ id: 'u1' }) },

@@ -211,7 +211,7 @@ export interface IdempotentOutcome<T> {
  * X_IDEMPOTENCY_CONFLICT for a payload mismatch, X_IDEMPOTENCY_CONFLICT for a duplicate still in
  * flight.
  *
- * **Everything `run()` throws is treated as possibly-committed.** `guard()` and `validateInput`
+ * **Everything `run()` throws is treated as possibly-committed.** `guardAction()` and `validateInput`
  * both run before this gate is reached (`invoke.ts`), so by the time `run` is called the only
  * things left are the handler and `validateOutput` — and the second of those throws *after* the
  * first has committed. Releasing the reservation there is what turned a rounding change in an

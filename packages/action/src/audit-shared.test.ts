@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as core from '@ultimat3/core';
 import {
   AUDIT_RECORD_FIELDS,
-  createContext,
+  ctxOf,
   resetAuditSink,
   setAuditSink,
   userActor,
@@ -22,15 +22,15 @@ import { memoryAuditSink } from './audit-memory';
 import * as barrel from './index';
 import { invoke } from './invoke';
 import { mutator } from './mutator';
-import { resetRegistry } from './registry';
+import { resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid });
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';
-const editor = createContext({
+const editor = ctxOf({
   actor: { ...userActor({ id: 'u1' }), permissions: ['post:publish'] },
 });
-const reader = createContext({ actor: userActor({ id: 'u2' }) });
+const reader = ctxOf({ actor: userActor({ id: 'u2' }) });
 
 const archivePost = action({
   input: Input,
@@ -41,7 +41,7 @@ const archivePost = action({
 }).named('archivePost');
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetAuditSink();
 });
 

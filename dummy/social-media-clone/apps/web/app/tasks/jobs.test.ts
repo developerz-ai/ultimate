@@ -5,7 +5,7 @@
 import { afterAll, beforeEach, expect, test } from 'bun:test';
 import { db, driver, seedDemo } from '@social-media-clone/db';
 import { seedId } from '@ultimat3/entity';
-import { createRunJobs, type RunJobs } from '@ultimat3/testing';
+import { type RunJobs, testJobs } from '@ultimat3/testing';
 import { resetDemo, sweepOrphanMedia } from './jobs';
 import { mediaById, missingDemoMarkers, pendingMediaBefore } from './repo';
 
@@ -27,7 +27,7 @@ beforeEach(async () => {
   driver.reset?.();
   await seedDemo();
   await jobs?.[Symbol.asyncDispose]();
-  jobs = await createRunJobs();
+  jobs = await testJobs();
 });
 
 afterAll(async () => {

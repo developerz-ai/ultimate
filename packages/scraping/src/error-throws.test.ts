@@ -11,8 +11,8 @@ import {
   profileLocked,
   promptUnanswered,
   remoteRequired,
+  scrapeSessionExpired,
   scrapeTimeout,
-  sessionExpired,
 } from './error-throws';
 
 describe('unit · X_SCRAPE_DRIVER_UNKNOWN reads as a sentence', () => {
@@ -180,7 +180,7 @@ describe('unit · the two budget/session failures', () => {
   });
 
   test('X_SCRAPE_SESSION_EXPIRED names the session key and the missing auth.login', () => {
-    const error = sessionExpired('orders.daily', 'org-1/orders.daily/default');
+    const error = scrapeSessionExpired('orders.daily', 'org-1/orders.daily/default');
     expect(error.code).toBe('X_SCRAPE_SESSION_EXPIRED');
     expect(error.cause).toContain('the stored session org-1/orders.daily/default');
     expect(error.cause).toContain('declares no auth.login');

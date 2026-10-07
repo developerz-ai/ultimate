@@ -340,7 +340,7 @@ const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 
 /**
  * Round-trips with `traceId()` / `spanId()` from `ids.ts` and with nothing else. A context whose
- * `traceId` came from `uuid()` renders a 36-character dashed header here that `parseTraceparent`
+ * `traceId` came from `uuidV7()` renders a 36-character dashed header here that `parseTraceparent`
  * — and every OTLP collector — rejects, so mint the pair with those two generators.
  */
 export function traceparent(context: SpanContext): string {

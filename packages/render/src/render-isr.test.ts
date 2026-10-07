@@ -1,8 +1,8 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
-import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, isrKey } from './render-isr';
+import { clearRoutes, describePages, registerRoute } from './registry';
+import { isrController, isrKey } from './render-isr';
 import { memoryIsrStore } from './render-isr-store';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
@@ -53,7 +53,7 @@ afterAll(() => {
 describe('single-flight regeneration', () => {
   test('a burst of concurrent requests renders exactly once', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     let calls = 0;
     const render = async (path: string): Promise<string> => {
@@ -75,7 +75,7 @@ describe('single-flight regeneration', () => {
 
   test('a stale entry is served immediately and refreshed behind the request', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     let version = 1;
     const render = (): string => `<p>v${version}</p>`;
@@ -108,7 +108,7 @@ describe('single-flight regeneration', () => {
    */
   test('a regeneration that throws a value String() cannot render still logs and moves on', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     let fail = false;
     const render = (): string => {
@@ -131,7 +131,7 @@ describe('single-flight regeneration', () => {
 describe('the CDN is told the TTL the route declared', () => {
   test("revalidate: { ttl: '5m' } advertises s-maxage=300, not a house default", async () => {
     isrRoute('apps/web/site/pricing/page.tsx', [postTag], '5m');
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     const { result } = await controller.serve('/pricing', () => '<p>pricing</p>');
     expect(sMaxAge(result)).toBe('300');
@@ -142,14 +142,14 @@ describe('the CDN is told the TTL the route declared', () => {
 
   test('a sub-minute ttl shortens the shared cache too', async () => {
     isrRoute('apps/web/site/status/page.tsx', [postTag], '30s');
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     expect(sMaxAge((await controller.serve('/status', () => '<p>ok</p>')).result)).toBe('30');
   });
 
   test('a tag-only route keeps the 60s floor: its clock is the invalidation graph', async () => {
     isrRoute('apps/web/site/team/page.tsx', [orgTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     const { entry, result } = await controller.serve('/team', () => '<p>team</p>');
     expect(entry.ttlMs).toBe(null);
@@ -158,7 +158,7 @@ describe('the CDN is told the TTL the route declared', () => {
 
   test('the served-stale copy keeps its own TTL and is marked stale', async () => {
     isrRoute('apps/web/site/pricing/page.tsx', [postTag], '5m');
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     await controller.serve('/pricing', () => '<p>v1</p>');
     controller.markStale('/pricing');
@@ -174,7 +174,7 @@ describe('tag-driven revalidation', () => {
   test('a rendered page joins the invalidation graph under its route tags', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
     isrRoute('apps/web/site/team/page.tsx', [orgTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     const render = (path: string): string => `<p>${path}</p>`;
     await controller.serve('/blog/a', render);
@@ -191,7 +191,7 @@ describe('tag-driven revalidation', () => {
 
   test('a row tag busts the pages registered under its collection tag', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     await controller.serve('/blog/a', (path) => `<p>${path}</p>`);
 
     expect(controller.revalidateByTags([tag('post', '1')])).toEqual(['/blog/a']);
@@ -199,7 +199,7 @@ describe('tag-driven revalidation', () => {
 
   test('attach registers the controller as the framework revalidator', async () => {
     isrRoute('apps/web/site/team/page.tsx', [orgTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     const detach = controller.attach();
     await controller.serve('/team', () => '<p>team</p>');
 
@@ -215,14 +215,14 @@ describe('detach releases the revalidator, not only the dependents', () => {
   // store stayed reachable from the cache graph.
   test('a detached controller stops receiving revalidations', async () => {
     isrRoute('apps/web/site/team/page.tsx', [orgTag]);
-    const a = createIsrController({ routes: describeRoutes });
+    const a = isrController({ routes: describePages });
     const detachA = a.attach();
     await a.serve('/team', () => '<p>a</p>');
     detachA();
 
     // The reload's other half: a new controller renders the same path — which puts it back in
     // the graph — and never attaches, so the only revalidator installed is the detached one's.
-    const b = createIsrController({ routes: describeRoutes });
+    const b = isrController({ routes: describePages });
     await b.serve('/team', () => '<p>b</p>');
 
     await invalidateTags([orgTag]);
@@ -234,9 +234,9 @@ describe('detach releases the revalidator, not only the dependents', () => {
   // Detaching in the wrong order must not silence the controller that owns the slot now.
   test('a stale detach never clears a revalidator another controller installed', async () => {
     isrRoute('apps/web/site/team/page.tsx', [orgTag]);
-    const a = createIsrController({ routes: describeRoutes });
+    const a = isrController({ routes: describePages });
     const detachA = a.attach();
-    const b = createIsrController({ routes: describeRoutes });
+    const b = isrController({ routes: describePages });
     b.attach();
     await b.serve('/team', () => '<p>b</p>');
 
@@ -290,8 +290,8 @@ describe('the default ISR store is bounded', () => {
   // runs for weeks, and a `revalidateByTags` that reported marking pages it did not mark.
   test('an evicted page leaves the invalidation graph with it', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({
-      routes: describeRoutes,
+    const controller = isrController({
+      routes: describePages,
       store: memoryIsrStore({ maxEntries: 2 }),
     });
     const render = (path: string): string => `<p>${path}</p>`;
@@ -306,8 +306,8 @@ describe('the default ISR store is bounded', () => {
 
   test('a page rendered again after its eviction rejoins the graph', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({
-      routes: describeRoutes,
+    const controller = isrController({
+      routes: describePages,
       store: memoryIsrStore({ maxEntries: 2 }),
     });
     const render = (path: string): string => `<p>${path}</p>`;
@@ -327,7 +327,7 @@ describe('the default ISR store is bounded', () => {
 describe('the store key carries the query, and the route lookup does not', () => {
   test('two queries on one path are two entries, not one served twice', async () => {
     isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
-    const isr = createIsrController({ store: memoryIsrStore() });
+    const isr = isrController({ store: memoryIsrStore() });
 
     const first = await isr.serve('/blog?page=2', () => '<p>page 2</p>');
     const second = await isr.serve('/blog?page=3', () => '<p>page 3</p>');
@@ -346,7 +346,7 @@ describe('the store key carries the query, and the route lookup does not', () =>
     // `ttlMs: null`, and `revalidate: { ttl: '5m' }` would silently become tag-only. `s-maxage`
     // is where that surfaces: 300 is the declared five minutes, 60 is the tag-only fallback.
     isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
-    const isr = createIsrController({ store: memoryIsrStore() });
+    const isr = isrController({ store: memoryIsrStore() });
 
     const served = await isr.serve('/blog?page=2', () => '<p>x</p>');
 
@@ -356,7 +356,7 @@ describe('the store key carries the query, and the route lookup does not', () =>
 
   test('a dynamic route with a query resolves through its pattern too', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag], '5m');
-    const isr = createIsrController({ store: memoryIsrStore() });
+    const isr = isrController({ store: memoryIsrStore() });
 
     const served = await isr.serve('/blog/hello?utm_source=x', () => '<p>x</p>');
 
@@ -365,7 +365,7 @@ describe('the store key carries the query, and the route lookup does not', () =>
 
   test('a tag bust marks the query-keyed entries, so nothing escapes invalidation', async () => {
     isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
-    const isr = createIsrController({ store: memoryIsrStore() });
+    const isr = isrController({ store: memoryIsrStore() });
     await isr.serve('/blog?page=2', () => '<p>a</p>');
     await isr.serve('/blog?page=3', () => '<p>b</p>');
 
@@ -380,7 +380,7 @@ describe('a bust that lands mid-render', () => {
     // an entry built from rows read BEFORE the write, and for a tag-only route `isFresh` is then
     // true forever: the process serves pre-write HTML for the rest of its life.
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     controller.attach();
 
     let release = (_html: string): void => undefined;
@@ -405,7 +405,7 @@ describe('a bust that lands mid-render', () => {
     // `registerPath` ran AFTER the render, so `revalidateByTags` could not see a path whose first
     // render was still in flight — the window in which the bust that matters most arrives.
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     let release = (_html: string): void => undefined;
     const key = isrKeyOf('/blog/b');
@@ -460,23 +460,23 @@ describe('isrKey', () => {
 // Every regeneration looked its route up by re-sorting the whole table and compiling a `RegExp` per
 // dynamic route. The table only changes when a route REGISTERS, so both are built once per change.
 describe('the route table an ISR lookup reads', () => {
-  test('describeRoutes answers the same array until the registry changes', () => {
+  test('describePages answers the same array until the registry changes', () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const first = describeRoutes();
-    expect(describeRoutes()).toBe(first);
+    const first = describePages();
+    expect(describePages()).toBe(first);
     isrRoute('apps/web/site/team/page.tsx', [postTag]);
-    const second = describeRoutes();
+    const second = describePages();
     expect(second).not.toBe(first);
     expect(second.map((route) => route.path)).toEqual(['/blog/:slug', '/team']);
     clearRoutes();
-    expect(describeRoutes()).toEqual([]);
+    expect(describePages()).toEqual([]);
   });
 
   test('matchers are compiled once per table, and still match after a new route', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
     const compiled = spyOn(globalThis, 'RegExp');
     try {
-      const controller = createIsrController({ routes: describeRoutes });
+      const controller = isrController({ routes: describePages });
       const render = async (path: string): Promise<string> => `<p>${path}</p>`;
       await controller.serve('/blog/a', render);
       await controller.serve('/blog/b', render);

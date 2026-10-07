@@ -7,7 +7,7 @@
 // why: Bun ships no path API; the entry is resolved to a file and named in the cause.
 import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse } from '@ultimat3/http';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
 import { describeBuildError, graphHash, stripDebugId } from './island-identity';
 
@@ -198,7 +198,7 @@ function scriptRoute(
     handler: (request: UltimateRequest): Response => {
       const script = source();
       if (script === undefined || script.url !== request.pathname) {
-        return json(
+        return jsonResponse(
           {
             ok: false,
             error: {

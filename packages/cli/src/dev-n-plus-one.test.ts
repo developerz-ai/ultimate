@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, logger, runWithContext } from '@ultimat3/core';
+import { ctxOf, logger, runWithContext } from '@ultimat3/core';
 import type { StatementAttribution, StatementEvent } from '@ultimat3/db';
 import { N_PLUS_ONE_THRESHOLD } from '@ultimat3/entity';
 import { createStatementLedger } from './dev-n-plus-one';
@@ -33,7 +33,7 @@ const SELECT_ONE = 'select "id" from "members" where "id" = $1';
 
 /** One request, one context — the unit the threshold is counted over. */
 function request<T>(fn: (ctx: Ctx) => T): T {
-  const ctx = createContext({});
+  const ctx = ctxOf({});
   return runWithContext(ctx, () => fn(ctx));
 }
 
@@ -88,7 +88,7 @@ describe('unit · the N+1 ledger counts one shape per request', () => {
 
   test('the verdict names the request it happened in', () => {
     const ledger = createStatementLedger({ threshold: 2 });
-    const ctx = createContext({ requestId: 'req_7' });
+    const ctx = ctxOf({ requestId: 'req_7' });
     runWithContext(ctx, () => {
       ledger.observer.onStatement(statement(SELECT_ONE));
       ledger.observer.onStatement(statement(SELECT_ONE));
@@ -344,7 +344,7 @@ describe('unit · the verdicts of one request, for the page that request answere
     ]);
     // One below the threshold is not a loop, and a request with no tally at all is not an error.
     expect(ledger.repeatsFor(quiet)).toEqual([]);
-    expect(ledger.repeatsFor(createContext({}))).toEqual([]);
+    expect(ledger.repeatsFor(ctxOf({}))).toEqual([]);
   });
 
   test('a verdict the bound already dropped is still on the request it happened in', () => {

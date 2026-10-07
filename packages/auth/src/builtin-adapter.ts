@@ -117,13 +117,13 @@ const toApiKey = (row: Row): AuthApiKeyRecord => ({
  * assembled into dynamic SQL: `null` stays a meaningful value ("clear this field") and the
  * statement text remains constant, so the query plan is cached and nothing is interpolated.
  */
-export class BuiltinAdapter implements AuthAdapter {
+export class PostgresAuthAdapter implements AuthAdapter {
   readonly name = 'builtin-postgres';
   readonly #db: DbClient;
   readonly #clock: Clock;
 
   /**
-   * `clock` is the one `MemoryAdapter` takes, for the same stamp: hand over the clock
+   * `clock` is the one `MemoryAuthAdapter` takes, for the same stamp: hand over the clock
    * `defineAuth` was given, so a redemption is dated by the clock that judged its expiry.
    */
   constructor(client: DbClient = db(), clock: Clock = systemClock) {
@@ -238,7 +238,7 @@ export class BuiltinAdapter implements AuthAdapter {
    * the reason `updateUser`'s columns are: the statement text stays constant and nothing is
    * interpolated. Disabled members are excluded by default — an access review reads who can sign
    * in today — and `includeDisabled` is what an offboarding audit passes. Ordered `collate "C"`
-   * (byte order, which `MemoryAdapter` restates): the database default collation is the
+   * (byte order, which `MemoryAuthAdapter` restates): the database default collation is the
    * cluster's locale, so the order changed with the deployment and disagreed with memory's.
    */
   async listUsersByOrg(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]> {
@@ -432,6 +432,6 @@ export class BuiltinAdapter implements AuthAdapter {
 export function postgresAuthAdapter(
   client: DbClient = db(),
   clock: Clock = systemClock,
-): BuiltinAdapter {
-  return new BuiltinAdapter(client, clock);
+): PostgresAuthAdapter {
+  return new PostgresAuthAdapter(client, clock);
 }

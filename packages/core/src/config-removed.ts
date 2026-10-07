@@ -12,10 +12,12 @@ export interface RemovedConfigKey {
 }
 
 /**
- * Dotted paths, one row per deleted leaf. `jobs.driver` (5.0.0) was silently dropped until 25.0.0
- * made a written one a refusal. A row is never removed: a config written against an
- * older major must keep getting the instruction, not silence. `Object.freeze`d, read through
- * `Object.hasOwn`, so `__proto__` in a layer names no row.
+ * Dotted paths, one row per deleted leaf. Every row older than 25.0.0 was silently carried through
+ * `section()` until 25.0.0 refused it — this table by name, then `config-keys.ts` closing the
+ * shape for any other key; a row is what turns "not a key" into the line that replaces it. A row
+ * is never removed: a config written against an older major must keep getting the instruction,
+ * not silence. `Object.freeze`d, read through `Object.hasOwn`, so `__proto__` in a layer names no
+ * row.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, RemovedConfigKey>> = Object.freeze({
   locales: {
@@ -42,6 +44,56 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, RemovedConfigKey>> = O
     removedIn: '5.0.0',
     instead:
       'nothing read it and boot always built Postgres; the driver is code — setJobDriver(postgresJobDriver({ executor })) from @ultimat3/jobs, or setJobDriver(memoryJobDriver()) in a test',
+  },
+  'realtime.heartbeatMs': {
+    removedIn: '4.0.0',
+    instead:
+      "nothing read it; the page socket's beat is the sync node's, named in its hello reply, and the presence beat is a third of the presence ttl",
+  },
+  'database.urlEnv': {
+    removedIn: '4.0.0',
+    instead:
+      'nothing read it; the connection string is the DATABASE_URL environment variable, read by @ultimat3/db',
+  },
+  'database.poolSize': {
+    removedIn: '4.0.0',
+    instead:
+      'nothing read it; the pool is sized by the DATABASE_POOL_MAX environment variable, per process',
+  },
+  'database.schema': {
+    removedIn: '4.0.0',
+    instead:
+      'nothing read it and nothing emits SET search_path; entity() tables live in public, and there is no replacement',
+  },
+  'pwa.installPrompt': {
+    removedIn: '8.0.0',
+    instead:
+      'nothing read it; call installController() from @ultimat3/pwa in your own install affordance',
+  },
+  'auth.afterSignInPath': {
+    removedIn: '8.0.0',
+    instead:
+      'nothing read it; send the visitor where you mean from your sign-in route, the only code that can honour it',
+  },
+  'ai.modelEnv': {
+    removedIn: '8.0.0',
+    instead:
+      "nothing read it; the model is the prompt's own, or llm({ model }) from @ultimat3/ai — read your own env key and pass it there",
+  },
+  'cache.driver': {
+    removedIn: '9.0.0',
+    instead:
+      "cache.tiers is the one selector — name the rung: cache: { tiers: ['request-memo', 'lru', 'redis'] }",
+  },
+  'cache.urlEnv': {
+    removedIn: '9.0.0',
+    instead:
+      "nothing read it; the redis tier reads the REDIS_URL environment variable, so name 'redis' in cache.tiers and set REDIS_URL",
+  },
+  'realtime.tier': {
+    removedIn: '10.0.0',
+    instead:
+      "nothing read it; an app's realtime tier is what it declares — a channel() topic, a live: true query, persist: true on an entity",
   },
   'theme.tokens': {
     removedIn: '25.0.0',

@@ -7,7 +7,7 @@ import { parseColor } from './color';
 import { imageUnsupported } from './errors';
 import {
   assertPixelBudget,
-  createRaster,
+  blankRaster,
   type ImageRegion,
   type ImageSize,
   type Raster,
@@ -221,7 +221,7 @@ function blend(dst: Uint8ClampedArray, d: number, s: Uint8ClampedArray, p: numbe
  */
 export function composeOnto(art: Raster, layout: Layout): Raster {
   const { box, pad, inner } = layout;
-  const canvas = createRaster(box.width, box.height, 'resize');
+  const canvas = blankRaster(box.width, box.height, 'resize');
   fill(canvas, layout.background);
   const ox = pad + Math.round((inner.width - art.width) / 2);
   const oy = pad + Math.round((inner.height - art.height) / 2);

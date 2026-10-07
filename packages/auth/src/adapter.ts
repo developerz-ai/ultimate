@@ -1,7 +1,7 @@
 // Single responsibility: the persistence seam. `AuthAdapter` is the one interface auth talks
 // to, split into per-concern stores so a test (or a caller) can satisfy just the slice it uses.
 // Better Auth binds here — it is an adapter implementation, not a dependency. The blessed
-// default is `BuiltinAdapter` in `builtin-adapter.ts`; the DDL it expects is in `tables.ts`.
+// default is `PostgresAuthAdapter` in `builtin-adapter.ts`; the DDL it expects is in `tables.ts`.
 
 export interface AuthUser {
   readonly id: string;
@@ -231,7 +231,7 @@ export interface ApiKeyStore {
 }
 
 /**
- * The full seam. One blessed implementation ships (`BuiltinAdapter`); Better Auth, or any
+ * The full seam. One blessed implementation ships (`PostgresAuthAdapter`); Better Auth, or any
  * other identity backend, binds by implementing this and nothing else changes upstream.
  */
 export interface AuthAdapter

@@ -7,7 +7,7 @@
 // it against the root is string work no `Bun.file` overload does — the same necessity
 // `runtime-assets.ts` records for `ICON_SOURCE`.
 import { join } from 'node:path';
-import { createRaster, encodeImage } from '@ultimat3/core';
+import { blankRaster, encodeImage } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 
@@ -47,7 +47,7 @@ const FAVICON_CACHE: CacheHint = { mode: 'public', maxAgeSeconds: 3600 };
  * is a third rung under a mechanism that has exactly two.
  */
 export function defaultFavicon(): Uint8Array {
-  const raster = createRaster(DEFAULT_SIZE, DEFAULT_SIZE, 'favicon');
+  const raster = blankRaster(DEFAULT_SIZE, DEFAULT_SIZE, 'favicon');
   const { pixels } = raster;
   for (let i = 0; i < pixels.length; i += 4) {
     pixels[i] = MARK_LEVEL;

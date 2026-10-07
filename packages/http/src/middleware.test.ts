@@ -3,10 +3,10 @@
 // to stop the chain are invisible in the type signature, so they are asserted here.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createRequestContext, type RequestContext } from './context';
+import { type RequestContext, requestContext } from './context';
 import { compose, type Middleware } from './middleware';
 import { UltimateRequest } from './request';
-import { text } from './response';
+import { textResponse } from './response';
 import type { RouteHandler } from './router';
 
 const config = defineHttpConfig({
@@ -17,7 +17,7 @@ const config = defineHttpConfig({
 });
 
 const makeRequest = (): { request: UltimateRequest; ctx: RequestContext } => {
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url: new URL('http://x.test/posts'),
     method: 'GET',
     role: 'web',
@@ -45,7 +45,7 @@ describe('compose()', () => {
     };
     const handler: RouteHandler = () => {
       order.push('handler');
-      return text('ok');
+      return textResponse('ok');
     };
 
     const composed = compose([a, b])(handler);
@@ -61,7 +61,7 @@ describe('compose()', () => {
 
     const handler: RouteHandler = (req, c) => {
       seen = { request: req, ctx: c };
-      return text('bare');
+      return textResponse('bare');
     };
 
     const composed = compose([])(handler);
@@ -78,7 +78,7 @@ describe('compose()', () => {
 
     const shortCircuit: Middleware = (_req, _c, _next) => {
       order.push('short-circuit');
-      return text('stopped', { status: 403 });
+      return textResponse('stopped', { status: 403 });
     };
     const neverRuns: Middleware = async (req, c, next) => {
       order.push('never-runs-in');
@@ -86,7 +86,7 @@ describe('compose()', () => {
     };
     const handler: RouteHandler = () => {
       order.push('handler');
-      return text('unreachable');
+      return textResponse('unreachable');
     };
 
     const composed = compose([shortCircuit, neverRuns])(handler);

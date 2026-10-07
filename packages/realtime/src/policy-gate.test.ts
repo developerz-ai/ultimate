@@ -3,7 +3,7 @@
 // inside `args.input`. A denied row is still dropped rather than raised.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { isRow, type Row } from './json';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 
@@ -35,7 +35,7 @@ function spyPolicy(seen: SeenArgs[], decide: (args: SeenArgs) => boolean) {
   };
 }
 
-const options = () => ({ query: 'posts.feed', ctx: createContext() });
+const options = () => ({ query: 'posts.feed', ctx: ctxOf() });
 const row: Row = { id: 'row-42', authorId: 'owner' };
 const input = { orgId: 'org-1' };
 

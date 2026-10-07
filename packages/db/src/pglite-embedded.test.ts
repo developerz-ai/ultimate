@@ -6,7 +6,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { baseClient, setDbClient } from './client';
 import { type Migration, migrate, rollback } from './migrate';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { readOnlyQuery } from './readonly-query';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
@@ -18,12 +18,12 @@ describe('the real embedded database', () => {
 
   /**
    * One session for all four cases, not one each. The boot is the entire cost — four measured
-   * ~2.4s apiece — and `createPgliteClient` is lazy, so the WASM compile still happens inside the
+   * ~2.4s apiece — and `pgliteClient` is lazy, so the WASM compile still happens inside the
    * first case that runs a statement rather than at import. Sharing costs these cases nothing they
    * were asserting: PGlite is a pool of exactly one either way, which is the very thing the
    * reservation rules below exist for, so a shared client is the shape production runs.
    */
-  const client = createPgliteClient();
+  const client = pgliteClient();
 
   // Each case owns `posts` outright, so none of them inherits the previous one's table or rows.
   beforeEach(async () => {

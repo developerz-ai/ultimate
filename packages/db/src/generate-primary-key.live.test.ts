@@ -9,7 +9,7 @@ import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
-import { introspect } from './introspect';
+import { introspectSchema } from './introspect';
 import { raw } from './sql';
 import { sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
@@ -57,7 +57,8 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
   };
 
   const liveKey = async (): Promise<readonly string[]> =>
-    (await introspect({ client })).tables.find((table) => table.name === POSTS)?.primaryKey ?? [];
+    (await introspectSchema({ client })).tables.find((table) => table.name === POSTS)?.primaryKey ??
+    [];
 
   const teardown = async (): Promise<void> => {
     await client.execute(raw(`drop table if exists "${COMMENTS}" cascade`));
@@ -95,7 +96,7 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
     expect(await liveKey()).toEqual(['org_id', 'slug']);
     // The snapshot the migration recorded is the database it left behind — which it was not, for
     // as long as `up` was empty.
-    const live = await introspect({ client });
+    const live = await introspectSchema({ client });
     const mine = { tables: live.tables.filter((table) => table.name === POSTS) };
     expect(diffSchema(mine, migration.snapshot).differences).toEqual([]);
 
@@ -153,7 +154,7 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
       indexes: [],
     });
     const read = async () =>
-      (await introspect({ client })).tables.find((table) => table.name === NULLABLE);
+      (await introspectSchema({ client })).tables.find((table) => table.name === NULLABLE);
 
     await client.execute(raw(`drop table if exists "${NULLABLE}"`));
     await apply(generateMigration({ entities: [shape(['id'])], name: 'init', now: at }).up);

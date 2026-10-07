@@ -4,12 +4,10 @@
  * which is why nothing that predates this file has to change to keep meaning what it meant.
  */
 
-import { isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
+import { isMoneyScale } from '@ultimat3/schema';
 import { exponentOf } from './currency';
 import { scaleInvalid, scaleNotWidening, scaleOverflow } from './errors';
 import type { Money } from './money';
-
-export { MAX_MONEY_SCALE };
 
 /**
  * The decimal exponent this value's `minor` counts in — its own, or the currency's.
@@ -31,7 +29,7 @@ export function assertScale(scale: number): number {
  * `amount.minor` restated at `scale`, exactly, as a bigint.
  *
  * A bigint because widening is what a comparison does first, and a comparison must not throw:
- * `MAX_SAFE_INTEGER` cents restated in micros is past 2^53, which `money()` rightly refuses to
+ * `MAX_SAFE_INTEGER` cents restated in micros is past 2^53, which `fromMinor()` rightly refuses to
  * *store* and which says nothing about whether it is larger than the value beside it.
  *
  * Widening only. Narrowing drops digits, and which digits go is a decision with a mode attached —
@@ -52,7 +50,7 @@ export function commonScale(left: Money, right: Money): number {
 /**
  * A widened bigint back to a storable `minor`, or a scale error naming the finest scale that
  * would fit. The one place that conversion happens, because `Number(widened)` alone reached
- * `money()` as a plain out-of-range amount — reported as a fractional minor nobody wrote, with a
+ * `fromMinor()` as a plain out-of-range amount — reported as a fractional minor nobody wrote, with a
  * `fromDecimal` fix line that throws the same error again.
  */
 export function toMinor(widened: bigint, scale: number, currency: string): number {

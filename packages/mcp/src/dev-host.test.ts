@@ -4,7 +4,7 @@
 // happen to hold the same names.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { frameworkVersion } from '@ultimat3/core';
 import { entity, text, uuid } from '@ultimat3/entity';
@@ -17,9 +17,9 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
-import { createDevServer, devHost, frameworkIntrospection } from './dev-host';
+import { devHost, devMcpServer, frameworkIntrospection } from './dev-host';
 import type { DevCapabilities } from './dev-server';
 import { DEV_SCOPES } from './dev-server';
 import type { McpCaller } from './registry';
@@ -162,9 +162,9 @@ describe('frameworkIntrospection.jobInspect', () => {
   });
 });
 
-describe('createDevServer', () => {
+describe('devMcpServer', () => {
   test('announces itself as ultimate-dev at the framework version', async () => {
-    const server = createDevServer({ host: devHost(intro(), capabilities().host) });
+    const server = devMcpServer({ host: devHost(intro(), capabilities().host) });
     const response = await server.handle(
       { jsonrpc: '2.0', id: 1, method: 'initialize' },
       { actor: caller.actor, scopes: new Set() },
@@ -176,7 +176,7 @@ describe('createDevServer', () => {
   });
 
   test('serves the whole dev tool catalog, and only the mutating ones are writes', () => {
-    const server = createDevServer({ host: devHost(intro(), capabilities().host) });
+    const server = devMcpServer({ host: devHost(intro(), capabilities().host) });
     expect(server.list(caller).map((tool) => tool.name)).toEqual([
       'actions.describe',
       'db.migrate',
@@ -204,10 +204,10 @@ describe('createDevServer', () => {
   });
 
   test('resources are opt-in: none by default, and only the ones a provider was given for', () => {
-    const bare = createDevServer({ host: devHost(intro(), capabilities().host) });
+    const bare = devMcpServer({ host: devHost(intro(), capabilities().host) });
     expect(bare.resources.list(caller)).toEqual([]);
 
-    const wired = createDevServer({
+    const wired = devMcpServer({
       host: devHost(intro(), capabilities().host),
       resources: { manifest: () => '{"version":1}' },
     });

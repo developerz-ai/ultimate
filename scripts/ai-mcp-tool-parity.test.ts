@@ -10,15 +10,15 @@ import {
   action,
   memoryIdempotencyStore,
   registerAction,
+  resetActions,
   resetIdempotency,
-  resetRegistry,
   setIdempotencyStore,
 } from '@ultimat3/action';
 import { asProjectableAction } from '@ultimat3/ai';
 import type { Actor } from '@ultimat3/core';
 import {
   agentActor,
-  createContext,
+  ctxOf,
   isMcpExposed,
   isUltimateError,
   renderThrowable,
@@ -55,7 +55,7 @@ const charge = (idempotent: boolean): AnyAction =>
     }),
   );
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 /** The coded refusal `run` made — the code is what a model reads first on either surface. */
 async function codeOf(run: () => unknown): Promise<string> {
@@ -88,7 +88,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetIdempotency();
   clearPermissions();
   clearRoles();

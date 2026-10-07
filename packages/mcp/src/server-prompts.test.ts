@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import type { McpCaller } from './registry';
 import { promptFromPath } from './resources';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { INVALID_PARAMS } from './wire';
 
 const caller: McpCaller = {
@@ -21,7 +21,7 @@ const call = (method: string, params?: unknown) => ({
   ...(params === undefined ? {} : { params }),
 });
 
-const server = createMcpServer({
+const server = mcpServer({
   prompts: [
     {
       name: 'summarize.v3',
@@ -81,7 +81,7 @@ describe('prompts/get', () => {
     const path = `${import.meta.dir}/fixtures-prompt-${process.pid}.md`;
     await Bun.write(path, 'Read me.');
     try {
-      const fromFile = createMcpServer({ prompts: [promptFromPath(path)] });
+      const fromFile = mcpServer({ prompts: [promptFromPath(path)] });
       const name = promptFromPath(path).name;
       const response = await fromFile.handle(call('prompts/get', { name }), caller);
       const result = response && 'result' in response ? response.result : undefined;
@@ -94,7 +94,7 @@ describe('prompts/get', () => {
 
 describe('prompt visibleTo', () => {
   const staff: McpCaller = { ...caller, role: 'staff' };
-  const gated = createMcpServer({
+  const gated = mcpServer({
     prompts: [
       { name: 'open', description: 'anyone', read: () => 'open' },
       { name: 'staff-only', description: 'staff', visibleTo: ['staff'], read: () => 'secret' },

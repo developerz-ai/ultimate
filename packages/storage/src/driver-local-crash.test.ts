@@ -81,7 +81,7 @@ interface Seen {
 async function observe(): Promise<Seen> {
   const read = await disk.get(KEY).catch(() => undefined);
   const stat = await disk.stat(KEY);
-  const listed = (await disk.list()).objects.find((object) => object.key === KEY);
+  const listed = (await disk.list()).rows.find((object) => object.key === KEY);
   const onDisk = (await Bun.file(`${root}/${KEY}`).exists())
     ? etagOf(new Uint8Array(await Bun.file(`${root}/${KEY}`).arrayBuffer()))
     : undefined;

@@ -9,7 +9,7 @@ import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn, memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
-import { CHANGE_SUBJECT_PREFIX, createReplicator } from './replicator';
+import { CHANGE_SUBJECT_PREFIX, changeFeedReplicator } from './replicator';
 import { parseChange, parseEnvelope, SeqGapDetector } from './replicator-envelope';
 
 const envelope = (
@@ -89,7 +89,7 @@ describe('the replicator sequences what it publishes', () => {
       published.push(payload);
     });
     const feed = memoryChangeFeed();
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed,
       transport,
       lock: memoryAdvisoryLock('x:replicator:test-seq'),

@@ -21,7 +21,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `describe <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
-| `x jobs ls\|show\|retry\|cancel\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`, `drain --to` |
+| `x jobs ls\|show\|retry\|cancel\|rm\|promote\|pause\|resume` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`; `ls --json` pages as `rows`/`nextCursor`/`hasMore`; `drain` is planned (`X_NOT_IMPLEMENTED`) |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
 | `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it |
 | `x auth seal-mfa` | one-shot auth maintenance | seals every `x_users.mfa_secret` still in the clear; idempotent, `{ sealed, alreadySealed, skipped }` |

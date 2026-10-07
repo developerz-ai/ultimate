@@ -5,12 +5,12 @@
  */
 
 import { rescaleNotExact } from './errors';
-import { type Money, money } from './money';
+import { fromMinor, type Money } from './money';
 import { type RoundingMode, roundRatio } from './rounding';
 import { assertScale, minorAt, moneyScale, toMinor } from './scale';
 
 /**
- * `rescale(money(80, 'USD'), 8)` → 80,000,000 hundred-millionths, the granularity a per-token
+ * `rescale(fromMinor(80, 'USD'), 8)` → 80,000,000 hundred-millionths, the granularity a per-token
  * price needs. `rescale(m, 2, 'half-up')` brings it back to cents, having named who pays for the
  * digits that go.
  */
@@ -18,7 +18,11 @@ export function rescale(amount: Money, scale: number, mode?: RoundingMode): Mone
   assertScale(scale);
   const from = moneyScale(amount);
   if (scale >= from) {
-    return money(toMinor(minorAt(amount, scale), scale, amount.currency), amount.currency, scale);
+    return fromMinor(
+      toMinor(minorAt(amount, scale), scale, amount.currency),
+      amount.currency,
+      scale,
+    );
   }
 
   const divisor = 10n ** BigInt(from - scale);
@@ -27,5 +31,5 @@ export function rescale(amount: Money, scale: number, mode?: RoundingMode): Mone
   if (mode === undefined && numerator % divisor !== 0n) {
     throw rescaleNotExact(amount, from, scale);
   }
-  return money(roundRatio(numerator, divisor, mode), amount.currency, scale);
+  return fromMinor(roundRatio(numerator, divisor, mode), amount.currency, scale);
 }

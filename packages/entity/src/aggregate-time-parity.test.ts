@@ -4,13 +4,7 @@
 // and year `0099` came back as 1999.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { timestamp, uuid } from './columns';
 import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -23,7 +17,7 @@ const events = entity('atp_events', {
   columns: { id: uuid().primaryKey(), at: timestamp() },
 });
 
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   setDbClient(client);

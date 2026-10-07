@@ -4,7 +4,7 @@
 // and an audit record like every other write.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { registerAction, resetRegistry } from '@ultimat3/action';
+import { registerAction, resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import {
   agentActor,
@@ -28,7 +28,7 @@ import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetCursorSigning();
 });
 

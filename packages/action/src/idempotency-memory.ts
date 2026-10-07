@@ -3,7 +3,7 @@
  * and for tests, and refused at registration under a `shared` declaration — its `scope` says so.
  * Shaped after `@ultimat3/http`'s `memoryRateLimitStore`, including the deliberate eviction order.
  */
-import { finiteCount, uuid } from '@ultimat3/core';
+import { finiteCount, uuidV7 } from '@ultimat3/core';
 import { IdempotencyReservationLostError } from './errors-idempotency';
 import type {
   IdempotencyFailure,
@@ -110,7 +110,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
       return Promise.resolve({ record: existing, created: false });
     }
     const record: IdempotencyRecord = {
-      id: uuid(),
+      id: uuidV7(),
       key,
       requestHash,
       status: 'in-flight',

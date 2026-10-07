@@ -78,14 +78,14 @@ describe('localDriver', () => {
     expect(read.object.size).toBe(11);
 
     const page = await driver.list({ prefix: 'org/org-1/' });
-    expect(page.objects.map((object) => object.key)).toEqual([key]);
-    expect(page.truncated).toBe(false);
+    expect(page.rows.map((object) => object.key)).toEqual([key]);
+    expect(page.hasMore).toBe(false);
     // The `.meta` sidecar tree must never appear as an object.
-    expect(page.objects.every((object) => !object.key.startsWith('.meta/'))).toBe(true);
+    expect(page.rows.every((object) => !object.key.startsWith('.meta/'))).toBe(true);
 
     await driver.delete(key);
     expect(await driver.exists(key)).toBe(false);
-    expect((await driver.list({ prefix: 'org/org-1/' })).objects).toEqual([]);
+    expect((await driver.list({ prefix: 'org/org-1/' })).rows).toEqual([]);
   });
 
   test('get and list round-trip cacheControl and metadata written by put()', async () => {
@@ -100,7 +100,7 @@ describe('localDriver', () => {
     expect(read.object.cacheControl).toBe('public, max-age=3600');
     expect(read.object.metadata).toEqual({ uploadedBy: 'user-1' });
 
-    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).objects;
+    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).rows;
     expect(listed?.cacheControl).toBe('public, max-age=3600');
     expect(listed?.metadata).toEqual({ uploadedBy: 'user-1' });
   });
@@ -121,7 +121,7 @@ describe('localDriver', () => {
     );
 
     expect((await driver.get(key)).object.metadata).toBeUndefined();
-    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).objects;
+    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).rows;
     expect(listed?.metadata).toBeUndefined();
   });
 
@@ -222,7 +222,7 @@ describe('localDriver', () => {
     // driver's listing used to make; absent says "this listing does not know".
     await Bun.write(`${root}/org/org-1/orphan.bin`, 'raw');
 
-    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).objects;
+    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).rows;
     expect(listed?.key).toBe('org/org-1/orphan.bin');
     expect(listed?.contentType).toBeUndefined();
     // `get()` still answers a full StorageObject: a read has a type to serve with.
@@ -272,15 +272,16 @@ describe('localDriver', () => {
       await driver.put(`org/org-1/${name}`, bytesOf(name), { contentType: 'text/plain' });
     }
     const first = await driver.list({ prefix: 'org/org-1/', limit: 2 });
-    expect(first.objects.map((object) => object.key)).toEqual([
-      'org/org-1/a.txt',
-      'org/org-1/b.txt',
-    ]);
-    expect(first.truncated).toBe(true);
+    expect(first.rows.map((object) => object.key)).toEqual(['org/org-1/a.txt', 'org/org-1/b.txt']);
+    expect([first.nextCursor, first.hasMore]).toEqual(['org/org-1/b.txt', true]);
 
-    const second = await driver.list({ prefix: 'org/org-1/', limit: 2, cursor: first.cursor });
-    expect(second.objects.map((object) => object.key)).toEqual(['org/org-1/c.txt']);
-    expect(second.truncated).toBe(false);
+    const second = await driver.list({ prefix: 'org/org-1/', limit: 2, cursor: first.nextCursor });
+    expect(second.rows.map((object) => object.key)).toEqual(['org/org-1/c.txt']);
+    expect([second.nextCursor, second.hasMore]).toEqual([null, false]);
+
+    // A full last page — exactly `limit` rows remain — carries no cursor to an empty page.
+    const exact = await driver.list({ prefix: 'org/org-1/', limit: 3 });
+    expect([exact.rows.length, exact.nextCursor, exact.hasMore]).toEqual([3, null, false]);
   });
 
   test('signedUrl is verifiable and carries the constraints', async () => {

@@ -4,7 +4,7 @@
 // silently, which is how the reference app shipped an admin nobody could open.
 
 import { renderFixShellArg, stripComments } from '@ultimat3/core';
-import { describeRoutes } from '@ultimat3/render';
+import { describePages } from '@ultimat3/render';
 import { ADMIN_FILE } from './admin-registration';
 import type { Finding } from './output';
 import { hasPathSegment } from './path-segments';
@@ -17,7 +17,7 @@ const DECLARES = /\bdefineAdmin\(/;
 
 /** Any admin this process mounted — then every declaration was reached, wherever it sits. */
 export const adminMounted = (): boolean =>
-  describeRoutes().some((route) => route.mount?.by === 'defineAdmin');
+  describePages().some((route) => route.mount?.by === 'defineAdmin');
 
 /** Where the file belongs: its own name under the admin's home, `index.ts` as the declaration. */
 const homeOf = (file: string): string => {

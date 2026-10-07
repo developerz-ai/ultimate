@@ -1,7 +1,7 @@
 // Single responsibility: the ONE normalisation an email address gets before anything uses it as an
 // identity key — a user lookup, a user insert, or the lockout bucket that has to key the same way
 // those two do. It lives above the `AuthAdapter` seam because an adapter that normalises hides a
-// caller that forgot to: `MemoryAdapter` did and `BuiltinAdapter` did not, so "does this account
+// caller that forgot to: `MemoryAuthAdapter` did and `PostgresAuthAdapter` did not, so "does this account
 // exist" had two answers, one under `x dev` and another in production.
 
 /**

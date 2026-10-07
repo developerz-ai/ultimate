@@ -4,7 +4,7 @@
  * resolves and prices on that row alone.
  */
 
-import { configureAi, createGateway, EchoProvider, modelSpec } from '@ultimat3/ai';
+import { configureAi, echoProvider, modelSpec, providerGateway } from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
 import { APP_MODELS, CLAUDE_SONNET_5, claudeSonnet5 } from './models';
 import { reviewDraft, summarize } from './posts/actions';
@@ -36,7 +36,7 @@ test('the model-backed actions resolve and price on the app rows, with no gatewa
       ? JSON.stringify({ verdict: 'ready', notes: 'Ready.' })
       : JSON.stringify({ summary: 'Minor units and a currency.', tags: ['money'] });
   // No `defaultModel`: each declaration's prompt names its model, so the gateway is never asked.
-  configureAi({ gateway: createGateway({ providers: [new EchoProvider({ fallback: reply })] }) });
+  configureAi({ gateway: providerGateway({ providers: [echoProvider({ fallback: reply })] }) });
   const { draft, bruno } = await seed('dev').pick({
     draft: 'post:draft-money',
     bruno: 'member:bruno',

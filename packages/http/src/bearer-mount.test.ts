@@ -7,14 +7,14 @@ import { t } from '@ultimat3/schema';
 import { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
 import { defineHttpConfig } from './config';
 import { useRequestContext } from './context';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import { memoryRateLimitStore } from './rate-limit';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const agent: Actor = agentActor({ id: 'user_1', orgId: 'org_1' });
 
-const seenActor = (): Response => json({ actor: useRequestContext()?.actor.id ?? null });
+const seenActor = (): Response => jsonResponse({ actor: useRequestContext()?.actor.id ?? null });
 
 const api: readonly Route[] = [
   {
@@ -55,8 +55,8 @@ const pipelineFor = (limit?: number) => {
     rateLimitStore: memoryRateLimitStore(),
     clock: frozenClock(0),
   });
-  return createPipeline({
-    table: createRouter([...api, ...mounted]),
+  return httpPipeline({
+    table: httpRouter([...api, ...mounted]),
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
     hooks: {
       // The app's cookie authenticator: it must never be consulted on the mount.
@@ -235,8 +235,8 @@ describe('the prefix is opaque to a caller without a valid token', () => {
   // a 401 there would block every cross-origin integrator. The `context` stage answers a preflight
   // before the match, so the catch-all never sees one.
   test('a CORS preflight under the prefix gets the CORS answer, never the 401', async () => {
-    const pipeline = createPipeline({
-      table: createRouter(
+    const pipeline = httpPipeline({
+      table: httpRouter(
         bearerMount({
           prefix: '/v1',
           routes: api,
@@ -295,8 +295,8 @@ describe('the cut answers before body validation and authz', () => {
     },
   ];
   const pipeline = () =>
-    createPipeline({
-      table: createRouter(
+    httpPipeline({
+      table: httpRouter(
         bearerMount({
           prefix: '/v1',
           routes: [...api, ...guarded],
@@ -392,8 +392,8 @@ describe('a refusal a valid token earns spends its allowance', () => {
 // spends the address's allowance for it, as it does for every required route.
 describe('a bad token on the mount is metered by address', () => {
   const guarded = () =>
-    createPipeline({
-      table: createRouter([
+    httpPipeline({
+      table: httpRouter([
         ...api,
         ...bearerMount({
           prefix: '/v1',

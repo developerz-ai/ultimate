@@ -11,15 +11,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { CacheSetOptions, CacheTag, CacheTier, TierName } from '@ultimat3/cache';
 import {
-  createLruTier,
   declareTags,
   invalidateTags,
   isolateDeclaredTags,
   isolateTiers,
+  lruTier,
   registerTier,
   tag,
 } from '@ultimat3/cache';
-import { createContext, frozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock } from '@ultimat3/core';
 import { readThrough } from './cache';
 
 let restore: (() => void) | undefined;
@@ -68,21 +68,21 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
    */
   test('a cache: read fills the registered tiers, and invalidateTags drops it', async () => {
     restore = isolateTiers();
-    registerTier(createLruTier());
+    registerTier(lruTier());
     let executed = 0;
     const run = async (): Promise<string> => {
       executed += 1;
       return `rows-${executed}`;
     };
 
-    expect(await readThrough(createContext({}), 'k', 60_000, run, [tag('post')])).toBe('rows-1');
+    expect(await readThrough(ctxOf({}), 'k', 60_000, run, [tag('post')])).toBe('rows-1');
     // A second request, so the per-request memo cannot be what answers.
-    expect(await readThrough(createContext({}), 'k', 60_000, run, [tag('post')])).toBe('rows-1');
+    expect(await readThrough(ctxOf({}), 'k', 60_000, run, [tag('post')])).toBe('rows-1');
     expect(executed).toBe(1);
 
     await invalidateTags([tag('post')]);
 
-    expect(await readThrough(createContext({}), 'k', 60_000, run, [tag('post')])).toBe('rows-2');
+    expect(await readThrough(ctxOf({}), 'k', 60_000, run, [tag('post')])).toBe('rows-2');
     expect(executed).toBe(2);
   });
 
@@ -98,10 +98,10 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
     const clock = frozenClock(1_000);
     // `jitterFraction: 0` because the default shaves a random slice off every lease — correct in
     // production, and exactly what a deterministic assertion may not inherit.
-    const lru = createLruTier({ clock, jitterFraction: 0 });
+    const lru = lruTier({ clock, jitterFraction: 0 });
     registerTier(lru);
 
-    await readThrough(createContext({ clock }), 'k', 60_000, async () => 'rows', [tag('post')]);
+    await readThrough(ctxOf({ clock }), 'k', 60_000, async () => 'rows', [tag('post')]);
 
     expect((await lru.get('k'))?.expiresAt).toBe(61_000);
   });
@@ -113,15 +113,15 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
   test('an entry written under a frozen clock is still a hit under that clock', async () => {
     restore = isolateTiers();
     const clock = frozenClock(1_000);
-    registerTier(createLruTier({ clock, jitterFraction: 0 }));
+    registerTier(lruTier({ clock, jitterFraction: 0 }));
     let executed = 0;
     const run = async (): Promise<number> => {
       executed += 1;
       return executed;
     };
 
-    await readThrough(createContext({ clock }), 'k', 60_000, run, []);
-    await readThrough(createContext({ clock }), 'k', 60_000, run, []);
+    await readThrough(ctxOf({ clock }), 'k', 60_000, run, []);
+    await readThrough(ctxOf({ clock }), 'k', 60_000, run, []);
 
     expect(executed).toBe(1);
   });
@@ -144,13 +144,13 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
       return 'rows';
     };
 
-    await readThrough(createContext({}), 'k', 60_000, run, []);
+    await readThrough(ctxOf({}), 'k', 60_000, run, []);
     // The fill writes every rung, so a second replica finds it too.
     expect(await redis.get('k')).toBeDefined();
     expect(await lru.get('k')).toBeDefined();
 
     redis.gets.length = 0;
-    await readThrough(createContext({}), 'k', 60_000, run, []);
+    await readThrough(ctxOf({}), 'k', 60_000, run, []);
 
     expect(executed).toBe(1);
     // The near rung answered, so the far one was never asked — the round trip this saves.
@@ -170,7 +170,7 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
       return executed;
     };
 
-    expect(await readThrough(createContext({}), 'k', 60_000, run, [])).toBe(1);
-    expect(await readThrough(createContext({}), 'k', 60_000, run, [])).toBe(2);
+    expect(await readThrough(ctxOf({}), 'k', 60_000, run, [])).toBe(1);
+    expect(await readThrough(ctxOf({}), 'k', 60_000, run, [])).toBe(2);
   });
 });

@@ -9,7 +9,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // renders ⟦key⟧ — which the last assertion is what checks for.
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
 import { renderComponent } from '@ultimat3/render/server';
 import type { Actor } from '../../shared/actor';
@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 
 const render = (data: Parameters<typeof page.Page>[0]['data']): Promise<string> =>
-  runWithContext(createContext({ actor: viewer, tz: 'UTC', locale: 'en' }), () =>
+  runWithContext(ctxOf({ actor: viewer, tz: 'UTC', locale: 'en' }), () =>
     renderComponent(() => page.Page({ data, url: URL }), {}, FILE),
   );
 

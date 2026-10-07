@@ -35,7 +35,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
 | — | opt-in flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, imported from core — `src/index.ts` re-exports only the `ClientFlight`/`ClientRetry` types. There is no local copy and must not be one |
-| `wire-headers.ts` | `BUILD_ID_HEADER` + `IDEMPOTENCY_HEADER`, and nothing else. Their own module so `client.ts` can name them without importing `http.ts` |
 | `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
 | `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
@@ -55,15 +54,15 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
-| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer plus a re-export of core's `isJsonObject` — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
+| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer (core's `isJsonObject` is imported from core, never re-exported) — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
 
 ## Invariants — execution and authz
 
-- Every surface goes through `invoke`: the policy's actor half (`guardBeforeInput`, 403 before the
+- Every surface goes through `invoke`: the policy's actor half (`guardActionBeforeInput`, 403 before the
   parse), parse input, evaluate policy, handle, parse output. A second
   execution path is the one unforgivable change here.
 - **An explicit `ctx` is INSTALLED, never merely passed** — the ambient context (which
-  `@ultimat3/entity`'s tenant guard reads) must be the identity `guard()` decided about.
+  `@ultimat3/entity`'s tenant guard reads) must be the identity `guardAction()` decided about.
   `invoke-context.test.ts` asserts ambient, `options.actor` and `options.ctx` are one caller.
 - The declaration never leaves `invoke.ts`: `defOf`/`stashDef` are never re-exported from
   `src/index.ts` (`index.test.ts`). An action has no `.def`; outside, read `.input`/`.output`/
@@ -72,15 +71,16 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   MCP projection beside mcp's `toolFrom` (`index.test.ts`, `type-pins.ts`).
 - **`toRoute` sets `enforcedBy: 'handler'`** — `invoke` is the one evaluation and the only one holding
   the row `def.row` loaded; `meta.policy` stays set. `http.test.ts` counts exactly one evaluation.
-- **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, via
-  `policy-gate.ts`), never the root combinator — never a copy here (`@ultimat3/query` needs the same
+- **`meta.auth` comes from `@ultimat3/policy`'s `admitsAnonymous`** (a walk of the tree, imported
+  from `@ultimat3/policy` by `http.ts`; 25.0.0 dropped this package's re-export, `index.test.ts`
+  pins the absence), never the root combinator — never a copy here (`@ultimat3/query` needs the same
   answer).
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })`; a denial becomes
   `ActionDeniedError`, keeping the policy's code. `policy-gate.ts` is the only RUNTIME edge to
   `@ultimat3/policy` (`errors.ts`'s `import type { SurfaceDenial }` erases).
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - **`registerAction` guards the derived PATH as well as the name** (`X_ACTION_PATH_DUPLICATE`; a
-  second index cleared by `resetRegistry`).
+  second index cleared by `resetActions`).
 - **A path is the app's `pathStyle` or the action's pin, never a third answer** (`http-path.ts`).
   `'resource'` stays the default (changing it moves every URL). `defineApi` sets the style FIRST and
   `configureActionPathStyle` re-derives every seated action (the module scan may have seated them
@@ -155,15 +155,15 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `json-schema.ts`). The HASH form is core's `canonicalJson`/`fingerprint` (injective: tags
   `NaN`/`±Infinity`/`-0`, `Date`, `Map`, `Set`); `stable.test.ts` pins byte-equality for ordinary
   payloads.
-- **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (re-exported; raises
-  `X_RATE_LIMIT_INVALID`). Never restore a local copy; never use `@ultimat3/render`'s `tagKeys`.
+- **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (imported, never
+  re-exported; `toBucket` raises `X_RATE_LIMIT_INVALID`). Never restore a local copy.
 - **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent
   tool and `.job()` share one bucket; `surface: 'server'` spends nothing. `toRoute` sets
   `rateLimitedBy: 'handler'` and NO `meta.rateLimit`/`rateLimitBucket` — the stage spends neither
   the action's bucket (the old HTTP-only point) nor `default`. Key `action:<name>|<subject>`.
   HTTP gets `RateLimit-*` via `onRateLimit` → http's `publishRateLimit`. The store is
   `@ultimat3/http`'s installed one, adopted by the boot on every role. Spent after
-  `guardBeforeInput`, BEFORE the parse and `def.row()` (an input/row-denied flood is refused). A key
+  `guardActionBeforeInput`, BEFORE the parse and `def.row()` (an input/row-denied flood is refused). A key
   the idempotency store holds spends nothing (replay); a reservation `withIdempotency` CREATES that
   the peek did not pay for spends in `beforeRun`, released on refusal. A job run is charged to its
   org, else `job:unattributed`. A surface's `clientAddress` is inherited by nested `invoke`s
@@ -177,7 +177,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **The span wraps `execute` whole** (including `def.row()`), with bounded attributes plus the
   namespaced idempotency key (never a metric label). `telemetry.test.ts`.
 - **`policyCapability` is a display label; `policyPermissions` (`ActionDescriptor.permissions`) is
-  what a report matches on** (a `not()` clause contributes its permissions).
+  what a report matches on** (a `not()` clause contributes its permissions). Both are
+  `@ultimat3/policy`'s, imported from there.
 - **MCP exposure is core's `isMcpExposed`** (`describeAction`, `x-ultimate.mcpTool`); **a tool's
   NAME is the export name verbatim** (`mcp-surface.test.ts`). `ActionFact.mcp` in the app manifest
   carries only `{ expose, description? }`.
@@ -200,7 +201,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   | Entry | `As of 2026-10-01` |
   |---|---|
   | `rpc` | 19,671 B (+181 B for the document's path-style stamp) |
-  | `rpc` + core's `createClientFlight` | 25,954 B |
+  | `rpc` + core's `clientFlight` | 25,954 B |
 
   Earlier columns (pre-transport 18,097 B, +977 B net for the envelope decoder) are in git history.
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the

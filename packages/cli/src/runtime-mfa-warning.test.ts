@@ -3,11 +3,11 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { logger } from '@ultimat3/core';
-import { createPgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, raw } from '@ultimat3/db';
 import { applyFrameworkSchema } from './framework-schema';
 import { warnUnsealedMfaSecrets } from './runtime-mfa-warning';
 
-const client = createPgliteClient();
+const client = pgliteClient();
 const printWarning = logger.warn;
 const warned: { message: string; fields: unknown }[] = [];
 

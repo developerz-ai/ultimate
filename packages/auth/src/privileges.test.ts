@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
-import { MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+import { MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import { updatePrivileges } from './privileges';
 import { createSession, type IssuedSession, type SessionRuntime } from './session';
 
@@ -15,7 +15,7 @@ const START = 1_700_000_000_000;
 
 const setup = async (
   session?: Partial<Auth['sessions']['policy']>,
-): Promise<{ auth: Auth; adapter: MemoryAdapter; issued: IssuedSession }> => {
+): Promise<{ auth: Auth; adapter: MemoryAuthAdapter; issued: IssuedSession }> => {
   const adapter = memoryAuthAdapter();
   const auth = defineAuth({
     adapter,
@@ -249,7 +249,7 @@ describe('a privilege change on a session that is already gone', () => {
  * rotation finishes — was minted under the OLD password and must not survive the change.
  */
 describe('a session minted mid-change does not outlive the password change', () => {
-  class InFlightLogin extends MemoryAdapter {
+  class InFlightLogin extends MemoryAuthAdapter {
     runtime: SessionRuntime | undefined;
     override async deleteSession(id: string): Promise<boolean> {
       const runtime = this.runtime;

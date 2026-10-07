@@ -3,7 +3,7 @@ import type { Clock } from '@ultimat3/core';
 import { StepDuplicateError } from './errors';
 import { memoryEventBus } from './events';
 import type { StepStore } from './steps';
-import { createStepRunner, isStepSuspension, MAX_TRACE_NAMES } from './steps';
+import { isStepSuspension, MAX_TRACE_NAMES, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
@@ -30,7 +30,7 @@ describe('step.run replay', () => {
     let emailCalls = 0;
 
     const attempt = async (failEmail: boolean): Promise<void> => {
-      const runner = createStepRunner({ runId: 'run-1', jobName: 'onboardOrg', store });
+      const runner = stepRunner({ runId: 'run-1', jobName: 'onboardOrg', store });
       const org = await runner.step.run('provision', () => {
         provisionCalls += 1;
         return { id: 'org-1', name: 'Acme' };
@@ -59,11 +59,11 @@ describe('step.run replay', () => {
   });
 
   test('the persisted output is returned verbatim on replay', async () => {
-    const first = createStepRunner({ runId: 'run-2', jobName: 'j', store });
+    const first = stepRunner({ runId: 'run-2', jobName: 'j', store });
     const value = await first.step.run('compute', () => ({ total: 42, currency: 'EUR' }));
     expect(value).toEqual({ total: 42, currency: 'EUR' });
 
-    const second = createStepRunner({ runId: 'run-2', jobName: 'j', store });
+    const second = stepRunner({ runId: 'run-2', jobName: 'j', store });
     const replayed = await second.step.run<{ total: number; currency: string }>('compute', () => {
       throw new Error('must not run');
     });
@@ -72,13 +72,13 @@ describe('step.run replay', () => {
   });
 
   test('a duplicate step name in one run fails with X_STEP_DUPLICATE', async () => {
-    const runner = createStepRunner({ runId: 'run-3', jobName: 'j', store });
+    const runner = stepRunner({ runId: 'run-3', jobName: 'j', store });
     await runner.step.run('same', () => 1);
     await expect(runner.step.run('same', () => 2)).rejects.toThrow(StepDuplicateError);
   });
 
   test('a failed step records the error and re-executes on the next attempt', async () => {
-    const runner = createStepRunner({ runId: 'run-4', jobName: 'j', store });
+    const runner = stepRunner({ runId: 'run-4', jobName: 'j', store });
     await expect(
       runner.step.run('flaky', () => {
         throw new Error('boom');
@@ -91,7 +91,7 @@ describe('step.run replay', () => {
     // message, and it is rendered totally rather than through `String(error)`.
     expect(record?.error).toBe('Error: boom');
 
-    const retry = createStepRunner({ runId: 'run-4', jobName: 'j', store });
+    const retry = stepRunner({ runId: 'run-4', jobName: 'j', store });
     await expect(retry.step.run('flaky', () => 'ok')).resolves.toBe('ok');
     expect((await store.get('run-4', 'flaky'))?.status).toBe('completed');
   });
@@ -104,7 +104,7 @@ describe('step.sleep', () => {
     let provisions = 0;
 
     const attempt = async (): Promise<void> => {
-      const runner = createStepRunner({ runId: 'run-5', jobName: 'onboardOrg', store, clock });
+      const runner = stepRunner({ runId: 'run-5', jobName: 'onboardOrg', store, clock });
       await runner.step.run('provision', () => {
         provisions += 1;
         return 'org';
@@ -137,7 +137,7 @@ describe('step.sleep', () => {
 
   test('the single-argument form derives a deterministic step name', async () => {
     const clock = fakeClock(T0);
-    const runner = createStepRunner({ runId: 'run-6', jobName: 'j', store, clock });
+    const runner = stepRunner({ runId: 'run-6', jobName: 'j', store, clock });
     await runner.step.sleep('30s').catch(() => undefined);
     expect((await store.get('run-6', 'sleep:30s'))?.wakeAt).toBe(T0 + 30_000);
   });
@@ -150,7 +150,7 @@ describe('step.sleep', () => {
     // The body a poll loop is: three identical sleeps. Each attempt replays it from the top,
     // which is what makes the ordinal deterministic — and what made the old derived name collide.
     const body = async (): Promise<void> => {
-      const runner = createStepRunner({ runId: 'run-7', jobName: 'j', store, clock });
+      const runner = stepRunner({ runId: 'run-7', jobName: 'j', store, clock });
       for (let i = 0; i < 3; i += 1) await runner.step.sleep('1h');
     };
 
@@ -169,7 +169,7 @@ describe('step.sleep', () => {
 
   test('the ordinal is per duration, so two different sleeps do not share a counter', async () => {
     const clock = fakeClock(T0);
-    const runner = createStepRunner({ runId: 'run-8', jobName: 'j', store, clock });
+    const runner = stepRunner({ runId: 'run-8', jobName: 'j', store, clock });
 
     await runner.step.sleep('1h').catch(() => undefined);
     await runner.step.sleep('2h').catch(() => undefined);
@@ -185,7 +185,7 @@ describe('step.waitForEvent', () => {
     const events = memoryEventBus({ clock });
 
     const attempt = (): Promise<unknown> => {
-      const runner = createStepRunner({
+      const runner = stepRunner({
         runId: 'run-7',
         jobName: 'awaitApproval',
         store,
@@ -215,7 +215,7 @@ describe('step.waitForEvent', () => {
     const clock = fakeClock(T0);
     const events = memoryEventBus({ clock });
     const attempt = (): Promise<unknown> => {
-      const runner = createStepRunner({ runId: 'run-8', jobName: 'j', store, clock, events });
+      const runner = stepRunner({ runId: 'run-8', jobName: 'j', store, clock, events });
       return runner.step.waitForEvent('maybe', 'never.happens', { timeout: '1m' });
     };
 
@@ -238,7 +238,7 @@ describe('a cancelled run writes nothing', () => {
   };
 
   test('a step that finishes after the cancel is refused instead of recorded', async () => {
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-9',
       jobName: 'j',
       store,
@@ -259,7 +259,7 @@ describe('a cancelled run writes nothing', () => {
       startedAt: T0,
       attempts: 1,
     });
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-10',
       jobName: 'j',
       store,
@@ -278,7 +278,7 @@ describe('a cancelled run writes nothing', () => {
 
   test('sleep and waitForEvent are fenced by the same signal', async () => {
     const clock = fakeClock(T0);
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-11',
       jobName: 'j',
       store,
@@ -295,7 +295,7 @@ describe('a cancelled run writes nothing', () => {
 describe('a step timeout cancels the body it is timing', () => {
   test('the signal handed to the step aborts before the step is failed', async () => {
     let observed: AbortSignal | undefined;
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-12',
       jobName: 'j',
       store,
@@ -318,7 +318,7 @@ describe('a step timeout cancels the body it is timing', () => {
   test('the run signal reaches the body too, so one check covers both deadlines', async () => {
     const controller = new AbortController();
     let observed: AbortSignal | undefined;
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-13',
       jobName: 'j',
       store,
@@ -342,7 +342,7 @@ describe('the attempt trace is bounded, and duplicate detection is not', () => {
   // `Array.includes` per claim made a long run quadratic: 20,000 steps is ~200M string compares
   // plus a 20,000-entry array carried to the end of the run and read by `x jobs show`.
   test('keeps the most recent MAX_TRACE_NAMES names, not one per step', async () => {
-    const runner = createStepRunner({ runId: 'run-long', jobName: 'sweep', store });
+    const runner = stepRunner({ runId: 'run-long', jobName: 'sweep', store });
 
     for (let i = 0; i < MAX_TRACE_NAMES * 3; i += 1) {
       await runner.step.run(`batch:${i}`, () => i);
@@ -355,7 +355,7 @@ describe('the attempt trace is bounded, and duplicate detection is not', () => {
 
   // The trace forgetting a name must never make it re-claimable: the store is keyed by it.
   test('still refuses a duplicate whose name scrolled out of the trace', async () => {
-    const runner = createStepRunner({ runId: 'run-dup', jobName: 'sweep', store });
+    const runner = stepRunner({ runId: 'run-dup', jobName: 'sweep', store });
 
     await runner.step.run('batch:0', () => 0);
     for (let i = 1; i <= MAX_TRACE_NAMES * 2; i += 1) {
@@ -367,12 +367,12 @@ describe('the attempt trace is bounded, and duplicate detection is not', () => {
   });
 
   test('bounds the replay trace the same way', async () => {
-    const first = createStepRunner({ runId: 'run-replay', jobName: 'sweep', store });
+    const first = stepRunner({ runId: 'run-replay', jobName: 'sweep', store });
     for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
       await first.step.run(`batch:${i}`, () => i);
     }
 
-    const second = createStepRunner({ runId: 'run-replay', jobName: 'sweep', store });
+    const second = stepRunner({ runId: 'run-replay', jobName: 'sweep', store });
     for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
       await second.step.run(`batch:${i}`, () => i);
     }
@@ -405,9 +405,9 @@ describe('a replay is the same value on every store', () => {
     test(`${label}: a Date output replays as what the store persisted, identically`, async () => {
       const on = make();
       const at = new Date(T0);
-      const first = createStepRunner({ runId: 'run-p', jobName: 'j', store: on });
+      const first = stepRunner({ runId: 'run-p', jobName: 'j', store: on });
       await first.step.run('stamp', () => ({ at }));
-      const second = createStepRunner({ runId: 'run-p', jobName: 'j', store: on });
+      const second = stepRunner({ runId: 'run-p', jobName: 'j', store: on });
       const replayed = await second.step.run('stamp', () => ({ at: new Date(0) }));
       expect(replayed).toEqual({ at: at.toISOString() } as unknown as { at: Date });
     });
@@ -417,7 +417,7 @@ describe('a replay is the same value on every store', () => {
       const clock = fakeClock(T0);
       const events = memoryEventBus({ clock });
       const attempt = (): Promise<unknown> =>
-        createStepRunner({
+        stepRunner({
           runId: 'run-t',
           jobName: 'j',
           store: on,

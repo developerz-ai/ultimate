@@ -5,7 +5,7 @@
  * row failed a filter over a column it did not carry.
  */
 
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
 import { publicPostSlugs } from './live';
@@ -15,7 +15,7 @@ test('every published post is a prerendered URL, newest first, and a draft is no
 }) => {
   // `pick` is what runs the seed; the builder alone writes nothing.
   await seed('dev').pick({ draft: 'post:draft-money' });
-  const server = createServer({
+  const server = httpServer({
     routes: [toQueryRoute(publicPostSlugs)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
   });

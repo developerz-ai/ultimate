@@ -5,7 +5,7 @@
 
 import { finiteCount, readWithinLimit } from '@ultimat3/core';
 import type { RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import { json, NO_STORE } from '@ultimat3/http';
+import { jsonResponse, NO_STORE } from '@ultimat3/http';
 import type { Storage } from '@ultimat3/storage';
 import {
   acceptSignedUpload,
@@ -74,7 +74,7 @@ async function acceptUpload(
         : { allowedContentTypes: [constraints.contentType] }),
     }),
   });
-  return json({ key: stored.key }, { status: 201 });
+  return jsonResponse({ key: stored.key }, { status: 201 });
 }
 
 /**

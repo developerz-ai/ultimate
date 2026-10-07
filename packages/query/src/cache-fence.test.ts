@@ -6,22 +6,22 @@
 // so the drop is a no-op and the report says `errors: []`. T2 `run()` resolves with pre-write rows.
 // T3 the fill publishes them for the full TTL — invisible to every reader until it expires. The
 // fence is `@ultimat3/cache`'s, sampled before the load and asked before the write; there is no
-// second one here — `createCacheStack` owns it, and this file is the proof the read path inherited
+// second one here — `cacheStack` owns it, and this file is the proof the read path inherited
 // the property when it stopped keeping a store of its own.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTier } from '@ultimat3/cache';
 import {
-  createLruTier,
   declareTags,
   invalidateTags,
   isolateDeclaredTags,
   isolateTiers,
+  lruTier,
   registerTier,
   resetTiers,
   tag,
 } from '@ultimat3/cache';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { readThrough } from './cache';
 
 /** A source that hangs until released, so the sequence below is an ordering, not a duration. */
@@ -42,7 +42,7 @@ beforeEach(() => {
   restore?.();
   restore = isolateTiers();
   resetTiers();
-  lru = createLruTier();
+  lru = lruTier();
   registerTier(lru);
 });
 
@@ -90,7 +90,7 @@ describe('the fence around a read-through fill', () => {
   test('a bust that lands mid-read is answered, never published', async () => {
     const read = startedRead('pre-write rows');
 
-    const reading = readThrough(createContext({}), 'k', 60_000, read.run, [tag('post')]);
+    const reading = readThrough(ctxOf({}), 'k', 60_000, read.run, [tag('post')]);
     await read.entered;
     // The drop finds no key — it is not in the tier yet — so it reports `errors: []`.
     await invalidateTags([tag('post')]);
@@ -107,26 +107,22 @@ describe('the fence around a read-through fill', () => {
   test('the next request re-reads, rather than joining an entry that was never written', async () => {
     const first = startedRead('pre-write rows');
 
-    const reading = readThrough(createContext({}), 'k', 60_000, first.run, [tag('post')]);
+    const reading = readThrough(ctxOf({}), 'k', 60_000, first.run, [tag('post')]);
     await first.entered;
     await invalidateTags([tag('post')]);
     first.finish();
     await reading;
 
-    const second = await readThrough(
-      createContext({}),
-      'k',
-      60_000,
-      async () => 'post-write rows',
-      [tag('post')],
-    );
+    const second = await readThrough(ctxOf({}), 'k', 60_000, async () => 'post-write rows', [
+      tag('post'),
+    ]);
     expect(second).toBe('post-write rows');
   });
 
   test('a bust of an unrelated tag does not stop the write', async () => {
     const read = startedRead('rows');
 
-    const reading = readThrough(createContext({}), 'k', 60_000, read.run, [tag('comment')]);
+    const reading = readThrough(ctxOf({}), 'k', 60_000, read.run, [tag('comment')]);
     await read.entered;
     await invalidateTags([tag('post')]);
     read.finish();
@@ -136,7 +132,7 @@ describe('the fence around a read-through fill', () => {
   });
 
   test('a fill nothing raced still writes', async () => {
-    await readThrough(createContext({}), 'k', 60_000, async () => 'rows', [tag('post')]);
+    await readThrough(ctxOf({}), 'k', 60_000, async () => 'rows', [tag('post')]);
 
     expect(await published('k')).toBe('rows');
   });

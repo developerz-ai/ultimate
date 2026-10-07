@@ -7,9 +7,6 @@
 import { CLIENT_BUILD_META, CLIENT_SYNC_META, CLIENT_SYNC_WORKER_META } from '@ultimat3/core';
 import type { HeadTag } from './head';
 
-/** Core's names (`page-meta.ts`), so the writer here and every reader share one literal each. */
-export { CLIENT_BUILD_META, CLIENT_SYNC_META, CLIENT_SYNC_WORKER_META };
-
 export interface ClientSyncHead {
   readonly syncUrl: string;
   readonly buildId: string;

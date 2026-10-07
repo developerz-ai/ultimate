@@ -3,12 +3,11 @@
  * HTTP `Accept-Language` negotiation. Knows nothing about catalogs or interpolation.
  */
 
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import { localeUnsupported } from './errors';
 
 /** A normalized BCP-47 tag — primary subtag, lowercase (`pt`), or `lang-script` (`zh-hant`). */
 export type Locale = string;
-
-export const DEFAULT_LOCALE: Locale = 'en';
 
 /** Locales the framework's own catalogs may ship for. Apps narrow or extend this set. */
 export const SUPPORTED_LOCALES: readonly Locale[] = [
@@ -44,10 +43,11 @@ export const SUPPORTED_LOCALES: readonly Locale[] = [
   'zh',
 ];
 
-// Direction moved to `@ultimat3/core` (`locale-direction.ts`) so a browser chunk that needs only
-// `directionOf` does not reach this barrel and the framework catalog it installs (issue #490).
-// Re-exported under the same names: every caller of this package is unchanged.
-export { type Direction, directionOf, isRtl } from '@ultimat3/core';
+// Direction is `@ultimat3/core`'s (`locale-direction.ts`), so a browser chunk that needs only
+// `directionOf` does not reach this barrel and the framework catalog it installs (issue #490). The
+// TYPE is re-exported because `LocaleResolution.direction` names it; the functions are not — their
+// one import path is `@ultimat3/core`.
+export type { Direction } from '@ultimat3/core';
 
 /**
  * The registered spelling of `lower`, compared case-insensitively. A registered `pt-BR` used to

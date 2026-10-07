@@ -12,10 +12,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
 import { html } from './response';
-import { createRouter, type Route } from './router';
+import { httpRouter, type Route } from './router';
 
 /** What `renderSsr` puts on an ungated page, verbatim. */
 const SSR_CACHE = 'public, max-age=0, s-maxage=30, stale-while-revalidate=300';
@@ -66,10 +66,10 @@ const routes: readonly Route[] = [
 ];
 
 const pipelineWith = (actorId?: string) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',

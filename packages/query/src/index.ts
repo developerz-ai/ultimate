@@ -17,14 +17,14 @@ import './registry';
 
 /**
  * Flight control for the typed client, and OPT-IN by construction: `client.ts` names `ClientFlight`
- * as a TYPE only, so a caller that never mentions `createClientFlight` pays nothing for the fence,
+ * as a TYPE only, so a caller that never mentions `clientFlight` pays nothing for the fence,
  * the dedup map or the retry loop. Every mechanism underneath is `@ultimat3/core`'s — one fence,
  * one flight map, one gate, one backoff curve for the whole framework — and so is the pipeline
  * itself: it shipped as a byte-identical copy here and in `@ultimat3/action`, and
  * two tier-3 packages may not import each other, so the one copy lives at tier 0.
  *
  * `ClientFlight` and `ClientRetry` are re-exported as TYPES because this barrel's options name
- * them; every value (`createClientFlight`, `isSuperseded`, …) is imported from `@ultimat3/core`,
+ * them; every value (`clientFlight`, `isSuperseded`, …) is imported from `@ultimat3/core`,
  * its one home — a re-export is a second import path (`X_HELPER_COPY`, `bun run flight-copies`).
  */
 export type { ClientFlight, ClientRetry } from '@ultimat3/core';
@@ -68,7 +68,6 @@ export { queryClient, queryClientMethodFor } from './client';
 export type { KindOf } from './column-kinds';
 export { kindsOf } from './column-kinds';
 export {
-  CursorInvalidError,
   CursorValueUnsupportedError,
   MatcherUnsupportedError,
   QueryColumnUnselectedError,
@@ -93,21 +92,15 @@ export { planResume, seekOf, spendQueryLimit, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
 /**
- * Path derivation only. There is no `toToolName`: an MCP tool is served under the export name
- * verbatim, and an exported derivation would be a second way to spell one tool.
- */
-export { derivePath } from './naming';
-/**
  * The read half of `openapi.json`. `@ultimat3/cli` merges these paths into `@ultimat3/action`'s
  * `buildOpenApi` document — the two packages are one tier and cannot compose each other.
  */
 export { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
 /**
- * The two search-string keys that page `GET /_x/query/<name>` — `_first` and `_after` — and the
- * shape the typed client's `.page()` takes. `MAX_PAGE_SIZE` is the bound both ends check.
+ * The shape the typed client's `.page()` takes. The bound both ends check is `@ultimat3/entity`'s
+ * `MAX_PAGE_SIZE` — imported from there, never re-published here.
  */
 export type { PageControls } from './page-controls';
-export { MAX_PAGE_SIZE } from './page-controls';
 /**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask
@@ -117,19 +110,12 @@ export { MAX_PAGE_SIZE } from './page-controls';
 export type { Page, PaginateArgs } from './pagination';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
 /**
- * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.
- * `admitsAnonymous` is `@ultimat3/policy`'s, re-exported here beside them: it is what
- * `toQueryRoute` derives `meta.auth` from, so a plain `route` sets that field from the same walk
- * rather than re-reading the root combinator.
+ * The one authz gate for reads, named after what it guards. The display label
+ * (`policyCapability`), what a report MATCHES on (`policyPermissions`) and what `toQueryRoute`
+ * derives `meta.auth` from (`admitsAnonymous`) are `@ultimat3/policy`'s, and the anonymous →
+ * `null` mapping (`actorOf`) is `@ultimat3/core`'s — imported from there, never re-published.
  */
-export {
-  actorOf,
-  admitsAnonymous,
-  guard,
-  guardBeforeInput,
-  policyCapability,
-  policyPermissions,
-} from './policy-gate';
+export { guardQuery, guardQueryBeforeInput } from './policy-gate';
 export type {
   AnyQuery,
   Query,
@@ -137,10 +123,6 @@ export type {
   QueryDef,
   QueryDescriptor,
   QueryFacade,
-  QueryListFilterOp,
-  QueryListParams,
-  QueryMcp,
-  QueryMcpAnnotations,
   QueryOptions,
   QueryRateLimit,
   SourceOptions,
@@ -154,7 +136,7 @@ export {
   listQueries,
   registerQueries,
   registerQuery,
-  resetRegistry,
+  resetQueries,
 } from './registry';
 /** The query FACTORY over an entity's searchable columns — a `query`, never a ninth primitive. */
 export type { SearchChain, SearchDef, SearchInput, SearchPage } from './search';
@@ -169,8 +151,9 @@ export {
 } from './shape';
 /** What a `single: true` read answers — one rule, also `@ultimat3/mcp`'s served tool's. */
 export { readAnswer } from './single-answer';
-export type { RowProvider, SqlSource, SqlText } from './source';
+/** `Builder` is a type only: `from()` is the one way to build one, so there is no `new Builder()`. */
+export type { Builder, RowProvider, SqlSource, SqlText } from './source';
 /** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
-export { Builder, from, isAfterKey } from './source';
+export { from, isAfterKey } from './source';
 export type { ExplainResult, QuerySqlInfo } from './sql';
-export { describeSql, explain } from './sql';
+export { describeSql, explainQuery } from './sql';

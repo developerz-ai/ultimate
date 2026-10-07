@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 
-// Enforce ONE spelling for the memory / Postgres factories every package's public entry exports:
-// `memoryX` and `postgresX`. A `create(Memory|Pg|Postgres)X` or a `pgX` export is a finding; so is
-// an exported `(In)Memory|Pg|Postgres` CLASS (the factory is the value, the class a type only) and
-// a `create<Vendor>Driver` (a driver is named for what it is: `smtpMailDriver`).
+// Enforce ONE spelling per factory every package's public entry exports: `memoryX` / `postgresX`
+// for the in-process and Postgres implementations, `<what it builds>()` for everything else.
+// `create(Memory|Pg|Postgres)X`, `pgX` and any `create<Thing>` export are findings; so is an
+// exported `(In)Memory|Pg|Postgres` CLASS, and a class exported as a VALUE beside a factory that
+// returns its seam (the factory is the value, the class a type only); so is a TYPE a factory takes
+// or builds that is not spelled after it (`factory-names-types.ts`); so is one value name declared
+// by two packages.
 //
 // THE DEFECT THIS EXISTS FOR. 24.x shipped both spellings side by side — `memoryAuditLog` and
 // `postgresAuditLog` in admin, `memoryRateLimitStore` in http, beside `createMemoryDriver`,
@@ -11,23 +14,34 @@
 // agent guessing a factory's name guessed wrong half the time (axiom 1). The first cut of this rule
 // read only camelCase and so missed `new MemoryIdempotencyStore()` beside
 // `postgresIdempotencyStore()`, `PgVectorStore`, `MemoryAdapter` and mail's `createSmtpDriver`
-// beside `memoryMailDriver`: the same two-spellings defect, one case away.
+// beside `memoryMailDriver`: the same two-spellings defect, one case away. The second read only the
+// memory / Postgres prefixes, and so missed `new AnthropicProvider()` beside `openAiProvider()`,
+// `createPgliteClient()` beside `postgresClient()`, and `cacheKeyFor` meaning a prompt's key in
+// `@ultimat3/ai` and a query's in `@ultimat3/query`.
 //
 // WHAT IS READ. Every `exports` target of every `packages/*/package.json` and of
 // `create-ultimate` — `src/index.ts` and each subpath (`@ultimat3/admin/schema`, …), because a
-// subpath is as public as the barrel. Names come from `Bun.Transpiler#scan`, so `export type` is
-// already gone (a type is not a factory — `export type { MemoryVectorStore }` is how a class stays
-// nameable) and `export { a as createPgX }` is caught as `createPgX`.
+// subpath is as public as the barrel. VALUE names come from `Bun.Transpiler#scan`, so `export
+// type` is not a value spelling (`export type { MemoryVectorStore }` is how a class stays nameable)
+// and `export { a as createPgX }` is caught as `createPgX`. TYPE names, the local binding behind an
+// alias and every `export *` come from `factory-names-exports.ts`; an `export *` names nothing
+// readable, so it is a finding, never a clean module. What each binding IS — a class, what it
+// implements, what a function takes and returns, whether the package declares it — comes from the
+// package's own top-level declarations (`factory-names-declarations.ts`), looked up by the LOCAL
+// name, so `export { Impl as Name }` is read as `Impl`.
 //
 // WHAT THIS CANNOT SEE. The rule is about SPELLING: a factory called `makeInMemoryQueue` matches
-// nothing here. `Pg` followed by a lower-case letter is a word (`createPgliteClient` names PGlite,
-// a product, not "Postgres"), so the prefix must be followed by an upper-case letter or a digit.
-// `PGLITE_MEMORY` is a constant, not `Pg…`. A PascalCase value is read as a class; a PascalCase
-// non-class value with one of these prefixes is flagged too, deliberately — it reads as one.
+// nothing here. `Pg` followed by a lower-case letter is a word (PGlite is a product, not
+// "Postgres"), so the prefix must be followed by an upper-case letter or a digit. `PGLITE_MEMORY`
+// is a constant, not `Pg…`. A PascalCase value with one of these prefixes is flagged whatever it
+// is, deliberately — it reads as a class. A class beside a factory is seen only when the factory
+// DECLARES its return type, and a re-export of another package's binding is the same binding — not
+// a second meaning; a second import PATH for one binding is a different defect, and core's is
+// `flight-copies`' (`lib/package-reexports.ts`).
 //
-// A canonical `memoryX` / `postgresX` exported by TWO packages is a finding too (`sharedFactoryNames`).
-//
-// Pinned at ZERO, enforcing outright: `scripts/factory-names.test.ts` asserts the real tree.
+// Pinned at ZERO, enforcing outright: `scripts/factory-names.test.ts` asserts the real tree. A
+// genuine exception, or a rename another package owes, is a row in `factory-names-pins.ts` with
+// its sentence; a row that matches no finding is a finding, so the table only shrinks.
 //
 //   bun run scripts/factory-names.ts [--json]
 
@@ -35,6 +49,14 @@
 import { join } from 'node:path';
 // The leaf module, never the `@ultimat3/core` barrel: a guard must not link the whole tree.
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import type { Declaration } from './factory-names-declarations';
+import { readDeclarations } from './factory-names-declarations';
+import type { ModuleExports } from './factory-names-exports';
+import { exportsIn, ownLocal } from './factory-names-exports';
+import type { FactoryNamePins } from './factory-names-pins';
+import { FACTORY_NAME_PINS, NO_PINS } from './factory-names-pins';
+import type { OwnExport } from './factory-names-types';
+import { typeMisspellings } from './factory-names-types';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -52,7 +74,10 @@ const CLASS = /^(?:In)?(Memory|Pg|Postgres)(?=[A-Z0-9])(.*)$/;
 /** `createSmtpDriver` — the vendor transport is a value named for what it builds. */
 const CREATE_DRIVER = /^create([A-Z]\w*)Driver$/;
 
-type Kind = 'factory' | 'class' | 'driver';
+/** `createGateway` — a factory is named for what it builds, never for the act of building. */
+const CREATE = /^create([A-Z0-9]\w*)$/;
+
+type Kind = 'factory' | 'class' | 'driver' | 'create' | 'seam' | 'type' | 'builder';
 
 interface Retired {
   readonly kind: Kind;
@@ -74,6 +99,8 @@ function retired(name: string): Retired | undefined {
   }
   const driver = CREATE_DRIVER.exec(name);
   if (driver !== null) return { kind: 'driver', canonical: `${lowerFirst(driver[1] ?? '')}Driver` };
+  const create = CREATE.exec(name);
+  if (create !== null) return { kind: 'create', canonical: lowerFirst(create[1] ?? '') };
   return undefined;
 }
 
@@ -88,6 +115,11 @@ export interface EntryModule {
   /** The specifier an app imports it by (`@ultimat3/jobs`, `@ultimat3/admin/schema`). */
   readonly specifier: string;
   readonly text: string;
+  /**
+   * The PACKAGE's top-level declarations (`factory-names-declarations.ts`). Absent, every export
+   * reads as the package's own value and no class is known — the reading that flags more.
+   */
+  readonly declarations?: ReadonlyMap<string, Declaration>;
 }
 
 const transpiler = new Bun.Transpiler({ loader: 'tsx' });
@@ -99,33 +131,187 @@ const WHY: Readonly<Record<Kind, string>> = {
     'a memory or Postgres implementation is built by a memoryX() / postgresX() factory and its class is not a public value, so `new MemoryX()` beside `postgresX()` is never a second spelling',
   driver:
     'a vendor transport is a <vendor><Thing>Driver() factory (smtpMailDriver, memoryJobDriver), never create<Vendor>Driver beside a memoryXDriver',
+  create:
+    'a factory is named for what it builds (openAiProvider, postgresClient, memoryVectorStore), never create<Thing>, so an agent guessing a factory never has to guess which of two conventions a package chose',
+  seam: 'an implementation is built by its factory and its class is not a public value, so `new X()` beside a sibling factory is never a second way to build one seam',
+  type: 'a type a factory takes or builds is spelled after that factory (postgresJobDriver takes PostgresJobDriverOptions, mcpServer takes McpServerInput), so the retired spelling never survives one import away from the new one',
+  builder:
+    'an in-process or Postgres implementation is built by a memoryX() / postgresX() factory, so the factory and the type it builds are never two spellings',
 };
+
+/** `@ultimat3/admin/schema` → `@ultimat3/admin`: a subpath re-exporting its own barrel is one package. */
+const packageOf = (specifier: string): string =>
+  specifier
+    .split('/')
+    .slice(0, specifier.startsWith('@') ? 2 : 1)
+    .join('/');
+
+/** A finding plus the key a pin names it by. */
+interface Keyed {
+  readonly key: string;
+  readonly finding: Finding;
+}
 
 function fixFor(name: string, found: Retired, at: string): string {
   const grep = `git grep -nw ${renderFixShellArg(name, '<the export>')}`;
   const rename = `rename ${name} to ${found.canonical} at every hit, its declaration and ${at} included`;
-  if (found.kind === 'class') {
+  if (found.kind === 'class' || found.kind === 'seam') {
     return `${grep}   # ${rename}: add \`export function ${found.canonical}(…): ${name}\` beside the class, keep the class exported from its own module, and export it from ${at} as \`export type { ${name} }\`; a caller's \`new ${name}(…)\` becomes \`${found.canonical}(…)\`, an in-package \`extends\` imports the module`;
+  }
+  if (found.kind === 'type') {
+    return `${grep}   # ${rename}, keeping it a type export (\`export type { ${found.canonical} }\`)`;
   }
   if (found.kind === 'driver') {
     return `${grep}   # ${rename} — or, naming what it builds, ${found.canonical.replace(/Driver$/, '')}<Thing>Driver (smtpMailDriver)`;
   }
+  if (found.kind === 'create') {
+    return `${grep}   # ${rename}; a caller's \`const clock = createTestClock()\` becomes \`const clock = testClock()\`, and where ${found.canonical} would shadow the caller's own variable or another package's export, qualify it after the variant it builds (scrapePacer, not pacer)`;
+  }
   return `${grep}   # ${rename}; if ${found.canonical} collides with another package's export, name the thing it builds (memoryJobDriver, not memoryDriver)`;
 }
 
-export function retiredExports(entry: EntryModule): readonly Finding[] {
-  const findings: Finding[] = [];
-  for (const name of transpiler.scan(entry.text).exports) {
-    const found = retired(name);
-    if (found === undefined) continue;
-    findings.push({
+const finding = (entry: EntryModule, name: string, found: Retired, why: string): Keyed => ({
+  key: `${packageOf(entry.specifier)} ${name}`,
+  finding: {
+    code: CODE,
+    cause: `${entry.specifier} exports ${name} (${entry.at}), ${why}`,
+    fix: fixFor(name, found, entry.at),
+    at: entry.at,
+  },
+});
+
+const exportsOf = (entry: EntryModule): readonly string[] => transpiler.scan(entry.text).exports;
+
+const parsed = new WeakMap<EntryModule, ModuleExports>();
+const parsedOf = (entry: EntryModule): ModuleExports => {
+  const known = parsed.get(entry);
+  if (known !== undefined) return known;
+  const read = exportsIn(entry.text);
+  parsed.set(entry, read);
+  return read;
+};
+
+/**
+ * The binding the PACKAGE declares behind an exported value name: `Impl` for
+ * `export { Impl as Name } from './x'`, nothing for a re-export of another package's binding. A
+ * name Bun's scan lists that the reading missed is taken as its own binding — the reading that
+ * flags more.
+ */
+function localOf(entry: EntryModule, name: string): string | undefined {
+  const read = parsedOf(entry);
+  const one = read.names.find((candidate) => !candidate.type && candidate.name === name);
+  return one === undefined ? name : ownLocal(one, read.imported);
+}
+
+/** Every name the entry exports — types included — with the binding its package declares. */
+function ownExports(entry: EntryModule): readonly OwnExport[] {
+  const read = parsedOf(entry);
+  return read.names.map((exported) => ({ exported, local: ownLocal(exported, read.imported) }));
+}
+
+/** `export * from './x'` adds names no rule here reads: reported unscanned, never read as clean. */
+function starKeyed(entry: EntryModule): readonly Keyed[] {
+  return parsedOf(entry).stars.map((from) => ({
+    key: `${packageOf(entry.specifier)} export * from ${from}`,
+    finding: {
       code: CODE,
-      cause: `${entry.specifier} exports ${name} (${entry.at}), a spelling 25.0.0 retired: ${WHY[found.kind]}`,
-      fix: fixFor(name, found, entry.at),
+      cause: `${entry.specifier} has \`export * from '${from}'\` (${entry.at}): an export * names nothing this rule can read, so every name it adds would pass unchecked — the module is reported unscanned, never clean`,
+      fix: `bun run scripts/factory-names.ts --json   # after replacing export * from '${from}' in ${entry.at} with export { … } from '${from}', each binding named`,
       at: entry.at,
-    });
+    },
+  }));
+}
+
+/** Rules over TYPE exports (`factory-names-types.ts`), one package's entries at a time. */
+function typesKeyed(entries: readonly EntryModule[]): readonly Keyed[] {
+  const found: Keyed[] = [];
+  for (const group of byPackage(entries).values()) {
+    const declarations = group[0]?.declarations;
+    if (declarations === undefined) continue;
+    const all = group.flatMap((entry) => ownExports(entry).map((own) => ({ entry, own })));
+    const seen = new Set<string>();
+    for (const miss of typeMisspellings(
+      all.map((one) => one.own),
+      declarations,
+    )) {
+      const at = all.find((one) => one.own.exported.name === miss.name)?.entry ?? group[0];
+      if (at === undefined || seen.has(miss.name)) continue;
+      seen.add(miss.name);
+      const kind = miss.kind;
+      found.push(
+        finding(at, miss.name, { kind, canonical: miss.canonical }, `${miss.why}: ${WHY[kind]}`),
+      );
+    }
   }
-  return findings;
+  return found;
+}
+
+function byPackage(entries: readonly EntryModule[]): ReadonlyMap<string, readonly EntryModule[]> {
+  const grouped = new Map<string, EntryModule[]>();
+  for (const entry of entries) {
+    const pkg = packageOf(entry.specifier);
+    grouped.set(pkg, [...(grouped.get(pkg) ?? []), entry]);
+  }
+  return grouped;
+}
+
+function retiredKeyed(entry: EntryModule): readonly Keyed[] {
+  const found: Keyed[] = [];
+  for (const name of exportsOf(entry)) {
+    const spelled = retired(name);
+    if (spelled === undefined) continue;
+    found.push(finding(entry, name, spelled, `a spelling 25.0.0 retired: ${WHY[spelled.kind]}`));
+  }
+  return found;
+}
+
+export function retiredExports(entry: EntryModule): readonly Finding[] {
+  return retiredKeyed(entry).map((one) => one.finding);
+}
+
+/**
+ * An error class is not a seam: `instanceof` is how a caller tells failures apart and `extends` is
+ * how every package declares one (root `CLAUDE.md`: subclass `UltimateError`), so the class IS the
+ * public value and a builder returning one is a message, not a second way to construct a seam.
+ */
+const isErrorClass = (name: string): boolean => /Error$/.test(name);
+
+/**
+ * A class exported as a VALUE by a package that also exports a camelCase factory DECLARED to return
+ * that class or an interface the class implements: `AnthropicProvider implements Provider` beside
+ * `openAiProvider(): Provider`. Structural, not lexical — `NatsTransport` beside `selectTransport():
+ * TransportSelection` is two seams, and a shared suffix proves nothing.
+ */
+function classesBesideFactories(entries: readonly EntryModule[]): readonly Keyed[] {
+  const found: Keyed[] = [];
+  for (const group of byPackage(entries).values()) {
+    const declarations = group[0]?.declarations;
+    if (declarations === undefined) continue;
+    const factories = new Map<string, string>();
+    for (const entry of group) {
+      for (const name of exportsOf(entry)) {
+        const local = localOf(entry, name);
+        const returns = local === undefined ? undefined : declarations.get(local)?.returns;
+        if (/^[a-z]/.test(name) && returns !== undefined && !factories.has(returns)) {
+          factories.set(returns, name);
+        }
+      }
+    }
+    for (const entry of group) {
+      for (const name of exportsOf(entry)) {
+        const local = localOf(entry, name);
+        const declared = local === undefined ? undefined : declarations.get(local);
+        if (declared?.kind !== 'class' || isErrorClass(name) || retired(name) !== undefined)
+          continue;
+        const seam = [local ?? name, ...declared.implements].find((type) => factories.has(type));
+        if (seam === undefined) continue;
+        const factory = factories.get(seam) ?? '';
+        const why = `a class VALUE while ${factory}() returns ${seam}: ${WHY.seam}`;
+        found.push(finding(entry, name, { kind: 'seam', canonical: lowerFirst(name) }, why));
+      }
+    }
+  }
+  return found;
 }
 
 /** A package.json `exports` value: a path, or a condition map whose leaves are paths. */
@@ -151,6 +337,7 @@ export async function readEntryModules(root: string): Promise<readonly EntryModu
     const name = 'name' in parsed && typeof parsed.name === 'string' ? parsed.name : manifest;
     const exportsField = 'exports' in parsed ? parsed.exports : undefined;
     const dir = manifest.slice(0, -'/package.json'.length);
+    const declarations = await readDeclarations(root, dir);
     const map: Record<string, unknown> =
       typeof exportsField === 'string'
         ? { '.': exportsField }
@@ -164,14 +351,33 @@ export async function readEntryModules(root: string): Promise<readonly EntryModu
         const source = Bun.file(join(root, at));
         if (!(await source.exists())) continue;
         const specifier = subpath === '.' ? name : `${name}/${subpath.replace(/^\.\//, '')}`;
-        entries.push({ at, specifier, text: await source.text() });
+        entries.push({ at, specifier, text: await source.text(), declarations });
       }
     }
   }
   return entries;
 }
 
-export function checkFactoryNames(entries: readonly EntryModule[]): readonly Finding[] {
+/** A pin row that silences nothing: the rename landed, or the exception no longer holds. */
+function stalePins(pins: FactoryNamePins, keys: ReadonlySet<string>): readonly Finding[] {
+  const rows = [
+    ...Object.keys(pins.exceptions).map((key) => ['exceptions', key] as const),
+    ...Object.keys(pins.owed).map((key) => ['owed', key] as const),
+  ];
+  return rows
+    .filter(([, key]) => !keys.has(key))
+    .map(([table, key]) => ({
+      code: CODE,
+      cause: `factory-names-pins.ts ${table} row ${JSON.stringify(key)} matches no finding: the rename landed or the exception no longer holds, and a stale row would silence the next export of that name`,
+      fix: `bun run scripts/factory-names.ts --json   # after deleting the ${JSON.stringify(key)} row from ${table} in scripts/factory-names-pins.ts`,
+      at: 'scripts/factory-names-pins.ts',
+    }));
+}
+
+export function checkFactoryNames(
+  entries: readonly EntryModule[],
+  pins: FactoryNamePins = NO_PINS,
+): readonly Finding[] {
   if (!entries.some((entry) => entry.at === 'packages/jobs/src/index.ts')) {
     return [
       {
@@ -183,36 +389,43 @@ export function checkFactoryNames(entries: readonly EntryModule[]): readonly Fin
       },
     ];
   }
-  return [...entries.flatMap(retiredExports), ...sharedFactoryNames(entries)];
+  const keyed = [
+    ...entries.flatMap(retiredKeyed),
+    ...classesBesideFactories(entries),
+    ...typesKeyed(entries),
+    ...entries.flatMap(starKeyed),
+    ...sharedNamesKeyed(entries),
+  ];
+  const pinned = (key: string): boolean =>
+    Object.hasOwn(pins.exceptions, key) || Object.hasOwn(pins.owed, key);
+  return [
+    ...keyed.filter((one) => !pinned(one.key)).map((one) => one.finding),
+    ...stalePins(pins, new Set(keyed.map((one) => one.key))),
+  ];
 }
 
-/** `memoryX` / `postgresX` — the canonical spelling, which must also be unique across packages. */
-const FACTORY = /^(?:memory|postgres)(?=[A-Z0-9])/;
-
-/** `@ultimat3/admin/schema` → `@ultimat3/admin`: a subpath re-exporting its own barrel is one package. */
-const packageOf = (specifier: string): string =>
-  specifier
-    .split('/')
-    .slice(0, specifier.startsWith('@') ? 2 : 1)
-    .join('/');
-
 /**
- * One factory name exported by two PACKAGES. `memoryDriver` was both `@ultimat3/entity`'s and
- * `@ultimat3/storage`'s, so a test wiring a database and a disk aliased one of them by hand — the
- * collision the canonical spelling cannot see on its own, because both halves are spelled right.
+ * One value name DECLARED by two packages and exported from both. `memoryDriver` was both
+ * `@ultimat3/entity`'s and `@ultimat3/storage`'s, so a test wiring a database and a disk aliased
+ * one of them by hand; `cacheKeyFor` was a prompt's key in `@ultimat3/ai` and a query's in
+ * `@ultimat3/query`, and `NO_TENANT` was `''` in one package and `'global'` in another. A
+ * re-export of another package's binding declares nothing, so it is not counted here.
  */
-export function sharedFactoryNames(entries: readonly EntryModule[]): readonly Finding[] {
+function sharedNamesKeyed(entries: readonly EntryModule[]): readonly Keyed[] {
   const owners = new Map<string, Map<string, EntryModule>>();
   for (const entry of entries) {
-    for (const name of transpiler.scan(entry.text).exports) {
-      if (!FACTORY.test(name)) continue;
+    for (const name of exportsOf(entry)) {
+      if (entry.declarations !== undefined) {
+        const local = localOf(entry, name);
+        if (local === undefined || !entry.declarations.has(local)) continue;
+      }
       const byPackage = owners.get(name) ?? new Map<string, EntryModule>();
       const pkg = packageOf(entry.specifier);
       if (!byPackage.has(pkg)) byPackage.set(pkg, entry);
       owners.set(name, byPackage);
     }
   }
-  const findings: Finding[] = [];
+  const found: Keyed[] = [];
   for (const [name, byPackage] of owners) {
     if (byPackage.size < 2) continue;
     const packages = [...byPackage.keys()].sort();
@@ -220,29 +433,32 @@ export function sharedFactoryNames(entries: readonly EntryModule[]): readonly Fi
     for (const pkg of packages) {
       const entry = byPackage.get(pkg);
       if (entry === undefined) continue;
-      findings.push({
-        code: CODE,
-        cause: `${listed} both export ${name} (${entry.at}): one factory name in two packages means a file importing both aliases one by hand, and an agent cannot tell from the name which thing it builds`,
-        fix: `git grep -nw ${renderFixShellArg(name, '<the export>')}   # in every package but one, rename ${name} after the type it returns (memoryStorageDriver for a MemoryStorageDriver), its declaration and ${entry.at} included`,
-        at: entry.at,
+      found.push({
+        key: `${packages.join(' + ')} ${name}`,
+        finding: {
+          code: CODE,
+          cause: `${listed} both export ${name} (${entry.at}): one name declared by two packages means a file importing both aliases one by hand, and an agent cannot tell from the name which thing it is`,
+          fix: `git grep -nw ${renderFixShellArg(name, '<the export>')}   # in every package but the lowest-tier one, rename ${name} after what it is there (memoryStorageDriver for a MemoryStorageDriver, promptCacheKey for a prompt's cache key), its declaration and ${entry.at} included; if the two are one thing, delete the copy and import the lower tier's`,
+          at: entry.at,
+        },
       });
     }
   }
-  return findings;
+  return found;
 }
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const entries = await readEntryModules(repoRoot());
-  const findings = checkFactoryNames(entries);
+  const findings = checkFactoryNames(entries, FACTORY_NAME_PINS);
   report(
     {
       ok: findings.length === 0,
       script: SCRIPT,
       summary:
         findings.length === 0
-          ? `every memory / Postgres factory across ${String(entries.length)} public entry module(s) is spelled memoryX / postgresX`
-          : `${String(findings.length)} export(s) still spelled create(Memory|Pg|Postgres)X, pgX, a Memory/Pg class or create<Vendor>Driver`,
+          ? `every factory across ${String(entries.length)} public entry module(s) is spelled memoryX / postgresX / <what it builds>, no class beside its factory, no name declared twice`
+          : `${String(findings.length)} export(s) spelled create<Thing>, create(Memory|Pg|Postgres)X or pgX, a class value beside its factory, a name two packages declare, or a stale pin`,
       findings,
       data: { entries: entries.map((entry) => entry.at) },
     },

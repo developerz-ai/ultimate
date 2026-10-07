@@ -30,7 +30,7 @@ export interface FormatMoneyOptions {
 }
 
 /**
- * `formatMoney(money(129900,'EUR'), 'de-DE')` → `1.299,00 €`.
+ * `formatMoney(fromMinor(129900,'EUR'), 'de-DE')` → `1.299,00 €`.
  *
  * Delegates to `formatMoneyParts` and joins: a UI styling the symbol off the parts and a label
  * rendering the string must not disagree about where the sign goes. Hand-prefixing `-` here put

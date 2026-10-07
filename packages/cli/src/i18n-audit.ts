@@ -8,13 +8,12 @@
 // root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { renderThrowable } from '@ultimat3/core';
+import { DEFAULT_LOCALE, renderThrowable } from '@ultimat3/core';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
   auditCatalogs,
   catalogInvalid,
   catalogKeys,
-  DEFAULT_LOCALE,
   extractFromFiles,
   loadCatalog,
   missingFrom,

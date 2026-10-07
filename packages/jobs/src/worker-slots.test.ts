@@ -4,15 +4,15 @@
 // belongs to its own job, and it is free the moment that job settles.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimOptions, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { type LeaseStore, memoryLeaseStore } from './leases';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -72,7 +72,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     });
 
     const driver = memoryJobDriver();
-    const worker = createWorker({ driver, concurrency: 2, context, drainOnShutdown: false });
+    const worker = jobWorker({ driver, concurrency: 2, context, drainOnShutdown: false });
     await enqueue(driver, 'slowJob', 'default');
 
     const first = worker.tick();
@@ -124,7 +124,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
         return base.claim(options);
       },
     };
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       queues: ['imports', 'emails'],
       concurrency: 1,
@@ -166,7 +166,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     }
 
     const driver = memoryJobDriver();
-    const worker = createWorker({ driver, concurrency: 1, context, drainOnShutdown: false });
+    const worker = jobWorker({ driver, concurrency: 1, context, drainOnShutdown: false });
     await enqueue(driver, 'jobA', 'default');
     await enqueue(driver, 'jobB', 'default');
 
@@ -219,7 +219,7 @@ describe('the fleet slot is handed back before the driver goes', () => {
         await base.close();
       },
     };
-    const worker = createWorker({ driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver, context, pollIntervalMs: 1 });
     await enqueue(driver, 'cappedJob', 'default');
 
     worker.start();
@@ -251,7 +251,7 @@ describe('the concurrency table is read by OWN keys, so a queue name is only eve
     // `concurrency` is a caller-supplied map keyed by queue NAME, and a queue name is deployment
     // data: an inherited member reached `Math.max(0, <function> - inFlight)` and the loop then
     // asked the driver for `limit: NaN`.
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       queues: ['imports', 'constructor', '__proto__', 'toString'],
       concurrency: { imports: 3 },
@@ -304,7 +304,7 @@ describe('a claim round that fails part-way hands the rest of the batch back', (
         maxAttempts: 3,
       });
     }
-    const worker = createWorker({ driver, context, pollIntervalMs: 1, concurrency: 3 });
+    const worker = jobWorker({ driver, context, pollIntervalMs: 1, concurrency: 3 });
 
     await expect(worker.tick()).rejects.toThrow('connection terminated');
 

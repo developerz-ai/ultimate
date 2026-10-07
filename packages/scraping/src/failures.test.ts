@@ -3,7 +3,7 @@
 // that arrives as a plain object and is not recognised there is a failure the queue retries.
 
 import { describe, expect, test } from 'bun:test';
-import { authFailed, blocked, promptUnanswered, sessionExpired } from './error-throws';
+import { authFailed, blocked, promptUnanswered, scrapeSessionExpired } from './error-throws';
 import { BURNS_SESSION, burnsSession, errorCode, NEVER_RETRIED, neverRetried } from './failures';
 
 describe('unit · errorCode', () => {
@@ -31,7 +31,7 @@ describe('unit · burnsSession', () => {
     expect(burnsSession(blocked('orders.daily', 'https://shop.test/orders', 'HTTP 403'))).toBe(
       true,
     );
-    expect(burnsSession(sessionExpired('orders.daily', 'k'))).toBe(true);
+    expect(burnsSession(scrapeSessionExpired('orders.daily', 'k'))).toBe(true);
     expect([...BURNS_SESSION].sort()).toEqual(['X_SCRAPE_BLOCKED', 'X_SCRAPE_SESSION_EXPIRED']);
   });
 

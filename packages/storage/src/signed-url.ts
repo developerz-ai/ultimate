@@ -8,10 +8,6 @@ import { type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
 
-/** Re-exported so every existing `from '@ultimat3/storage'` import keeps working — the
- * implementation now lives in `@ultimat3/core`, shared with `@ultimat3/auth`. */
-export { timingSafeEqual };
-
 /** `v2` since the canonical string carries the base path: a `v1` signature names no disk. */
 export const SIGNED_URL_VERSION = 'v2';
 export const DEFAULT_SIGNED_URL_TTL_MS = 900_000;

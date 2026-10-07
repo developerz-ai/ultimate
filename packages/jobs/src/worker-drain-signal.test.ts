@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type Ctx,
   configureLifecycle,
-  createContext,
+  ctxOf,
   drain,
   isUltimateError,
   resetLifecycle,
@@ -24,9 +24,9 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver, NackOptions, QueueStats } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker, type Worker } from './worker';
+import { jobWorker, type Worker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -103,7 +103,7 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
     idempotencyKey: 'signalled:1',
     maxAttempts: 1,
   });
-  const worker = createWorker({ driver, context, pollIntervalMs: 1, workerId: 'w-drain' });
+  const worker = jobWorker({ driver, context, pollIntervalMs: 1, workerId: 'w-drain' });
   worker.start();
   await isRunning;
   return { worker, driver, nacks, reason: () => reason, queueAtClose: () => queueAtClose };
@@ -230,7 +230,7 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
       idempotencyKey: 'held:1',
       maxAttempts: 1,
     });
-    const worker = createWorker({ driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver, context, pollIntervalMs: 1 });
     worker.start();
     await isRunning;
 

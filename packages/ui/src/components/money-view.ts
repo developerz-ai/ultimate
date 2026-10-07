@@ -1,12 +1,7 @@
 // Pure formatting core behind <Money>. Split out so the rule "format through the
 // injected locale, never an ambient default" is testable without a renderer.
 
-import {
-  type FormatMoneyOptions,
-  formatMoney,
-  type Money,
-  money as makeMoney,
-} from '@ultimat3/money';
+import { type FormatMoneyOptions, formatMoney, fromMinor, type Money } from '@ultimat3/money';
 import { invalidValueError } from '../errors';
 
 /** A bare number is minor units in the context currency. */
@@ -36,7 +31,7 @@ export function toMoney(value: MoneyInput, currency: string): Money {
       throw invalidValueError('Money', value, 'an integer number of minor units');
     }
     // Delegated so the currency code is validated by the one authority on it.
-    return makeMoney(value, currency);
+    return fromMinor(value, currency);
   }
   if (!Number.isInteger(value.minor)) {
     throw invalidValueError('Money', value, 'an integer number of minor units');

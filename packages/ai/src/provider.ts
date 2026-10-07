@@ -76,7 +76,7 @@ export interface GenerateRequest {
   /**
    * The caller's abort signal, forwarded to the socket by every provider in this package.
    *
-   * Deliberately absent from `cacheKeyFor` and from every estimate: it says whether a request was
+   * Deliberately absent from `promptCacheKey` and from every estimate: it says whether a request was
    * ABANDONED, never what it asked for, so two calls that differ only in it are the same call and
    * must share a cache entry. Omitted means the call runs to completion — there is no ambient
    * default, because a timeout the caller did not ask for is a truncated answer nothing reports.
@@ -193,8 +193,8 @@ export function totalTokens(usage: TokenUsage): number {
 export interface AnthropicProviderInput {
   /**
    * The ids this endpoint serves — REQUIRED, the app's list, never a built-in one: the gateway
-   * routes by membership, and each id is one the app `registerModel`-ed. The first answers a
-   * direct call that names no model, as `openAiProvider({ models })`'s does.
+   * routes by membership, and each id is one the app `registerModel`-ed. A direct call names its
+   * model or is refused (`X_AI_MODEL_UNRESOLVED`), as `openAiProvider({ models })`'s is.
    */
   readonly models: readonly ModelId[];
   /** Reads `ANTHROPIC_API_KEY` when omitted. Absent at call time is a labelled throw. */
@@ -220,6 +220,11 @@ export function requiresStreaming(request: GenerateRequest): boolean {
   return Math.min(request.maxTokens, modelSpec(model).maxOutput) > STREAM_ONLY_MAX_TOKENS;
 }
 
+/** The Anthropic Messages API provider — the one way to build one; the class is a type only. */
+export function anthropicProvider(input: AnthropicProviderInput): AnthropicProvider {
+  return new AnthropicProvider(input);
+}
+
 /**
  * The real Messages API shape. The request-surface rules are encoded rather than documented,
  * because getting them wrong is a 400:
@@ -241,8 +246,8 @@ export class AnthropicProvider implements Provider {
       // same way, as an empty `openAiProvider({ models })`.
       throw new AiRequestInvalidError({
         detail:
-          'AnthropicProvider was given an empty models list, so the gateway can never route to it',
-        fix: "new AnthropicProvider({ models: ['<id>'] })   # the ids this endpoint serves, each one your app registerModel-ed",
+          'anthropicProvider() was given an empty models list, so the gateway can never route to it',
+        fix: "anthropicProvider({ models: ['<id>'] })   # the ids this endpoint serves, each one your app registerModel-ed",
       });
     }
     this.models = config.models;

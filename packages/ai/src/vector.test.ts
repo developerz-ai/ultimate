@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
-import { HashEmbedder, normalize } from './embeddings';
-import { assembleContext, chunk } from './rag';
+import { hashEmbedder, normalizeVector } from './embeddings';
+import { assembleContext, chunkDocument } from './rag';
 import { fuse, type MemoryVectorStore, memoryVectorStore } from './vector';
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 
 /** Deliberately NOT normalised: magnitude must not decide the order. `pg-vector.live.test.ts` holds the twin. */
 const UNNORMALISED = [
@@ -84,7 +84,7 @@ describe('hybrid search', () => {
 });
 
 /**
- * The dev store enforces the SAME envelope `PgVectorStore` compiles into SQL. A tenant leak
+ * The dev store enforces the SAME envelope `PostgresVectorStore` compiles into SQL. A tenant leak
  * that only reproduces against production Postgres is a leak nobody finds locally.
  */
 describe('scope', () => {
@@ -190,7 +190,7 @@ describe('pg parity', () => {
 
 describe('embedding', () => {
   test('the hash embedder is deterministic and normalised', async () => {
-    const embedder = new HashEmbedder({ dimension: 32 });
+    const embedder = hashEmbedder({ dimension: 32 });
     const [a] = await embedder.embed(['the quick brown fox']);
     const [b] = await embedder.embed(['the quick brown fox']);
     expect(Array.from(a as Float32Array)).toEqual(Array.from(b as Float32Array));
@@ -204,7 +204,7 @@ describe('chunking and assembly', () => {
     const text = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} about things.`).join(
       ' ',
     );
-    const chunks = chunk({ id: 'doc-1', text, size: 40, overlap: 8 });
+    const chunks = chunkDocument({ id: 'doc-1', text, size: 40, overlap: 8 });
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) {
       expect(c.tokens).toBeLessThanOrEqual(60);

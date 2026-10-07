@@ -247,10 +247,11 @@ throw new UltimateError({
 
 Not a config edit. `JobsConfig.driver` was deleted in 5.0.0 for having no reader, so there is no
 key that selects a driver — `setJobDriver` is the seam, and the fix has to name the one that
-actually replaces the stub. It names no drain: every `x jobs drain --to` target either is one of
-these stubs or is refused (`memory` acked a durable queue into a `Map` that died at exit), and
-`enqueue` on a stub refuses, so nothing was ever queued onto it — the "then move what is already
-queued" clause this line carried until 2026-09-06 was a second unrunnable instruction. This was
+actually replaces the stub. It names no drain: `x jobs drain` is a planned subcommand
+(`X_NOT_IMPLEMENTED`, `packages/cli/src/cmd-planned.ts`) — a planned command in a `fix` is
+`X_ERROR_FIX_INVALID` — and `enqueue` on a stub refused, so nothing was ever queued onto it; the
+"then move what is already queued" clause this line carried until 2026-09-06 was a second
+unrunnable instruction. This was
 the Redis job-driver stub's own line until 25.0.0 deleted it, quoted rather
 than invented: a worked example in the page that DEFINES the rule may not be the one place it is
 broken.
@@ -267,7 +268,7 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_ERROR_STATUS_INVALID` | `http` | 500 | `registerErrorStatus()` given a framework code, an out-of-range status, or a second answer for one code | map a code this app owns to a status the framework does not hold |
 | `X_NOT_IMPLEMENTED` | any | 501 | a labelled unimplemented driver path | switch to the default driver |
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
-| `X_FLIGHT_GATE_OVERLOADED` | `core` | 503 | a `createFlightGate` is at `maxConcurrent` with its queue at `maxQueued`; `meta.retryAfterSeconds` is what `retryAfterOf` renders onto the header | retry after `Retry-After`, or widen the ceiling at the call site |
+| `X_FLIGHT_GATE_OVERLOADED` | `core` | 503 | a `flightGate` is at `maxConcurrent` with its queue at `maxQueued`; `meta.retryAfterSeconds` is what `retryAfterOf` renders onto the header | retry after `Retry-After`, or widen the ceiling at the call site |
 | `X_SUPERSEDED` | `core` | 499 | `fence.guard(issued)` was handed a generation the fence has moved past | discard the answer and re-issue against `fence.generation()` |
 | `X_INPUT_INVALID` | `action` | 400 | `input` parse failed; `data.path` names the field | fix the caller's field |
 | `X_OUTPUT_INVALID` | `action` | 500 | handler returned a value the `output` schema rejects | fix the handler or the schema |

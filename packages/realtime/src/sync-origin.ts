@@ -33,7 +33,7 @@ export function upgradeOrigin(
     origin,
     secFetchSite: request.headers.get('sec-fetch-site'),
     listed: (asked) => admitted.includes(asked),
-    listName: 'APP_URL or createSyncNode({ allowedOrigins })',
+    listName: 'APP_URL or syncNode({ allowedOrigins })',
   });
 }
 

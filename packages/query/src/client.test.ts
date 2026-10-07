@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { RecordEnvelope, RecordRows, RecordSink } from '@ultimat3/core';
-import { createClientFlight, pageClient, RECORDS_HEADER } from '@ultimat3/core';
+import { clientFlight, pageClient, RECORDS_HEADER } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type FetchLike, queryClient, queryClientMethodFor } from './client';
@@ -319,7 +319,7 @@ describe('the read client on the page store', () => {
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch,
-      flight: createClientFlight({ principal: () => 'alice' }),
+      flight: clientFlight({ principal: () => 'alice' }),
     });
 
     const both = Promise.all([client.publicPost({ slug: 'x' }), client.publicPost({ slug: 'x' })]);

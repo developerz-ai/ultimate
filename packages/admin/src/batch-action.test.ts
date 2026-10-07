@@ -3,19 +3,19 @@
 // that a worker runs through that same gate, as the operator who queued it.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, UltimateError } from '@ultimat3/core';
+import { ctxOf, UltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
-  createWorker,
   getJob,
   type JobDriver,
+  jobWorker,
   memoryJobDriver,
   resetJobDriver,
   setJobDriver,
 } from '@ultimat3/jobs';
 import type { AdminApp } from './admin';
-import { type AdminAuthz, allowed, denied } from './authz';
+import { type AdminAuthz, adminAllowed, adminDenied } from './authz';
 import type { BatchEnqueue } from './batch';
 import type { AdminAction, AdminRow } from './registry';
 import type { AdminResource } from './resource';
@@ -40,8 +40,8 @@ const rowRule: AdminAuthz = {
   decide: ({ permission, subject }) => {
     const row = subject?.row as AdminRow | undefined | null;
     return row !== undefined && row !== null && row['title'] === 'locked'
-      ? denied(permission, 'probe.locked-row')
-      : allowed(permission, 'probe.granted');
+      ? adminDenied(permission, 'probe.locked-row')
+      : adminAllowed(permission, 'probe.granted');
   },
 };
 
@@ -271,9 +271,9 @@ describe('unit · above the declared threshold, one job per chunk', () => {
     const result = await callAdminTool(admin, ctx(), 'admin.action.item.archive', { ids });
     expect(result).toMatchObject({ ok: true, data: { queued: 3 } });
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: jobs,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     const executions = [...(await worker.tick()), ...(await worker.tick())];

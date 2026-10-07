@@ -4,11 +4,11 @@
 // double rather than that file's single-answer one.
 
 import { describe, expect, test } from 'bun:test';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { httpOverFetch } from './http';
 import { MAX_REDIRECT_HOPS } from './http-redirect';
 import type { NetworkEntry } from './rings';
-import { createRing } from './rings';
+import { boundedRing } from './rings';
 import type { RobotsGate } from './robots';
 import type { SessionSnapshot } from './session-state';
 import { EMPTY_SESSION } from './session-state';
@@ -51,10 +51,10 @@ describe('unit · every redirect hop is screened, and the FINAL url is what is r
       body?: string;
       redirect?: string;
     }[] = [];
-    const network = createRing<NetworkEntry>();
+    const network = boundedRing<NetworkEntry>();
     const http = httpOverFetch({
       rules: { allowHosts: options.allowHosts ?? ['api.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
       network,
       robots: options.robots,

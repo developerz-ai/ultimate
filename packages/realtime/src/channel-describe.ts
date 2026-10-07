@@ -2,7 +2,7 @@
 // flattened the way a query's is. Server-side on purpose — the policy flattening is
 // `@ultimat3/query`'s, and a browser island declaring a channel must not bundle it.
 
-import { policyCapability, policyPermissions } from '@ultimat3/query';
+import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import { registeredChannels } from './channel-registry';
 
 export interface ChannelDescription {

@@ -8,7 +8,7 @@ import { browserRecord } from './browser-record';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { SessionSnapshot } from './session-state';
 
 const ORIGIN = 'https://shop.test';
@@ -51,7 +51,7 @@ describe('unit · restore() writes every stored key back, whatever it is called'
       page,
       browser,
       rules: { allowHosts: ['shop.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
     });
     // Built the way `session()` builds one read OUT of a page: `JSON.parse` files `__proto__` as
     // an own key, and `browserRecord` keeps it on a null prototype.

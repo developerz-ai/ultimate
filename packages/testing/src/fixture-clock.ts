@@ -33,7 +33,7 @@ export interface TestClock {
  * installed determinism once for the whole process, and uninstalling it here would hand the REAL
  * `Date` and the REAL `Math.random` to everything after. Restore only what was found.
  */
-export async function createTestClock(): Promise<TestClock> {
+export async function testClock(): Promise<TestClock> {
   const { toMs } = await import('@ultimat3/time');
   const captured = captureDeterminism();
   return {

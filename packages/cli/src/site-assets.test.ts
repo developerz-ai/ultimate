@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { AssetPath } from '@ultimat3/render';
 import { asset, setAssetResolver } from '@ultimat3/render';
 import { byteRange, siteAssetRoutes } from './site-asset-routes';
@@ -39,7 +39,7 @@ const get = async (
   headers: Record<string, string> = {},
 ): Promise<Response> => {
   const url = new URL(`http://app.test${pathname}`);
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: 'GET',
     role: 'web',

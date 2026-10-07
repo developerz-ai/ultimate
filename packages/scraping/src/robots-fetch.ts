@@ -8,8 +8,8 @@
 // The exit is a RESOLVER, not a string: `scrape-run.ts` builds this gate as an argument to
 // `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
+import type { HostRule } from '@ultimat3/core';
 import { finiteCount, isUltimateError, readWithinLimit } from '@ultimat3/core';
-import type { HostRule } from './hosts';
 import type { ScrapeFetch } from './http';
 import { redirectHop } from './http-redirect';
 import { interceptVerdict } from './intercept';

@@ -8,6 +8,8 @@
 // for having no reader. A 32-bit hash nothing calls is a hash the next caller reaches for as a
 // sharing key, which is the one thing it must never be.
 
+import { isJsonObject } from '@ultimat3/core/page';
+
 export type JsonValue =
   | string
   | number
@@ -47,12 +49,17 @@ export interface RowPatch {
   readonly write?: string;
 }
 
-export function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/**
+ * Core's `isJsonObject`, read as the wire's value domain. Sound ONLY for a value that came out of
+ * `JSON.parse` (a frame, a stored row): every member of one is a `JsonValue` by construction, which
+ * is the one thing core's shape check cannot know and so does not claim. One implementation, core's.
+ */
+export function isParsedJsonObject(value: unknown): value is JsonObject {
+  return isJsonObject(value);
 }
 
 export function isRow(value: unknown): value is Row {
-  return isJsonObject(value) && typeof value['id'] === 'string';
+  return isParsedJsonObject(value) && typeof value['id'] === 'string';
 }
 
 /** Shallow diff used to keep update patches minimal — the pipeline never ships unchanged columns. */

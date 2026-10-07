@@ -3,13 +3,13 @@
 // and the manifest reads the same table (`channel-describe.ts`); a second declaration of one name
 // is refused. Browser-safe: `channel()` runs in islands too.
 
-import { invariant } from '@ultimat3/core';
+import { assertCoded } from '@ultimat3/core';
 import type { Channel } from './channel-decl';
 
 const channels = new Map<string, Channel>();
 
 export function registerChannel(declared: Channel): Channel {
-  invariant(
+  assertCoded(
     !channels.has(declared.name),
     'X_CHANNEL_DECLARATION_INVALID',
     `two channel() declarations share the name "${declared.name}"`,

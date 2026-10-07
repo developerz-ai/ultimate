@@ -2,8 +2,8 @@
 // the bug this pins lived in the write, not the string: the app's own `ctx.headers.set` replaced
 // any cookie already on the response, so a sign-in beside a second cookie reached the browser alone.
 
-import { createContext, isUltimateError, runWithContext } from '@ultimat3/core';
-import { asCtx, createRequestContext, defineHttpConfig, setCookie } from '@ultimat3/http';
+import { ctxOf, isUltimateError, runWithContext } from '@ultimat3/core';
+import { asCtx, defineHttpConfig, requestContext, setCookie } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
 import { SESSION_COOKIE_PLAIN, SESSION_COOKIE_SECURE } from '../../shared/session';
 import { clearSessionCookie, writeSessionCookie } from './session-cookie';
@@ -12,7 +12,7 @@ const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
 
 /** Every `Set-Cookie` line `fn` leaves on the response of one request. */
 const cookiesAfter = (fn: () => void): readonly string[] => {
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url: new URL('https://app.test/api/sessions/create'),
     method: 'POST',
     role: 'web',
@@ -78,6 +78,6 @@ const codeOf = (fn: () => void): string => {
 
 unitTest('off-request it refuses rather than issuing a token nobody can present', () => {
   expect(codeOf(() => writeSessionCookie('abc', true, 600))).toBe('X_NO_CONTEXT');
-  const job = createContext({ role: 'worker' });
+  const job = ctxOf({ role: 'worker' });
   expect(codeOf(() => runWithContext(job, () => clearSessionCookie(true)))).toBe('X_NO_REQUEST');
 });

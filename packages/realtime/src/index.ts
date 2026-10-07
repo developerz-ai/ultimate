@@ -99,7 +99,6 @@ export {
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   changedColumns,
-  isJsonObject,
   isRow,
   type JsonObject,
   type JsonValue,
@@ -130,8 +129,8 @@ export {
   type QueueStore,
 } from './offline-queue';
 export {
-  createOutbox,
   listenForDrain,
+  localOutbox,
   type OutboxEntry,
   type PageOutbox,
   pageOutbox,

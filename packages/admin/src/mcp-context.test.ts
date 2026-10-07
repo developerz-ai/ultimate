@@ -6,13 +6,7 @@
 // HTTP that is the session cookie's user; over stdio it is nothing at all.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  agentActor,
-  createContext,
-  runWithContext,
-  tryUseContext,
-  userActor,
-} from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import type { McpCaller } from '@ultimat3/mcp';
 import type { AdminApp } from './admin';
@@ -114,7 +108,7 @@ describe('the MCP caller is the ambient actor for the whole call', () => {
     // The HTTP case: `mcpHttpRoute` mounted in a pipeline that already resolved a session cookie.
     // The agent token authorized as the agent while the repo reads ran as the cookie user.
     await runWithContext(
-      createContext({ actor: userActor({ id: 'cookie-user', orgId: 'org-other' }) }),
+      ctxOf({ actor: userActor({ id: 'cookie-user', orgId: 'org-other' }) }),
       callWhoami,
     );
     expect(seenActorId).toBe('agent');

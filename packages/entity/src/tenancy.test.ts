@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor, withChildContext } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor, withChildContext } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import type { EntityError } from './errors';
@@ -24,7 +24,7 @@ import {
  */
 const inRequest = <T>(build: () => T): T =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: userActor({ id: 'u-1', orgId: '11111111-1111-4111-8111-111111111111' }),
     }),
     build,
@@ -205,7 +205,7 @@ describe('the tenant comes from the actor, never from the caller', () => {
     { id: '44444444-4444-4444-8444-444444444444', orgId: ORG_B, title: 'theirs' },
   ];
   const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+    runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
 
   test('no row of another tenant is ever returned, whatever the caller names', async () => {
     const repo = memoryRepo(posts, rows);
@@ -238,7 +238,7 @@ describe('the tenant a plan actually runs under', () => {
     { id: '66666666-6666-4666-8666-666666666666', orgId: ORG_B, title: 'theirs' },
   ];
   const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+    runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
 
   test('is derived, so a call that names no tenant reads the actor’s and only the actor’s', async () => {
     const repo = memoryRepo(posts, rows);
@@ -319,7 +319,7 @@ describe('the tenant a plan actually runs under', () => {
     // The decision, pinned: an actor with no org is inside no org, so every tenant-scoped row is
     // somebody else's. Anonymous and system callers say so explicitly with crossTenant().
     const repo = memoryRepo(posts, rows);
-    await runWithContext(createContext(), async () => {
+    await runWithContext(ctxOf(), async () => {
       await expect(repo.findMany({ orgId: ORG_B })).rejects.toBeUltimateError(
         'X_TENANCY_ACTOR_ORG_REQUIRED',
       );
@@ -329,7 +329,7 @@ describe('the tenant a plan actually runs under', () => {
 
   test('an entity with no tenant column is untouched by any of it', async () => {
     const repo = memoryRepo(settings, [{ id: '77777777-7777-4777-8777-777777777777', key: 'k' }]);
-    await runWithContext(createContext(), async () => {
+    await runWithContext(ctxOf(), async () => {
       expect((await repo.findMany({})).rows).toHaveLength(1);
     });
   });
@@ -376,7 +376,7 @@ describe('the tenant a row is written under', () => {
   const MINE = '88888888-8888-4888-8888-888888888888';
   const seeded = [{ id: MINE, orgId: ORG_A, title: 'ours' }];
   const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+    runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
 
   test('an insert into another tenant is refused, and stores nothing', async () => {
     const repo = memoryRepo(posts, []);
@@ -429,7 +429,7 @@ describe('a hostile tenant value cannot replace the refusal it earned', () => {
   ];
 
   const asOrgA = <T>(fn: () => T): T =>
-    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+    runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
 
   test('a row naming one is X_TENANCY_ACTOR_MISMATCH, never the formatter’s own failure', () => {
     for (const [label, value] of HOSTILE) {
@@ -462,7 +462,7 @@ describe('a hostile tenant value cannot replace the refusal it earned', () => {
     // The other half of every message: `Actor.orgId` is typed `string`, and a JS caller minting an
     // actor is not bound by that. The refusal survives it too.
     const error = caught(() =>
-      runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: 10n as never }) }), () =>
+      runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: 10n as never }) }), () =>
         scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_A)),
       ),
     );

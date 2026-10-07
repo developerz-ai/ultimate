@@ -16,7 +16,7 @@ import { join } from 'node:path';
 // why: Bun has no file-URL-to-path API; the router's entry is located beside this file.
 import { fileURLToPath } from 'node:url';
 import { isUltimateError, userActor } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RouteNavigationMode } from '@ultimat3/render';
 import {
   clearRoutes,
@@ -78,7 +78,7 @@ function page(
 const ALICE = userActor({ id: 'alice@example.com', permissions: ['casos.read'] });
 
 const serverFor = (actor: ReturnType<typeof userActor> | null = null) =>
-  createServer({
+  httpServer({
     routes: appRoutes({ buildId: BUILD_ID, navigation: HEAD }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
@@ -241,7 +241,7 @@ describe('unit · the router route and the document that names it', () => {
   test('served immutable at its content address; any other name is a 404 naming the fix', async () => {
     const script = await buildNavigationScript(OUTSIDE, { entry });
     if (script === undefined) return expect.unreachable('the router did not build');
-    const server = createServer({
+    const server = httpServer({
       routes: navigationRoutes(() => script),
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

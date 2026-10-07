@@ -1,12 +1,12 @@
-// `createWorker({ schedule })` is the ONE seam every renewal a worker arms runs on — the registry
+// `jobWorker({ schedule })` is the ONE seam every renewal a worker arms runs on — the registry
 // row's here, the lease's and the fleet slot's per run. A renewal wired past it would be a real
 // interval inside the `runJobs` fixture, ticking on the wall clock under every job test.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import type { IntervalScheduler } from './renewal-timer';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 describe('unit · the worker renews on the scheduler it is handed', () => {
   test('the registry row is announced on the injected seam, and stop() disarms it', async () => {
@@ -17,13 +17,13 @@ describe('unit · the worker renews on the scheduler it is handed', () => {
         armed.delete(tick);
       };
     };
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: memoryJobDriver(),
       workerId: 'scheduled-worker',
       heartbeatIntervalMs: 7_000,
       drainOnShutdown: false,
       schedule,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
     });
 
     worker.start();

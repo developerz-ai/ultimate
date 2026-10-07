@@ -31,6 +31,26 @@ describe('@ultimat3/query public surface', () => {
     }
   });
 
+  // 25.0.0, one name one meaning (`scripts/factory-names.ts`): each of these was a second
+  // declaration of a name `@ultimat3/action`, `@ultimat3/policy` or `@ultimat3/core` also declares.
+  test('no twin of a sibling or lower-tier name — each renamed or imported from its one home', () => {
+    for (const name of [
+      'Builder',
+      'actorOf',
+      'derivePath',
+      'explain',
+      'guard',
+      'guardBeforeInput',
+      'policyCapability',
+      'resetRegistry',
+    ]) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    for (const name of ['explainQuery', 'guardQuery', 'guardQueryBeforeInput', 'resetQueries']) {
+      expect(typeof Reflect.get(surface, name)).toBe('function');
+    }
+  });
+
   // O-tool, 25.0.0: an MCP tool has ONE projection, `@ultimat3/mcp`'s `toolFrom` — the one
   // `tools/list` serves. `.tool()` was a second one built here; tier 3 cannot import the tier-4
   // projection, so the twin could not be made to return it. It is gone, and this keeps it gone.
@@ -59,5 +79,15 @@ describe('@ultimat3/query public surface', () => {
     const schema = t.object({ limit: t.number.max(50) });
     expect(schema.parse({ limit: 50 })).toEqual({ limit: 50 });
     expect(() => schema.parse({ limit: 51 })).toThrow();
+  });
+
+  // 25.0.0: a value whose home is a lower tier is imported from that tier, never re-published here
+  // — `admitsAnonymous`/`policyPermissions` are `@ultimat3/policy`'s, `MAX_PAGE_SIZE` is
+  // `@ultimat3/entity`'s. Core's values are `bun run flight-copies`' (`X_HELPER_COPY`); these are not
+  // core's, so the absence is pinned where the export could come back.
+  test('no value of a lower-tier package is re-published on the barrel', () => {
+    for (const name of ['admitsAnonymous', 'policyPermissions', 'MAX_PAGE_SIZE']) {
+      expect(surface).not.toHaveProperty(name);
+    }
   });
 });

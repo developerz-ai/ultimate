@@ -10,12 +10,12 @@ import {
   resendRequest,
   svixSignature,
 } from './delivery-event-fixture';
-import { createResendEventReceiver } from './resend-event-receiver';
+import { resendEventReceiver } from './resend-event-receiver';
 
 const SVIX_ID = 'msg_2KWPBgLlAfxdpx2AI54pPJ85f4W';
 const SVIX_TIMESTAMP = '1791288000'; // 2026-10-06T12:00:00Z
 const clock = frozenClock('2026-10-06T12:01:00.000Z');
-const receiver = createResendEventReceiver({ secret: RESEND_SECRET, clock });
+const receiver = resendEventReceiver({ secret: RESEND_SECRET, clock });
 
 async function signed(body: string, id = SVIX_ID, timestamp = SVIX_TIMESTAMP): Promise<Request> {
   return resendRequest(body, {
@@ -37,7 +37,7 @@ async function refusal(promise: Promise<unknown>): Promise<UltimateError> {
 
 const BODY = JSON.stringify(RESEND_BOUNCED);
 
-describe('createResendEventReceiver — authentic webhooks', () => {
+describe('resendEventReceiver — authentic webhooks', () => {
   test('email.bounced (Permanent) becomes a hard bounce keyed on the Resend email id', async () => {
     const outcome = await receiver.receive(await signed(BODY));
     expect(outcome).toEqual({
@@ -96,7 +96,7 @@ describe('createResendEventReceiver — authentic webhooks', () => {
   });
 });
 
-describe('createResendEventReceiver — forgeries are refused', () => {
+describe('resendEventReceiver — forgeries are refused', () => {
   test('flipping any one byte of the body is refused as a bad signature', async () => {
     const signature = await svixSignature(SVIX_ID, SVIX_TIMESTAMP, BODY);
     for (let index = 0; index < BODY.length; index += 1) {
@@ -128,7 +128,7 @@ describe('createResendEventReceiver — forgeries are refused', () => {
   });
 
   test('a body signed with another secret is refused', async () => {
-    const other = createResendEventReceiver({
+    const other = resendEventReceiver({
       secret: `whsec_${btoa('a-different-secret-entirely')}`,
       clock,
     });
@@ -148,7 +148,7 @@ describe('createResendEventReceiver — forgeries are refused', () => {
 
   test('an authentic delivery outside five minutes is stale, either direction', async () => {
     for (const at of ['2026-10-06T12:05:01Z', '2026-10-06T11:54:59Z']) {
-      const late = createResendEventReceiver({ secret: RESEND_SECRET, clock: frozenClock(at) });
+      const late = resendEventReceiver({ secret: RESEND_SECRET, clock: frozenClock(at) });
       expect((await refusal(late.receive(await signed(BODY)))).meta?.['reason']).toBe('stale');
     }
   });
@@ -172,20 +172,20 @@ describe('createResendEventReceiver — forgeries are refused', () => {
   });
 });
 
-describe('createResendEventReceiver — configuration', () => {
+describe('resendEventReceiver — configuration', () => {
   test.each([['whsec_'], ['whsec_!!!not-base64'], ['whsec_c2hvcnQ=']])(
     'secret %p is refused at construction',
     (secret) => {
-      expect(() => createResendEventReceiver({ secret })).toThrow(/whsec_/);
+      expect(() => resendEventReceiver({ secret })).toThrow(/whsec_/);
     },
   );
 
   test.each([[0], [Number.NaN]])('toleranceMs %p is refused at construction', (toleranceMs) => {
-    expect(() => createResendEventReceiver({ secret: RESEND_SECRET, toleranceMs })).toThrow();
+    expect(() => resendEventReceiver({ secret: RESEND_SECRET, toleranceMs })).toThrow();
   });
 });
 
-describe('createResendEventReceiver — prototype keys from the body', () => {
+describe('resendEventReceiver — prototype keys from the body', () => {
   // `type` is the sender's string; an object lookup would answer `Object.prototype` for these.
   test.each([['constructor'], ['__proto__'], ['toString'], ['hasOwnProperty']])(
     'a signed event of type %p is ignored, never mapped',

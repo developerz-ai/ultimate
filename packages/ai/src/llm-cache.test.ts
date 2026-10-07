@@ -8,7 +8,7 @@ import { anonymousCtx } from '@ultimat3/action';
 import { memorySemanticCache } from '@ultimat3/cache';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import {
   ANSWER,
@@ -213,7 +213,7 @@ describe('the entry key', () => {
     const inner = memorySemanticCache();
     const { provider } = stub({ answer: 'ok' });
     configureAi({
-      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
       // Orthogonal per first letter, so the two prompts never answer each other's lookup and the
       // entry KEY is the only thing under test.
       embedder: {

@@ -9,7 +9,7 @@ import type { Transport, TransportHandler, TransportSubscription } from './fanou
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry } from './socket';
-import { createSyncNode, type SyncNode } from './sync-node';
+import { type SyncNode, syncNode } from './sync-node';
 
 /** An in-process bus whose `subscribe` waits for `open()`, counting what is subscribed now. */
 class GatedTransport implements Transport {
@@ -62,7 +62,7 @@ class GatedTransport implements Transport {
 function gatedNode(): { node: SyncNode; transport: GatedTransport } {
   const sockets = new SocketRegistry();
   const transport = new GatedTransport();
-  const node = createSyncNode({
+  const node = syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,

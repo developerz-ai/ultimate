@@ -2,7 +2,7 @@
 // Distinct from Select — a menu runs commands, it does not hold a form value.
 
 import type { JSX } from 'solid-js';
-import { createFocusTrap, createRovingTabindex, useId } from '../a11y';
+import { focusTrap, rovingTabindex, useId } from '../a11y';
 import { cx } from '../cx';
 import { MENU_ITEM_SELECTOR, tabStopIndex } from '../roving';
 import { useUi } from '../theme/context';
@@ -49,7 +49,7 @@ export function Menu(props: MenuProps): JSX.Element {
 
   // Disabled items are excluded from BOTH answers — the list arrows walk and the one item that
   // carries the tab stop — because `focus()` on a disabled button silently does nothing.
-  const onKeyDown = createRovingTabindex(
+  const onKeyDown = rovingTabindex(
     () =>
       list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)),
     { orientation: 'vertical', dir: ui.dir },
@@ -69,7 +69,7 @@ export function Menu(props: MenuProps): JSX.Element {
     // Closing unmounts the panel with focus inside it, which resets focus to <body> and makes the
     // next Tab restart at the top of the document. The trap moves focus in on open and hands it
     // back to the trigger on close, so Escape returns the user where they were.
-    const trap = list === undefined ? undefined : createFocusTrap(list);
+    const trap = list === undefined ? undefined : focusTrap(list);
     trap?.activate();
     rt.onCleanup(() => {
       document.removeEventListener('pointerdown', onPointerDown, true);

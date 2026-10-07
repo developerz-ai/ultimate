@@ -12,7 +12,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // `packages/*/src/**` — but a test file reaches the admin directly and has to say so.
 import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
 import { memoryJobDriver, setJobDriver } from '@ultimat3/jobs';
 
@@ -38,7 +38,7 @@ const ask = (
   } = {},
 ): Promise<Answer> =>
   runWithContext(
-    createContext({
+    ctxOf({
       ...(roles === null ? {} : { actor: userActor({ id: 'seeded-admin', roles }) }),
       tz: context.tz ?? 'UTC',
       locale: context.locale ?? 'en',

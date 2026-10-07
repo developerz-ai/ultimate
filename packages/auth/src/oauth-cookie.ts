@@ -6,13 +6,19 @@
 // format at one trust level.
 
 import type { Clock } from '@ultimat3/core';
-import { EnvMissingError, readCookie, serializeSetCookie, systemClock } from '@ultimat3/core';
+import {
+  EnvMissingError,
+  readCookie,
+  serializeSetCookie,
+  systemClock,
+  timingSafeEqual,
+} from '@ultimat3/core';
 import type { OAuthHandshake, OAuthProviderId } from './oauth';
 import { oauthStateInvalid } from './oauth-errors';
 import { hasOAuthProvider } from './oauth-registry';
 import { assertFiniteAuthCount } from './policy-numbers';
 import type { RequestLike } from './session';
-import { base64Url, timingSafeEqual } from './tokens';
+import { base64Url } from './tokens';
 
 /** `__Host-` for the same reason the session cookie carries it: no subdomain can plant one. */
 export const OAUTH_HANDSHAKE_COOKIE_PREFIX = '__Host-x_oauth';

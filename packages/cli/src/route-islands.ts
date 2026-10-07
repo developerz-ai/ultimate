@@ -7,7 +7,7 @@ import { posix } from 'node:path';
 import type { IslandCollector, RouteEntry } from '@ultimat3/render';
 import {
   clientBootTags,
-  createIslandCollector,
+  islandCollector,
   islandModuleId,
   islandModuleIds,
   renderHead,
@@ -26,7 +26,7 @@ export const collectorFor = (
   options: DocumentOptions,
   scope: string | undefined,
 ): IslandCollector =>
-  createIslandCollector({
+  islandCollector({
     file: entry.file,
     hydrate: entry.config.hydrate,
     ...(options.resolveIsland === undefined ? {} : { resolve: options.resolveIsland(entry.file) }),

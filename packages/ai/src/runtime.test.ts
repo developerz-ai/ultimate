@@ -6,14 +6,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { memorySemanticCache } from '@ultimat3/cache';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
-import {
-  configureAi,
-  MAX_SEMANTIC_CACHE_SCOPES,
-  resetAiRuntime,
-  semanticCacheFor,
-} from './runtime';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
+import { configureAi, resetAiRuntime, semanticCacheFor } from './runtime';
 
 const built: string[] = [];
 
@@ -21,7 +16,7 @@ beforeEach(() => {
   resetAiRuntime();
   built.length = 0;
   configureAi({
-    gateway: createGateway({ providers: [new EchoProvider()] }),
+    gateway: providerGateway({ providers: [echoProvider()] }),
     semanticCache: (scope) => {
       built.push(scope);
       return memorySemanticCache();
@@ -38,11 +33,11 @@ describe('semanticCacheFor', () => {
   });
 
   test('the instance map is bounded, so an actor-keyed default cannot grow without end', () => {
-    for (let index = 0; index < MAX_SEMANTIC_CACHE_SCOPES + 50; index += 1) {
+    for (let index = 0; index < MAX_CACHED_FORMATTERS + 50; index += 1) {
       semanticCacheFor(`actor-${index}`);
     }
     // Each scope was built exactly once on its way in: the bound EVICTS, it does not refuse.
-    expect(built.length).toBe(MAX_SEMANTIC_CACHE_SCOPES + 50);
+    expect(built.length).toBe(MAX_CACHED_FORMATTERS + 50);
 
     // FIFO, so the oldest scopes are gone and asking again rebuilds rather than answering a hit.
     semanticCacheFor('actor-0');
@@ -51,20 +46,19 @@ describe('semanticCacheFor', () => {
     // The most recent one is still resident, which is what makes the eviction an eviction and
     // not a cache that answers nothing.
     const before = built.length;
-    semanticCacheFor(`actor-${MAX_SEMANTIC_CACHE_SCOPES + 49}`);
+    semanticCacheFor(`actor-${MAX_CACHED_FORMATTERS + 49}`);
     expect(built.length).toBe(before);
   });
 
   test("the bound is core's, not a second one this package invented", () => {
     // Axiom 1: `cachedFormatter` is the framework's one bounded FIFO map, and its name is about
     // its first caller rather than its contract.
-    expect(MAX_SEMANTIC_CACHE_SCOPES).toBe(MAX_CACHED_FORMATTERS);
   });
 
   test('a new runtime drops every instance — vectors from two embedders are not comparable', () => {
     semanticCacheFor('org-a');
     configureAi({
-      gateway: createGateway({ providers: [new EchoProvider()] }),
+      gateway: providerGateway({ providers: [echoProvider()] }),
       semanticCache: (scope) => {
         built.push(scope);
         return memorySemanticCache();

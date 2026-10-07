@@ -61,8 +61,8 @@ afterAll(async () => {
 describeLive('listUsersByOrg · one order on both adapters', () => {
   test('memory and Postgres both answer byte order, whatever the database collation', async () => {
     const adapters: readonly (readonly [string, AuthAdapter])[] = [
-      ['MemoryAdapter', memoryAuthAdapter(clock)],
-      ['BuiltinAdapter', postgresAuthAdapter(client, clock)],
+      ['MemoryAuthAdapter', memoryAuthAdapter(clock)],
+      ['PostgresAuthAdapter', postgresAuthAdapter(client, clock)],
     ];
     const answers: string[][] = [];
     for (const [name, adapter] of adapters) {
@@ -80,8 +80,8 @@ describeLive('listUsersByOrg · one order on both adapters', () => {
       answers.push([name, ...(await adapter.listUsersByOrg(ORG)).map((user) => user.email)]);
     }
     expect(answers).toEqual([
-      ['MemoryAdapter', ...EMAILS_IN_ORDER],
-      ['BuiltinAdapter', ...EMAILS_IN_ORDER],
+      ['MemoryAuthAdapter', ...EMAILS_IN_ORDER],
+      ['PostgresAuthAdapter', ...EMAILS_IN_ORDER],
     ]);
   });
 });

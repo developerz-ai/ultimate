@@ -7,13 +7,13 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
@@ -51,7 +51,7 @@ function answering(): { provider: Provider; seen: GenerateRequest[] } {
       };
       return Promise.resolve(result);
     },
-    stream: (request) => new EchoProvider().stream(request),
+    stream: (request) => echoProvider().stream(request),
   };
   return { provider, seen };
 }
@@ -66,7 +66,7 @@ function promptFor(): Prompt<{ orderId: string }> {
   });
 }
 
-const ctxAs = (id: string) => createContext({ actor: userActor({ id }) });
+const ctxAs = (id: string) => ctxOf({ actor: userActor({ id }) });
 
 beforeEach(() => {
   resetAiRuntime();
@@ -158,7 +158,9 @@ describe('agent() screens its loop bounds at declaration', () => {
 
   test('an honest declaration still loops — the non-vacuity half', async () => {
     const { provider, seen } = answering();
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const support = agent({
       input: Input,
       output: Output,

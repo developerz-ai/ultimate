@@ -6,7 +6,7 @@
 // On the wire it is not a frame kind: a roster change is an `events` frame on the channel the member
 // joined (`channel-presence.ts` is the payload), so only a channel declared `events: true` has one.
 
-import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
+import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
 import { presenceEvent } from './channel-presence';
 import type { ChannelEventsFrame } from './channel-wire';
@@ -86,7 +86,7 @@ export class PresenceRegistry {
       1,
       finiteOption('presence', 'maxMembers', options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS),
     );
-    this.#nodeId = options.nodeId ?? uuid();
+    this.#nodeId = options.nodeId ?? uuidV7();
   }
 
   get ttlMs(): number {

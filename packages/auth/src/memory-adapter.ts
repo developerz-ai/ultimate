@@ -2,7 +2,7 @@
 // database exists and the one every test in this package runs against — the same interface
 // Postgres and Better Auth implement, so a flow that works here works there or the seam is wrong.
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type {
   AuthAccount,
   AuthAdapter,
@@ -17,12 +17,11 @@ import type {
   UserQuery,
 } from './adapter';
 import { authUniqueViolation } from './errors';
-import { timingSafeEqual } from './tokens';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 
 /**
- * `BuiltinAdapter`'s `order by email collate "C"`: byte order over UTF-8, which is CODE-POINT order
+ * `PostgresAuthAdapter`'s `order by email collate "C"`: byte order over UTF-8, which is CODE-POINT order
  * — never `localeCompare` (the machine's locale) and never `<` on strings, whose UTF-16 code units
  * put an astral character (a lead surrogate, 0xD8xx) ahead of U+E000–U+FFFF.
  */
@@ -39,7 +38,7 @@ const byCodePoint = (a: string, b: string): number => {
   }
 };
 
-export class MemoryAdapter implements AuthAdapter {
+export class MemoryAuthAdapter implements AuthAdapter {
   readonly name = 'memory';
   readonly #clock: Clock;
   readonly #users = new Map<string, AuthUser>();
@@ -58,7 +57,7 @@ export class MemoryAdapter implements AuthAdapter {
   }
 
   /**
-   * Exact match, because `BuiltinAdapter` issues `where email = $1` against a plain `text ...
+   * Exact match, because `PostgresAuthAdapter` issues `where email = $1` against a plain `text ...
    * unique` column and nothing folds case there. Normalising here instead made this the ONE
    * adapter that found an account Postgres would not, which is a linked account under `x dev` and
    * a duplicate one in production. `normaliseEmail` is the caller's, above the seam.
@@ -75,7 +74,7 @@ export class MemoryAdapter implements AuthAdapter {
   }
 
   /**
-   * The two UNIQUE constraints `x_users` declares, enforced here because `BuiltinAdapter` LEANS on
+   * The two UNIQUE constraints `x_users` declares, enforced here because `PostgresAuthAdapter` LEANS on
    * them: `email text not null unique` and `external_id text unique` (`tables.ts`). Without them
    * this adapter — the one `x new` scaffolds and every test runs against — accepted two rows at one
    * address, and the second was unreachable forever, since `findUserByEmail` returns the first.
@@ -353,6 +352,6 @@ export class MemoryAdapter implements AuthAdapter {
  * The one way to build the in-memory adapter — the twin of `postgresAuthAdapter()`. The class is a
  * type in the barrel only (`X_FACTORY_NAME_SPELLING`), so `new` is never a second spelling.
  */
-export function memoryAuthAdapter(clock: Clock = systemClock): MemoryAdapter {
-  return new MemoryAdapter(clock);
+export function memoryAuthAdapter(clock: Clock = systemClock): MemoryAuthAdapter {
+  return new MemoryAuthAdapter(clock);
 }

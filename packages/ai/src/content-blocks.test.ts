@@ -15,10 +15,10 @@ import {
 } from './content-blocks';
 import { AiContentUnsupportedError } from './content-errors';
 import { AiRequestInvalidError } from './errors';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, useFixtureModels } from './model-fixture';
 import { modelSpec, registerModel, resetModels } from './models';
-import { type AiMessage, AnthropicProvider, estimateInputTokens, messageText } from './provider';
+import { type AiMessage, anthropicProvider, estimateInputTokens, messageText } from './provider';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -71,7 +71,7 @@ describe('a well-formed block passes, and the Anthropic body carries it untouche
 
   test('every source of both kinds', () => {
     for (const block of blocks) {
-      const body = new AnthropicProvider({ models: FIXTURE_ANTHROPIC_IDS }).body({
+      const body = anthropicProvider({ models: FIXTURE_ANTHROPIC_IDS }).body({
         model: TARGET.model,
         messages: turn(block),
         maxTokens: 100,
@@ -203,9 +203,9 @@ describe('a replayed block with no source never crashes the pre-flight', () => {
   // The gateway estimates BEFORE the provider screens. A `{ type: 'document' }` with no source, or
   // a null one, read `source.type` there and surfaced as a bare TypeError, not the coded refusal.
   test('a sourceless or null-source document through gateway.generate is X_AI_REQUEST_INVALID', async () => {
-    const gateway = createGateway({
+    const gateway = providerGateway({
       providers: [
-        new AnthropicProvider({
+        anthropicProvider({
           models: FIXTURE_ANTHROPIC_IDS,
           apiKey: 'k',
           fetch: async () => new Response('{}'),

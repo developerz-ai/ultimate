@@ -273,7 +273,7 @@ export class LruCache {
   }
 }
 
-export function createLruTier(options: LruOptions = {}): CacheTier & { readonly cache: LruCache } {
+export function lruTier(options: LruOptions = {}): CacheTier & { readonly cache: LruCache } {
   const cache = new LruCache(options);
   return {
     name: 'lru',

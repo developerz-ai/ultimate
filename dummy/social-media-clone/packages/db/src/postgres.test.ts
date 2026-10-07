@@ -7,7 +7,7 @@
 // all of it: the boot costs seconds, the statements cost nothing.
 
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { createPgliteClient, type DbClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
+import { type DbClient, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { database, postgresDriver } from '@ultimat3/entity';
 import { blocks, conversations, friendships, participants, users } from './schema';
 import { demo } from './seed';
@@ -51,7 +51,7 @@ const migrationFiles = async (): Promise<readonly string[]> => {
 const PGLITE_BOOT_AND_MIGRATE_MS = 60_000;
 
 beforeAll(async () => {
-  client = createPgliteClient();
+  client = pgliteClient();
   // The ambient client `postgresDriver()` resolves through. Same install `startServices` performs.
   setDbClient(client);
   const files = await migrationFiles();

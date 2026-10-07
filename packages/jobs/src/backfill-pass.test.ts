@@ -19,7 +19,7 @@ import {
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import type { StepStore } from './steps';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 beforeEach(() => {
@@ -69,7 +69,7 @@ describe('one pass', () => {
       source: () => table.where({ orgId: ORG }),
       handle: () => expect.unreachable('an empty source has no batch to hand over'),
     });
-    const runner = createStepRunner({ runId: RUN_ID, jobName: 'nothing', store: pass.store });
+    const runner = stepRunner({ runId: RUN_ID, jobName: 'nothing', store: pass.store });
 
     const report = await empty.run({
       input: {},

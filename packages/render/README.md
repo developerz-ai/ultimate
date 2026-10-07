@@ -143,7 +143,7 @@ is a build error.
 
 ## The route table is the single source of route truth
 
-`registry.ts` maps file paths to URLs and `describeRoutes()` projects the table into a
+`registry.ts` maps file paths to URLs and `describePages()` projects the table into a
 sorted, JSON-safe descriptor list. Every downstream generator reads that one table.
 
 | File | URL |
@@ -333,7 +333,7 @@ first frame — an id, a count, and the URL of the read that answers the rest:
 
 ```ts
 // page.tsx — the props are the id and the endpoint, never the rows
-import { derivePath } from '@ultimat3/query';
+import { queryPath } from '@ultimat3/core';
 import { island } from '@ultimat3/render';
 
 const Dispatch = island({
@@ -342,7 +342,7 @@ const Dispatch = island({
 });
 
 export const DispatchFor = (host: { readonly id: string }) =>
-  Dispatch({ hostId: host.id, models: [], modelsEndpoint: `${derivePath('modelList')}?limit=100` });
+  Dispatch({ hostId: host.id, models: [], modelsEndpoint: `${queryPath('modelList')}?limit=100` });
 ```
 
 ```tsx
@@ -370,7 +370,7 @@ export function mount(el: HTMLElement, props: DispatchProps): void {
 ```
 
 `models: []` keeps the island's first frame honest (an empty picker, not a missing one) and
-`derivePath` is the same derivation the typed `client()` uses, so the URL cannot drift from the
+`queryPath` is the same derivation the typed `client()` uses, so the URL cannot drift from the
 route. The `fix:` line of an over-cap `X_ISLAND_PROPS_INVALID` names exactly this edit, with the
 heaviest prop's own name in it.
 
@@ -385,7 +385,7 @@ by the request that carries it.
 ### It counts against the route's budget
 
 ```ts
-const collector = createIslandCollector({ file, hydrate: config.hydrate, resolve });
+const collector = islandCollector({ file, hydrate: config.hydrate, resolve });
 const html = await renderToHtml(page, { islands: collector });
 document.body += hydrateRuntime(collector.directives);   // the one thing left to remember
 ```
@@ -494,14 +494,14 @@ a job boundary the class is gone and the `code` is what survives — match on th
 |---|---|
 | `defineRoute` | the `route` primitive |
 | `withStatus`, `routeStatusOf` | the status a loader answers, carried on its data; 200 when nothing asked |
-| `island`, `createIslandCollector` | one interactive component on a static page |
+| `island`, `islandCollector` | one interactive component on a static page |
 | `asset`, `setAssetResolver`, `assetPathProblem`, `AssetPath` | `asset('assets/x.avif')` → the content-hashed URL of a public site file; the table is the CLI's ([Static Assets](../../wiki/Static-Assets.md)) |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
-| `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |
-| `registerMountedRoutes`, `RouteMount`, `RouteMountInput`, `MountedRouteInput` | routes a package mounts with no surface file: listed by `describeRoutes()` with `mount: { by, permissions }`, absent from `routeEntries()` |
+| `registerRoute`, `describePages`, `routeFor`, `routePathFromFile` | the route table |
+| `registerMountedRoutes`, `RouteMount`, `RouteMountInput`, `MountedRouteInput` | routes a package mounts with no surface file: listed by `describePages()` with `mount: { by, permissions }`, absent from `routeEntries()` |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
-| `createIsrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
+| `isrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
 | `renderSsr`†, `streamResult`† | the per-request modes |
 | `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |
 | `claimStylesheets`† | a package claims its own directory's stylesheets for ONE surface, so the other surface's documents never carry them |
@@ -526,7 +526,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
   dependents and the revalidator slot, the latter only while it is still this controller's.
   The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
   least recently generated evicted first. One regeneration holds its page for at most
-  `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `createIsrController({ regenerateDeadlineMs })`),
+  `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `isrController({ regenerateDeadlineMs })`),
   so a render that never settles no longer pins the page for the life of the process. A stored
   path takes its TTL and tags from the most specific matching route (static > `:param` >
   `*catch-all`, per segment), never the first in table order.
@@ -554,7 +554,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 - **`hydrate: 'never'`** emits no attributes beyond the marker and no runtime — the `site/`
   0kb default is mechanical, not aspirational. A page that renders an island anyway is
   `X_ISLAND_NOT_HYDRATED`, not a silently dead button.
-- **A gated page is `ssr`**, never a client-rendered shell. `spa` and `createRouter` were
+- **A gated page is `ssr`**, never a client-rendered shell. `spa` and `httpRouter` were
   deleted `As of 2026-08-20`: `renderSpa` never read the route's component and no build ever produced the
   `chunks` it preloaded, so every `spa` route served an empty `<div id="x-root">`, and the router
   that shell would have needed had no caller in the framework or in either tracked app. A page

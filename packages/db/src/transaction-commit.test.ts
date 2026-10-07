@@ -4,11 +4,11 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { withTransaction } from './transaction';
 
 beforeEach(() => {
-  setDbClient(createRecordingClient());
+  setDbClient(recordingClient());
 });
 
 describe('onCommit', () => {

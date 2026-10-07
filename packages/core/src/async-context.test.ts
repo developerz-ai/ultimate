@@ -62,7 +62,7 @@ describe('a browser bundle of @ultimat3/core', () => {
     readonly hasContext: () => boolean;
     readonly currentSpan: () => unknown;
     readonly isImpersonating: () => boolean;
-    readonly createContext: () => unknown;
+    readonly ctxOf: () => unknown;
     readonly anonymousActor: () => unknown;
     readonly runWithContext: (ctx: unknown, fn: () => unknown) => unknown;
     readonly withSpan: (name: string, fn: () => unknown) => unknown;
@@ -114,9 +114,7 @@ describe('a browser bundle of @ultimat3/core', () => {
    */
   test('refuses to OPEN a scope, with a code and a fix, on every write path', async () => {
     const core = await barrel();
-    expect(() => core.runWithContext(core.createContext(), () => 1)).toThrow(
-      /X_ASYNC_CONTEXT_UNAVAILABLE/,
-    );
+    expect(() => core.runWithContext(core.ctxOf(), () => 1)).toThrow(/X_ASYNC_CONTEXT_UNAVAILABLE/);
     expect(() => core.withSpan('work', () => 1)).toThrow(/X_ASYNC_CONTEXT_UNAVAILABLE/);
   }, 60_000);
 

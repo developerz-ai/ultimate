@@ -3,12 +3,12 @@
 // agent reads off the docstring and ships against.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import { jobLeaseKey, memoryLeaseStore } from './leases';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 afterEach(() => {
   resetJobs();
@@ -72,14 +72,14 @@ describe('fleet-wide job concurrency', () => {
       maxAttempts: 1,
     });
 
-    const workerA = createWorker({
+    const workerA = jobWorker({
       driver: driverA,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
-    const workerB = createWorker({
+    const workerB = jobWorker({
       driver: driverB,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
 
@@ -127,9 +127,9 @@ describe('fleet-wide job concurrency', () => {
       idempotencyKey: 'one',
       maxAttempts: 1,
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     await worker.tick();
@@ -150,10 +150,10 @@ describe('fleet-wide job concurrency', () => {
       run: () => Promise.resolve(),
     });
     const { leases: _dropped, ...withoutLeases } = memoryJobDriver();
-    const worker = createWorker({
+    const worker = jobWorker({
       // The lease store is what makes it enforceable, so a driver without one is the case.
       driver: withoutLeases,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     expect(() => {

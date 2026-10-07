@@ -35,7 +35,7 @@ export interface AdminLayoutProps {
 const SIDE_ID = 'x-admin-side';
 
 /** The one rendering of "who am I acting as", so no two screens can disagree about it. */
-export const actorLabel = (actor: AdminActor | null | undefined): string =>
+export const adminActorLabel = (actor: AdminActor | null | undefined): string =>
   actor === null || actor === undefined || actor.id === 'anonymous'
     ? t('admin.actor.anonymous')
     : t('admin.actor.signedIn', { id: actor.id, roles: (actor.roles ?? []).join(', ') });
@@ -85,7 +85,7 @@ export function AdminLayout(props: AdminLayoutProps): JSX.Element {
           )}
           <span>{t(props.app.branding.nameKey)}</span>
         </a>
-        <p class={styles['actor']}>{actorLabel(props.actor)}</p>
+        <p class={styles['actor']}>{adminActorLabel(props.actor)}</p>
 
         {/* A native GET at the search route: the term rides the URL, so a result page is a link
             an operator can send and the form needs no handler. */}

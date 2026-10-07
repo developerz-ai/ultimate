@@ -2,7 +2,7 @@
 // own queue (the dev driver under `x dev`) — one jobs UI, not a second one in the dev panel. Only
 // ever reached by `dev/panel-jobs.ts`'s dynamic `import()`, so `/_x`'s mount graph stays free of it.
 
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { renderToHtml } from '@ultimat3/render/server';
 import { listHref } from '../list-request';
 import { adminMounts } from '../mounts';
@@ -33,7 +33,7 @@ export async function jobsTabHtml(tabPath: string, params: URLSearchParams): Pro
   const json = `${tabPath}?json=1`;
   const data = await overviewData(range, Date.now());
   // The framework catalog's locale for every label, whatever the app's default is.
-  return runWithContext(createContext({ locale: 'en', tz: 'UTC' }), () =>
+  return runWithContext(ctxOf({ locale: 'en', tz: 'UTC' }), () =>
     renderToHtml(
       <JobsOverview
         data={data}

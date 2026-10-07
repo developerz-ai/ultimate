@@ -9,7 +9,7 @@
 // sharing a name would each destroy the other's schema. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -116,7 +116,7 @@ describe.skipIf(!hasPostgres)('live · postgres · tenancy', () => {
    * keep their own `caught`, three their own `inRequest`.
    */
   const inRequestFor = <T>(orgId: string, work: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: userActor({ id: 'live-reader', orgId }) }), work);
+    runWithContext(ctxOf({ actor: userActor({ id: 'live-reader', orgId }) }), work);
 
   /** The stable code a call rejected with. Message text is not the contract; the code is. */
   const rejectionCode = async (call: Promise<unknown>): Promise<string> => {

@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { createJwksClient } from './jwks';
+import { jwksClient } from './jwks';
 
 const clock = frozenClock(new Date('2026-08-16T12:00:00.000Z'));
 
@@ -18,7 +18,7 @@ const HOSTILE = 'https://op.test/$(id)/`id`/jwks';
 
 /** The `fix:` of whatever this client refuses with, or a sentence naming what came back instead. */
 const fixFor = async (jwksUri: string, doFetch: () => Promise<Response>): Promise<string> => {
-  const keys = createJwksClient({ provider: 'test-op', jwksUri, clock, fetch: doFetch });
+  const keys = jwksClient({ provider: 'test-op', jwksUri, clock, fetch: doFetch });
   const thrown = await keys.keyFor('k1', 'RS256').catch((error: unknown) => error);
   return thrown instanceof AuthError ? thrown.fix : `not-an-AuthError: ${typeof thrown}`;
 };
@@ -63,7 +63,7 @@ describe('a jwks_uri the issuer supplied', () => {
       new Response(JSON.stringify({ keys: [other] }), {
         headers: { 'content-type': 'application/json' },
       });
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: HOSTILE,
       clock,

@@ -19,16 +19,14 @@
 // disagreed with what `tools/list` served — deleted in 25.0.0 (O-tool), because tier 3 cannot
 // import this one to return it. `cross-surface.test.ts` pins `toolFrom` to the served entry.
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, McpExposureDeclaration } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
-import type { McpListParams } from './list-params';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
 import type {
   AnyMcpTool,
   McpCaller,
-  McpRole,
   McpToolAnnotations,
   McpToolResult,
   ToolArgs,
@@ -36,32 +34,6 @@ import type {
 import { jsonResult, structuredResult } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
-
-/**
- * MCP exposure as declared on an action/query (`mcp: { expose: true, description }`).
- * `visibleTo` restricts which roles may enumerate the tool; it is a catalog concern, not
- * an authz one — the policy still decides.
- */
-export interface McpExposure {
-  readonly expose?: boolean;
-  /**
-   * Contract text, not UI text: the same string is the OpenAPI operation `summary`, and
-   * `buildOpenApi`'s bytes are what `x verify` diffs. Routing it through the ambient,
-   * request-scoped `t()` would make that artifact locale-dependent — see
-   * `ActionMcp.description` in @ultimat3/action.
-   */
-  readonly description?: string;
-  readonly visibleTo?: readonly McpRole[];
-  /** Display name for a client's UI. Contract text, like `description`. Absent: none published. */
-  readonly title?: string;
-  /**
-   * Overrides of the derived hints, key by key — see `deriveAnnotations`. The one declaration an
-   * app writes for a write that destroys nothing: `annotations: { destructiveHint: false }`.
-   */
-  readonly annotations?: McpToolAnnotations;
-  /** A list query's whitelist, carried to the tool for the meta surface. See `McpListParams`. */
-  readonly listParams?: McpListParams;
-}
 
 /**
  * The surface this projection needs from a primitive. Structurally satisfied by `Action`
@@ -72,7 +44,8 @@ export interface McpExposure {
 export interface ProjectablePrimitive {
   readonly name: string;
   readonly description?: string;
-  readonly mcp?: McpExposure;
+  /** Core's ONE `mcp` block, as the action or query declared it — never a restatement here. */
+  readonly mcp?: McpExposureDeclaration;
   /** JSON Schema of the input, narrowed to the wire subset by `toWireSchema`. */
   readonly inputJsonSchema?: JsonSchema;
   /** True for a mutation. Drives the rate-limit bucket; queries set it false. */
@@ -117,7 +90,7 @@ function exposed(primitive: ProjectablePrimitive): boolean {
  */
 export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
   const primitive = asProjectable(listed);
-  // The primitive's own name and nothing else: `McpExposure.name` was a second naming field no
+  // The primitive's own name and nothing else: `mcp.name` was a second naming field no
   // declaration could set, deleted in 25.0.0 (plan 101, M4).
   const name = primitive.name;
   const description =

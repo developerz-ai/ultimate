@@ -10,7 +10,7 @@ import { afterAll, beforeAll, expect } from 'bun:test';
 // why: Bun has no file-URL-to-path API; the router's entry is located beside this file.
 import { fileURLToPath } from 'node:url';
 import type { Route, RouteNavigation } from '@ultimat3/http';
-import { createServer, cspHashSource, defineHttpConfig, redirect } from '@ultimat3/http';
+import { cspHashSource, defineHttpConfig, httpServer, redirect } from '@ultimat3/http';
 import type { IslandDirective } from '@ultimat3/render';
 import {
   clientNavigationTags,
@@ -358,7 +358,7 @@ const routes: Route[] = [
   ),
 ];
 
-const pipeline = createServer({
+const pipeline = httpServer({
   routes,
   role: 'web',
   config: defineHttpConfig({

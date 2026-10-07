@@ -108,7 +108,7 @@ export class CacheLimitInvalidError extends UltimateError {
     expected: string;
     /**
      * Where the value came FROM, when that is not an `app.config.ts` key. `loadDeadlineMs` and the
-     * similarity override arrive as call arguments (`createCacheStack`, `lookup`), so telling their
+     * similarity override arrive as call arguments (`cacheStack`, `lookup`), so telling their
      * caller to edit `app.config.ts` names a key that does not exist.
      */
     source?: string | undefined;

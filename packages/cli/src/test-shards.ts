@@ -52,9 +52,6 @@ import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
 import { testEnvOverrides } from './test-dotenv';
 
-/** `@ultimat3/testing`'s `ISOLATED_ENV` — the one spelling, which that package's preload reads. */
-export const ISOLATED_TEST_ENV = ISOLATED_ENV;
-
 /** Bun's per-file durations, cached under the run's root and refreshed by every parallel run. */
 export const TEST_TIMINGS_FILE = '.x/test-timings.json';
 
@@ -258,7 +255,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
     // Only an isolated run: the preload clears `Bun.plugin` handlers after each file, which in a
     // shared global would leave the next `.tsx` compiling with Bun's classic factory.
-    ...(isolatedRun(options) ? { [ISOLATED_TEST_ENV]: '1' } : {}),
+    ...(isolatedRun(options) ? { [ISOLATED_ENV]: '1' } : {}),
   };
   const passthrough = options.passthrough ?? [];
   const watching = passthrough.includes('--watch');

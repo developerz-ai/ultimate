@@ -14,7 +14,7 @@ import {
   isIslandNode,
   island,
 } from './island';
-import { createIslandCollector, islandModuleIds } from './island-collector';
+import { islandCollector, islandModuleIds } from './island-collector';
 import { ISLAND_PROPS_MAX_BYTES } from './island-props';
 import { parseByteBudget } from './islands';
 import { h } from './jsx';
@@ -161,7 +161,7 @@ describe('island · a specifier that cannot be emitted', () => {
 describe('island · an island that can never boot', () => {
   test("hydrate: 'never' plus an island is a contradiction the route has to resolve", async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
-    const collector = createIslandCollector({ file: PAGE, hydrate: 'never' });
+    const collector = islandCollector({ file: PAGE, hydrate: 'never' });
     const code = await asyncCodeOf(() =>
       renderToHtml(h(Modal, null, 'Contact us'), { islands: collector }),
     );
@@ -177,7 +177,7 @@ describe('island · an island that can never boot', () => {
 
   test('the fix names the route file, and one edit — not a menu to choose from', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
-    const collector = createIslandCollector({ file: PAGE, hydrate: 'never' });
+    const collector = islandCollector({ file: PAGE, hydrate: 'never' });
     try {
       await renderToHtml(h(Modal, null, 'x'), { islands: collector });
       throw new Error('unreachable');
@@ -194,7 +194,7 @@ describe('island · an island that can never boot', () => {
 describe('island · what an island may close over', () => {
   const render = (node: unknown): Promise<string> =>
     renderToHtml(node, {
-      islands: createIslandCollector({ file: PAGE, hydrate: 'interaction' }),
+      islands: islandCollector({ file: PAGE, hydrate: 'interaction' }),
     });
 
   test('an undeclared prop is refused by name — a spread entity row names every column', async () => {
@@ -242,7 +242,7 @@ describe('island · a static page ships JS for only its island', () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['subject'] });
     const Hero = () => h('h1', null, 'Pricing');
 
-    const collector = createIslandCollector({ file: PAGE, hydrate: 'interaction' });
+    const collector = islandCollector({ file: PAGE, hydrate: 'interaction' });
     const html = await renderToHtml(
       h(
         'main',
@@ -277,7 +277,7 @@ describe('island · a static page ships JS for only its island', () => {
 
   test('the same island twice gets one module and two prop bags', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['subject'] });
-    const collector = createIslandCollector({ file: PAGE, hydrate: 'interaction' });
+    const collector = islandCollector({ file: PAGE, hydrate: 'interaction' });
     const html = await renderToHtml(
       h('main', null, Modal({ subject: 'top' }), Modal({ subject: 'bottom' })),
       { islands: collector },
@@ -298,14 +298,14 @@ describe('island · a static page ships JS for only its island', () => {
     expect(isIslandNode(node)).toBe(true);
     // …and the walker must still see the island, not an empty array: order, not luck.
     const html = await renderToHtml(node, {
-      islands: createIslandCollector({ file: PAGE, hydrate: 'idle' }),
+      islands: islandCollector({ file: PAGE, hydrate: 'idle' }),
     });
     expect(html).toContain('data-x-island="contact-modal-1"');
   });
 
   test('the built chunk URL replaces the specifier through one hook, nothing else', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
-    const collector = createIslandCollector({
+    const collector = islandCollector({
       file: PAGE,
       hydrate: 'idle',
       resolve: () => '/_x/islands/contact-modal.9f2a1c.js',
@@ -337,7 +337,7 @@ describe('island · declaring one is the whole declaration', () => {
     expect(entry.islands).toEqual(['contact-modal']);
 
     // 3. it renders, and the browser is told to boot it
-    const collector = createIslandCollector({ file: PAGE, hydrate: entry.config.hydrate });
+    const collector = islandCollector({ file: PAGE, hydrate: entry.config.hydrate });
     const html = await renderToHtml(Modal({ subject: 'pricing', children: 'Contact us' }), {
       islands: collector,
     });
@@ -420,7 +420,7 @@ describe('island · declaring one is the whole declaration', () => {
     expect(entry.config.budget.js).toBeUndefined();
 
     // The registration is not the refusal. This is: the island is reached, and rejected.
-    const collector = createIslandCollector({ file: PAGE, hydrate: entry.config.hydrate });
+    const collector = islandCollector({ file: PAGE, hydrate: entry.config.hydrate });
     expect(await asyncCodeOf(() => renderToHtml(h(Modal, null, 'x'), { islands: collector }))).toBe(
       'X_ISLAND_NOT_HYDRATED',
     );
@@ -433,7 +433,7 @@ describe('island · declaring one is the whole declaration', () => {
     expect(stated.islands).toHaveLength(1);
     const statedFix = await fixOf(() =>
       renderToHtml(h(Stated, null, 'x'), {
-        islands: createIslandCollector({ file: PAGE, hydrate: stated.hydrate }),
+        islands: islandCollector({ file: PAGE, hydrate: stated.hydrate }),
       }),
     );
     expect(statedFix).toContain("remove hydrate: 'never'");
@@ -446,7 +446,7 @@ describe('island · declaring one is the whole declaration', () => {
     expect(orphan.hydrate).toBe('never');
     const orphanFix = await fixOf(() =>
       renderToHtml(h(Orphan, null, 'x'), {
-        islands: createIslandCollector({ file: PAGE, hydrate: orphan.hydrate }),
+        islands: islandCollector({ file: PAGE, hydrate: orphan.hydrate }),
       }),
     );
     expect(orphanFix).toContain('above defineRoute');

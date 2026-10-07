@@ -8,12 +8,7 @@
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import { measurementActor, runWithContext, withInProcessFetch } from '@ultimat3/core';
-import {
-  createPipeline,
-  createRequestContext,
-  createRouter,
-  defineHttpConfig,
-} from '@ultimat3/http';
+import { defineHttpConfig, httpPipeline, httpRouter, requestContext } from '@ultimat3/http';
 import { apiRoutes } from './api-routes';
 
 /** One build's measurement scope: its actor, and a runner that renders inside it. */
@@ -35,15 +30,15 @@ export async function measureScope(input: {
   // No rate limit: every request here is this build's own render, and a limiter would need a
   // deployment scope a build does not have (`X_RATE_LIMIT_SCOPE_UNSET`).
   const config = defineHttpConfig({ buildId: input.buildId, rateLimit: { enabled: false } });
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url: new URL(input.origin),
     method: 'GET',
     role: 'web',
     config,
   });
   ctx.actor = actor;
-  const pipeline = createPipeline({
-    table: createRouter(apiRoutes()),
+  const pipeline = httpPipeline({
+    table: httpRouter(apiRoutes()),
     config,
     hooks: { authenticate: () => actor },
   });

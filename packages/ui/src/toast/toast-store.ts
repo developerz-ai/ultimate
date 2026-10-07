@@ -84,7 +84,7 @@ function defaultEnv(): ToastEnv {
   return typeof document === 'undefined' ? INERT_TOAST_ENV : browserToastEnv();
 }
 
-export function createToastStore(env: ToastEnv = defaultEnv()): ToastStore {
+export function toastStore(env: ToastEnv = defaultEnv()): ToastStore {
   const holds = new Set<ToastHold>();
   const listeners = new Set<(queue: ToastQueue) => void>();
   let queue: ToastQueue = EMPTY_TOAST_QUEUE;

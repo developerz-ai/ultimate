@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { arm } from './cdp-arm';
 import type { CdpPageLike } from './cdp-port';
-import { testClock } from './clock';
-import { createRing } from './rings';
+import { testScrapeClock } from './clock';
+import { boundedRing } from './rings';
 
 const unhandled: unknown[] = [];
 const onUnhandled = (reason: unknown): void => {
@@ -43,11 +43,11 @@ describe('arm', () => {
   ])('%s leaves nothing unhandled', async (_label, url) => {
     const { page, fire } = fakePage();
     await arm(
-      { page, rules: { allowHosts: ['allowed.test'] }, clock: testClock() },
+      { page, rules: { allowHosts: ['allowed.test'] }, clock: testScrapeClock() },
       {
-        network: createRing(),
-        console: createRing(),
-        pageErrors: createRing(),
+        network: boundedRing(),
+        console: boundedRing(),
+        pageErrors: boundedRing(),
         crashed: { value: undefined },
       },
     );

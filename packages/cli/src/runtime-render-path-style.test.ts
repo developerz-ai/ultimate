@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { configureActionPathStyle, forgetHandedOutActionPaths } from '@ultimat3/action';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { appRoutes } from './runtime-render';
@@ -42,7 +42,7 @@ function registerPages(): void {
 }
 
 async function documentAt(path: string): Promise<string> {
-  const server = createServer({
+  const server = httpServer({
     routes: appRoutes({ buildId: BUILD_ID }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
@@ -82,7 +82,7 @@ describe("unit · a document carries the server's action path style", () => {
     registerPages();
     const routes = appRoutes({ buildId: BUILD_ID });
     configureActionPathStyle('readable');
-    const server = createServer({
+    const server = httpServer({
       routes,
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

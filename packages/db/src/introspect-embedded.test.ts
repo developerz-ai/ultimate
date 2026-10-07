@@ -1,18 +1,18 @@
-// Single responsibility: `introspect()`'s three catalog queries against the real embedded
+// Single responsibility: `introspectSchema()`'s three catalog queries against the real embedded
 // database. `introspect.test.ts` pins the row -> description fold with a recording client, and
 // nothing there can tell a correct catalog query from one Postgres answers differently — a
 // composite foreign key is the case that proves it, because the wrong join returns a cross
 // product of source and target columns that a stubbed row set would never produce.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { findTable, introspect } from './introspect';
-import { createPgliteClient } from './pglite';
+import { findTable, introspectSchema } from './introspect';
+import { pgliteClient } from './pglite';
 import { sql } from './sql';
 
-describe('introspect · the real embedded database', () => {
+describe('introspectSchema · the real embedded database', () => {
   // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
   const PGLITE_BOOT_MS = 30_000;
-  const client = createPgliteClient();
+  const client = pgliteClient();
 
   afterAll(async () => {
     await client.close();
@@ -42,7 +42,7 @@ describe('introspect · the real embedded database', () => {
         )
       `);
 
-      const schema = await introspect({ client });
+      const schema = await introspectSchema({ client });
       const memberships = findTable(schema, 'introspect_memberships');
 
       expect(memberships?.foreignKeys).toEqual([
@@ -84,7 +84,7 @@ describe('introspect · the real embedded database', () => {
                0, 'e'
       `);
 
-      const schema = await introspect({ client });
+      const schema = await introspectSchema({ client });
       const names = schema.tables.map((table) => table.name);
 
       expect(names).toContain('introspect_posts');
@@ -117,7 +117,7 @@ describe('introspect · the real embedded database', () => {
       );
       await client.execute(sql`create index introspect_gin_id_idx on introspect_gin ("id")`);
 
-      const table = findTable(await introspect({ client }), 'introspect_gin');
+      const table = findTable(await introspectSchema({ client }), 'introspect_gin');
       const method = (name: string): string | undefined =>
         table?.indexes.find((index) => index.name === name)?.using;
 
@@ -139,7 +139,7 @@ describe('introspect · the real embedded database', () => {
       await client.execute(
         sql`create index introspect_exprs_idx on introspect_exprs (id, lower(title))`,
       );
-      const table = findTable(await introspect({ client }), 'introspect_exprs');
+      const table = findTable(await introspectSchema({ client }), 'introspect_exprs');
       const index = table?.indexes.find((entry) => entry.name === 'introspect_exprs_idx');
       // The inner join on `pg_attribute` answered `['id']`: an index rebuilt by hand with an extra
       // expression key compared equal to the one migrations declare.
@@ -164,7 +164,7 @@ describe('introspect · the real embedded database', () => {
           at timestamptz
         )
       `);
-      const table = findTable(await introspect({ client }), 'introspect_types');
+      const table = findTable(await introspectSchema({ client }), 'introspect_types');
       // `information_schema.data_type` answered numeric, character varying, ARRAY, USER-DEFINED.
       expect(Object.fromEntries(table?.columns.map((c) => [c.name, c.dataType]) ?? [])).toEqual({
         at: 'timestamp with time zone',

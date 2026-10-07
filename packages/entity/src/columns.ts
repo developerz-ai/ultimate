@@ -2,7 +2,7 @@
 // locale and a time zone — the alternatives (float money, naive timestamps, a single implied
 // currency) are the bugs this file exists to make unreachable.
 
-import { uuid as uuidV7 } from '@ultimat3/core';
+import { uuidV7 } from '@ultimat3/core';
 import {
   CURRENCY_CODE_PATTERN,
   isCurrencyCode,

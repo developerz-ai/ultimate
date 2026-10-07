@@ -43,7 +43,7 @@ import { errorResponse, INVALID_REQUEST, PARSE_ERROR, refusalMessage } from './w
 /**
  * The same 1 MiB `@ultimat3/http`'s `bodyLimitBytes` defaults to. This descriptor is driven from a
  * bare `Request` and never passes through that pipeline, so without a cap here Bun's 128 MiB
- * default was the only ceiling — and `x mcp serve` and `createServer` both pass no
+ * default was the only ceiling — and `x mcp serve` and `httpServer` both pass no
  * `maxRequestBodySize`.
  */
 export const DEFAULT_MCP_BODY_LIMIT_BYTES = 1_048_576;

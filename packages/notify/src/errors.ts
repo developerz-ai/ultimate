@@ -96,7 +96,7 @@ export class NotifyChannelDuplicateError extends UltimateError {
     super({
       code: 'X_NOTIFY_CHANNEL_DUPLICATE',
       cause: `notifier "${input.notifier}" declares the channel "${input.channel}" twice, and the delivery ledger keys on it — the second would be deduped away`,
-      fix: `give the second channel its own name on notifier("${input.notifier}") — channel('${input.channel}-digest', …) — or merge the two deliver entries`,
+      fix: `give the second channel its own name on notifier("${input.notifier}") — deliveryChannel('${input.channel}-digest', …) — or merge the two deliver entries`,
       meta: { notifier: input.notifier, channel: input.channel },
     });
   }
@@ -152,7 +152,7 @@ export class NotifyDigestUnsupportedError extends UltimateError {
     super({
       code: 'X_NOTIFY_DIGEST_UNSUPPORTED',
       cause: `notifier "${input.notifier}" declares a digest window on the bulk channel "${input.channel}", and a window coalesces per recipient where a bulk send has none`,
-      fix: `drop digest from the "${input.channel}" entry on notifier("${input.notifier}") and give it a wait instead, or deliver it through channel('${input.channel}', …) one recipient at a time`,
+      fix: `drop digest from the "${input.channel}" entry on notifier("${input.notifier}") and give it a wait instead, or deliver it through deliveryChannel('${input.channel}', …) one recipient at a time`,
       meta: { notifier: input.notifier, channel: input.channel },
     });
   }

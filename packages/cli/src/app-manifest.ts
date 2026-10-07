@@ -21,7 +21,7 @@ import {
 import { knownPermissions } from '@ultimat3/policy';
 import { describeQueries } from '@ultimat3/query';
 import type { RouteDescriptor } from '@ultimat3/render';
-import { describeRoutes } from '@ultimat3/render';
+import { describePages } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { AppPackageInvalidError } from './errors';
 import type { Finding } from './output';
@@ -105,7 +105,7 @@ type UrlRoute = RouteDescriptor & { readonly surface: 'site' | 'app' | 'api' };
 const hasUrl = (route: RouteDescriptor): route is UrlRoute => route.surface !== 'shared';
 
 const routeFacts = (): readonly RouteFact[] =>
-  describeRoutes()
+  describePages()
     .filter(hasUrl)
     .map((route) => ({
       url: route.path,

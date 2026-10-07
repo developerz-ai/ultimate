@@ -10,7 +10,7 @@ import type { AuditRecord, AuditSink } from '@ultimat3/core';
 import {
   AUDIT_RECORD_FIELDS,
   anonymousActor,
-  createContext,
+  ctxOf,
   isUltimateError,
   resetAuditSink,
   setAuditSink,
@@ -21,7 +21,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
 import { runQuery } from './read';
-import { resetRegistry } from './registry';
+import { resetQueries } from './registry';
 import { from } from './source';
 
 interface Row {
@@ -66,7 +66,7 @@ async function thrown(run: () => Promise<unknown>): Promise<unknown> {
 }
 
 afterEach(() => {
-  resetRegistry();
+  resetQueries();
   resetAuditSink();
   executed = 0;
 });
@@ -75,7 +75,7 @@ describe('unit · an audited read is recorded once per call', () => {
   test('an allowed read: the full record, every field core declares and no other', async () => {
     const sink = collecting();
     setAuditSink(sink);
-    const ctx = createContext({ actor: reader });
+    const ctx = ctxOf({ actor: reader });
 
     await runQuery(postList(), { limit: 5 }, { ctx });
 
@@ -102,7 +102,7 @@ describe('unit · an audited read is recorded once per call', () => {
     const sink = collecting();
     setAuditSink(sink);
 
-    await runQuery(postList(), { limit: 5 }, { ctx: createContext({ actor: reader }) });
+    await runQuery(postList(), { limit: 5 }, { ctx: ctxOf({ actor: reader }) });
 
     expect(JSON.stringify(sink.records[0]?.input)).not.toContain('secret plans');
     expect(Object.values(sink.records[0] ?? {})).not.toContainEqual([
@@ -114,14 +114,14 @@ describe('unit · an audited read is recorded once per call', () => {
     const sink = collecting();
     setAuditSink(sink);
 
-    await runQuery(postList(false), { limit: 5 }, { ctx: createContext({ actor: reader }) });
+    await runQuery(postList(false), { limit: 5 }, { ctx: ctxOf({ actor: reader }) });
 
     expect(sink.records).toEqual([]);
   });
 
   test('no sink installed refuses BEFORE anything is read', async () => {
     const error = await thrown(() =>
-      runQuery(postList(), { limit: 5 }, { ctx: createContext({ actor: reader }) }),
+      runQuery(postList(), { limit: 5 }, { ctx: ctxOf({ actor: reader }) }),
     );
 
     expect(isUltimateError(error) && error.code).toBe('X_QUERY_AUDIT_SINK_MISSING');
@@ -137,7 +137,7 @@ describe('unit · an audited read is recorded once per call', () => {
       postList(false),
       { limit: 5 },
       {
-        ctx: createContext({ actor: reader }),
+        ctx: ctxOf({ actor: reader }),
       },
     );
     expect(rows).toHaveLength(1);
@@ -150,7 +150,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
     setAuditSink(sink);
 
     const error = await thrown(() =>
-      runQuery(postList(), { limit: 5 }, { ctx: createContext({ actor: stranger }) }),
+      runQuery(postList(), { limit: 5 }, { ctx: ctxOf({ actor: stranger }) }),
     );
 
     const record = sink.records[0];
@@ -169,7 +169,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
     setAuditSink(sink);
 
     await thrown(() =>
-      runQuery(postList(), { limit: 'lots' }, { ctx: createContext({ actor: anonymousActor() }) }),
+      runQuery(postList(), { limit: 'lots' }, { ctx: ctxOf({ actor: anonymousActor() }) }),
     );
 
     expect(sink.records[0]?.outcome).toBe('denied');
@@ -181,7 +181,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
     setAuditSink(sink);
 
     await thrown(() =>
-      runQuery(postList(), { limit: 5, open: false }, { ctx: createContext({ actor: reader }) }),
+      runQuery(postList(), { limit: 5, open: false }, { ctx: ctxOf({ actor: reader }) }),
     );
 
     expect(sink.records[0]?.outcome).toBe('denied');
@@ -192,9 +192,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
     const sink = collecting();
     setAuditSink(sink);
 
-    await thrown(() =>
-      runQuery(postList(), { limit: 0 }, { ctx: createContext({ actor: reader }) }),
-    );
+    await thrown(() => runQuery(postList(), { limit: 0 }, { ctx: ctxOf({ actor: reader }) }));
 
     expect(sink.records[0]).toMatchObject({ outcome: 'failed', input: undefined });
     expect(sink.records[0]?.failure?.code).toBe('X_INPUT_INVALID');
@@ -215,7 +213,7 @@ describe('unit · denied and failed reads are recorded, and the caller still get
     }).named('brokenList');
 
     const error = await thrown(() =>
-      runQuery(broken, { limit: 1 }, { ctx: createContext({ actor: reader }) }),
+      runQuery(broken, { limit: 1 }, { ctx: ctxOf({ actor: reader }) }),
     );
 
     expect(error).toBe(boom);

@@ -7,9 +7,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { CacheSetOptions, CacheTier } from '@ultimat3/cache';
 import { declareTags, isolateDeclaredTags, isolateTiers, registerTier, tag } from '@ultimat3/cache';
-import { anonymousActor, createContext, isUltimateError, runWithContext } from '@ultimat3/core';
+import { anonymousActor, ctxOf, isUltimateError, runWithContext } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
@@ -67,7 +67,7 @@ const list = (extra: { rows?: boolean; single?: boolean; cached?: boolean } = {}
   }).named('sealedAccounts');
 
 const serve = (target: AnyQuery) =>
-  createServer({
+  httpServer({
     routes: [toQueryRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => null },
@@ -124,9 +124,7 @@ describe('unit · a sealed column leaves through no projection of a query', () =
   });
 
   test('a live window: the rows a snapshot frame is built from', async () => {
-    const live = await runWithContext(createContext({ actor: anonymousActor() }), () =>
-      list().live({}),
-    );
+    const live = await runWithContext(ctxOf({ actor: anonymousActor() }), () => list().live({}));
     const rows = await live.execute();
     clean(JSON.stringify({ rows, cursor: live.initialCursor(rows) }));
   });
@@ -143,7 +141,7 @@ describe('unit · a sealed column leaves through no projection of a query', () =
       }).named('sealedKeyed');
     const subscribe = async (target: AnyQuery): Promise<string> => {
       try {
-        await runWithContext(createContext({ actor: anonymousActor() }), () => target.live({}));
+        await runWithContext(ctxOf({ actor: anonymousActor() }), () => target.live({}));
       } catch (error) {
         return isUltimateError(error) ? `${error.code}: ${error.cause}` : 'uncoded';
       }

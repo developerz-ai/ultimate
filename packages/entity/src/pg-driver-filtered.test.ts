@@ -5,7 +5,7 @@
 // radius lives.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -84,7 +84,7 @@ const ROW: Invoice = {
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

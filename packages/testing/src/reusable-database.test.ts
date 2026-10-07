@@ -2,10 +2,10 @@
 // data the template held, through an insert-only guard, with sequences and generated columns.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient, raw, sql } from '@ultimat3/db';
+import { pgliteClient, raw, sql } from '@ultimat3/db';
 import { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
 
-const client = createPgliteClient();
+const client = pgliteClient();
 afterAll(() => client.close());
 
 const setup = async (): Promise<void> => {

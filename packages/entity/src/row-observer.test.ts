@@ -2,8 +2,8 @@
 // write does, or turn a working write into a failing one.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor, withWriteOrigin } from '@ultimat3/core';
-import { createRecordingClient, setDbClient, withTransaction } from '@ultimat3/db';
+import { ctxOf, runWithContext, userActor, withWriteOrigin } from '@ultimat3/core';
+import { recordingClient, setDbClient, withTransaction } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -51,7 +51,7 @@ const build = (): {
 };
 
 const asMember = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
 
 afterEach(() => {
   setRowObserver(null);
@@ -232,7 +232,7 @@ describe('the before-read of a batch is one statement, never one per row', () =>
   test('an upsertAll reads its before-rows in ONE statement, and every row is still reported', async () => {
     const seen: RowChange[] = [];
     setRowObserver({ onChange: (change) => seen.push(change) });
-    const recorded = createRecordingClient();
+    const recorded = recordingClient();
     setDbClient(recorded);
     // Two of the six are already stored, so the read has to answer per row, not just "some".
     const stored = batch.slice(0, 2).map((row) => ({ id: row.id, label: 'old' }));
@@ -289,7 +289,7 @@ describe('the before-read of a batch is one statement, never one per row', () =>
   test('a read that refuses leaves the write alone: every row reports as an insert', async () => {
     const seen: RowChange[] = [];
     setRowObserver({ onChange: (change) => seen.push(change) });
-    const recorded = createRecordingClient();
+    const recorded = recordingClient();
     recorded.on('insert into "observed_tags"', { rows: batch });
     // Every read refuses; the write goes through. The rejection is the subject's input, never a
     // verdict — which is why it is a bare `Error` and not one of this package's own.
@@ -336,7 +336,7 @@ describe('changes inside a transaction are reported at COMMIT', () => {
   });
 
   test('postgres: the ambient withTransaction holds the change until COMMIT', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('observed_tags', { rows: [{ id: ONE, label: 'x' }] });
     setDbClient(client);
     const seen: RowChange[] = [];

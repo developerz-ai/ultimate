@@ -10,14 +10,14 @@ import {
   AUTH_ERROR_CODES,
   AuthError,
   accountLocked,
-  forbidden,
+  authForbidden,
+  authUnauthenticated,
   kdfOverloaded,
-  unauthenticated,
 } from './errors';
 
-describe('unauthenticated', () => {
+describe('authUnauthenticated', () => {
   test('names the surface that needed an actor and how to resolve one', () => {
-    const error = unauthenticated('POST /api/posts');
+    const error = authUnauthenticated('POST /api/posts');
     expect(error).toBeInstanceOf(AuthError);
     expect(error.code).toBe('X_UNAUTHENTICATED');
     expect(error.cause).toContain('POST /api/posts');
@@ -27,11 +27,11 @@ describe('unauthenticated', () => {
   });
 });
 
-describe('forbidden', () => {
+describe('authForbidden', () => {
   // The distinction is the whole point: `X_UNAUTHENTICATED` says "nobody is signed in" and
   // `X_FORBIDDEN` says "this actor is, and still may not" — two different next steps.
   test('carries the surface AND the reason, and its fix is the command that explains the grant', () => {
-    const error = forbidden('deletePost', 'actor holds no posts:delete grant');
+    const error = authForbidden('deletePost', 'actor holds no posts:delete grant');
     expect(error).toBeInstanceOf(AuthError);
     expect(error.code).toBe('X_FORBIDDEN');
     expect(error.cause).toContain('deletePost');
@@ -39,12 +39,14 @@ describe('forbidden', () => {
     expect(error.fix).toContain('x policy explain --json');
   });
 
-  test('is a different code from unauthenticated for the same surface', () => {
-    expect(forbidden('deletePost', 'no grant').code).not.toBe(unauthenticated('deletePost').code);
+  test('is a different code from authUnauthenticated for the same surface', () => {
+    expect(authForbidden('deletePost', 'no grant').code).not.toBe(
+      authUnauthenticated('deletePost').code,
+    );
   });
 
   test('the reason reaches the cause verbatim, so a policy can say what it denied on', () => {
-    const error = forbidden('reports.read', 'org o1 is not the row’s tenant');
+    const error = authForbidden('reports.read', 'org o1 is not the row’s tenant');
     expect(error.cause).toContain('org o1 is not the row’s tenant');
   });
 });
@@ -55,7 +57,10 @@ describe('forbidden', () => {
 // the tree, with the code interpolated into a fragment no page has ever had an anchor for.
 describe('docs', () => {
   test('a constructed auth error points at the one page, never a per-code URL', () => {
-    for (const error of [unauthenticated('POST /api/posts'), forbidden('deletePost', 'no grant')]) {
+    for (const error of [
+      authUnauthenticated('POST /api/posts'),
+      authForbidden('deletePost', 'no grant'),
+    ]) {
       expect(error.docs).toBe(ERROR_DOCS_URL);
       expect(error.docs).not.toContain(error.code);
     }

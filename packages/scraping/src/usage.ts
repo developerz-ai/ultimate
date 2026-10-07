@@ -43,7 +43,7 @@ export interface RunUsageMeter extends UsageMeter {
 }
 
 /** Built BEFORE `driver.open()`, so the time a rented browser took to arrive is time it was held. */
-export function createUsageMeter(clock: ScrapeClock): RunUsageMeter {
+export function usageMeter(clock: ScrapeClock): RunUsageMeter {
   const startedAt = clock.monotonic();
   let navigations = 0;
   let httpRequests = 0;

@@ -9,8 +9,8 @@ import { finiteCount, systemClock } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import {
   configuredAuthenticator,
-  createRequestContext,
   defineHttpConfig,
+  requestContext,
   UltimateRequest,
 } from '@ultimat3/http';
 import type { SyncAuthenticator, SyncGrant } from '@ultimat3/realtime/server';
@@ -84,7 +84,7 @@ export interface SyncAuthenticatorOptions {
 /**
  * What the sync node is given when the app configured an authenticator, and `undefined` when it
  * did not — which keeps `x dev` anonymous and makes the node log that it is, exactly as
- * `createSyncNode` documents. A stub that answered `{ actor: anonymous }` would look configured.
+ * `syncNode` documents. A stub that answered `{ actor: anonymous }` would look configured.
  *
  * The grant carries an `expiresAt` and a `refresh`, and both are the app's own resolver asked
  * again: `configureAuthenticator` says who is dialling, and the only honest way to learn that it
@@ -115,7 +115,7 @@ export function syncAuthenticator(
       method: credential.method,
       headers: credential.headers,
     });
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL(credential.url),
       method: credential.method,
       role: 'sync',

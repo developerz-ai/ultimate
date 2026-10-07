@@ -12,7 +12,7 @@ import type { DevCapabilities, DevHost, DevIntrospection } from './dev-server';
 import { devTools } from './dev-server';
 import type { FrameworkResourceProviders } from './resources';
 import { frameworkResources } from './resources';
-import { createMcpServer, type McpServer } from './server';
+import { type McpServer, mcpServer } from './server';
 
 /**
  * The description half of a real app's `DevHost`. `routes` and `policies` are supplied by
@@ -39,14 +39,14 @@ export function frameworkIntrospection(
   };
 }
 
-export interface CreateDevServerInput {
+export interface DevMcpServerInput {
   readonly host: DevHost;
   readonly resources?: FrameworkResourceProviders;
 }
 
 /** `x mcp serve` and `POST /mcp` in dev both build the server through this. */
-export function createDevServer(input: CreateDevServerInput): McpServer {
-  return createMcpServer({
+export function devMcpServer(input: DevMcpServerInput): McpServer {
+  return mcpServer({
     tools: devTools(input.host),
     resources: frameworkResources(input.resources ?? {}),
     serverInfo: { name: 'ultimate-dev', version: frameworkVersion() },

@@ -3,7 +3,7 @@
 // worth taking. A stub on either side proves nothing.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { fixProblem } from './error-contract';
@@ -13,8 +13,8 @@ import { styleRoutes } from './style-routes';
 
 const BUILD_ID = 'styles-under-test';
 
-const serve = (): ReturnType<typeof createServer> =>
-  createServer({
+const serve = (): ReturnType<typeof httpServer> =>
+  httpServer({
     routes: [...styleRoutes(() => styleBundle()), ...appRoutes({ buildId: BUILD_ID })],
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

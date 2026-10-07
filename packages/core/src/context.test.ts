@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor, anonymousActor, userActor } from './actor';
 import { frozenClock } from './clock';
 import {
-  createContext,
+  ctxOf,
   hasContext,
   runWithContext,
   throwIfAborted,
@@ -11,7 +11,7 @@ import {
   useService,
   withChildContext,
 } from './context';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 import { remainingBudgetMs } from './request-budget';
 
 describe('request context', () => {
@@ -25,7 +25,7 @@ describe('request context', () => {
     const observed: string[] = [];
 
     async function handle(actorId: string, delayMs: number): Promise<string> {
-      const ctx = createContext({ actor: userActor({ id: actorId }), locale: `x-${actorId}` });
+      const ctx = ctxOf({ actor: userActor({ id: actorId }), locale: `x-${actorId}` });
       return runWithContext(ctx, async () => {
         await Bun.sleep(delayMs);
         // Interleaved on purpose: a leak between tasks shows up right here.
@@ -54,7 +54,7 @@ describe('request context', () => {
   });
 
   test('child contexts inherit, override, and keep the request id', () => {
-    const ctx = createContext({ actor: anonymousActor(), locale: 'en', tz: 'UTC' });
+    const ctx = ctxOf({ actor: anonymousActor(), locale: 'en', tz: 'UTC' });
     runWithContext(ctx, () => {
       withChildContext({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) }, () => {
         const child = useContext();
@@ -69,8 +69,8 @@ describe('request context', () => {
 
   test('ctx.logger carries requestId and traceId on every line', () => {
     const lines: string[] = [];
-    const ctx = createContext({
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+    const ctx = ctxOf({
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     runWithContext(ctx, () => {
       ctx.logger.info('published', { postId: 'p1' });
@@ -82,7 +82,7 @@ describe('request context', () => {
   });
 
   test('services resolve by name and fail loudly when absent', () => {
-    const ctx = createContext({ services: { mail: { send: () => true } } });
+    const ctx = ctxOf({ services: { mail: { send: () => true } } });
     runWithContext(ctx, () => {
       expect(useService<{ send: () => boolean }>('mail').send()).toBe(true);
       expect(() => useService('posts')).toThrow(/X_SERVICE_MISSING/);
@@ -93,7 +93,7 @@ describe('request context', () => {
     // `interface CtxServices { posts: PostsService }` types `ctx.posts`; if the service were only
     // under `ctx.services`, every augmenting app would read `undefined` through a typed property.
     const posts = { byId: () => 'p1' };
-    const ctx = createContext({ services: { posts } });
+    const ctx = ctxOf({ services: { posts } });
     expect((ctx as unknown as { posts: unknown }).posts).toBe(posts);
     expect(ctx.services['posts']).toBe(posts);
   });
@@ -102,7 +102,7 @@ describe('request context', () => {
     // Pins the comment on the `...services` spread. `ctx` is a frozen plain object, not a
     // get-trap proxy, so a `CtxServices`-declared service that boot never passed reads
     // `undefined` and its first call is a bare TypeError. Only `useService()` names it.
-    const ctx = createContext({ services: { mail: { send: () => true } } });
+    const ctx = ctxOf({ services: { mail: { send: () => true } } });
     const posts = ctx as unknown as { posts?: { byId(): string } };
     expect(posts.posts).toBeUndefined();
     expect(() => (posts as { posts: { byId(): string } }).posts.byId()).toThrow(TypeError);
@@ -115,7 +115,7 @@ describe('request context', () => {
     // `useService(row.serviceKey)` travels as data. A raw index on a `{}`-prototyped object is
     // never `undefined` for these names, so the guard above it could not see them and the
     // caller's first method call was a bare TypeError several frames away.
-    const ctx = createContext({ services: { mail: { send: () => true } } });
+    const ctx = ctxOf({ services: { mail: { send: () => true } } });
     runWithContext(ctx, () => {
       for (const name of [
         'constructor',
@@ -136,7 +136,7 @@ describe('request context', () => {
     // The refusal above must be about OWNERSHIP, not about the name: an app that installs a
     // service called `constructor` gets it back.
     const service = { send: () => true };
-    const ctx = createContext({ services: { constructor: service } });
+    const ctx = ctxOf({ services: { constructor: service } });
     runWithContext(ctx, () => {
       // The type argument is the caller's, exactly as app code writes it: `useService<T>` has no
       // inference site, so leaving it off resolves `T` to `unknown` and the comparison below has
@@ -148,7 +148,7 @@ describe('request context', () => {
   test('a service may not shadow a context field', () => {
     // An app is free to call a service `logger`; the context's own logger still wins, and the
     // service stays reachable by name. Otherwise naming a service would change what `ctx` means.
-    const ctx = createContext({ services: { logger: 'not-a-logger', actor: 'not-an-actor' } });
+    const ctx = ctxOf({ services: { logger: 'not-a-logger', actor: 'not-an-actor' } });
     expect(typeof ctx.logger.info).toBe('function');
     expect(ctx.actor.kind).toBe('anonymous');
     expect(ctx.services['logger']).toBe('not-a-logger');
@@ -156,7 +156,7 @@ describe('request context', () => {
 
   test('throwIfAborted surfaces caller disconnects as X_ABORTED', () => {
     const controller = new AbortController();
-    const ctx = createContext({ signal: controller.signal });
+    const ctx = ctxOf({ signal: controller.signal });
     runWithContext(ctx, () => {
       expect(() => throwIfAborted()).not.toThrow();
       controller.abort();
@@ -169,9 +169,9 @@ describe('request-scoped log fields', () => {
   const lineOf = (fn: () => void): Record<string, unknown> => {
     const lines: string[] = [];
     // The level is named: the ambient one is `silent` under the test preload, on purpose.
-    const log = createLogger({ level: 'info', writer: (line) => lines.push(line) });
+    const log = structuredLogger({ level: 'info', writer: (line) => lines.push(line) });
     runWithContext(
-      createContext({
+      ctxOf({
         actor: userActor({ id: 'u-1', orgId: 'org-3' }),
         logger: log,
         role: 'worker',
@@ -212,8 +212,8 @@ describe('request-scoped log fields', () => {
   test('omits orgId for an actor that has none, rather than logging undefined', () => {
     const lines: string[] = [];
     // The level is named: the ambient one is `silent` under the test preload, on purpose.
-    const log = createLogger({ level: 'info', writer: (line) => lines.push(line) });
-    runWithContext(createContext({ actor: anonymousActor(), logger: log }), () => {
+    const log = structuredLogger({ level: 'info', writer: (line) => lines.push(line) });
+    runWithContext(ctxOf({ actor: anonymousActor(), logger: log }), () => {
       useContext().logger.info('event');
     });
     expect(JSON.parse(lines[0] ?? '{}')).not.toHaveProperty('orgId');
@@ -227,7 +227,7 @@ describe('request-scoped log fields', () => {
  */
 describe('the server path is unchanged by the lazy storage', () => {
   test('resolves the same context object inside the scope, and none outside it', () => {
-    const ctx = createContext({ locale: 'de-DE' });
+    const ctx = ctxOf({ locale: 'de-DE' });
     expect(hasContext()).toBe(false);
     const seen = runWithContext(ctx, () => {
       expect(hasContext()).toBe(true);
@@ -239,7 +239,7 @@ describe('the server path is unchanged by the lazy storage', () => {
   });
 
   test('propagates across an await, which is the whole reason for AsyncLocalStorage', async () => {
-    const ctx = createContext({ locale: 'fr-FR' });
+    const ctx = ctxOf({ locale: 'fr-FR' });
     await runWithContext(ctx, async () => {
       await Bun.sleep(1);
       expect(useContext().locale).toBe('fr-FR');
@@ -260,7 +260,7 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
     parentAt: number | undefined,
     patchAt: number | undefined,
   ): number | null =>
-    runWithContext(createContext(parentAt === undefined ? {} : { deadlineAt: parentAt }), () =>
+    runWithContext(ctxOf(parentAt === undefined ? {} : { deadlineAt: parentAt }), () =>
       withChildContext(patchAt === undefined ? {} : { deadlineAt: patchAt }, () => {
         return useContext().deadlineAt;
       }),
@@ -294,7 +294,7 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
   test('the header the next hop reads carries the clamped budget, not the extended one', () => {
     const clock = frozenClock('2026-08-24T10:00:00.000Z');
     const now = clock.now().getTime();
-    runWithContext(createContext({ clock, deadlineAt: now + 1_000 }), () => {
+    runWithContext(ctxOf({ clock, deadlineAt: now + 1_000 }), () => {
       withChildContext({ deadlineAt: now + 3_600_000 }, () => {
         const left = remainingBudgetMs(useContext());
         expect(left).toBeDefined();
@@ -308,11 +308,11 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
   // gets false, and answers `undefined` — indistinguishable from "no deadline set". The budget
   // header vanishes and the next hop silently uses its own timeout.
   test('a non-finite deadline is refused at the boundary, never propagated by Math.min', () => {
-    expect(() => createContext({ deadlineAt: Number.NaN })).toThrow('deadlineAt');
-    expect(() => createContext({ deadlineAt: Number.POSITIVE_INFINITY })).toThrow('deadlineAt');
+    expect(() => ctxOf({ deadlineAt: Number.NaN })).toThrow('deadlineAt');
+    expect(() => ctxOf({ deadlineAt: Number.POSITIVE_INFINITY })).toThrow('deadlineAt');
 
     const clock = frozenClock('2026-08-24T10:00:00.000Z');
-    const parent = createContext({ clock, deadlineAt: clock.now().getTime() + 1_000 });
+    const parent = ctxOf({ clock, deadlineAt: clock.now().getTime() + 1_000 });
     runWithContext(parent, () => {
       expect(() => withChildContext({ deadlineAt: Number.NaN }, () => undefined)).toThrow(
         'deadlineAt',
@@ -323,8 +323,8 @@ describe('a child scope inherits the deadline and can only shorten it', () => {
   // The guard must not have eaten the legitimate case: no deadline at all is still no deadline,
   // and that is the ONE nullish value `screenDeadline` is allowed to pass through.
   test('an absent deadline is still absent, and still means unbounded', () => {
-    expect(createContext({}).deadlineAt).toBeNull();
-    expect(remainingBudgetMs(createContext({}))).toBeUndefined();
+    expect(ctxOf({}).deadlineAt).toBeNull();
+    expect(remainingBudgetMs(ctxOf({}))).toBeUndefined();
   });
 });
 
@@ -334,7 +334,7 @@ describe("a child scope's signal composes the parent's", () => {
     // so a step that brought its own stopped seeing the request it runs inside end.
     const request = new AbortController();
     const step = new AbortController();
-    runWithContext(createContext({ signal: request.signal }), () => {
+    runWithContext(ctxOf({ signal: request.signal }), () => {
       withChildContext({ signal: step.signal }, () => {
         const child = useContext();
         expect(child.signal.aborted).toBe(false);
@@ -348,7 +348,7 @@ describe("a child scope's signal composes the parent's", () => {
   test("the patch's own abort still ends the child, and never the parent", () => {
     const request = new AbortController();
     const step = new AbortController();
-    runWithContext(createContext({ signal: request.signal }), () => {
+    runWithContext(ctxOf({ signal: request.signal }), () => {
       withChildContext({ signal: step.signal }, () => {
         step.abort();
         expect(useContext().signal.aborted).toBe(true);
@@ -359,7 +359,7 @@ describe("a child scope's signal composes the parent's", () => {
 
   test('a child that patches no signal keeps the very same one', () => {
     const request = new AbortController();
-    runWithContext(createContext({ signal: request.signal }), () => {
+    runWithContext(ctxOf({ signal: request.signal }), () => {
       withChildContext({ locale: 'de' }, () => {
         expect(useContext().signal).toBe(request.signal);
       });

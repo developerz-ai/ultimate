@@ -7,7 +7,7 @@
  * refusal rather than a read made as nobody in particular.
  */
 
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
 import { memberHeaders } from './client';
 
@@ -16,7 +16,7 @@ import { memberHeaders } from './client';
  * are what `useRequestHeader` proves a request by. Spread, because core's context is frozen.
  */
 const inRequest = <T>(headers: HeadersInit, fn: () => T): T =>
-  runWithContext({ ...createContext(), requestHeaders: new Headers(headers) }, fn);
+  runWithContext({ ...ctxOf(), requestHeaders: new Headers(headers) }, fn);
 
 test("a member read carries the inbound cookie — the member's, onto the app's own origin", () => {
   const cookie = 'postly_demo_member=mara; locale=es';

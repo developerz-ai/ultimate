@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
-import { createPipeline, PIPELINE_STAGES } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline, PIPELINE_STAGES } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 import type { Schema } from './validate';
 
 const titleSchema: Schema<{ title: string }> = {
@@ -27,37 +27,37 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
     path: '/private',
     meta: { name: 'private', auth: 'required' },
-    handler: (_request, ctx) => json({ locale: ctx.locale, tz: ctx.tz }),
+    handler: (_request, ctx) => jsonResponse({ locale: ctx.locale, tz: ctx.tz }),
   },
   {
     method: 'POST',
     path: '/posts',
     meta: { name: 'posts.create', auth: 'public', input: titleSchema },
-    handler: (_request, ctx) => json({ input: ctx.input }),
+    handler: (_request, ctx) => jsonResponse({ input: ctx.input }),
   },
   {
     method: 'GET',
     path: '/guarded',
     meta: { name: 'guarded', auth: 'public', policy: 'post:publish' },
-    handler: () => text('never reached'),
+    handler: () => textResponse('never reached'),
   },
   {
     method: 'GET',
     path: '/self-guarded',
     meta: { name: 'self-guarded', auth: 'public', policy: 'post:publish', enforcedBy: 'handler' },
-    handler: () => text('the handler decided'),
+    handler: () => textResponse('the handler decided'),
   },
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: () => text('one post'),
+    handler: () => textResponse('one post'),
   },
   {
     method: 'GET',
@@ -97,10 +97,10 @@ const pipelineWith = (options: PipelineTestOptions) => {
     onAuthorize?.();
     return decision ?? { allowed: true };
   };
-  return createPipeline({
-    table: createRouter(routes),
+  return httpPipeline({
+    table: httpRouter(routes),
     config: active,
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',
@@ -225,8 +225,8 @@ describe('lifecycle', () => {
   // text in the viewport. The document is right for the agent that asked for JSON and wrong for
   // the browser that asked for HTML, and `signInPath` is what separates them.
   test('a browser hitting the same route is sent to the sign-in page', async () => {
-    const signIn = createPipeline({
-      table: createRouter(routes),
+    const signIn = httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({
         rateLimit: { scope: 'process' },
         dev: false,
@@ -344,8 +344,8 @@ describe('a failed credential is metered by address', () => {
   let lookups = 0;
   const metered = (enabled = true) => {
     lookups = 0;
-    return createPipeline({
-      table: createRouter(routes),
+    return httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({
         dev: false,
         buildId: null,
@@ -408,8 +408,8 @@ describe('a failed credential is metered by address', () => {
   });
 
   test('a success spends nothing from it', async () => {
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({
         dev: false,
         buildId: null,

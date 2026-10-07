@@ -7,7 +7,7 @@ import type { Clock } from '@ultimat3/core';
 import { assert, finiteOption } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { MemoryCounters } from './counters';
-import { createMemoryCounters } from './counters';
+import { memoryCounters } from './counters';
 import type { JobRecord } from './driver';
 import { REQUEUEABLE_STATES } from './driver';
 import { signalEnqueued } from './enqueue-signal';
@@ -92,9 +92,9 @@ function pauseSet(clock: Clock): {
   };
 }
 
-export function createMemoryOperator(state: MemoryQueueState): MemoryOperator {
+export function memoryOperator(state: MemoryQueueState): MemoryOperator {
   const { jobs, clock } = state;
-  const counters = createMemoryCounters();
+  const counters = memoryCounters();
   const queues = pauseSet(clock);
   const tasks = pauseSet(clock);
   const workers = new Map<string, WorkerRecord & { readonly expiresAt: number }>();

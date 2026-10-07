@@ -9,7 +9,7 @@
 // That exact command produced the committed result in `results/` — see `results/50k-restart.log`
 // for the run's own transcript.
 //
-// Methodology: boot a real `sync` node (the shipped `createSyncNode`, over the shipped
+// Methodology: boot a real `sync` node (the shipped `syncNode`, over the shipped
 // `AcceptBudget` at its default 500/s, burst 2000) in its own OS process. Ramp N real WebSocket
 // clients against it, split across `--workers` client-shard processes (default: one per CPU minus
 // two, floor 2) — see restart-bench-client-worker.ts for why one process cannot hold the whole

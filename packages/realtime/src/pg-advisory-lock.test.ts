@@ -1,10 +1,10 @@
-// Drives `PgAdvisoryLock` against a fake `PgStream`, the same shape `pg-connection.test.ts` uses
+// Drives `PostgresAdvisoryLock` against a fake `PgStream`, the same shape `pg-connection.test.ts` uses
 // for `PgConnection` — no socket, no real server, no timers. Each test scripts a fresh session:
 // trust auth, then one row answering the lock query, `t` or `f`.
 
 import { describe, expect, test } from 'bun:test';
 import { ReplicationFailedError } from './errors';
-import { type PgAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
+import { type PostgresAdvisoryLock, postgresAdvisoryLock } from './pg-advisory-lock';
 import { ByteReader } from './pg-bytes';
 import {
   authOk,
@@ -42,7 +42,7 @@ const scriptLockReply = (stream: FakeStream, value: 't' | 'f'): void => {
   stream.push(dataRow(value), commandComplete('SELECT 1'), readyForQuery());
 };
 
-const lockOver = (stream: FakeStream, key: string = KEY): PgAdvisoryLock =>
+const lockOver = (stream: FakeStream, key: string = KEY): PostgresAdvisoryLock =>
   postgresAdvisoryLock({ url: FAKE_URL, key, stream: () => Promise.resolve(stream) });
 
 describe('constructor — key validation', () => {

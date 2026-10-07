@@ -165,7 +165,7 @@ const dbSeedTest = (app: NameSet, example: boolean): string =>
 // development viewer's tenant policy refuses, and the dashboard then counts zero.
 ${sortedImports([
   `import { DEMO_ORG_ID } from '@${app.kebab}/web/shared/demo-org';`,
-  "import { createContext, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
 ])}
@@ -174,7 +174,7 @@ import { ${app.camel}Seed } from './seed';
 
 /** The development viewer's org: every read below runs as an actor inside it. */
 const asViewer = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: testActor('viewer', { orgId: DEMO_ORG_ID }).actor }), run);
+  runWithContext(ctxOf({ actor: testActor('viewer', { orgId: DEMO_ORG_ID }).actor }), run);
 
 // One store per process: without this, one test's rows are the next test's fixtures.
 afterEach(() => {

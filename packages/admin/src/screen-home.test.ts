@@ -4,7 +4,7 @@
 // of the three, its count included.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import {
@@ -77,7 +77,7 @@ afterAll(() => {
 
 const home = (app: AdminApp, role: string): Promise<string> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: userActor({ id: `u-${role}`, roles: [role] }),
       tz: 'UTC',
       locale: 'en',

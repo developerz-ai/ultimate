@@ -275,7 +275,7 @@ Fifty *counts* collapse neither way — one `count()` per row is fifty different
 | `primitive` | `'query'` (an action's record says `'action'`) — what tells a read from a write in one sink |
 | `input` | the parsed input, never the raw payload; a persisting sink redacts it through `auditableInput` |
 | rows | **never on the record**, as an action's result never is |
-| Not recorded | `explain()`, `describeSql()`, the shared live window: built `unenforced`, no caller to attribute |
+| Not recorded | `explainQuery()`, `describeSql()`, the shared live window: built `unenforced`, no caller to attribute |
 | No sink installed | `X_QUERY_AUDIT_SINK_MISSING`, before the input parse |
 | The sink refuses | a denied/failed record: logged (`audit.sink.failed`), the caller gets the original error. An allowed record: the rows are withheld, `X_QUERY_AUDIT_SINK_FAILED` — a read commits nothing, so retry |
 

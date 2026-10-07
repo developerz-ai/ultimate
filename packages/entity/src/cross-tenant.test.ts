@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import {
   anonymousActor,
-  createContext,
+  ctxOf,
   runWithContext,
   serviceActor,
   userActor,
@@ -29,7 +29,7 @@ const support = serviceActor({ id: 'support-1', scopes: [CROSS_TENANT_SCOPE] });
 const member = userActor({ id: 'u-1', orgId: ORG_A });
 
 const inRequest = <T>(actor: Actor, work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor }), work);
+  runWithContext(ctxOf({ actor }), work);
 
 afterAll(() => {
   clearRegistry();

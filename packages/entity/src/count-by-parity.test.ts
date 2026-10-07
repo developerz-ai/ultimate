@@ -6,7 +6,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { column } from './column';
 import { integer, money, text, timestamp, uuid } from './columns';
 import { MAX_GROUPS } from './count-by';
@@ -118,7 +118,7 @@ const WITH_DELETED_GROUPS = [
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

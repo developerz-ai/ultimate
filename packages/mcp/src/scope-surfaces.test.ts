@@ -4,19 +4,13 @@
 // token over MCP. This file drives both real surfaces with the same tokens and compares the sets.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  action,
-  listActions,
-  registerAction,
-  resetRegistry as resetActions,
-  toRoute,
-} from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { action, listActions, registerAction, resetActions, toRoute } from '@ultimat3/action';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   bearerMount,
-  createPipeline,
-  createRouter,
   defineHttpConfig,
+  httpPipeline,
+  httpRouter,
   mountedPath,
 } from '@ultimat3/http';
 import {
@@ -50,8 +44,8 @@ const resolveToken = (token: string) => {
 /** What the bearer mount serves this token: every primitive whose `/v1` path is not a 404. */
 const bearerReach = async (scopes: McpScopes, token: string): Promise<readonly string[]> => {
   const api = listActions().map(toRoute);
-  const pipeline = createPipeline({
-    table: createRouter([
+  const pipeline = httpPipeline({
+    table: httpRouter([
       ...api,
       ...bearerMount({ prefix: '/v1', routes: api, scopes, resolveToken }),
     ]),
@@ -83,7 +77,7 @@ const mcpReach = async (scopes: McpScopes, token: string): Promise<readonly stri
   const caller = { ...(resolveToken(token) ?? { actor: owner, scopes: new Set<string>() }) };
   const reached: string[] = [];
   for (const name of NAMES) {
-    const response = await runWithContext(createContext({}), () =>
+    const response = await runWithContext(ctxOf({}), () =>
       server.handle(
         { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } },
         caller,

@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { FetchLike } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -15,7 +15,7 @@ import { toOpenApiOperation, toPostBinding, toRoute } from './http';
 import { assertPinnedPath } from './http-path';
 import { derivePath } from './naming';
 import { buildOpenApi } from './openapi';
-import { actionHttpPath, configureActionPathStyle, getAction, resetRegistry } from './registry';
+import { actionHttpPath, configureActionPathStyle, getAction, resetActions } from './registry';
 
 const make = (http?: { readonly path: string }) =>
   action({
@@ -26,8 +26,8 @@ const make = (http?: { readonly path: string }) =>
     handle: () => ({ ok: true }),
   });
 
-beforeEach(() => resetRegistry());
-afterEach(() => resetRegistry());
+beforeEach(() => resetActions());
+afterEach(() => resetActions());
 
 describe('pathStyle', () => {
   test("default 'resource' keeps every existing URL", () => {
@@ -92,9 +92,9 @@ describe('pathStyle', () => {
     expect(() => configureActionPathStyle('readable')).not.toThrow();
   });
 
-  test('resetRegistry forgets every hand-out', () => {
+  test('resetActions forgets every hand-out', () => {
     derivePath('signOut');
-    resetRegistry();
+    resetActions();
     expect(() => configureActionPathStyle('readable')).not.toThrow();
   });
 
@@ -224,7 +224,7 @@ describe('toPostBinding — a page URL bound to an action', () => {
   }).named('unsubscribeOnboarding');
 
   const server = () =>
-    createServer({
+    httpServer({
       routes: [toPostBinding(unsubscribe, '/correos/baja')],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     });

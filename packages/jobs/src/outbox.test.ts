@@ -8,13 +8,13 @@ import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
 import {
-  createJobsFacade,
   enqueueInTx,
   memoryOutboxStore,
+  outboxJobsFacade,
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
+import { outboxRelay } from './outbox-relay';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -57,7 +57,7 @@ describe('transactional outbox', () => {
   test('a job staged in a rolled-back transaction is never delivered', async () => {
     const driver = memoryJobDriver();
     const store: OutboxStore = memoryOutboxStore();
-    const relay = createOutboxRelay({ store, driver });
+    const relay = outboxRelay({ store, driver });
     const tx = fakeTx();
 
     await enqueueInTx({ store, driver }, tx, notify, { orgId: 'org-1' });
@@ -74,7 +74,7 @@ describe('transactional outbox', () => {
   test('a job staged in a committed transaction is delivered exactly once by the relay', async () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
-    const relay = createOutboxRelay({ store, driver });
+    const relay = outboxRelay({ store, driver });
     const tx = fakeTx();
 
     await enqueueInTx({ store, driver }, tx, notify, { orgId: 'org-1' });
@@ -128,7 +128,7 @@ describe('ctx.jobs.enqueue facade', () => {
     const store = memoryOutboxStore();
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
-    const jobs = createJobsFacade({ store, driver }, () => ambient);
+    const jobs = outboxJobsFacade({ store, driver }, () => ambient);
 
     await jobs.enqueue(notify, { orgId: 'org-1' });
     expect(((await driver.introspect?.list()) ?? []).length).toBe(0);
@@ -144,7 +144,7 @@ describe('ctx.jobs.enqueue facade', () => {
   test('outbox mode "required" refuses an enqueue with no transaction', async () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
-    const jobs = createJobsFacade({ store, driver, mode: 'required' }, () => undefined);
+    const jobs = outboxJobsFacade({ store, driver, mode: 'required' }, () => undefined);
     await expect(jobs.enqueue(notify, { orgId: 'org-3' })).rejects.toThrow(OutboxNoTxError);
   });
 });
@@ -153,10 +153,10 @@ describe('handle.enqueue through the installed facade', () => {
   test('stages into the ambient transaction — the row exists only after commit', async () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
-    const relay = createOutboxRelay({ store, driver });
+    const relay = outboxRelay({ store, driver });
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
-    setJobsFacade(createJobsFacade({ store, driver }, () => ambient));
+    setJobsFacade(outboxJobsFacade({ store, driver }, () => ambient));
 
     const staged = await notify.enqueue({ orgId: 'org-1' });
     // The ids are allocated at stage time; the ROW does not exist until COMMIT, and neither does
@@ -184,7 +184,7 @@ describe('handle.enqueue through the installed facade', () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
     const tx = fakeTx();
-    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver }, () => tx));
 
     await notify.as({ orgId: 'org-9' }, { orgId: 'org-9' });
     const [record] = await store.commit(tx);
@@ -195,7 +195,7 @@ describe('handle.enqueue through the installed facade', () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
     const tx = fakeTx();
-    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver }, () => tx));
     resetJobsFacade();
 
     // No driver installed either, so the fallback has nothing to publish to and says so.
@@ -237,11 +237,11 @@ describe('the relay loop', () => {
     const driver = memoryJobDriver();
     const store = flakyStore(1);
     const tx = fakeTx();
-    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver }, () => tx));
     await notify.enqueue({ orgId: 'org-relay' });
     await store.commit(tx);
 
-    const relay = createOutboxRelay({ store, driver, intervalMs: 5 });
+    const relay = outboxRelay({ store, driver, intervalMs: 5 });
     relay.start();
     try {
       const deadline = Date.now() + 2_000;
@@ -292,7 +292,7 @@ describe('the relay loop', () => {
     }
     await store.commit(tx);
 
-    const relay = createOutboxRelay({ store, driver: driver as JobDriver });
+    const relay = outboxRelay({ store, driver: driver as JobDriver });
     expect(await relay.tick()).toBe(0);
 
     // Nothing overtook the wedged row, and all three are still pending for the next pass.
@@ -342,7 +342,7 @@ describe('the relay joins the tick it is stopping', () => {
     });
     await store.commit(tx);
 
-    const relay = createOutboxRelay({ store, driver: driver as JobDriver, intervalMs: 1 });
+    const relay = outboxRelay({ store, driver: driver as JobDriver, intervalMs: 1 });
     relay.start();
     await entered.passed;
 
@@ -363,7 +363,7 @@ describe('the relay joins the tick it is stopping', () => {
   });
 
   test('stop() with nothing in flight resolves, and a second one is a no-op', async () => {
-    const relay = createOutboxRelay({
+    const relay = outboxRelay({
       store: memoryOutboxStore(),
       driver: memoryJobDriver(),
     });
@@ -378,7 +378,7 @@ describe('memoryOutboxStore retention', () => {
   test('holds nothing once a row is published', async () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
-    const relay = createOutboxRelay({ store, driver, batchSize: 500 });
+    const relay = outboxRelay({ store, driver, batchSize: 500 });
 
     for (let i = 0; i < 200; i += 1) {
       const tx = fakeTx();

@@ -2,7 +2,7 @@
 // Through a real `UltimateRequest` and a real `RequestContext`, `pwa-artifacts.test.ts`'s shape.
 
 import { describe, expect, test } from 'bun:test';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { routeDescriptor } from '../e2e/route-descriptor-fixture';
 import { islandBundle } from './island-bundle';
 import type { PwaArtifacts } from './pwa-artifacts';
@@ -27,6 +27,7 @@ const pwa = (patch: Partial<PwaArtifacts> = {}): PwaArtifacts => ({
   },
   backgroundSync: false,
   push: false,
+  locales: { routed: ['en'], fallback: 'en' },
   ...patch,
 });
 
@@ -67,7 +68,7 @@ describe('serviceWorkerRoutes', () => {
     // shape: a cast would hide a dependency on either appearing later.
     const url = new URL(`http://dev.test${SERVICE_WORKER_PATH}`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
 
     // A cached `sw.js` is a worker that cannot be replaced: the browser re-fetches it to decide
@@ -92,7 +93,7 @@ describe('serviceWorkerRoutes', () => {
     const call = async (headers: Record<string, string> = {}): Promise<Response> => {
       const url = new URL(`http://dev.test${SW_REGISTER_PATH}`);
       const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-      const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+      const ctx = requestContext({ url, method: 'GET', role: 'web', config });
       return route.handler(new UltimateRequest(new Request(url, { headers }), ctx), ctx);
     };
 

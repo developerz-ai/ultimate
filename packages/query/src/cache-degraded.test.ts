@@ -1,13 +1,13 @@
 // Single responsibility: what a `cache:` read does when the tier under it refuses. A tier is
 // best-effort infrastructure — a Redis refusal must degrade the cache, never fail the business
 // read the database could have answered. That is the rule `packages/cache/CLAUDE.md` states and
-// `createCacheStack` already kept; this file is what says the read path kept it after it stopped
+// `cacheStack` already kept; this file is what says the read path kept it after it stopped
 // keeping a store of its own and started reading through that stack.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { CacheTier } from '@ultimat3/cache';
 import { isolateTiers, recentTierFailures, registerTier, resetTiers } from '@ultimat3/cache';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { readThrough } from './cache';
 
 let restore: (() => void) | undefined;
@@ -43,7 +43,7 @@ describe('a read tier that refuses', () => {
     resetTiers();
     registerTier(refusingTier());
 
-    expect(await readThrough(createContext({}), KEY, 60_000, async () => 'rows', [])).toBe('rows');
+    expect(await readThrough(ctxOf({}), KEY, 60_000, async () => 'rows', [])).toBe('rows');
 
     // Degraded, and SAYABLE: the refusal reaches `recentTierFailures()` under the name of the tier
     // that actually refused, so a stack running without its cache is answerable instead of merely

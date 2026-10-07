@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { processRoot } from './process-root-fixture';
 import {
   buildPageBoot,
@@ -77,7 +77,7 @@ describe('buildSyncWorker', () => {
 
 describe('syncWorkerRoutes', () => {
   const serve = (worker: Awaited<ReturnType<typeof buildSyncWorker>>) =>
-    createServer({
+    httpServer({
       routes: syncWorkerRoutes(() => worker),
       role: 'web',
       config: defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } }),
@@ -112,7 +112,7 @@ describe('the page boot', () => {
     // It opens the outbox with the page: the one guarantee a read-only page relies on it for.
     expect(boot?.code).toContain('ultimate.outbox');
 
-    const server = createServer({
+    const server = httpServer({
       routes: pageBootRoutes(() => boot),
       role: 'web',
       config: defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } }),

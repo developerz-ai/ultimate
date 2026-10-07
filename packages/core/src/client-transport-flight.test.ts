@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { FetchLike } from './client-dispatch';
-import { createClientFlight } from './client-flight';
+import { clientFlight } from './client-flight';
 import { clientTransport } from './client-transport';
 import { failure, fakeFetch, json } from './client-transport-fixture';
 import { isUltimateError, UltimateError } from './errors';
@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe('clientTransport — flight', () => {
   test('concurrent identical GETs under a flight dispatch once', async () => {
-    const flight = createClientFlight({ principal: () => 'user:1' });
+    const flight = clientFlight({ principal: () => 'user:1' });
     const { fetchImpl, calls } = fakeFetch(() => json({ n: 1 }));
     const [a, b] = await Promise.all([
       clientTransport({ method: 'GET', url: '/q', flight, fetchImpl }),
@@ -24,7 +24,7 @@ describe('clientTransport — flight', () => {
   });
 
   test('a write never dedupes, even two sharing one idempotency key', async () => {
-    const flight = createClientFlight({ principal: () => 'user:1' });
+    const flight = clientFlight({ principal: () => 'user:1' });
     const { fetchImpl, calls } = fakeFetch(() => json({ ok: true }));
     const post = (): Promise<unknown> =>
       clientTransport({
@@ -40,7 +40,7 @@ describe('clientTransport — flight', () => {
   });
 
   test('fresh: true refuses to join a read already in flight', async () => {
-    const flight = createClientFlight({ principal: () => 'user:1' });
+    const flight = clientFlight({ principal: () => 'user:1' });
     const { fetchImpl, calls } = fakeFetch(() => json(1));
     await Promise.all([
       clientTransport({ method: 'GET', url: '/q', flight, fetchImpl }),
@@ -50,7 +50,7 @@ describe('clientTransport — flight', () => {
   });
 
   test('a per-call retry reaches the flight', async () => {
-    const flight = createClientFlight({ sleep: async () => {} });
+    const flight = clientFlight({ sleep: async () => {} });
     let attempts = 0;
     const fetchImpl: FetchLike = async () => {
       attempts += 1;
@@ -134,7 +134,7 @@ describe('clientTransport — caller hooks', () => {
 // the whole try, so a hook's own TypeError came back as `failure: 'network'`, retryable — and a
 // flight then re-sent the request for a bug no retry can fix.
 describe('clientTransport — only the wire is a network failure', () => {
-  const retrying = () => createClientFlight({ sleep: async () => {} });
+  const retrying = () => clientFlight({ sleep: async () => {} });
 
   test("a TypeError thrown by onResponse is the caller's own, and is never retried", async () => {
     const { fetchImpl, calls } = fakeFetch(() => json(1));

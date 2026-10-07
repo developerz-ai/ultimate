@@ -8,7 +8,7 @@ import type { MetaAction, MetaResource } from './meta-surface';
 import { oneLineParams, renderCatalog } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -202,7 +202,7 @@ describe('list_resources — a raw tool that never said', () => {
       inputSchema: NO_ARGS,
       handle: async () => textResult('ok'),
     };
-    const server = createMcpServer({
+    const server = mcpServer({
       tools: [raw, { ...raw, name: 'read', destructive: false }],
       surface: 'meta',
       groups: { things: { description: 'Things', tools: ['raw', 'read'] } },

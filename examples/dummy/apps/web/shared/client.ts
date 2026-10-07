@@ -10,7 +10,7 @@
  *
  * There is no codegen step to remember: the shape is inferred from the declarations. A
  * build id travels on every action call — always, defaulting to `dev` exactly as
- * `createContext()` does — so a page left open across a deploy raises `X_CONTRACT_DRIFT` instead
+ * `ctxOf()` does — so a page left open across a deploy raises `X_CONTRACT_DRIFT` instead
  * of silently posting to an operation that changed shape. A read carries none: a GET that
  * validates its own search string against the read's schema answers `X_INPUT_INVALID` on its own.
  *
@@ -47,7 +47,7 @@ export const client = rpc<Api['actions']>({
   get baseUrl() {
     return appUrl();
   },
-  // Mirrors `createContext()`'s own default. An absent build id sends no header at all, which
+  // Mirrors `ctxOf()`'s own default. An absent build id sends no header at all, which
   // turns drift detection off silently — the one failure this file's header promises it catches.
   buildId: process.env['BUILD_ID'] ?? 'dev',
 });

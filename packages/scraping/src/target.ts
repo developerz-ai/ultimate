@@ -117,7 +117,7 @@ export interface GotoOptions {
  * so `page.screenshot({ timeout })` was a documented deadline that bounded nothing. Deleted
  * rather than implemented: the CDP port's own `screenshot({ fullPage })` has no timeout slot to
  * forward it to, and a deadline enforced in `page-over-target.ts` would have to race
- * `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask and would time
+ * `ScrapeClock.sleep`, which under `testScrapeClock` resolves on the first microtask and would time
  * out every capture in every test. A driver's own default is the honest bound.
  */
 export type CaptureOptions = CaptureFraming;

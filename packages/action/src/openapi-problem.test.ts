@@ -3,7 +3,7 @@ import { registerErrorStatus, registerProblemMeta, toProblem } from '@ultimat3/h
 import { InputInvalidError } from './errors';
 import type { JsonSchemaObject } from './json-schema';
 import { buildOpenApi } from './openapi';
-import { resetRegistry } from './registry';
+import { resetActions } from './registry';
 
 /** The published `Problem`, as a reader of `openapi.json` sees it. */
 function problemSchema(): { properties: Record<string, JsonSchemaObject>; required: string[] } {
@@ -24,7 +24,7 @@ const ISSUE = { path: 'input.postId', expected: 'uuid', received: 'string', mess
 
 describe('the published Problem schema against the document @ultimat3/http serves', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetActions();
   });
 
   test('every member of a served X_INPUT_INVALID document is a declared property', () => {

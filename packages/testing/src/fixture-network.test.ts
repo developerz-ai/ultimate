@@ -1,5 +1,5 @@
 import { afterEach, test as bunTest, describe, expect } from 'bun:test';
-import { createTestNetwork } from './fixture-network';
+import { testNetwork } from './fixture-network';
 import {
   isNetworkSealed,
   mockJson,
@@ -29,7 +29,7 @@ const URL_UNDER_TEST = 'https://api.stripe.test/v1/charges';
 describe(testName('unit', 'the network fixture'), () => {
   bunTest('offline fails the request the app’s offline path is written for', async () => {
     sealNetwork();
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.offline();
 
@@ -40,7 +40,7 @@ describe(testName('unit', 'the network fixture'), () => {
   bunTest('online puts it back, and a mock answers again', async () => {
     sealNetwork();
     mockJson(URL_UNDER_TEST, { ok: true });
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.offline();
     await expect(fetch(URL_UNDER_TEST)).rejects.toBeUltimateError('X_TEST_NETWORK_OFFLINE');
@@ -54,7 +54,7 @@ describe(testName('unit', 'the network fixture'), () => {
   bunTest('a mocked route is offline too — offline beats the mock', async () => {
     sealNetwork();
     mockJson(URL_UNDER_TEST, { ok: true });
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.offline();
 
@@ -63,7 +63,7 @@ describe(testName('unit', 'the network fixture'), () => {
 
   bunTest('drop is offline that names itself, so a resume is not a resubscribe', async () => {
     sealNetwork();
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.drop();
 
@@ -75,7 +75,7 @@ describe(testName('unit', 'the network fixture'), () => {
   // or a deliberate-integration file silently tests nothing when it goes offline.
   bunTest('offline works in an unsealed process, and hands the process back unsealed', () => {
     unsealNetwork();
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.offline();
     expect(isNetworkSealed()).toBe(true);
@@ -88,7 +88,7 @@ describe(testName('unit', 'the network fixture'), () => {
 
   bunTest('a sealed process stays sealed after disposal', () => {
     sealNetwork();
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.offline();
     network[Symbol.dispose]();
@@ -101,7 +101,7 @@ describe(testName('unit', 'the network fixture'), () => {
   // offline left behind fails every later file at its first fetch, somewhere else entirely.
   bunTest('disposal puts the process back online even after drop', () => {
     sealNetwork();
-    const network = createTestNetwork();
+    const network = testNetwork();
 
     network.drop();
     network[Symbol.dispose]();
@@ -113,10 +113,10 @@ describe(testName('unit', 'the network fixture'), () => {
   // forcing 'online' on the way out would let an inner fixture's disposal reconnect the outer test.
   bunTest('disposal restores the state it found, not online', () => {
     sealNetwork();
-    const outer = createTestNetwork();
+    const outer = testNetwork();
     outer.drop();
 
-    const inner = createTestNetwork();
+    const inner = testNetwork();
     inner.online();
     inner[Symbol.dispose]();
 

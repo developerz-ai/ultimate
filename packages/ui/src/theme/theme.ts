@@ -2,12 +2,12 @@
 // already stamped on the document, then the app's `theme.defaultMode` (the OS for `'system'`). Every side effect
 // goes through an injected `ThemeEnv`, so this is testable without a DOM and reusable on the server.
 
+import { THEME_STORAGE_KEY } from '@ultimat3/core';
 import { invalidThemeError, runtimeMissingError } from '../errors';
 import type { Theme } from '../tokens/tokens';
 
 export type { Theme };
 
-export const THEME_STORAGE_KEY = 'ultimate.theme';
 export const THEME_ATTRIBUTE = 'data-theme';
 /** Where the boot script records `theme.defaultMode` itself — `'light'`, `'dark'` or `'system'`.
  *  `@ultimat3/render`'s `themeScriptBody` writes `${attribute}-default`; this is that name. */

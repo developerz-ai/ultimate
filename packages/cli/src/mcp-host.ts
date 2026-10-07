@@ -35,8 +35,8 @@ import type {
   VerifyResult,
   VerifyStep,
 } from '@ultimat3/mcp';
-import { createDevServer, DEV_SCOPES, devHost, frameworkIntrospection } from '@ultimat3/mcp';
-import { describeRoutes } from '@ultimat3/render';
+import { DEV_SCOPES, devHost, devMcpServer, frameworkIntrospection } from '@ultimat3/mcp';
+import { describePages } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { appManifest, policyFacts } from './app-manifest';
 import { runVerify, VERIFY_STEPS } from './cmd-verify';
@@ -349,10 +349,10 @@ export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpSer
   const lazy = lazyServices(input);
   const ui = uiCapabilities({ root: input.root, env: input.env });
   const introspection = frameworkIntrospection({
-    routes: () => describeRoutes(),
+    routes: () => describePages(),
     policies: () => policyFacts(),
   });
-  const server = createDevServer({ host: devHost(introspection, capabilities(input, lazy, ui)) });
+  const server = devMcpServer({ host: devHost(introspection, capabilities(input, lazy, ui)) });
   const caller = localCaller();
   return {
     server,

@@ -54,7 +54,7 @@ describe('realtime barrels', () => {
     expect(client.useQuery).toBeTypeOf('function');
     expect(client.useRecord).toBeTypeOf('function');
     expect(client.decode).toBeTypeOf('function');
-    for (const name of ['openNatsClient', 'bunPgStream', 'NatsTransport', 'createSyncNode']) {
+    for (const name of ['openNatsClient', 'bunPgStream', 'NatsTransport', 'syncNode']) {
       expect(Object.keys(client)).not.toContain(name);
     }
   });
@@ -63,6 +63,6 @@ describe('realtime barrels', () => {
     expect(server.openNatsClient).toBeTypeOf('function');
     expect(server.bunPgStream).toBeTypeOf('function');
     expect(server.NatsTransport).toBeTypeOf('function');
-    expect(server.createSyncNode).toBeTypeOf('function');
+    expect(server.syncNode).toBeTypeOf('function');
   });
 });

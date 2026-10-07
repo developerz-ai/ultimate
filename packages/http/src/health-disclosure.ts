@@ -12,9 +12,6 @@ import type { HttpConfig } from './config';
 import { HttpError } from './errors';
 import { forwardedClientAddress } from './forwarded';
 
-/** Core's, named here for the config that defaults to it — never a second copy of the list. */
-export { DEFAULT_HEALTH_DETAIL_PEERS } from '@ultimat3/core';
-
 /** Every class an entry may name. A `Record` so a class core adds is a build error here. */
 const ADDRESS_CLASSES = Object.freeze<Record<AddressClass, true>>({
   loopback: true,

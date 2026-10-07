@@ -49,7 +49,7 @@ the wide shape and answer with the row type.
   `scaleOf` still answer for a *currency*, which is a different question.
 - **A stated currency is an ASSERTION, never a fallback.** `sum(amounts, currency)` used its
   second argument only when the list was empty and ignored it entirely once a first addend existed:
-  `sum([money(1, 'EUR')], 'USD')` answered `{ minor: 1, currency: 'EUR' }`, so a caller who wrote
+  `sum([fromMinor(1, 'EUR')], 'USD')` answered `{ minor: 1, currency: 'EUR' }`, so a caller who wrote
   down USD received EUR with nothing refused — in the one entry point of a file whose header is
   "Integer arithmetic that refuses to mix currencies". A stated currency the first addend
   contradicts is `X_CURRENCY_MISMATCH`.
@@ -60,13 +60,13 @@ the wide shape and answer with the row type.
 - **Lossy narrowing names its mode at the call.** `rescale(m, 2)` throws rather than drop a
   non-zero digit; `rescale(m, 2, 'half-up')` is the same rule `fromDecimal` applies to excess
   precision. A narrowing that loses nothing needs no mode — nothing is being decided.
-- **`money()` is the only place the canonical form is decided.** It drops a `scale` equal to the
-  currency's exponent — only equal, so a deliberately *coarser* scale (`money(5, 'USD', 0)`, whole
+- **`fromMinor()` is the only place the canonical form is decided.** It drops a `scale` equal to the
+  currency's exponent — only equal, so a deliberately *coarser* scale (`fromMinor(5, 'USD', 0)`, whole
   dollars) is kept exactly as a finer one is. Every constructor, every arithmetic result and every
   allocation part therefore agree on one encoding without any of them repeating the rule.
 - **A widened value that will not fit is a scale error, not a fractional-minor one.** `add`,
   `subtract` and `rescale` convert through `toMinor`, which throws `X_MONEY_SCALE_INVALID` naming
-  the finest scale that fits. Letting `money()` refuse the raw number reported a fractional minor
+  the finest scale that fits. Letting `fromMinor()` refuse the raw number reported a fractional minor
   nobody wrote, with a `fromDecimal` fix line that threw the same error again.
 - Never combine currencies without `convert()` first.
 - Never round without naming a `RoundingMode` in the call or accepting the stated default.
@@ -85,7 +85,7 @@ the wide shape and answer with the row type.
   of a value that names none; a value that names one keeps it, because narrowing $0.000002 to
   EUR's two decimals is the 10,000x reinterpretation `scale` was added to prevent. Same rule as
   `multiply` and `divide`, which already kept theirs.
-- **`money()` normalises `-0` to `0`.** One amount must not have two identities: `JSON.stringify`
+- **`fromMinor()` normalises `-0` to `0`.** One amount must not have two identities: `JSON.stringify`
   writes `-0` as `0` while `Object.is` and any keyed `Map` see something else, so a refund
   rounding to nothing produced a value its own wire format cannot reproduce. `roundToInteger`
   refuses to produce it either — `sign * 0` is the source.

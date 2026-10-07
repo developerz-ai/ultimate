@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { AiTransportError } from './errors';
-import { backoffMs, createGateway, isRetryable, type RetryPolicy } from './gateway';
+import { backoffMs, isRetryable, providerGateway, type RetryPolicy } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateResult, Provider, StreamChunk } from './provider';
 
@@ -28,7 +28,7 @@ function failingGateway(status: number, waits: number[], random: () => number) {
       throw new AiTransportError({ provider: 'failing', status, detail: 'no' });
     },
   };
-  const gateway = createGateway({
+  const gateway = providerGateway({
     defaultModel: FIXTURE_MODEL,
     providers: [failing],
     retry: { attempts: 3, baseDelayMs: 500, maxDelayMs: 8_000 },

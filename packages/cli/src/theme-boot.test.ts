@@ -4,9 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, THEME_STORAGE_KEY } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
-import { THEME_STORAGE_KEY } from '@ultimat3/render';
 import { loadThemeMode, themeBoot } from './theme-boot';
 
 let root = '';
@@ -61,17 +60,17 @@ describe('unit · the boot tag and its CSP source come from one body', () => {
 });
 
 /**
- * Render sits below ui in the tier table and cannot import it, so each package carries the key as
- * its own literal. This is the pin that keeps them one key: the boot stamping one and
- * `ThemeToggle` writing another was exactly the bug — a visitor's choice never survived a reload.
- * Read from source text rather than imported: `@ultimat3/cli` does not depend on `@ultimat3/ui`.
+ * The boot stamping one key and `ThemeToggle` writing another was exactly the bug — a visitor's
+ * choice never survived a reload. Since 25.0.0 the key is ONE declaration in `@ultimat3/core`
+ * that render and ui both import; what this pins is that neither grew its literal back. Read from
+ * source text rather than imported: `@ultimat3/cli` does not depend on `@ultimat3/ui`.
  */
 describe('unit · render and ui agree on the storage key', () => {
-  test('THEME_STORAGE_KEY is one literal in both packages', async () => {
+  test('the boot reads the THEME_STORAGE_KEY core declares, and ui declares no key of its own', async () => {
     const theme = Bun.fileURLToPath(new URL('../../ui/src/theme/theme.ts', import.meta.url));
     const source = await Bun.file(theme).text();
-    const declared = /export const THEME_STORAGE_KEY = '([^']+)'/.exec(source)?.[1];
-    expect(declared).toBe(THEME_STORAGE_KEY);
+    expect(source).toContain("import { THEME_STORAGE_KEY } from '@ultimat3/core';");
+    expect(source).not.toContain(JSON.stringify(THEME_STORAGE_KEY).replaceAll('"', "'"));
     expect(themeBoot('system').head).toContain(JSON.stringify(THEME_STORAGE_KEY));
   });
 

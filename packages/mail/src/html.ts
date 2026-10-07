@@ -10,7 +10,7 @@ const SAFE_PROTOCOLS: readonly string[] = ['http:', 'https:', 'mailto:'];
  * `javascript:` and `data:` hrefs are stripped rather than escaped: some clients still
  * follow them, and a link the recipient cannot trust is worse than a dead one.
  */
-export function safeUrl(value: string): string {
+export function safeMailHref(value: string): string {
   let parsed: URL;
   try {
     parsed = new URL(value);

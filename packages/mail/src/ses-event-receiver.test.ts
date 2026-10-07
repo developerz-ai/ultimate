@@ -18,7 +18,7 @@ import {
   toBase64,
 } from './delivery-event-fixture';
 import type { MailFetch } from './driver-resend';
-import { createSesEventReceiver, type SesEventReceiverOptions } from './ses-event-receiver';
+import { type SesEventReceiverOptions, sesEventReceiver } from './ses-event-receiver';
 import type { SnsMessage } from './sns-signature';
 
 let signer: SnsSigner;
@@ -31,7 +31,7 @@ const clock = frozenClock('2026-10-06T12:01:00.000Z');
 
 function receiver(extra: Partial<SesEventReceiverOptions> = {}) {
   const fetched: string[] = [];
-  const instance = createSesEventReceiver({
+  const instance = sesEventReceiver({
     topicArns: [TOPIC_ARN],
     clock,
     fetchCertificate: async (url) => {
@@ -55,7 +55,7 @@ async function refusal(promise: Promise<unknown>): Promise<UltimateError> {
 const receive = (message: SnsMessage, extra: Partial<SesEventReceiverOptions> = {}) =>
   receiver(extra).instance.receive(snsRequest(snsBody(message)));
 
-describe('createSesEventReceiver — authentic notifications', () => {
+describe('sesEventReceiver — authentic notifications', () => {
   test('a Bounce becomes one hard bounce per bounced recipient, joined on the SES MessageId', async () => {
     const outcome = await receive(await sesNotification(signer, SES_BOUNCE));
     if (outcome.type !== 'events') return expect.unreachable('expected events');
@@ -144,7 +144,7 @@ describe('createSesEventReceiver — authentic notifications', () => {
   });
 });
 
-describe('createSesEventReceiver — SubscriptionConfirmation', () => {
+describe('sesEventReceiver — SubscriptionConfirmation', () => {
   const confirmUrl =
     'https://sns.us-west-2.amazonaws.com/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:us-west-2:123456789012:ses-events&Token=2336412f37fb687f5d51e6e2425f004aed';
   const confirmation = () =>
@@ -201,7 +201,7 @@ describe('createSesEventReceiver — SubscriptionConfirmation', () => {
   });
 });
 
-describe('createSesEventReceiver — forgeries are refused', () => {
+describe('sesEventReceiver — forgeries are refused', () => {
   test('a topic this app does not own is refused before any certificate is fetched', async () => {
     const { instance, fetched } = receiver({
       topicArns: ['arn:aws:sns:us-west-2:123456789012:other-topic'],
@@ -317,7 +317,7 @@ describe('createSesEventReceiver — forgeries are refused', () => {
   });
 });
 
-describe('createSesEventReceiver — bodies and configuration', () => {
+describe('sesEventReceiver — bodies and configuration', () => {
   test.each([
     ['not json', 'not-json'],
     ['{"Type":"Notification"}', 'envelope'],
@@ -349,17 +349,17 @@ describe('createSesEventReceiver — bodies and configuration', () => {
       seen.push(init);
       return new Response(signer.certificatePem);
     };
-    const instance = createSesEventReceiver({ topicArns: [TOPIC_ARN], clock, fetch });
+    const instance = sesEventReceiver({ topicArns: [TOPIC_ARN], clock, fetch });
     await instance.receive(snsRequest(snsBody(await sesNotification(signer, SES_BOUNCE))));
     expect(seen[0]?.redirect).toBe('error');
   });
 
   test.each([[[]], [['not-an-arn']]])('topicArns %p is refused at construction', (topicArns) => {
-    expect(() => createSesEventReceiver({ topicArns })).toThrow(/topic ARN/);
+    expect(() => sesEventReceiver({ topicArns })).toThrow(/topic ARN/);
   });
 });
 
-describe('createSesEventReceiver — prototype keys from the body', () => {
+describe('sesEventReceiver — prototype keys from the body', () => {
   test.each([['constructor'], ['__proto__'], ['toString']])(
     'a signed notificationType of %p is ignored',
     async (notificationType) => {

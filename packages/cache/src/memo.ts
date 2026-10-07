@@ -46,7 +46,7 @@ export function memoSize(): number {
   return storeFor(false)?.size ?? 0;
 }
 
-export function createMemoTier(): CacheTier {
+export function memoTier(): CacheTier {
   return {
     name: 'request-memo',
 
@@ -61,7 +61,7 @@ export function createMemoTier(): CacheTier {
      *
      * This tier holds nothing past the request, so it stores no `expiresAt` — but it is still a
      * rung of one ladder, and `assertTtl` is the one place that says what `ttlMs` may be. Skipping
-     * it made `ttlMs: 0` a value the memo accepted and every other tier refused: `createCacheStack`
+     * it made `ttlMs: 0` a value the memo accepted and every other tier refused: `cacheStack`
      * routes each rung through `bestEffort`, so the miswiring was swallowed as two tier failures
      * and the read still hit — out of the one tier that never should have taken it. Exactly the
      * "two tiers, two readings of `0`" the rule exists to close.

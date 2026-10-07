@@ -104,8 +104,8 @@ both mechanisms live in `@ultimat3/core`.
 
 | Resource | Bound | What happens at the bound |
 |---|---|---|
-| a slot in a concurrency gate (`createFlightGate`) | `maxConcurrent` running, `maxQueued` waiting | past the queue the answer is a **refusal** — `X_FLIGHT_GATE_OVERLOADED`, 503, `Retry-After: 1`. Never a longer queue: an unbounded queue turns a load spike into a memory fault and answers it minutes late. `@ultimat3/auth` throws its own `X_OVERLOADED` through the same gate |
-| a key held by an in-flight load (`createSingleFlight`) | an optional `deadlineMs` | the **key** is freed and the next caller may start its own. The work is not cancelled and no promise is rejected — the framework holds no signal that could abort a caller's function, and pretending otherwise would be a second, false promise. `createCacheStack` sets 30 s, `@ultimat3/auth`'s JWKS refresh twice its transport timeout |
+| a slot in a concurrency gate (`flightGate`) | `maxConcurrent` running, `maxQueued` waiting | past the queue the answer is a **refusal** — `X_FLIGHT_GATE_OVERLOADED`, 503, `Retry-After: 1`. Never a longer queue: an unbounded queue turns a load spike into a memory fault and answers it minutes late. `@ultimat3/auth` throws its own `X_OVERLOADED` through the same gate |
+| a key held by an in-flight load (`singleFlight`) | an optional `deadlineMs` | the **key** is freed and the next caller may start its own. The work is not cancelled and no promise is rejected — the framework holds no signal that could abort a caller's function, and pretending otherwise would be a second, false promise. `cacheStack` sets 30 s, `@ultimat3/auth`'s JWKS refresh twice its transport timeout |
 
 A slot is handed **over** on release rather than released and re-acquired: decrementing first would
 let a caller arriving in the same tick past the ceiling while a waiter's continuation is still a

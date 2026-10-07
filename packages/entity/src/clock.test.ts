@@ -4,8 +4,8 @@
 // however the ctx was built, and a test could only ever assert a range.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createContext, frozenClock, runWithContext, userActor } from '@ultimat3/core';
-import { createRecordingClient, setDbClient } from '@ultimat3/db';
+import { ctxOf, frozenClock, runWithContext, userActor } from '@ultimat3/core';
+import { recordingClient, setDbClient } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -32,7 +32,7 @@ const db = () => database({ notes }, { driver: memoryDriver() });
 /** A request whose clock is stopped — the shape a deterministic test is written in. */
 const atFrozen = <T>(work: () => Promise<T>): Promise<T> =>
   runWithContext(
-    createContext({ actor: userActor({ id: 'writer', orgId: ORG }), clock: frozenClock(FROZEN) }),
+    ctxOf({ actor: userActor({ id: 'writer', orgId: ORG }), clock: frozenClock(FROZEN) }),
     work,
   );
 
@@ -76,7 +76,7 @@ describe('the write path reads ctx.clock', () => {
   // The Postgres driver stamps the same column from the same call, so the two drivers cannot
   // disagree about when a row was deleted — `pg-driver.ts` had its own `systemClock` read.
   test('the Postgres driver binds that instant into the soft-delete statement', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     setDbClient(client);
     try {
       await atFrozen(() => postgresRepo(notes).deleteWhere({ body: 'first' }));

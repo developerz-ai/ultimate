@@ -10,6 +10,7 @@ import { retryAfterSecondsOf } from './client-retry-after';
 import { onRescope } from './client-scope';
 import { scopeChanged } from './client-scope-error';
 import type { UltimateError } from './errors';
+import { CLIENT_BUILD_META } from './page-meta';
 import type { RecordEnvelope } from './record-envelope';
 import { RECORDS_HEADER } from './record-envelope';
 import { outboundSlot, pageClient } from './record-sink';
@@ -18,6 +19,14 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 /** The header `@ultimat3/action`'s server reads to replay rather than re-run a write. */
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
+
+/**
+ * The build a client was served, on the request, and the build that answered, on the response.
+ * `@ultimat3/http` reads it into `ctx.clientBuildId` and stamps it back; `@ultimat3/action`'s typed
+ * client and `@ultimat3/pwa`'s service worker send it; `@ultimat3/render` writes it. The document
+ * meta's spelling by construction, so a script reading either reads one name. Not configurable.
+ */
+export const BUILD_ID_HEADER: typeof CLIENT_BUILD_META = CLIENT_BUILD_META;
 
 export interface TransportRequest {
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

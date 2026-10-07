@@ -67,6 +67,29 @@ export const sitesRows =
   };
 
 /**
+ * `<table>.<section>.<key>` → 1 for a `{ exceptions, owed }` table of reason strings
+ * (`factory-names-pins.ts`): a row is a licence, so a new row is the raise.
+ */
+export const reasonSectionRows =
+  (table: string) =>
+  (value: unknown): ReadonlyMap<string, number> => {
+    const rows = new Map<string, number>();
+    if (typeof value !== 'object' || value === null) return rows;
+    for (const [section, entries] of Object.entries(value)) {
+      if (typeof entries !== 'object' || entries === null) continue;
+      for (const key of Object.keys(entries)) rows.set(`${table}.${section}.${key}`, 1);
+    }
+    return rows;
+  };
+
+/** The `'<key>':` line a `reasonSectionRows` row names — `<table>.<section>.<key>`. */
+export function reasonSectionLine(source: string, row: string): number {
+  const key = row.split('.').slice(2).join('.');
+  const at = source.split('\n').findIndex((line) => line.includes(`'${key}':`));
+  return at === -1 ? 0 : at + 1;
+}
+
+/**
  * The tables whose headers say they may only shrink but which live outside `PIN_GLOB` — each was a
  * row an author could raise beside the debt it excused with no guard reading the number.
  */
@@ -89,6 +112,18 @@ export const SCRIPT_PIN_TABLES: readonly ScriptPinTable[] = [
     path: 'scripts/set-cookie-literals.ts',
     table: 'SET_COOKIE_RELAY_PINS',
     rows: sitesRows('SET_COOKIE_RELAY_PINS'),
+  },
+  {
+    path: 'scripts/factory-names-pins.ts',
+    table: 'FACTORY_NAME_PINS',
+    rows: reasonSectionRows('FACTORY_NAME_PINS'),
+    line: reasonSectionLine,
+  },
+  {
+    path: 'scripts/factory-names-pins.ts',
+    table: 'NO_PINS',
+    rows: reasonSectionRows('NO_PINS'),
+    line: reasonSectionLine,
   },
   { path: 'scripts/wiki-fences-backlog.ts', table: 'WIKI_FENCE_BACKLOG' },
 ];

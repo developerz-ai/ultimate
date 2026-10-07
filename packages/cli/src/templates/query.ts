@@ -63,7 +63,7 @@ const queryTest = (name: NameSet, feature: NameSet, shape: ReadShape): string =>
   const subscribes = live && shape.storesRow;
   const imports = subscribes
     ? [
-        "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+        "import { ctxOf, frozenClock, runWithContext } from '@ultimat3/core';",
         `import { afterEach, expect, ${wrapper} } from '@ultimat3/testing';`,
         `import { driver } from '${shape.dbModule}';`,
       ]
@@ -161,7 +161,7 @@ const clock = frozenClock('2026-01-01T00:00:00.000Z');
 
 const store = (org: string, title: string) => {
   const draft = { orgId: org, title, price: { minor: 0, currency: 'USD' } };
-  const writer = createContext({ actor: testActor('writer', { orgId: org }).actor, clock });
+  const writer = ctxOf({ actor: testActor('writer', { orgId: org }).actor, clock });
   return runWithContext(writer, () => repo.insert(draft));
 };
 
@@ -225,7 +225,7 @@ const clock = frozenClock('2026-01-01T00:00:00.000Z');
 
 const store = (owner: string, title: string) => {
   const draft = { orgId: owner, title, price: { minor: 0, currency: 'USD' } };
-  const writer = createContext({ actor: testActor('writer', { orgId: owner }).actor, clock });
+  const writer = ctxOf({ actor: testActor('writer', { orgId: owner }).actor, clock });
   return runWithContext(writer, () => repo.insert(draft));
 };
 
@@ -288,7 +288,7 @@ ${shape.storesRow ? storedRowsTest() : ''}`;
 /** The imports the read cases need, over whatever the file they land in already imports. */
 const readImports = (shape: ReadShape, testing: readonly string[]): readonly string[] => [
   ...(shape.storesRow
-    ? ["import { createContext, frozenClock, runWithContext } from '@ultimat3/core';"]
+    ? ["import { ctxOf, frozenClock, runWithContext } from '@ultimat3/core';"]
     : []),
   `import { ${[...(shape.storesRow ? ['afterEach'] : []), ...testing].join(', ')} } from '@ultimat3/testing';`,
   ...(shape.storesRow ? [`import { driver } from '${shape.dbModule}';`] : []),

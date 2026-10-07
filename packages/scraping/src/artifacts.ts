@@ -5,7 +5,7 @@
 // Written through `@ultimat3/storage`'s driver, so the same call lands on a local disk in
 // development and on S3 in production, and this package owns no upload path of its own.
 
-import type { StorageDriver } from '@ultimat3/storage';
+import { DEFAULT_CONTENT_TYPE, type StorageDriver } from '@ultimat3/storage';
 
 export interface ArtifactRef {
   readonly key: string;
@@ -31,8 +31,6 @@ export interface ArtifactWriterInit {
 
 export const DEFAULT_ARTIFACT_PREFIX = 'scrape';
 
-export const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
-
 /**
  * A `Map`, not an object literal — the same choice `failures.ts` makes, for the same reason. The
  * extension comes off a caller-supplied filename, and on a download that filename came off the
@@ -57,7 +55,7 @@ export const contentTypeFor = (name: string): string =>
  * that has not configured storage should still be able to run a scrape; losing the artifact is a
  * cost, and refusing the run over it is a bigger one.
  */
-export function createArtifactWriter(init: ArtifactWriterInit): ArtifactWriter {
+export function artifactWriter(init: ArtifactWriterInit): ArtifactWriter {
   const saved: ArtifactRef[] = [];
   const prefix = `${init.prefix ?? DEFAULT_ARTIFACT_PREFIX}/${init.scrape}/${init.runId}`;
   return {

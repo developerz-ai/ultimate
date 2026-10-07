@@ -6,19 +6,26 @@
 // It exists because the alternative was written by hand in every suite that needed a bucket: a
 // fake with three methods and five `unsupported()` stubs, each a slightly different contract.
 
-import { type Clock, finiteCount, NotImplementedError, systemClock } from '@ultimat3/core';
+import {
+  type Clock,
+  finiteCount,
+  NotImplementedError,
+  type Page,
+  pageOf,
+  systemClock,
+} from '@ultimat3/core';
 import {
   assertListOptions,
   assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
-  type ListPage,
   type PutOptions,
   resolveListLimit,
   type SignedUrlOptions,
   type StorageBody,
   type StorageDriver,
+  type StorageListEntry,
   type StorageObject,
   type StorageRead,
   sha256Base64,
@@ -232,11 +239,11 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       return stored.has(assertSafeKey(key));
     },
 
-    async list(listOptions?: ListOptions): Promise<ListPage> {
+    async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
       const prefix = listOptions?.prefix ?? '';
       assertListOptions(listOptions);
       const limit = resolveListLimit(listOptions?.limit);
-      const cursor = listOptions?.cursor;
+      const cursor = listOptions?.cursor ?? undefined;
       // Code-unit order and "the cursor is the last key of the page before" — the local disk's own.
       const keys = [...stored.keys()]
         .filter((key) => key.startsWith(prefix) && (cursor === undefined || key > cursor))
@@ -246,10 +253,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
         const hit = stored.get(key);
         return hit === undefined ? [] : [snapshot(hit.object)];
       });
-      const last = page.at(-1);
-      return keys.length > page.length && last !== undefined
-        ? { objects, truncated: true, cursor: last }
-        : { objects, truncated: false };
+      return pageOf(objects, keys.length > page.length ? (page.at(-1) ?? null) : null);
     },
 
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {

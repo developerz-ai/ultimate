@@ -249,7 +249,7 @@ resetScrapeClock(); // in the afterEach
 |---|---|---|
 | `systemScrapeClock` | waits | production |
 | `noWaitClock` | one turn of the event loop, whatever was asked; `now()` and deadlines are real | a test whose run waits on something that really happens in the same process — an answer the test publishes |
-| `testClock()` | advances virtual time and yields a microtask | a test of a timeout: thirty seconds pass in none |
+| `testScrapeClock()` | advances virtual time and yields a microtask | a test of a timeout: thirty seconds pass in none |
 
 A third-party driver takes part by reading three `SessionInit` fields: dial `proxy` or throw
 `egressUnsupported()`, pass `usage` to `pageOverTarget` and its HTTP transport, and answer

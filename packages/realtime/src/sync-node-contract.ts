@@ -1,4 +1,4 @@
-// What a `sync` node IS, as types: the options `createSyncNode` takes, the node it returns and the
+// What a `sync` node IS, as types: the options `syncNode` takes, the node it returns and the
 // socket Bun hands its handlers. Apart from `sync-node.ts` so the lifecycle there stays under the
 // file ceiling, and so a host can name the shapes without reading the lifecycle.
 
@@ -33,7 +33,7 @@ export interface SyncNodeOptions {
   /**
    * When a socket starts dropping frames, and how many drops close it. On `SyncSocket` too, but
    * this node builds every socket it holds — so unforwarded they were reachable only by abandoning
-   * `createSyncNode`, and a dropped channel frame is the one loss nothing replays.
+   * `syncNode`, and a dropped channel frame is the one loss nothing replays.
    */
   readonly maxBufferedBytes?: number;
   readonly maxDroppedFrames?: number;

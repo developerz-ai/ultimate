@@ -7,7 +7,7 @@ import {
   adoptAcceptedFiles,
   type FileCandidate,
   type FileTarget,
-  formatBytes,
+  formatFileSize,
   progressPercent,
   selectFiles,
 } from './file-input-view';
@@ -78,21 +78,21 @@ describe('progressPercent', () => {
   });
 });
 
-describe('formatBytes', () => {
+describe('formatFileSize', () => {
   test('steps through decimal units, because that is what Intl’s byte units mean', () => {
-    expect(formatBytes(0, 'en-US')).toBe('0 byte');
-    expect(formatBytes(999, 'en-US')).toBe('999 byte');
-    expect(formatBytes(1000, 'en-US')).toBe('1 kB');
-    expect(formatBytes(1_500_000, 'en-US')).toBe('1.5 MB');
+    expect(formatFileSize(0, 'en-US')).toBe('0 byte');
+    expect(formatFileSize(999, 'en-US')).toBe('999 byte');
+    expect(formatFileSize(1000, 'en-US')).toBe('1 kB');
+    expect(formatFileSize(1_500_000, 'en-US')).toBe('1.5 MB');
   });
 
   test('formats in the caller’s locale', () => {
-    expect(formatBytes(1_500_000, 'de-DE')).toBe('1,5 MB');
+    expect(formatFileSize(1_500_000, 'de-DE')).toBe('1,5 MB');
   });
 
   test('a negative or non-finite size is 0, never a bar that renders NaN', () => {
-    expect(formatBytes(-1, 'en-US')).toBe('0 byte');
-    expect(formatBytes(Number.NaN, 'en-US')).toBe('0 byte');
+    expect(formatFileSize(-1, 'en-US')).toBe('0 byte');
+    expect(formatFileSize(Number.NaN, 'en-US')).toBe('0 byte');
   });
 });
 

@@ -10,12 +10,12 @@ import { InProcessTransport } from './fanout';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { createFrameRouter } from './sync-frames';
+import { frameRouter } from './sync-frames';
 import {
-  createSyncNode,
   DEFAULT_MAX_CONNECTIONS,
   DEFAULT_MAX_FRAME_BYTES,
   type SyncNode,
+  syncNode,
   type UpgradeTarget,
   type WsData,
 } from './sync-node';
@@ -74,7 +74,7 @@ function harness(options: { maxFramesPerSecond?: number; frameBurst?: number } =
     ...options,
   });
   sockets.add(socket);
-  const route = createFrameRouter({
+  const route = frameRouter({
     hub: new ChannelHub({ transport, sockets }),
     registry,
     buildId: BUILD_ID,
@@ -104,7 +104,7 @@ function node(
 } {
   const transport = new InProcessTransport();
   const sockets = new SocketRegistry();
-  const sync = createSyncNode({
+  const sync = syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,
@@ -196,7 +196,7 @@ describe('the connection ceiling', () => {
  * The two ceilings that decide when a socket starts losing frames and when it is closed for it.
  * They were `SyncSocketOptions` only, and `sync-node` constructs every socket itself — so an
  * operator whose clients are slower than this node's fanout could not move either without
- * abandoning `createSyncNode` and building the socket by hand.
+ * abandoning `syncNode` and building the socket by hand.
  */
 describe('the backpressure ceilings', () => {
   const open = (
@@ -212,7 +212,7 @@ describe('the backpressure ceilings', () => {
   };
   const frame: Frame = { type: 'update-available', v: PROTOCOL_VERSION, buildId: BUILD_ID };
 
-  test('are reachable from createSyncNode, so the drop point is an operator decision', () => {
+  test('are reachable from syncNode, so the drop point is an operator decision', () => {
     const { sync, sockets } = node({ maxBufferedBytes: 8, maxDroppedFrames: 0 });
 
     const socket = open(sync, sockets, 9);

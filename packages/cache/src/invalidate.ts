@@ -4,14 +4,21 @@
 // the returned report is what the `/_x` cache panel renders, so "did it actually clear?" is
 // answerable without a log dive.
 
-import { currentSpan, logger, renderThrowable, systemClock, withSpan } from '@ultimat3/core';
+import {
+  CACHE_TIERS,
+  currentSpan,
+  logger,
+  renderThrowable,
+  systemClock,
+  withSpan,
+} from '@ultimat3/core';
 import { markInvalidated } from './fence';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
-import { sortTiers, TIER_ORDER } from './tiers';
+import { sortTiers } from './tiers';
 
 /** Revalidates one ISR route path. Provided by `@ultimat3/render`; absent on a worker. */
 export type Revalidator = (path: string) => Promise<void> | void;
@@ -231,7 +238,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     }
     // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
     // printed upside down is a second thing for a reader to learn.
-    tiers.sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
+    tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
 
     const isr = dependentsOfKind(tags, 'isr-route');
     const cdn = dependentsOfKind(tags, 'cdn-path');

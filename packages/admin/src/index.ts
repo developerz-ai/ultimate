@@ -78,23 +78,22 @@ export {
   deniedDraft,
   diffRows,
   memoryAuditLog,
-  REDACTED,
 } from './audit';
 export {
   type PostgresAuditLogOptions,
   postgresAuditLog,
 } from './audit-pg';
-export { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from './audit-schema';
+// The audit table's DDL is `@ultimat3/admin/schema`'s alone — one import path for one statement.
 export {
   type AdminActor,
   type AdminAuthz,
   type AdminAuthzQuery,
   type AdminDecision,
   type AdminSubject,
-  allowed,
+  adminAllowed,
+  adminDenied,
   anonymousAuthz,
   decideAll,
-  denied,
   expandPermissions,
   isAllowed,
   staticAuthz,
@@ -198,7 +197,7 @@ export { currencyFieldOf, decodeForm, posted } from './form-decode';
 export { JOB_MANAGE, JOB_READ } from './jobs/job-actions';
 export { JOB_ENTITY } from './jobs/job-entities';
 export { JOBS_PATH, jobRowScope } from './jobs/job-resources';
-export { AdminLayout, type AdminLayoutProps, actorLabel } from './layout';
+export { AdminLayout, type AdminLayoutProps, adminActorLabel } from './layout';
 export { AdminList, type AdminListProps } from './list';
 export { type ResourceColumnsInput, resourceColumns } from './list-columns';
 export { AdminFilterBar, type AdminFilterBarProps } from './list-filter-bar';
@@ -343,8 +342,8 @@ export {
   labelOf,
   type RelationData,
   type RelationNeed,
+  relationDataFor,
   relationNeeds,
-  relationsFor,
 } from './relations';
 export { ComputedCell, TRUNCATE_AT } from './renderers';
 export { adminEntitiesOf, adminRepoFor, adminTablesOf } from './repo-entity';

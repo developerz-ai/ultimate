@@ -33,10 +33,10 @@ export const UNSCOPED: VectorScope = Object.freeze({ crossTenant: true });
 export const UNBOUND: VectorScope = Object.freeze({});
 
 /** The tenant column value a row carries when its store had no tenant bound. */
-export const NO_TENANT = '';
+export const NO_VECTOR_TENANT = '';
 
 export function tenantOf(scope: VectorScope): string {
-  return scope.tenant ?? NO_TENANT;
+  return scope.tenant ?? NO_VECTOR_TENANT;
 }
 
 /**

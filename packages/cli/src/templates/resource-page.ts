@@ -188,7 +188,7 @@ const pageTest = (options: ResourcePageOptions): string => {
 ${sortedImports([
   catalogImport(options.catalogModule),
   `import { driver } from '${options.dbModule}';`,
-  "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, frozenClock, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { afterEach, expect, renderRoute, unitTest } from '@ultimat3/testing';",
 ])}
@@ -211,7 +211,7 @@ const clock = frozenClock('2026-01-01T00:00:00.000Z');
 
 const store = (title: string) => {
   const draft = { orgId, title, price: { minor: 1200, currency: 'USD' } };
-  return runWithContext(createContext({ actor: member, clock }), () => repo.insert(draft));
+  return runWithContext(ctxOf({ actor: member, clock }), () => repo.insert(draft));
 };
 
 // One store per process: without this, one test's rows are the next test's fixtures.

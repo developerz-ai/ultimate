@@ -401,7 +401,7 @@ export const authFailed = (scrape: string, detail: string): ScrapeError =>
     meta: { scrape },
   });
 
-export const sessionExpired = (scrape: string, key: string): ScrapeError =>
+export const scrapeSessionExpired = (scrape: string, key: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_SESSION_EXPIRED',
     cause: `the stored session ${key} for scrape "${scrape}" failed its validate() probe and the definition declares no auth.login`,

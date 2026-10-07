@@ -4,7 +4,7 @@
 // the value, the text around it, what the text must read after the pass).
 
 import { describe, expect, test } from 'bun:test';
-import { createSecretBag, redactSecrets } from './secrets';
+import { redactSecrets, secretBag } from './secrets';
 import { urlSecretValues } from './url-secrets';
 
 const PASSWORD = 'p@ss word&1\'"<x>';
@@ -159,10 +159,10 @@ const ROWS: readonly (Row & { readonly name: string })[] = [
 
 const redactedBy = (row: Row): string => {
   if (row.source === 'secret') {
-    const bag = createSecretBag(['PASSWORD'], () => row.value);
+    const bag = secretBag(['PASSWORD'], () => row.value);
     return redactSecrets(row.text, bag);
   }
-  const bag = createSecretBag([]);
+  const bag = secretBag([]);
   for (const value of urlSecretValues(row.value)) bag.conceal(value);
   return redactSecrets(row.text, bag);
 };
@@ -175,7 +175,7 @@ describe('unit · by-value redaction, one fixture table', () => {
   }
 
   test('a value learned mid-run is caught in its encoded spellings too', () => {
-    const bag = createSecretBag([]);
+    const bag = secretBag([]);
     bag.conceal('an swer/42');
     expect(redactSecrets('?a=an%20swer%2F42 and a=an+swer%2F42', bag)).toBe(
       '?a=[redacted] and a=[redacted]',
@@ -183,7 +183,7 @@ describe('unit · by-value redaction, one fixture table', () => {
   });
 
   test('the floor holds for every spelling: a short secret is not redacted, encoded or not', () => {
-    const bag = createSecretBag(['PIN'], () => 'a b');
+    const bag = secretBag(['PIN'], () => 'a b');
     expect(redactSecrets('a b and a%20b and a+b', bag)).toBe('a b and a%20b and a+b');
   });
 });

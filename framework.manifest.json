@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "122bf20a6055e2c6e28711ea544e76085fe3266c46b205f4aa7cafe82e5dc319",
+  "buildId": "8b2c12b161ee05d0e75381824844a728c2b49f2fcbcea0fea0c2051e6d80c2cc",
   "tiers": {
     "0": [
       "core",
@@ -1827,7 +1827,7 @@
     {
       "code": "X_HELPER_COPY",
       "owner": "scripts",
-      "at": "scripts/lib/helper-homes.ts"
+      "at": "scripts/lib/export-all.ts"
     },
     {
       "code": "X_HIVE_EMPTY",

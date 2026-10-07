@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { actorLabel, serviceActor, userActor } from './actor';
-import { createContext, runWithContext, useContext } from './context';
+import { ctxOf, runWithContext, useContext } from './context';
 import { isUltimateError } from './errors';
 import { impersonate, impersonationReason, isImpersonating } from './impersonate';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 
 const support = serviceActor({ id: 'eng-7' });
 const customer = userActor({ id: 'cust-99', orgId: 'org-3' });
@@ -18,7 +18,7 @@ const codeOf = (fn: () => unknown): string => {
 };
 
 const inRequest = <T>(fn: () => T): T =>
-  runWithContext(createContext({ actor: support, logger: createLogger({ level: 'silent' }) }), fn);
+  runWithContext(ctxOf({ actor: support, logger: structuredLogger({ level: 'silent' }) }), fn);
 
 describe('impersonate', () => {
   test('refuses a blank reason — an escape with no argument is a pragma', () => {

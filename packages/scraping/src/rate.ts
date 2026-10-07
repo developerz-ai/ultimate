@@ -9,7 +9,7 @@ export const DEFAULT_NAVIGATION_RATE = 1;
 
 export type Pacer = (signal?: AbortSignal) => Promise<void>;
 
-export function createPacer(rate: number, clock: ScrapeClock): Pacer {
+export function scrapePacer(rate: number, clock: ScrapeClock): Pacer {
   const intervalMs = 1_000 / rate;
   let nextAt = 0;
   return async (signal?: AbortSignal): Promise<void> => {

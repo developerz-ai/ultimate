@@ -14,7 +14,7 @@ import { defineHttpConfig } from './config';
 import { memoryRateLimitStore } from './rate-limit';
 import { installedRateLimitStore, resetRateLimitStore } from './rate-limit-installed';
 import type { Route } from './router';
-import { createServer, type UpgradeTarget } from './server';
+import { httpServer, type UpgradeTarget } from './server';
 
 beforeEach(resetLifecycle);
 afterEach(resetLifecycle);
@@ -30,7 +30,7 @@ const openSocket = (url: string): Promise<WebSocket> =>
 
 test('an open websocket does not hold a later accept hook until the drain deadline', async () => {
   configureLifecycle({ deadlineMs: 3000, readinessGraceMs: 0 });
-  const handle = createServer({
+  const handle = httpServer({
     routes: [],
     role: 'web',
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -75,7 +75,7 @@ test('the rate-limit store adopted at boot is still given back by a stop over an
   resetRateLimitStore();
   configureLifecycle({ deadlineMs: 3000, readinessGraceMs: 0 });
   const store = memoryRateLimitStore();
-  const handle = createServer({
+  const handle = httpServer({
     routes: [],
     role: 'web',
     rateLimitStore: store,
@@ -121,7 +121,7 @@ const streaming = (body: () => ReadableStream<Uint8Array>): Route[] => [
 ];
 
 const streamingServer = (body: () => ReadableStream<Uint8Array>) =>
-  createServer({
+  httpServer({
     routes: streaming(body),
     role: 'web',
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0, dev: false }),

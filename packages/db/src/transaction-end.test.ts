@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DbClient } from './client';
 import { dbUnavailable, driverError } from './errors';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { reservableOver } from './fake-reservable-fixture';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
@@ -178,7 +178,7 @@ describe('what a nested scope may ask for', () => {
   const nestedWith = async (
     options: Parameters<typeof withTransaction>[1],
   ): Promise<{ error: Caught | undefined; texts: readonly string[] }> => {
-    const outer = createRecordingClient();
+    const outer = recordingClient();
     const error = await caught(
       withTransaction(() => withTransaction(async () => undefined, options), { client: outer }),
     );
@@ -189,7 +189,7 @@ describe('what a nested scope may ask for', () => {
     ['isolation', { isolation: 'serializable' }],
     ['readOnly', { readOnly: true }],
     ['deferrable', { deferrable: true }],
-    ['another client', { client: createRecordingClient() }],
+    ['another client', { client: recordingClient() }],
   ] as const)('%s is refused: a SAVEPOINT cannot honour it', async (_name, options) => {
     const { error, texts } = await nestedWith(options);
     expect(error?.code).toBe('X_INVARIANT');
@@ -198,7 +198,7 @@ describe('what a nested scope may ask for', () => {
   });
 
   test('the client the root was opened on is not a second database, and is accepted', async () => {
-    const outer = createRecordingClient();
+    const outer = recordingClient();
     await withTransaction(() => withTransaction(async () => undefined, { client: outer }), {
       client: outer,
     });

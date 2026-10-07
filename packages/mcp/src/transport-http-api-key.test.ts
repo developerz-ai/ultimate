@@ -14,13 +14,13 @@ import {
 } from '@ultimat3/auth';
 import { frozenClock } from '@ultimat3/core';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
 const clock = frozenClock('2026-10-02T09:00:00.000Z');
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 
-const server = createMcpServer({
+const server = mcpServer({
   tools: [
     {
       name: 'echo',

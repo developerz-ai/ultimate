@@ -1,12 +1,12 @@
 // Single responsibility: pin `buildSchema`'s row->description mapping (pure, no database) and
-// `introspect()`'s four-query wiring against a recording client — the shape drift detection,
+// `introspectSchema()`'s four-query wiring against a recording client — the shape drift detection,
 // the admin schema view and the MCP `schema.describe` tool all depend on. The fourth query is
 // `nonAppRelations()`; what it excludes is pinned in `app-relation.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
-import { createRecordingClient } from './fake';
-import { buildSchema, findTable, introspect } from './introspect';
+import { recordingClient } from './fake';
+import { buildSchema, findTable, introspectSchema } from './introspect';
 
 afterEach(() => {
   setDbClient(undefined);
@@ -231,7 +231,7 @@ describe('findTable', () => {
 
 describe('introspect', () => {
   test('sends six catalog queries and folds their rows through buildSchema', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
         {
@@ -280,7 +280,7 @@ describe('introspect', () => {
       rows: [{ table_name: 'posts', trigger_name: 'ultimate_append_only' }],
     });
 
-    const schema = await introspect({ client });
+    const schema = await introspectSchema({ client });
 
     expect(client.statements).toHaveLength(6);
     const posts = findTable(schema, 'posts');
@@ -296,7 +296,7 @@ describe('introspect', () => {
   });
 
   test('defaults `exclude` to `[x_migrations]`, so the ledger never appears as a table', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
         {
@@ -320,12 +320,12 @@ describe('introspect', () => {
     client.on(/pg_index/, { rows: [] });
     client.on(/pg_constraint/, { rows: [] });
 
-    const schema = await introspect({ client });
+    const schema = await introspectSchema({ client });
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);
   });
 
   test('an explicit `exclude` overrides the default rather than adding to it', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
         {
@@ -349,13 +349,13 @@ describe('introspect', () => {
     client.on(/pg_index/, { rows: [] });
     client.on(/pg_constraint/, { rows: [] });
 
-    const schema = await introspect({ client, exclude: ['scratch'] });
+    const schema = await introspectSchema({ client, exclude: ['scratch'] });
     // x_migrations is back, because passing `exclude` replaced the default rather than adding to it.
     expect(schema.tables.map((t) => t.name)).toEqual(['x_migrations']);
   });
 
   test('`schema` option is threaded into every query and the returned rows', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
         {
@@ -371,18 +371,18 @@ describe('introspect', () => {
     client.on(/pg_index/, { rows: [] });
     client.on(/pg_constraint/, { rows: [] });
 
-    const schema = await introspect({ client, schema: 'tenant_a' });
+    const schema = await introspectSchema({ client, schema: 'tenant_a' });
     expect(findTable(schema, 'posts')?.schema).toBe('tenant_a');
     expect(client.statements.every((s) => s.values.includes('tenant_a'))).toBe(true);
   });
 
   test('the foreign-key query pairs conkey with confkey by ordinality, never with `= any`', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, { rows: [] });
     client.on(/pg_index/, { rows: [] });
     client.on(/pg_constraint/, { rows: [] });
 
-    await introspect({ client });
+    await introspectSchema({ client });
 
     const constraints = client.texts.find((text) => text.includes('pg_constraint'));
     expect(constraints).toBeDefined();
@@ -395,8 +395,8 @@ describe('introspect', () => {
   });
 
   test('the CHECK query reads conname and never a definition', async () => {
-    const client = createRecordingClient();
-    await introspect({ client });
+    const client = recordingClient();
+    await introspectSchema({ client });
     const checks = client.texts.find((text) => text.includes("contype = 'c'"));
     expect(checks).toBeDefined();
     // The whole reason this query is name-only: `pg_get_constraintdef` answers Postgres' own
@@ -407,7 +407,7 @@ describe('introspect', () => {
   });
 
   test('with no `client` option the ambient client is used, so `x db` needs no wiring', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/information_schema\.columns/, {
       rows: [
         {
@@ -424,7 +424,7 @@ describe('introspect', () => {
     client.on(/pg_constraint/, { rows: [] });
     setDbClient(client);
 
-    const schema = await introspect();
+    const schema = await introspectSchema();
 
     expect(client.statements).toHaveLength(6);
     expect(schema.tables.map((t) => t.name)).toEqual(['posts']);

@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
 import { clearRoutes, registerRoute } from './registry';
 import type { StaticArtifact, StaticRenderFn } from './render-static';
@@ -144,9 +144,7 @@ describe('assertNoPerRequestState', () => {
 
   test('throws RouteModeInvalidError naming the file when a context is live', () => {
     const run = (): void =>
-      runWithContext(createContext({}), () =>
-        assertNoPerRequestState('apps/web/site/pricing/page.tsx'),
-      );
+      runWithContext(ctxOf({}), () => assertNoPerRequestState('apps/web/site/pricing/page.tsx'));
     expect(run).toThrow(RouteModeInvalidError);
     expect(run).toThrow(/apps\/web\/site\/pricing\/page\.tsx/);
   });
@@ -238,9 +236,7 @@ describe('renderStatic', () => {
   test('rejects inside an ambient context, same guard as assertNoPerRequestState', async () => {
     const entry = blogRoute(async () => ['a']);
     const render: StaticRenderFn = () => '<p>x</p>';
-    const promise = runWithContext(createContext({}), () =>
-      renderStatic(entry, render, { buildId: 'b1' }),
-    );
+    const promise = runWithContext(ctxOf({}), () => renderStatic(entry, render, { buildId: 'b1' }));
     await expect(promise).rejects.toThrow(RouteModeInvalidError);
   });
 

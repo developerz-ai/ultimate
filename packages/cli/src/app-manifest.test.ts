@@ -8,12 +8,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { resetRegistry as resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetCatalogs } from '@ultimat3/i18n';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';

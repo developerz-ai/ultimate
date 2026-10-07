@@ -28,7 +28,7 @@ export const digest = job({
 `,
 
   // A batch action past a declared threshold: `defineAdmin` declares `admin.batch` for it.
-  'apps/admin/app/admin/admin.ts': `import { allowed, defineAdmin } from '@ultimat3/admin';
+  'apps/admin/app/admin/admin.ts': `import { adminAllowed, defineAdmin } from '@ultimat3/admin';
 import { database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 const items = entity('jobs_fixture_items', {
   columns: { id: uuid().primaryKey(), title: text({ max: 80 }) },
@@ -47,7 +47,7 @@ export const admin = defineAdmin({
       handle: async () => {},
     },
   ],
-  auth: { authz: { decide: ({ permission }) => allowed(permission, 'fixture') } },
+  auth: { authz: { decide: ({ permission }) => adminAllowed(permission, 'fixture') } },
 });
 `,
 };

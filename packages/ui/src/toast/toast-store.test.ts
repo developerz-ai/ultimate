@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { TOAST_DWELL_MS } from './toast-state';
-import { createToastStore, INERT_TOAST_ENV, type ToastEnv } from './toast-store';
+import { INERT_TOAST_ENV, type ToastEnv, toastStore } from './toast-store';
 
 interface Clock {
   readonly env: ToastEnv;
@@ -63,10 +63,10 @@ function fakeClock(startHidden = false): Clock {
   };
 }
 
-describe('createToastStore', () => {
+describe('toastStore', () => {
   test('a toast dismisses itself on the dwell its token names', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     store.show({ message: 'Saved' });
 
     clock.advance(TOAST_DWELL_MS.short - 1);
@@ -77,7 +77,7 @@ describe('createToastStore', () => {
 
   test('a backgrounded tab does not burn the dwell — the message survives the switch away', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     store.show({ message: 'Upload failed' });
 
     clock.setHidden(true);
@@ -92,7 +92,7 @@ describe('createToastStore', () => {
 
   test('a store created while the tab is already hidden starts held', () => {
     const clock = fakeClock(true);
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     store.show({ message: 'Saved' });
     // The first visibilitychange it will hear is the one bringing the tab BACK, so a store that
     // only listened would have spent the whole dwell before its first event.
@@ -102,7 +102,7 @@ describe('createToastStore', () => {
 
   test('a pointer over the stack stops the countdown, and leaving resumes what was left', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     store.show({ message: 'Saved' });
 
     clock.advance(1_000);
@@ -119,7 +119,7 @@ describe('createToastStore', () => {
 
   test('the holds are independent — a pointer leaving a toast still focused keeps it', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     store.show({ message: 'Saved' });
 
     store.hold('pointer');
@@ -137,7 +137,7 @@ describe('createToastStore', () => {
 
   test('a queued toast starts its dwell only when it surfaces', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     for (const message of ['one', 'two', 'three', 'four']) store.show({ message });
 
     clock.advance(TOAST_DWELL_MS.short);
@@ -150,7 +150,7 @@ describe('createToastStore', () => {
 
   test('a duplicate answers the live toast’s id, so dismissing it dismisses the one on screen', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     const first = store.show({ message: 'Could not save' });
     const second = store.show({ message: 'Could not save' });
 
@@ -161,7 +161,7 @@ describe('createToastStore', () => {
 
   test('a sticky toast waits for the reader, however long that is', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     const id = store.show({ message: 'You were signed out', dwell: 'sticky' });
     clock.advance(600_000);
     expect(store.queue().items).toHaveLength(1);
@@ -171,7 +171,7 @@ describe('createToastStore', () => {
 
   test('subscribers hear every change to the list, and nothing else', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     const seen: number[] = [];
     const unsubscribe = store.subscribe((queue) => seen.push(queue.items.length));
 
@@ -185,7 +185,7 @@ describe('createToastStore', () => {
 
   test('stop() drops the timer, so a torn-down island leaves nothing running', () => {
     const clock = fakeClock();
-    const store = createToastStore(clock.env);
+    const store = toastStore(clock.env);
     const seen: number[] = [];
     store.subscribe((queue) => seen.push(queue.items.length));
     store.show({ message: 'Saved' });
@@ -196,7 +196,7 @@ describe('createToastStore', () => {
   });
 
   test('the inert env schedules nothing: a server render holds a store that cannot tick', () => {
-    const store = createToastStore(INERT_TOAST_ENV);
+    const store = toastStore(INERT_TOAST_ENV);
     store.show({ message: 'Saved' });
     // No timer exists to fire, so the queue a server render walks is the one it was handed.
     expect(store.queue().items).toHaveLength(1);

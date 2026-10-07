@@ -10,14 +10,14 @@ import { join } from 'node:path';
 import { agentActor } from '@ultimat3/core';
 import type { McpCaller } from './registry';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { DEFAULT_STDIO_LINE_LIMIT, serveStdio } from './transport-stdio';
 
 const caller: McpCaller = { actor: agentActor({ id: 'dev' }), scopes: new Set() };
 
 // `echo` returns its argument verbatim, so a byte that the transport mangled on its way in
 // comes back out where an assertion can see it.
-const server = createMcpServer({
+const server = mcpServer({
   tools: [
     {
       name: 'echo',

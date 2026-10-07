@@ -4,8 +4,8 @@
 // and reaches the same spend through `spendQueryLimit`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { createServer, defineHttpConfig, resetRateLimitStore } from '@ultimat3/http';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { defineHttpConfig, httpServer, resetRateLimitStore } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -31,7 +31,7 @@ const searchOrders = (limit = 2) =>
   }).named('searchOrders');
 
 const serve = (target: ReturnType<typeof searchOrders>, defaultCapacity = 120) =>
-  createServer({
+  httpServer({
     routes: [toQueryRoute(target)],
     config: defineHttpConfig({
       rateLimit: {
@@ -57,7 +57,7 @@ const viaMcp = async (target: ReturnType<typeof searchOrders>): Promise<unknown>
   (await sourceFor(target, { orgId: ORG }, { surface: 'mcp' })).execute();
 
 const asReader = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: reader }), run);
+  runWithContext(ctxOf({ actor: reader }), run);
 
 describe('a declared read limit is refused after the limit on every surface', () => {
   test('HTTP: 200, 200, 429 with the read’s own numbers on the headers', async () => {

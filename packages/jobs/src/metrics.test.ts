@@ -4,10 +4,10 @@
 // that filled overnight and stopped growing pages nobody.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { collectMetrics, createContext, resetMetrics } from '@ultimat3/core';
+import { collectMetrics, ctxOf, resetMetrics } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 beforeEach(() => {
   resetMetrics();
@@ -37,11 +37,11 @@ describe('the alertable queue gauges', () => {
       runAt: at - 600_000,
     });
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       clock,
       queues: ['payments'],
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     await worker.tick();
@@ -67,10 +67,10 @@ describe('the alertable queue gauges', () => {
       maxAttempts: 1,
       runAt: at - 1_500,
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       clock,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       drainOnShutdown: false,
     });
     await worker.tick();

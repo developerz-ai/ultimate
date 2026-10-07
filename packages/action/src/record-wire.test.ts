@@ -5,7 +5,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { RECORDS_HEADER } from '@ultimat3/core';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -46,7 +46,7 @@ const countPosts = action({
 }).named('countPosts');
 
 async function call(target: AnyAction): Promise<Response> {
-  const server = createServer({
+  const server = httpServer({
     routes: [toRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => null },

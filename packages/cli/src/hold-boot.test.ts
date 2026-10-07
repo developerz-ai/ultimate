@@ -7,16 +7,16 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type Ctx,
   configureLifecycle,
-  createContext,
+  ctxOf,
   lifecycleState,
   resetLifecycle,
 } from '@ultimat3/core';
 import type { JobDriver, NackOptions, QueueStats } from '@ultimat3/jobs';
-import { createWorker, job, memoryJobDriver, resetJobs, type Worker } from '@ultimat3/jobs';
+import { job, jobWorker, memoryJobDriver, resetJobs, type Worker } from '@ultimat3/jobs';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { holdWhileBooting } from './hold';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -90,7 +90,7 @@ describe('holdWhileBooting', () => {
     const booted = await holdWhileBooting(
       'probe',
       async () => {
-        const worker: Worker = createWorker({ driver, context, pollIntervalMs: 1 });
+        const worker: Worker = jobWorker({ driver, context, pollIntervalMs: 1 });
         worker.start();
         await running;
         // The signal, as the kernel delivers it: to whatever listens. Before the fix nothing did

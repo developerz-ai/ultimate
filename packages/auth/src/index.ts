@@ -61,7 +61,7 @@ export {
   UserSchema,
   VerificationSchema,
 } from './auth';
-export { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
+export { type PostgresAuthAdapter, postgresAuthAdapter } from './builtin-adapter';
 /** The opaque per-principal id a per-request document hands the page's client store. */
 export type { ClientScopeOptions } from './client-scope';
 export { clientScopeOf } from './client-scope';
@@ -78,11 +78,12 @@ export {
   AuthError,
   accountLocked,
   apiKeyInvalid,
+  authForbidden,
   authLimiterNotShared,
   authLimiterPolicyMismatch,
+  authUnauthenticated,
   authUniqueViolation,
   authWriteFailed,
-  forbidden,
   kdfOverloaded,
   mfaRequiredUnenforceable,
   mfaSecretInvalid,
@@ -90,7 +91,6 @@ export {
   passwordWeak,
   sessionExpired,
   sessionUnknown,
-  unauthenticated,
 } from './errors';
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
@@ -108,22 +108,22 @@ export type {
   JwtHeader,
 } from './jwks';
 export {
-  createJwksClient,
   decodeJwtHeader,
+  jwksClient,
   providerJwks,
   verifyJwtSignature,
 } from './jwks';
 export type { KdfGate, KdfLimits } from './kdf-gate';
 export {
+  boundedKdfGate,
   configureKdfGate,
-  createKdfGate,
   kdfGate,
 } from './kdf-gate';
 export type { AuthLimiterFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
 export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
-export { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
+export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,
   MemoryTotpReplayGuard,
@@ -136,11 +136,11 @@ export type {
 export {
   base32Decode,
   base32Encode,
-  createTotpReplayGuard,
   DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
   generateTotpSecret,
+  memoryTotpReplayGuard,
   recoveryCodeHash,
   TOTP_DIGITS,
   TOTP_DRIFT_STEPS,
@@ -174,7 +174,7 @@ export type {
   OAuthProviderId,
   PkcePair,
 } from './oauth';
-export { assertOAuthCallback, beginOAuth, createPkce } from './oauth';
+export { assertOAuthCallback, beginOAuth, pkcePair } from './oauth';
 export {
   APPLE_PROVIDER,
   BUILTIN_OAUTH_PROVIDER_IDS,
@@ -284,11 +284,11 @@ export type {
 export {
   accountKey,
   assertAuthLimiterPolicy,
-  createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
   loginFailed,
+  memoryAuthLimiter,
   orgKey,
   orgRateLimit,
 } from './rate-limit';
@@ -342,7 +342,6 @@ export {
 export {
   randomToken,
   sha256Hex,
-  timingSafeEqual,
 } from './tokens';
 export type {
   ConsumeVerificationInput,

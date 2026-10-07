@@ -3,15 +3,20 @@
 // to hold on page one, on every later page, and on a source that cannot push the seek down.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, createContext, encodeCursor, userActor } from '@ultimat3/core';
+import {
+  CursorInvalidError,
+  configureCursorSigning,
+  ctxOf,
+  encodeCursor,
+  userActor,
+} from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { CursorInvalidError } from './errors';
 import type { Page } from './pagination';
 import { paginate } from './pagination';
 import type { Query } from './query';
 import { query, queryHash } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import type { SqlSource } from './source';
 import { from } from './source';
 
@@ -20,7 +25,7 @@ interface Score {
   readonly points: number;
 }
 
-const ctx = createContext({
+const ctx = ctxOf({
   actor: { ...userActor({ id: 'u1' }), permissions: ['score:read'] },
 });
 
@@ -83,7 +88,7 @@ async function walk(
 
 describe('a declared limit bounds the listing a page is cut from', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 

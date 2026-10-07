@@ -3,10 +3,11 @@
 // reads are written into every operation from the one module that spells them.
 
 import { describe, expect, test } from 'bun:test';
+import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { queryOpenApiPaths, toQueryOpenApiOperation } from './openapi';
-import { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
+import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import { query } from './query';
 import { from } from './source';
 

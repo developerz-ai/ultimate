@@ -10,29 +10,29 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
 import { defineHttpConfig } from '../src/config';
-import { json, text } from '../src/response';
+import { jsonResponse, textResponse } from '../src/response';
 import type { Route } from '../src/router';
-import { createServer } from '../src/server';
+import { httpServer } from '../src/server';
 
 const routes: readonly Route[] = [
   {
     method: 'GET',
     path: '/ping',
     meta: { name: 'ping', auth: 'public' },
-    handler: () => text('pong'),
+    handler: () => textResponse('pong'),
   },
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: (request) => json({ id: request.param('id') }),
+    handler: (request) => jsonResponse({ id: request.param('id') }),
   },
 ];
 
 resetLifecycle();
 
 // port 0 lets the kernel pick, so this never collides with a running dev server.
-const handle = createServer({
+const handle = httpServer({
   routes,
   role: 'web',
   config: defineHttpConfig({
@@ -100,7 +100,7 @@ describe('real socket', () => {
 describe('a health endpoint tells a peer nobody listed only the verdict', () => {
   // An empty list, because a socket test can only ever arrive from loopback: the listed case is
   // the describe above, and the address rule itself is `health-disclosure.test.ts`'s.
-  const quiet = createServer({
+  const quiet = httpServer({
     routes,
     role: 'web',
     config: defineHttpConfig({
@@ -140,7 +140,7 @@ describe('a health endpoint tells a peer nobody listed only the verdict', () => 
 describe("a websocket mounted on the app's own port", () => {
   const MOUNT_PATH = '/_x/echo';
 
-  const mounted = createServer({
+  const mounted = httpServer({
     routes,
     role: 'web',
     // The mount speaks Bun's own convention, which is `SyncNode.fetch`'s: `undefined` means the
@@ -212,7 +212,7 @@ describe("a websocket mounted on the app's own port", () => {
 
 describe('drain', () => {
   test('readyz reports 503 once draining, then the process reports stopped', async () => {
-    const draining = createServer({
+    const draining = httpServer({
       routes,
       role: 'worker',
       config: defineHttpConfig({
@@ -245,7 +245,7 @@ describe('the drain hands every hook back', () => {
   test('a server drained by a signal leaves nothing registered behind its own stop()', async () => {
     resetLifecycle();
     const before = shutdownHookCount();
-    const handle = createServer({
+    const handle = httpServer({
       routes,
       role: 'web',
       config: defineHttpConfig({

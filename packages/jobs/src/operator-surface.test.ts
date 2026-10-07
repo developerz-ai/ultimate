@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, logger, redactKeys } from '@ultimat3/core';
-import { counterBucketStart, createMemoryCounters } from './counters';
+import { counterBucketStart, memoryCounters } from './counters';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { inspectJob } from './inspect';
@@ -23,7 +23,7 @@ import {
 import { operatorScopeScenarios } from './operator-surface-scope-fixture';
 import { operatorSettleScenarios } from './operator-surface-settle-fixture';
 import { createProgressReporter } from './progress';
-import { COUNTER_ROLLUP_INTERVAL_MS, createScheduler, PAUSE_RECHECK_MS } from './scheduler';
+import { COUNTER_ROLLUP_INTERVAL_MS, jobScheduler, PAUSE_RECHECK_MS } from './scheduler';
 import { resetTasks, task } from './task';
 
 const clock = frozenClock('2026-10-01T00:00:30.000Z');
@@ -73,7 +73,7 @@ describe('the operator surface', () => {
 
 describe('counter buckets age into wider ones', () => {
   test('a bucket past its tier folds into the next, and past the last tier it is dropped', () => {
-    const counters = createMemoryCounters();
+    const counters = memoryCounters();
     const [minute, five, hour] = COUNTER_TIERS;
     const at = Date.UTC(2026, 9, 1, 12, 0, 30);
     counters.add('sync', 'done', 40, at);
@@ -121,7 +121,7 @@ describe('counter buckets age into wider ones', () => {
         },
       },
     };
-    const scheduler = createScheduler({ driver: counting, clock, tasks: [] });
+    const scheduler = jobScheduler({ driver: counting, clock, tasks: [] });
 
     await scheduler.tick();
     await scheduler.tick();
@@ -258,7 +258,7 @@ describe('a paused task', () => {
     });
     const everyHour = (_cron: string, options: { from: Date }): Date =>
       new Date(Math.floor(options.from.getTime() / 3_600_000) * 3_600_000 + 3_600_000);
-    const scheduler = createScheduler({ driver, clock, cron: everyHour, tasks: [hourly] });
+    const scheduler = jobScheduler({ driver, clock, cron: everyHour, tasks: [hourly] });
     await scheduler.tick();
 
     await operator.pauseTask('operator-hourly');

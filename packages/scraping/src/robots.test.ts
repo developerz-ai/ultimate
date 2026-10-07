@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createRobotsGate, parseRobots, robotsAllows } from './robots';
+import { parseRobots, robotsAllows, robotsGate } from './robots';
 
 const FILE = `
 # a comment
@@ -54,7 +54,7 @@ describe('unit · robots.txt', () => {
 
 describe('unit · the gate', () => {
   test('obeying refuses a disallowed path with a code and a written-reason fix', async () => {
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       fetchText: () => Promise.resolve('User-agent: *\nDisallow: /private'),
     });
@@ -66,7 +66,7 @@ describe('unit · the gate', () => {
 
   test('one fetch per origin, whatever the run navigates', async () => {
     let fetches = 0;
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       fetchText: () => {
         fetches += 1;
@@ -80,12 +80,12 @@ describe('unit · the gate', () => {
   });
 
   test('a missing robots.txt allows — no file means no restrictions', async () => {
-    const gate = createRobotsGate({ policy: 'obey', fetchText: () => Promise.resolve(undefined) });
+    const gate = robotsGate({ policy: 'obey', fetchText: () => Promise.resolve(undefined) });
     expect(await codeOf(gate.assertAllowed('https://example.test/private'))).toBeUndefined();
   });
 
   test('an unreachable robots.txt refuses — RFC 9309 §2.3.1.4 is complete disallow', async () => {
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       fetchText: () => Promise.reject(new TypeError('unreachable')),
     });
@@ -95,7 +95,7 @@ describe('unit · the gate', () => {
   });
 
   test('ignoring requires a written reason, and the gate carries it', async () => {
-    const gate = createRobotsGate({ policy: { ignore: 'the user is scraping their own account' } });
+    const gate = robotsGate({ policy: { ignore: 'the user is scraping their own account' } });
     expect(gate.ignoredBecause).toBe('the user is scraping their own account');
     expect(await codeOf(gate.assertAllowed('https://example.test/private'))).toBeUndefined();
   });

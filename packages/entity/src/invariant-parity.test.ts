@@ -6,8 +6,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import {
-  createPgliteClient,
   generateMigration,
+  pgliteClient,
   raw,
   setDbClient,
   sqlState,
@@ -49,7 +49,7 @@ const ranges = entity('ip_ranges', {
 });
 
 const ENTITIES = { ledgers, ranges };
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   setDbClient(client);

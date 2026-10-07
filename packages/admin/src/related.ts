@@ -2,7 +2,7 @@
 // related resource's own list — its gate, its row scope, its columns — narrowed to the rows that
 // point at this one. No second table is declared anywhere: the related resource already is one.
 
-import { relationsFor as entityRelationsFor } from '@ultimat3/entity';
+import { relationsFor } from '@ultimat3/entity';
 import { adminList, type CrudCtx, canOperate } from './crud';
 import { AdminFieldUnsupportedError } from './errors';
 import type { AdminPage } from './pagination';
@@ -36,7 +36,7 @@ export function relatedOf(
   if (resource.related.length === 0) return [];
   // The one read of `@ultimat3/entity`'s relations in this package: the FK already written IS
   // the relation, so the admin derives nothing of its own and names nothing twice.
-  const relations = entityRelationsFor(resource.name);
+  const relations = relationsFor(resource.name);
   const offered = Object.values(relations)
     .filter((relation) => relation.kind === 'hasMany')
     .map((relation) => relation.name);

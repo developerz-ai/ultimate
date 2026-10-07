@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
   configureTelemetry,
-  createContext,
+  ctxOf,
   currentSpan,
   memoryExporter,
   resetTelemetry,
@@ -26,10 +26,10 @@ const Output = t.object({ id: t.string });
 // (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
 // `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
 const editorActor: PolicyActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
-const editor = createContext({ actor: editorActor });
+const editor = ctxOf({ actor: editorActor });
 /** No grant at all — the denial half, and the reason `permissions: []` is written out. */
 const strangerActor: PolicyActor = { ...userActor({ id: 'u2' }), permissions: [] };
-const stranger = createContext({ actor: strangerActor });
+const stranger = ctxOf({ actor: strangerActor });
 
 /**
  * Records which span was ACTIVE while `row:` loaded and while the policy decided — the two stages

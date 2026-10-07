@@ -1,11 +1,11 @@
 // `x routes` — the route table as a table, or as JSON. Replaces grepping a router directory, which
 // is what an agent does when the framework has no answer to "what URLs exist".
 //
-// The rows are `@ultimat3/render`'s own `describeRoutes()`: the CLI prints the route table, it
+// The rows are `@ultimat3/render`'s own `describePages()`: the CLI prints the route table, it
 // does not keep a second one.
 
 import type { RouteDescriptor, Surface } from '@ultimat3/render';
-import { describeRoutes, SURFACES } from '@ultimat3/render';
+import { describePages, SURFACES } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { routesSpec } from './cmd-routes-spec';
@@ -97,7 +97,7 @@ export const routesCommand: CliCommand = {
     // `--transport` already follows.
     const surface = readSurfaceFilter(flagString(ctx.args, 'surface'));
     const { findings } = await loadApp(root);
-    const routes = describeRoutes().filter(
+    const routes = describePages().filter(
       (route) => surface === undefined || route.surface === surface,
     );
     return {

@@ -9,9 +9,9 @@
 
 import type { SemanticCache } from '@ultimat3/cache';
 import { memorySemanticCache } from '@ultimat3/cache';
-import { cachedFormatter, MAX_CACHED_FORMATTERS } from '@ultimat3/core';
+import { cachedFormatter } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
-import { HashEmbedder } from './embeddings';
+import { hashEmbedder } from './embeddings';
 import { AiGatewayMissingError } from './errors';
 import type { Gateway } from './gateway';
 
@@ -62,7 +62,7 @@ const caches = new Map<string, SemanticCache>();
 export function configureAi(input: AiRuntimeInput): void {
   runtime = {
     gateway: input.gateway,
-    embedder: input.embedder ?? new HashEmbedder(),
+    embedder: input.embedder ?? hashEmbedder(),
     semanticCache: input.semanticCache ?? (() => memorySemanticCache()),
     redact: input.redact ?? noRedaction,
   };
@@ -83,20 +83,13 @@ export function installedGateway(): Gateway | undefined {
 }
 
 export function aiEmbedder(): Embedder {
-  return runtime?.embedder ?? new HashEmbedder();
+  return runtime?.embedder ?? hashEmbedder();
 }
 
 /** The installed redactor, or the identity. Never absent, so the call site has no branch. */
 export function aiRedactor(): Redactor {
   return runtime?.redact ?? noRedaction;
 }
-
-/**
- * How many scopes hold a live cache instance at once. Core's bound, not a second one — the name
- * `MAX_CACHED_FORMATTERS` is about `cachedFormatter`'s first caller, never about its contract,
- * and a second FIFO map written here would be two answers to one question (axiom 1).
- */
-export const MAX_SEMANTIC_CACHE_SCOPES = MAX_CACHED_FORMATTERS;
 
 /**
  * The cache for one scope. Scopes are separate CACHE INSTANCES, never a filter over a shared

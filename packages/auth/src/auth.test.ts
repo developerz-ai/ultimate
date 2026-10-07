@@ -14,7 +14,7 @@ import { hashPassword } from './password';
 
 /** Same adapter, except `findUserById` answers "gone" — simulates a user row disappearing
  *  (hard delete, another process) without its session being cleaned up alongside it. Bound to
- *  `base` explicitly so `MemoryAdapter`'s private fields resolve against the real instance. */
+ *  `base` explicitly so `MemoryAuthAdapter`'s private fields resolve against the real instance. */
 function withUserGone(base: AuthAdapter): AuthAdapter {
   return new Proxy(base, {
     get(target, prop) {
@@ -29,7 +29,7 @@ const EMAIL = 'ADA@Example.test';
 const NORMALISED_EMAIL = 'ada@example.test';
 
 // `adapter: AuthAdapter`, annotated rather than inferred from the default: without it the
-// parameter reads as the concrete `MemoryAdapter`, and no helper that takes an adapter — the
+// parameter reads as the concrete `MemoryAuthAdapter`, and no helper that takes an adapter — the
 // `withUserGone` proxy above, any app's real adapter — can be handed to it.
 const newAuth = (adapter: AuthAdapter = memoryAuthAdapter(), startMs = 1_700_000_000_000): Auth =>
   defineAuth({

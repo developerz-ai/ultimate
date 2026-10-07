@@ -5,11 +5,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   anonymousActor,
-  createContext,
+  ctxOf,
   isAnonymous,
   runWithContext,
   userActor,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import { localeConfig } from '@ultimat3/i18n';
 import { timeConfig } from '@ultimat3/time';
@@ -17,8 +17,8 @@ import { defineHttpConfig } from './config';
 import {
   actorView,
   asCtx,
-  createRequestContext,
   elapsedMs,
+  requestContext,
   useRequestContext,
   useRequestCookie,
   useRequestHeader,
@@ -29,9 +29,9 @@ const config = defineHttpConfig({
   rateLimit: { scope: 'process' },
 });
 
-describe('createRequestContext', () => {
+describe('requestContext', () => {
   test('builds the defaults for a plain https request', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -60,7 +60,7 @@ describe('createRequestContext', () => {
   });
 
   test('honors an explicit requestId and traceId', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -73,13 +73,13 @@ describe('createRequestContext', () => {
   });
 
   test('generates a fresh id per call when none is passed', () => {
-    const a = createRequestContext({
+    const a = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
       config,
     });
-    const b = createRequestContext({
+    const b = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -90,7 +90,7 @@ describe('createRequestContext', () => {
   });
 
   test('infers https from a plain http url', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('http://example.com/x'),
       method: 'get',
       role: 'web',
@@ -100,7 +100,7 @@ describe('createRequestContext', () => {
   });
 
   test('init.https overrides url-protocol inference', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -113,7 +113,7 @@ describe('createRequestContext', () => {
 
 describe('asCtx', () => {
   test('is an identity cast', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -129,7 +129,7 @@ describe('useRequestContext', () => {
   });
 
   test('round-trips the same context object through the ALS', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -143,7 +143,7 @@ describe('useRequestContext', () => {
   // `RequestContext`. The unchecked cast handed those back with `undefined` in non-optional
   // fields, so the first reader failed as a bare `TypeError` from a PUBLIC API.
   test('refuses a context that is not an HTTP request, with an instruction', () => {
-    const jobCtx = createContext({});
+    const jobCtx = ctxOf({});
 
     expect(() => runWithContext(jobCtx, () => useRequestContext())).toThrow(/X_NO_REQUEST/);
     expect(() => runWithContext(jobCtx, () => useRequestContext().requestHeaders.get('cookie'))) //
@@ -151,7 +151,7 @@ describe('useRequestContext', () => {
   });
 
   test('names what the caller was after in the refusal', () => {
-    const jobCtx = createContext({});
+    const jobCtx = ctxOf({});
 
     expect(() => runWithContext(jobCtx, () => useRequestContext('the session cookie'))).toThrow(
       /the session cookie was read outside an HTTP request/,
@@ -164,7 +164,7 @@ describe('useRequestContext', () => {
 // back. Sign-in worked, and "signed in as X" was unreachable.
 describe('the inbound headers on the context', () => {
   const withHeaders = (headers: HeadersInit) =>
-    createRequestContext({
+    requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -173,7 +173,7 @@ describe('the inbound headers on the context', () => {
     });
 
   test('a context built without them carries an empty Headers, never undefined', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -205,11 +205,11 @@ describe('the inbound headers on the context', () => {
   // one `null` is how a job would quietly run as nobody.
   test('X_NO_REQUEST inside a context that is not a request', () => {
     expect(() =>
-      runWithContext(createContext({ role: 'worker' }), () => useRequestCookie('session')),
+      runWithContext(ctxOf({ role: 'worker' }), () => useRequestCookie('session')),
     ).toThrow('X_NO_REQUEST');
-    expect(() =>
-      runWithContext(createContext({ role: 'worker' }), () => useRequestHeaders()),
-    ).toThrow('X_NO_REQUEST');
+    expect(() => runWithContext(ctxOf({ role: 'worker' }), () => useRequestHeaders())).toThrow(
+      'X_NO_REQUEST',
+    );
   });
 
   test('X_NO_CONTEXT outside any context at all — core answers that one', () => {
@@ -219,7 +219,7 @@ describe('the inbound headers on the context', () => {
 
 describe('elapsedMs', () => {
   test('is a non-negative finite number', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/x'),
       method: 'get',
       role: 'web',
@@ -241,7 +241,7 @@ describe('actorView', () => {
   });
 
   test('a real actor narrows (by cast) to expose id and orgId', () => {
-    const actor = userActor({ id: uuid(), orgId: 'org-1' });
+    const actor = userActor({ id: uuidV7(), orgId: 'org-1' });
     expect(isAnonymous(actor)).toBe(false);
     const view = actorView(actor);
     expect(view).not.toBeNull();
@@ -254,13 +254,13 @@ describe('actorView', () => {
 
 describe('services ride ON the context, not only under ctx.services', () => {
   // `CtxServices` exists to be augmented, so `ctx.posts` has to BE the service — core's
-  // `createContext` has spread the bag onto the context since it shipped and this one did not, so
+  // `ctxOf` has spread the bag onto the context since it shipped and this one did not, so
   // an app declaring `ctx.posts` the documented way read `undefined` over HTTP while `ctx.services`
   // beside it was populated.
   const posts = { byId: () => 'a post' };
 
   test('a passed service is reachable both ways', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://app.test/x'),
       method: 'GET',
       role: 'web',
@@ -276,7 +276,7 @@ describe('services ride ON the context, not only under ctx.services', () => {
     // Spread order is the guarantee: `actor`, `logger` and `signal` are the request's, whatever an
     // app named a service. The colliding service stays reachable under `ctx.services`.
     const impostor = { id: 'not-an-actor' };
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://app.test/x'),
       method: 'GET',
       role: 'web',
@@ -293,7 +293,7 @@ describe('services ride ON the context, not only under ctx.services', () => {
     // (`pipeline.ts:224`), and this file used to build its own bag from that argument alone — so a
     // `defineService('posts', …)` an app registered at boot was installed for a job, a task and a
     // CLI command and NOT for a request. `useService('posts')` threw `X_SERVICE_MISSING` on the
-    // one surface an app spends its life on. Composing `createContext` is what fixed it: the
+    // one surface an app spends its life on. Composing `ctxOf` is what fixed it: the
     // installer is core's, and this is core's constructor.
     const { defineService, resetServices, runWithContext, useService } = await import(
       '@ultimat3/core'
@@ -302,7 +302,7 @@ describe('services ride ON the context, not only under ctx.services', () => {
     const built = { kind: 'from-a-factory' };
     defineService('probeService', () => built);
     try {
-      const ctx = createRequestContext({
+      const ctx = requestContext({
         url: new URL('https://app.test/x'),
         method: 'GET',
         role: 'web',
@@ -320,7 +320,7 @@ describe('services ride ON the context, not only under ctx.services', () => {
   });
 
   test('a context with no services and no factories carries an empty bag rather than nothing', () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://app.test/x'),
       method: 'GET',
       role: 'web',

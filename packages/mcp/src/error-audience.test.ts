@@ -1,11 +1,11 @@
 // Whose `fix:` a refusal carries over MCP. An app's server answers REMOTE agents, which cannot run
 // `x policy explain` or edit `defineAppMcp`, so it renders the error's `callerFix`; the developer's
-// fix stays the default for `createMcpServer` (the dev server) and in the log line. An app's own
+// fix stays the default for `mcpServer` (the dev server) and in the log line. An app's own
 // error may name a `docs://` guide, printed as a fourth line the moment the agent is stuck.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext, UltimateError } from '@ultimat3/core';
+import { action, registerAction, resetActions } from '@ultimat3/action';
+import { agentActor, ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -18,7 +18,7 @@ import { defineAppMcp } from './app-tools';
 import { asFrameworkError, renderFrameworkError } from './framework-error';
 import type { AnyMcpTool, McpCaller } from './registry';
 import type { McpServer } from './server';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { NO_ARGS } from './wire';
 
 const member: McpCaller = {
@@ -32,7 +32,7 @@ const publisher: McpCaller = {
   scopes: new Set<string>(),
 };
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 const call = (
   server: McpServer,
@@ -89,9 +89,9 @@ describe('a policy denial', () => {
     );
   });
 
-  test('createMcpServer keeps the developer fix by default — the dev server answers the author', async () => {
+  test('mcpServer keeps the developer fix by default — the dev server answers the author', async () => {
     const { tools } = defineAppMcp({ include: 'exposed' });
-    const server = createMcpServer({ tools });
+    const server = mcpServer({ tools });
     expect(text(await call(server, 'publishPost', { postId: 'p1' }))).toInclude(
       'x policy explain publishPost',
     );
@@ -145,7 +145,7 @@ describe("an app error's docs:// uri", () => {
   };
 
   test('rides as a fourth line, after the fix the audience reads', async () => {
-    const server = createMcpServer({ tools: [refund], errorAudience: 'caller' });
+    const server = mcpServer({ tools: [refund], errorAudience: 'caller' });
     const lines = text(await call(server, 'refund')).split('\n');
     expect(lines).toHaveLength(4);
     expect(lines[2]).toBe('  fix:   issue a credit note instead');

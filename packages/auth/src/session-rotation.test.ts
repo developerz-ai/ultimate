@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createPgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, raw } from '@ultimat3/db';
 import type { AuthAdapter } from './adapter';
 import { defineAuth } from './auth';
 import { postgresAuthAdapter } from './builtin-adapter';
@@ -28,7 +28,7 @@ const ALICE = '00000000-0000-7000-8000-000000000501';
 
 // The Postgres half on PGlite: the inherited instants have to survive a real `timestamptz`
 // round trip, and the sweep is the adapter's own `created_at <` statement, not the memory filter.
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   for (const entry of AUTH_TABLES) {

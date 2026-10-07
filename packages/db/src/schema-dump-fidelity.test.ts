@@ -5,7 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { introspectCatalog } from './introspect-catalog';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { renderSchemaDump, type SchemaDumpFile } from './schema-dump';
 import { loadSchemaDump } from './schema-load';
 import { raw } from './sql';
@@ -14,7 +14,7 @@ import { statementsOf } from './statement-split';
 const PGLITE_BOOT_MS = 60_000;
 
 describe('the schema dump · fidelity', () => {
-  const client = createPgliteClient();
+  const client = pgliteClient();
   const apply = async (script: string): Promise<void> => {
     for (const statement of statementsOf(script)) await client.execute(raw(statement));
   };

@@ -6,7 +6,7 @@ import {
   anonymousActor,
   type Clock,
   type Ctx,
-  createContext,
+  ctxOf,
   isAnonymous,
   type Logger,
   traceId as newTraceId,
@@ -15,7 +15,7 @@ import {
   type ServiceBag,
   systemClock,
   useContext,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import { localeConfig } from '@ultimat3/i18n';
 import { timeConfig } from '@ultimat3/time';
@@ -36,8 +36,8 @@ import type { Route, RouteParams } from './router';
  * `CtxServices` with `declare module` to declare `ctx.posts`, and every service it declared then
  * became a required member of every context literal in the framework — this file failed to
  * compile inside `examples/dummy` with `TS2739: missing posts, orgs` while the framework's own
- * gate, which augments nothing, stayed green. `createRequestContext` now spreads
- * `createContext()`'s result, so the members only an app's boot can supply arrive with it and the
+ * gate, which augments nothing, stayed green. `requestContext` now spreads
+ * `ctxOf()`'s result, so the members only an app's boot can supply arrive with it and the
  * literal below is checked in full.
  *
  * The `extends` is therefore back to doing what it was always claimed to do: a member core adds
@@ -118,7 +118,7 @@ export interface RequestContext extends Ctx {
    */
   pathLocale: string | undefined;
   tz: string;
-  /** What the CLIENT says it is running, from `config.buildIdHeader`. `assertBuild()` reads it. */
+  /** What the CLIENT says it is running, from core's `BUILD_ID_HEADER`. `assertBuild()` reads it. */
   clientBuildId: string | null;
   input: unknown;
   authz: AuthzDecision | undefined;
@@ -166,15 +166,15 @@ export interface RequestContextInit {
   readonly services?: ServiceBag;
 }
 
-export const createRequestContext = (init: RequestContextInit): RequestContext => {
+export const requestContext = (init: RequestContextInit): RequestContext => {
   const clock = init.clock ?? systemClock;
-  const requestId = init.requestId ?? uuid(clock);
+  const requestId = init.requestId ?? uuidV7(clock);
   // core's `traceId()`, never `uuid()`: a dashed UUIDv7 is not a 32-hex W3C trace id, and a
   // collector rejects the span that carries one — while the log lines beside it, which quote the
   // same field, look fine. Two ids for one request that cannot be joined.
   const traceId = init.traceId ?? newTraceId();
   // COMPOSED from core's constructor rather than built beside it, and that is what deletes the
-  // last cast in this file. `createContext` returns a `Ctx` that already carries the app's
+  // last cast in this file. `ctxOf` returns a `Ctx` that already carries the app's
   // `CtxServices` augmentation, so spreading it hands this literal the members only the app's boot
   // could supply — and the return below is checked in full, with nothing asserted anywhere.
   //
@@ -186,8 +186,8 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
   // `ctx.services.posts` beside it was populated. Composing makes that class of drift unwritable.
   //
   // `defineService` factories now install on this surface too, for the same reason: they are
-  // `createContext`'s and this is `createContext`.
-  const base = createContext({
+  // `ctxOf`'s and this is `ctxOf`.
+  const base = ctxOf({
     requestId,
     traceId,
     role: init.role,

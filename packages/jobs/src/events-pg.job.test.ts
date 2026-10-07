@@ -10,7 +10,7 @@ import { embeddedPg } from './embedded-pg-fixture';
 import type { EventBus } from './events';
 import { eventsPurgeTarget } from './events';
 import { postgresEventBus } from './events-pg';
-import { createStepRunner, isStepSuspension } from './steps';
+import { isStepSuspension, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 let pg: EmbeddedPg;
@@ -32,7 +32,7 @@ afterAll(async () => {
 const busOnAPodSkewedBy = (at: number, skewMs: number): EventBus =>
   postgresEventBus({
     executor: pg.executor,
-    // @ts-expect-error — `PgEventBusOptions` has no `clock`: every instant is the database's.
+    // @ts-expect-error — `PostgresEventBusOptions` has no `clock`: every instant is the database's.
     clock: frozenClock(at + skewMs),
   });
 
@@ -96,7 +96,7 @@ describe('a wait against the stored bus is stamped by the database', () => {
     const store = memoryStepStore();
     // The worker pod: 5 s ahead of the database that stamps every `published_at`.
     const attempt = (aheadMs: number): Promise<unknown> =>
-      createStepRunner({
+      stepRunner({
         runId: 'run-skew',
         jobName: 'awaitOtp',
         store,

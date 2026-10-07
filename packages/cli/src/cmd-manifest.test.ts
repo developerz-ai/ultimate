@@ -6,13 +6,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { resetRegistry as resetActions } from '@ultimat3/action';
+import { resetActions } from '@ultimat3/action';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { resetAppLoad } from './app-load';
 import { OPENAPI_FILE } from './app-openapi';

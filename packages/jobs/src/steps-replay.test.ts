@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { StepStore } from './steps';
-import { createStepRunner, MAX_TRACE_NAMES } from './steps';
+import { MAX_TRACE_NAMES, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 function counting(inner: StepStore): StepStore & { gets: number; lists: number } {
@@ -48,7 +48,7 @@ describe('step replay', () => {
     }
 
     const store = counting(inner);
-    const runner = createStepRunner({ runId: 'run-1', jobName: 'backfillOrgs', store });
+    const runner = stepRunner({ runId: 'run-1', jobName: 'backfillOrgs', store });
 
     let executed = 0;
     for (let i = 0; i < 501; i += 1) {
@@ -76,7 +76,7 @@ describe('step replay', () => {
       completedAt: 2,
       attempts: 1,
     });
-    const runner = createStepRunner({ runId: 'run-1', jobName: 'checkout', store: inner });
+    const runner = stepRunner({ runId: 'run-1', jobName: 'checkout', store: inner });
     const result = await runner.step.run('charge', () =>
       Promise.resolve({ chargeId: 'ch_SHOULD_NOT_HAPPEN' }),
     );
@@ -88,7 +88,7 @@ describe('step replay', () => {
     // later read of the same run see a stale absence.
     const inner = memoryStepStore();
     const store = counting(inner);
-    const runner = createStepRunner({ runId: 'run-1', jobName: 'x', store });
+    const runner = stepRunner({ runId: 'run-1', jobName: 'x', store });
     await runner.step.run('a', () => Promise.resolve(1));
     expect(await store.list('run-1')).toHaveLength(1);
   });
@@ -108,7 +108,7 @@ describe('step replay', () => {
         attempts: 1,
       });
     }
-    const runner = createStepRunner({ runId: 'run-1', jobName: 'drip', store: inner });
+    const runner = stepRunner({ runId: 'run-1', jobName: 'drip', store: inner });
     for (let i = 0; i < total; i += 1) await runner.step.sleep(`sleep:${i}`, '1s');
 
     expect(runner.replayedNames()).toHaveLength(MAX_TRACE_NAMES);

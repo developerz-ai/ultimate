@@ -6,7 +6,7 @@ import { finiteCount } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
 import { type AuditEntry, deniedDraft } from './audit';
 import type { AdminActor } from './authz';
-import { denied } from './authz';
+import { adminDenied } from './authz';
 import type { CrudCtx } from './crud';
 import { decideOperation } from './crud';
 import { rowWhere } from './list-scope';
@@ -145,7 +145,7 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
             entityId: null,
             // A resource that does not OFFER search was refused by the registry, not by a policy,
             // and the decision object would otherwise read `allow` on a denied entry.
-            decision: offered ? decision : denied(decision.permission, SKIPPED_FORBIDDEN),
+            decision: offered ? decision : adminDenied(decision.permission, SKIPPED_FORBIDDEN),
           }),
         ),
       );

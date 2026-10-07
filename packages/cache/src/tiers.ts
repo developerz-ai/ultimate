@@ -4,12 +4,11 @@
 // sites. Order is data, not control flow.
 
 import type { CacheTierName, Clock, Scheduler } from '@ultimat3/core';
-import { CACHE_TIERS, systemClock } from '@ultimat3/core';
+import { CACHE_TIERS, singleFlight, systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheLimitInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence, FenceScope } from './fence';
 import { markInvalidated, sampleFence } from './fence';
 import { mergeSetOptions, tagsAddedSince, ttlOptionsFor } from './set-options';
-import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
 import type { TierFence, TierFences } from './tier-fence';
@@ -24,14 +23,14 @@ import { sampleTierFences, verdictOf } from './tier-fence';
  */
 export type TierName = CacheTierName;
 
-/** Read order. Index in this array is the tier's distance from the request. */
-export const TIER_ORDER: readonly TierName[] = CACHE_TIERS;
+// Read order is core's `CACHE_TIERS`: index in that array is the tier's distance from the request.
+// Imported, never aliased under a second name here (`X_HELPER_COPY`).
 
 /**
  * Who a swallowed refusal is attributed to in `recentTierFailures()` and the `/_x` panel: every
  * rung of the ladder, plus a store that degrades the same way without being on it.
  *
- * Closed rather than a free-form string, and NOT a widening of `TierName`: `TIER_ORDER` is the
+ * Closed rather than a free-form string, and NOT a widening of `TierName`: `CACHE_TIERS` is the
  * ladder and a name missing from it sorts to `-1`, ahead of the request memo. A label is a log
  * facet; a `TierName` is a position. Two spellings of one store is a panel nobody can group.
  *
@@ -220,9 +219,9 @@ export function isExpired<T>(entry: CacheEntry<T>, at: number): boolean {
   return entry.expiresAt !== undefined && entry.expiresAt <= at;
 }
 
-/** Sorts tiers into `TIER_ORDER` so registration order cannot change read semantics. */
+/** Sorts tiers into `CACHE_TIERS` order so registration order cannot change read semantics. */
 export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
-  return [...tiers].sort((a, b) => TIER_ORDER.indexOf(a.name) - TIER_ORDER.indexOf(b.name));
+  return [...tiers].sort((a, b) => CACHE_TIERS.indexOf(a.name) - CACHE_TIERS.indexOf(b.name));
 }
 
 /**
@@ -254,7 +253,7 @@ export interface CacheStackOptions {
   readonly schedule?: Scheduler;
 }
 
-export function createCacheStack(
+export function cacheStack(
   tiers: readonly CacheTier[],
   options: CacheStackOptions = {},
 ): CacheStack {
@@ -267,14 +266,14 @@ export function createCacheStack(
   // holding its promise still get whatever it eventually answers. What eviction buys is that the
   // NEXT reader is allowed to try. So the worst case is one duplicate fill, which the ladder's
   // last-write-wins `set` already tolerates, against a key pinned for the life of the process.
-  const flight = createSingleFlight({
+  const flight = singleFlight({
     deadlineMs: assertFiniteDurationMs(
       'ladder',
       'loadDeadlineMs',
       options.loadDeadlineMs ?? DEFAULT_LOAD_DEADLINE_MS,
-      // Caller-owned: it arrives as a `createCacheStack({ loadDeadlineMs })` argument, so there is
+      // Caller-owned: it arrives as a `cacheStack({ loadDeadlineMs })` argument, so there is
       // no `app.config.ts` key to send the reader to.
-      'the loadDeadlineMs argument to createCacheStack(...)',
+      'the loadDeadlineMs argument to cacheStack(...)',
     ),
     schedule: options.schedule,
   });

@@ -11,15 +11,14 @@
  * transport, its rows adopted into the page's store, so the return type is the rows either way.
  *
  * `ClientFlight` is a TYPE here and never a value: dedup, retry, the deadline and the fence are
- * `@ultimat3/core`'s `client-flight.ts`, and a caller that never calls `createClientFlight` does
+ * `@ultimat3/core`'s `client-flight.ts`, and a caller that never calls `clientFlight` does
  * not pay a byte for any of them — an `import type` is erased and the value import would not be.
  */
 
 import type { ClientFlight, ClientRetry } from '@ultimat3/core';
 import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
-import { clientTransport, isJsonObject } from '@ultimat3/core/page';
+import { clientTransport, isJsonObject, queryPath } from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
-import { derivePath } from './naming';
 import type { PageControls } from './page-controls';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
 import type { Page } from './pagination';
@@ -33,7 +32,7 @@ export interface QueryClientOptions {
   readonly fetch?: FetchLike;
   readonly headers?: Readonly<Record<string, string>>;
   /**
-   * Opt-in flight control for every read this client makes — `createClientFlight({ principal })`.
+   * Opt-in flight control for every read this client makes — `clientFlight({ principal })`.
    * Absent, a read is one dispatch and nothing else, which is what every caller written before
    * this option existed already gets.
    */
@@ -183,7 +182,7 @@ function read(
   const search = searchOf(input, page);
   return clientTransport({
     method: 'GET',
-    url: `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`,
+    url: `${base}${queryPath(name)}${search === '' ? '' : `?${search}`}`,
     // The trace and budget are the transport's, from its server-side outbound slot, placed
     // before these so an explicit `traceparent` still wins; a browser bundles none of it.
     ...(options.headers === undefined ? {} : { headers: options.headers }),

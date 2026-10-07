@@ -5,10 +5,10 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateTiers, registerTier, resetTiers } from './invalidate';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import { declareTags, isolateDeclaredTags, tag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation, TierName } from './tiers';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
 const restoreTiers = isolateTiers();
 const restoreTags = isolateDeclaredTags();
@@ -85,9 +85,9 @@ describe('a fill that outlives the invalidation it raced', () => {
     // T0 miss -> load(); T1 the mutator commits and busts a key that is not there yet, a no-op;
     // T2 load() resolves with rows read BEFORE that write; T3 the fill writes them for the full
     // TTL. The write is invisible to every reader for `ttlMs` and the report says `errors: []`.
-    const lru = createLruTier({ rng: () => 0 });
+    const lru = lruTier({ rng: () => 0 });
     registerTier(lru);
-    const stack = createCacheStack([lru]);
+    const stack = cacheStack([lru]);
 
     const started = deferred<void>();
     const gate = deferred<string>();
@@ -112,8 +112,8 @@ describe('a fill that outlives the invalidation it raced', () => {
   });
 
   test('a stack.drop during an in-flight load is not overwritten either', async () => {
-    const lru = createLruTier({ rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ rng: () => 0 });
+    const stack = cacheStack([lru]);
 
     const started = deferred<void>();
     const gate = deferred<string>();
@@ -135,8 +135,8 @@ describe('a fill that outlives the invalidation it raced', () => {
   });
 
   test('a write() landing during an in-flight load wins over the fill', async () => {
-    const lru = createLruTier({ rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ rng: () => 0 });
+    const stack = cacheStack([lru]);
 
     const started = deferred<void>();
     const gate = deferred<string>();
@@ -160,8 +160,8 @@ describe('a fill that outlives the invalidation it raced', () => {
   test('nothing racing it: an ordinary fill still lands in every tier', async () => {
     // The mutation that would otherwise make every test above pass for free — a fence that
     // refuses every write is not a fence.
-    const lru = createLruTier({ rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ rng: () => 0 });
+    const stack = cacheStack([lru]);
 
     expect(await stack.read('post:1', () => Promise.resolve('fresh'), { ttlMs: 60_000 })).toBe(
       'fresh',
@@ -186,11 +186,11 @@ describe('the fan-out clears farthest-first', () => {
   });
 
   test('a read racing the bust cannot promote a stale value into a cleared near tier', async () => {
-    const lru = createLruTier({ rng: () => 0 });
+    const lru = lruTier({ rng: () => 0 });
     const far = gatedFarTier('STALE');
     registerTier(lru);
     registerTier(far);
-    const stack = createCacheStack([lru, far]);
+    const stack = cacheStack([lru, far]);
 
     const bust = invalidateTags([tag('post', '1')]);
     await far.entered;

@@ -9,10 +9,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
+import { action, registerActions, resetActions, t } from '@ultimat3/action';
 import type { Policy } from '@ultimat3/policy';
 import { can, clearPermissions, clearRoles } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetQueries } from '@ultimat3/query';
 import { REQUIRED_BUN } from './app-root';
 import { policyCommand } from './cmd-policy';
 import type { CommandContext } from './command';

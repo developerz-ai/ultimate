@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { FetchLike } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -13,7 +13,7 @@ import { rpc } from './client';
 import { defineApi } from './define-api';
 import { toRoute } from './http';
 import { explainActionPathMiss } from './path-style-miss';
-import { listActions, resetRegistry } from './registry';
+import { listActions, resetActions } from './registry';
 
 const make = (http?: { readonly path: string }) =>
   action({
@@ -27,8 +27,8 @@ const make = (http?: { readonly path: string }) =>
 const signIn = make();
 type Actions = { readonly signIn: typeof signIn };
 
-beforeEach(() => resetRegistry());
-afterEach(() => resetRegistry());
+beforeEach(() => resetActions());
+afterEach(() => resetActions());
 
 describe('explainActionPathMiss', () => {
   test("a 'resource' path on a 'readable' server names the action, both styles and where it lives", () => {
@@ -83,7 +83,7 @@ describe('explainActionPathMiss', () => {
 
 describe('over the wire, as `hooks.explainMiss`', () => {
   const serve = () =>
-    createServer({
+    httpServer({
       routes: listActions().map(toRoute),
       role: 'web',
       hooks: { explainMiss: explainActionPathMiss },

@@ -122,21 +122,21 @@ or with a schema no `entity()` branded (a `t.object` look-alike, a `.pick()`ed p
 is the bare rows, byte-identical to before. `rows:` exists because a read's `sql:` names its table
 as a STRING, so nothing else carries a schema the envelope could be derived from.
 
-### Flight control — `createClientFlight`, opt-in
+### Flight control — `clientFlight`, opt-in
 
 A typed read is one dispatch and nothing else until a `flight` is installed. With one, N concurrent
 identical reads become ONE dispatch, a fence can retire everything issued before now, and a failure
 worth sending again is sent again on `@ultimat3/core`'s one backoff curve.
 
 ```ts
-import { createClientFlight, isSuperseded } from '@ultimat3/core';
+import { clientFlight, isSuperseded } from '@ultimat3/core';
 import { queryClient } from '@ultimat3/query';
 
 declare const session: () => { userId: string };
 declare const baseUrl: string;
 type Api = { queries: Record<string, never> };
 
-const flight = createClientFlight({
+const flight = clientFlight({
   principal: () => session().userId,   // dedup is OFF without this — see below
   retry: { attempts: 3 },              // default is `attempts: 1`, i.e. no retry
   deadlineMs: 10_000,
@@ -160,7 +160,7 @@ flight.bump();
 | an **unclassified** throw is not retried | core's `retryDecision` retries anything nobody classified — a caller's own `AbortError` included. A client retries a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all |
 | a deadline is `X_TIMEOUT` | core's code, already classified `retryable`, so a caller's own loop needs no table |
 
-`createClientFlight` is **`@ultimat3/core`'s**, and imported from there, `isSuperseded` with it.
+`clientFlight` is **`@ultimat3/core`'s**, and imported from there, `isSuperseded` with it.
 It shipped as a byte-identical copy here and in `@ultimat3/action` (both tier 3, neither may import
 the other); the copies are gone, and since 25.0.0 so are the re-exports: one value, one import
 path (`X_HELPER_COPY`, `bun run flight-copies`). The types `ClientFlight` and `ClientRetry` stay
@@ -181,7 +181,7 @@ merely looks like a query (`kind: 'query'`, no declaration) is `X_QUERY_FOREIGN`
 ### Skipping the policy costs a written reason
 
 Two reads have no subscriber to decide about: developer tooling that returns the statement and no
-rows (`explain`, `describeSql`), and the shared, subject-less window a sync node builds once per
+rows (`explainQuery`, `describeSql`), and the shared, subject-less window a sync node builds once per
 `(query, input)`. Both say so, in words:
 
 ```ts
@@ -204,13 +204,12 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
-| `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire; `MAX_PAGE_SIZE` |
+| `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `@ultimat3/entity`'s `MAX_PAGE_SIZE` |
 | `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query |
-| `naming.ts` | export name → wire path. The MCP tool name is the export name verbatim |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |
-| `sql.ts` | `explain()` — the generated SQL, verbatim |
+| `sql.ts` | `explainQuery()` — the generated SQL, verbatim |
 | `audit-gate.ts` | `audit: true` — the only file that calls an `AuditSink`; one record per call, an audited source per `execute()` |
 | `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` |
 | `cache.ts` | request memo + tag-keyed tier, one invalidation graph |
@@ -413,8 +412,8 @@ The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
 open cursor) and `usesDevCursorSecret` are all imported from there. `As of 2026-08`, `x doctor`
 reports `X_CURSOR_SECRET_DEV` when a production process is still signing with the key shipped in
 the package, and rotating the secret is what invalidates every open cursor. This package supplies
-the only thing that is its business — the scope, `queryHash(name, input)` — and re-exports
-`CursorInvalidError` so the failure keeps its name on this surface.
+the only thing that is its business — the scope, `queryHash(name, input)`. `CursorInvalidError`
+is core's too, imported from `@ultimat3/core` (25.0.0 dropped this package's re-export).
 
 The scope's hash is **SHA-256, first 16 hex** — `fingerprint` from `@ultimat3/core`, the primitive
 and width `@ultimat3/entity`'s `planScope` already uses, and the same function
@@ -504,7 +503,7 @@ no kind is the defect.
 ## Caching
 
 Request memo (same read twice in one render ⇒ one round trip), then the tier ladder
-`@ultimat3/cache` has registered — `createCacheStack(registeredTiers())`, read down and promoted
+`@ultimat3/cache` has registered — `cacheStack(registeredTiers())`, read down and promoted
 up. Keys are `query:<name>:<authority>:<input fingerprint>:<tags>`. An action's `cache.invalidates`
 and a query's `cache.tags` meet in the one graph owned by `@ultimat3/cache`, because there is one
 registry and this package holds no store of its own.
@@ -527,7 +526,7 @@ skipped policy. `readAuthority(actor, scope)` is the only producer of the compon
 required positional argument of `cacheKeyFor`, because an optional one is one a call site forgets.
 
 **The fill is fenced, best-effort and single-flighted, and none of that is written here.**
-`createCacheStack` samples `@ultimat3/cache`'s fence immediately before it runs the source and
+`cacheStack` samples `@ultimat3/cache`'s fence immediately before it runs the source and
 re-asks it per rung before each write, so a bust that lands mid-read cannot be republished for the
 whole TTL — the caller still gets the rows it read, because those are its answer; only publishing is
 refused. Every tier call goes through `bestEffort`, so a Redis refusal is a miss rather than a
@@ -591,7 +590,7 @@ subscriber, which spends nothing — and spends per subscriber through `spendQue
 | Fact | Answer |
 |---|---|
 | whose bucket | the reader's: actor → org → connection address (`@ultimat3/http`'s `rateLimitSpends`) |
-| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore`) — the one `@ultimat3/action` spends from, and the instance the boot hands `createServer` |
+| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore`) — the one `@ultimat3/action` spends from, and the instance the boot hands `httpServer` |
 | what HTTP answers | `RateLimit-*` from the bucket closest to refusing; `429` + `Retry-After` on a refusal |
 | `default` | not spent for this route: it is `rateLimitedBy: 'handler'`, so a read declaring more than `default` is not capped at it. The tenant allowance still applies |
 
@@ -659,7 +658,7 @@ a copy of every row seen is a second table to protect as carefully as the first.
 |---|---|
 | `read(input)`, `.as()`, the route, `.page()` | once per call — `.page()` once even when a spent `.limit()` answers without executing |
 | `sourceFor(target, input, …)` then `execute()` | once per `execute()`; a build that is refused (denied, unparsed, rate-limited) once, at the build |
-| `explain()`, `describeSql()`, the shared live window | never — they are built `unenforced`, with no caller to attribute a sighting to |
+| `explainQuery()`, `describeSql()`, the shared live window | never — they are built `unenforced`, with no caller to attribute a sighting to |
 
 Failure policies are the action seam's: no sink installed is `X_QUERY_AUDIT_SINK_MISSING`, refused
 before the parse; a sink refusing a **denied/failed** record is logged (`audit.sink.failed`) and the

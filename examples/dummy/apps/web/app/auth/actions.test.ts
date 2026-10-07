@@ -2,7 +2,7 @@
 // assembles. The cookie is the demo viewer's switch, and the switch is script-settable by design.
 
 import { runWithContext } from '@ultimat3/core';
-import { asCtx, createRequestContext, defineHttpConfig } from '@ultimat3/http';
+import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { describe, expect, test } from '@ultimat3/testing';
 import { AFTER_SIGN_OUT, endSession } from './actions';
 import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from './demo-actor';
@@ -10,7 +10,7 @@ import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from './demo-actor';
 const signOut = async (accept: string) => {
   const url = new URL(`https://postly.test/api/sessions/end`);
   const config = defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } });
-  const request = createRequestContext({
+  const request = requestContext({
     url,
     method: 'POST',
     role: 'web',

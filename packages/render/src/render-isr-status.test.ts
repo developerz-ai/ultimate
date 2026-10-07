@@ -3,8 +3,8 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { isolateGraph, resetGraph, tag } from '@ultimat3/cache';
-import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, isrKey } from './render-isr';
+import { clearRoutes, describePages, registerRoute } from './registry';
+import { isrController, isrKey } from './render-isr';
 import { memoryIsrStore } from './render-isr-store';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
@@ -58,7 +58,7 @@ describe('a render that answers a status', () => {
   // `{ html, status }`; a bare string is still the 200 it always was.
   test('a bare string is 200, as every render before this one was', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     const served = await controller.serve(isrKeyOf('/blog/a'), () => '<p>a</p>');
     expect(served.result.status).toBe(200);
     expect(served.entry.status).toBe(200);
@@ -66,7 +66,7 @@ describe('a render that answers a status', () => {
 
   test('{ html, status: 404 } is served as a 404, on the miss and on every hit after it', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     const render = () => ({ html: '<p>no such post</p>', status: 404 });
     const miss = await controller.serve(isrKeyOf('/blog/nope'), render);
     expect(miss.state).toBe('miss');
@@ -79,7 +79,7 @@ describe('a render that answers a status', () => {
 
   test('the stale copy keeps its status while the refresh runs behind it', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     const key = isrKeyOf('/blog/late');
     await controller.serve(key, () => ({ html: '<p>gone</p>', status: 410 }));
     controller.markStale(key);
@@ -90,7 +90,7 @@ describe('a render that answers a status', () => {
 
   test('a status new Response() would refuse fails the regeneration by name', async () => {
     isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
     await expect(
       controller.serve(isrKeyOf('/blog/x'), () => ({ html: '<p>x</p>', status: Number.NaN })),
     ).rejects.toMatchObject({ code: 'X_INVARIANT' });
@@ -108,7 +108,7 @@ describe('a render that answers a status', () => {
       ttlMs: null,
       stale: false,
     });
-    const controller = createIsrController({ store, routes: describeRoutes });
+    const controller = isrController({ store, routes: describePages });
     const served = await controller.serve('/blog/old', () => '<p>never called</p>');
     expect(served.state).toBe('hit');
     expect(served.result.status).toBe(200);

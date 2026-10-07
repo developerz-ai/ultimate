@@ -7,7 +7,7 @@
 
 import { db } from '@social-media-clone/db';
 import type { LocalTable, LocalTx } from '@ultimat3/action';
-import { createContext, isUltimateError, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { markNotificationsRead } from './mutator';
@@ -95,9 +95,7 @@ unitTest('local reads no clock and no randomness, so a replay produces the same 
 unitTest('an anonymous caller marks nothing read', async () => {
   const mine = await repo.insertNotification({ userId: ADA, kind: 'message', actorId: MARA });
   expect(
-    await codeOf(
-      target({ ids: [mine.id] }, { ctx: createContext(), actor: null, surface: 'http' }),
-    ),
+    await codeOf(target({ ids: [mine.id] }, { ctx: ctxOf(), actor: null, surface: 'http' })),
   ).toBe('X_UNAUTHENTICATED');
   expect(await unreadFor(ADA)).toBe(1);
 });
@@ -105,7 +103,7 @@ unitTest('an anonymous caller marks nothing read', async () => {
 unitTest("a batch naming somebody else's notification cannot touch it", async () => {
   const mine = await repo.inboxPage(ADA);
   const theirs = await repo.insertNotification({ userId: MARA, kind: 'message', actorId: ADA });
-  const ctx = createContext({ actor: member(ADA) });
+  const ctx = ctxOf({ actor: member(ADA) });
 
   const result = await target(
     { ids: [mine[0]?.id ?? '', theirs.id] },
@@ -123,7 +121,7 @@ unitTest("a batch naming somebody else's notification cannot touch it", async ()
 
 unitTest('the server half is convergent too: three calls leave one readAt', async () => {
   const row = await repo.insertNotification({ userId: MARA, kind: 'post-liked', actorId: ADA });
-  const ctx = createContext({ actor: member(MARA) });
+  const ctx = ctxOf({ actor: member(MARA) });
   const call = () => target({ ids: [row.id] }, { ctx, actor: member(MARA), surface: 'http' });
   const before = await unreadFor(MARA);
 

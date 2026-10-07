@@ -4,14 +4,14 @@
  * component — `static` at build time, `ssr`/`stream` per request, all through `renderToHtml`.
  */
 
-import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { escapeHtml, renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import {
   IslandInvalidError,
   IslandNotHydratedError,
   IslandPropsInvalidError,
   PrerenderFailedError,
 } from './errors';
-import { escapeHtml, renderAttributes, VOID_ELEMENTS } from './html';
+import { renderAttributes, VOID_ELEMENTS } from './html';
 import { emitIslandAttributes, emitIslandProps } from './hydrate';
 import type { IslandNode } from './island';
 import { isIslandNode } from './island';

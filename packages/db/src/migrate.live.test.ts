@@ -13,7 +13,7 @@ import type {
   IndexDescriptionLike,
 } from './entity-shape';
 import { generateMigration } from './generate';
-import { introspect, type SchemaDescription } from './introspect';
+import { introspectSchema, type SchemaDescription } from './introspect';
 import { LEDGER_TABLE, MIGRATION_LOCK_KEY, type Migration, migrate, rollback } from './migrate';
 import { raw, sql } from './sql';
 
@@ -299,7 +299,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite i
     // The description `checkDrift` compares against, off the same server. Ordered by `indkey`
     // and not by `attnum`: a composite index whose columns are declared in a different order
     // from the table's came back reversed, which reads correct and compares wrong.
-    const live = await introspect({ client });
+    const live = await introspectSchema({ client });
     const described = live.tables.find((each) => each.name === 'live_composite_posts');
     const declared = new Map(described?.indexes.map((each) => [each.name, each]) ?? []);
     expect(declared.get('live_composite_posts_org_id_created_at_idx')?.columns).toEqual([
@@ -398,7 +398,7 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key
     expect(report.applied.map((applied) => applied.id)).toEqual([withKey.id]);
 
     const client = freshClient();
-    const live = await introspect({ client });
+    const live = await introspectSchema({ client });
     const described = live.tables.find((each) => each.name === 'live_key_posts');
     // The server's own catalog: the constraint the inline clause created, named as the snapshot
     // predicted and pointing where the entity said.
@@ -423,7 +423,10 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key
     await client.execute(
       raw('alter table "live_key_posts" drop constraint "live_key_posts_org_id_fkey"'),
     );
-    const after = diffSchema(scoped(await introspect({ client }), 'live_key_posts'), expected);
+    const after = diffSchema(
+      scoped(await introspectSchema({ client }), 'live_key_posts'),
+      expected,
+    );
     expect(after.ok).toBe(false);
     expect(after.differences[0]?.kind).toBe('missing-foreign-key');
     expect(after.differences[0]?.cause).toContain('no foreign key on (org_id) to "live_key_orgs"');
@@ -436,9 +439,9 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key
           'foreign key ("org_id") references "live_key_orgs" ("id")',
       ),
     );
-    expect(diffSchema(scoped(await introspect({ client }), 'live_key_posts'), expected).ok).toBe(
-      true,
-    );
+    expect(
+      diffSchema(scoped(await introspectSchema({ client }), 'live_key_posts'), expected).ok,
+    ).toBe(true);
   }, 15_000);
 });
 

@@ -155,28 +155,6 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
     expect((await rowOf(driver, id)).state).toBe('done');
   });
 
-  test(`${label}: an ack that is not counted settles the row and writes no history`, async () => {
-    const driver = await harness.driver();
-    const operator = operatorOf(driver);
-    const handle = itemJob({ run: () => Promise.resolve() });
-    const moved = await enqueueItem(driver, handle);
-    const ran = await enqueueItem(driver, handle);
-    await driver.claim({
-      queues: ['default'],
-      limit: 2,
-      visibilityTimeoutMs: TTL_MS,
-      workerId: 'x-jobs-drain',
-    });
-    const by = { workerId: 'x-jobs-drain', claim: 1 };
-    // What `x jobs drain` sends for a row it moved to another driver.
-    expect(await driver.ack(moved, { ...by, counted: false })).toBe(true);
-    expect((await rowOf(driver, moved)).state).toBe('done');
-    expect(await operator.counterTotals(0)).toEqual([]);
-    // The default is counted.
-    expect(await driver.ack(ran, by)).toBe(true);
-    expect((await operator.counterTotals(0)).map((row) => row.done)).toEqual([1]);
-  });
-
   test(`${label}: an occurrence fires once — the watermark and its jobs move together`, async () => {
     const driver = await harness.driver();
     const state = await harness.schedulerState(driver);

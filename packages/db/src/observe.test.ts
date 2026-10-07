@@ -10,7 +10,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { postgresClient } from './client';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver, statementObserver } from './observe';
-import { createPgliteClient, type PgliteDriver } from './pglite';
+import { type PgliteDriver, pgliteClient } from './pglite';
 import { sql } from './sql';
 
 function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
@@ -146,7 +146,7 @@ describe('the production path — no observer installed', () => {
   test('the embedded client never reads the clock', async () => {
     clock = spyOn(performance, 'now');
 
-    await createPgliteClient({ driver: fakePgliteDriver() }).query(sql`select 1`);
+    await pgliteClient({ driver: fakePgliteDriver() }).query(sql`select 1`);
 
     expect(clock).not.toHaveBeenCalled();
   });

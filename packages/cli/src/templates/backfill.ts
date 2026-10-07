@@ -162,7 +162,7 @@ const backfillUnitTest = (
 // driver. A sweep rewrites rows no user asked it to, so what is worth failing on is that it reaches
 // every tenant's rows, writes the projection and nothing else, and that a replay changes nothing.
 ${sortedImports([
-  "import { createContext, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
   `import { db, driver } from '${dbModule}';`,
@@ -175,7 +175,7 @@ const orgB = '00000000-0000-4000-8000-000000000009';
 
 /** What a request is to the handle: an actor, whose org every read and write runs under. */
 const inOrg = <T>(orgId: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: testActor('member', { orgId }).actor }), run);
+  runWithContext(ctxOf({ actor: testActor('member', { orgId }).actor }), run);
 
 const store = (orgId: string, title: string): Promise<${feature.pascal}> => {
   const draft = { orgId, title, price: { minor: 1000, currency: 'USD' } };

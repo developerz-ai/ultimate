@@ -11,8 +11,8 @@ import { claimOf } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createJobsFacade, enqueueInTx, memoryOutboxStore, resetJobsFacade } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
+import { enqueueInTx, memoryOutboxStore, outboxJobsFacade, resetJobsFacade } from './outbox';
+import { outboxRelay } from './outbox-relay';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -55,7 +55,7 @@ describe('an enqueue names its run on every path', () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
     const tx = fakeTx();
-    const jobs = createJobsFacade({ store, driver }, () => tx);
+    const jobs = outboxJobsFacade({ store, driver }, () => tx);
 
     const queued = await jobs.enqueue(sync, { requestId: 'r1' });
 
@@ -65,7 +65,7 @@ describe('an enqueue names its run on every path', () => {
     expect(await driver.introspect?.job(queued.id)).toBeUndefined();
 
     await store.commit(tx);
-    await createOutboxRelay({ store, driver }).tick();
+    await outboxRelay({ store, driver }).tick();
 
     const row = await driver.introspect?.job(queued.id);
     expect(row?.runId).toBe(queued.runId);
@@ -77,12 +77,12 @@ describe('an enqueue names its run on every path', () => {
     const store = memoryOutboxStore();
     const tx = fakeTx();
     let ambient: Tx | undefined = tx;
-    const jobs = createJobsFacade({ store, driver }, () => ambient);
+    const jobs = outboxJobsFacade({ store, driver }, () => ambient);
 
     const staged = await jobs.enqueue(sync, { requestId: 'r1' }, { runId: RUN });
     expect(staged.runId).toBe(RUN);
     await store.commit(tx);
-    await createOutboxRelay({ store, driver }).tick();
+    await outboxRelay({ store, driver }).tick();
     expect((await driver.introspect?.job(staged.id))?.runId).toBe(RUN);
 
     ambient = undefined;
@@ -96,7 +96,7 @@ describe('an enqueue names its run on every path', () => {
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
     const tx = fakeTx();
-    const jobs = createJobsFacade({ store, driver }, () => tx);
+    const jobs = outboxJobsFacade({ store, driver }, () => tx);
     const queued = await jobs.enqueue(sync, { requestId: 'r1' });
     const [record] = await store.commit(tx);
     if (record === undefined) return expect.unreachable('expected one staged record');
@@ -158,7 +158,7 @@ describe('a named run is a uuid on every path, refused before anything is writte
 
   test('direct: the driver is never asked', async () => {
     const driver = memoryJobDriver();
-    const jobs = createJobsFacade({ store: memoryOutboxStore(), driver }, () => undefined);
+    const jobs = outboxJobsFacade({ store: memoryOutboxStore(), driver }, () => undefined);
     for (const runId of NOT_UUIDS) {
       const options = { runId } as { runId: string };
       expect(await codeOf(() => jobs.enqueue(sync, { requestId: 'r1' }, options))).toBe(
@@ -172,7 +172,7 @@ describe('a named run is a uuid on every path, refused before anything is writte
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
     const tx = fakeTx();
-    const jobs = createJobsFacade({ store, driver }, () => tx);
+    const jobs = outboxJobsFacade({ store, driver }, () => tx);
     for (const runId of NOT_UUIDS) {
       const options = { runId } as { runId: string };
       expect(await codeOf(() => jobs.enqueue(sync, { requestId: 'r1' }, options))).toBe(
@@ -186,7 +186,7 @@ describe('a named run is a uuid on every path, refused before anything is writte
   });
 
   test('the refusal names the option and never echoes the value', async () => {
-    const jobs = createJobsFacade(
+    const jobs = outboxJobsFacade(
       { store: memoryOutboxStore(), driver: memoryJobDriver() },
       () => undefined,
     );
@@ -196,6 +196,6 @@ describe('a named run is a uuid on every path, refused before anything is writte
     if (!isUltimateError(thrown)) return expect.unreachable('expected a coded refusal');
     expect(thrown.cause).toContain('runId');
     expect(thrown.cause).not.toContain('sk_live_not_a_run');
-    expect(thrown.fix).toContain('uuid()');
+    expect(thrown.fix).toContain('uuidV7()');
   });
 });

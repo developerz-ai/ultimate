@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { createContext, hasContext, runWithContext, useContext, userActor } from '@ultimat3/core';
+import { ctxOf, hasContext, runWithContext, useContext, userActor } from '@ultimat3/core';
 import { asCallerContext } from './caller-context';
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'org-a' });
@@ -22,7 +22,7 @@ describe('the ambient identity for a tool call', () => {
   test('http: with a request in flight the caller REPLACES the surrounding actor', () => {
     // The leak this closes: an agent token authorizing as agent-1 while the repo reads run as
     // the session cookie's user, because the two identities came from two different places.
-    const answer = runWithContext(createContext({ actor: alice }), () =>
+    const answer = runWithContext(ctxOf({ actor: alice }), () =>
       asCallerContext(agent, () => useContext().actor),
     );
     expect(answer?.id).toBe('agent-1');
@@ -30,7 +30,7 @@ describe('the ambient identity for a tool call', () => {
   });
 
   test('http: the surrounding context is restored afterwards', () => {
-    const after = runWithContext(createContext({ actor: alice }), () => {
+    const after = runWithContext(ctxOf({ actor: alice }), () => {
       asCallerContext(agent, () => undefined);
       return useContext().actor;
     });
@@ -45,7 +45,7 @@ describe('the ambient identity for a tool call', () => {
   test('a value returned by fn is handed back on both branches', () => {
     expect(asCallerContext(agent, () => 'stdio')).toBe('stdio');
     expect(
-      runWithContext(createContext({ actor: alice }), () => asCallerContext(agent, () => 'http')),
+      runWithContext(ctxOf({ actor: alice }), () => asCallerContext(agent, () => 'http')),
     ).toBe('http');
   });
 });

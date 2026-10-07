@@ -17,11 +17,11 @@ import {
   unregisterDependent,
 } from '@ultimat3/cache';
 import type { Scheduler } from '@ultimat3/core';
-import { createSingleFlight, finiteCount, logger, renderThrowable } from '@ultimat3/core';
+import { finiteCount, logger, renderThrowable, singleFlight } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import { finiteStatus, isRenderStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
-import { describeRoutes } from './registry';
+import { describePages } from './registry';
 import type { IsrEntry, IsrState, IsrStore } from './render-isr-store';
 import { memoryIsrStore } from './render-isr-store';
 import { contentHash, staticHeaders } from './render-static';
@@ -153,16 +153,16 @@ let installedRevalidator: Revalidator | undefined;
 /** What `registerRevalidator` is handed on detach: the framework's "nothing to revalidate". */
 const NO_REVALIDATION: Revalidator = () => undefined;
 
-export function createIsrController(options: IsrControllerOptions = {}): IsrController {
+export function isrController(options: IsrControllerOptions = {}): IsrController {
   const store = options.store ?? memoryIsrStore();
   const now = options.now ?? (() => Date.now());
-  const routes = options.routes ?? describeRoutes;
+  const routes = options.routes ?? describePages;
   const isrDependents =
     options.isrDependents ?? ((tags: readonly CacheTag[]) => dependentsOfKind(tags, 'isr-route'));
   const buildId = options.buildId ?? 'dev';
-  const flight = createSingleFlight({
+  const flight = singleFlight({
     deadlineMs: finiteCount(
-      'createIsrController',
+      'isrController',
       'regenerateDeadlineMs',
       options.regenerateDeadlineMs ?? DEFAULT_ISR_REGENERATE_DEADLINE_MS,
       1,
@@ -380,7 +380,7 @@ interface RouteMatcher {
   test(storedPath: string): boolean;
 }
 
-/** One compiled set per route TABLE — `describeRoutes()` hands out one array per registry change. */
+/** One compiled set per route TABLE — `describePages()` hands out one array per registry change. */
 const compiledTables = new WeakMap<readonly RouteDescriptor[], readonly RouteMatcher[]>();
 
 /**

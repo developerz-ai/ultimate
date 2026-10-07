@@ -5,17 +5,17 @@
 // And a login that succeeded is not undone by a failure to SAVE it.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger } from '@ultimat3/core';
+import { ctxOf, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { AuthPlanInput } from './auth';
 import { burnSession, ensureAuthenticated, markRefused } from './auth';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { fakeBrowser, fakePage } from './driver-fake';
 import { authFailed, blocked } from './error-throws';
 import type { ScrapeDefinition } from './scrape';
 import { runScrape } from './scrape-run';
-import { createSecretBag } from './secrets';
+import { secretBag } from './secrets';
 import type { ScrapeSessionStore, SessionState } from './session-state';
 import { memorySessionStore } from './session-state';
 
@@ -37,7 +37,7 @@ const state = (savedAt: string, over: Partial<SessionState> = {}): SessionState 
 
 const linesOf = () => {
   const lines: Record<string, unknown>[] = [];
-  const logger = createLogger({
+  const logger = structuredLogger({
     writer: (line) => {
       lines.push(JSON.parse(line) as Record<string, unknown>);
     },
@@ -52,7 +52,7 @@ const planOver = (
   scrape: 'bank',
   auth: { store, login: () => Promise.resolve() },
   key: KEY,
-  clock: testClock(new Date(T1)),
+  clock: testScrapeClock(new Date(T1)),
   logger,
 });
 
@@ -95,7 +95,7 @@ describe('unit · burn and refuse stand down when another run moved the record',
       input: {},
       runId: 'run-1',
       page,
-      secrets: createSecretBag([]),
+      secrets: secretBag([]),
       restored: state(T0),
       prompt: () => Promise.resolve(''),
     });
@@ -104,13 +104,13 @@ describe('unit · burn and refuse stand down when another run moved the record',
 });
 
 const runArgs = (
-  logger = createLogger({ writer: () => undefined }),
+  logger = structuredLogger({ writer: () => undefined }),
 ): JobRunArgs<Record<string, never>> => ({
   input: {},
   step: {
     run: <T>(_name: string, fn: () => Promise<T> | T) => Promise.resolve(fn()),
   } as unknown as StepApi,
-  ctx: createContext({ logger }),
+  ctx: ctxOf({ logger }),
   attempt: 1,
   finalAttempt: false,
   progress: () => undefined,
@@ -128,7 +128,7 @@ const define = (
   tenant: 'none',
   allowHosts: ['shop.test'],
   robots: { ignore: 'fixture host' },
-  clock: testClock(new Date(T1)),
+  clock: testScrapeClock(new Date(T1)),
   driver: fakeBrowser([{ url: URL_A, html: '<p class="row" data-id="1">One</p>' }]),
   run: () => Promise.resolve([{ id: '1' }]),
   ...over,

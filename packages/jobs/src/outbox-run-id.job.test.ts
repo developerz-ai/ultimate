@@ -12,9 +12,9 @@ import { claimOf } from './driver';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { job, resetJobs } from './job';
-import { createJobsFacade } from './outbox';
+import { outboxJobsFacade } from './outbox';
 import { postgresOutboxStore } from './outbox-pg';
-import { createOutboxRelay } from './outbox-relay';
+import { outboxRelay } from './outbox-relay';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -54,7 +54,7 @@ describe('pg: an enqueue inside a transaction names the job its commit creates',
       executor: pg.executor,
       txExecutor: () => bound ?? expect.unreachable('staged outside the transaction'),
     });
-    const jobs = createJobsFacade({ store, driver }, () => tx);
+    const jobs = outboxJobsFacade({ store, driver }, () => tx);
 
     let queued = { id: '', runId: '', deduped: true };
     await pg.transaction(async (executor) => {
@@ -63,7 +63,7 @@ describe('pg: an enqueue inside a transaction names the job its commit creates',
     });
     expect(queued.deduped).toBe(false);
 
-    const relay = createOutboxRelay({ store, driver });
+    const relay = outboxRelay({ store, driver });
     expect(await relay.tick()).toBe(1);
     const row = await driver.introspect?.job(queued.id);
     expect(row?.runId).toBe(queued.runId);

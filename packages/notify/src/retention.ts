@@ -3,15 +3,15 @@
 // owns the hourly sweep, so the sweep cannot hold the stores — it can only ask, per attempt, what
 // is installed now. Same shape and the same reason as `purgeAuthLimits()`.
 
-import type { PgDigestStore } from './digest-pg';
-import type { InboxPurgeBefore, PgInboxStore } from './inbox-pg';
-import type { PgDeliveryLedger } from './ledger-pg';
+import type { PostgresDigestStore } from './digest-pg';
+import type { InboxPurgeBefore, PostgresInboxStore } from './inbox-pg';
+import type { PostgresDeliveryLedger } from './ledger-pg';
 import { notifyStores } from './stores';
 
 /**
  * Whether the installed store can delete by age at all.
  *
- * A DECLARED capability check, never duck typing: `PgInboxStore` and `PgDeliveryLedger` widen the
+ * A DECLARED capability check, never duck typing: `PostgresInboxStore` and `PostgresDeliveryLedger` widen the
  * seam their memory siblings satisfy, so "has this method" is exactly "is this the Postgres one".
  * The memory stores deliberately have none — a heap map is bounded by process life, and adding the
  * method to `InboxStore`/`DeliveryLedger` would break every app that wrote its own implementation.
@@ -31,7 +31,7 @@ const purgeable = <T>(store: unknown, method: string): store is T =>
  */
 export async function purgeNotifyInbox(before: InboxPurgeBefore): Promise<number> {
   const store = notifyStores().inbox;
-  if (!purgeable<PgInboxStore>(store, 'purgeBefore')) return 0;
+  if (!purgeable<PostgresInboxStore>(store, 'purgeBefore')) return 0;
   return store.purgeBefore(before);
 }
 
@@ -46,7 +46,7 @@ export async function purgeNotifyInbox(before: InboxPurgeBefore): Promise<number
  */
 export async function purgeNotifyDeliveries(nowMs: number): Promise<number> {
   const ledger = notifyStores().ledger;
-  if (!purgeable<PgDeliveryLedger>(ledger, 'purgeExpired')) return 0;
+  if (!purgeable<PostgresDeliveryLedger>(ledger, 'purgeExpired')) return 0;
   return ledger.purgeExpired(nowMs);
 }
 
@@ -57,6 +57,6 @@ export async function purgeNotifyDeliveries(nowMs: number): Promise<number> {
  */
 export async function purgeNotifyDigests(nowMs: number): Promise<number> {
   const digest = notifyStores().digest;
-  if (!purgeable<PgDigestStore>(digest, 'purgeExpired')) return 0;
+  if (!purgeable<PostgresDigestStore>(digest, 'purgeExpired')) return 0;
   return digest.purgeExpired(nowMs);
 }

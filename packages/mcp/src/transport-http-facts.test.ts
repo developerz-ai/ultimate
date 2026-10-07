@@ -7,10 +7,10 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor, frozenClock } from '@ultimat3/core';
 import { memoryRateLimitStore } from '@ultimat3/http';
 import type { McpRequestFacts } from './index';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
-const server = createMcpServer();
+const server = mcpServer();
 
 const ping = (headers: Record<string, string> = {}, url = 'http://local/mcp'): Request =>
   new Request(url, {

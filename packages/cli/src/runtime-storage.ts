@@ -7,12 +7,12 @@
 // `localDriver` SIGNS `/_storage/<disk>/<key>`, so a local `'/_storage'` here is a second statement
 // of one constant — and a signer and a reader that disagree serve 404 for every signed URL.
 
-import { actorOf } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
+import { actorOf } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { asCtx, unauthenticated } from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
-import { can, codeOf, evaluate, forbidden, reasonOf } from '@ultimat3/policy';
+import { can, codeOf, evaluate, policyForbidden, reasonOf } from '@ultimat3/policy';
 import type { Storage, StorageRead } from '@ultimat3/storage';
 import {
   assertSafeKey,
@@ -88,7 +88,7 @@ export function authorizeStorageRead(input: StorageReadInput, ctx: RequestContex
   const reason = reasonOf(evaluation.decision) ?? 'denied';
   throw codeOf(evaluation.decision) === 'X_UNAUTHENTICATED'
     ? unauthenticated(ctx.url.pathname)
-    : forbidden(policy.label, reason);
+    : policyForbidden(policy.label, reason);
 }
 
 /**

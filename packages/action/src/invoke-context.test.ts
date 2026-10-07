@@ -1,6 +1,6 @@
 // One action, three ways of naming who is calling — the ambient context, `options.actor`,
 // `options.ctx` — and one identity behind all three. `options.ctx` used to be honoured as a
-// PARAMETER and never installed, so `guard()` decided about that actor while everything reading
+// PARAMETER and never installed, so `guardAction()` decided about that actor while everything reading
 // `tryUseContext()` (most of all `@ultimat3/entity`'s tenant guard, which derives from it rather
 // than from the ctx it is handed) saw a different identity, or none.
 //
@@ -9,13 +9,13 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { createContext, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { invoke } from './invoke';
-import { resetRegistry } from './registry';
+import { resetActions } from './registry';
 
 const Input = t.object({ noop: t.boolean });
 const Output = t.object({ policyActor: t.string, ambientActor: t.string });
@@ -43,7 +43,7 @@ const build = () => {
   const target = action({
     input: Input,
     output: Output,
-    // The predicate runs inside `guard()`, which is the one authz evaluation.
+    // The predicate runs inside `guardAction()`, which is the one authz evaluation.
     policy: can('post:publish', ({ actor }) => {
       policyActor = label(actor);
       return true;
@@ -56,22 +56,18 @@ const build = () => {
 };
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
 });
 
 describe('an explicit ctx is INSTALLED, not merely passed', () => {
   test('the three spellings of one caller agree on the identity, policy and ambient alike', async () => {
     const target = build();
 
-    const ambient = (await runWithContext(createContext({ actor: caller }), () =>
+    const ambient = (await runWithContext(ctxOf({ actor: caller }), () =>
       invoke(target, { noop: true }),
     )) as Seen;
     const byActor = (await invoke(target, { noop: true }, { actor: caller })) as Seen;
-    const byCtx = (await invoke(
-      target,
-      { noop: true },
-      { ctx: createContext({ actor: caller }) },
-    )) as Seen;
+    const byCtx = (await invoke(target, { noop: true }, { ctx: ctxOf({ actor: caller }) })) as Seen;
 
     // Every surface's policy saw the same caller — this half already held.
     expect(ambient.policyActor).toBe(`u1@${ORG}`);
@@ -92,11 +88,11 @@ describe('an explicit ctx is INSTALLED, not merely passed', () => {
       permissions: ['post:publish'],
     };
 
-    const outcome = await runWithContext(createContext({ actor: caller }), async () => {
+    const outcome = await runWithContext(ctxOf({ actor: caller }), async () => {
       const inner = (await invoke(
         target,
         { noop: true },
-        { ctx: createContext({ actor: other }) },
+        { ctx: ctxOf({ actor: other }) },
       )) as Seen;
       return { inner, after: label(tryUseContext()?.actor) };
     });

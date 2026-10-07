@@ -2,7 +2,7 @@
 // refusal is `X_PROTOCOL_VERSION` with the field named. Shared by `sync-protocol.ts` and
 // `wire-channel.ts`, so the channel frames are held to the same ceilings as every other kind.
 
-import { isJsonObject, type JsonObject, type JsonValue } from './json';
+import { isParsedJsonObject, type JsonObject, type JsonValue } from './json';
 import { ProtocolVersionError } from './page-errors';
 import { FRAME_LIMITS, PROTOCOL_VERSION } from './wire-version';
 
@@ -81,6 +81,6 @@ export function bounded(value: JsonValue, label: string): JsonValue {
 }
 
 export function object(value: unknown): JsonObject {
-  if (!isJsonObject(value)) throw fail('expected a JSON object');
+  if (!isParsedJsonObject(value)) throw fail('expected a JSON object');
   return value;
 }

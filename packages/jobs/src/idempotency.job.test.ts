@@ -4,11 +4,11 @@
 // worker (`start()`/`stop()`, not `tick()`) must run the handler exactly once for it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -20,7 +20,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
   for (let i = 0; i < 400; i += 1) {
@@ -66,7 +66,7 @@ describe('two enqueues racing on one idempotency key', () => {
     expect(second.id).toBe(first.id);
     expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     try {
       await waitFor(async () => {
@@ -108,7 +108,7 @@ describe('two enqueues racing on one idempotency key', () => {
     expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
 
     const workers = Array.from({ length: 3 }, () =>
-      createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 }),
+      jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 }),
     );
     for (const worker of workers) worker.start();
     try {
@@ -149,7 +149,7 @@ describe('the dedupe window is "currently live", not "ever existed"', () => {
         maxAttempts: handle.retry.attempts,
       });
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     try {
       const firstEnqueue = await enqueueOne();

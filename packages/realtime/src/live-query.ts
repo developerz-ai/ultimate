@@ -6,7 +6,7 @@
 // policy is never sent to that actor — it arrives as a `delete` if they hold it, and is dropped
 // otherwise.
 
-import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core';
+import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import { type LiveCursor, makeCursor } from './cursor';
@@ -21,7 +21,7 @@ import { reauthorizeSocket } from './live-reauth';
 import { resumeOnto } from './live-resume';
 import { type Charge, type SubscribeArgs, spendOnce } from './live-spend';
 import { liveTenantOf, windowId } from './live-tenant';
-import { createEntry, fillWindow, type QueryEntry } from './query-window';
+import { fillWindow, type QueryEntry, queryEntry } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
@@ -45,7 +45,7 @@ export class LiveQueryRegistry {
    * This node's mark for a window read before it held any position: unique to the process, and
    * `!` sorts below every hex digit, so every real change is above it.
    */
-  readonly #origin = `!${uuid()}`;
+  readonly #origin = `!${uuidV7()}`;
   #staleChanges = 0;
 
   constructor(options: LiveQueryRegistryOptions) {
@@ -140,7 +140,7 @@ export class LiveQueryRegistry {
     // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
     // client "x build && redeploy the client" for a typo no rebuild changes.
     if (!definition) throw new LiveQueryUnknownError({ name: args.name });
-    const sid = args.sid ?? uuid();
+    const sid = args.sid ?? uuidV7();
     // Everything this subscribe can be refused for, decided in one synchronous step BEFORE the
     // first await — the caps and the sid both. Read at the top and acted on three awaits later,
     // they were bypassed by the ordinary case: one WebSocket write carrying N subscribe frames,
@@ -396,7 +396,7 @@ export class LiveQueryRegistry {
         knob: 'maxEntries',
       });
     }
-    const created = createEntry(qid, definition, input, definition.matcher(input), {
+    const created = queryEntry(qid, definition, input, definition.matcher(input), {
       readDeadlineMs: this.#options.readDeadlineMs,
       schedule: this.#options.schedule,
       tenant,

@@ -17,7 +17,7 @@ import {
   t,
 } from '@ultimat3/jobs';
 import { advanceClock } from './determinism';
-import { createRunJobs, type RunJobs } from './fixture-jobs';
+import { type RunJobs, testJobs } from './fixture-jobs';
 import { testName } from './test-types';
 
 interface Input {
@@ -47,11 +47,11 @@ const declare = (
 
 let runJobs: RunJobs | undefined;
 const worker = async (): Promise<RunJobs> => {
-  runJobs = await createRunJobs();
+  runJobs = await testJobs();
   return runJobs;
 };
 
-// `createRunJobs()` by hand is not disposed for anyone: hand the ambient driver back per test.
+// `testJobs()` by hand is not disposed for anyone: hand the ambient driver back per test.
 afterEach(async () => {
   await runJobs?.[Symbol.asyncDispose]();
   runJobs = undefined;
@@ -169,7 +169,7 @@ describe(testName('unit', 'runJobs: each fixture has its own event bus'), () => 
   // published was still there for the next test's `step.waitForEvent` — which then resumed on it.
   test('an event published under one fixture is not there for the next', async () => {
     const before = eventBus();
-    const first = await createRunJobs();
+    const first = await testJobs();
     expect(eventBus()).not.toBe(before);
     await publishEvent('prompt.answered', { answer: 'yes' }, { correlationKey: 'run-1' });
     expect(eventBus().size()).toBe(1);
@@ -186,9 +186,9 @@ describe(testName('unit', 'runJobs: each fixture has its own event bus'), () => 
   test('a driver whose close() throws still hands back the bus and the driver', async () => {
     const busBefore = eventBus();
     const driverBefore = jobDriver();
-    const fixture = await createRunJobs();
+    const fixture = await testJobs();
     const installed = jobDriver();
-    if (installed === undefined) return expect.unreachable('createRunJobs installed no driver');
+    if (installed === undefined) return expect.unreachable('testJobs installed no driver');
     spyOn(installed, 'close').mockImplementation(() => {
       throw new TypeError('driver close failed');
     });

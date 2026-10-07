@@ -36,7 +36,7 @@ import { raceTimeout } from './run-deadline';
 import { createRunSignal } from './run-signal';
 import { announceSettled, settledCode } from './settled';
 import type { EventLookup, StepRecord } from './steps';
-import { createStepRunner, isStepSuspension } from './steps';
+import { isStepSuspension, stepRunner } from './steps';
 import { jobRunActor } from './tenant';
 
 /**
@@ -62,7 +62,7 @@ export type JobOutcome =
 const NEVER_ABORTED = new AbortController().signal;
 
 /**
- * `Ctx.signal` is non-optional in the type and `createContext` always sets it — but a context can
+ * `Ctx.signal` is non-optional in the type and `ctxOf` always sets it — but a context can
  * still arrive across a cast (`@ultimat3/http`'s `asCtx`, a test's `{} as Ctx`) without one, and
  * a job that crashed on a missing field would be a far worse answer than a job with no caller to
  * follow. Read it, do not assume it.
@@ -73,7 +73,7 @@ function callerSignal(ctx: Ctx): AbortSignal {
 
 /**
  * The same defensive read, for the same reason: `Ctx.actor` is non-optional in the type and
- * `createContext` always sets it, but `WorkerOptions.context()` is the app's own function and a
+ * `ctxOf` always sets it, but `WorkerOptions.context()` is the app's own function and a
  * cast context (`{} as Ctx`) reaches here without one. Anonymous is the honest stand-in — it
  * carries no org, so the job's declared tenant is the only thing that can put one on the run.
  */
@@ -152,7 +152,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     signal,
     services: callerServices(options.ctx),
   });
-  const runner = createStepRunner({
+  const runner = stepRunner({
     runId: claimed.runId,
     jobName: handle.name,
     store: driver.steps,

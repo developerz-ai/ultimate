@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PurgeDriver } from './cdn';
-import { cacheHeaders, createCdnTier, noopPurgeDriver, surrogateKeys } from './cdn';
+import { cacheHeaders, cdnTier, noopPurgeDriver, surrogateKeys } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import { tag } from './tags';
 
@@ -121,25 +121,25 @@ const purgeSpy = (accept?: (keys: readonly string[]) => readonly string[]) => {
   return { driver, calls };
 };
 
-describe('createCdnTier', () => {
+describe('cdnTier', () => {
   test('is named "cdn"', () => {
-    expect(createCdnTier().name).toBe('cdn');
+    expect(cdnTier().name).toBe('cdn');
   });
 
   test('get always resolves undefined regardless of key', async () => {
-    const tier = createCdnTier();
+    const tier = cdnTier();
     expect(await tier.get('anything')).toBeUndefined();
     expect(await tier.get('')).toBeUndefined();
   });
 
   test('set is a no-op that resolves', async () => {
-    const tier = createCdnTier();
+    const tier = cdnTier();
     await expect(tier.set('k', { a: 1 })).resolves.toBeUndefined();
   });
 
   test('del only purges when pathsForKey returns a non-empty array', async () => {
     const { driver, calls } = purgeSpy();
-    const tier = createCdnTier({
+    const tier = cdnTier({
       purge: driver,
       pathsForKey: (key) => (key === 'post-1' ? ['/a', '/b'] : []),
     });
@@ -153,7 +153,7 @@ describe('createCdnTier', () => {
 
   test('invalidateTags([]) short-circuits without calling the driver', async () => {
     const { driver, calls } = purgeSpy();
-    const tier = createCdnTier({ purge: driver });
+    const tier = cdnTier({ purge: driver });
 
     const result = await tier.invalidateTags([]);
 
@@ -166,7 +166,7 @@ describe('createCdnTier', () => {
     // `noopPurgeDriver()` for exactly that env. The noop echoes its argument back, so the tier
     // reported every tag as CLEARED and `recentInvalidations().busted` picked it up with no
     // errors: a partial bust reading as a clean one, which is the log's whole job to prevent.
-    const tier = createCdnTier();
+    const tier = cdnTier();
 
     const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
 
@@ -179,7 +179,7 @@ describe('createCdnTier', () => {
 
   test('invalidateTags surfaces the driver-accepted keys', async () => {
     const { driver, calls } = purgeSpy((keys) => keys.filter((key) => key === 'post'));
-    const tier = createCdnTier({ purge: driver });
+    const tier = cdnTier({ purge: driver });
 
     const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
 
@@ -191,21 +191,21 @@ describe('createCdnTier', () => {
     // The list keyed `post` contained the row, so it goes. `e:post` is on every response of the
     // entity: purging it here would clear `post:2`'s page for a write to `post:1`.
     const { driver, calls } = purgeSpy();
-    await createCdnTier({ purge: driver }).invalidateTags([tag('post', '1')]);
+    await cdnTier({ purge: driver }).invalidateTags([tag('post', '1')]);
     expect(calls).toEqual([['post:1', 'post']]);
   });
 
   test('a COLLECTION bust purges the entity index, and the bare key older responses carry', async () => {
     const { driver, calls } = purgeSpy();
-    await createCdnTier({ purge: driver }).invalidateTags([tag('post')]);
+    await cdnTier({ purge: driver }).invalidateTags([tag('post')]);
     expect(calls).toEqual([['e:post', 'post']]);
   });
 
   test('a bust of an unpurgeable tag is refused before any driver is asked', async () => {
     const { driver, calls } = purgeSpy();
-    await expect(
-      createCdnTier({ purge: driver }).invalidateTags([tag('post', 'a b')]),
-    ).rejects.toThrow(CachePurgeFailedError);
+    await expect(cdnTier({ purge: driver }).invalidateTags([tag('post', 'a b')])).rejects.toThrow(
+      CachePurgeFailedError,
+    );
     expect(calls).toEqual([]);
   });
 });

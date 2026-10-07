@@ -23,9 +23,9 @@ import {
 } from './keyed-concurrency-fixture';
 import { jobLeaseKey, memoryLeaseStore } from './leases';
 import { isFinalAttempt } from './retry';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import { resetTasks, task } from './task';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 const clock = frozenClock('2026-10-01T00:00:00.000Z');
 
@@ -160,7 +160,7 @@ describe('a concurrency key at a scheduled enqueue', () => {
     const failures = spyOn(logger, 'error');
     const hourly = (_cron: string, options: { from: Date }): Date =>
       new Date(Math.floor(options.from.getTime() / 3_600_000) * 3_600_000 + 3_600_000);
-    const scheduler = createScheduler({ driver, clock, cron: hourly });
+    const scheduler = jobScheduler({ driver, clock, cron: hourly });
 
     await scheduler.tick();
     clock.advance(2 * 3_600_000);
@@ -192,7 +192,7 @@ describe('a key the worker cannot derive at claim', () => {
     });
     const poison = await enqueueRun(driver, probe, 'poison');
     await enqueueRun(driver, probe, 'acct-1');
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       clock,
       concurrency: 2,
@@ -252,7 +252,7 @@ describe('finalAttempt', () => {
 
 describe('a driver that cannot hold a keyed cap', () => {
   const startOn = (driver: JobDriver) => () =>
-    createWorker({ driver, context: () => ({}) as never, drainOnShutdown: false }).start();
+    jobWorker({ driver, context: () => ({}) as never, drainOnShutdown: false }).start();
 
   test('with no lease store, the worker refuses to start', () => {
     const { leases: _leases, ...leaseless } = memoryJobDriver({ clock });

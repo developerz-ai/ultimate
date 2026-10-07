@@ -4,28 +4,20 @@
 // primitive out is a different way to NAME a tool, never a second way to run one.
 
 import type { AnyAction } from '@ultimat3/action';
+import { actionName, guardActionBeforeInput, invoke, isAction } from '@ultimat3/action';
 import {
-  guardBeforeInput as actionGuardBeforeInput,
-  actionName,
+  type Actor,
   actorOf,
-  invoke,
-  isAction,
-} from '@ultimat3/action';
-import { type Actor, isMcpExposed, useContext } from '@ultimat3/core';
+  isMcpExposed,
+  type McpExposureDeclaration,
+  useContext,
+} from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
-import {
-  isQuery,
-  guardBeforeInput as queryGuardBeforeInput,
-  queryName,
-  readAnswer,
-  sourceFor,
-} from '@ultimat3/query';
+import { guardQueryBeforeInput, isQuery, queryName, readAnswer, sourceFor } from '@ultimat3/query';
 import { toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
 import { asCallerContext } from './caller-context';
-import type { McpExposure, ProjectablePrimitive } from './from-action';
+import type { ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
-import type { McpListParams } from './list-params';
-import type { McpToolAnnotations } from './registry';
 import type { JsonSchema } from './wire';
 
 /**
@@ -75,7 +67,7 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
     admit: (actor: Actor) =>
       asCallerContext(actor, () => {
         const ctx = useContext();
-        actionGuardBeforeInput(target.policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
+        guardActionBeforeInput(target.policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
       }),
     // The actor rides in on the options: `invoke` swaps it inside the one execution path.
     run: keyed
@@ -110,7 +102,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
     admit: (actor: Actor) =>
       asCallerContext(actor, () => {
         const ctx = useContext();
-        queryGuardBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'server');
+        guardQueryBeforeInput(target.policy, { actor: actorOf(ctx), ctx, query: name }, 'server');
       }),
     run: ({ input, actor }) =>
       asCallerContext(actor, async () => {
@@ -139,7 +131,7 @@ export function toRowsOutputSchema(rows: unknown): JsonSchema | undefined {
 }
 
 /**
- * An action and a query declare MCP exposure with the same fields, so one typed path reads
+ * An action and a query declare core's ONE `McpExposureDeclaration`, so one typed path reads
  * both. Narrow on purpose, through `@ultimat3/core`'s `isMcpExposed`: only a literal
  * `expose: true` counts, so nothing is exposed by accident — an undeclared `mcp` block yields
  * no exposure at all.
@@ -150,7 +142,9 @@ export function toRowsOutputSchema(rows: unknown): JsonSchema | undefined {
  * projected tool was visible to every caller and the first outcome existed only for the
  * hand-written tools that build their own `McpTool`.
  */
-function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined {
+function exposureOf(
+  declared: McpExposureDeclaration | undefined,
+): McpExposureDeclaration | undefined {
   if (declared === undefined) return undefined;
   return {
     expose: isMcpExposed(declared),
@@ -160,15 +154,4 @@ function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined 
     ...(declared.title === undefined ? {} : { title: declared.title }),
     ...(declared.annotations === undefined ? {} : { annotations: declared.annotations }),
   };
-}
-
-/** `ActionMcp` and `QueryMcp` are the same shape; restating it binds to neither. */
-interface DeclaredMcp {
-  readonly expose: boolean;
-  readonly description?: string;
-  readonly visibleTo?: readonly string[];
-  /** `QueryMcp` only; an action has no list to compose. */
-  readonly listParams?: McpListParams;
-  readonly title?: string;
-  readonly annotations?: McpToolAnnotations;
 }

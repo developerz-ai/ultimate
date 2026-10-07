@@ -2,7 +2,7 @@
 // Enforce, as a gate step, that a fenced `ts`/`tsx` example in a package README typechecks. A
 // README example is the first code an agent copies, and nothing compiled one: `packages/render`'s
 // calls `config.meta({ post })` where `meta` takes a `RouteMetaContext` — the shape the same page
-// documents four lines earlier — and `packages/jobs`' `createWorker({ driver, queues, concurrency })`
+// documents four lines earlier — and `packages/jobs`' `jobWorker({ driver, queues, concurrency })`
 // omits a non-optional field. Both read as authoritative and neither would compile.
 //
 // It ships on a RATCHET, not enforcing: 155 of 170 examples are illustrative fragments today

@@ -15,7 +15,7 @@ import { join } from 'node:path';
 /**
  * The defect a server-side test cannot see, because the runtime it runs in has the binding.
  *
- * `logger` at the foot of `logger.ts` is `createLogger()` at MODULE INIT, and `envLevel()` read a
+ * `logger` at the foot of `logger.ts` is `structuredLogger()` at MODULE INIT, and `envLevel()` read a
  * bare `process.env['LOG_LEVEL']`. `@ultimat3/core`'s barrel is what every other package imports,
  * `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, and so the shaker keeps `logger` in the
  * chunk of any island that reaches a live subscription. Measured on ai-maxxing's session console

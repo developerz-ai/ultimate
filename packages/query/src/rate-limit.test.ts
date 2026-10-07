@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig, resetRateLimitStore } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, resetRateLimitStore } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -37,7 +37,7 @@ const searchOrders = (rateLimit?: QueryRateLimit) =>
   }).named('searchOrders');
 
 const serve = (rateLimit?: QueryRateLimit) =>
-  createServer({
+  httpServer({
     routes: [toQueryRoute(searchOrders(rateLimit))],
     config: oneProcess(),
     hooks: { authenticate: () => reader },

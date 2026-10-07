@@ -8,7 +8,7 @@
 // `pg-driver-cursor.live.test.ts` walks the same pages against a real server.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
@@ -80,7 +80,7 @@ const ROW: Invoice = {
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

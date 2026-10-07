@@ -9,7 +9,7 @@
 
 import type { PgExecutor } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
-import { createPgliteClient } from '@ultimat3/db';
+import { pgliteClient } from '@ultimat3/db';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import type { PgListener } from './queue-wake';
 
@@ -81,7 +81,7 @@ let booted: Promise<EmbeddedPg> | undefined;
 /** One embedded Postgres per test process — booting it costs seconds. */
 export function embeddedPg(): Promise<EmbeddedPg> {
   booted ??= (async () => {
-    const client: PgliteClient = createPgliteClient();
+    const client: PgliteClient = pgliteClient();
     const query = <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
       client.query<R>({ text, values });
     // Statement by statement: the embedded Postgres speaks the extended protocol.

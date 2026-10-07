@@ -18,7 +18,7 @@ export interface GenerationFence {
  * `subject` names what the generation counts, and it reaches the `cause:` — "the live window was
  * superseded" is actionable where "generation 3 != 4" is a puzzle.
  */
-export function createFence(subject: string): GenerationFence {
+export function generationFence(subject: string): GenerationFence {
   let current = 0;
   return {
     generation: (): number => current,

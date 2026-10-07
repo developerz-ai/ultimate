@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { json, selfOrigin } from '@ultimat3/http';
+import { jsonResponse, selfOrigin } from '@ultimat3/http';
 import {
   type AppMcp,
   McpAppUnmountedError,
@@ -177,7 +177,7 @@ function endpointRoutes(route: Descriptor, path: string, index: number): readonl
               method: 'GET',
               path: metadataPath,
               handler: (_request, ctx) => {
-                const response = json(resource.document(selfOrigin(ctx.url, ctx.https)));
+                const response = jsonResponse(resource.document(selfOrigin(ctx.url, ctx.https)));
                 // A browser-hosted MCP client reads this cross-origin; it holds nothing secret.
                 response.headers.set('access-control-allow-origin', '*');
                 response.headers.set('cache-control', 'public, max-age=3600');

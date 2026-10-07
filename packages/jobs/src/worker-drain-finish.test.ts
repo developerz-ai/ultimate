@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type Ctx,
   configureLifecycle,
-  createContext,
+  ctxOf,
   drain,
   isUltimateError,
   resetLifecycle,
@@ -20,9 +20,9 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AckOptions, JobDriver, NackOptions, QueueStats } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -153,7 +153,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       },
     });
     await enqueueOne(rec.driver, 'chargeCard');
-    const worker = createWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
     await started.reached;
 
@@ -195,7 +195,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       },
     });
     await enqueueOne(rec.driver, 'cooperative');
-    const worker = createWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
     await started.reached;
 
@@ -237,7 +237,7 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
       },
     });
     await enqueueOne(rec.driver, 'longRunning');
-    const worker = createWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
     await started.reached;
 
@@ -278,7 +278,7 @@ describe('a claim still held at the cut-off goes back to the queue before the dr
       },
     });
     await enqueueOne(rec.driver, 'deaf');
-    const first = createWorker({
+    const first = jobWorker({
       driver: rec.driver,
       context,
       pollIntervalMs: 1,
@@ -297,7 +297,7 @@ describe('a claim still held at the cut-off goes back to the queue before the dr
     expect((await first.stats()).state).toBe('stopped');
 
     resetLifecycle();
-    const second = createWorker({
+    const second = jobWorker({
       driver: rec.driver,
       context,
       pollIntervalMs: 1,
@@ -350,7 +350,7 @@ describe('a worker started inside a drain claims nothing', () => {
 
     // `startRoles` reaching `worker.start()` after the signal: the shutdown hooks it would register
     // never run — the drain is past them — so a worker that claimed here held jobs nothing drains.
-    const worker = createWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
+    const worker = jobWorker({ driver: rec.driver, context, pollIntervalMs: 1 });
     worker.start();
     await Bun.sleep(30);
 

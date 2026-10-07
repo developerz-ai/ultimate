@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { type CatalogDescription, emptyCatalog } from './catalog';
 import { DbError } from './errors';
 import { introspectCatalog } from './introspect-catalog';
-import { createPgliteClient, type PgliteModule } from './pglite';
+import { type PgliteModule, pgliteClient } from './pglite';
 import { PGLITE_PACKAGE } from './pglite-package';
 import {
   dumpFileName,
@@ -205,7 +205,7 @@ describe('the schema dump · the real embedded database', () => {
   // Booted WITH a snapshot directory, so the one `initdb` this file pays also writes the cache
   // the last block restores from.
   const cache = mkdtempSync(join(tmpdir(), 'x-schema-dump-cache-'));
-  const client = createPgliteClient({ snapshotDir: cache });
+  const client = pgliteClient({ snapshotDir: cache });
   const apply = async (script: string): Promise<void> => {
     for (const statement of statementsOf(script)) await client.execute(raw(statement));
   };
@@ -442,7 +442,7 @@ describe('the schema dump · the real embedded database', () => {
       'links an extension the snapshot never saw, creates it, and dumps it',
       async () => {
         const handed: unknown[] = [];
-        const restored = createPgliteClient({
+        const restored = pgliteClient({
           snapshotDir: cache,
           extensions: ['citext'],
           load: async () => {

@@ -4,13 +4,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { integer, text, timestamp, url, uuid } from './columns';
 import { arrayOf, bigint, decimal, json } from './columns-data';
@@ -90,7 +84,7 @@ const docs = entity('wp_docs', {
 });
 
 const ENTITIES = { notes, tags, coupons, rates, countries, links, docs };
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   setDbClient(client);

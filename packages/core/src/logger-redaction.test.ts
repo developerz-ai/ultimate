@@ -2,11 +2,11 @@
 // credential names the matcher catches, and the ordinary names it must leave readable.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
-import { createLogger, isRedactedKey, REDACTED, redactKeys } from './logger';
+import { isRedactedKey, REDACTED, redactKeys, structuredLogger } from './logger';
 
 function capture() {
   const lines: Record<string, unknown>[] = [];
-  const logger = createLogger({
+  const logger = structuredLogger({
     level: 'info',
     clock: frozenClock('2026-07-26T10:00:00.000Z'),
     writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),

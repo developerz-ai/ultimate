@@ -47,7 +47,7 @@ import {
 
 export type { McpWire } from './wire';
 
-export interface CreateMcpServerInput {
+export interface McpServerInput {
   readonly tools?: readonly AnyMcpTool[];
   readonly resources?: readonly McpResource[];
   readonly prompts?: readonly McpPrompt[];
@@ -88,7 +88,7 @@ const METHODS = [
   'prompts/get',
 ] as const;
 
-export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
+export function mcpServer(input: McpServerInput = {}): McpServer {
   const tools = new ToolRegistry().registerAll(input.tools ?? []);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   const meta = MetaSurface.build({

@@ -19,18 +19,18 @@ import {
   installRateLimitStore,
   resetRateLimitStore,
 } from './rate-limit-installed';
-import { json, text } from './response';
+import { jsonResponse, textResponse } from './response';
 import type { Route } from './router';
-import { createServer } from './server';
+import { httpServer } from './server';
 
 describe('the drain budget', () => {
   // `configureLifecycle({ deadlineMs })` is what `X_SHUTDOWN_TIMEOUT`'s own `fix:` line tells an
-  // operator to write. `createServer` then called `configureLifecycle` unconditionally with
+  // operator to write. `httpServer` then called `configureLifecycle` unconditionally with
   // `drainTimeoutMs`, which `defineHttpConfig` DEFAULTED to 15s — so the remedy was reverted by
   // the next line of boot, silently, in every process that serves web.
-  test('an app-declared lifecycle deadline survives createServer', () => {
+  test('an app-declared lifecycle deadline survives httpServer', () => {
     configureLifecycle({ deadlineMs: 600_000 });
-    createServer({
+    httpServer({
       routes: [],
       role: 'web',
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -44,7 +44,7 @@ describe('the drain budget', () => {
   test("the web role's budget is drain.deadlineMs — a server built after it leaves it alone", () => {
     for (const role of ['web', 'sync', 'worker'] as const) {
       configureLifecycle({ deadlineMs: 42_000 });
-      createServer({
+      httpServer({
         routes: [],
         role,
         config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -58,7 +58,7 @@ describe('the drain budget', () => {
   // drain. Without a reader it was a key an operator could set and nothing would honour.
   test("the app config's readiness grace reaches core's drain", () => {
     resetLifecycle();
-    createServer({
+    httpServer({
       routes: [],
       role: 'web',
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -70,7 +70,7 @@ describe('the drain budget', () => {
 
   test('no drain option leaves an app-configured grace alone', () => {
     configureLifecycle({ readinessGraceMs: 9_000 });
-    createServer({
+    httpServer({
       routes: [],
       role: 'web',
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -94,7 +94,7 @@ describe('a websocket mount and the routes beside it', () => {
     }) as const;
 
   const serve = (path: string, routes: readonly Route[]) =>
-    createServer({
+    httpServer({
       routes,
       role: 'web',
       websocket: mount(path),
@@ -107,7 +107,7 @@ describe('a websocket mount and the routes beside it', () => {
         method: 'GET',
         path: '/_x/sync',
         meta: { name: 'sync.page', auth: 'public' },
-        handler: () => text('no'),
+        handler: () => textResponse('no'),
       },
     ];
     expect(() => serve('/_x/sync', taken)).toThrow(/X_ROUTE_CONFLICT|sync\.page/);
@@ -124,7 +124,7 @@ describe('a websocket mount and the routes beside it', () => {
         method: 'GET',
         path: '/_x/:panel',
         meta: { name: 'panel', auth: 'public' },
-        handler: () => text('panel'),
+        handler: () => textResponse('panel'),
       },
     ];
     expect(() => serve('/_x/sync', params)).not.toThrow();
@@ -132,13 +132,13 @@ describe('a websocket mount and the routes beside it', () => {
 
   test('with no mount nothing is checked, and nothing changes', () => {
     expect(() =>
-      createServer({
+      httpServer({
         routes: [
           {
             method: 'GET',
             path: '/_x/sync',
             meta: { name: 'sync.page', auth: 'public' },
-            handler: () => text('ok'),
+            handler: () => textResponse('ok'),
           },
         ],
         role: 'web',
@@ -153,18 +153,18 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/ping',
     meta: { name: 'ping', auth: 'public' },
-    handler: () => text('pong'),
+    handler: () => textResponse('pong'),
   },
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: (request) => json({ id: request.param('id') }),
+    handler: (request) => jsonResponse({ id: request.param('id') }),
   },
 ];
 
 const server = () =>
-  createServer({
+  httpServer({
     routes,
     role: 'web',
     // start() is never called here, so no port is bound.
@@ -183,7 +183,7 @@ afterEach(resetLifecycle);
 beforeEach(resetRateLimitStore);
 afterEach(resetRateLimitStore);
 
-describe('createServer', () => {
+describe('httpServer', () => {
   test('runs a static route through the full pipeline in-process', async () => {
     const response = await server().fetch(new Request('http://local/ping'));
     expect(response.status).toBe(200);
@@ -231,7 +231,7 @@ describe('rate limiting across replicas', () => {
   };
 
   const replica = (store: RateLimitStore) =>
-    createServer({
+    httpServer({
       routes,
       role: 'web',
       config: defineHttpConfig({
@@ -291,7 +291,7 @@ describe('rate limiting across replicas', () => {
   test('a refusal AFTER the pipeline — a taken mount path — still gives the slot back', () => {
     const store = sharedStore();
     expect(() =>
-      createServer({
+      httpServer({
         routes,
         role: 'web',
         rateLimitStore: store,
@@ -308,7 +308,7 @@ describe('rate limiting across replicas', () => {
 
   test('the default declaration still boots on the memory store', () => {
     expect(() =>
-      createServer({
+      httpServer({
         routes,
         role: 'web',
         config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
@@ -358,7 +358,7 @@ describe('lifecycle wiring', () => {
   });
 
   test('a handler that throws still balances the in-flight count', async () => {
-    const handle = createServer({
+    const handle = httpServer({
       routes: [
         {
           method: 'GET',

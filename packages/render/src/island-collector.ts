@@ -49,7 +49,7 @@ export interface IslandCollector {
   record(spec: IslandSpec, props: JsxProps): IslandDirective;
 }
 
-export function createIslandCollector(input: IslandCollectorInput): IslandCollector {
+export function islandCollector(input: IslandCollectorInput): IslandCollector {
   const directives: IslandDirective[] = [];
   const entries = new Map<string, string>();
   const resolve = input.resolve ?? ((src: string) => src);
@@ -141,7 +141,7 @@ function assertEntry(entry: string, spec: IslandSpec, file: string): void {
   throw new IslandInvalidError(
     `the resolver returned ${renderCauseValue(entry)} for the ${spec.moduleId} island in ${file}, ` +
       'which cannot be emitted as a module URL',
-    'fix the resolve() passed to createIslandCollector — it must return a plain URL path',
+    'fix the resolve() passed to islandCollector — it must return a plain URL path',
   );
 }
 
@@ -150,7 +150,7 @@ export function islandWithoutCollector(spec: IslandSpec): IslandNotHydratedError
   return new IslandNotHydratedError(
     `the ${spec.moduleId} island was rendered outside a render that collects islands, so no ` +
       'hydration runtime is emitted and its chunk is never requested',
-    'render the page through renderToHtml(tree, { islands: createIslandCollector({ file, ' +
+    'render the page through renderToHtml(tree, { islands: islandCollector({ file, ' +
       'hydrate }) }) so the island is counted, booted and budgeted',
   );
 }

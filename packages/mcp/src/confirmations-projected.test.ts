@@ -4,10 +4,10 @@
 // it lets through, and its handler sees the arguments the person approved.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry } from '@ultimat3/action';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import {
   agentActor,
-  createContext,
+  ctxOf,
   generateMasterKey,
   runWithContext,
   SECRETS_KEY_ENV,
@@ -20,9 +20,9 @@ import { memoryConfirmationStore } from './confirmation-store';
 import { mcpConfirmations } from './confirmations';
 import type { McpCaller } from './registry';
 
-afterEach(() => resetRegistry());
+afterEach(() => resetActions());
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 const human = userActor({ id: 'u-1', orgId: 'o1', permissions: ['order:confirm'] });
 
 function app() {
