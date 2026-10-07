@@ -17,6 +17,18 @@ export interface OutboxHandle {
   enqueue(entry: OutboxEntry): Promise<void>;
   replay(): Promise<unknown>;
   pending(): readonly OutboxEntry[];
+  /** Writes not yet taken by the server. `0` until the store has opened. */
+  readonly size: number;
+  /**
+   * `listener` runs whenever `size` may have moved: a write queued, acked or refused, a queue
+   * opened, a principal change. Returns the release.
+   */
+  subscribe(listener: () => void): () => void;
+  /**
+   * Re-reads the durable queue, which another tab of this user may have changed since, and tells
+   * the listeners. What a write asks before deciding to queue behind older writes or to send.
+   */
+  refresh(): Promise<void>;
   /** Settles once the current principal's queue is open. */
   readonly ready: Promise<void>;
 }

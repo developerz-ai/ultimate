@@ -8,9 +8,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+**Sweep 14** — the backlog closed: every #648 owner decision taken and recorded (`docs/plans/2026/10/04/101-squeaky-clean-sweep/00-owner-decisions.md`), #702 fixed (#705 shipped in #711), the breaking tails batched for 26.0.0 (#709), the large decided features planned (#710).
+
 ### Added
 
 - `@ultimat3/core`: `probeDatabaseName(prefix)` — the one way a test names a throwaway database (`<prefix>_<pid>_<8 hex>`, ≤ 63 bytes). `sweepProbeDatabases(executor, name)` drops one a killed run left behind (dead pid, no backends). `bun run probe-databases` refuses a fixed name (`X_PROBE_DATABASE_FIXED`); 17 suites that collided under concurrent runs on one server now use it (#705).
+- `@ultimat3/cli`: `x routes` prints the served table — pages, then every `/api/*` action and query route and the `runtime.ts` routes, with method and policy; `--surface api` lists them. The MCP dev tool `routes.list` reads the same builder (#648 row 2).
+- `@ultimat3/cli`: `x doctor` lists a shipped guard whose content differs from the current template, with `x g guard <name> --force` to refresh it (#648 row 8).
+- `@ultimat3/realtime`: `useOutbox()` and `OutboxHandle.size`/`subscribe` — the page outbox's own pending count, so an island shows "queued" until the server takes the write (#648 row 19). The reference app's `shared/queued-writes.ts` workaround is deleted.
+
+### Fixed
+
+- `@ultimat3/realtime`: the page outbox is one queue across tabs. Another tab's enqueue, ack or refusal reaches this tab's count (a `BroadcastChannel` plus a read-only `refresh()`). A write is queued or sent from a fresh read of the durable queue, so a live write in one tab no longer overtakes one another tab queued, which could leave the user's last action contradicted. A send that throws no longer puts back an entry already acked or refused, which was replayed or resent once more.
+- `@ultimat3/action`, `@ultimat3/entity`: a `transition({ row })` whose policy read a column (an `authorId`) no longer moves the row after a concurrent change to that column. The compare-and-set also pins every column the policy read (`Move.observed`), on both drivers, and refuses a changed row with `X_STATE_CONFLICT` naming the column (#702). Not pinned: timestamp, JSON, array, bytea, money and sealed columns, and anything the loader reads from other tables.
 
 ## 25.1.0 - 2026-10-07
 

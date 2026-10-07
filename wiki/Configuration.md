@@ -614,7 +614,7 @@ picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cl
 | Rule | Why |
 |---|---|
 | middleware wraps a **matched** route only | the router runs first (`packages/http/src/stages.ts`). An unmatched path is answered `404` (or `405` with `allow`) before any middleware runs, so middleware cannot rewrite, redirect or serve a URL that no route declares |
-| a redirect from a path nothing serves needs a route | declare a page at the old path that answers the redirect, or add one to `runtime.routes` — an `api/**/route.ts` cannot register today ([Known gaps](Known-Gaps#awaiting-an-owner-decision)) |
+| a redirect from a path nothing serves needs a route | declare a page at the old path that answers the redirect, or add one to `runtime.routes`. `api/` holds no route file: it is actions and queries only ([Project layout](Project-Layout#surfaces)) |
 | `/healthz` and `/readyz` never reach it | they are answered by the listener before the pipeline, so a draining or rate-limited process can still say what it is doing |
 | a `/<locale>/` prefix is stripped before the match | middleware sees the route the stripped path matched, never the prefix as a route of its own |
 

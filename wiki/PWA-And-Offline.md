@@ -26,8 +26,8 @@
 > edit; the old `offline: 'runtime'` was an app-wide default for a field `defineRoute` makes
 > required on every route, so it defaulted nothing and was read by nobody.
 >
-> **Still not wired: `pwa.push`, and whether it will be is undecided** ([#648](https://github.com/developerz-ai/ultimate/issues/648),
-> owner decision 11 — [below](#push-is-an-open-owner-decision)). `generateServiceWorker` emits a push handler only when a VAPID
+> **Still not wired: `pwa.push`. Wiring it is decided** (owner decision 11, [#648](https://github.com/developerz-ai/ultimate/issues/648)) and
+> tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710) — [below](#push-is-decided-not-built). `generateServiceWorker` emits a push handler only when a VAPID
 > key comes with the capability, there is no `pwa.vapid` config key, and it drops the handler in
 > silence otherwise. `x build --json` now reports that as a `serviceWorkerWarnings` entry rather than
 > leaving the switch quietly inert.
@@ -285,7 +285,7 @@ accepted.
 
 | Flag | Generates | Cost of enabling |
 |---|---|---|
-| `push` | **nothing through `x build`, and undecided** — see [Push is an open owner decision](#push-is-an-open-owner-decision). `pushSource`'s SW `push` and `notificationclick` handlers are emitted only when `generateServiceWorker` is also handed a `vapid` key, and `x build` never is: there is no `pwa.vapid` key, so it emits neither and files a `serviceWorkerWarnings` entry (`cli.build.pushUnwired`, `packages/cli/src/sw-artifacts.ts`). No subscription endpoint, no send job. Called directly with a key, a tap opens a same-origin URL only; any other opens the app root | notification permission prompt; VAPID keys the build has no way to take |
+| `push` | **nothing through `x build` yet** — wiring it is decided and tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710); see [Push is decided, not built](#push-is-decided-not-built). `pushSource`'s SW `push` and `notificationclick` handlers are emitted only when `generateServiceWorker` is also handed a `vapid` key, and `x build` never is: there is no `pwa.vapid` key, so it emits neither and files a `serviceWorkerWarnings` entry (`cli.build.pushUnwired`, `packages/cli/src/sw-artifacts.ts`). No subscription endpoint, no send job. Called directly with a key, a tap opens a same-origin URL only; any other opens the app root | notification permission prompt; VAPID keys the build has no way to take |
 | `backgroundSync` | a SW `sync` listener that posts `OUTBOX_DRAIN_MESSAGE` to every open tab, and the page registration with an `online` fallback where the Background Sync API is missing | replay must be idempotent. By design each queued write carries an idempotency key, so `action`'s idempotency store answers a replay rather than applying it twice. The queue is IndexedDB-backed, per principal |
 | `badging` | badge update from a live query — **only alongside `push`** `As of 2026-08-20`: the badge call is emitted inside the push block, so `badging: true` on its own changes nothing while `capabilities.badging` still reports `true` | Chromium-only surface |
 | `shareTarget` | the `share_target` manifest member, from `generateWebManifest`'s `shareTarget` input — nothing else: no route, no policy, no worker code. `x build` passes neither the flag nor the input, so no app's manifest carries it, `As of 2026-10-02` | the app serves the target route itself and must treat its payload as untrusted |
@@ -294,9 +294,9 @@ accepted.
 
 All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send would be a job, a share target is a route the app serves. No PWA-specific concept escapes into the app's mental model.
 
-### Push is an open owner decision
+### Push is decided, not built
 
-**`pwa.push` is neither built nor scheduled for deletion: whether to finish it or remove it is undecided.** `As of 2026-10-06`. It is owner decision 11 ("`pwa` push, `packages/pwa/src/push.ts`") in [#648](https://github.com/developerz-ai/ultimate/issues/648), with **no default answer**, so no sweep may pick one.
+**`pwa.push` will be wired, and is not yet.** `As of 2026-10-07`. Owner decision 11 in [#648](https://github.com/developerz-ai/ultimate/issues/648) chose to finish it: a `pwa.vapid` key, a subscription action, a notify delivery channel and Web Push signing on WebCrypto, tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710).
 
 | Exists today | Missing for a working push |
 |---|---|
@@ -304,7 +304,7 @@ All of them are `route` / `action` / `job` primitives underneath ([The eight pri
 | `@ultimat3/pwa`'s `push.ts`: subscription records with their locale, `VapidConfig`, typed payloads | a subscription endpoint the browser posts to |
 | `pushSource`, emitted by `generateServiceWorker` only when handed a `vapid` key | a send job, and the Web Push signing behind it |
 
-Until #648 answers: do not set `pwa.push` expecting notifications. An app that needs push today owns all three missing pieces — the route, the action storing subscriptions and the job sending them — and its own service worker handler.
+Until #710 lands: do not set `pwa.push` expecting notifications. An app that needs push today owns all three missing pieces — the route, the action storing subscriptions and the job sending them — and its own service worker handler.
 
 ## What is checked, and where
 

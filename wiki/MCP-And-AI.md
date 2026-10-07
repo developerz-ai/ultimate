@@ -12,7 +12,7 @@ Sixteen tools `As of 2026-09-19` — the whole catalog, spelled exactly as they 
 
 | Tool | Introspects / does | Replaces the agent's usual guess |
 |---|---|---|
-| `routes.list` | route table: url, render mode, hydrate, offline, budget | grepping a router directory |
+| `routes.list` | the `x routes --json` table: pages (render mode, hydrate, offline, budget), then every action, query and `runtime.ts` route | grepping a router directory |
 | `schema.describe` | entities with columns, types and invariants | reading migration files in order |
 | `policies.list` | every `policy`: permission, subject, where it is enforced | "is this endpoint protected?" |
 | `actions.describe` | every action **and query**: input/output schema, policy, cache tags, MCP exposure | reading `api/` by hand |

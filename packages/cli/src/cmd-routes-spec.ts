@@ -5,7 +5,7 @@ import type { CommandSpec } from './parse';
 
 export const routesSpec: CommandSpec = {
   name: 'routes',
-  summary: 'the route table: path, surface, render mode, hydrate, offline',
+  summary: 'every served route: pages, then actions, queries and runtime.ts routes',
   usage: 'x routes [--surface site|app|api|shared] [--json]',
   requiresApp: true,
   flags: [{ name: 'surface', type: 'string', summary: 'filter by surface' }],

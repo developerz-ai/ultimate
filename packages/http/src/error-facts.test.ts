@@ -82,7 +82,7 @@ describe('toProblem', () => {
     expect(document.type).toBe('urn:ultimate:error:X_BODY_INVALID');
     expect(document.detail).toContain('title: required');
     expect(document.code).toBe('X_BODY_INVALID');
-    expect(document.fix).toContain('x routes --json');
+    expect(document.fix).toContain('x routes --surface api --json');
     expect(document.instance).toBe('/posts');
     expect(document.requestId).toBe('req-1');
   });

@@ -102,6 +102,8 @@ const CATALOG = {
   'cli.doctor.findings': '{count} finding(s)',
   'cli.doctor.guards':
     '{count} shipped guard(s) this app does not hold — each line adds one, then x verify reports what it finds:',
+  'cli.doctor.guardsDiffer':
+    '{count} shipped guard(s) differ from the current template — an older copy or your own edit; each line rewrites one and its test, review the diff before keeping it:',
   // `x doctor`'s other listing: what the coverage floor in x.verify.json does not see, and why.
   'cli.doctor.coverageExclude':
     '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',

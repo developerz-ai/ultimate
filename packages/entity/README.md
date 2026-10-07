@@ -593,6 +593,14 @@ const db = database({ orders });
 
 // One statement. `from` is the state you believe the row is in, and it rides in the predicate.
 const shipped = await db.orders.transition('status', id, { from: 'paid', to: 'shipped' });
+
+// Decided about the row? Say what the decision read, and the move is conditional on it too.
+const read = await db.orders.where({ id }).one();
+await db.orders.transition('status', id, {
+  from: 'shipped',
+  to: 'delivered',
+  observed: { row: read, read: ['orgId'] },
+});
 ```
 
 | Fact | Why |
@@ -607,6 +615,8 @@ const shipped = await db.orders.transition('status', id, { from: 'paid', to: 'sh
 | the CHECK comes from `enumerated()` | the machine emits no DDL of its own — one declaration of what a legal value is |
 | `memoryDriver()` answers it exactly as Postgres does | a compare-and-set over a map is the same question; unlike a `tsvector` match, there is nothing to fake |
 | an `undefined` or `null` id is `X_NOT_FOUND`, and moves no row | an absent id names no row — it is refused before the statement, where it used to drop out of the filter and move every row in the `from` state |
+| `observed: { row, read }` pins what a **decision** read, in the same statement | a move decided about the row (`row.authorId === actor.id`) is conditional on that row still holding it: each `read` property that is a plain column of THIS row (a row carrying another key is another record; a keyless projection is this one) joins `id` and `from` in the predicate. A reassignment committed first matches no row; one in flight holds the row's lock, and Postgres re-checks the predicate after it commits. Either way `X_STATE_CONFLICT`, naming the column and never its value. `@ultimat3/action`'s `transition()` fills it from what its policy read (#702) |
+| a `timestamptz`, `jsonb`, array, `bytea`, money or sealed column is **not** pinned | none has an `=` meaning one thing in both drivers — a `defaultNow()` column holds microseconds in Postgres and a decoded `Date` milliseconds, so a pin on it would refuse every move there and none in memory (`transition-observed.test.ts`) |
 
 What is deliberately **not** here: who may make a move, what happens on arrival, an approval chain,
 a reason code. Those differ per app — wrap `transition()` in your own function and put them there.

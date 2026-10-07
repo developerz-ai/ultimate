@@ -34,7 +34,7 @@ every boot; an app writes no migration for them.
 | not a write per request | `lastSeenAt` moves at most once per `idleSlideMs` (default `idleTtlMs / 20`); a changed IP or user agent is written at once |
 | revocation is immediate | the user row is re-read on every request, so a revoked role takes effect on the next one |
 | the cookie | `__Host-x_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age` |
-| brute force | per-IP, per-account and per-org buckets (`X_ACCOUNT_LOCKED`); every login failure is one indistinguishable `X_UNAUTHENTICATED`. `rateLimit: { scope: 'shared' }` makes the count one for the fleet |
+| brute force | per-IP, per-account and per-org buckets (`X_ACCOUNT_LOCKED`); every login failure is one indistinguishable `X_UNAUTHENTICATED`. `rateLimit: { scope: 'shared' }` makes the count one for the fleet. The org bucket (`orgMaxAttempts`, default 100 per window) can be exhausted by someone who knows about 20 of an org's addresses, locking its password sign-in — kept by decision ([`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md#known-gaps)) |
 
 **Signing out** is `logout(auth, token)` for the row plus `signOutHeaders()` on the response: it
 expires the session cookie and sends `Clear-Site-Data: "cache", "storage"`
@@ -58,7 +58,7 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | `redirect_uri` origin | `oauthLogin(auth, { baseUrl })`, else `APP_URL`. With neither the start leg answers `X_ENV_MISSING` — never the request's `Host` |
 | a refused leg's body | `code`, `title`, `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json`. The authored cause and fix are the `auth.oauth.refused` log line |
 | `discoverOAuthProvider` | refuses a document whose `issuer` is not the one asked for (a trailing slash aside) |
-| `apple` | unproven: no sign-in has completed against it. The callback is GET-only |
+| `apple` | unproven: no sign-in has completed against it, and the callback is GET-only while Apple POSTs. **Removed from the built-ins in 26.0.0** (owner decision 14, [#709](https://github.com/developerz-ai/ultimate/issues/709)): an app that needs it registers its own with `registerOAuthProvider` |
 
 ## MFA, verification, API keys, workloads
 

@@ -98,7 +98,6 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `MAX_GROUPS + 1`, never a truncation; absent is not `0`; NULL is one group keyed `null`; the order
   is applied after the rows are in, never in SQL; `group_value` / `group_count` are fixed aliases.
   The refusal names a groupable column of THIS entity, never `x entity explain`.
-  The argument for each: [`docs/history/entity.md`](../../docs/history/entity.md).
 - **The codec is `@ultimat3/core`'s**, reached through `cursorFor(entity, plan, row, id)` and
   `seekFrom(entity, plan)`; **`assertSeekable` runs in `planFor`**, before a statement exists. A
   `timestamptz` sort key is refused when its `<column>$US` alias would pass 63 bytes. A cursor is bound
@@ -237,7 +236,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `TransitionTable<S>`): a terminal state is one with no outgoing moves; the move is ONE statement with
   `from` in the predicate (`pg-transition.live.test.ts`: 1 winner of 20); `X_STATE_CONFLICT` is read
   after the refusal from a tenant-scoped `findById`; no DDL beyond `enumerated()`'s CHECK; a machine
-  column may not be nullable; `whyNot` asks unknown → terminal → legal list.
+  column may not be nullable; `whyNot` asks unknown → terminal → legal list. **`move.observed`
+  pins what a decision read** (#702, `transition-pins.ts`).
 
 ## Do not regress — sealed columns
 
@@ -286,7 +286,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 Each file's header states its one job. The map, by area: `types.ts` (derivation; `COLUMN_KINDS`),
 `column.ts` / `columns.ts` / `columns-data.ts` / `array-element.ts` / `enum-column.ts` /
 `column-values.ts` (builders, `columnName`, `narrowMoney`), `refuse.ts`, `expr.ts` / `invariants.ts`,
-`entity.ts` / `describe.ts` / `index-name.ts` / `search.ts`, `state-machine.ts` / `transition.ts`,
+`entity.ts` / `describe.ts` / `index-name.ts` / `search.ts`, `state-machine.ts` / `transition*.ts`,
 `feature-errors.ts`, `view.ts` / `row-schema.ts` / `record-projection.ts` / `record-key.ts` /
 `rows-of.ts` / `record-table.ts` / `record.ts`, `entity-error.ts` / `errors.ts`, `query.ts` /
 `database.ts` / `clock.ts`, `memory-match.ts` / `like.ts` / `numeric-compare.ts` / `unique-constraints.ts` / `repo.ts` /

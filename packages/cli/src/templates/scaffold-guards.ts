@@ -76,6 +76,18 @@ export const shippedGuardFiles = (name: string): readonly GeneratedFile[] | unde
   SHIPPED.find(([shipped]) => shipped === name)?.[1]();
 
 /**
+ * The current text of a shipped guard's rule file (`guards/<name>.ts`), or `undefined` when the
+ * name was never shipped — what `x doctor` compares an app's copy against.
+ */
+export const shippedGuardSource = (name: string): string | undefined => {
+  const contents = shippedGuardFiles(name)?.find(
+    (file) => file.path === `guards/${name}.ts`,
+  )?.contents;
+  // A guard is source text; bytes would be a template bug, and comparing them as text would hide it.
+  return typeof contents === 'string' ? contents : undefined;
+};
+
+/**
  * Every guard `x new` ships, each with its test. One module per guard, because an app deletes a
  * rule it does not want by deleting one file — and a guard the app then writes for itself is
  * `x g guard <name>`, the same shape.

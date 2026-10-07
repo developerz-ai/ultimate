@@ -19,6 +19,7 @@ import { pageLocalStore, scopeKey } from './local-store-idb';
 import type { DrainReport, QueuedMutation, QueueState, QueueStore } from './offline-queue';
 import { memoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
 import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle, type OutboxHost } from './outbox-slot';
+import { type OutboxTabs, type OutboxTabsWindow, outboxTabs } from './outbox-tabs';
 import { LocalStoreUnavailableError, OfflineQueueAbandonedError } from './page-errors';
 import { peekPageRealtime } from './page-store';
 import { carriedBy } from './record-store';
@@ -29,8 +30,6 @@ export interface PageOutbox extends OutboxHandle {
   enqueue(entry: OutboxEntry): Promise<void>;
   /** Sends everything queued, in order, stopping at the first write the network could not take. */
   replay(): Promise<DrainReport>;
-  /** Writes not yet taken by the server. `0` until the store has opened. */
-  readonly size: number;
   /**
    * Those writes, in queue order — what `useMutation` re-applies as overlays after a reload, so a
    * queued write is ON SCREEN until its replay settles or refuses it. Empty until `ready`.
@@ -62,6 +61,11 @@ export interface OutboxOptions {
    * the write queued and the post it liked missing, and showed the old count.
    */
   readonly beforeEnqueue?: (() => Promise<void>) | undefined;
+  /**
+   * The tie to this origin's other tabs, which share the durable queue: given `heard`, returns how
+   * to announce this tab's own changes. `pageOutbox` passes a `BroadcastChannel`; none, no sync.
+   */
+  readonly tabs?: ((heard: (scope: string | null) => void) => OutboxTabs) | undefined;
   /** Where a disk that refused the queue is said, by code. Default `console.warn`. */
   readonly warn?: ((error: UltimateError) => void) | undefined;
 }
@@ -91,6 +95,38 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
    */
   let epoch = 0;
   const warn = options.warn ?? ((error: UltimateError): void => console.warn(error));
+  /** Re-read the durable queue (read-only) and tell this tab's listeners what it holds now. */
+  const refreshHeld = async (): Promise<void> => {
+    const now = held;
+    if (now === undefined) return;
+    await now.queue.refresh();
+    if (held === now) notify();
+  };
+  const tabs = options.tabs?.((scope) => {
+    // Another principal's queue is another scope's disk; `null` is "re-read whatever is held".
+    if (held === undefined || (scope !== null && scope !== held.scope)) return;
+    refreshHeld().catch((error: unknown) => unavailable('the outbox could not be re-read', error));
+  });
+  /** After this tab changed the disk: every other tab holding that scope re-reads it. */
+  const announce = (scope: string | undefined): void => {
+    if (scope !== undefined) tabs?.announce(scope);
+  };
+  /**
+   * Told whenever the count may have moved. A listener that throws is rethrown on its own task:
+   * reported like any uncaught error, and never the refusal of the write that moved the count.
+   */
+  const listeners = new Set<() => void>();
+  const notify = (): void => {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (error) {
+        queueMicrotask(() => {
+          throw error;
+        });
+      }
+    }
+  };
   const unavailable = (what: string, error: unknown): void =>
     warn(new LocalStoreUnavailableError({ reason: `${what}: ${renderThrowable(error)}` }));
 
@@ -113,6 +149,7 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
     }
     held?.queue.abandon();
     held = { queue, scope };
+    notify();
   };
   let ready = open();
   /** The current principal's queue: `ready` is re-made by a rescope, so it is re-read until still. */
@@ -128,7 +165,7 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
   let again = false;
 
   const deliver =
-    (queue: OfflineQueue) =>
+    ({ queue, scope }: Held) =>
     async (mutation: QueuedMutation): Promise<void> => {
       const carried = new Set<string>();
       try {
@@ -140,6 +177,8 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
         if (kind === 'retryable' || kind === 'retry-after' || queue.abandoned) throw error;
         // Anything else is the server's decision about this write — kept for the UI, never resent.
         await queue.fail(mutation.key, toQueueError(error));
+        notify();
+        announce(scope);
         overlays()?.drop(mutation.key);
         return;
       }
@@ -147,6 +186,8 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
       // gone, and what is on the page now is somebody else's.
       if (queue.abandoned) return;
       await queue.ack(mutation.key);
+      notify();
+      announce(scope);
       const store = overlays();
       try {
         // Exactly as a live write settles: a row the answer did not carry keeps its overlay until
@@ -166,6 +207,7 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
     held?.queue.abandon();
     held = undefined;
     epoch += 1;
+    notify();
     // The single-flight slot is the principal's too: left set, the next principal's trigger JOINED
     // the abandoned pass — handed its report, another principal's key in it — and its own queue
     // was not drained until some later trigger. `settled` only clears a slot that is still its own.
@@ -198,6 +240,8 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
       await options.beforeEnqueue?.().catch(() => undefined);
       // Abandoned meanwhile, it refuses by the same code.
       await mine.queue.enqueue(entry);
+      notify();
+      announce(mine.scope);
     },
     replay: () => {
       // Single flight: a trigger that lands while a replay is running JOINS it. Open, `online`,
@@ -222,8 +266,10 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
         // sent too, and an `inflight` entry — which only a pass holding this lock could have put
         // on the wire, and it is over — goes back to `pending`.
         return await exclusive(`ultimate-outbox:${now.scope ?? 'memory'}`, async () => {
+          // Re-read under the lock: what another tab queued or sent since is this count too.
           await now.queue.reload();
-          return await now.queue.drain(deliver(now.queue));
+          notify();
+          return await now.queue.drain(deliver(now));
         });
       })();
       const settled = (report?: DrainReport): void => {
@@ -246,6 +292,16 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
     },
     pending: () =>
       (held?.queue.pending() ?? []).map(({ key, name, input }) => ({ key, name, input })),
+    refresh: async () => {
+      await current();
+      await refreshHeld();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     get ready(): Promise<void> {
       return ready;
     },
@@ -326,9 +382,15 @@ export function pageOutbox(options: Pick<OutboxOptions, 'beforeEnqueue'> = {}): 
   const existing = host[OUTBOX_KEY];
   // Only this function writes the slot, so what it holds is always a `PageOutbox`.
   if (existing !== undefined) return existing as PageOutbox;
-  const outbox = localOutbox({ local: pageLocalStore(), beforeEnqueue: options.beforeEnqueue });
+  const browser = Reflect.has(globalThis, 'document');
+  const outbox = localOutbox({
+    local: pageLocalStore(),
+    beforeEnqueue: options.beforeEnqueue,
+    // Every tab of this user shares the durable queue; each re-reads it when another changes it.
+    ...(browser ? { tabs: (heard) => outboxTabs(globalThis as OutboxTabsWindow, heard) } : {}),
+  });
   Object.defineProperty(host, OUTBOX_KEY, { value: outbox, configurable: true });
-  if (Reflect.has(globalThis, 'document')) {
+  if (browser) {
     listenForDrain(outbox);
     if (!knownOffline()) void outbox.replay().catch(() => undefined);
   }

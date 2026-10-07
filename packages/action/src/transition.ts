@@ -10,6 +10,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
+import type { TransitionObservation } from '@ultimat3/entity';
 import type {
   InferOutput,
   ObjectSchema,
@@ -21,6 +22,7 @@ import { nodeOf, t } from '@ultimat3/schema';
 import type { ActionRowArgs } from './action';
 import { type Mutator, mutator } from './mutator';
 import type { ActionPolicy } from './policy-gate';
+import { observeRow, takeObservation } from './transition-observe';
 
 /**
  * The one method this factory calls, declared structurally: `@ultimat3/entity`'s `Table.transition`
@@ -50,7 +52,11 @@ export type TransitionInput<S extends string> = ObjectSchema<{
 }>;
 
 export interface TransitionTarget<Row, S extends string> {
-  transition(column: string, id: string, move: { readonly from: S; readonly to: S }): Promise<Row>;
+  transition(
+    column: string,
+    id: string,
+    move: { readonly from: S; readonly to: S; readonly observed?: TransitionObservation },
+  ): Promise<Row>;
 }
 
 export interface TransitionDef<
@@ -93,12 +99,21 @@ export interface TransitionDef<
    * factory reads no row itself; which columns a rule needs (an `authorId` the `output` view may not
    * carry) is the app's. Omitted, the rule sees `row: null` — and must fail closed on it.
    *
-   * CHECK-THEN-ACT, as every row-policy action's: the read is unlocked and outside any transaction,
-   * and the compare-and-set predicate is `id` + `from` only. A concurrent write to a column the
-   * rule read (an `authorId` reassigned between the read and the move) is not seen, so the move
-   * lands on the decision about the older row. Where that matters, do not use `transition()`: an
-   * `action` whose handler runs `withTransaction`, reads the row `for update`, decides, and calls
-   * `Table.transition` in that transaction closes the window.
+   * The DECISION rides in the compare-and-set (#702). The rule is handed a view of the loaded row
+   * that records which properties it read; the move then carries the row and that list to
+   * `Table.transition` (`observed`), which pins every one that is a plain column of the moved row
+   * beside `id` and `from`. An `authorId` reassigned between the read and the move — committed
+   * first, or in flight and waited on — matches no statement: `X_STATE_CONFLICT`, naming the
+   * column, and the row does not move. A column the rule never read may change freely.
+   *
+   * What is NOT pinned, by entity's rules (`transition-pins.ts`): a row carrying a key that is not
+   * the moved row's (a loader that reads a parent record — a keyless projection IS this row), a
+   * property that names no column, and a `timestamptz`, `jsonb`, array, `bytea`, money or sealed
+   * column — none has an `=` that means one thing in both drivers. Nor, by this factory's: a column
+   * read INSIDE a getter or method of a class-shaped row (only the accessor's own name is recorded,
+   * and it runs against the unobserved row) — return a plain row from the loader. A rule that
+   * decides on any of those, or on another table's rows, decides on a read the statement cannot
+   * re-check.
    */
   row?(args: ActionRowArgs<TransitionInput<S>>): TRow | null | Promise<TRow | null>;
   /**
@@ -145,7 +160,10 @@ export function transition<
     // `X_STATE_CONFLICT` for a move that already happened.
     idempotent: true,
     // `.call(def, …)`, as `mutator()` hands its own on: a loader written as a method keeps `this`.
-    ...(row === undefined ? {} : { row: (args) => row.call(def, args) }),
+    // The row is remembered for `server` below and the rule sees a view recording what it reads.
+    ...(row === undefined
+      ? {}
+      : { row: async (args) => observeRow(args.input, await row.call(def, args)) }),
     ...(def.audit === undefined ? {} : { audit: def.audit }),
     // Never overridable: the server is the half that REFUSED the move, and a local twin that won
     // the rebase would leave the client showing a state the database rejected.
@@ -163,9 +181,11 @@ export function transition<
     // entity's and propagate as they are. A second error class over one failure is a second path.
     server: (ctx, raw) => {
       const input = valuesOf(raw);
+      const observed = takeObservation(raw);
       return def.table(ctx).transition(def.column, input.id, {
         from: input.from,
         to: input.to,
+        ...(observed === undefined ? {} : { observed }),
       });
     },
   });

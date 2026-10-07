@@ -66,7 +66,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
   X_SEARCH_IN_MEMORY: 'the in-memory driver cannot answer a full-text match',
   X_STATE_UNDECLARED: 'that column declares no state machine',
   X_STATE_TRANSITION_ILLEGAL: 'the machine has no such transition',
-  X_STATE_CONFLICT: 'the row is no longer in the state this transition named',
+  X_STATE_CONFLICT: 'the row changed after the read this transition was decided on',
   X_RECORD_KEY_MISSING: 'a row reached its record key without a primary-key value',
   X_ENTITY_SEALED_PREDICATE:
     'a sealed column is read by a predicate, an order or a rule the database evaluates',

@@ -14,3 +14,21 @@ factory is adding a row, not editing a sentence. Three file headers each called 
 fourth instance" and at most one could have been right — the list is sorted by package then name, so
 **no ordinal is derivable from it**, and any prose ordinal is wrong the moment the next factory
 lands. `As of 2026-08-22`.
+
+**`channel()` is realtime mechanism, not a ninth primitive and not a factory — decided 2026-10-07**
+(owner decision 3, [#648](https://github.com/developerz-ai/ultimate/issues/648)). The rule it is
+held to is the one `defineFlag()` meets (`packages/flags/CLAUDE.md`): nothing for the registrar to
+project.
+
+| Question | A channel's answer |
+|---|---|
+| Does it have a handler or an input schema? | No. It names a topic shape (`params`) and which entity rows travel on it (`records`) |
+| Where is its read? | A `query`, by name: `catchUp` is the read a client re-runs on a gap or a new epoch |
+| Where is its authz? | A `QueryPolicy`, required — the same object a query takes |
+| What does it add? | Delivery: the topic, per-node `seq`/`epoch`, gap repair, presence (`events: true`) |
+
+So the data a channel carries is already a `query`'s and an `entity`'s, and what it declares is the
+socket's routing of it. Rewriting it as a `query` factory would make a topic answer HTTP and OpenAPI
+for no reader. `PRIMITIVE_FACTORIES` stays the list of functions that **return** a primitive;
+`channel()` returns a `Channel`, so it has no row there. notify's unrelated `channel()` was renamed
+`deliveryChannel` in 25.0.0, so the name means one thing.

@@ -1,63 +1,20 @@
 // `x routes` — the route table as a table, or as JSON. Replaces grepping a router directory, which
 // is what an agent does when the framework has no answer to "what URLs exist".
 //
-// The rows are `@ultimat3/render`'s own `describePages()`: the CLI prints the route table, it
-// does not keep a second one.
+// The rows are `route-table.ts`'s — the one builder the MCP dev tool `routes.list` reads too — so
+// the CLI keeps no second table.
 
-import type { RouteDescriptor, Surface } from '@ultimat3/render';
-import { describePages, SURFACES } from '@ultimat3/render';
+import type { Surface } from '@ultimat3/render';
+import { SURFACES } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { routesSpec } from './cmd-routes-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
-import type { CommandResult, JsonValue } from './output';
+import type { CommandResult } from './output';
 import { flagString } from './parse';
-
-/**
- * Where a route comes from. A file route names its file; a MOUNTED one names the call that
- * mounted it and every permission that gates it — there is no `page.tsx` to name, and printing the
- * package would send a reader looking for a route file inside `node_modules`.
- */
-const declaredBy = (route: RouteDescriptor): string =>
-  route.mount === undefined
-    ? route.file
-    : `${route.mount.by}() · ${route.mount.permissions.join(' + ')}`;
-
-/** Fixed-width columns so the output diffs cleanly between runs and between machines. */
-export function renderRouteTable(routes: readonly RouteDescriptor[]): readonly string[] {
-  const rows = routes.map((route) => [
-    route.path,
-    route.surface,
-    route.mode,
-    route.hydrate,
-    route.offline,
-    declaredBy(route),
-  ]);
-  const header = ['path', 'surface', 'render', 'hydrate', 'offline', 'file'];
-  const widths = header.map((title, index) =>
-    Math.max(title.length, ...rows.map((row) => (row[index] ?? '').length)),
-  );
-  const line = (cells: readonly string[]): string =>
-    cells.map((value, index) => value.padEnd(widths[index] ?? 0)).join('  ');
-  return [line(header), ...rows.map(line)];
-}
-
-const routeJson = (routes: readonly RouteDescriptor[]): JsonValue =>
-  routes.map((route) => ({
-    path: route.path,
-    surface: route.surface,
-    file: route.file,
-    render: route.mode,
-    hydrate: route.hydrate,
-    offline: route.offline,
-    budget: { js: route.budgetJs },
-    // Absent on a file route, never `null`: only a mounted route has the fact.
-    ...(route.mount === undefined
-      ? {}
-      : { mount: { by: route.mount.by, permissions: [...route.mount.permissions] } }),
-  }));
+import { plainAppRoutes, renderRouteRows, routeRows } from './route-table';
 
 /**
  * A closed set, because the filter was a bare `===`: `x routes --surface App` and `--surface pages`
@@ -97,7 +54,7 @@ export const routesCommand: CliCommand = {
     // `--transport` already follows.
     const surface = readSurfaceFilter(flagString(ctx.args, 'surface'));
     const { findings } = await loadApp(root);
-    const routes = describePages().filter(
+    const routes = routeRows(await plainAppRoutes(root)).filter(
       (route) => surface === undefined || route.surface === surface,
     );
     return {
@@ -107,9 +64,9 @@ export const routesCommand: CliCommand = {
         routes.length === 0
           ? msg('cli.routes.empty')
           : msg('cli.routes.count', { count: routes.length }),
-      lines: routes.length === 0 ? [] : renderRouteTable(routes).map((line) => `  ${line}`),
+      lines: routes.length === 0 ? [] : renderRouteRows(routes).map((line) => `  ${line}`),
       findings,
-      data: { routes: routeJson(routes) },
+      data: { routes: routes.map((route) => route.json) },
     };
   },
 };

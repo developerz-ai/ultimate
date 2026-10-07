@@ -120,7 +120,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`transition()` is a mutator factory that decides nothing about the machine**: entity's three
   codes propagate; `from` is REQUIRED (it is the UPDATE's predicate); `conflict: 'server-wins'` fixed;
   `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
-  `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687).
+  `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687); **the rule's reads
+  are pinned in the move** (#702, `transition-observe.ts`: `def.row`, `def.handle` share `input`).
 - **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`, `BY_FORMAT` in
   `sample-input.ts`) — caller- or provider-supplied keys.
 
@@ -203,7 +204,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   | `rpc` | 19,671 B (+181 B for the document's path-style stamp) |
   | `rpc` + core's `clientFlight` | 25,954 B |
 
-  Earlier columns (pre-transport 18,097 B, +977 B net for the envelope decoder) are in git history.
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
   not. An http refusal needs no http module: core's decoders take its title off the body and its

@@ -40,6 +40,9 @@ function outbox(
     },
     replay: async () => undefined,
     pending: () => held,
+    size: held.length,
+    subscribe: () => () => undefined,
+    refresh: async () => undefined,
     ready: Promise.resolve(),
   };
   Object.defineProperty(globalThis, OUTBOX_KEY, { value: handle, configurable: true });

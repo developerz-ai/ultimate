@@ -31,12 +31,6 @@ export { GENERATORS, generate, writeFiles } from './cmd-generate';
 export { JOBS_SUBCOMMANDS } from './cmd-jobs';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
 export { PLANNED_COMMANDS, PLANNED_SUBCOMMANDS, plannedSubcommand } from './cmd-planned';
-// `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach
-// `x` through `registry.ts`, which is the only thing that makes a command exist — and the barrel
-// is the surface an APP imports. Exporting them would put the browser driver and the GitHub client
-// in the module graph of every app that imports `@ultimat3/cli`, for tools it never calls. The app
-// path does not pay for the tool path.
-export { renderRouteTable } from './cmd-routes';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand } from './command';
 export { failed, ok } from './command';
@@ -130,6 +124,12 @@ export { loadPwaArtifacts } from './pwa-artifacts';
 export { COMMANDS, cliVersion, SPECS } from './registry';
 export type { RunningRoles, WebBinding } from './role-start';
 export { DEV_BINDING, DEV_ROLES, startRoles } from './role-start';
+// `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach
+// `x` through `registry.ts`, which is the only thing that makes a command exist — and the barrel
+// is the surface an APP imports. Exporting them would put the browser driver and the GitHub client
+// in the module graph of every app that imports `@ultimat3/cli`, for tools it never calls. The app
+// path does not pay for the tool path.
+export { renderRouteTable } from './route-table';
 export { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
 export { resolveServices } from './runtime-bindings';
 export { devHooks } from './runtime-hooks';

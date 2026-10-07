@@ -75,8 +75,12 @@ export const config = defineRoute({
    * as on `/feed` — the held-island runtime (+417 B), `catchUp`'s let-go after a mount it did not
    * flush (+59 B) and `holdFirstPaint` in the run console (+318 B). The other +979 B is the page
    * boot (68,980 → 69,531) and the console's own growth from the rest of sweep 9.
+   * raised 164kb → 167kb (sweep 14, #648 row 19). measured: 169,390 B (2026-10-07; was 167,815).
+   * +1,575 B is the page boot carrying the outbox's pending count (`OutboxHandle.size`/`subscribe`/
+   * `refresh`, read by `useOutbox()`) and its cross-tab sync, which every page's islands share; this
+   * route's own island is unchanged.
    */
-  budget: { js: '164kb' },
+  budget: { js: '167kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

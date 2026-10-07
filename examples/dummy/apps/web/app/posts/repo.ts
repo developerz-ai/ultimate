@@ -27,7 +27,7 @@ import {
   postId as toPostId,
 } from '@postly/domain';
 import { assert, serviceActor, withChildContext } from '@ultimat3/core';
-import { CROSS_TENANT_SCOPE, crossTenant, type ReadBuilder } from '@ultimat3/entity';
+import { CROSS_TENANT_SCOPE, crossTenant, type Move, type ReadBuilder } from '@ultimat3/entity';
 import { type CommentView, PostAuthor, type PostSummary, type PostView } from './entity';
 
 /** The post page's aggregate: one row, its comments attached. Shared by the query and the route. */
@@ -229,14 +229,12 @@ export const exportSource = (orgId: OrgId): ReadBuilder<Post> => db.posts.where(
 /**
  * The status column's state machine, as `transition()` (the posts mutator) addresses it: one
  * conditional statement, tenant-scoped by the request's actor like every read here. Structural —
- * the one method the factory calls — so the mutator never touches `db`.
+ * the one method the factory calls — so the mutator never touches `db`. `move` is entity's `Move`
+ * and is passed WHOLE: it carries `observed`, what `postSchedule` read, which the statement pins.
  */
 export const postStatus = {
-  transition: (
-    column: 'status',
-    id: string,
-    move: { readonly from: PostStatus; readonly to: PostStatus },
-  ) => db.posts.transition(column, toPostId(id), move),
+  transition: (column: 'status', id: string, move: Move<PostStatus>) =>
+    db.posts.transition(column, toPostId(id), move),
 };
 
 export const markPublished = async (orgId: OrgId, id: PostId, at: Date): Promise<PostView> =>

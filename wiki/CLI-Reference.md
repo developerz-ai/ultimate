@@ -38,7 +38,7 @@ x version              # CLI version
 | `x build` | container image, single binary, prerendered static site, or a prebuilt bundle (`--target docker\|binary\|static\|prebuilt`) | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
-| `x routes` | the route table: path, surface, render mode, hydrate, offline | shipped |
+| `x routes` | every served route: pages, then actions, queries and runtime.ts routes | shipped |
 | `x mcp serve` · `x mcp tools` | serve the framework MCP tools over stdio or HTTP · list them | shipped |
 | `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
@@ -287,7 +287,7 @@ x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen
 x g guard <name>                            # a convention this app enforces, as a build error
 ```
 
-`x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing ([Interface rules](Interface-Rules#stylesheets)).
+`x g guard <name>` writes `guards/<name>.ts` and its test. A name the framework ships a guard under — `raw-length`, `raw-breakpoint`, `raw-z-index`, `raw-shadow`, `raw-motion`, `undefined-style-class`, `undeclared-custom-property`, `repo-raw-sql` and every other name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) — writes THAT guard, which is how an app adopts one it does not hold; any other name writes the blank template. `x doctor` lists the shipped ones missing, and the held ones that differ from the current template ([Interface rules](Interface-Rules#stylesheets)).
 
 Alias: `x generate`.
 
@@ -941,16 +941,27 @@ x routes [--surface site|app|api|shared] [--json]
 No positional: `x routes list` (the retired spelling) or `x routes app` is `X_CLI_UNKNOWN_COMMAND`
 with fix `x routes --json` — the filter is `--surface`.
 
+**Every URL the app serves through a primitive, in one table** (`As of 2026-10-07`, owner decision 2):
+the pages from `describePages()`, then — sorted by path — the action and query routes from
+`apiRoutes()` (the builder `x dev` and the container mount) and the plain `routes` of
+`apps/<app>/runtime.ts`. The MCP dev tool `routes.list` answers the same rows.
+
+| Row | Surface | Last column (`declared by`) | `--json` keys |
+|---|---|---|---|
+| a page | `site` / `app` | its file | `method` (`GET`), `path`, `surface`, `file`, `render`, `hydrate`, `offline`, `budget` |
+| a mounted page — every screen `defineAdmin()` serves | `site` / `app` | the call and the permissions that gate it: `defineAdmin() · admin:read + widgets:read` | the page keys plus `mount: { by, permissions }`; a file route has no `mount` key |
+| an action or query projection | `api` | the primitive, its name and its policy: `action publishPost · posts:publish` | `method`, `path`, `surface`, `primitive`, `name`, `auth`, `policy` |
+| a plain `runtime.ts` route — a webhook receiver, an OAuth endpoint | `api` | `runtime.ts routes <name>`, then its policy | the same keys, `primitive: null` |
+
 ```bash
-$ x routes --surface site --json
-{"ok":true,"routes":[{"path":"/","surface":"site","render":"static","hydrate":"never",
-  "offline":"precache","budget":{"js":"0kb"},"meta":{"title":true,"description":true}}]}
+$ x routes --surface api --json
+{"ok":true,"command":"routes","summary":"2 routes","findings":[],"data":{"routes":[
+  {"method":"GET","path":"/_x/query/org-feed","surface":"api","primitive":"query","name":"orgFeed","auth":"public","policy":"allow"},
+  {"method":"POST","path":"/api/posts/publish","surface":"api","primitive":"action","name":"publishPost","auth":"required","policy":"posts:publish"}]}}
 ```
 
-A route a package mounts — every screen `defineAdmin()` serves — has no `page.tsx`. Its row names
-the call and the permissions that gate it instead of a file (`defineAdmin() · admin:read + widgets:read`
-in the table), and its `--json` row carries `mount: { by, permissions }`; a file route has no
-`mount` key at all. `As of 2026-10`.
+Not listed: a bearer mount's copies of the API (`defineApi({ http: { mounts } })`), a page's
+`post:` binding, and the framework's own asset, island and `/_x` routes.
 
 Errors: `X_ROUTE_CONFLICT`, `X_ROUTE_META_MISSING`.
 
@@ -972,7 +983,7 @@ whatever its bearer token was issued.
 
 | Tool | Does | Scope |
 |---|---|---|
-| `routes.list` | route table: url, render mode, offline, hydrate, budget | `dev:read` |
+| `routes.list` | the `x routes --json` table: pages (render mode, hydrate, offline, budget), then every action, query and `runtime.ts` route | `dev:read` |
 | `schema.describe` | entities with columns, types and invariants | `dev:read` |
 | `policies.list` | every policy: permission, subject, where it is enforced | `dev:read` |
 | `actions.describe` | actions and queries: schemas, policy, cache tags, MCP exposure | `dev:read` |
@@ -1012,7 +1023,14 @@ x doctor [--port 3000] [--json]
 
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
 
-It also lists the shipped guards the app's `guards/` does not hold, one `x g guard <name>` line each and `data.guards.missing` under `--json`. A listing, never a finding: deleting a guard is how an app drops a rule, so the verdict does not move.
+It also lists the shipped guards the app's `guards/` does not hold, and the ones it holds that differ from the current template — a copy from an older release, or the app's own edit. `As of 2026-10-07` (owner decision 8: shipped guards stay copies the app owns).
+
+| Listing | One line each | `--json` |
+|---|---|---|
+| missing | `x g guard <name>` | `data.guards.missing[]`: `{ name, add }` |
+| differs from the template (line endings ignored) | `x g guard <name> --force` — rewrites the guard and its test; review the diff, and restore your edit if it was deliberate | `data.guards.differs[]`: `{ name, refresh }` |
+
+A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
 
 The embedded half is the bare-VM case: the external-database probe answers nothing the moment `DATABASE_URL` is unset, and that silence *is* the configuration a fresh box has. So `x doctor` also asks whether `@electric-sql/pglite` resolves from the app root — a resolve, never an import, because loading it boots the WASM build and takes the single-writer lock the next command needs. Red only where both hold: `DATABASE_URL` unset **and** the peer unresolvable, reported as `X_DB_UNAVAILABLE` with `@ultimat3/db`'s own sentence and its own runnable fix ([Bare VM](Bare-VM)). The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
 

@@ -109,7 +109,7 @@ describe('bodyInvalid', () => {
     expect(error.cause).toContain('title: required');
     expect(error.cause).toContain('body: too long');
     expect(error.fix).toBe(
-      'x routes --json   # find /posts, then send a body matching its input schema',
+      'x routes --surface api --json   # find /posts, a runtime.ts route, then send a body its meta.input schema accepts',
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });

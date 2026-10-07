@@ -76,8 +76,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `PgExecutor` builder, #688) and `cache/src/value-codec.ts` (one value shape on every cache tier).
  * raised 628 → 629, measured 629 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
+ * raised 629 → 630, measured 630 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
+ * columns a transition's policy read, pinned into its compare-and-set (#702).
  */
-const MIGRATE_CEILING = 629;
+const MIGRATE_CEILING = 630;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -138,8 +140,10 @@ const MIGRATE_CEILING = 629;
  * `MIGRATE_CEILING` for 13a, reached through the same db, schema and cache barrels.
  * raised 923 → 924, measured 924 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
+ * raised 924 → 925, measured 925 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
+ * columns a transition's policy read, pinned into its compare-and-set (#702).
  */
-const SERVING_ROLE_CEILING = 924;
+const SERVING_ROLE_CEILING = 925;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -189,8 +193,10 @@ const SERVING_ROLE_CEILING = 924;
  * `MIGRATE_CEILING` for 13a — the web role reaches every module the serving roles do.
  * raised 1035 → 1036, measured 1036 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
+ * raised 1036 → 1037, measured 1037 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
+ * columns a transition's policy read, pinned into its compare-and-set (#702).
  */
-const WEB_ROLE_CEILING = 1036;
+const WEB_ROLE_CEILING = 1037;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

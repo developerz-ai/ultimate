@@ -101,7 +101,7 @@ apps/web/app/<feature>/ui/                                           # component
 | `entity.ts` | table + domain type + invariants | I/O, policy |
 | `repo.ts` | the feature's reads and writes, through the typed handle | a raw SQL literal the handle can express — `guards/repo-raw-sql.ts` |
 | `service.ts` | business logic, composed from repos | an HTTP import — `X_BOUNDARY_SERVICE_TO_HTTP` |
-| `page.tsx` · `layout.tsx` · `route.ts` | a URL | a database import — `X_BOUNDARY_ROUTE_TO_DB` |
+| `page.tsx` · `layout.tsx` | a URL | a database import — `X_BOUNDARY_ROUTE_TO_DB` |
 | `actions/` · `actions.ts` | `action` / `mutator` declarations | logic (delegate to `service.ts`) |
 | `live/` · `queries/` · `live.ts` | `query` declarations | writes |
 | `jobs/` · `tasks/` · `jobs.ts` | `job` / `task` declarations | inline slow work in an action |

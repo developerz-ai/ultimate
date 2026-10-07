@@ -193,6 +193,7 @@ export {
   useMutation,
   useMutationQueue,
 } from './use-mutation';
+export { type OutboxView, useOutbox } from './use-outbox';
 export { type QueryAccessor, type QueryOptions, type QueryRef, useQuery } from './use-query';
 export {
   type RecordAccessor,

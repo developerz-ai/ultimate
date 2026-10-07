@@ -121,3 +121,22 @@ export const stateConflict = (
     cause: `${entityName}.${column} named "${expected}" for row ${id}, which is in "${actual}" — something moved it first`,
     fix: `re-read the row and decide again against "${actual}": ${entityName}.findById(id) — a transition names the state it expects, so a stale read is refused rather than overwritten`,
   });
+
+/**
+ * The conditional update matched no row, the row IS in the named state, and a column the decision
+ * read no longer holds the value it read (#702). The same code as the stale state because it is the
+ * same refusal — the caller decided about a row that has since changed — and the same remedy: read
+ * again and decide again. Names the columns, never their values: those are row data.
+ */
+export const stateRowChanged = (
+  entityName: string,
+  column: string,
+  id: string,
+  key: string,
+  changed: readonly string[],
+): EntityError =>
+  new EntityError({
+    code: 'X_STATE_CONFLICT',
+    cause: `${entityName}.${column} move for row ${id} was decided on ${changed.join(', ')}, which changed before the move landed — something rewrote the row the decision read`,
+    fix: `${entityName}.where({ ${key}: id }).one()   # re-read the row and decide again: a transition carries what its decision read, so a stale decision is refused rather than applied`,
+  });
