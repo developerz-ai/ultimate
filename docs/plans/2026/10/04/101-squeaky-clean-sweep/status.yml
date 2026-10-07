@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "claude"
 owner: sebi
 percent: 95
-current_focus: "sweep 12a (25.0.0 breaking deletions M1–M12; M13 dropped: its only consumer goes with M12)"
+current_focus: "sweep 12b (release 25.0.0 through release.yml)"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -142,9 +142,9 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 12-major-25.md
     tier: 0
     sweep: "12a"
-    status: in_progress
-    percent: 85
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#696"]
   - file: 12-major-25.md
     tier: 0
     sweep: "12b"

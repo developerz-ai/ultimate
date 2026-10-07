@@ -617,7 +617,7 @@ loop and both stop on the last page without fetching an empty one.
 
 | | |
 |---|---|
-| The type | a union of `{ nextCursor: string; hasMore: true }` and `{ nextCursor: null; hasMore: false }` — a literal that disagrees is a build error (`cursor-page-pins.ts`), and `if (page.hasMore)` narrows `nextCursor` to `string` |
+| The type | a union of `{ nextCursor: string; hasMore: true }` and `{ nextCursor: null; hasMore: false }` — a literal that disagrees is a build error (`type-pins.ts`), and `if (page.hasMore)` narrows `nextCursor` to `string` |
 | `pageOf(rows, nextCursor)` | the only constructor: `hasMore` is derived from the cursor, never passed beside it. `null` (or `''`) is the last page |
 | Re-exported | by `@ultimat3/query` as its `Page`; `@ultimat3/entity` exports none — import it from here |
 

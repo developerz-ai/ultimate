@@ -29,7 +29,7 @@ describe('pageOf', () => {
     const fetched: (string | null)[] = [null];
     let index = 0;
     let page = pages[index] as Page<number>;
-    // `cursor-page-pins.ts` holds the narrowing inside `tsc -b`; this is the loop's runtime half.
+    // `type-pins.ts` holds the narrowing inside `tsc -b`; this is the loop's runtime half.
     while (page.hasMore) {
       const after = page.nextCursor;
       fetched.push(after);
