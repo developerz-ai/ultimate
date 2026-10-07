@@ -1,6 +1,6 @@
 // This package's two statements that bind an array, run against a real Postgres through the
 // executor every booted role gets: `@ultimat3/db`'s client, `{ text, values }`, which is what
-// `cli/src/runtime-queue.ts`'s `pgExecutorFor` builds. Issue #384: `Bun.SQL` joins a JS array's
+// `@ultimat3/db`'s `dbExecutor` builds for the boot. Issue #384: `Bun.SQL` joins a JS array's
 // elements with commas, so both answered `malformed array literal` (22P02) — `SQL_CLAIM` is the
 // entire loop of every `ROLE=worker` container the framework produces.
 //
@@ -42,7 +42,9 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
   beforeAll(async () => {
     client = postgresClient({ url: url ?? '', role: 'worker' });
     const owned = client;
-    // `pgExecutorFor`'s body, verbatim: the composition under test, not a stand-in for it.
+    // `dbExecutor(() => client)`'s body, restated: the composition under test, not a stand-in for
+    // it. Restated rather than imported because this package reaches `@ultimat3/db` for the N+1
+    // detector only (`CLAUDE.md`, Boundary).
     executor = {
       query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
         owned.query<R>({ text, values }),

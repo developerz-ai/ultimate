@@ -8,6 +8,7 @@
 
 import type { Role } from '@ultimat3/core';
 import { ctxOf, isRole, logger, markReady, ROLES } from '@ultimat3/core';
+import { dbExecutor } from '@ultimat3/db';
 import type { RateLimitStore, Route, ServerHandle, WebSocketMount } from '@ultimat3/http';
 import {
   adoptRateLimitStore,
@@ -43,7 +44,6 @@ import { startWorkerWake } from './role-wake';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
 import { startLiveFeed } from './runtime-live-feed';
-import { pgExecutorFor } from './runtime-queue';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { inlineStyleSources } from './style-csp';
@@ -359,7 +359,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // SESSION-scoped, and the session ends the moment the connection goes back to the pool, so
     // every node reads itself as leader anyway. An expiring row is correct on the executor this
     // package is actually handed.
-    const executor = pgExecutorFor(options.runtime.db);
+    const executor = dbExecutor(() => options.runtime.db);
     const scheduler = selected.includes('scheduler')
       ? jobScheduler({
           driver: options.runtime.jobs,

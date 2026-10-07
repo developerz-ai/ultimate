@@ -29,6 +29,8 @@ const ENFORCED = new Set([
   'maximum',
   'minLength',
   'maxLength',
+  'minItems',
+  'maxItems',
   'pattern',
   'anyOf',
 ]);
@@ -61,6 +63,7 @@ const Everything = t.object({
   count: t.number.int().min(1).max(50),
   nested: t.object({ childId: t.uuid }),
   tags: t.array(t.email),
+  picks: t.array(t.string, { min: 1, max: 3 }),
   choice: t.enum(['a', 'b']),
   maybe: t.optional(t.uuid),
 });
@@ -91,11 +94,38 @@ describe('toWireSchema publishes only what this server enforces', () => {
   test('every published constraint refuses at least one value', () => {
     const wire = toWireSchema(Everything);
     const properties = wire.properties ?? {};
+    // Each property inside an object: `validateArgs` refuses any non-object ROOT, so a bare
+    // property schema answers `false` for every value and the bound under test never runs. The
+    // accepted value beside each refusal is what proves the refusal came from the bound.
+    const one = (key: string, value: unknown): boolean =>
+      validateArgs(
+        { type: 'object', properties: { [key]: properties[key] ?? {} } },
+        { [key]: value },
+      ).ok;
     // minLength/maxLength, minimum/maximum, enum, type and required all still bite.
-    expect(validateArgs(properties['title'] ?? {}, '').ok).toBe(false);
-    expect(validateArgs(properties['count'] ?? {}, 0).ok).toBe(false);
-    expect(validateArgs(properties['choice'] ?? {}, 'c').ok).toBe(false);
+    expect([one('title', ''), one('title', 'x'.repeat(11)), one('title', 'ok')]).toEqual([
+      false,
+      false,
+      true,
+    ]);
+    expect([one('count', 0), one('count', 51), one('count', 1.5), one('count', 50)]).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect([one('choice', 'c'), one('choice', 'a')]).toEqual([false, true]);
     expect(validateArgs(wire, {}).ok).toBe(false);
+  });
+
+  test('an array count bound on the wire is one this server refuses on, both sides', () => {
+    // Through an object: `validateArgs` refuses any non-object ROOT, so a bare property schema
+    // would answer `false` for every value and prove nothing about the bound.
+    const wire = toWireSchema(t.object({ picks: t.array(t.string, { min: 1, max: 3 }) }));
+    expect(wire.properties?.['picks']).toMatchObject({ minItems: 1, maxItems: 3 });
+    expect(validateArgs(wire, { picks: [] }).ok).toBe(false);
+    expect(validateArgs(wire, { picks: ['a', 'b', 'c', 'd'] }).ok).toBe(false);
+    expect(validateArgs(wire, { picks: ['a', 'b', 'c'] }).ok).toBe(true);
   });
 
   test('the shape itself is unchanged: properties, required and nesting survive', () => {

@@ -33,7 +33,7 @@ describe.skipIf(adminUrl === '')(testName('live', 'the pg job driver'), () => {
     if (failures.length > 0) throw failures[0];
   });
 
-  // The executor the boot builds (`pgExecutorFor`, `@ultimat3/cli`): the db client's own query.
+  // The executor the boot builds (`dbExecutor(() => client)`, `@ultimat3/db`): the db client's own query.
   const executor: PgExecutor = {
     query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
       (client as PostgresClient).query<R>({ text, values }),

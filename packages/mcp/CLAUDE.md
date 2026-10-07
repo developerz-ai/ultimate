@@ -228,7 +228,8 @@ import. The CLI wires it.
 - Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never
   a name (`pg_sleep_for` passed an exact `pg_sleep` ban); the call unit and the three named bans: README.
 - `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
-  (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
+  (the CLI wires them — this package never opens a `db` connection; it imports one lexer rule,
+  `endOfBlockComment`, so a nested comment ends where Postgres ends it), the parse here, the caps here.
   `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
 - The caps run in the **tool**, not the host. A host that forgets them answers a million rows
   into a model's context. `guards` names the layers that engaged; a layer that could not engage

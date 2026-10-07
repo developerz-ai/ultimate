@@ -6,6 +6,7 @@
 // anywhere at statement level (which also catches a data-modifying CTE — `WITH x AS
 // (INSERT ...) SELECT`, which reads like a SELECT and is not one).
 
+import { dollarTagAt, endOfBlockComment } from '@ultimat3/db';
 import { McpNotBranchDbError, McpQueryRejectedError } from './errors';
 import { calledFunctions, forbiddenFamily } from './readonly-sql-calls';
 
@@ -216,8 +217,9 @@ function notBranch(cause: string, fix: string): McpNotBranchDbError {
 /**
  * Replace string/identifier literals and comments with spaces so keyword scanning cannot be
  * fooled by `SELECT 'delete'` (a harmless literal that looks like a write) and cannot be
- * evaded by hiding a second statement behind a block comment. Only word boundaries matter
- * downstream, so collapsing each run to one space is enough.
+ * evaded by hiding a second statement behind a block comment — ended where Postgres ends it,
+ * nesting counted (`@ultimat3/db`'s `endOfBlockComment`), or a comment closed early hides one
+ * instead. Only word boundaries matter downstream, so collapsing each run to one space is enough.
  *
  * `identifiers: 'keep'` unwraps a double-quoted identifier to its content instead — the call
  * scan needs it, because `"pg_advisory_lock"(1)` calls the function the blanked form hides.
@@ -234,11 +236,13 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       continue;
     }
     if (two === '/*') {
-      const end = sql.indexOf('*/', i + 2);
-      if (end === -1) {
+      // Nested, as Postgres reads it: ending at the FIRST `*/` let `/* /* */ ' */` open a literal
+      // here that swallowed the real statement after the comment.
+      const end = endOfBlockComment(sql, i);
+      if (end === null) {
         throw unterminated('a /* block comment', 'close it with */, or use -- to the end of line');
       }
-      i = end + 2;
+      i = end;
       out += ' ';
       continue;
     }
@@ -260,26 +264,21 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       i = end;
       continue;
     }
-    // Glued to an identifier, `$` is part of the NAME (`a$b$` is one identifier to Postgres), so
-    // it opens nothing — `@ultimat3/db`'s `dollarTagAt` makes the same check.
-    if (char === '$' && !IDENTIFIER_CHAR.test(sql[i - 1] ?? '')) {
-      // Postgres's own tag grammar: an identifier that does not start with a digit — letters,
-      // `_`, digits after the first, and any non-ASCII character. `[a-z_]*` read `$a1$` as text,
-      // and the `'` it then saw hid a `pg_sleep` Postgres runs outside every quote.
-      const tag = DOLLAR_TAG.exec(sql.slice(i));
-      if (tag !== null) {
-        const marker = tag[0];
-        const end = sql.indexOf(marker, i + marker.length);
-        if (end === -1) {
-          throw unterminated(
-            `a ${marker} dollar-quoted body`,
-            `close it with the same tag: ${marker} … ${marker}`,
-          );
-        }
-        i = end + marker.length;
-        out += ' ';
-        continue;
+    // `@ultimat3/db`'s lexer rule, the one copy: Postgres's tag grammar (non-ASCII included, never
+    // a leading digit — `[a-z_]*` read `$a1$` as text and hid a `pg_sleep` behind the `'` after
+    // it), and a `$` that continues an identifier (`é$x$` is one name) opens nothing.
+    const marker = char === '$' ? dollarTagAt(sql, i) : null;
+    if (marker !== null) {
+      const end = sql.indexOf(marker, i + marker.length);
+      if (end === -1) {
+        throw unterminated(
+          `a ${marker} dollar-quoted body`,
+          `close it with the same tag: ${marker} … ${marker}`,
+        );
       }
+      i = end + marker.length;
+      out += ' ';
+      continue;
     }
     out += char;
     i += 1;
@@ -289,7 +288,6 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
 
 const IDENTIFIER_CHAR = /[A-Za-z0-9_$\u0080-\uffff]/;
 const WORD = /[a-z_\u0080-\uffff][a-z0-9_$\u0080-\uffff]*/g;
-const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-\uffff][A-Za-z0-9_\u0080-\uffff]*)?\$/;
 
 /**
  * `U&"` opening at a token boundary — the lexer's `xuistart`, with no space inside. `menu&"m"` is

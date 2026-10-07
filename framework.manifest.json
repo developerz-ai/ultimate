@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "79d3235af8123576d640a59c7ca99377a8c1227f225f2041273d72fef60d80f9",
+  "buildId": "9f5fd4e3265282e9e1b2f39afaa774cc9ebba02a596f2f7497aa61080445d429",
   "tiers": {
     "0": [
       "core",
@@ -2066,6 +2066,11 @@
     },
     {
       "code": "X_JOB_SLOT_LOST",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_TENANT_MISMATCH",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },

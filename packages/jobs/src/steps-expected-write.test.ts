@@ -45,7 +45,10 @@ function installFakeSql(): void {
   };
 }
 
-/** `@ultimat3/cli`'s `pgExecutorFor`: where the queue's statements enter the funnel in a real boot. */
+/**
+ * `@ultimat3/db`'s `dbExecutor(() => client)`, restated: where the queue's statements enter the
+ * funnel in a real boot. Restated because this package takes nothing but the detector from `db`.
+ */
 const executorOver = (client: DbClient): PgExecutor => ({
   query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
     client.query<R>({ text, values } satisfies SqlFragment),

@@ -1,6 +1,6 @@
-// Where Postgres ends a `--` comment, and what the scanner sees after it. Split from
-// `readonly-sql.test.ts` at the 500-line ceiling: this is one subject — the lexer's own
-// `non_newline` rule — and every case here is a payload hidden from FIVE checks by one byte.
+// Where Postgres ends a comment, and what the scanner sees after it. Split from
+// `readonly-sql.test.ts` at the 500-line ceiling: this is one subject — the lexer's own comment
+// rules (`non_newline`, nested `/*`) — and every case here is a payload hidden from every check.
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, type UltimateError } from '@ultimat3/core';
@@ -72,6 +72,56 @@ describe('a -- comment ends at a CR, because that is where Postgres ends it', ()
     // The comment branch never runs here — the quote opens first — so the `drop` after the CR is
     // inside the literal for Postgres too, and refusing it would cost an ordinary read.
     const sql = "select 'a\rdrop table posts' as note";
+    expect(assertReadOnlyQuery(sql)).toBe(sql);
+  });
+});
+
+// Postgres NESTS block comments: `/* /* */` is still inside a comment, closed only by a second
+// `*/`. A scanner that ends the comment at the first `*/` reads the rest as code — so a quote
+// Postgres sees inside the comment opens a "literal" for the scanner, and that literal swallows
+// the real statement after the comment's true end.
+describe('a /* comment nests, because Postgres nests it', () => {
+  test('a session advisory lock behind a nested comment is refused', () => {
+    // Postgres runs `select pg_advisory_lock(42)`; the lock outlives the read-only rollback.
+    expect(
+      caught(() => assertReadOnlyQuery("select /* /* */ ' */ pg_advisory_lock(42) --'")),
+    ).toMatchObject(refusal);
+  });
+
+  test('a data-modifying CTE behind a nested comment is refused', () => {
+    expect(
+      caught(() =>
+        assertReadOnlyQuery("with /* /* */ ' */ d as (delete from posts returning 1) select 1 --'"),
+      ),
+    ).toMatchObject(refusal);
+  });
+
+  test('a nested comment that never closes its outer level is unreadable, not code', () => {
+    expect(
+      caught(() => assertReadOnlyQuery('select 1 /* /* */ ; delete from members')),
+    ).toMatchObject({
+      ...refusal,
+      cause: 'the statement ends inside a /* block comment, so the rest of it cannot be read',
+    });
+  });
+
+  test('a properly nested comment is still an ordinary read', () => {
+    const sql = 'select /* outer /* inner drop */ still outer */ id from posts';
+    expect(assertReadOnlyQuery(sql)).toBe(sql);
+  });
+});
+
+// The `$tag$` grammar, read against Postgres 17: a non-ASCII tag opens a body, and a `$` glued to
+// a non-ASCII identifier continues it. These hold whichever scanner reads the tag.
+describe('a $tag$ is read as Postgres lexes it', () => {
+  test('a non-ASCII tag is a body, so the quote inside it hides nothing', () => {
+    expect(
+      caught(() => assertReadOnlyQuery("select $é$ ' $é$, pg_advisory_lock(42) --'")),
+    ).toMatchObject(refusal);
+  });
+
+  test('a $ inside a non-ASCII identifier opens no body', () => {
+    const sql = 'select 1 as é$x$, 2';
     expect(assertReadOnlyQuery(sql)).toBe(sql);
   });
 });

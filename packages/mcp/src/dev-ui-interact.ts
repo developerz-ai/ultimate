@@ -4,10 +4,11 @@
 // navigation. Its own file for the reason `dev-ui-tools.ts` has one: that file stands near the
 // 500-line ceiling, and this tool's step schema alone is a screen. `dev-server.ts` spreads both.
 //
-// Every bound lives in the HANDLER's contract, not the schema: `validate-args.ts` enforces no
-// `maxItems`, and a step list the schema cannot bound is one the CLI refuses whole — never trims,
-// because dropping a step changes what the picture is of. The schema's job is the SHAPE of a step
-// (`anyOf` over five one-key objects); the CLI's is the count, the lengths and the policies.
+// Every bound lives in the HANDLER's contract, not the schema — a placement, no longer a limit:
+// `validate-args.ts` enforces `maxItems` now, so the count COULD move into the schema; it has not.
+// The CLI refuses an over-long step list whole — never trims, because dropping a step changes what
+// the picture is of. The schema's job is the SHAPE of a step (`anyOf` over five one-key objects);
+// the CLI's is the count, the lengths and the policies.
 
 import type {
   UiColorScheme,

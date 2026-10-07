@@ -137,8 +137,13 @@ export interface IdempotencyStore {
    * and re-running it is the double charge.
    */
   fail?(key: string, failure: IdempotencyFailure, reservationId: string): Promise<void>;
-  /** Drop a reservation, so a retry can run. Only ever correct BEFORE the handler starts. */
-  release(key: string): Promise<void>;
+  /**
+   * Drop the reservation `reservationId` owns, so a retry can run. Only ever correct BEFORE the
+   * handler starts. Fenced like `settle` and `fail`: a straggler whose reservation was reclaimed
+   * past the deadline deleted the REPLACEMENT's record by key — settled, the next retry re-ran a
+   * handler that had committed. A release that matches nothing is a no-op.
+   */
+  release(key: string, reservationId: string): Promise<void>;
   get(key: string): Promise<IdempotencyRecord | undefined>;
 }
 
@@ -252,7 +257,15 @@ export async function withIdempotency<T>(
     try {
       await options.beforeRun();
     } catch (error) {
-      await store.release(key);
+      // THIS reservation's id: one reclaimed while `beforeRun` waited is no longer ours to drop.
+      // A release the store refuses never replaces the refusal: the caller is owed the 429, not a
+      // driver error. The reservation then stays in flight until the window lapses (an autocommit
+      // one is never reclaimed early), so a retry inside it is a 409 — logged, so it is findable.
+      try {
+        await store.release(key, record.id);
+      } catch (storeError) {
+        logger.error('action.idempotency.release-refused', { key, error: storeError });
+      }
       throw error;
     }
   }

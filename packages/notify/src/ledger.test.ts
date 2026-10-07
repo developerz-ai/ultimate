@@ -62,6 +62,26 @@ describe('unit · delivery ledger', () => {
     expect(await ledger.claim({ ...bulk, recipient: 'ana' }, AT)).toBe(true);
   });
 
+  test('a NULL and an empty recipient are one delivery, as the Postgres index reads them', async () => {
+    // `coalesce(recipient, '')` is the pg ledger's key; a ledger that told the two apart would
+    // send a bulk notification twice in dev and once in production.
+    const ledger = memoryDeliveryLedger();
+    const bulk = { ...claim, recipient: null, channel: 'slack' };
+    await ledger.claim(bulk, AT);
+    await ledger.settle({ ...bulk, recipient: '' }, 'sent', AT);
+    expect(await ledger.claim(bulk, AT)).toBe(false);
+    expect(await ledger.claim({ ...bulk, recipient: '' }, AT)).toBe(false);
+    expect(ledger.size).toBe(1);
+    expect((await ledger.find({ ...bulk, recipient: '' }))?.recipient).toBeNull();
+  });
+
+  test('a settle with no claim is a no-op, as the pg UPDATE that matches no row is', async () => {
+    const ledger = memoryDeliveryLedger();
+    await ledger.settle(claim, 'sent', AT);
+    expect(ledger.size).toBe(0);
+    expect(await ledger.claim(claim, AT)).toBe(true);
+  });
+
   test('the cap evicts oldest-first and PUBLISHES the drop, because a dropped row stops deduping', async () => {
     const ledger = memoryDeliveryLedger({ max: 2 });
     for (const recipient of ['ana', 'ben', 'cyd']) {

@@ -44,6 +44,7 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_PAGE_INVALID',
   'X_JOB_ON_SETTLED_FAILED',
   'X_JOB_NOT_FOUND',
+  'X_JOB_TENANT_MISMATCH',
 ] as const;
 
 /**
@@ -102,6 +103,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_PAGE_INVALID: 'a job list page was asked for outside its bounds',
   X_JOB_ON_SETTLED_FAILED: 'the onSettled hook failed after the run was settled',
   X_JOB_NOT_FOUND: 'the queue holds no job with this id',
+  X_JOB_TENANT_MISMATCH: "a job's payload names an org other than the tenant it runs under",
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -155,6 +157,9 @@ registerErrorRetry({
   X_EXPORT_PART_TOO_LARGE: 'terminal',
   // The worker settles a busy key itself; listed so a body that RETHROWS one it was handed stops.
   X_JOB_KEY_BUSY: 'terminal',
+  // The payload names the wrong org, or none its tenant can run under — a fact about the ROW, so
+  // every attempt and every `x jobs retry` is refused identically: the repair is a new enqueue.
+  X_JOB_TENANT_MISMATCH: 'terminal',
 });
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from

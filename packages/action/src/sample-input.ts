@@ -99,6 +99,25 @@ function sampleObject(node: SchemaNode): Record<string, unknown> {
   return sample;
 }
 
+/**
+ * The most items a sample will hold. A contract sample is a handful of values; `minItems` past
+ * this is an input the framework does not invent — `2 ** 32` made `Array.from` throw, and anything
+ * below it allocated that many samples first. Such an array is a GAP (`sampleGaps`), reported as
+ * `X_CONTRACT_DRIFT` with the instruction to pass the input, never silently under-sampled.
+ */
+export const SAMPLE_ITEMS_MAX = 1000;
+
+/**
+ * The `minItems` an array sample owes, or `undefined` when none can be built: past the ceiling,
+ * or not a count at all. The builtin `t.array` refuses a bad bound at declaration
+ * (`X_SCHEMA_BOUNDS_INVALID`), but this IR may come from a swapped provider.
+ */
+function owedItems(node: SchemaNode): number | undefined {
+  const min = node.minItems;
+  if (min === undefined) return 0;
+  return Number.isSafeInteger(min) && min >= 0 && min <= SAMPLE_ITEMS_MAX ? min : undefined;
+}
+
 function sampleFor(node: SchemaNode): unknown {
   // A nullable field accepts `null`, and `null` is the smallest thing it accepts.
   if (node.nullable === true) return null;
@@ -115,8 +134,13 @@ function sampleFor(node: SchemaNode): unknown {
       return node.values?.[0] ?? SAMPLE_STRING;
     case 'literal':
       return node.literal ?? null;
+    // The fewest items the array accepts: `[]` under a `minItems` is a sample its own schema
+    // refuses. Items repeat the one item sample; a uniqueness rule would be a refinement.
     case 'array':
-      return [];
+      // An unbuildable count samples `[]`, which the schema refuses — `sampleGaps` names why.
+      return Array.from({ length: owedItems(node) ?? 0 }, () =>
+        node.items === undefined ? null : sampleFor(node.items),
+      );
     case 'union': {
       const first = node.anyOf?.[0];
       return first === undefined ? null : sampleFor(first);
@@ -174,24 +198,29 @@ function gapsIn(node: SchemaNode, path: string): string[] {
     }
     return out;
   }
-  if (satisfiesPattern(node, sampleFor(node))) return [];
+  const unbuildable = node.kind === 'array' && owedItems(node) === undefined;
+  if (!unbuildable && satisfiesPattern(node, sampleFor(node))) return [];
   return [path === '' ? ROOT_PATH : path];
 }
 
 /** `orderRef` -> `orderRef (must match ^ORD-\d{4}$)`, for a cause a reader can act on. */
 export function describeSampleGap(schema: StandardSchemaV1, path: string): string {
-  const pattern = patternAt(tryIntrospect(schema), path);
+  const node = nodeAt(tryIntrospect(schema), path);
+  if (node?.kind === 'array' && node.minItems !== undefined && owedItems(node) === undefined) {
+    return `${path} (needs at least ${node.minItems} items)`;
+  }
+  const pattern = node?.pattern;
   return pattern === undefined ? path : `${path} (must match ${pattern})`;
 }
 
-function patternAt(node: SchemaNode | undefined, path: string): string | undefined {
+function nodeAt(node: SchemaNode | undefined, path: string): SchemaNode | undefined {
   if (node === undefined) return undefined;
-  if (path === '' || path === ROOT_PATH) return node.pattern;
+  if (path === '' || path === ROOT_PATH) return node;
   const [head, ...rest] = path.split('.');
   // `path` is the caller's — `describeSampleGap` is exported — so the same own-property read the
   // format table takes: `properties['constructor']` is otherwise the `Object` function.
   const properties = node.properties ?? {};
   const child =
     head === undefined || !Object.hasOwn(properties, head) ? undefined : properties[head];
-  return child === undefined ? undefined : patternAt(child, rest.join('.'));
+  return child === undefined ? undefined : nodeAt(child, rest.join('.'));
 }

@@ -40,7 +40,7 @@ export interface LiveTransaction extends CommitScope {
  * settlement bound to a transaction that already ended is bound to nothing: it would run as its
  * own commit while the record claimed otherwise, and that record is the one a retry may reclaim.
  *
- * The fragment is assembled by hand, exactly as `@ultimat3/cli`'s `pgExecutorFor` does: the caller
+ * The fragment is assembled by hand, exactly as `@ultimat3/db`'s `dbExecutor` does: the caller
  * wrote the `$1..$n` text itself and hands over already-bound values.
  */
 export function liveTransaction(): LiveTransaction | undefined {

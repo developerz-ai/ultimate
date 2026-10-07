@@ -58,6 +58,23 @@ describe('fetchDocument — the request', () => {
   });
 });
 
+describe('fetchDocument — the browser HTTP cache never answers (#693)', () => {
+  // The router's own 30 s cache is the only reuse layer: a page cached `public, max-age=0,
+  // stale-while-revalidate` would otherwise be served stale after a write, a sign-out or a deploy.
+  for (const [name, purpose, init] of [
+    ['a soft GET', 'soft', undefined],
+    ['a prefetch', 'prefetch', undefined],
+    ['a POST', 'soft', { method: 'POST' }],
+    ['a caller asking for the cache', 'soft', { cache: 'force-cache' }],
+  ] as const) {
+    test(`${name} revalidates with the server: cache 'no-cache'`, async () => {
+      const { seen, fetch } = answering(() => new Response(null, { status: 204 }));
+      await run(doc(), fetch)('https://app.test/b', purpose, init);
+      expect(seen[0]?.init?.cache).toBe('no-cache');
+    });
+  }
+});
+
 describe('fetchDocument — the answer, read once', () => {
   test('a page: its text, its build, no-store read off cache-control', async () => {
     const { fetch } = answering(

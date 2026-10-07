@@ -27,6 +27,7 @@ import {
 import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
+import { JobTenantMismatchError } from './errors-tenant';
 import type { JobHandle } from './job';
 import { job } from './job';
 import type { RetryPolicy } from './retry';
@@ -94,7 +95,22 @@ export interface WebhookDeliveryInput {
   readonly endpointId: string;
   /** Also the id the receiver dedupes on — it is signed, so it cannot be moved in transit. */
   readonly eventId: string;
+  /**
+   * The org that owns the endpoint, for a delivery declared `tenant: ({ orgId }) => orgId`. On the
+   * input because `tenant` is a synchronous function of the input alone — derived from the
+   * endpoint id it would be a read before the run has an org to read under. Neither signed nor
+   * sent: the receiver learns nothing it did not already know.
+   */
+  readonly orgId?: string | undefined;
 }
+
+/**
+ * Who a delivery runs as: `'none'`, or the org derived from its payload. May answer `undefined` —
+ * `({ orgId }) => orgId` over a row that carries none — and that answer is refused, TERMINALLY,
+ * before either seam reads (`X_JOB_TENANT_MISMATCH`). One signature for both shapes on purpose: a
+ * 25.0.0 `({ endpointId }) => …` that never reads `orgId` keeps enqueuing without one.
+ */
+export type WebhookTenant = 'none' | ((input: WebhookDeliveryInput) => string | undefined);
 
 /** What one landed delivery reports. Bounded, so `x jobs show` can print it. */
 export interface WebhookReport {
@@ -111,12 +127,13 @@ export interface WebhookDefinition {
    */
   readonly name: string;
   /**
-   * REQUIRED, exactly as on `job()`: `tenant: ({ endpointId }) => …` for a delivery scoped to the
-   * org that owns the endpoint, or the explicit `tenant: 'none'`. A delivery reads the app's own
-   * endpoint and event rows through the seams below, so the org those reads run under is a fact
-   * about the WORK and is declared here rather than inherited from whichever worker claimed it.
+   * REQUIRED, exactly as on `job()`: `tenant: ({ orgId }) => orgId` for a delivery scoped to the
+   * org that owns the endpoint — every enqueue then carries `orgId` — or the explicit
+   * `tenant: 'none'`. A delivery reads the app's own endpoint and event rows
+   * through the seams below, so the org those reads run under is a fact about the WORK and is
+   * declared here rather than inherited from whichever worker claimed it.
    */
-  readonly tenant: JobTenant<WebhookDeliveryInput>;
+  readonly tenant: WebhookTenant;
   /**
    * The endpoint this delivery is for. Read once PER ATTEMPT and never checkpointed: it carries a
    * secret, and a `step.run` output is written to `x_job_steps` — a credential in a durable table
@@ -124,11 +141,18 @@ export interface WebhookDefinition {
    */
   endpoint(args: {
     readonly endpointId: string;
+    /**
+     * The delivery's own `orgId`, off the input — by the time a seam runs, the org the run is
+     * under, or absent. Handed over so a seam names its tenant from the work rather than reading it
+     * back off `ctx.actor`.
+     */
+    readonly orgId: string | undefined;
     readonly ctx: Ctx;
   }): Promise<WebhookEndpoint | null> | WebhookEndpoint | null;
   /** The event's bytes. Read per attempt as well, out of the app's own table. */
   event(args: {
     readonly eventId: string;
+    readonly orgId: string | undefined;
     readonly ctx: Ctx;
   }): Promise<WebhookEvent | null> | WebhookEvent | null;
   /** Where every attempt is recorded, and where the consecutive-failure count comes from. */
@@ -175,11 +199,11 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
   // Named so `run` can read the deadline `job()` resolved — one parse of `timeout`, never two.
   const handle: JobHandle<WebhookDeliveryInput> = job<WebhookDeliveryInput>({
     name: definition.name,
-    input: t.object({ endpointId: t.string, eventId: t.string }),
+    input: t.object({ endpointId: t.string, eventId: t.string, orgId: t.optional(t.string) }),
     // Endpoint AND event: the same event fans out to every subscribed endpoint, so a key on the
     // event alone would dedupe every one of those deliveries into the first endpoint's row.
     idempotencyKey: ({ endpointId, eventId }) => `${definition.name}:${endpointId}:${eventId}`,
-    tenant: definition.tenant,
+    tenant: tenantOf(definition),
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
@@ -194,7 +218,13 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
               job: definition.name,
               timeoutMs: handle.timeoutMs,
             };
-      const endpoint = await definition.endpoint({ endpointId: input.endpointId, ctx });
+      // Before either seam: the org they are handed must be the org every read runs under.
+      assertInputOrg(definition.name, input.orgId, ctx);
+      const endpoint = await definition.endpoint({
+        endpointId: input.endpointId,
+        orgId: input.orgId,
+        ctx,
+      });
       if (endpoint === null) {
         throw new WebhookEndpointUnknownError({
           webhook: definition.name,
@@ -222,7 +252,7 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
         resolve: definition.resolve ?? resolveWebhookHost,
       });
 
-      const event = await definition.event({ eventId: input.eventId, ctx });
+      const event = await definition.event({ eventId: input.eventId, orgId: input.orgId, ctx });
       if (event === null) {
         throw new WebhookEventUnknownError({ webhook: definition.name, eventId: input.eventId });
       }
@@ -321,6 +351,44 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
     },
   });
   return handle;
+}
+
+/**
+ * The declared tenant, asked as declared, with one refusal added: an answer that names NO org. Only
+ * then — a 25.0.0 `tenant: ({ endpointId }) => …` never reads `orgId` and needs none, so requiring
+ * one would refuse every delivery it queued. The usual cause is a row queued before `orgId` existed
+ * under a `({ orgId }) => orgId` declaration. Coded and TERMINAL rather than `jobTenantFor`'s
+ * `assert`: an unclassified refusal spent the whole retry policy, and `x jobs retry`, re-proving it.
+ */
+function tenantOf(definition: WebhookDefinition): JobTenant<WebhookDeliveryInput> {
+  const declared = definition.tenant;
+  if (typeof declared !== 'function') return declared;
+  return (input) => {
+    const orgId = declared(input);
+    if (typeof orgId === 'string' && orgId.length > 0) return orgId;
+    throw new JobTenantMismatchError({
+      job: definition.name,
+      reason: `declares an org tenant, and this delivery's payload names no org for it${input.orgId === undefined ? ' (it carries no orgId)' : ''}`,
+      fix: `${definition.name}.enqueue({ endpointId, eventId, orgId }) — re-enqueue it with the org that owns the endpoint; a queued row cannot be retried into having one`,
+    });
+  };
+}
+
+/**
+ * The org a seam is HANDED is the org the run is UNDER, or the delivery is refused before either
+ * seam reads: a lookup filtered by `orgId` would otherwise read another org's endpoint, secret and
+ * all, inside this org's run. With `tenant: 'none'` nothing would check it at all, so any `orgId`
+ * is refused there. Terminal for `tenantOf`'s reason — the payload is the same on every attempt.
+ */
+function assertInputOrg(name: string, orgId: string | undefined, ctx: Ctx): void {
+  if (orgId === undefined) return;
+  const runOrg = ctx.actor.orgId ?? undefined;
+  if (orgId === runOrg) return;
+  throw new JobTenantMismatchError({
+    job: name,
+    reason: `was handed orgId ${orgId}, but the run is under ${runOrg === undefined ? "tenant 'none'" : `org ${runOrg}`}`,
+    fix: `webhook({ name: '${name}', tenant: ({ orgId }) => orgId, … }) — derive the tenant from the payload's own org, or enqueue ${name} with the orgId its tenant resolves to`,
+  });
 }
 
 /** A URL no delivery may open, or a secret that would make the POST unsigned. The parsed url. */

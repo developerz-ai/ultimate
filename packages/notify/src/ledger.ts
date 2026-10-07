@@ -58,9 +58,10 @@ export interface DeliveryLedger {
  * The tuple as one string. `JSON.stringify` of an ARRAY rather than a joined separator: a
  * recipient id or a channel name containing the separator would otherwise collide two distinct
  * deliveries into one ledger row, and the failure mode is a notification nobody ever receives.
+ * `recipient ?? ''` is the Postgres ledger's `coalesce(recipient, '')`: one identity, both stores.
  */
 const keyOf = (claim: DeliveryClaim): string =>
-  JSON.stringify([claim.notifier, claim.key, claim.recipient, claim.channel]);
+  JSON.stringify([claim.notifier, claim.key, claim.recipient ?? '', claim.channel]);
 
 export interface MemoryDeliveryLedgerOptions {
   /**
@@ -122,8 +123,9 @@ export function memoryDeliveryLedger(
       const id = keyOf(claim);
       const existing = rows.get(id);
       if (existing?.status === 'sent') return Promise.resolve(false);
+      // The row it found keeps its own identity, as the pg `on conflict do update` does.
       rows.set(id, {
-        ...claim,
+        ...(existing ?? claim),
         status: 'sending',
         attempts: (existing?.attempts ?? 0) + 1,
         at,
@@ -134,7 +136,9 @@ export function memoryDeliveryLedger(
     settle(claim, status, at) {
       const id = keyOf(claim);
       const existing = rows.get(id);
-      rows.set(id, { ...claim, status, attempts: existing?.attempts ?? 1, at });
+      // No claim, no row: the pg `update` matches nothing, and a row written here would refuse
+      // the claim after it — a notification dev never sends and production does.
+      if (existing !== undefined) rows.set(id, { ...existing, status, at });
       return Promise.resolve();
     },
     find(claim) {

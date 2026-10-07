@@ -88,6 +88,7 @@ export const OFF_SOCKET: Pins = {
     'X_JOB_SLOT_LOST',
     'X_JOB_TIMEOUT',
     'X_STEP_DUPLICATE',
+    'X_JOB_TENANT_MISMATCH',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).

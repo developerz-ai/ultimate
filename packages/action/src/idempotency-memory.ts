@@ -200,8 +200,9 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     return existing;
   }
 
-  release(key: string): Promise<void> {
-    this.#records.delete(key);
+  /** Fenced by `#owned`, as both settlements are: a record that is not this reservation stays. */
+  release(key: string, reservationId: string): Promise<void> {
+    if (this.#owned(key, reservationId) !== undefined) this.#records.delete(key);
     return Promise.resolve();
   }
 

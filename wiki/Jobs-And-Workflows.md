@@ -294,7 +294,7 @@ import { memoryWebhookLedger, webhook } from '@ultimat3/jobs';
 
 export const deliver = webhook({
   name: 'partner.webhooks',          // required: a durable queue key
-  tenant: 'none',                    // or ({ endpointId }) => the org that owns the endpoint
+  tenant: ({ orgId }) => orgId,      // the org that owns the endpoint — or 'none'
   endpoint: ({ endpointId }) => db.endpoints.byId(endpointId), // read per attempt, never checkpointed
   event: ({ eventId }) => db.events.byId(eventId),             // { topic, body }
   ledger: memoryWebhookLedger(),     // dev only — a WebhookLedger over your own table in production
@@ -302,7 +302,7 @@ export const deliver = webhook({
 });
 
 for (const endpoint of await subscribersOf('orders.paid')) {
-  await deliver.enqueue({ endpointId: endpoint.id, eventId: event.id });
+  await deliver.enqueue({ endpointId: endpoint.id, eventId: event.id, orgId: endpoint.orgId });
 }
 ```
 
@@ -314,7 +314,8 @@ for (const endpoint of await subscribersOf('orders.paid')) {
 | an endpoint URL | `https://` in production; a host resolving to a loopback, private, link-local or metadata address is refused unless `allowPrivate: true` |
 | a `Retry-After` | honoured: `X_WEBHOOK_DELIVERY_THROTTLED` carries `meta.retryAfterSeconds` and the nack waits it out |
 | a disabled endpoint | `X_WEBHOOK_ENDPOINT_DISABLED`; re-enabling is always the app's |
-| the ledger | `WebhookLedger` is a seam, not a table: retention is the app's decision |
+| the org | `tenant: ({ orgId }) => orgId` needs `orgId` on every enqueue, and both seams are handed it. A tenant that reads no `orgId` enqueues without one, as in 25.0.0. A payload naming no org for its tenant, or an `orgId` that is not the run's org, is `X_JOB_TENANT_MISMATCH` — terminal, dead-lettered on attempt 1. Switching a live webhook to an org tenant: drain its queue first, or re-enqueue what dead-letters with its `orgId` |
+| the ledger | `WebhookLedger` is a seam, not a table: retention is the app's decision. Worked example: the reference app's `apps/web/app/webhooks/ledger.ts` over its own `webhook_deliveries` |
 | the attempt deadline | `timeout:` bounds one attempt and the request inside it — there is no second per-request timeout |
 
 Full contract, every rule with its reason: [`packages/jobs/README.md` § Outbound webhooks](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#outbound-webhooks-are-jobs-too).

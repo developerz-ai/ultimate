@@ -1,7 +1,7 @@
 // One contract, two stores: the memory store every test uses and the Postgres store a fleet needs
 // must answer every transition identically — or a confirmation approved on one replica is a
 // different fact on the next. Postgres runs against `TEST_DATABASE_URL` through `Bun.SQL` (this
-// package may never import `@ultimat3/db`); unset, that half skips.
+// package never opens an `@ultimat3/db` client); unset, that half skips.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';

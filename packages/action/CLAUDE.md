@@ -120,7 +120,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **`transition()` is a mutator factory that decides nothing about the machine**: entity's three
   codes propagate; `from` is REQUIRED (it is the UPDATE's predicate); `conflict: 'server-wins'` fixed;
   `audit` off unless declared; `id` is the key `output.id` declares (`keySchemaOf`), never a fixed
-  `t.uuid`.
+  `t.uuid`; `row` goes to `mutator()` as declared, never loaded here (#687).
 - **A lookup table is read with `Object.hasOwn`** (`IRREGULAR` in `naming.ts`, `BY_FORMAT` in
   `sample-input.ts`) — caller- or provider-supplied keys.
 
@@ -222,8 +222,8 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   inside `withWriteOrigin(writeDigest(key))` so the page recognises its own `records` echo. A label,
   never a gate.
 - **Both stores FENCE a settlement on the reservation `id` AND `in-flight`**:
-  `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)`. A fenced no-op is logged,
-  never thrown.
+  `settle(key, value, reservationId, redacted)` / `fail(key, failure, reservationId)` /
+  `release(key, reservationId)`. A fenced no-op is never thrown.
 - **An answer rests REDACTED** (#591): `withIdempotency` passes the store `restingAnswer(value)`
   (core's `isRedactedKey` + `isSecret` — never a second rule) and `redacted` as `settle`'s
   REQUIRED 4th argument; both stores keep it (`x_idempotency.redacted`, memory's record field).

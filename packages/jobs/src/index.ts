@@ -153,6 +153,7 @@ export {
   JobPageInvalidError,
 } from './errors-operator';
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
+export { JobTenantMismatchError } from './errors-tenant';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
   EVENTS_PURGE_TARGET,
@@ -361,6 +362,7 @@ export type {
   WebhookEndpoint,
   WebhookEvent,
   WebhookReport,
+  WebhookTenant,
 } from './webhook';
 export { DEFAULT_WEBHOOK_DISABLE_AFTER, webhook } from './webhook';
 export type { WebhookFetch } from './webhook-attempt';

@@ -5,10 +5,9 @@
 
 import { gauge } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
-import { canListen } from '@ultimat3/db';
+import { canListen, dbExecutor } from '@ultimat3/db';
 import type { QueueWake } from '@ultimat3/jobs';
 import { startQueueWake } from '@ultimat3/jobs';
-import { pgExecutorFor } from './runtime-queue';
 
 // The wake the gauge reads. One observer for the life of the process: a gauge redeclared with a
 // different `observe` is refused, and `x dev` starts the roles again on every restart-in-place.
@@ -32,7 +31,7 @@ export function startWorkerWake(db: DbClient): QueueWake | null {
       observe: wakeLive,
     });
   }
-  const wake = startQueueWake({ listener: db, executor: pgExecutorFor(db) });
+  const wake = startQueueWake({ listener: db, executor: dbExecutor(() => db) });
   current = wake;
   return {
     live: () => wake.live(),
