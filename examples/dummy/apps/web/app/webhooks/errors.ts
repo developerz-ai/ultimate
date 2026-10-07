@@ -7,7 +7,7 @@ export class EndpointLimitReached extends UltimateError {
     super({
       code: 'X_ORG_ENDPOINT_LIMIT',
       cause: `org ${orgId} already has ${limit} webhook endpoints, the most one org may register`,
-      fix: `psql "$DATABASE_URL" -c "DELETE FROM webhook_endpoints WHERE org_id = '${orgId}' AND disabled_reason IS NOT NULL"`,
+      fix: `removeWebhookEndpoint({ orgId: '${orgId}', endpointId }) — as the org's owner, for an endpoint the org no longer delivers to; that frees its slot`,
     });
   }
 }

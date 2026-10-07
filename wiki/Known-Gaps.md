@@ -95,13 +95,13 @@ Each of these is a defect somebody has already argued about, and the reasoning i
 
 ## Carried backlog
 
-`As of 2026-10-06`. Rows plan 101 carried from superseded plans and sweeps 10a–10e left open. **The
+`As of 2026-10-07`. Rows plan 101 carried from superseded plans and sweeps 10a–10e left open. **The
 backlog row is the record** — cause, evidence and fix live there and in the issue; a row here says
 only what you meet and how to get past it. Backlog: [`10-carried-backlog.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/10/04/101-squeaky-clean-sweep/10-carried-backlog.md).
 
 None open, `As of 2026-10-07`: sweep 13 closed the last four — B24 (`agentJob` output, #685), B25
 (`webhook`'s endpoints and ledger, #686), B26 (`t.array` bounds and `transition()`'s row loader, #687)
-and B27 (one `PgExecutor` builder, `dbExecutor()`, #688).
+and B27 (one `PgExecutor` builder, `dbExecutor()`, #688), in PRs #701, #703 and #706.
 
 ## Deferred by plan 101
 
