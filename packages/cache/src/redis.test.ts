@@ -12,6 +12,7 @@ import { namespaceFor, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTi
 import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 import { cacheStack } from './tiers';
+import { CACHE_CODEC_MARK } from './value-codec';
 
 describe('redisTier', () => {
   test('is named "redis"', () => {
@@ -80,7 +81,14 @@ describe('redisTier', () => {
     await tier.set('k', 'v', { ttlMs: 500 });
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
-    expect(setCall).toEqual(['SET', 'x:c:k', JSON.stringify({ v: 'v', t: [] }), 'PX', '500']);
+    // The codec's mark, then the JSON: only marked text is revived on the way back.
+    expect(setCall).toEqual([
+      'SET',
+      'x:c:k',
+      `${CACHE_CODEC_MARK}${JSON.stringify({ v: 'v', t: [] })}`,
+      'PX',
+      '500',
+    ]);
   });
 
   test('a sub-second remainder is not rounded up into staleness', async () => {

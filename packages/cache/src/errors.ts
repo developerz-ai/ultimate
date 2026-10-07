@@ -86,7 +86,7 @@ export class CacheValueUnencodableError extends UltimateError {
     super({
       code: 'X_CACHE_VALUE_UNENCODABLE',
       cause: `entry "${input.key}" cannot be written to the ${input.tier} tier: ${input.reason}. A cache tier holds JSON plus Date, bigint, Map and Set, the same shape on every tier`,
-      fix: 'cache a projection without the cycle — e.g. map the rows to plain objects before returning them from the cached load(), and drop back-references such as a parent pointer',
+      fix: 'cache a projection the codec can read back — map the rows to plain objects in the cached load(), drop back-references such as a parent pointer, flatten nesting past 512 levels, and store a bigint past 4096 digits as a string',
       meta: { key: input.key, tier: input.tier },
     });
   }

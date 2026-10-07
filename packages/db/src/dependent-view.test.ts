@@ -56,6 +56,17 @@ describe('retypeTargets', () => {
     ]);
   });
 
+  // `ident_cont` takes non-ASCII and `$`, and a UTF8 server folds only ASCII: `Évent` stays
+  // `Évent`, so a JS `toLowerCase()` named a column the catalog does not hold.
+  test('a non-ASCII or $-bearing bare name is one name, folded in ASCII only', () => {
+    expect(retypeTargets('alter table Docs alter Évent type text;')).toEqual([
+      { table: 'docs', column: 'Évent' },
+    ]);
+    expect(retypeTargets('alter table docs alter a$b type text;')).toEqual([
+      { table: 'docs', column: 'a$b' },
+    ]);
+  });
+
   test('a quoted name keeps its case, because that is the name the catalog holds', () => {
     expect(retypeTargets('alter table "Docs" alter column "Rank" type text;')).toEqual([
       { table: 'Docs', column: 'Rank' },

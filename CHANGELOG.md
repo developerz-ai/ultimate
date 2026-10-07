@@ -8,7 +8,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+**Sweep 13** — a deep-dive audit of every tier, and the last open reference-app gaps (B24–B27).
+
+### Added
+
+- `@ultimat3/schema`: `t.array(items, { min, max })` — item-count bounds, published as `minItems`/`maxItems` in the JSON Schema and the wire schema. A bound no array can satisfy refuses at declaration (`X_SCHEMA_BOUNDS_INVALID`) (#687).
+- `@ultimat3/db`: `dbExecutor(client = db)` — the one `PgExecutor` builder. The default resolves the ambient client per statement, so a module-scope executor reaches the boot's client and joins an open transaction (#688). `endOfBlockComment` and `dollarTagAt` are exported: the lexer rules other packages read SQL with.
+- `@ultimat3/core`: `grantCovers(grant, wanted)` — the one wildcard-grant matcher.
+
+### Fixed
+
+- `@ultimat3/http`: `verifyWebhookSignature` refuses an empty or missing `secret` (`X_CONFIG_INVALID`). An unset env var used to verify any forgery, signed with an empty key.
+- `@ultimat3/policy`, `@ultimat3/auth`: a grant `a:b:*` covered every `a:…` permission, so `billing:invoice:*` granted `billing:refund:issue`, and an API key could keep that scope under an owner without it. Wildcards now cover exactly their prefix.
+- `@ultimat3/cache`: every tier stores one encoding (JSON plus tagged `Date`, `bigint`, `Map`, `Set`) and hands back a fresh copy. A `Date` was a `Date` on the pod that loaded it and a string on every other; a mutated LRU hit leaked to the next reader; a `bigint` never reached Redis. Codec text is marked (`x1:`), so a pre-codec entry reads back as plain JSON; nesting past 512 levels or a `bigint` past 4096 digits is refused at the write. A value no codec can encode is `X_CACHE_VALUE_UNENCODABLE`.
+- `@ultimat3/time`: `parseDuration` refuses a total that is not a safe integer (`'9'.repeat(305) + 'd'` was `Infinity`).
+- `@ultimat3/db`: a dollar-quote tag may hold non-ASCII letters, as in Postgres (`$é$ … $é$`).
+- `@ultimat3/db`: one identifier character class (`IDENTIFIER_CHAR`: ASCII, `_`, `$`, any non-ASCII), as Postgres reads names. `éE'\'` is a name then a plain string, so a `drop` after it is no longer hidden from `destructiveStatements`; a retyped non-ASCII column (`prénom`) finds its dependent views, and `col` is not matched inside `écol`; bare names fold ASCII-only, like the server.
 
 ## 25.0.0 - 2026-10-07
 

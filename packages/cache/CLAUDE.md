@@ -97,7 +97,8 @@ Tier 1. Tagged caching + THE invalidation graph.
   `redis.live.test.ts`.
 - **Every tier stores codec TEXT, never the caller's object** (`value-codec.ts`: JSON + tagged
   `Date`/`bigint`/`Map`/`Set`, app `$x` keys escaped). One shape whichever tier hit, no shared
-  mutable reference; a cycle is `X_CACHE_VALUE_UNENCODABLE` at the write. `tier-value-shape.test.ts`.
+  mutable reference; a cycle, depth > 512 or a bigint > 4096 chars is `X_CACHE_VALUE_UNENCODABLE`
+  at the write. Only `x1:`-marked text is revived; unmarked (pre-codec) is plain `JSON.parse`.
 - **`CacheTier.set` REJECTS, never throws synchronously** — `lruTier`/`memoTier` are
   `async` for that alone.
 - **`redis.ts`'s script deletes NOTHING — it reads.** It returns the members; the tier `DEL`s them

@@ -22,7 +22,7 @@ import { addCheck, dropCheck } from './check-ddl';
 import type { Plan } from './foreign-key-plan';
 import { asDeclared, createIndex, dropIndex } from './index-ddl';
 import type { CheckDescription, IndexDescription, TableDescription } from './introspect';
-import { IDENTIFIER_PART, noiseAt } from './sql-scan';
+import { IDENTIFIER_CHAR, noiseAt } from './sql-scan';
 
 /**
  * Whether `expression` reads `column`, over-approximating on purpose.
@@ -52,12 +52,12 @@ export function referencesColumn(expression: string, column: string): boolean {
       at = noise.end;
       continue;
     }
-    if (!IDENTIFIER_PART.test(expression[at] ?? '')) {
+    if (!IDENTIFIER_CHAR.test(expression[at] ?? '')) {
       at += 1;
       continue;
     }
     let end = at;
-    while (end < expression.length && IDENTIFIER_PART.test(expression[end] ?? '')) end += 1;
+    while (end < expression.length && IDENTIFIER_CHAR.test(expression[end] ?? '')) end += 1;
     if (expression.slice(at, end).toLowerCase() === wanted) return true;
     at = end;
   }

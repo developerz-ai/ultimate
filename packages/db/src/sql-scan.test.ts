@@ -1,7 +1,9 @@
 // The block-comment rule `sql-scan.ts` exports for a second reader (`@ultimat3/mcp`'s read-only
 // check): Postgres NESTS `/* */`, and a comment that never closes is reported, never guessed.
 import { describe, expect, test } from 'bun:test';
+import { destructiveStatements } from './destructive';
 import { dollarTagAt, endOfBlockComment, noiseAt } from './sql-scan';
+import { statementsOf } from './statement-split';
 
 describe('endOfBlockComment', () => {
   test('a nested comment closes at its OUTER terminator, not the first one', () => {
@@ -43,5 +45,24 @@ describe('dollarTagAt — the tag grammar Postgres lexes', () => {
 
   test('a tag never starts with a digit', () => {
     expect(dollarTagAt('$1$', 0)).toBeNull();
+  });
+});
+
+// `E'…'` is an escape string only when the `E` is a token of its own. After ANY identifier
+// character — non-ASCII and `$` included, as Postgres's `ident_cont` reads them — it ends the name
+// and the `'` opens a standard string, where `\` is data and `'` closes it.
+describe('an E prefix glued to an identifier opens no escape string', () => {
+  test('after a non-ASCII name, E then a quote is a plain string: the drop is its own statement', () => {
+    const script = "select 1 as éE'\\'; drop table posts; --';";
+    expect(statementsOf(script)).toHaveLength(2);
+    expect(destructiveStatements(script).map((one) => one.kind)).toEqual(['drop-table']);
+  });
+
+  test('a $ inside the name ends it the same way', () => {
+    expect(statementsOf("select 1 as a$E'\\'; drop table posts; --';")).toHaveLength(2);
+  });
+
+  test('a standalone E still opens an escape string, where a backslash escapes the quote', () => {
+    expect(statementsOf("select E'\\'; drop table posts; --';")).toHaveLength(1);
   });
 });

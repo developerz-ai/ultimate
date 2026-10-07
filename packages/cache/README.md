@@ -55,11 +55,12 @@ Every tier (the memo and the LRU included) stores the value as text through one 
 | a `Date`, a `bigint`, a `Map`, a `Set` (at any depth) | the same type back |
 | a plain object, array, string, number, boolean, `null` | JSON semantics: `NaN`/`Infinity` → `null`, `undefined` members dropped |
 | a class instance | a plain object — its prototype is not stored |
-| a cycle, or a `toJSON` that throws | `X_CACHE_VALUE_UNENCODABLE`, at the write |
+| a cycle, a `toJSON` that throws, nesting past `MAX_CACHE_VALUE_DEPTH` (512), a `bigint` past `MAX_CACHE_BIGINT_DIGITS` (4096 chars) | `X_CACHE_VALUE_UNENCODABLE`, at the write — a value is stored and readable, or refused |
 
 A hit is never the object that was written, nor the one another reader got: mutating it changes
-nothing in the cache. An app key spelled `$x` (or `$$x`…) is escaped on the way in, and a Redis
-entry written as plain JSON before the codec still reads.
+nothing in the cache. An app key spelled `$x` (or `$$x`…) is escaped on the way in. The stored text
+is `x1:` + JSON; only marked text is revived, so a Redis entry written as plain JSON before the
+codec reads back exactly as stored — never revived, never renamed.
 
 **`ttlMs` is positive and finite, in every tier.** Omit it for the tier's default; anything else
 is `X_CACHE_TTL_INVALID`. There is no "never expires" and no "do not cache" — `0` used to mean the
