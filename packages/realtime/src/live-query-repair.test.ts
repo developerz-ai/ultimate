@@ -78,7 +78,7 @@ function socketFor(id: string): { socket: SyncSocket; ws: FakeWs } {
 
 function change(after: Row, position: number): ChangeEvent {
   return {
-    entity: 'posts',
+    table: 'posts',
     op: 'update',
     before: null,
     after,

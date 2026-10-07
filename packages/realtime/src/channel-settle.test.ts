@@ -209,7 +209,7 @@ describe('the latch of denials is bounded', () => {
 });
 
 const change = (seq: number, over: Partial<ChangeEvent> = {}): ChangeEvent => ({
-  entity: 'channel_settle_notes',
+  table: 'channel_settle_notes',
   op: 'insert',
   before: null,
   after: { id: `n${seq}`, orgId: 'o1', title: 't', body: 'b' },

@@ -21,6 +21,7 @@ import {
   SCRIPT_TAG,
   SRC_ATTR,
 } from './budgets-scan';
+import { builtUnmeasuredFinding } from './budgets-unmeasured';
 import type { Finding } from './output';
 import type { UnmeasuredRoute } from './static-report';
 import { SW_REGISTER_PATH } from './sw-artifacts';
@@ -115,8 +116,13 @@ function exceededJsFix(url: string, file: string | undefined, bytes: number): st
  * second build's. Reporting the first as the second is what sends a reader to re-run a build that
  * already did everything it was going to do.
  */
-function unmeasuredFinding(url: string, declared: string, built: boolean, stale = false): Finding {
-  if (stale) {
+function unmeasuredFinding(
+  url: string,
+  declared: string,
+  stats: BuildStats | undefined,
+  unmeasured: readonly UnmeasuredRoute[],
+): Finding {
+  if (stats?.stale === true) {
     return {
       code: 'X_BUDGET_UNMEASURED',
       cause: `${url} declares a ${declared} budget and ${BUILD_STATS_FILE} was written by an earlier measurement rule than this gate's (v${String(BUILD_STATS_RULES)}), so its numbers are not this gate's to read`,
@@ -125,54 +131,19 @@ function unmeasuredFinding(url: string, declared: string, built: boolean, stale 
       at: url,
     };
   }
+  // A build ran: the report's account of this route decides the instruction
+  // (`budgets-unmeasured.ts`) — its own code, an actor edit, or the report.
+  if (stats !== undefined) {
+    const entry = unmeasured.find((one) => one.path === url);
+    return builtUnmeasuredFinding(url, declared, BUILD_STATS_FILE, entry);
+  }
   return {
     code: 'X_BUDGET_UNMEASURED',
-    cause: built
-      ? `${url} declares a ${declared} budget and ${BUILD_STATS_FILE} has no row for it, so the build ran and could not weigh it`
-      : `${url} declares a ${declared} budget and no build has written ${BUILD_STATS_FILE} in this repo`,
+    cause: `${url} declares a ${declared} budget and no build has written ${BUILD_STATS_FILE} in this repo`,
     // `--target static` is load-bearing and `x build` alone was a fix that changes nothing: the
     // flag defaults to `docker`, and only the static target runs `apps/web/prerender.ts`, which is
-    // the one caller of `writeBuildStats`. When a build already ran, the second half is where the
-    // answer is — the report names every route it could not weigh, and why.
-    fix: built
-      ? `x build --target static --json   # its "unmeasured" list says why ${url} could not be weighed`
-      : 'x build --target static --json && x verify --json',
-    docs: ERROR_DOCS_URL,
-    at: url,
-  };
-}
-
-/**
- * The ONE code a failed measurement is reported under by its own name rather than as
- * `X_BUDGET_UNMEASURED`. Its cause is complete — the island, the prop, its bytes, the cap — and
- * its fix is an edit to the page, so the step's own "run x build and read the list" would put a
- * second command between the author and a sentence the build had already composed. Every other
- * render failure keeps the generic finding: a `TypeError` from a `load` that wanted a request is
- * a reason to read the report, not an instruction.
- *
- * ONE code and not "any coded error", deliberately. `X_NO_CONTEXT`, `X_UNAUTHENTICATED` and
- * `X_DB_UNAVAILABLE` from a measurement render are facts about the BUILD's environment, and
- * reporting them under their own codes would tell the author to fix a database the gate never
- * had. The list grows by a decision, per code, here.
- */
-const REPORTED_BY_OWN_CODE: ReadonlySet<string> = new Set([
-  'X_ISLAND_PROPS_INVALID',
-  // A dynamic route that lists no `prerender()` path: the edit is in the route, not the build.
-  'X_BUDGET_PARAMS_UNDECLARED',
-]);
-
-/**
- * The build's own finding for a route it could not weigh, when that failure is an instruction.
- * Read off the static report's `unmeasured` list — the same list `X_BUDGET_UNMEASURED`'s `fix:`
- * sends its reader to, now read by the step itself for the one code it can act on.
- */
-function ownCodeFinding(url: string, unmeasured: readonly UnmeasuredRoute[]): Finding | undefined {
-  const entry = unmeasured.find((one) => one.path === url);
-  if (entry?.code === undefined || !REPORTED_BY_OWN_CODE.has(entry.code)) return undefined;
-  return {
-    code: entry.code,
-    cause: entry.cause ?? entry.reason,
-    fix: entry.fix ?? `x build --target static --json   # its "unmeasured" list has ${url}`,
+    // the one caller of `writeBuildStats`.
+    fix: 'x build --target static --json && x verify --json',
     docs: ERROR_DOCS_URL,
     at: url,
   };
@@ -186,7 +157,7 @@ function ownCodeFinding(url: string, unmeasured: readonly UnmeasuredRoute[]): Fi
  * `unmeasured` is the static report's list of routes the build rendered and could not weigh, with
  * each failure's code when it had one. Optional because the report is written beside the stats
  * and can be absent for the same reason; with it, a route whose measurement failed on a code in
- * `REPORTED_BY_OWN_CODE` is reported under that code, with the build's own cause and fix.
+ * `REPORTED_BY_OWN_CODE` (`budgets-unmeasured.ts`) is reported under that code, with the build's own cause and fix.
  *
  * `fileOf` names the file an `X_BUDGET_EXCEEDED` fix edits: the step runs after the app loaded,
  * so render's route table already holds it. A test hands its own.
@@ -210,10 +181,7 @@ export function checkBudgets(
     const js = jsBudgetOf(route);
     if (measured === undefined) {
       if (js !== null) {
-        findings.push(
-          ownCodeFinding(route.url, unmeasured) ??
-            unmeasuredFinding(route.url, 'JS', stats !== undefined, stats?.stale === true),
-        );
+        findings.push(unmeasuredFinding(route.url, 'JS', stats, unmeasured));
       }
       continue;
     }

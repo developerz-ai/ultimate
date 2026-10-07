@@ -35,7 +35,7 @@ const across = (change: ChangeEvent): ChangeEvent | undefined =>
   )?.change;
 
 const change = (after: Record<string, unknown>, over: Partial<ChangeEvent> = {}): ChangeEvent => ({
-  entity: 'bus_blobs',
+  table: 'bus_blobs',
   op: 'update',
   before: null,
   after: asRow(after),

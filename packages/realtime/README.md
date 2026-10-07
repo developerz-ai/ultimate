@@ -75,7 +75,7 @@ class — stay on `.`.
 | tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
 | tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
-| the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). Moved from `@ultimat3/testing`, which no longer re-exports it |
+| the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). `ChangeEvent.table` is the entity's TABLE on it as on the WAL decoder and `recordPublisher`, so an `entity(name, { table })` reaches channels and live windows (25.0.0). Moved from `@ultimat3/testing`, which no longer re-exports it |
 | fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus, behind `NatsTransport` | `./server` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
 | reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
@@ -84,7 +84,8 @@ class — stay on `.`.
 | wire | `.` | `PROTOCOL_VERSION` (3), `encode`, `decode`, `Frame` |
 | the node | `./server` | `syncNode` / `listenSyncNode` (`sync` role) |
 | a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `.` | `useQuery`, `useRecord`, `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| hooks | `.` | `useQuery`, `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useMutation`, `useMutationQueue`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
+| channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
 | first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`: the boot's restore and the open outbox, capped (#506) |
 | offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `memoryLocalStore()` |
@@ -120,6 +121,62 @@ is `X_CHANNEL_DECLARATION_INVALID` at declaration. `catchUp` is read on every ac
 whose name `registerQueries()` stamps at boot is picked up. The reference app's
 [`app/posts/channel-ref.ts`](../../examples/dummy/apps/web/app/posts/channel-ref.ts) is the idiom.
 
+### What `useChannel()` reports
+
+`useChannel(ref, params)()` is a `ChannelState`. Every channel that carries `records` or `events`
+leaves `joining` on the node's first answer; nothing waits for app traffic.
+
+| State | Entered when | Left when |
+|---|---|---|
+| `joining` | the subscribe is sent (on hold, and again on every reconnect) | the node's answer: a `records` channel's `replay-gap` (a fresh seat) or the `records` frame at a current cursor; an `events` channel's roster — sent on every seat, an empty one from a node with no presence (24.0.0) |
+| `catching-up` | a `replay-gap`, or a frame in a new epoch: the `catchUp` query is re-read, frames held behind it | the read lands → `live` (the held frames applied in order) |
+| `live` | as above | the socket drops → `offline`; a gap → `catching-up` |
+| `offline` | the page socket closed | it reopens → `joining` |
+| `failed` | the node refused the subscribe (`error()` is the coded refusal), or a catch-up read failed (retried on the client's curve, and on the next open) | a successful retry → `live` |
+
+A channel declared with **neither** `records` nor `events` carries nothing, so nothing answers its
+join and it reads `joining` for as long as it is held.
+
+## Channel records with no replicator
+
+A channel's `records` come off the change bus every sync node reads. The WAL replicator fills it
+— and needs a replication slot and the `REPLICATION` grant, cluster-wide on a shared Postgres.
+Without one, `recordPublisher` (`./server`) is how an app puts its own **committed** rows on that
+bus; every node turns them into `records` frames exactly as it does a replicated change (#682).
+
+```ts
+import type { ChannelEntity, Row } from '@ultimat3/realtime';
+import { recordPublisher, type Transport } from '@ultimat3/realtime/server';
+
+declare const transport: Transport; // the process's bus — the one `selectTransport` chose
+declare const runs: ChannelEntity; // an `entity()` a `channel(…, { records: [runs] })` lists
+declare const finished: readonly Row[];
+
+// Once per process, at boot, naming every entity it will publish.
+const publisher = recordPublisher({ transport, entities: [runs] });
+
+// After the transaction commits.
+export async function settled(): Promise<void> {
+  await publisher.publish(runs, finished);
+  await publisher.publish(runs, finished, { op: 'delete' });
+}
+
+export const shutdown = (): void => publisher.close();
+```
+
+| Fact | Rule |
+|---|---|
+| one per process | one publisher is one `producer`; its `seq` counts from 1, one per row, in call order. A node reads a hole in it as a gap, and the members of every records topic re-run their catch-up read. A NEW publisher is not a gap — publishers run side by side, one per process |
+| committed rows only | call it after COMMIT. A row published from inside a transaction is on every page before a rollback; nothing here can see the transaction |
+| what rides | the entity's record properties and nothing else: a sealed column and a property the entity does not declare are dropped. A row without its key is `X_RECORD_KEY_MISSING`, before any row of the call is sent |
+| `op` | `upsert` (default) adopts the rows; `delete` removes them by key. A row whose channel params changed: publish its old image as a `delete`, then the new one |
+| `write` | the keyed request the call runs inside (`writeDigest` of its idempotency key), so the writing page settles its own echo; or the digest you pass; or `null` |
+| a send the bus refused | the call rejects (`X_TRANSPORT_UNAVAILABLE` from NATS); that row's seq stays spent, so the nodes see the hole and repair it |
+| channels, never live queries | a publisher has no commit position, and a live window refuses a change below its own lsn as stale. Its changes reach the declared channels only; a live query needs the replicator |
+| under `x dev` | an entity a publisher claims is no longer carried to channels by the in-process bridge — the app's publish is its one delivery, as in production. Live queries still hear the bridge |
+| one producer kind per table | a sync node keeps the producer KIND (replicator or publisher) that first carried a table and drops the other's changes for it, logged once per table as `X_REALTIME_PRODUCER_CONFLICT` — a replicator and a publisher on one table was every row twice on every channel. The replicator carries every entity table, so the fix is always to stop publishing that one; the node decides again on restart |
+| refusals | `X_INVARIANT`: an entity the publisher did not claim, a `write` that is not a digest, a closed publisher |
+
 ## The hooks
 
 One record store and one socket per **page**, on `globalThis`: every island is its own bundle, so a
@@ -142,6 +199,7 @@ import {
   usePresence,
   useQuery,
   useRecord,
+  useRecords,
 } from '@ultimat3/realtime';
 
 declare const orgId: string;
@@ -149,10 +207,16 @@ declare const postId: string;
 declare const LIKE_POST: MutatorLike; // name + local twin + conflict — never the mutator VALUE
 declare const orgFeed: ChannelRef<'orgId'>; // a `channel('org-feed', { params: ['orgId'], … })`
 declare function onEvent(event: Readonly<Record<string, unknown>>): void;
+type Run = { readonly id: string; readonly state: string; readonly startedAt: string };
 
 const feed = useQuery({ name: 'liveFeed', live: true }, { orgId }); // AsyncState<readonly Row[]>
 const posts = useQuery({ name: 'listPosts', entity: 'posts' }, {}); // one HTTP read, rows as records
 const post = useRecord('posts', postId);                            // AsyncState<Row | undefined>
+const pair = useRecords('posts', [postId]);                         // those keys, in key order
+const runs = useRecords<Run>('runs', {                              // EVERY `runs` record on the page
+  where: (run) => run.state !== 'done',
+  order: (a, b) => (a.startedAt < b.startedAt ? 1 : -1),
+});
 const like = useMutation(LIKE_POST);                                // await like(input); like.pending
 const connection = useConnection();                                 // .offline .online .reconnectAt .updateAvailable
 const writes = useMutationQueue();                                  // .pending .failed
@@ -176,6 +240,7 @@ same type `@ultimat3/ui` renders.
 |---|---|
 | A query ref is `{ name, live?, entity? }`, never the query VALUE | importing a `query()` drags its read path into the island (698,801 B measured) |
 | Lists hold keys; rows are the store's | a record updated by any answer or frame re-renders every list showing it, with no refetch |
+| A list that must GROW with the store is `useRecords(type, { where?, order? })` | a `useQuery` list holds its own answer's keys and `useRecords(type, keys)` the keys it was given, so a record a channel's `records` frame adopts reaches neither. The whole-type form is the channel-records counterpart of a live window: `ready` from its first read, every record of the type the store holds (optimistic ones included), default order by key, and none evicted while it is held — a row it alone kept goes when the last reader of the type lets go (#680) |
 | Every write is HTTP through core's `clientTransport` | one write path: the action's authz, idempotency and contract; the socket carries none |
 | The answer's records are adopted before the overlay goes | a convergent twin never flickers back to the pre-write value |
 | **No `solid-js` import.** Each bundle installs its own `SignalFactory` | every island carries its own solid-js; a signal from another bundle is invisible to its effects |
@@ -464,8 +529,12 @@ principal.
   or, since 24.0.0, a new `producer` after one it already read: the run before it died, and the
   tail of a dead stream has no later sequence to be missed against —
   invalidates every window it holds and desyncs every subscriber, so the next change to each query
-  re-reads and re-snapshots. Both fields are optional on the bus, so a publisher that does not
-  sequence simply detects nothing. Durable replay (JetStream) is a separate decision — retention,
+  re-reads and re-snapshots — and tells every member of every open topic that carries records
+  `replay-gap` at a new epoch, so each re-runs its channel's catch-up read (`ChannelHub.invalidate`,
+  24.0.0, #681). A bus that reconnected is the same repair, with no later message needed. Both
+  fields are optional on the bus, so a publisher that does not sequence simply detects nothing.
+  A `recordPublisher`'s changes are sequenced too (`source: 'publisher'`): a hole in one is a
+  gap; a new publisher is not, because publishers run side by side. Durable replay (JetStream) is a separate decision — retention,
   storage and replay window — and is deliberately not this mechanism.
 - **A bulk write re-reads only the windows over its entity.** `updateWhere`/`deleteWhere` name a
   filter, not rows, so the in-process replicator calls `registry.invalidate(entity)`: windows whose
@@ -491,17 +560,17 @@ principal.
   readers that throw on an absent field, unlike the `list()` that made `hello.resume`'s removal free.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next delivery re-snapshots rather than diverging.
-- **A dropped CHANNEL frame is not safe, and is not repaired.** A topic has no cursor, no mark and
-  no re-snapshot, so tier 1 is **at most once**. Every refusal is counted — the series
+- **A dropped `events` frame is not repaired** (a dropped `records` frame is: `replay-gap` once the
+  socket drains). An event has no cursor, no mark and no re-snapshot, so tier 1's `events` are
+  **at most once**. Every refusal is counted — the series
   `channel_frames_dropped_total` (no labels: a topic is client-chosen, so a per-topic label is
   unbounded series one socket can mint), the log line `channel.frames_dropped` at `warn` carrying
   `{ topic, dropped, total }`, and `node.sockets.droppedChannelFrames` for a test or a benchmark
   that cannot scrape. Node-wide and cumulative, because a socket past `maxDroppedFrames` is closed
   and removed — a per-socket count leaves exactly when loss is worst. Distinct from
   `SyncSocket.droppedFrames`, which counts every kind of frame one connection lost and dies with it.
-  Repair would need a per-topic sequence on the wire: a channel's `lsn` is the publishing hub's own
-  per-node counter, so a client cannot tell a gap from a message that arrived via another node.
-  **Anything that must arrive belongs on a live query.**
+  `records` frames carry a per-node `seq`/`epoch`, which is what lets them be repaired; `events`
+  carry none. **Anything that must arrive belongs on a live query or a `records` channel.**
 - **Bun's native WS pub/sub is not used.** `subscribeTopic` does not call `ws.subscribe` and the
   websocket config declares no `publishToSelf`; every channel message is one filtered `send` per
   socket through `SocketRegistry.deliver`, reading a per-topic index rather than walking the socket

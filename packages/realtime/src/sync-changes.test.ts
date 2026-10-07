@@ -17,7 +17,7 @@ import { type SyncNode, syncNode } from './sync-node';
 const BUILD_ID = 'build-1';
 
 const change: ChangeEvent = {
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before: null,
   after: { id: 'p1', orgId: 'o1', title: 'edited' },
@@ -47,7 +47,7 @@ function harness(registry: LiveQueryRegistry): {
     node,
     publish: async (event) => {
       await transport.publish(
-        `${CHANGE_SUBJECT_PREFIX}.${event.entity}.${event.orgId}`,
+        `${CHANGE_SUBJECT_PREFIX}.${event.table}.${event.orgId}`,
         JSON.stringify(event),
       );
       // The handler is synchronous and the fanout is not; one turn is enough for an in-process bus.

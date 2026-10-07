@@ -302,6 +302,31 @@ convention and business convention never ships ([axiom
 **every** login — so removing somebody from a group in the IdP takes effect at their next sign-in,
 rather than never. A seam that returns the stored answer writes nothing.
 
+**The profile is not all the IdP said.** `resolveGrants(profile, context)` takes a second argument
+(`OAuthGrantContext`) for an IdP that keeps authorization facts off the id token — groups,
+entitlements, an `allowed_oauth_apps` claim served on `/userinfo` only:
+
+```ts
+import { defineAuth, memoryAuthAdapter, oauthLogin } from '@ultimat3/auth';
+
+const auth = defineAuth({ adapter: memoryAuthAdapter(), providers: ['google'] });
+
+export const { start, callback } = oauthLogin(auth, {
+  resolveGrants: async (_profile, context) => {
+    const claims = await context.userinfo();
+    const apps = Array.isArray(claims['allowed_oauth_apps']) ? claims['allowed_oauth_apps'] : [];
+    return apps.includes('bank-integrations') ? { roles: ['member'] } : { roles: [] };
+  },
+});
+```
+
+| `context.` | What it is |
+|---|---|
+| `provider` | the provider id this login came through |
+| `tokens` | the exchange's `OAuthTokens`, in flight — the framework stores none of them; keeping one is the app storing a credential |
+| `idTokenClaims` | every claim of the VERIFIED id token, the ones `OAuthProfile` drops included (`hd`, `groups`); `null` without one |
+| `userinfo()` | the provider's userinfo body, every claim, read with the access token — lazily (no call, no request) and at most once per login; none at all when the profile was already read off userinfo (GitHub), whose body it hands back. A body naming another `sub` is `X_OAUTH_EXCHANGE_FAILED`; so is a provider with no userinfo endpoint, and a failed read, which is not remembered |
+
 ## MFA — TOTP and recovery codes
 
 TOTP is pure functions over a secret and a clock; what is STORED goes through two writers and one
@@ -611,17 +636,39 @@ the previous scope's persisted rows and queued writes).
 `beginOAuth`, the handshake cookie and `completeOAuthLogin`. Provider configs stay pure data —
 importing `oauth.ts` performs no network I/O and reads no env.
 
+Mount both in the app's own server through **`runtime.routes`**: `apps/<app>/runtime.ts`
+exporting `runtime` (`RuntimeOverrides`). `x dev` and `runRole` both read that file and mount its
+routes through the whole pipeline — `configureAuthenticator`, the rate limiter, the security
+headers, the SIGTERM drain. Never a second `Bun.serve` beside the app: it stands on its own
+socket, outside every one of those, and a login flow is the last surface that should run
+unthrottled and unheadered.
+
 ```ts
+// apps/web/runtime.ts
+import {
+  type AuthRouteDescriptor,
+  defineAuth,
+  oauthLogin,
+  postgresAuthAdapter,
+} from '@ultimat3/auth';
+import type { ServeOptions } from '@ultimat3/cli/serve';
+import type { Route } from '@ultimat3/http';
+
+// The app's one `auth` — imported from wherever it declares it.
+const auth = defineAuth({ adapter: postgresAuthAdapter(), providers: ['github'] });
 const { start, callback } = oauthLogin(auth);
 
-Bun.serve({
-  fetch(request) {
-    const { pathname } = new URL(request.url);
-    if (pathname.endsWith('/callback')) return callback.handle(request);
-    if (pathname.startsWith('/auth/oauth/')) return start.handle(request);
-    return new Response(null, { status: 404 });
-  },
+// A descriptor takes a bare `Request`: the pipeline's `UltimateRequest` carries it as `raw`.
+const mounted = (leg: AuthRouteDescriptor): Route => ({
+  method: leg.method,
+  path: leg.path,
+  handler: (request) => leg.handle(request.raw),
+  meta: { name: leg.name, auth: leg.auth },
 });
+
+export const runtime: NonNullable<ServeOptions['runtime']> = {
+  routes: [start, callback].map(mounted),
+};
 ```
 
 | | `start` | `callback` |
@@ -633,20 +680,9 @@ Bun.serve({
 A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`
 is tier 2 like this package, so auth may not import it, and `defineRoute` is tier 4 and describes
 a rendered page. A bare `Request` in, a `Response` out: drivable from a test, mountable by any
-router that can match a `:param`.
-
-**The `Bun.serve` above is library usage, not app usage.** An Ultimate app's server is `runRole`
-(`apps/web/server.ts` is three lines that call it), and `As of 2026-08` `ServeOptions` has no
-routes seam — the route list is built inside `serveApp` and closed. So a second `Bun.serve` in an
-app does not extend that server, it stands beside it: on its own socket, outside the pipeline, and
-therefore outside `configureAuthenticator`, the rate limiter, the security headers and the
-SIGTERM drain. A login flow is the last surface that should be the one running unthrottled and
-unheadered.
-
-Until the seam exists, an app serving these descriptors serves them itself and pays for all of
-that itself — a second port to publish and health-check, its own throttle in front of `callback`,
-its own security headers, and a drain that does not strand a handshake mid-flight. There is no
-mounting API to call today; do not write one, and do not read this section as promising one.
+router that can match a `:param` — and `runtime.routes` is the one an app has. It mounts after the
+framework's own routes and before the pages; every field it shares the file with is in
+[`wiki/Configuration.md`](../../wiki/Configuration.md#runtime-overrides--appsappruntimets).
 
 **The paths are not configurable.** `X_OAUTH_STATE_INVALID` has always told the caller to restart
 at `GET /auth/oauth/<provider>`; it now quotes `oauthStartPath()`, the same declaration the mount

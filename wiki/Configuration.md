@@ -127,13 +127,23 @@ There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 
 | field | type | default | notes |
 |---|---|---|---|
 | ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(postgresJobDriver({ executor }))`, or `setJobDriver(memoryJobDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)). Since 25.0.0 a config still writing it is refused at boot, `X_CONFIG_INVALID` naming that call |
-| `jobs.queues` | `string[]` | `['<name>-default']` | derived from `name`, not the literal `['default']`. A `worker` runs one pool per queue in `WORKER_QUEUES`. Empty is `X_CONFIG_INVALID` |
-| `jobs.concurrency` | `number` | `8` | per pool, per process. Below 1 is `X_CONFIG_INVALID` |
+| `jobs.queues` | `string[]` | `['<name>-default']` | derived from `name`, not the literal `['default']`. A `worker` serves these **and** every queue a registered `job()` is enqueued on (the union, so a job naming no queue is never stranded on `default`). A Deployment that sets [`WORKER_QUEUES`](#env-vars) serves exactly that list instead. Empty is `X_CONFIG_INVALID` |
+| `jobs.concurrency` | `number \| Record<queue, number>` | `8` (`JOBS_CONCURRENCY_DEFAULT`) | slots per queue, per worker process. A number applies to every queue served; a table gives each its own (`{ banks: 4, 'banks-long': 2 }`), and a served queue the table does not name runs at `8`. `As of 25.0.0`. A count below 1 or not whole, an empty table or a blank queue name is `X_CONFIG_INVALID` naming the entry (`jobs.concurrency.banks`). An overlay's table replaces the base's whole |
 | `jobs.maxAttempts` | `number` | `5` | per-job `retry` overrides it |
 | `jobs.backoff` | `'exponential' \| 'fixed'` | `'exponential'` | **two values, not three** — there is no `'linear'` |
 | `jobs.visibilityTimeoutMs` | `number` | `30000` | milliseconds, not a duration string. Lease length; expiry is how a killed worker's job resumes |
 
 There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retention` block `As of 2026-08-22` — `JobsConfig` is `{ queues, concurrency, maxAttempts, backoff, visibilityTimeoutMs }` and the flat spellings above are the whole surface.
+
+**Splitting queues across Deployments** (`As of 25.0.0`). Every Deployment runs the same image and the same `app.config.ts`, so which queues a Deployment claims is env, never config:
+
+```yaml
+# worker-short: 15 min grace          # worker-long: 2 h grace
+ROLE: worker                          ROLE: worker
+WORKER_QUEUES: banks                  WORKER_QUEUES: banks-long
+```
+
+Each worker then claims its list and nothing else. At boot it logs `jobs.worker.queue-unserved` (a warning, not a refusal) naming every queue a registered job is enqueued on that it will not claim, so a queue no Deployment serves is visible in the first log line rather than as a backlog. `x jobs ls --json` shows each queue's workers.
 
 ## `realtime`
 
@@ -626,7 +636,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
 | `ULTIMATE_STATE_DIR` | all, under `x dev` | no — default `<app>/.x` | relocates the whole of `.x/` (the embedded database, the local disk, the dev lock) for one process tree. The e2e step uses it to boot the app on a throwaway database beside a running `x dev` (`packages/cli/src/runtime-bindings.ts`). 21.0.0 |
 | `SYNC_URL` | `web` | no — unset dials `/_x/sync` on the page's own origin | where the page's one socket dials, rendered into every document as `<meta name="ultimate-sync">`. Must be `ws://` or `wss://`; anything else is `X_CONFIG_INVALID` at boot. **Required on the Compose rung**, where `sync` is published on its own port with no proxy in front: `SYNC_URL=ws://<host>:3001/_x/sync`. The shipped compose file refuses to start `web` without it. `x dev`, a combined-role container and the Helm chart's ingress all serve `/_x/sync` on the page origin, so they need nothing. `As of 2026-09-22` (21.0.0) |
-| `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
+| `WORKER_QUEUES` | `worker` | no — unset or blank serves `jobs.queues` plus every registered job's queue | comma-separated, trimmed, deduplicated. Set, it is the EXACT list this worker claims — `jobs.queues` and the registered queues are not added (`As of 25.0.0`; documented here before then and read by nothing). An empty entry (`banks,,long`) is `X_CONFIG_INVALID` at boot. See [Splitting queues across Deployments](#jobs) |
 | `NATS_URL` | `sync`, `replicator` | no — unset is in-process fanout | one node only; a second replica shares nothing. Unreachable → `X_TRANSPORT_UNAVAILABLE` at boot, not at readiness |
 | `NATS_KV_BUCKET` | `sync` | no — default `x_presence` | the JetStream KV bucket presence lives in. `[a-zA-Z0-9_-]+`; anything else is `X_TRANSPORT_PROTOCOL` at boot |
 | `REPLICATION_URL` | `replicator` | no — defaults to `DATABASE_URL` | the connection the WAL is read from; this role must have `REPLICATION` privilege |
@@ -690,7 +700,15 @@ await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.examp
 
 `renderEnvExample(schema, { extras })` returns the whole file, deterministic in declaration order. Per key it writes the description, then an annotation line — `required|optional · <type or enum values> · secret · role a/b` — then `KEY=<example>`. **A `secret: true` key's example is always empty**, even when the declaration has a default. `extras` are appended as commented `# NAME=` lines.
 
-**`x verify` holds the committed file to it**, on the `manifest` step: `.env.example` must be byte-for-byte the projection of `envSchema` in `app.config.ts`, so a moved description, default or required flag fails the gate as well as a missing key. A miss is `X_ENV_EXAMPLE_DRIFT`, missing keys named first; the fix is `x env example`. An app that exports no `envSchema` has nothing to project and the check is silent.
+**`x env example` writes more than the schema.** After the app's own keys it appends a `# --- Framework` section: the secrets the framework refuses to boot without outside `development`/`test`, whatever `envSchema` declares — `ULTIMATE_CURSOR_SECRET` (cursor signing, `X_CURSOR_SECRET_DEV`) and `STORAGE_SIGNING_SECRET` (the embedded disk's upload grants, `X_ENV_MISSING`; not read when `S3_ENDPOINT`/`S3_BUCKET` select object storage). Each is annotated `required when deployed · string · secret` with its reason and an empty value, so the file is the whole deploy contract an infra repo builds its Secret from. A key the app declares itself is rendered once, as the app declared it. The list is `FRAMEWORK_SECRETS` in [`packages/cli/src/framework-env.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/framework-env.ts) — `x env check` and `x doctor` read the same one. `renderEnvExample` itself is the app's projection alone.
+
+| Command | Framework secrets |
+|---|---|
+| `x env example` | rendered, blank, after the app's keys |
+| `x env check` | checked against the environment it runs in, by the boot's own rule (core's `devSecretsRefused`, `deployed` in `framework-env.ts`): anything but `development`/`test`, **and an environment naming none** — the boot fails closed. `ULTIMATE_ENV=production x env check` answers what the first deployed boot would (`X_CURSOR_SECRET_DEV`, `X_STORAGE_SECRET_DEV`, exit 1); the published development keys count as unset |
+| `x doctor` | the same findings, cause and fix — but about **this machine**: only where `ULTIMATE_ENV` (else `NODE_ENV`) names `staging` or `production` (`namedDeployed`). A developer shell naming no environment gets none; ask `x env check` what a deployed boot would do with it |
+
+**`x verify` holds the committed file to it**, on the `manifest` step: `.env.example` must be byte-for-byte the projection of `envSchema` in `app.config.ts`, so a moved description, default or required flag fails the gate as well as a missing key — and so does a file missing the framework section (an example written by 24.x). A miss is `X_ENV_EXAMPLE_DRIFT`, missing keys named first; the fix is `x env example`. An app that exports no `envSchema` has nothing to project and the check is silent.
 
 `assertEnvExample(schema, text)`, the older, weaker check (key presence only, called by nothing), was **deleted in 25.0.0** with `EnvExampleDriftError`; the gate above is the one check, and `checkEnvExample(schema, text)` returns the same report as data.
 

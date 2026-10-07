@@ -4,7 +4,7 @@
 // belongs to its own job, and it is free the moment that job settles.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, ctxOf } from '@ultimat3/core';
+import { type Ctx, ctxOf, JOBS_CONCURRENCY_DEFAULT } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimOptions, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -263,9 +263,9 @@ describe('the concurrency table is read by OWN keys, so a queue name is only eve
 
     expect(asked).toEqual([
       { queue: 'imports', limit: 3 },
-      { queue: 'constructor', limit: 5 },
-      { queue: '__proto__', limit: 5 },
-      { queue: 'toString', limit: 5 },
+      { queue: 'constructor', limit: JOBS_CONCURRENCY_DEFAULT },
+      { queue: '__proto__', limit: JOBS_CONCURRENCY_DEFAULT },
+      { queue: 'toString', limit: JOBS_CONCURRENCY_DEFAULT },
     ]);
   });
 });

@@ -62,7 +62,7 @@ describe('unit · registerLiveQueries · resume', () => {
     // No change has reached this node, so the read is marked with the node's own origin.
     expect(held.lsn.startsWith('!')).toBe(true);
     await registry.deliver({
-      entity: 'posts',
+      table: 'posts',
       op: 'update',
       before: rows[0] ?? null,
       after: { id: 'p1', orgId: 'o1', likes: 1 },

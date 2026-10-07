@@ -87,9 +87,9 @@ export class LiveQueryRegistry {
    * ever ask for a re-snapshot. The repair lands on the next change to each query — which is the
    * event that proves the query is moving at all.
    *
-   * `entity` narrows it to the windows that read that entity: a filtered write
-   * (`updateWhere`/`deleteWhere`) names its entity but no row, and staling every window on the node
-   * for it re-read every live query in the process on each bulk write to any table.
+   * `entity` — the RELATION, as on `ChangeEvent.table` — narrows it to the windows that read it:
+   * a filtered write (`updateWhere`/`deleteWhere`) names its table but no row, and staling every
+   * window on the node for it re-read every live query in the process on each bulk write.
    */
   invalidate(entity?: string): number {
     let marked = 0;

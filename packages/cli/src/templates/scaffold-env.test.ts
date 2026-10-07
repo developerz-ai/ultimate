@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkEnvExample } from '@ultimat3/core';
+import { envExampleFor } from '../app-env';
 import {
   envExampleSource,
   envSchemaSource,
@@ -22,8 +23,15 @@ describe('unit · the scaffold env declaration', () => {
     expect(checkEnvExample(SCAFFOLD_ENV_SCHEMA, envExampleSource())).toEqual({
       ok: true,
       missing: [],
-      extra: [],
+      // The framework's deploy-required keys, after the app's own — never in the app's schema.
+      extra: ['ULTIMATE_CURSOR_SECRET', 'STORAGE_SIGNING_SECRET'],
     });
+  });
+
+  // #679: what `x new` commits must be the bytes `x env example` would write, framework keys and
+  // all — otherwise a fresh app's first `x verify` is X_ENV_EXAMPLE_DRIFT.
+  test('the scaffold example is the projection the drift gate holds it to', () => {
+    expect(envExampleSource()).toBe(envExampleFor(SCAFFOLD_ENV_SCHEMA));
   });
 
   test('the emitted TypeScript names exactly the variables the schema declares', () => {

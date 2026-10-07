@@ -29,7 +29,10 @@ every file earlier waves had not reached: 36 proven defects fixed, and the guard
 of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth's 14. Sweep 12a is
 the major's cut: one spelling per factory, one MCP projection, one page shape, no model chosen for
 an app, and every key and re-export a deprecation promised to remove, removed; sweep 12a2 closes
-it: a closed `app.config.ts`, one locale reader, no re-exported value, one name per meaning. Every breaking entry
+it: a closed `app.config.ts`, one locale reader, no re-exported value, one name per meaning. Sweep
+12c closes customer issues: fenced prompt slots, per-queue job concurrency, a worker a deploy
+retires first, the framework's own secrets in `.env.example`, and channel records with no
+replicator. Every breaking entry
 under Changed has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `24.x → 25.0.0` section, in
 the same order. No legacy path, no codemod, no shim: a break is a build error or an `X_*` error
@@ -162,8 +165,63 @@ that names the rewrite.
   `loadAppCatalogs(root)` imports `APP_CATALOGS_PATH` (`packages/i18n/src/index.ts`) and answers
   `{ locales, defaultLocale }`, or `undefined` when that module declares no `defineCatalogs()`.
   Server-only, so a subpath of its own: the barrel ships in every island.
+- ai: `promptFences(template)` — per `{{slot}}`, the XML-style tag pairs enclosing every
+  occurrence of it (`[]` when one occurrence is bare), so an app's test can assert a slot is data:
+  `expect(promptFences(template).body).toEqual(['post_body'])` (`packages/ai/src/prompt-fence.ts`,
+  #689). The reference app's `posts.summarize@5` fences the post as `<post_title>` / `<post_body>`.
+- auth: `resolveGrants(profile, context)`. `OAuthGrantContext` carries `provider`, `tokens`,
+  `idTokenClaims` (every claim of the verified id token, custom ones included; `null` without one)
+  and `userinfo()` — fetched on first call, once per login, refused `X_OAUTH_EXCHANGE_FAILED` when
+  its subject is not the profile's — for an IdP that keeps its grants off the id token (#670).
+  When the profile itself was read from userinfo, `userinfo()` hands back that body and makes no
+  second request. The new parameter is #37 under Changed.
+- cli: `ROLE=worker` retires on SIGUSR2 (`packages/cli/src/serve-retire.ts`, #669): it stops
+  claiming, finishes every held job however long it runs, aborts nothing, logs
+  `jobs.worker.retiring` then `jobs.worker.retired`, drains and exits 0. The listener is armed
+  before the boot, so a signal mid-boot waits for the worker; a SIGTERM mid-retire is the ordinary
+  drain, bound to `drain.deadlineMs`. Both Helm charts (`docker/helm/` and the one `x new` writes)
+  wire it as the worker's `preStop` behind `roles.worker.retireSeconds` — `0`, the default, is off —
+  and add those seconds to the worker's `terminationGracePeriodSeconds`. A no-op on Windows, which
+  has no SIGUSR2. SIGTERM alone still finishes jobs within `drain.deadlineMs`, as since 24.0.0.
+- core: `CURSOR_SECRET_KEY` (`'ULTIMATE_CURSOR_SECRET'`), the one spelling `x env example`,
+  `x env check` and `x doctor` read; `CURSOR_SECRET_FIX`, the one fix line for
+  `X_CURSOR_SECRET_DEV` — `export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"` — which the
+  boot, `x doctor` and `x env check` all print; `devSecretsRefused(options)`, the one rule for
+  whether an environment refuses a shipped development secret (anything but `development`/`test`;
+  a table naming no environment is deployed), read by the boot, `@ultimat3/storage` and
+  `x env check` (#679).
+- realtime: `useRecords(type, {})` / `useRecords(type, { where, order })` (`RecordSelection`) — a
+  reactive list of every record of a type the page store holds: HTTP answers, live patches, a
+  channel's `records` frames and pending optimistic writes alike. The selection argument is
+  required — there is no one-argument form — and a row only a whole-type reader kept is evicted
+  when the last reader of that type releases. The channel-records counterpart of a live window
+  (#680).
+- realtime: `recordPublisher({ transport, entities })` on `@ultimat3/realtime/server` publishes
+  committed rows as channel records for a deployment that runs no replicator: projected through the
+  entity, one `seq` per producer, a lost message repaired by the channel's catch-up read. Channels
+  only — a publisher has no commit position, so it feeds no live window. Under `x dev` a table a
+  publisher claims is no longer delivered a second time by the in-process bridge (#682). A sync
+  node carries each table from one producer kind — the first it reads for that table; the other
+  kind's changes for it are dropped and logged once (`X_REALTIME_PRODUCER_CONFLICT`).
+- realtime: `encodeEnvelope(change, seq, producer, source?)` on `@ultimat3/realtime/server`, the one
+  bus-envelope writer the replicator and `recordPublisher` both use, beside `parseEnvelope`.
+- testing: an island state's route stub may answer `{ kind: 'records', data, records, removed? }`,
+  served as the records envelope behind `x-ultimate-records: 1`, so the island's page store adopts
+  the rows as it would from the server; a `json` stub of the same body adopts nothing (#683).
+- testing: `waitForServiceWorker({ timeoutMs })` raises one test's wait, the handover reload
+  included (#678).
 
 ### Security
+
+- `ai` (#689): a `{{slot}}` inside an XML-style tag pair of a prompt template is fenced data.
+  `render` breaks every closer of that slot's fences that a value wrote any character of — any
+  case, whitespace either side of the slash, and whatever follows the tag name (`</post_body x>`,
+  `</post_body/>`, a bare `</post_body`). The scan runs over the ASSEMBLED prompt, so a closer can
+  be neither rebuilt across two adjacent slots nor completed by the template text after one; a
+  closer the template wrote alone stands. User text can no longer close the fence and pose as
+  instructions. Broken, never deleted: the model still reads every word. `assembleContext` breaks
+  `</document>` with the same neutraliser (`packages/ai/src/prompt-fence.ts`). Read once per
+  `definePrompt`; the template, so every `promptHash`, is unchanged.
 
 - `cli`: Ctrl-C during `x secrets edit` through the local-CLI hand-off can no longer leave the
   decrypted buffer in `$TMPDIR`. The hand-off no longer forwards a second SIGINT (the terminal
@@ -612,6 +670,53 @@ After the cut — one name, one meaning; jobs.
   `x jobs drain` body #15 deleted; `counted: false` settled a row and wrote no history. A custom
   `JobDriver.ack` stops reading it, and a caller that still passes it is TS2353.
 
+Sweep 12c — core, cli, testing.
+
+- **BREAKING — (#34) `JobsConfig.concurrency` is `number | Readonly<Record<string, number>>`.**
+  `jobs.concurrency` takes slots per queue (`{ banks: 4, 'banks-long': 2 }`); a served queue the
+  table does not name runs at `JOBS_CONCURRENCY_DEFAULT` (8). Both are exported from
+  `@ultimat3/core`, the type as `JobsConcurrency`. Code that reads `config.jobs.concurrency` as a
+  `number` is a type error (TS2322 at an assignment); narrow it with `typeof … === 'number'`. An
+  empty table, a blank queue name or a count below 1 is `X_CONFIG_INVALID` (#676).
+- **BREAKING — (#35) `.env.example` carries the framework's deploy-required secrets.**
+  `x env example` appends a `Framework` section after the app's own variables —
+  `ULTIMATE_CURSOR_SECRET`, then `STORAGE_SIGNING_SECRET` — always listed, with a note that object
+  storage (`S3_ENDPOINT`) never reads it — blank, and skipping a key `envSchema` already declares. An app
+  that exports `envSchema` fails the `manifest` step with `X_ENV_EXAMPLE_DRIFT` until it reruns
+  `x env example` and commits the file (#679).
+- **BREAKING — (#36) `startE2eApp` no longer hands the app an exported `DATABASE_URL` or
+  `S3_ENDPOINT`.** The harness boots on a throwaway state directory; an inherited `DATABASE_URL`
+  (an integration suite's Postgres) made its `x db reset` refuse, and the e2e step went red for
+  the shell's reason. An e2e that wants an external database or object store passes it:
+  `startE2eApp({ root, env: { DATABASE_URL } })`. `x db reset`'s refusal now names the variable
+  and the `env -u DATABASE_URL x db reset` that resets the embedded one (#674).
+
+Sweep 12c, review round — auth, cli, jobs, realtime.
+
+- **BREAKING — (#37) `ResolveOAuthGrants` takes `(profile, context)`.** The second parameter is
+  `OAuthGrantContext` (`provider`, `tokens`, `idTokenClaims`, `userinfo()`; Added). A one-argument
+  `resolveGrants` still assigns to the type; code that itself CALLS a `ResolveOAuthGrants`-typed
+  function with one argument — an app unit-testing its grants function — is TS2554. Pass a context
+  literal typed `OAuthGrantContext` (exported as a type by `@ultimat3/auth`) as the second argument
+  (#670).
+- **BREAKING — (#38) `WORKER_QUEUES` is the exact set a worker claims.** 24.x read nothing by that
+  name, so a Deployment that set it served `jobs.queues` plus every registered job's queue. It now
+  serves exactly the comma-separated list — never widened by that union — and a job on any other
+  queue stays unclaimed by it; the boot warns `jobs.worker.queue-unserved` naming the registered
+  queues it leaves. An empty entry (`banks,,mail`) is `X_CONFIG_INVALID`. A Deployment that relied
+  on the union lists every queue it should serve, or unsets the variable
+  (`packages/cli/src/runtime-jobs.ts`, #673).
+- **BREAKING — (#39) `jobWorker`'s per-queue default is core's `JOBS_CONCURRENCY_DEFAULT` (8), was
+  5.** A queue a hand-built `jobWorker({ concurrency })` does not name — or every queue, when it
+  passes no `concurrency` — runs 8 slots. A worker `x` boots for an app already ran its
+  `jobs.concurrency`, default 8; only a hand-built `jobWorker` changes. Pass `concurrency: 5` to keep the old number
+  (`packages/jobs/src/worker-options.ts`).
+- **BREAKING — (#40) realtime's `ChangeEvent.entity` is renamed `table`.** It holds the relation
+  (table) name on every producer: the WAL replicator, the `x dev` bridge and `recordPublisher`. A
+  custom `ChangeFeed` or consumer that builds or reads one replaces `entity:` with `table:` (TS2353 /
+  TS2339). The bus envelope writes `table`; a sync node still reads a 24.x replicator's `entity`, so a
+  rolling deploy keeps every live view moving (`packages/realtime/src/replicator-envelope.ts`).
+
 Not breaking.
 
 - Locales have one reader, `appLocaleSet(root)` from `@ultimat3/i18n/app-catalogs`, beside
@@ -768,6 +873,42 @@ Not breaking.
 
 ### Fixed
 
+- cli: an `x dev` restart retires the worker before the drain: it claims nothing more, its running
+  jobs finish, and the restart says on stderr that it is waiting. A job that ran past the drain
+  budget used to be aborted `X_DRAINING` and run again (`packages/cli/src/dev-restart-retire.ts`,
+  #677).
+- cli: `x env check` and `x doctor` report `ULTIMATE_CURSOR_SECRET` (`X_CURSOR_SECRET_DEV`) and
+  `STORAGE_SIGNING_SECRET` (`X_STORAGE_SECRET_DEV`) off one list
+  (`packages/cli/src/framework-env.ts`), each with one wording. `x env check` judges a table as the
+  boot does, through core's `devSecretsRefused` — a table naming no environment is deployed;
+  `x doctor` reports them only where this machine's environment is named `staging` or
+  `production`. The published development cursor key counts as unset, and neither command reports
+  the storage key on a deploy whose `S3_ENDPOINT` selects object storage. `X_CURSOR_SECRET_DEV`'s
+  boot refusal now prints the same fix as both commands,
+  `export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"` (core `CURSOR_SECRET_FIX`; was
+  `x secrets set ULTIMATE_CURSOR_SECRET — …`) (#679, #35 under Changed).
+- cli: `X_BUDGET_UNMEASURED` for a route the measurement actor could not render names that actor
+  (kind, id, org, roles), the refusal's code and cause, and the `defineMeasurementActor(…)` edit in
+  `app.config.ts` (`packages/cli/src/budgets-unmeasured.ts`, #675).
+- cli: `x dev --port 0` picks a free web/sync port PAIR. It asked the kernel for one port, and the
+  boot failed `X_PORT_IN_USE` whenever `port + 1` was taken (`freeDevPort`,
+  `packages/cli/src/dev-supervisor.ts`).
+- cli: the `settleMs` the MCP `ui.*` captures are built with (`ui.shot`, the island shot) must be a
+  whole number ≥ 0 (`finiteCount`): a `NaN` or negative settle would wait forever or not at all
+  (`packages/cli/src/mcp-ui.ts`).
+- testing: `waitForServiceWorker()` reloads a page once when its worker is active but does not
+  control it, so the first page of a run — committed before its worker activated, missed by
+  `clients.claim()` — no longer flakes (`packages/testing/src/e2e-service-worker.ts`, #678).
+- realtime: under `x dev` the in-process bridge puts the entity's TABLE name on the change event
+  (`ChangeEvent.table` since #40), as the WAL replicator does. An entity with its own `table:` reached no
+  channel's records, no live window and no bulk re-read in development
+  (`packages/realtime/src/live-replicator.ts`).
+- realtime: the `useChannel()` state machine is documented (`packages/realtime/README.md`, What
+  `useChannel()` reports), and a test pins the gap → `replay-gap` repair
+  (`packages/realtime/src/sync-bus-handlers.test.ts`). Both behaviours already held in 24.0.0
+  (#672, #681).
+- auth: the README mounts `oauthLogin`'s routes through `apps/<app>/runtime.ts` →
+  `runtime.routes`, the one router an app has that matches a `:param` (#671).
 - cli: `x jobs ls` asks the queue whether a row exists past the page it prints, so a full last page
   no longer offers `--after <cursor>` to an empty one (`packages/cli/src/jobs-report.ts`).
 - ai: an in-app agent's tool for an `idempotent: true` action carries the reserved

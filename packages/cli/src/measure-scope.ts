@@ -7,7 +7,7 @@
 // `withInProcessFetch`, because no server is listening during a build (plan 101 slice 11 m).
 
 import type { Actor, Ctx } from '@ultimat3/core';
-import { measurementActor, runWithContext, withInProcessFetch } from '@ultimat3/core';
+import { actorLabel, measurementActor, runWithContext, withInProcessFetch } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter, requestContext } from '@ultimat3/http';
 import { apiRoutes } from './api-routes';
 
@@ -66,4 +66,14 @@ export async function withAppUrl<T>(origin: string, fn: () => Promise<T>): Promi
     if (before === undefined) delete process.env['APP_URL'];
     else process.env['APP_URL'] = before;
   }
+}
+
+/**
+ * The measurement actor as a refusal names it: core's `actorLabel` (kind, id, tenant) — the one
+ * actor format — plus the roles, which a role-gated page asks of it and `actorLabel` omits (#675).
+ * Never `facts`: this lands in a report and a gate finding.
+ */
+export function measurementActorLabel(actor: Actor): string {
+  const roles = actor.roles.length === 0 ? 'none' : actor.roles.join(', ');
+  return `${actorLabel(actor)} (roles: ${roles})`;
 }

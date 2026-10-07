@@ -27,6 +27,7 @@ import type { RowBulkChange, RowChange, RowObserver } from '@ultimat3/entity';
 import type { ChangeEvent, ChangeOp } from './changefeed';
 import type { Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
+import { isPublishedTable } from './record-publisher';
 
 /** What a caller does with a change nobody could deliver. */
 export interface LiveReplicatorOptions {
@@ -89,6 +90,15 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
   let tail: Promise<void> = Promise.resolve();
   let stopped = false;
 
+  /**
+   * The RELATION an entity's rows live in — what `ChangeEvent.table` carries on every producer:
+   * the WAL decoder reads it off the Relation message, a channel matches `projection.table`, and a
+   * live shape is `from('<table>', …)`. The row observer reports the entity's declared NAME, which
+   * is the table only until an entity adopts one (`entity('ledger', { table: 'gl_entries' })`);
+   * passed through, such an entity reached no channel, no window and no bulk re-read here.
+   */
+  const tableOf = (name: string): string => entity.getEntity(name)?.tableName ?? name;
+
   const enqueue = (work: () => Promise<void>): void => {
     tail = tail.then(work).catch((error: unknown) => {
       // Never rethrown into the chain: one failed fanout must not silence every change behind it,
@@ -105,7 +115,7 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
       const row = change.after ?? change.before;
       const orgId = typeof row?.[tenant] === 'string' ? (row[tenant] as string) : null;
       const event: ChangeEvent = {
-        entity: change.entity,
+        table: tableOf(change.entity),
         // A repository's three row ops are three of the feed's four; a truncate never comes this way.
         op: change.op satisfies ChangeOp,
         before: asRow(change.before),
@@ -122,8 +132,10 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
       };
       enqueue(async () => {
         // Channels first, as the node does: a live query's fanout that throws must not also cost
-        // every declared channel the change.
-        options.channels?.deliverChange(event);
+        // every declared channel the change. Not an entity a `recordPublisher` claims: the app's
+        // own publish is its one channel delivery, as in production with no replicator, and both
+        // was every insert twice (#682). Asked per change, so a publisher built later counts.
+        if (!isPublishedTable(event.table)) options.channels?.deliverChange(event);
         delivered += await registry.deliver(event);
       });
     },
@@ -137,9 +149,10 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
      */
     onBulk(change: RowBulkChange): void {
       if (stopped) return;
-      registry.invalidate(change.entity);
+      const table = tableOf(change.entity);
+      registry.invalidate(table);
       // Channels too, or a tab seated on one held the pre-update rows with nothing to re-read.
-      options.channels?.invalidate(change.entity);
+      options.channels?.invalidate(table);
     },
   };
 

@@ -80,8 +80,9 @@ services:
 |---|---|
 | `migrate` completes before `web`/`sync` start | a new schema must exist before new code reads it |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
-| `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout ([`11-topology.md`](./11-topology.md)) |
+| `stop_grace_period` >= `drain.deadlineMs` (plus `roles.worker.retireSeconds` on a retiring worker) | otherwise SIGKILL truncates the drain and the reconnect fanout ([`11-topology.md`](./11-topology.md)) |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
+| `WORKER_QUEUES` lists every queue that worker must claim | it is the exact set, never widened by the registered jobs' queues: a queue it leaves out is claimed by no one unless another worker lists it (`jobs.worker.queue-unserved` at boot) |
 
 | A role that publishes a host port at `replicas: 1` | one host port has exactly one binder — the second replica dies with `Bind for 0.0.0.0:3000 failed: port is already allocated` |
 | `sync` at `PORT: 3000` while publishing `3001` | the role binds `PORT + 1`, so `PORT: 3001` opens 3002 and publishes a socket nothing listens on |

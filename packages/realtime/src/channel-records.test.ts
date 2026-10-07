@@ -27,7 +27,7 @@ const feed = channel('accounts', {
 });
 
 const change = (over: Partial<ChangeEvent>): ChangeEvent => ({
-  entity: 'legacy_accounts',
+  table: 'legacy_accounts',
   op: 'insert',
   before: null,
   after: null,
@@ -52,7 +52,7 @@ describe('updatesFor()', () => {
 
   test('the feed names the table, and a renamed table still routes', () => {
     expect(
-      updatesFor([feed], change({ entity: 'channel_records_account', after: row('o1') })),
+      updatesFor([feed], change({ table: 'channel_records_account', after: row('o1') })),
     ).toEqual([]);
   });
 
@@ -89,7 +89,7 @@ describe('updatesFor()', () => {
   });
 
   test('a table no channel lists is nobody’s', () => {
-    expect(updatesFor([feed], change({ entity: 'other', after: row('o1') }))).toEqual([]);
+    expect(updatesFor([feed], change({ table: 'other', after: row('o1') }))).toEqual([]);
   });
 });
 

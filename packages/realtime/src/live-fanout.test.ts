@@ -98,7 +98,7 @@ function subscribe(entry: QueryEntry, socket: SyncSocket, sid: string): LiveSubs
 }
 
 const change = (lsn: string): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before: { id: 'p1', orgId: 'o1', likes: 0 },
   after: { id: 'p1', orgId: 'o1', likes: 1 },
@@ -238,7 +238,7 @@ describe('a stale window owes EVERY subscriber a snapshot of its re-read', () =>
     subscribe(entry, alice.socket, 's1');
     entry.stale = true;
 
-    const result = await fanoutChange(deps, entry, { ...change('1'), entity: 'comments' });
+    const result = await fanoutChange(deps, entry, { ...change('1'), table: 'comments' });
 
     expect(reads()).toBe(1);
     expect(result.sent).toBe(1);
@@ -343,7 +343,7 @@ describe('a live row travels under its RECORD key', () => {
 // truncated rows until something else happened to touch the query.
 describe('a truncate empties the window it reads from', () => {
   const truncate = (lsn: string): ChangeEvent => ({
-    entity: 'posts',
+    table: 'posts',
     op: 'truncate',
     before: null,
     after: null,
@@ -371,7 +371,7 @@ describe('a truncate empties the window it reads from', () => {
   test('a window that reads another relation is untouched', async () => {
     const { entry, deps, reads } = rig(() => patched, []);
     subscribe(entry, connect().socket, 's1');
-    const other = { ...truncate('9'), entity: 'comments' };
+    const other = { ...truncate('9'), table: 'comments' };
     expect(await fanoutChange(deps, entry, other)).toEqual({ sent: 0, stale: 0 });
     expect(reads()).toBe(0);
     expect(entry.rows).toEqual(seated);

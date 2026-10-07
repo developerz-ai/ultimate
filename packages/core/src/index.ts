@@ -141,6 +141,7 @@ export type { AiConfig, AiConfigInput, McpConfig } from './config-ai';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
 export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
+export { JOBS_CONCURRENCY_DEFAULT, type JobsConcurrency } from './config-jobs';
 export type {
   MailConfig,
   MailRetainMimeConfig,
@@ -202,6 +203,8 @@ export type { CookiePriority, CookieSameSite, SetCookieOptions } from './cookie'
 export { CookieInvalidError, readCookie, serializeSetCookie } from './cookie';
 export type { CursorPayload } from './cursor';
 export {
+  CURSOR_SECRET_FIX,
+  CURSOR_SECRET_KEY,
   CursorInvalidError,
   configureCursorSigning,
   decodeCursor,
@@ -216,7 +219,11 @@ export { compareDecimalText } from './decimal-order';
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { DevSecretsOptions } from './dev-secrets';
-export { assertNoDevSecretsOutsideLocal, CursorSecretDevError } from './dev-secrets';
+export {
+  assertNoDevSecretsOutsideLocal,
+  CursorSecretDevError,
+  devSecretsRefused,
+} from './dev-secrets';
 export { DRAIN_DEADLINE_DEFAULT_MS, DRAIN_DEADLINE_MAX_MS } from './drain-deadline';
 export type {
   Env,

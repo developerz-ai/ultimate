@@ -255,8 +255,11 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
   const services = resolveServices(root, ctx.env);
   if (services.db.mode === 'external') {
     throw new NotImplementedError({
-      cause: 'x db reset against an external Postgres is not implemented in this build',
-      fix: 'drop and recreate the database yourself, then run: x db migrate',
+      // The usual way here is an EXPORTED `DATABASE_URL` (an integration suite's Postgres) that
+      // the shell handed down, so the variable is named and the embedded reset is one command (#674).
+      cause:
+        'DATABASE_URL is set, so x db reset would target an external Postgres — dropping a database this process does not own is not implemented in this build',
+      fix: 'env -u DATABASE_URL x db reset   # resets the embedded database instead — or drop and recreate the external one yourself, then run: x db migrate',
     });
   }
   // A running `x dev` has this directory open: deleting it under a live embedded Postgres is data

@@ -80,6 +80,70 @@ describe(testName('unit', 'defineIslandStates'), () => {
     }
   });
 
+  // #683: the records stub rides the same JSON seam, and its rows are an envelope the client
+  // decodes by shape — a malformed one is a picture of `X_CLIENT_RECORD_ENVELOPE_INVALID`.
+  test('accepts a records stub and keeps it as declared', () => {
+    const respond = {
+      kind: 'records',
+      data: [{ id: 'r1' }],
+      records: { runs: { r1: { id: 'r1' } } },
+    } as const;
+    const manifest = defineIslandStates({
+      island: ISLAND,
+      states: [{ ...ok, routes: [{ match: 'GET /api/runs', respond }] }],
+    });
+    expect(manifest.states[0]?.routes[0]?.respond).toEqual(respond);
+  });
+
+  test('refuses records data JSON cannot carry, naming where it is', () => {
+    try {
+      defineIslandStates({
+        island: ISLAND,
+        states: [
+          {
+            ...ok,
+            routes: [
+              {
+                match: 'GET /api/runs',
+                respond: { kind: 'records', data: { at: new Date(0) }, records: {} },
+              },
+            ],
+          },
+        ],
+      });
+      expect.unreachable('a Date in records data never reaches the island as a Date');
+    } catch (error) {
+      expect(error).toBeUltimateError('X_TEST_ISLAND_STATE_JSON_INVALID');
+      expect((error as { cause: string }).cause).toContain('routes[0].respond.data.at');
+    }
+  });
+
+  test('refuses records that are not record type -> record key -> row', () => {
+    try {
+      defineIslandStates({
+        island: ISLAND,
+        states: [
+          {
+            ...ok,
+            routes: [
+              {
+                match: 'GET /api/runs',
+                respond: { kind: 'records', data: [], records: { runs: [{ id: 'r1' }] as never } },
+              },
+            ],
+          },
+        ],
+      });
+      expect.unreachable('rows as an array have no record key for the store to adopt them under');
+    } catch (error) {
+      expect(error).toBeUltimateError('X_TEST_ISLAND_STATE_STUB_INVALID');
+      expect((error as { cause: string }).cause).toContain('routes[0].respond');
+      // Core's own decoder's words: the stub is held to the rule the client applies, not a copy.
+      expect((error as { cause: string }).cause).toContain('is not an object of rows by key');
+      expect((error as { fix: string }).fix).toContain("records: { runs: { 'r1': { id: 'r1'");
+    }
+  });
+
   test('refuses a stub match that is not "<METHOD> <pathname>" — it would match nothing', () => {
     expect(() =>
       defineIslandStates({

@@ -782,7 +782,7 @@ or `ready` — so a new branch cannot land in one driver and not another. Its le
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `jobWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
+| `worker` | `jobWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close. `concurrency` is a number for every queue or a table per queue; a queue it does not name gets core's `JOBS_CONCURRENCY_DEFAULT` (8 — this package's own default was 5 before 25.0.0) |
 | `scheduler` | `jobScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
 Both roles register the same **pair** of hooks and bound the `close` half the same way. The

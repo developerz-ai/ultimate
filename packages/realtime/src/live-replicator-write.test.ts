@@ -20,6 +20,7 @@ import { clearChannels } from './channel-registry';
 import { InProcessTransport } from './fanout';
 import { startLiveReplicator } from './live-replicator';
 import { OPEN_POLICY } from './policy-fake-fixture';
+import { recordPublisher } from './record-publisher';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
@@ -151,6 +152,113 @@ describe('a bulk write reopens the channels carrying its table', () => {
     await db.notes.updateWhere({ orgId: ORG, label: 'a' }, { label: 'b' });
     await replicator.settled();
     replicator.stop();
+    expect(gaps()).toBe(before + 1);
+  });
+});
+
+// An app that publishes an entity itself (`recordPublisher`) is that entity's one channel delivery,
+// as it is in production with no replicator. The bridge carrying the same insert as well was every
+// insert twice under `x dev` (#682); its live-query half stays, since a publisher feeds no window.
+describe('an entity a record publisher claims', () => {
+  test('reaches no channel through the bridge, and still reaches the live queries', async () => {
+    const { hub, ws } = await seated();
+    const delivered: string[] = [];
+    const replicator = await startLiveReplicator({
+      registry: {
+        deliver: (change: { table: string }) => {
+          delivered.push(change.table);
+          return Promise.resolve(0);
+        },
+        invalidate: () => 0,
+      } as never,
+      channels: hub,
+    });
+    const publisher = recordPublisher({ transport: new InProcessTransport(), entities: [notes] });
+    const db = database({ notes }, { driver: memoryDriver() });
+    await db.notes.insert({ id: '00000000-0000-4000-8000-000000000005', orgId: ORG, label: 'a' });
+    await replicator.settled();
+    publisher.close();
+    await db.notes.insert({ id: '00000000-0000-4000-8000-000000000006', orgId: ORG, label: 'b' });
+    await replicator.settled();
+    replicator.stop();
+
+    const records = ws.frames.filter((frame) => frame['type'] === 'records');
+    // Only the write made after the claim was released.
+    expect(records).toHaveLength(1);
+    expect(JSON.stringify(records[0])).toContain('000000000006');
+    expect(delivered).toEqual(['echoed_notes', 'echoed_notes']);
+  });
+});
+
+// `ChangeEvent.table` is the RELATION, on every producer: the WAL decoder reads it off the
+// Relation message, a channel matches `projection.table`, a live shape is `from('<table>', …)`. The
+// row observer reports the entity's declared NAME, and the bridge passed it through, so an entity
+// adopting a table under another name (`entity('ledger', { table: 'gl_entries' })`) reached no
+// channel, no live window and no bulk re-read under `x dev`.
+describe('an entity whose table is not its name', () => {
+  const ledger = entity('bridged_ledger', {
+    table: 'bridged_gl_entries',
+    columns: { id: uuid().primaryKey(), orgId: uuid(), label: text({ max: 40 }) },
+  });
+  const ledgerFeed = channel('bridged-ledger', {
+    params: ['orgId'],
+    catchUp: { name: 'bridgedLedger' },
+    policy: OPEN_POLICY,
+    records: [ledger],
+  });
+
+  test('crosses the bridge under its table: channel records, live windows, bulk re-reads', async () => {
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({
+      transport: new InProcessTransport(),
+      sockets,
+      channels: [ledgerFeed],
+    });
+    const ws = new FakeWs();
+    const socket = new SyncSocket({
+      ws,
+      clientBuildId: 'b',
+      serverBuildId: 'b',
+      actor: userActor({ id: 'm1', orgId: ORG }),
+    });
+    sockets.add(socket);
+    await hub.subscribeChannel(socket, {
+      kind: 'channel',
+      channel: ledgerFeed.name,
+      params: { orgId: ORG },
+    });
+    const delivered: string[] = [];
+    const invalidated: (string | undefined)[] = [];
+    const replicator = await startLiveReplicator({
+      registry: {
+        deliver: (change: { table: string }) => {
+          delivered.push(change.table);
+          return Promise.resolve(0);
+        },
+        invalidate: (table?: string) => {
+          invalidated.push(table);
+          return 0;
+        },
+      } as never,
+      channels: hub,
+    });
+    const db = database({ ledger }, { driver: memoryDriver() });
+    await db.ledger.insert({ id: '00000000-0000-4000-8000-000000000007', orgId: ORG, label: 'a' });
+    await replicator.settled();
+    const gaps = (): number => ws.frames.filter((frame) => frame['type'] === 'replay-gap').length;
+    const before = gaps();
+    await db.ledger.updateWhere({ orgId: ORG, label: 'a' }, { label: 'b' });
+    await replicator.settled();
+    replicator.stop();
+
+    const records = ws.frames.filter((frame) => frame['type'] === 'records');
+    expect(records).toHaveLength(1);
+    // Keyed in the store by the entity's NAME, as every record is; matched by its table.
+    expect(Object.keys((records[0]?.['adopt'] as object | undefined) ?? {})).toEqual([
+      'bridged_ledger',
+    ]);
+    expect(delivered).toEqual(['bridged_gl_entries']);
+    expect(invalidated).toEqual(['bridged_gl_entries']);
     expect(gaps()).toBe(before + 1);
   });
 });

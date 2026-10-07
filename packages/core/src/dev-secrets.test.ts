@@ -2,12 +2,19 @@
 // environment — and that a process with NO environment counts as production, not development.
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
+  CURSOR_SECRET_FIX,
+  CURSOR_SECRET_KEY,
   configureCursorSigning,
   currentSigningSecret,
+  DEV_CURSOR_SECRET,
   resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
-import { assertNoDevSecretsOutsideLocal } from './dev-secrets';
+import {
+  assertNoDevSecretsOutsideLocal,
+  CursorSecretDevError,
+  devSecretsRefused,
+} from './dev-secrets';
 
 const codeOf = (run: () => unknown): string | undefined => {
   try {
@@ -81,5 +88,42 @@ describe('assertNoDevSecretsOutsideLocal', () => {
       expect(text).toContain('ULTIMATE_CURSOR_SECRET');
       expect(text).not.toContain('ultimate-dev-cursor-secret');
     }
+  });
+});
+
+// One rule for "does this environment refuse a shipped dev secret": the boot's, which FAILS
+// CLOSED — so `x env check` and `x doctor` ask it too, rather than a reading that defaults to
+// development and calls an environment green that the boot refuses (#679 review).
+describe('devSecretsRefused', () => {
+  test('a process that names no environment is refused, as the boot refuses it', () => {
+    expect(devSecretsRefused({ env: {} })).toBe(true);
+  });
+
+  test('staging and production are refused; development and test are not', () => {
+    expect(devSecretsRefused({ env: { ULTIMATE_ENV: 'staging' } })).toBe(true);
+    expect(devSecretsRefused({ env: { NODE_ENV: 'production' } })).toBe(true);
+    expect(devSecretsRefused({ env: { ULTIMATE_ENV: 'development' } })).toBe(false);
+    expect(devSecretsRefused({ env: { NODE_ENV: 'test' } })).toBe(false);
+  });
+});
+
+describe('usesDevCursorSecret over a table', () => {
+  test('unset, empty and the published key all sign with the dev key', () => {
+    expect(usesDevCursorSecret({ env: {} })).toBe(true);
+    expect(usesDevCursorSecret({ env: { ULTIMATE_CURSOR_SECRET: '' } })).toBe(true);
+    expect(usesDevCursorSecret({ env: { ULTIMATE_CURSOR_SECRET: DEV_CURSOR_SECRET } })).toBe(true);
+    expect(usesDevCursorSecret({ env: { ULTIMATE_CURSOR_SECRET: 'k'.repeat(64) } })).toBe(false);
+  });
+});
+
+// One code, one fix: `x doctor` and `x env check` print the same line for X_CURSOR_SECRET_DEV
+// (`@ultimat3/cli`'s `framework-env.ts` reads `CURSOR_SECRET_FIX`), and the boot's refusal was
+// the odd one out with `x secrets set …` (#679 review).
+describe('the boot refusal names the key and the one fix', () => {
+  test('its fix is CURSOR_SECRET_FIX, and both are built from CURSOR_SECRET_KEY', () => {
+    const error = new CursorSecretDevError();
+    expect(error.fix).toBe(CURSOR_SECRET_FIX);
+    expect(CURSOR_SECRET_FIX).toBe(`export ${CURSOR_SECRET_KEY}="$(openssl rand -hex 32)"`);
+    expect(error.cause).toContain(CURSOR_SECRET_KEY);
   });
 });

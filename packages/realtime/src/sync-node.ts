@@ -26,7 +26,7 @@ import { DEFAULT_MAX_BUFFERED_BYTES } from './socket-defaults';
 import { idleSweepPeriodMs } from './socket-idle';
 import { actorChangeHandler } from './sync-actor-change';
 import { GrantBook, sweepGrants } from './sync-auth';
-import { changeHandler, reconnectHandler } from './sync-bus-handlers';
+import { changeHandler, ProducerKinds, reconnectHandler } from './sync-bus-handlers';
 import { ackRefOf, frameRouter } from './sync-frames';
 import {
   clientHeartbeatMs,
@@ -71,6 +71,8 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
   const grants = new GrantBook();
   const principals = new PrincipalSockets(options.maxSocketsPerActor);
   const gaps = new SeqGapDetector();
+  // Kept across restarts of the bus subscription: a table's producer kind is a fact of the fleet.
+  const producers = new ProducerKinds();
   const channelSids = new ChannelSids();
   let reconnects: (() => void) | null = null;
   /** The re-auth pass in flight, shared by every tick that lands while it runs. */
@@ -241,7 +243,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
   /** Everything `start()` does, fenced on the generation it began under — see `started`. */
   const begin = async (): Promise<void> => {
     const run = generation;
-    const bus = { registry: options.registry, hub: options.hub, gaps };
+    const bus = { registry: options.registry, hub: options.hub, gaps, producers };
     const subscription = await options.transport.subscribe(CHANGE_SUBJECT_ALL, changeHandler(bus));
     // A stop or drain ran inside that await: what it released did not include this yet.
     if (run !== generation) {

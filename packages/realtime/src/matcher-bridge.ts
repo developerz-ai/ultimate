@@ -43,7 +43,7 @@ export interface IncrementalMatcher {
 
 /** The cheap pre-filter. Pure, and the only thing that runs for a change nobody subscribed to. */
 export function canAffect(shape: SubscriptionShape, change: ChangeEvent): boolean {
-  if (!shape.entities.includes(change.entity)) return false;
+  if (!shape.entities.includes(change.table)) return false;
   if (shape.orgId !== null && change.orgId !== null && shape.orgId !== change.orgId) return false;
   if (shape.columns && change.op === 'update' && change.after !== null) {
     const touched = Object.keys(changedColumns(change.before, change.after));
@@ -95,7 +95,7 @@ export function matcherFor(live: LiveQuery, projection?: () => Projection): Incr
       const row = change.after ?? change.before;
       if (!row) return NO_CHANGE;
       const patches = match<Row>(live.name, live.shape, rows, {
-        entity: change.entity,
+        entity: change.table,
         op: change.op,
         row,
         ...(change.before === null ? {} : { before: change.before }),

@@ -19,7 +19,7 @@ const before: Row = { id: 'p1', orgId: 'o1', title: 'draft', likes: 1, internalN
 const after: Row = { ...before, likes: 2 };
 
 const update: ChangeEvent = {
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before,
   after,
@@ -63,7 +63,7 @@ describe('matcher bridge', () => {
   });
 
   test('the pre-filter skips subscriptions the change cannot touch', () => {
-    expect(canAffect(shape, { ...update, entity: 'comments' })).toBe(false);
+    expect(canAffect(shape, { ...update, table: 'comments' })).toBe(false);
     expect(canAffect(shape, { ...update, orgId: 'o2' })).toBe(false);
     // Touches only a column this query never reads.
     const noise: ChangeEvent = { ...update, before, after: { ...before, internalNote: 'y' } };
@@ -80,7 +80,7 @@ describe('matcher bridge', () => {
         return always.match(change, window);
       },
     };
-    bridgeChange(shape, counting, { ...update, entity: 'comments' }, window);
+    bridgeChange(shape, counting, { ...update, table: 'comments' }, window);
     expect(calls).toBe(0);
     bridgeChange(shape, counting, update, window);
     expect(calls).toBe(1);
@@ -140,7 +140,7 @@ describe('a patch carries the result set\u2019s columns, never the table\u2019s'
   const projection = new Set(['id', 'orgId', 'title', 'likes']);
 
   const changeOf = (op: 'insert' | 'update', row: Row, previous?: Row): ChangeEvent => ({
-    entity: 'posts',
+    table: 'posts',
     op,
     before: previous ?? null,
     after: row,

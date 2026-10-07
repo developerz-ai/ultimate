@@ -55,7 +55,7 @@ describe('decoded changes', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({
-      entity: 'posts',
+      table: 'posts',
       op: 'insert',
       before: null,
       after: {

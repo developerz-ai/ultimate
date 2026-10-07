@@ -4,7 +4,7 @@
 // app whose own `x verify` fails on the drift the framework exists to prevent.
 
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
-import { renderEnvExample } from '@ultimat3/core';
+import { appEnvExample } from '../framework-env';
 
 /**
  * Committed defaults only, so a fresh clone boots with `x dev` and no scavenger hunt. Every
@@ -90,9 +90,12 @@ export function envSchemaSource(schema: EnvSchema = SCAFFOLD_ENV_SCHEMA): string
   return lines.join('\n');
 }
 
-/** Byte-identical to what `x env example` writes, because both call core's one renderer. */
+/**
+ * Byte-identical to what `x env example` writes, because both call the one renderer — the app's
+ * declaration, then the framework's deploy-required keys (`framework-env.ts`).
+ */
 export const envExampleSource = (schema: EnvSchema = SCAFFOLD_ENV_SCHEMA): string =>
-  renderEnvExample(schema);
+  appEnvExample(schema);
 
 /** Named so a reader of `repoFiles` can see the two projections come from one declaration. */
 export const scaffoldEnvVarNames = (): readonly string[] =>

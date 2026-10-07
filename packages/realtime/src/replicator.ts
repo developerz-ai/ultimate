@@ -16,7 +16,7 @@ import type { AdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
 import type { Transport } from './fanout';
-import { busRow } from './replicator-row';
+import { encodeEnvelope } from './replicator-envelope';
 import {
   type BackoffPolicy,
   defaultBackoff,
@@ -30,9 +30,9 @@ export const CHANGE_SUBJECT_PREFIX = 'x.change';
 /** Every change subject: what a `sync` node subscribes to. A changefeed subject, never a channel. */
 export const CHANGE_SUBJECT_ALL = `${CHANGE_SUBJECT_PREFIX}.>`;
 
-/** `x.change.<entity>.<orgId>` — tenant in the subject, so fanout filters without parsing a row. */
+/** `x.change.<table>.<orgId>` — tenant in the subject, so fanout filters without parsing a row. */
 export function changeSubject(change: ChangeEvent): string {
-  return `${CHANGE_SUBJECT_PREFIX}.${change.entity}.${change.orgId ?? '_'}`;
+  return `${CHANGE_SUBJECT_PREFIX}.${change.table}.${change.orgId ?? '_'}`;
 }
 
 export interface ReplicatorOptions {
@@ -56,7 +56,7 @@ export interface ReplicatorStats {
   readonly restarts: number;
   /**
    * Why this replicator is not running although nothing stopped it — the stream's own reason, the
-   * last restart's, or the change (entity, lsn, how many times) the bus keeps refusing. `null`
+   * last restart's, or the change (table, lsn, how many times) the bus keeps refusing. `null`
    * while it runs, and after a `stop()`.
    */
   readonly failure: string | null;
@@ -87,7 +87,7 @@ interface Run {
 
 /** The change a run could not publish, kept until one goes out. */
 interface Refusal {
-  readonly entity: string;
+  readonly table: string;
   readonly lsn: string;
   readonly error: string;
   times: number;
@@ -200,23 +200,12 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       await withSpan('realtime.replicate', async () => {
         seq += 1;
         try {
-          // The envelope is the change plus two fields, flat, so a consumer that only knows about
-          // the change reads it unchanged — `parseChange` still answers on the same payload.
-          await options.transport.publish(
-            subjectOf(change),
-            JSON.stringify({
-              ...change,
-              before: busRow(change.before),
-              after: busRow(change.after),
-              seq,
-              producer,
-            }),
-          );
+          await options.transport.publish(subjectOf(change), encodeEnvelope(change, seq, producer));
         } catch (thrown) {
           const error = renderThrowable(thrown);
           const same = refusal !== null && refusal.lsn === change.lsn;
           refusal = {
-            entity: change.entity,
+            table: change.table,
             lsn: change.lsn,
             error,
             times: same ? (refusal?.times ?? 0) + 1 : 1,
@@ -238,7 +227,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   const describeFailure = (reason: string): string =>
     refusal === null
       ? reason
-      : `${refusal.entity} at lsn ${refusal.lsn} could not be published ` +
+      : `${refusal.table} at lsn ${refusal.lsn} could not be published ` +
         `(${refusal.times} time(s) in a row): ${refusal.error}`;
 
   const begin = async (): Promise<boolean> => {

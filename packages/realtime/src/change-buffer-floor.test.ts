@@ -67,7 +67,7 @@ const node = (): LiveQueryRegistry =>
   new LiveQueryRegistry({ source: new RingChangeBuffer(), clock }).register(liveFeed);
 
 const insert = (row: Row, lsn: number): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'insert',
   before: null,
   after: row,

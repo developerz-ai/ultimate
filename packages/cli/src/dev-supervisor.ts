@@ -5,7 +5,6 @@
 // of logging "reloaded" over stale code, and this loop boots a fresh one on the same port. Every
 // other save stays the in-process reload it was — a restart is paid only where nothing else works.
 
-import { drain } from '@ultimat3/core';
 import type { StalePin } from './app-reload-graph';
 import { devSpec } from './cmd-dev-spec';
 import type { DevChildGone, DevDrainMessage } from './dev-child-watch';
@@ -16,6 +15,7 @@ import {
   supervisorPid,
 } from './dev-child-watch';
 import { devPortFor } from './dev-port';
+import { type RetiringWorker, retireThenDrain } from './dev-restart-retire';
 import { PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { Finding } from './output';
@@ -239,12 +239,20 @@ export function restartFinding(root: string, pins: readonly StalePin[]): Finding
 export interface ChildRestart {
   readonly options: { readonly onRestart?: (pins: readonly StalePin[]) => void };
   readonly exit: (code: number) => void;
+  /**
+   * The worker this child booted, handed over once `startDev` returns: a restart retires it before
+   * the drain, so a save never cancels a running job (`dev-restart-retire.ts`). `null` for a child
+   * running no worker role.
+   */
+  readonly adopt: (worker: RetiringWorker | null) => void;
 }
 
 /**
  * Only a supervised child restarts: it says why on stderr (fd 1 may be `--json`'s one document),
- * starts core's drain — the hold then releases the lock, the port and the embedded database — and
- * exits `DEV_RESTART_EXIT_CODE` once released. Anything else keeps the finding on `/_x`.
+ * retires its worker — every running job finishes, none is claimed — then starts core's drain (the
+ * hold then releases the lock, the port and the embedded database) and exits
+ * `DEV_RESTART_EXIT_CODE` once released. One restart per child however many saves land while it
+ * waits. Anything else keeps the finding on `/_x`.
  *
  * A child its supervisor named (`DEV_SUPERVISOR_PID_ENV`) also watches for that supervisor's death
  * and its app root's, and stops on either — exit 1 for a root that is gone, which the supervisor,
@@ -254,9 +262,14 @@ export function childRestart(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
   watch: typeof startDevChildWatch = startDevChildWatch,
+  retire: (worker: RetiringWorker | null) => Promise<void> = retireThenDrain,
 ): ChildRestart {
-  if (env[DEV_CHILD_ENV] !== '1') return { options: {}, exit: () => undefined };
+  if (env[DEV_CHILD_ENV] !== '1') {
+    return { options: {}, exit: () => undefined, adopt: () => undefined };
+  }
   let leaving: 'restart' | DevChildGone | undefined;
+  let worker: RetiringWorker | null = null;
+  let restarting = false;
   const watched =
     supervisorPid(env) === undefined
       ? undefined
@@ -269,8 +282,14 @@ export function childRestart(
         writeErrorLine(msg('cli.dev.restart', { reason: restartReason(root, pins) }));
         leaving ??= 'restart';
         watched?.stopping(DEV_RESTART_EXIT_CODE);
-        void drain('restart');
+        if (restarting) return;
+        restarting = true;
+        // Never rejects: a failed retire is logged and the drain still runs (`retireThenDrain`).
+        void retire(worker);
       },
+    },
+    adopt: (booted) => {
+      worker = booted;
     },
     exit: () => {
       if (leaving === 'restart') process.exit(DEV_RESTART_EXIT_CODE);

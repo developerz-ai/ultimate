@@ -50,7 +50,7 @@ image:
 env:
   NODE_ENV: production
 
-existingSecret: ${app.kebab}-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, ULTIMATE_CURSOR_SECRET
+existingSecret: ${app.kebab}-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, and .env.example's Framework section
 
 # The release-wide Secret above is every role's DEFAULT: \`existingSecret\` under a role
 # (roles.web.existingSecret, migrate.existingSecret) names that role's own, so the migrate Job's
@@ -164,6 +164,11 @@ roles:
   worker:
     enabled: true
     replicas: 2
+    # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
+    # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
+    # — for a job whose side effect must happen at most once and may outlast drain.deadlineSeconds.
+    # Added to this role's terminationGracePeriodSeconds, which the kubelet counts the preStop against.
+    retireSeconds: 0
     resources:
       requests: { cpu: 200m, memory: 256Mi }
       limits: { memory: 1Gi }

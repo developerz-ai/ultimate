@@ -136,6 +136,22 @@ export class IslandStateStubInvalidError extends UltimateError {
 }
 
 /**
+ * A `records` stub whose rows are not the envelope's shape — record type -> record key -> row
+ * object, `removed` a list of keys per type. The client decodes that shape behind the header and
+ * refuses anything else (`X_CLIENT_RECORD_ENVELOPE_INVALID`), so the picture would be of that
+ * refusal. Its own class beside the one above, sharing one code: a stub that cannot answer.
+ */
+export class IslandStateRecordsInvalidError extends UltimateError {
+  constructor(input: { readonly island: string; readonly path: string; readonly reason: string }) {
+    super({
+      code: 'X_TEST_ISLAND_STATE_STUB_INVALID',
+      cause: `${input.path} ${input.reason}, so the page store would refuse the envelope rather than adopt it`,
+      fix: `respond: { kind: 'records', data: [{ id: 'r1' }], records: { runs: { 'r1': { id: 'r1' } } } } — in ${at(input.island)}`,
+    });
+  }
+}
+
+/**
  * A states file that imports the component it describes. The whole design rests on this file being
  * readable from Bun with no browser and no bundle — the command must know the complete expected
  * screenshot list BEFORE a browser exists, or "produced nothing and exited 0" is indistinguishable

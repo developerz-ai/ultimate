@@ -8,6 +8,10 @@ import type { RecordKey } from './record-key';
 export class SyncedLayer {
   readonly #rows = new Map<RecordKey, Row>();
   readonly #holds = new Map<RecordKey, number>();
+  /** Types a whole-type reader holds (`useRecords(type, selection)`): none of their rows is evicted. */
+  readonly #typeHolds = new Map<string, number>();
+  /** Per held type, the rows whose last key holder left while it was held: the hold's to evict. */
+  readonly #spared = new Map<string, Set<RecordKey>>();
   /** Keys restored from disk and not yet confirmed: the first server row REPLACES, never merges. */
   readonly #provisional = new Set<RecordKey>();
 
@@ -74,6 +78,8 @@ export class SyncedLayer {
   /** Answers whether a row was there to remove. */
   remove(rk: RecordKey): boolean {
     this.#provisional.delete(rk);
+    // Gone is no longer spared: a row the server sends again later is a new arrival, not this one.
+    this.#spared.get(rk.slice(0, rk.indexOf(':')))?.delete(rk);
     return this.#rows.delete(rk);
   }
 
@@ -81,7 +87,10 @@ export class SyncedLayer {
     this.#holds.set(rk, (this.#holds.get(rk) ?? 0) + 1);
   }
 
-  /** The last holder leaving evicts the row. Answers whether a row went. */
+  /**
+   * The last holder leaving evicts the row — unless a reader holds its whole type, which shows
+   * every row of it and would lose this one to another holder's unmount. Answers whether a row went.
+   */
   release(rk: RecordKey): boolean {
     const holds = this.#holds.get(rk);
     if (holds === undefined) return false;
@@ -90,11 +99,44 @@ export class SyncedLayer {
       return false;
     }
     this.#holds.delete(rk);
+    const type = rk.slice(0, rk.indexOf(':'));
+    if (this.#typeHolds.has(type)) {
+      const spared = this.#spared.get(type) ?? new Set<RecordKey>();
+      spared.add(rk);
+      this.#spared.set(type, spared);
+      return false;
+    }
     return this.remove(rk);
+  }
+
+  retainType(type: string): void {
+    this.#typeHolds.set(type, (this.#typeHolds.get(type) ?? 0) + 1);
+  }
+
+  /**
+   * The last type hold leaving evicts what it spared — each row whose last key holder left while
+   * the type was held and that no key holder has taken since — exactly as that release would have.
+   * A row no key holder ever held is not the hold's to evict. Answers the rows that went.
+   */
+  releaseType(type: string): readonly RecordKey[] {
+    const holds = this.#typeHolds.get(type) ?? 0;
+    if (holds > 1) {
+      this.#typeHolds.set(type, holds - 1);
+      return [];
+    }
+    this.#typeHolds.delete(type);
+    const spared = this.#spared.get(type);
+    this.#spared.delete(type);
+    const evicted: RecordKey[] = [];
+    for (const rk of spared ?? []) {
+      if (!this.#holds.has(rk) && this.remove(rk)) evicted.push(rk);
+    }
+    return evicted;
   }
 
   clear(): void {
     this.#rows.clear();
     this.#provisional.clear();
+    this.#spared.clear();
   }
 }

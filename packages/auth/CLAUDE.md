@@ -86,6 +86,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `alg: none` are refused in `decodeJwtHeader`. It checks `nbf` and `azp` too.
 - **`resolveGrants` is a seam, never a group-to-role table**, called on EVERY login. Absent leaves
   the row alone. A user created with no roles and no org logs a warning.
+  Its second argument (`OAuthGrantContext`, `oauth-grant-context.ts`, #670) is the token set, the
+  whole verified id-token payload and a LAZY, once-per-login, `sub`-checked `userinfo()` — read
+  through `oauth-profile.ts`'s `userinfoBody`, never a second userinfo reader.
 - **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Never cache
   the USER row — `authenticate` re-reads it every request so a revoked role bites on the next one.
   In `observed`, `null` is an ANSWER (clears the stored value) and `undefined` is silence.
@@ -234,7 +237,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `id-token.ts` | id token → claims this handshake may believe |
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
 | `auth-fixture.ts` | the KDF parameters, the password and the `AuthError` catcher the three `auth*.test.ts` suites share. Off `index.ts` |
-| `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
+| `oauth-profile.ts` | claims or userinfo → one `OAuthProfile`; `userinfoBody`, the one userinfo reader |
+| `oauth-grant-context.ts` | `resolveGrants`' second argument: tokens, every id-token claim, a lazy subject-checked `userinfo()` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |

@@ -156,12 +156,20 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A cached island transform’s content `hash` against the source’s, deciding whether the cached compile is still valid — a digest of source this process read.',
   },
-  'packages/core/src/cursor.ts: currentSecret() === DEV_SECRET': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `core` package row.
+  'packages/core/src/cursor.ts: currentSecret() === DEV_CURSOR_SECRET': {
+    // why: re-keyed in plan 101 sweep 12c — the constant is now `DEV_CURSOR_SECRET`; same site.
     count: 1,
     reason:
-      'Compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_SECRET` is a literal in that file, nothing an attacker does not already have.',
+      'Compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_CURSOR_SECRET` is a literal in that file, nothing an attacker does not already have.',
   },
+  // why: new in plan 101 sweep 12c (#679) — the same question asked of an env TABLE, so `x env
+  // check` and `x doctor` refuse the published key as the boot does; the other side is public.
+  'packages/core/src/cursor.ts: (configured || options.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET) === DEV_CURSOR_SECRET':
+    {
+      count: 1,
+      reason:
+        'The table form of the check above: does this env leave the process on the SHIPPED DEV CONSTANT? `DEV_CURSOR_SECRET` is a published literal, so the comparison leaks nothing an attacker lacks.',
+    },
   'packages/core/src/image/png-pixels.ts: bytes[i] !== PNG_SIGNATURE[i]': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `core` package row.
     count: 1,

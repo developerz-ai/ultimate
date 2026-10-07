@@ -47,7 +47,7 @@ export function busRow(row: Row | null): Row | null {
  * over directly.
  *
  * Decided by the column that DECLARED the value, never by what the value looks like: a `text()`
- * holding `2026-08-09T12:00:00.000Z` stays text. `table` is `ChangeEvent.entity`, which on the WAL
+ * holding `2026-08-09T12:00:00.000Z` stays text. `table` is `ChangeEvent.table`, which on the WAL
  * path is the relation name. A table with no entity here, a property with no column, and a value
  * its column refuses are all handed back as they arrived — a change that crosses unrevived is the
  * old behaviour; a change dropped is a window that silently diverges.

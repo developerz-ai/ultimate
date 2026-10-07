@@ -88,7 +88,10 @@ and set cookies. It lists the page's sockets and requests, reads IndexedDB datab
 waits for an expression (`waitFor`). That is what the two-tab and offline cases rest on. The spawned
 app runs with `APP_URL` set to its own origin, `NODE_ENV` stripped and `ULTIMATE_ENV=development`:
 a `NODE_ENV=test` inherited from `bun test` made it resolve as `test`, and a missing `APP_URL`
-answered 500 with `X_ENV_MISSING`. Readiness is polled over `node:http`, because the e2e preload
+answered 500 with `X_ENV_MISSING`. `DATABASE_URL` and `S3_ENDPOINT` are stripped too (25.0.0,
+#674): the state directory owns the database and the disk, and an exported integration-test
+Postgres made `x db reset` refuse an external database and the step go red. A run that wants an
+external one passes it in `startE2eApp({ env })`. Readiness is polled over `node:http`, because the e2e preload
 seals `fetch` against egress. Each e2e test gets 60 s (`E2E_TEST_TIMEOUT_MS`). A spawned app
 that will not come up is `X_E2E_APP_FAILED`.
 
@@ -278,7 +281,7 @@ export const postFormStates = defineIslandStates({
 | `states[].title` | one line: what this state **is** |
 | `states[].note` | why it deserves a picture — usually "you cannot reach this by clicking, because …" |
 | `states[].props` | JSON, riding the same `data-x-props` seam hydration already uses |
-| `states[].routes` | stubs for whatever the component fetches: `{ kind: 'json', status?, body }`, `{ kind: 'pending' }` or `{ kind: 'offline' }`, matched as a `"<METHOD> <pathname>"` prefix |
+| `states[].routes` | stubs for whatever the component fetches: `{ kind: 'json', status?, body }`, `{ kind: 'records', status?, data, records, removed? }`, `{ kind: 'pending' }` or `{ kind: 'offline' }`, matched as a `"<METHOD> <pathname>"` prefix. `records` is what a query declaring an entity's `rows:` answers — the envelope behind `x-ultimate-records: 1`, built by core's `encodeRecordEnvelope` — so the page store adopts `records` (type → key → row) exactly as from the server; a `json` stub of the same body is read as bare rows and adopts nothing (25.0.0, #683). A malformed envelope is refused at declaration (`X_TEST_ISLAND_STATE_STUB_INVALID`) |
 | `states[].viewport` · `themes` | per state. Both themes unless the state is only meaningful in one |
 | `viewport` · `target` · `timeZone` · `now` | manifest-wide. `1280x800`, the island's host element, `UTC`, and the suite's frozen instant |
 
@@ -338,6 +341,8 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 | `deploy` | `newBuild()` — same app, new build id, page still open | a browser driver |
 | `subscribe` | one subscriber's `rows()` `patches()` `settled()` `lsn()` | a replicator |
 | `seed`, and anything else | the app's own graph | the app's `scripts/test-setup.ts` |
+
+**`waitForServiceWorker({ timeoutMs? })` hands the first page over** (25.0.0, #678). The framework's register script runs on `load`, so the first page of a run is committed before its worker activates and `clients.claim()` can miss it: `ready` resolves and no `controllerchange` ever fires. The wait answers `ready`, gives the claim a second (`CLAIM_GRACE_MS`), and reloads an uncontrolled page ONCE — that navigation is answered by the worker — within one budget (`serviceWorkerTimeoutMs`, 10 s, or this call's `timeoutMs`). A page with no worker is refused without a reload, and a reload still uncontrolled is refused saying so (`X_E2E_SERVICE_WORKER_ABSENT`). Proven against a real worker that never claims: `packages/testing/e2e/service-worker-handover.e2e.test.ts`.
 
 The last five are **declared, not built**. The framework does not bundle a browser, so the name resolves and asking for it without a driver fails as `X_TEST_FIXTURE_UNAVAILABLE` naming what is missing — different from `X_TEST_FIXTURE_UNKNOWN`, whose fix ("register it") would have the app inventing its own idea of what a page is. A driver installs through the same registry:
 

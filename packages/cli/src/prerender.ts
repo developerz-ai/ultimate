@@ -27,7 +27,7 @@ import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
 import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
-import { measureScope, withAppUrl } from './measure-scope';
+import { measurementActorLabel, measureScope, withAppUrl } from './measure-scope';
 import { loadNavigation, pageNavigation } from './page-navigation';
 import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
 import { localizedArtifacts } from './prerender-locales';
@@ -347,6 +347,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
             ...(isUltimateError(error)
               ? { code: error.code, cause: error.cause, fix: error.fix }
               : {}),
+            actor: measurementActorLabel(measure.actor),
           });
         }
         continue;

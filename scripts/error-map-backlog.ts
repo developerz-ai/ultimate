@@ -121,6 +121,7 @@ export const OFF_SOCKET: Pins = {
     'X_TOPIC_FORBIDDEN',
     'X_TRANSPORT_PROTOCOL',
     'X_TRANSPORT_UNAVAILABLE',
+    'X_REALTIME_PRODUCER_CONFLICT',
   ],
   // tier 4 — a mail declared twice, at registration.
   mail: ['X_MAIL_DUPLICATE'],

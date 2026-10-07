@@ -62,7 +62,7 @@ const alice = userActor({ id: 'alice', orgId: 'o1' });
 const bob = userActor({ id: 'bob', orgId: 'o1' });
 
 const insert = (row: Row, lsn: number, write: string | null): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'insert',
   before: null,
   after: row,
@@ -245,7 +245,7 @@ test('the retained ring keeps the write beside the pre-policy patch, for the res
 test('ChangeEvent.write is required: "no keyed write" is spelled null, never left out', () => {
   // @ts-expect-error — `write` is missing
   const unnamed: ChangeEvent = {
-    entity: 'posts',
+    table: 'posts',
     op: 'insert',
     before: null,
     after: { id: 'p1' },

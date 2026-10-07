@@ -10,6 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { parseEnvKeys, renderEnvExample } from '@ultimat3/core';
 import { envExampleFindings, envExampleFor, isEnvSchema, loadEnvSchema } from './app-env';
 
 const SCHEMA = `export const envSchema = {
@@ -85,6 +86,27 @@ describe('unit · the .env.example drift gate', () => {
     const [finding] = await envExampleFindings(root);
     expect(finding?.code).toBe('X_ENV_EXAMPLE_DRIFT');
     expect(finding?.cause).toContain('no longer the projection');
+  });
+
+  // #679: a 24.x example is the app's projection alone. The framework's deploy-required keys are
+  // part of the contract now, and the finding names them rather than "a description moved".
+  test('an example missing the framework keys names them', async () => {
+    const schema = await loadEnvSchema(await appRoot('framework-keys', SCHEMA));
+    const root = await appRoot('framework-keys', SCHEMA, renderEnvExample(schema ?? {}));
+    const [finding] = await envExampleFindings(root);
+    expect(finding?.code).toBe('X_ENV_EXAMPLE_DRIFT');
+    expect(finding?.cause).toContain('ULTIMATE_CURSOR_SECRET, STORAGE_SIGNING_SECRET');
+    expect(finding?.cause).toContain('the framework');
+  });
+
+  test('the projection carries the framework keys after the app’s', async () => {
+    const schema = await loadEnvSchema(await appRoot('framework-render', SCHEMA));
+    expect(parseEnvKeys(envExampleFor(schema ?? {}))).toEqual([
+      'DATABASE_URL',
+      'API_TOKEN',
+      'ULTIMATE_CURSOR_SECRET',
+      'STORAGE_SIGNING_SECRET',
+    ]);
   });
 
   test('no file at all is drift, not a skip', async () => {

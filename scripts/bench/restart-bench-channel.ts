@@ -26,7 +26,7 @@ export const BENCH_CHANNEL = channel('bench', {
 /** The committed change one probe is — what the change feed would hand every `sync` node. */
 export function probeChange(seq: number, at: number): ChangeEvent {
   return {
-    entity: 'bench_probes',
+    table: 'bench_probes',
     op: 'insert',
     before: null,
     after: { id: newId(), room: BENCH_ROOM, seq },

@@ -15,6 +15,7 @@ import {
   MEASUREMENT_ACTOR_ID,
   resetMeasurementActor,
   useContext,
+  userActor,
 } from '@ultimat3/core';
 import { db, sql } from '@ultimat3/db';
 import { useRequestHeader } from '@ultimat3/http';
@@ -227,4 +228,49 @@ describe('the actor a measurement render runs as', () => {
     expect(report.unmeasured).toEqual([]);
     expect(rows).toEqual([{ n: 0 }]);
   }, 60_000);
+
+  // #675: a page whose policy names a ROLE is refused under the default actor (service, `*`, no
+  // org, no roles), and the report has to say who was refused — the gate's finding names the actor
+  // and `defineMeasurementActor()` from it. Declaring one with the role is what weighs the page.
+  test('a role-gated load is refused as the default actor, named, and weighed as a declared one', async () => {
+    const before = knownPermissions();
+    const beforeSites = permissionDeclarationSites();
+    definePermissions(['console:read']);
+    try {
+      const consoleRows = query({
+        input: t.object({}),
+        policy: can('console:read', ({ actor }) => actor?.roles.includes('dev') === true),
+        sql: () => from<{ id: string }>('things', [{ id: 'a' }]),
+      });
+      registerQueries({ consoleRows });
+      registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+      registerRoute({
+        file: 'apps/web/app/console/page.tsx',
+        config: defineRoute({
+          render: 'ssr',
+          hydrate: 'visible',
+          offline: 'runtime',
+          budget: { js: '60kb' },
+          load: async () => ({ rows: await runQuery(consoleRows, {}) }),
+          meta: () => ({ title: 'Console', description: 'dev only' }),
+        }),
+      });
+      const out = join(ROOT, 'static');
+      const refused = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+      expect(refused.unmeasured.map((one) => [one.path, one.code])).toEqual([
+        ['/console', 'X_FORBIDDEN'],
+      ]);
+      // Core's `actorLabel` for the identity — one actor format — plus the roles a gate reads.
+      expect(refused.unmeasured[0]?.actor).toBe(`service:${MEASUREMENT_ACTOR_ID} (roles: none)`);
+
+      defineMeasurementActor(() =>
+        userActor({ id: 'measure', orgId: 'org-1', roles: ['dev'], permissions: ['console:read'] }),
+      );
+      const weighed = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+      expect(weighed.unmeasured).toEqual([]);
+    } finally {
+      resetQueries();
+      restorePermissions(before, beforeSites);
+    }
+  });
 });

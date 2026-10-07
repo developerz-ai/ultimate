@@ -20,7 +20,7 @@ ROLE=replicator myapp
 |---|---|---|---|
 | `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
-| `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
+| `worker` | jobs + steps | **queue depth** | one pool per queue served; `WORKER_QUEUES=default,integrations` claims exactly those and nothing else, unset claims `jobs.queues` plus every registered job's queue ([Configuration](Configuration#jobs)) |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`postgresLeaseLeader`), never an advisory lock — that grant is session-scoped and the executor is a pool. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds the migration advisory lock on one pinned session for the whole run, so overlapping deploys serialise — the second waits, polling once per 500ms for up to 60s, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the rollout (`As of 2026-08`; 1.2.0 waits forever — [Known gaps](Known-Gaps)) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock — a container that loses it stays up, `/readyz` 503, and takes over when the holder goes (`x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD` instead) |
@@ -83,6 +83,26 @@ from the values `x deploy --method helm` passes it; on Compose, `stop_grace_peri
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 
 A hook or request still running at `drain.deadlineMs` is **abandoned** — logged as `X_SHUTDOWN_TIMEOUT` naming it, never thrown, and the process exits clean; requests arriving during the drain get `X_DRAINING`.
+
+### Retiring a worker before SIGTERM
+
+The SIGTERM path above already finishes held jobs — inside `drain.deadlineMs` (at most 1 h, one value per app). A worker that must outlast it — a job whose side effect may happen at most once, on a pod with a 2 h grace — is **retired** instead: send it **SIGUSR2** (`As of 25.0.0`, `ROLE=worker` only, `packages/cli/src/serve-retire.ts`).
+
+| Step | What the worker does |
+|---|---|
+| SIGUSR2 | logs `jobs.worker.retiring` (`inFlight`), stops claiming |
+| held jobs | every one runs to the end, however long — nothing is aborted, nothing handed back |
+| done | logs `jobs.worker.retired`, then the ordinary drain, then **exits 0** |
+
+It exits rather than holds: the only thing a `preStop` can observe is PID 1 going away, and a worker that claims nothing has nothing left to serve. A second SIGUSR2 joins the first. One during boot waits for the worker, then retires it. A SIGTERM that lands mid-retire is the ordinary drain: the wait is bound to `drain.deadlineMs` and cut off at the margin, as in the table. Outside a pod deletion an exit 0 is restarted by the Deployment like any other: a fresh worker.
+
+**The Helm chart wires it behind one value**: `roles.worker.retireSeconds` (0, off, by default). Set it to the longest a held job may run, and the worker's `preStop` sends its PID 1 SIGUSR2 and waits for it to exit; the same seconds are added to its `terminationGracePeriodSeconds`, which the kubelet counts the `preStop` against. The hook is `bun -e`, the one binary every app image carries — the image's `ENTRYPOINT ["bun", "apps/web/server.ts"]` is exec form, so bun **is** PID 1. Outside the chart, the target is the same: `kill -USR2 1` inside the container, or `docker kill --signal USR2 <container>`.
+
+```bash
+helm upgrade app docker/helm --set roles.worker.retireSeconds=7200   # 2 h worker
+```
+
+**Windows has no SIGUSR2**: there the retire installs nothing and the worker stops only through the drain above (Ctrl-C, Ctrl-Break). A native Windows process is for development and CI.
 
 ### Which signals start the drain
 
@@ -211,8 +231,14 @@ services:
   # PORT is the WEB port even here: `sync` binds PORT + 1, so 3000 is a listener on 3001.
   sync:       { <<: *app, environment: { ROLE: sync, PORT: 3000 }, ports: ['3001:3001'],
                 deploy: { replicas: 1 } }
-  worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'default,integrations' },
+  # WORKER_QUEUES is the EXACT set a worker claims (25.0.0): `integrations` runs on its own
+  # service, so the other worker names every remaining queue itself. Unset, a worker claims
+  # jobs.queues plus every queue a registered job is enqueued on; set, `jobs.worker.queue-unserved`
+  # at boot names the registered queues this one leaves to another.
+  worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'myapp-default,default' },
                 deploy: { replicas: 4 } }
+  worker-integrations: { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: integrations },
+                deploy: { replicas: 1 } }
   scheduler:  { <<: *app, environment: { ROLE: scheduler },  deploy: { replicas: 1 } }
   replicator: { <<: *app, environment: { ROLE: replicator }, deploy: { replicas: 1 } }
 ```

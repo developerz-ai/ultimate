@@ -94,7 +94,7 @@ with `{ runJobs }` — never `describe(testName('unit', …))` around a bare `te
 | `network` | `offline()` · `drop()` · `online()` · `state()` over the sealed network | the preload |
 | `runJobs` | a worker: call it to enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` — see [below](#a-job-under-runjobs) | the preload |
 | `statements` | every statement the test issued: `all()` `count(fingerprint?)` `shapes()` — and an N+1 throws | the preload |
-| `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker` | a browser driver |
+| `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker({ timeoutMs? })` — an uncontrolled first page is reloaded once for its worker (`e2e-service-worker.ts`) | a browser driver |
 | `budget` | `jsBytes(route)` measured off the built output | a browser driver |
 | `signIn` | put the browser session in a member's shoes | a browser driver |
 | `deploy` | `newBuild()` — same app, new build id, page still open | a browser driver |

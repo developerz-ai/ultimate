@@ -12,7 +12,7 @@ import { get } from 'node:http';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path API — nothing native joins a path.
 import { join } from 'node:path';
-import { E2E_APP_STOP_MS, READY_PROBE_MS, spawnE2eApp } from './e2e-spawn';
+import { E2E_APP_STOP_MS, inherited, READY_PROBE_MS, spawnE2eApp } from './e2e-spawn';
 
 /** Answers `/readyz`, and `/env` with what it was spawned with — the facts a test can read. */
 const SERVER = `
@@ -177,5 +177,32 @@ describe('spawnE2eApp', () => {
 
   test("the stop budget covers the app's own drain at its defaults, then the kill", () => {
     expect(E2E_APP_STOP_MS).toBeGreaterThan(25_000);
+  });
+});
+
+// #674: the harness boots the app on a THROWAWAY state directory, and an exported DATABASE_URL (a
+// developer's integration-test Postgres) rode along — `x db reset` refused the external database
+// and the whole e2e step went red for a reason the change under test had nothing to do with.
+describe('unit · the environment an e2e app inherits', () => {
+  const KEYS = ['DATABASE_URL', 'S3_ENDPOINT', 'EXTRA_KEPT'] as const;
+  const saved = new Map(KEYS.map((key) => [key, Bun.env[key]]));
+  afterAll(() => {
+    for (const key of KEYS) {
+      const value = saved.get(key);
+      if (value === undefined) delete Bun.env[key];
+      else Bun.env[key] = value;
+    }
+  });
+
+  test('the bindings the state directory owns are dropped; everything else rides along', () => {
+    Bun.env['DATABASE_URL'] = 'postgres://dev:dev@127.0.0.1:5432/integration';
+    Bun.env['S3_ENDPOINT'] = 'http://127.0.0.1:9000';
+    Bun.env['EXTRA_KEPT'] = 'kept';
+    const env = inherited();
+    expect(env['DATABASE_URL']).toBeUndefined();
+    expect(env['S3_ENDPOINT']).toBeUndefined();
+    expect(env['EXTRA_KEPT']).toBe('kept');
+    expect(env['NODE_ENV']).toBeUndefined();
+    expect(env['ULTIMATE_ENV']).toBe('development');
   });
 });

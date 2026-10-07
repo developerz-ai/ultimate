@@ -13,7 +13,10 @@ export interface WorkerOptions {
   readonly driver: JobDriver;
   /** Queues this process serves. Default `['default']`. */
   readonly queues?: readonly string[];
-  /** Slots per queue. A number applies to every queue. */
+  /**
+   * Slots per queue. A number applies to every queue; a table names some, and a queue it leaves out
+   * (or no `concurrency` at all) runs at core's `JOBS_CONCURRENCY_DEFAULT`, 8 — 5 before 25.0.0.
+   */
   readonly concurrency?: number | Readonly<Record<string, number>>;
   readonly limiter?: Limiter;
   readonly clock?: Clock;

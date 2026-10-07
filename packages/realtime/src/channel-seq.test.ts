@@ -133,7 +133,7 @@ const nextLsn = (): string => {
   return String(lsn).padStart(16, '0');
 };
 const insert = (row: Row, op: ChangeEvent['op'] = 'insert'): ChangeEvent => ({
-  entity: 'channel_seq_posts',
+  table: 'channel_seq_posts',
   op,
   before: op === 'insert' ? null : row,
   after: op === 'delete' ? null : row,

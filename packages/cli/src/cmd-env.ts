@@ -15,6 +15,7 @@ import { envExampleFor, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
+import { frameworkSecretFindings } from './framework-env';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 
@@ -67,33 +68,47 @@ async function writeExample(ctx: CommandContext): Promise<CommandResult> {
 }
 
 /**
- * The values are read from the real process environment, and only ever printed through
- * `maskedEnvValues` — `checkEnv().values` holds the actual secrets because `defineEnv()` has to
+ * The values are read from the environment the command was handed (`ctx.env`, the process's own
+ * in `bin.ts`) — one table for the app's keys and the framework's — and only ever printed through
+ * `maskedEnvValues`: `checkEnv().values` holds the actual secrets because `defineEnv()` has to
  * return them, and a `--json` report is the last place a DSN should appear in full.
+ *
+ * The framework's deploy-required secrets (`framework-env.ts`) are asked exactly where the boot
+ * refuses them — outside development/test, and where no environment is named at all — so `ULTIMATE_ENV=production x env check` answers what
+ * the first deployed boot would, instead of each role crash-looping on one key at a time (#679).
  */
 async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
   const { schema } = await requireSchema(ctx.cwd, 'check');
-  const report = checkEnv(schema);
+  const report = checkEnv(schema, { env: ctx.env });
   const total = Object.keys(schema).length;
-  const findings: readonly Finding[] = report.issues.map((issue) => ({
-    code: 'X_ENV_MISSING',
-    cause: `${issue.key} is ${issue.reason} (expected ${issue.expected})`,
-    fix: issue.fix,
-    docs: ERROR_DOCS_URL,
-    at: ENV_EXAMPLE_PATH,
-  }));
+  // A key the app's own declaration already reported is one finding, not two.
+  const reported = new Set(report.issues.map((issue) => issue.key));
+  // Gated by `deployed()` inside — the boot's own rule, so a table naming no environment is
+  // checked as the production process it boots as.
+  const framework = frameworkSecretFindings(ctx.env, reported);
+  const findings: readonly Finding[] = [
+    ...report.issues.map((issue) => ({
+      code: 'X_ENV_MISSING',
+      cause: `${issue.key} is ${issue.reason} (expected ${issue.expected})`,
+      fix: issue.fix,
+      docs: ERROR_DOCS_URL,
+      at: ENV_EXAMPLE_PATH,
+    })),
+    ...framework,
+  ];
+  const ok = findings.length === 0;
   return {
-    ok: report.ok,
+    ok,
     command: 'env',
-    summary: report.ok
+    summary: ok
       ? msg('cli.env.checked', { count: total })
-      : msg('cli.env.invalid', { count: report.issues.length, total }),
+      : msg('cli.env.invalid', { count: findings.length, total }),
     findings,
     data: {
       variables: total,
       values: maskedEnvValues(schema, report.values) as JsonValue,
     },
-    exitCode: report.ok ? 0 : 1,
+    exitCode: ok ? 0 : 1,
   };
 }
 

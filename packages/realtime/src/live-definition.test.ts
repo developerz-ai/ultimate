@@ -124,7 +124,7 @@ function registryFor(
 
 function change(after: FeedRow, before: FeedRow | null): ChangeEvent {
   return {
-    entity: 'posts',
+    table: 'posts',
     op: 'update',
     before,
     after,
@@ -425,7 +425,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
 
     if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
     expect(result.frame.entity).toBe('posts');
-    expect(result.frame.entity).toBe(change(ROWS[0] as FeedRow, null).entity);
+    expect(result.frame.entity).toBe(change(ROWS[0] as FeedRow, null).table);
   });
 
   test('a definition that states no entity sends no scope, rather than guessing one', async () => {

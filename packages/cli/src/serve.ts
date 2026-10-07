@@ -8,7 +8,7 @@ import { assertNoDevSecretsOutsideLocal, logger } from '@ultimat3/core';
 import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
-import { holdWhileBooting } from './hold';
+import { type BootedHold, holdWhileBooting } from './hold';
 import { startMetricsEndpoint } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
@@ -183,11 +183,26 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
   // `process.exit(code)` and `apps/web/server.ts` — which is what awaits this — does not. One
   // non-unref'd interval anywhere in the app then holds an event loop that has nothing left to do,
   // until `terminationGracePeriodSeconds` runs out and the kubelet SIGKILLs a drained process.
-  const { app, hold } = await holdWhileBooting('serve', () => serveApp({ ...options, role }), {
-    exit: (code) => {
-      process.exit(code);
-    },
-  });
+  //
+  // A worker also retires on SIGUSR2 (`serve-retire.ts`) — armed before the boot for the same
+  // reason: Bun's default for an unhandled SIGUSR2 ends the process, and a `preStop` may land
+  // while the pod still boots. The retire ends in the same drain, so the same hold exits 0.
+  // Behind `await import()`, as the serving graph is: `ROLE=migrate` never loads it.
+  const retire = role === 'worker' ? (await import('./serve-retire')).armWorkerRetire() : undefined;
+  let booted: BootedHold<ServedApp>;
+  try {
+    booted = await holdWhileBooting('serve', () => serveApp({ ...options, role }), {
+      exit: (code) => {
+        retire?.disarm();
+        process.exit(code);
+      },
+    });
+  } catch (error) {
+    retire?.disarm();
+    throw error;
+  }
+  const { app, hold } = booted;
+  retire?.adopt(app.running.worker);
   logger.info('ultimate started', { role: app.role, url: app.url, buildId: app.buildId });
   await hold();
   return app;

@@ -56,7 +56,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'ai: registerModel({': 1,
   "auth: const keys = providerJwks(providerFor('bigco-sso'));": 1,
   'auth: const { identity } = await verifyWorkloadToken({': 1,
-  'auth: const { start, callback } = oauthLogin(auth);': 1,
   'auth: defineAuth({': 1,
   "auth: defineAuth({ adapter, providers: ['github'], link: 'verified-email' })  // the default": 1,
   "auth: import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';": 1,

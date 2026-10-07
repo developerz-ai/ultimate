@@ -8,6 +8,7 @@
 // *contains* `window.WebSocket=`, which is what let both defects ship unnoticed.
 
 import { describe, expect, test } from 'bun:test';
+import { decodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { isStubMatch } from '@ultimat3/testing';
 import { HARNESS_GLOBAL, harnessScript, readinessProbe } from './island-harness-script';
 import { IslandRequestUnstubbedError } from './island-shot-errors';
@@ -185,5 +186,40 @@ describe('unit · the printed fix for an unstubbed request must be satisfiable',
     const match = /match: '([^']+)'/.exec(error.fix)?.[1];
     expect(match).toBeDefined();
     expect(isStubMatch(match as string)).toBe(false);
+  });
+});
+
+// #683: a query declaring an entity's `rows:` answers the records envelope behind
+// `x-ultimate-records: 1`, and the client adopts rows into the page store ONLY behind that header —
+// so a `json` stub could never set it, and an island rendering a projection of the store
+// photographed empty. The `records` stub answers exactly what the server does.
+describe('unit · a records stub answers the records envelope', () => {
+  const records = { runs: { r1: { id: 'r1', status: 'green' } } };
+  const stubs = [
+    {
+      match: 'GET /api/runs',
+      respond: { kind: 'records', data: [{ id: 'r1' }], records, removed: { runs: ['r0'] } },
+    },
+    { match: 'GET /api/plain', respond: { kind: 'json', body: { ok: true } } },
+  ];
+
+  test('the header is set and the body is the envelope the client decodes', async () => {
+    const { window } = runHarness({ stubs });
+    const fetchFn = window['fetch'] as (url: string) => Promise<Response>;
+    const response = await fetchFn('/api/runs?page=1');
+    expect(response.status).toBe(200);
+    expect(response.headers.get(RECORDS_HEADER)).toBe('1');
+    const decoded = decodeRecordEnvelope(await response.json());
+    expect(decoded.data).toEqual([{ id: 'r1' }]);
+    expect(decoded.records).toEqual(records);
+    expect(decoded.removed).toEqual({ runs: ['r0'] });
+  });
+
+  test('a json stub still answers bare, with no records header', async () => {
+    const { window } = runHarness({ stubs });
+    const fetchFn = window['fetch'] as (url: string) => Promise<Response>;
+    const response = await fetchFn('/api/plain');
+    expect(response.headers.get(RECORDS_HEADER)).toBeNull();
+    expect(await response.json()).toEqual({ ok: true });
   });
 });

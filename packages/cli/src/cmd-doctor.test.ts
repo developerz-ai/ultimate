@@ -1,56 +1,12 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove, and Bun.write is async in these synchronous
-// fixture helpers.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
-// why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
-import { join } from 'node:path';
+import { describe, expect, test } from 'bun:test';
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
-import { PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
-import { REQUIRED_BUN } from './app-root';
-import type { DoctorProbe } from './cmd-doctor';
-import { doctorCommand, doctorPort, ENV_DEVELOPMENT, probeFor, runDoctor } from './cmd-doctor';
-import type { CommandContext } from './command';
+import { doctorCommand, doctorPort, ENV_DEVELOPMENT, runDoctor } from './cmd-doctor';
+import { codes, probe } from './cmd-doctor-fixture';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
+import { frameworkSecretFindings } from './framework-env';
 import { ICON_SOURCE } from './icon-assets';
-import type { Finding } from './output';
 import type { ParsedArgs } from './parse';
 import { parseArgs } from './parse';
-
-const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
-  bunVersion: REQUIRED_BUN,
-  root: '/app',
-  port: 3000,
-  appUrl: undefined,
-  // The ordinary developer: the shipped cursor key, off production. Every case below that does
-  // not say otherwise is this one.
-  devCursorSecret: true,
-  devStorageSecret: true,
-  production: false,
-  exists: () => true,
-  portFree: async () => true,
-  // Reachable, or embedded — the probe's own `null`. A test that opened a pool would be asking
-  // about the box it runs on rather than about `runDoctor`.
-  database: async () => null,
-  // The bare VM that WORKS: no DATABASE_URL, and `bun install` put the optional peer in place.
-  embeddedDatabase: async () => ({ selected: true, resolved: true }),
-  drift: async () => [],
-  snapshots: async () => [],
-  // The app the scaffold writes: a declared fallback with a `site/` page answering it.
-  offlineFallback: async () => ({
-    fallback: '/offline',
-    routes: [{ path: '/offline', surface: 'site' }],
-  }),
-  // The app the scaffold writes: no sealed column, so the key ring is never asked about.
-  sealedKeys: async () => ({ columns: [], keys: undefined }),
-  // A database with nothing left over from an upgrade.
-  authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
-  ...over,
-});
-
-const codes = async (input: DoctorProbe): Promise<readonly string[]> =>
-  (await runDoctor(input)).map((finding) => finding.code);
 
 describe('unit · x doctor', () => {
   test('a retired key beside a sealed column is reported, and a clean ring is not', async () => {
@@ -242,42 +198,21 @@ describe('unit · x doctor', () => {
     expect(findings.map((finding) => finding.code)).toEqual(['X_MIGRATION_SNAPSHOT_MISSING']);
   });
 
-  // A finding every developer sees on day one is one they learn to skip, and the report goes with
-  // it — so the noise case is what makes the production gate real, not the finding itself.
-  test('the shipped cursor key is silent in development, where it is the design', async () => {
-    expect(await codes(probe({ devCursorSecret: true }))).toEqual([]);
-  });
-
-  test('the shipped cursor key in production is reported with the command that mints one', async () => {
-    const findings = await runDoctor(probe({ devCursorSecret: true, production: true }));
+  // The probe carries what the boot would refuse (`framework-env.ts` decides, `probeFor` asks);
+  // `runDoctor` reports it verbatim — one list, so a third secret cannot be mis-wired here.
+  test('the framework-secret findings the probe carries are reported, wording and all', async () => {
+    const findings = await runDoctor(probe({ frameworkFindings: frameworkSecretFindings({}) }));
     const cursor = findings.find((finding) => finding.code === 'X_CURSOR_SECRET_DEV');
     expect(cursor?.cause).toContain('forge a page position');
     // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
     expect(cursor?.fix).toBe('export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"');
-  });
-
-  test('a production deploy with its own secrets reports nothing', async () => {
-    expect(
-      await codes(probe({ devCursorSecret: false, devStorageSecret: false, production: true })),
-    ).toEqual([]);
-  });
-
-  // The storage twin, and the more expensive one: the published key mints a signed PUT for any
-  // key with any maxBytes and contentType, and `acceptSignedUpload` trusts a signed constraint
-  // over the app's own uploadPolicy.
-  test('the shipped storage key is silent in development, where it is the design', async () => {
-    expect(await codes(probe({ devStorageSecret: true }))).toEqual([]);
-  });
-
-  test('the shipped storage key in production is reported with the command that mints one', async () => {
-    const findings = await runDoctor(
-      probe({ devCursorSecret: false, devStorageSecret: true, production: true }),
-    );
     const storage = findings.find((finding) => finding.code === 'X_STORAGE_SECRET_DEV');
-    expect(storage?.cause).toContain('STORAGE_SIGNING_SECRET');
     expect(storage?.cause).toContain('uploadPolicy');
-    // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
     expect(storage?.fix).toBe('export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"');
+  });
+
+  test('a probe owing nothing reports nothing', async () => {
+    expect(await codes(probe({ frameworkFindings: [] }))).toEqual([]);
   });
 
   test('every finding carries a fix command — a diagnostic without one is not shippable', async () => {
@@ -294,199 +229,3 @@ describe('unit · x doctor', () => {
 // it was not production and skipped the two checks standing between it and a published signing
 // key. All three variables are restored after each case: bun shares one process across test files,
 // and a leaked environment would decide a later file's answer by load order.
-describe('unit · x doctor · probeFor', () => {
-  type EnvKey = 'ULTIMATE_ENV' | 'X_ENV' | 'NODE_ENV';
-  const KEYS: readonly EnvKey[] = ['ULTIMATE_ENV', 'X_ENV', 'NODE_ENV'];
-  const SAVED = new Map(KEYS.map((key) => [key, Bun.env[key]]));
-
-  const setEnv = (key: EnvKey, value: string | undefined): void => {
-    if (value === undefined) delete Bun.env[key];
-    else Bun.env[key] = value;
-  };
-
-  afterEach(() => {
-    for (const key of KEYS) setEnv(key, SAVED.get(key));
-  });
-
-  const production = (over: Partial<Record<EnvKey, string>>): boolean => {
-    for (const key of KEYS) setEnv(key, over[key]);
-    return probeFor(import.meta.dir, '1.3.14', 3000).production;
-  };
-
-  test('ULTIMATE_ENV=production is a production process', () => {
-    expect(production({ ULTIMATE_ENV: 'production' })).toBe(true);
-  });
-
-  // Core's documented fallback, kept: every container image and platform sets it, and an app that
-  // never heard of `ULTIMATE_ENV` must still be diagnosed correctly.
-  test('NODE_ENV=production alone is a production process', () => {
-    expect(production({ NODE_ENV: 'production' })).toBe(true);
-  });
-
-  // The precedence that matters: a base image that bakes in `NODE_ENV=production` would otherwise
-  // make `x doctor` report a forgeable cursor at every `x dev` inside it, and the developer who
-  // said so with the framework's own key would have been overruled by the image.
-  test('ULTIMATE_ENV overrides NODE_ENV rather than falling back to it', () => {
-    expect(production({ ULTIMATE_ENV: 'development', NODE_ENV: 'production' })).toBe(false);
-  });
-
-  // `X_ENV` is a spelling nothing in this repo reads. It must not decide, and — this is the half
-  // that bit — it must not SHADOW: `X_ENV ?? NODE_ENV` short-circuited on any non-empty value, so
-  // one stale variable turned a real production deploy into "not production".
-  test('X_ENV decides nothing, and shadows nothing', () => {
-    expect(production({ X_ENV: 'production' })).toBe(false);
-    expect(production({ X_ENV: 'prod', NODE_ENV: 'production' })).toBe(true);
-  });
-
-  // `ULTIMATE_ENV` is not in the env schema, so nothing validates it at boot and `x doctor` can be
-  // its first reader. `tryResolveEnvironment` answers `undefined` rather than throwing — a typo
-  // must be a diagnostic that runs, not a diagnostic that crashes.
-  test('a misspelled ULTIMATE_ENV answers "not production" instead of throwing', () => {
-    expect(production({ ULTIMATE_ENV: 'prodcution' })).toBe(false);
-  });
-
-  test('no variable set is not production', () => {
-    expect(production({})).toBe(false);
-  });
-});
-
-// `probeFor` is where `x doctor`'s diagnosis meets the machine. Only the deterministic half is
-// asserted: a port THIS test holds is not free, and the readers that depend on an app root answer
-// nothing when there is none. Whether an arbitrary port is free is not a fact a test can own.
-describe('unit · x doctor · probeFor reaches the real machine', () => {
-  test('a port this process is holding is reported as not free', async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response('') });
-    try {
-      // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always
-      // opens a TCP one, so an absent port is a broken assumption, never a case to default.
-      const taken = server.port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
-      expect(await probeFor(import.meta.dir, '1.3.14', taken).portFree(taken)).toBe(false);
-    } finally {
-      await server.stop(true);
-    }
-  });
-
-  test('outside an app, the root-dependent readers answer empty rather than throwing', async () => {
-    // `/` has no app.config.ts at or above it, so `findAppRoot` answers undefined.
-    const outside = probeFor('/', '1.3.14', 3000);
-    expect(outside.root).toBeUndefined();
-    expect(outside.exists('apps/web/site/page.tsx')).toBe(false);
-    expect(await outside.drift()).toEqual([]);
-    expect(await outside.snapshots()).toEqual([]);
-  });
-
-  test('inside an app, exists() is resolved against the app root and not against the cwd', () => {
-    const root = doctorAppRoot();
-    try {
-      // Called from a SUBDIRECTORY, so a reader that resolved against the cwd would miss both.
-      const inside = probeFor(join(root, 'apps', 'web'), '1.3.14', 3000);
-      expect(inside.root).toBe(root);
-      expect(inside.exists('app.config.ts')).toBe(true);
-      expect(inside.exists('this-file-does-not-exist.txt')).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('unit · x doctor · the command', () => {
-  const doctorContext = (argv: readonly string[], cwd: string): CommandContext => ({
-    args: parseArgs(argv, [doctorCommand.spec]),
-    cwd,
-    // `x doctor` diagnoses in-process; a subprocess from it is the bug, not a fixture.
-    runner: (command) => {
-      throw new Error(`x doctor spawned ${command.join(' ')}`);
-    },
-    env: {},
-    bunVersion: REQUIRED_BUN,
-  });
-
-  test('a port that is taken is reported as X_PORT_IN_USE, and --json lists the codes', async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response('') });
-    const root = doctorAppRoot();
-    try {
-      const result = await doctorCommand.run(
-        doctorContext(['doctor', '--port', String(server.port), '--json'], root),
-      );
-      expect(result.ok).toBe(false);
-      expect(result.command).toBe('doctor');
-      const data = result.data as { count: number; codes: readonly string[] };
-      expect(data.codes).toContain('X_PORT_IN_USE');
-      expect(data.count).toBe((result.findings ?? []).length);
-      // Every finding the report counted is a finding the report carries.
-      expect(data.codes).toEqual((result.findings ?? []).map((finding) => finding.code));
-    } finally {
-      await server.stop(true);
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-});
-
-/** The smallest thing `findAppRoot` accepts, plus one subdirectory to be called from. */
-function doctorAppRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-doctor-'));
-  mkdirSync(join(dir, 'apps', 'web'), { recursive: true });
-  writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
-  return dir;
-}
-
-describe('unit · x doctor probes the whole surface x dev binds', () => {
-  // `x dev --port 3999` printed `web listening on 3999`, then died on 4000 as X_CLI_UNEXPECTED
-  // with a caught `Error` rendered into its cause — and `x doctor --port 3999` answered
-  // "no findings — environment is shippable", because it probed one port of the two (#F5).
-  test('the sync port is probed too, and the finding names the role that wants it', async () => {
-    const findings = await runDoctor(
-      probe({ port: 3999, portFree: async (port) => port !== 4000 }),
-    );
-    expect(findings.map((entry) => entry.code)).toEqual(['X_PORT_IN_USE']);
-    expect(findings[0]?.cause).toContain('port 4000');
-    expect(findings[0]?.cause).toContain('sync');
-  });
-
-  test('a taken web port still names the web role, so the two are never confused', async () => {
-    const findings = await runDoctor(
-      probe({ port: 3999, portFree: async (port) => port !== 3999 }),
-    );
-    expect(findings[0]?.cause).toContain('port 3999');
-    expect(findings[0]?.cause).toContain('web');
-  });
-
-  // `x doctor` answered "shippable" against DATABASE_URL=postgres://nope:nope@localhost:5432/nope
-  // while `x db migrate` on the same env answered X_DB_UNAVAILABLE.
-  test('an unreachable database is a finding with the same fix @ultimat3/db gives', async () => {
-    const unreachable: Finding = {
-      code: 'X_DB_UNAVAILABLE',
-      cause: 'DATABASE_URL does not answer `select 1`: connection refused',
-      fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
-    };
-    const codesFound = await codes(probe({ database: async () => unreachable }));
-    expect(codesFound).toContain('X_DB_UNAVAILABLE');
-  });
-
-  test('an embedded database is not probed at all — that lock belongs to x dev', async () => {
-    expect(await codes(probe())).toEqual([]);
-  });
-
-  // The bare-VM hole, and the reason it stayed open: `database()` answers `null` with no
-  // DATABASE_URL, so the one configuration a dz-runner box actually has was the one configuration
-  // `x doctor` said nothing about. `bin/setup` reported it instead, four commands later, as an
-  // `x db migrate` failure.
-  test('a bare VM whose optional peer never installed is red, in @ultimat3/db own words', async () => {
-    const findings = await runDoctor(
-      probe({ embeddedDatabase: async () => ({ selected: true, resolved: false }) }),
-    );
-    expect(findings.map((entry) => entry.code)).toEqual(['X_DB_UNAVAILABLE']);
-    expect(findings[0]?.cause).toContain(PGLITE_MISSING);
-    expect(findings[0]?.cause).toContain('DATABASE_URL is unset');
-    // Runnable, and the package's own line — not a second wording for one condition.
-    expect(findings[0]?.fix).toBe(PGLITE_FIX);
-  });
-
-  // An app pointed at a real Postgres never loads PGlite, so an absent optional peer there is not
-  // a defect. `database()` owns that configuration, and a second finding about it is noise.
-  test('an app with a DATABASE_URL is not asked to install the embedded database', async () => {
-    expect(
-      await codes(probe({ embeddedDatabase: async () => ({ selected: false, resolved: false }) })),
-    ).toEqual([]);
-  });
-});

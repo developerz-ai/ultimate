@@ -26,7 +26,7 @@ describe('a truncate, read off the WAL', () => {
     await settled(1);
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ entity: 'posts', op: 'truncate', before: null, after: null });
+    expect(events[0]).toMatchObject({ table: 'posts', op: 'truncate', before: null, after: null });
     expect(events[0]?.lsn).not.toBe('');
     await feed.stop();
   });

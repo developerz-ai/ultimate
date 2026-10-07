@@ -102,7 +102,7 @@ const write = (table: Table, row: Row, lsn: number): ChangeEvent => {
   const before = table.rows.find((held) => held.id === row.id) ?? null;
   table.rows = [...table.rows.filter((held) => held.id !== row.id), row];
   return {
-    entity: 'posts',
+    table: 'posts',
     op: before === null ? 'insert' : 'update',
     before,
     after: row,

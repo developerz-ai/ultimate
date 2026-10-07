@@ -190,7 +190,7 @@ async function truncated(
   entry: QueryEntry,
   change: ChangeEvent,
 ): Promise<FanoutResult> {
-  if (!entry.shape.entities.includes(change.entity)) return { sent: 0, stale: 0 };
+  if (!entry.shape.entities.includes(change.table)) return { sent: 0, stale: 0 };
   await refillWindowInLane(entry);
   if (change.lsn > entry.lsn) entry.lsn = change.lsn;
   deps.source.floorAt?.(entry.qid, entry.lsn, { exclusive: true });

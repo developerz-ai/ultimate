@@ -83,7 +83,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
 }
 
 const change = (after: Row, before: Row | null): ChangeEvent => ({
-  entity: 'posts',
+  table: 'posts',
   op: 'update',
   before,
   after,

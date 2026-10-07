@@ -2,7 +2,11 @@
 // development fallback, the env key production must set, and the one rule (`localDriver` and
 // `memoryStorageDriver` both) for refusing the fallback outside a development or test environment.
 
-import { isLocal, type ResolveEnvironmentOptions, resolveEnvironment } from '@ultimat3/core';
+import {
+  devSecretsRefused,
+  type ResolveEnvironmentOptions,
+  resolveEnvironment,
+} from '@ultimat3/core';
 import { signingSecretMissing } from './errors';
 
 /**
@@ -62,10 +66,11 @@ export function resolveSigningSecret(disk: string, options: SigningSecretOptions
     supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
       ? undefined
       : supplied;
-  // FAILS CLOSED: a process that names no environment resolves as `production` here, the answer
-  // core's `assertNoDevSecretsOutsideLocal` gives. `isLocal`'s own fallback is `development`, so the
-  // process that forgot to say signed with the published key — exactly the one that must not.
-  if (configured === undefined && !isLocal({ env, fallback: 'production' }))
+  // FAILS CLOSED, through core's one rule (`devSecretsRefused`): a process that names no
+  // environment resolves as `production` here, the answer `assertNoDevSecretsOutsideLocal` gives.
+  // `isLocal`'s own fallback is `development`, so the process that forgot to say signed with the
+  // published key — exactly the one that must not.
+  if (configured === undefined && devSecretsRefused({ env }))
     throw signingSecretMissing(resolveEnvironment({ env, fallback: 'production' }), disk);
   return configured ?? DEV_SIGNING_SECRET;
 }

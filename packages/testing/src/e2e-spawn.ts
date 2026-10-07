@@ -95,9 +95,15 @@ export interface SpawnE2eAppOptions {
  * `NODE_ENV=test` rode along and the app resolved its environment as `test` — so a development-only
  * seam (the demo viewer an app installs instead of a sign-in route) was off and every page 401'd.
  * The app under e2e is a development app unless the caller's `env` says otherwise.
+ *
+ * Minus the two bindings `ULTIMATE_STATE_DIR` relocates, too — the database and the disk. The
+ * harness boots on a throwaway state directory, and a developer's exported `DATABASE_URL` (their
+ * integration-test Postgres) turned that into a reset of a database the run does not own: `x db
+ * reset` refused it, and the e2e step went red for an environment reason (#674). A run that WANTS
+ * an external one passes it in `startE2eApp({ env })`, which is spread after this.
  */
 export const inherited = (): Record<string, string | undefined> => {
-  const { NODE_ENV: _node, ...rest } = Bun.env;
+  const { NODE_ENV: _node, DATABASE_URL: _db, S3_ENDPOINT: _disk, ...rest } = Bun.env;
   return { ...rest, ULTIMATE_ENV: 'development' };
 };
 

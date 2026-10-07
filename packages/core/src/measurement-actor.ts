@@ -30,6 +30,9 @@ export function defineMeasurementActor(factory: MeasurementActorFactory): void {
 /**
  * `kind: 'service'` and `'*'`: weighing bytes needs no data authority, and an app's own
  * `requireMember()` has nothing to resolve for a service actor, which is the honest answer.
+ * No org and no roles, so a page whose policy names a role or whose `load` reads a tenant-scoped
+ * entity is refused under it — the `budgets` step's `X_BUDGET_UNMEASURED` names this actor, the
+ * refusal and `defineMeasurementActor()` for exactly that page.
  */
 const defaultMeasurementActor = (): Actor =>
   serviceActor({ id: MEASUREMENT_ACTOR_ID, permissions: ['*'] });
@@ -41,7 +44,9 @@ export async function measurementActor(): Promise<Actor> {
   assert(
     typeof actor === 'object' && actor !== null && typeof actor.id === 'string',
     'the factory handed to defineMeasurementActor() answered no actor',
-    'return one from it in app.config.ts: defineMeasurementActor(() => userActor({ id: "measure", roles: ["member"] }))',
+    // Placeholders, not `roles: ["member"]`: the actor exists to pass the app's OWN gates, and a
+    // literal role here is one a `dev`-gated console refuses too (#675).
+    'return one from it in app.config.ts: defineMeasurementActor(() => userActor({ id: "measure", orgId: "<an org your dev seed creates>", roles: ["<the role your gated pages require>"] }))',
   );
   return actor;
 }

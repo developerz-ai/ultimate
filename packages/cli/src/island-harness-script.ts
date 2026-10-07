@@ -6,6 +6,7 @@
 // the path that serves a page. `@ultimat3/testing`'s `sealNetwork()` patches THIS process's
 // `globalThis.fetch` and cannot reach the page's realm.
 
+import { encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import type { IslandRouteStub } from '@ultimat3/testing';
 
 /**
@@ -26,6 +27,25 @@ export const HARNESS_GLOBAL = '__xShot';
  */
 const embed = (value: unknown): string => JSON.stringify(value ?? null).replaceAll('<', '\\u003c');
 
+/**
+ * A stub as the page script answers it: `records` becomes the envelope core's own
+ * `encodeRecordEnvelope` builds, behind core's own `RECORDS_HEADER` — the server's two halves,
+ * never a second spelling of either in the browser string below (#683).
+ */
+const wireStub = (stub: IslandRouteStub): unknown => {
+  const { respond } = stub;
+  if (respond.kind !== 'records') return stub;
+  return {
+    match: stub.match,
+    respond: {
+      kind: 'json',
+      ...(respond.status === undefined ? {} : { status: respond.status }),
+      body: encodeRecordEnvelope(respond.data, respond.records, respond.removed),
+      headers: { [RECORDS_HEADER]: '1' },
+    },
+  };
+};
+
 export interface HarnessScriptOptions {
   readonly stubs: readonly IslandRouteStub[];
   /** The frozen instant, with an explicit offset — the manifest's `now`. */
@@ -44,7 +64,7 @@ export interface HarnessScriptOptions {
  * a `pending` fixture, which is a state an author declares on purpose.
  */
 const sealScript = (stubs: readonly IslandRouteStub[]): string => `
-var W=window.${HARNESS_GLOBAL};var STUBS=${embed(stubs)};
+var W=window.${HARNESS_GLOBAL};var STUBS=${embed(stubs.map(wireStub))};
 function bump(){W.activity+=1}
 function stubFor(method,path){var k=method.toUpperCase()+' '+path;
 for(var i=0;i<STUBS.length;i+=1){if(k.indexOf(STUBS[i].match)===0)return STUBS[i].respond}
@@ -57,8 +77,9 @@ function answer(respond,k){
 if(respond===null)return Promise.reject(refuse(k));
 if(respond.kind==='pending')return new Promise(function(){});
 if(respond.kind==='offline')return Promise.reject(new TypeError('x shot: offline fixture for '+k));
+var h=Object.assign({'content-type':'application/json'},respond.headers||{});
 return Promise.resolve(new Response(JSON.stringify(respond.body===undefined?null:respond.body),
-{status:respond.status||200,headers:{'content-type':'application/json'}}))}
+{status:respond.status||200,headers:h}))}
 window.fetch=function(input,init){
 var url=typeof input==='string'?input:(input&&input.url)||String(input);
 var method=(init&&init.method)||(typeof input==='object'&&input&&input.method)||'GET';

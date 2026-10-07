@@ -43,6 +43,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `gateway.ts` | routing, retries, cache, budget wiring |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
+| `prompt-fence.ts` | a template's data fences: which tag pairs enclose each slot (`promptFences`), and the closer-breaking `render` applies inside one |
 | `embeddings.ts` | `Embedder`, `hashEmbedder()`, cosine helpers |
 | `remote-embedder.ts` | `remoteEmbedder()` — the production `/v1/embeddings` client |
 | `evals.ts` | `defineEval`, the run, the baseline gate, prompt coverage |
@@ -139,6 +140,10 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
   is stamped by the gateway and put on the span as `llm.provider`.
 - Server-side `fallbacks` (beta) are never sent — the stable `2023-06-01` surface only.
+- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks, in the ASSEMBLED
+  prompt, every fence closer a fenced value wrote any character of (never per value: two slots can
+  each hold half) — never deletes, never touches a template-only closer. The
+  fences are read once at `definePrompt`; no hash moves.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
   `canonicalJson` (`prompt.test.ts` pins one hash literally); an absent schema hashes as `''`.
 

@@ -7,6 +7,7 @@
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { embedBatched, embedOne } from './embeddings';
+import { neutraliseFences } from './prompt-fence';
 import { estimateTextTokens as estimateChunkTokens } from './provider';
 import type { SearchHit, VectorStore } from './vector';
 
@@ -262,9 +263,9 @@ const BLOCK_CLOSE = '</document>';
  */
 function documentBlock(id: string, text: string): string {
   const label = id.replaceAll('"', "'").replaceAll('>', ')').replaceAll('<', '(');
-  const body = text
-    .replaceAll(BLOCK_CLOSE, '<\\/document>')
-    .replaceAll(BLOCK_OPEN, '<\\document id=');
+  // The closer through the one neutraliser `render` uses (any case, any whitespace, whatever
+  // follows the name); the opener is broken here, because a forged label is this fence's alone.
+  const body = neutraliseFences(text, ['document']).replaceAll(BLOCK_OPEN, '<\\document id=');
   return `${BLOCK_OPEN}"${label}">\n${body}\n${BLOCK_CLOSE}`;
 }
 

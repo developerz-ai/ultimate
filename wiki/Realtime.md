@@ -200,6 +200,10 @@ ready line says so:
 Never both: with a real database the decoder already carries this process's own writes, and a
 bridge beside it would deliver each of them twice. `--json` carries the same fact as `liveFeed`.
 
+An entity the app publishes itself (`recordPublisher`, for a deployment with no replicator) is the
+bridge's one exception: it stops carrying that entity's writes to channels, so each row reaches a
+channel member once — from the app's publish, as in production. Live queries still hear the bridge.
+
 ## Live query pipeline
 
 ```
@@ -246,6 +250,7 @@ however many lists, islands and paths hold it. It shipped in 21.0.0
 | A patch that omits a field never clears it | two queries may project different columns; a narrower answer must not blank what a wider one renders |
 | A row that is not an object, or has no key, is dropped and reported (`X_RECORD_REJECTED`) | a keyless row would overwrite another record |
 | A record lives exactly as long as something holds it | the last release drops it, so an infinite scroll is not a leak |
+| A list that must grow with the store is `useRecords(type, { where?, order? })` | a `useQuery` list holds its own answer's keys and `useRecords(type, keys)` the keys it was given, so a record a channel's `records` frame adopts reaches neither. The whole-type form shows every record of the type the store holds — `ready` from its first read, ordered by key unless `order` says otherwise, none evicted while it is held. The channel-records counterpart of a live window (25.0.0, #680) |
 
 **The key comes from the server, on every path.** A browser cannot compute a key without importing
 the app's `entity()` declarations, so it never does.
@@ -319,7 +324,10 @@ plan-101 DX ledger #21.
 | subscribe | by declared name + params. An undeclared name is `X_TOPIC_FORBIDDEN`, and so is a policy denial, latched per (socket, topic) until the session changes. Two more are denials before the policy runs: an anonymous socket on a channel that declares `row`, and a `row` loader the tenant guard refused |
 | re-authorization | when a socket's grant is renewed every seat is decided again. Denied: dropped, and refused to the client under its sid. Undecided (the policy or loader raised): kept but **suspended** — nothing is delivered until a later pass succeeds, then a records channel is told `replay-gap` |
 | the first join | a join with no cursor on a channel that carries records is answered with **one** `replay-gap`, so the client runs one catch-up read. Rows written between a page's render and its join are otherwise never seen. A resubscribe with `since` replays from the ring, or gets `replay-gap` when `since` fell out of it (`channel-logs.ts`, `resume`). A `since` that is already current is answered too — the `records` frame at that cursor, carrying nothing — so `useChannel()` leaves `joining`; an `events`-only channel leaves it on its first `events` frame, which is its presence roster |
-| records | rows of the listed entities travel as `records` frames, carrying `seq` and `epoch`, into the record store |
+| records | rows of the listed entities travel as `records` frames, carrying `seq` and `epoch`, into the record store; read them back as a list with `useRecords(type, { where?, order? })` |
+| a missed change | a hole in a producer's `seq` on the change bus, or a bus that reconnected, tells every member of every open records topic `replay-gap` at a new epoch, beside the live windows' re-snapshot (24.0.0, #681) |
+| records with no replicator | `recordPublisher({ transport, entities })` on `@ultimat3/realtime/server` puts an app's committed rows on the change bus, sequenced per producer; every node delivers them as `records`. Channels only — a publisher has no commit position to order a live window by. Under `x dev` a claimed entity is no longer also carried to channels by the in-process bridge, and a sync node carries each table from ONE producer kind — the first it saw — dropping the other's changes under `X_REALTIME_PRODUCER_CONFLICT` (25.0.0, #682). Rules: the package README, *Channel records with no replicator* |
+| `useChannel()` states | `joining` → `live` on the node's first answer to every channel that carries `records` or `events` (an `events` channel's is its roster, empty on a node without presence); `catching-up` while a `replay-gap` re-read runs; `offline`; `failed` with the coded refusal. The table is in the package README, *What `useChannel()` reports* |
 | events | `hub.publishEvent(decl, params, event)` on a channel declared with `events: true`; otherwise `X_CHANNEL_DECLARATION_INVALID` |
 | presence | a roster arrives as an `events` frame `{ presence: op, members, total? }`. Read it with `readPresence(frame.event)` in the channel's events handler. There is no separate presence frame |
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |

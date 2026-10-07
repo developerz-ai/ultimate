@@ -67,7 +67,7 @@ function socketFor(id: string, who: Actor): { socket: SyncSocket; ws: FakeWs } {
 
 function change(after: Row, before: Row | null): ChangeEvent {
   return {
-    entity: 'posts',
+    table: 'posts',
     op: 'update',
     before,
     after,
