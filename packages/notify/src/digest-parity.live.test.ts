@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import { type DigestSlot, type DigestStore, memoryDigestStore } from './digest';
 import { postgresDigestStore, SQL_NOTIFY_DIGESTS_TABLE } from './digest-pg';
 import type { NotifyEvent } from './notification';
@@ -15,7 +16,7 @@ const url = Bun.env['TEST_DATABASE_URL'];
  * share it, and the first `afterAll` dropped it from under the other. pid for the process, a
  * random hex suffix for two runs that land on one pid in different containers.
  */
-const PROBE_DB = `x_notify_digest_probe_${String(process.pid)}_${crypto.randomUUID().slice(0, 8)}`;
+const PROBE_DB = probeDatabaseName('x_notify_digest_probe');
 
 const slot: DigestSlot = {
   recipient: 'ana',
@@ -44,13 +45,19 @@ const append = (
 type Sql = InstanceType<typeof Bun.SQL>;
 let sql: Sql | undefined;
 
-const admin = async (statement: string): Promise<void> => {
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
   const client = new Bun.SQL(url ?? '', { max: 1 });
   try {
-    await client.unsafe(statement, []);
+    return [...(await client.unsafe(statement, [...values]))];
   } finally {
     await client.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await admin(text, values)) as R[],
 };
 
 /**
@@ -69,6 +76,7 @@ const executor = (): PgExecutor => ({
 beforeAll(async () => {
   if (url === undefined) return;
   await admin(`drop database if exists ${PROBE_DB} with (force)`);
+  await sweepProbeDatabases(adminExecutor, PROBE_DB);
   await admin(`create database ${PROBE_DB}`);
   const target = new URL(url);
   target.pathname = `/${PROBE_DB}`;

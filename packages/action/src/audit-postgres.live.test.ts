@@ -3,16 +3,16 @@
 // lands in the `action` column, which 25.0.0 kept. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, userActor } from '@ultimat3/core';
+import { ctxOf, probeDatabaseName, sweepProbeDatabases, userActor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, raw } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import type { AuditRecord } from './audit';
 import { postgresAuditSink, SQL_AUDIT_TABLE } from './audit-postgres';
 import { executorFor } from './idempotency-tx-fixture';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_action_audit_live';
+const PROBE_DB = probeDatabaseName('x_action_audit_live');
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? 'postgres://localhost/postgres');
@@ -52,6 +52,10 @@ describe.skipIf(!hasPostgres)(
     beforeAll(async () => {
       admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
       await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
+      await sweepProbeDatabases(
+        dbExecutor(() => admin),
+        PROBE_DB,
+      );
       await admin.execute(raw(`create database ${PROBE_DB}`));
       client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 2 } });
       await client.execute(raw(PRE_PRIMITIVE_TABLE));

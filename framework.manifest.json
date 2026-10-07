@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "aeeccaf8e923fcd2715fc18c8375de6913e0608a13de3d0b4cb77eaf4641398a",
+  "buildId": "b579ee0393403c7bda93865a6c3a3894b33c5abbaebb6aac98e9282a785c132e",
   "tiers": {
     "0": [
       "core",
@@ -2838,6 +2838,11 @@
       "code": "X_PRERENDER_FAILED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_PROBE_DATABASE_FIXED",
+      "owner": "scripts",
+      "at": "scripts/probe-databases.ts"
     },
     {
       "code": "X_PROBLEM_META_INVALID",

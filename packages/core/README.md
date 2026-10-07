@@ -496,6 +496,14 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   before trusting an empty `checks`.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
+- **A live suite's throwaway database is named by `probeDatabaseName(prefix)`** — test support,
+  here because tier 0 is the one tier every package with a live suite can import. Prefix, pid,
+  eight random hex characters, at most `PROBE_DATABASE_NAME_MAX` (63) bytes, valid unquoted: a
+  fixed name let two runs against one server drop each other's database.
+  `bun run probe-databases` refuses `create database` on any other name (`X_PROBE_DATABASE_FIXED`).
+  A killed run never reaches its `afterAll`, so call `sweepProbeDatabases(executor, PROBE_DB)`
+  before the `create`: it drops the same prefix's probe databases whose pid is dead on this host
+  AND which no backend is connected to — a concurrent run on any host is left alone.
 
 ## Metrics: same seam as tracing, one signal over
 

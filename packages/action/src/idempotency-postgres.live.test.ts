@@ -4,14 +4,15 @@
 // to reclaim. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, raw, sql, withTransaction } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
 import { postgresUnderTest, RECLAIM_MS, type TxHarness, txHarness } from './idempotency-tx-fixture';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_action_idempotency_live';
+const PROBE_DB = probeDatabaseName('x_action_idempotency_live');
 const KEY = '["chargeCard","user","u1",null,"k1"]';
 
 const probeUrl = (): string => {
@@ -33,6 +34,10 @@ describe.skipIf(!hasPostgres)('live · postgres · idempotency settles in the ha
   beforeAll(async () => {
     admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
+    await sweepProbeDatabases(
+      dbExecutor(() => admin),
+      PROBE_DB,
+    );
     await admin.execute(raw(`create database ${PROBE_DB}`));
     client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 4 } });
     harness = await txHarness(client, await postgresUnderTest(client));

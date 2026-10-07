@@ -5,9 +5,9 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { ctxOf } from '@ultimat3/core';
+import { ctxOf, probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, raw, sql } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw, sql } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import { setWakeLive, wakeIsLive } from './enqueue-signal';
@@ -18,7 +18,7 @@ import { jobWorker } from './worker';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_jobs_wake_live';
+const PROBE_DB = probeDatabaseName('x_jobs_wake_live');
 const LISTENER_APP = 'x-wake-live-worker';
 
 const probeUrl = (): string => {
@@ -55,6 +55,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
   beforeAll(async () => {
     admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
+    await sweepProbeDatabases(
+      dbExecutor(() => admin),
+      PROBE_DB,
+    );
     await admin.execute(raw(`create database ${PROBE_DB}`));
     workerPod = postgresClient({
       url: probeUrl(),

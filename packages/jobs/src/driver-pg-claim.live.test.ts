@@ -5,8 +5,9 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, raw } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import type { JobDriver, JobRecord } from './driver';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import { postgresJobDriver } from './driver-pg';
@@ -14,7 +15,7 @@ import { SQL_JOBS_TABLE } from './driver-pg-sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_jobs_claim_live';
+const PROBE_DB = probeDatabaseName('x_jobs_claim_live');
 const SESSIONS = 8;
 const TTL_MS = 30_000;
 
@@ -43,6 +44,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the claim buries a poison row
   beforeAll(async () => {
     admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
+    await sweepProbeDatabases(
+      dbExecutor(() => admin),
+      PROBE_DB,
+    );
     await admin.execute(raw(`create database ${PROBE_DB}`));
     client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: SESSIONS } });
     for (const statement of SQL_JOBS_TABLE.split(';')) {

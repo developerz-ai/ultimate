@@ -5,14 +5,15 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { postgresClient, raw } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import { postgresEventBus } from './events-pg';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_jobs_events_live';
+const PROBE_DB = probeDatabaseName('x_jobs_events_live');
 /** Long enough to tell from a round trip on a loaded machine; short enough to cost nothing. */
 const HELD_MS = 200;
 
@@ -29,6 +30,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the event bus in a transactio
   beforeAll(async () => {
     admin = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
+    await sweepProbeDatabases(
+      dbExecutor(() => admin),
+      PROBE_DB,
+    );
     await admin.execute(raw(`create database ${PROBE_DB}`));
     client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 2 } });
     for (const statement of SQL_JOBS_TABLE.split(';')) {

@@ -676,6 +676,11 @@ export {
 } from './page-meta';
 /** The structural Postgres seam http, auth, action and jobs share without a `@ultimat3/db` edge. */
 export type { PgExecutor } from './pg-executor';
+/** Test support: the one name a live suite gives the database it creates (`probe-databases`). */
+export type { ProbeDatabaseEntropy } from './probe-database';
+export { PROBE_DATABASE_NAME_MAX, probeDatabaseName } from './probe-database';
+export type { ProbeDatabaseSweepOptions } from './probe-database-sweep';
+export { probeDatabaseAlive, sweepProbeDatabases } from './probe-database-sweep';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';
 export { hasPublicCause, registerPublicCause, resetPublicCauses } from './public-cause';

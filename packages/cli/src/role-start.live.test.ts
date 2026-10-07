@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { resetLifecycle } from '@ultimat3/core';
+import { probeDatabaseName, resetLifecycle, sweepProbeDatabases } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
@@ -33,7 +33,7 @@ const describeLive = url === undefined ? describe.skip : describe;
 const BOOT_TIMEOUT_MS = 60_000;
 
 /** Its own database: this file writes framework tables and drops them with it. */
-const PROBE_DB = 'x_ratelimit_probe';
+const PROBE_DB = probeDatabaseName('x_ratelimit_probe');
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? '');
@@ -41,13 +41,19 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const admin = async (statement: string): Promise<void> => {
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
   const sql = new Bun.SQL(url ?? '', { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await admin(text, values)) as R[],
 };
 
 /**
@@ -100,6 +106,7 @@ describeLive('the rate limit is the fleet’s, not each replica’s', () => {
     async () => {
       root = mkdtempSync(join(tmpdir(), 'x-ratelimit-'));
       await admin(`drop database if exists ${PROBE_DB} with (force)`);
+      await sweepProbeDatabases(adminExecutor, PROBE_DB);
       await admin(`create database ${PROBE_DB}`);
       const dbUrl = probeUrl();
       runtime = await startServices(resolveServices(root, { DATABASE_URL: dbUrl }), {
