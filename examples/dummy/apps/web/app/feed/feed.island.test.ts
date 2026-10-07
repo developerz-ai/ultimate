@@ -141,7 +141,10 @@ beforeAll(async () => {
     shell: '<div data-role="shell">Loading the feed</div>',
     globals: { WebSocket: FakeSocket, fetch: offlineFetch },
   });
-  await settle();
+  // Until the socket dials, bounded by turns, never one turn: the page's disk restore runs first, and
+  // under a loaded runner (CI, three files in parallel) it took more than one — the first case then
+  // read zero sockets and every case after it failed with it. `run-console.island.test.ts` waits so.
+  for (let tick = 0; tick < 20 && opened.length === 0; tick += 1) await settle();
 }, 60_000);
 
 afterAll(() => {

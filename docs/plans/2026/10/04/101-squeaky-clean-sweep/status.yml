@@ -1,11 +1,11 @@
 plan: 101-squeaky-clean-sweep
 title: "Squeaky-clean sweep: every bug, leak, legacy path and open issue, to 25.0.0"
-status: in_progress        # not_started | in_progress | blocked | complete | superseded
+status: complete        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
 worked_by: "claude"
 owner: sebi
-percent: 95
-current_focus: "sweep 12b — 25.0.0 stamped; tag, publish through release.yml, registry audit, npm scaffold proof"
+percent: 100
+current_focus: "complete — 25.0.0 on npm, 31/31 attested (registry-audit); an app scaffolded from npm passes setup, check and docker build"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -154,9 +154,9 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 12-major-25.md
     tier: 0
     sweep: "12b"
-    status: in_progress
-    percent: 50
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#699", "v25.0.0"]
 evidence: []
 notes: "Audit at d7b8c7fa (24.0.0), 2026-10-04: 13 read-only agents in two waves + a Windows audit. Supersedes the open trackers of 2026/08/12/101, 2026/09/22/102, 2026/09/28/101; 2026/10/01/101 and 2026/10/02/101 marked complete. Owner answers are recorded here and in the owner-decisions issue."
 last_updated: 2026-10-07

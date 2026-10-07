@@ -189,7 +189,12 @@ describe('the Bun series is pinned once, in agreement', () => {
 
     // Each site must actually HAVE a pin — an empty list would otherwise agree with everything.
     expect(ciPins).toHaveLength(1);
-    expect(releasePins).toHaveLength(1);
+    // Two jobs pin Bun (`publish`, and `npm-scaffold` after it): at least one, and every one the same.
+    expect(releasePins.length).toBeGreaterThanOrEqual(1);
+    expect(
+      new Set(releasePins).size,
+      `release.yml pins Bun twice, differently: ${releasePins.join(', ')}`,
+    ).toBe(1);
     expect(frameworkTags).toHaveLength(3);
     expect(appTags).toHaveLength(2);
 
