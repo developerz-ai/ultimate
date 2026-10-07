@@ -133,7 +133,7 @@ export const feedActivity = query({
 });
 
 /**
- * A post's latest review — what `recordReview` kept, which is the only place a queued
+ * A post's latest review — what `keepDraftReview` kept, which is the only place a queued
  * `reviewDraftLater` run's verdict lands. Not cached: a review that just landed has to be the one
  * read back, and a tag for it would be a second invalidation to keep in step with the upsert.
  */

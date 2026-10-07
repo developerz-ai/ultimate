@@ -73,9 +73,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `llm-cache.ts` | the semantic cache half of `llm()`: what a declaration may partition on, and the store it reaches |
 | `llm-fixture.ts` | the harness `llm.test.ts` and `llm-cache.test.ts` share. Not shipped (`!src/**/*-fixture.ts`) |
 | `bounds-fixture.ts` | the one `refusal`/`asyncRefusal` every numeric-bound suite here asserts through. Not shipped, same rule |
-| `agent-bounds.test.ts` | the agent loop's ceilings, split out because `agent.test.ts` is at the 500-line ceiling |
+| `agent-bounds.test.ts` | the agent loop's ceilings (split from `agent.test.ts`, at its line ceiling) |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
-| `fix-line.ts` / `fix-line.evals.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's own dogfood eval — the first framework-level `*.eval.test.ts`, proving the `defineEval`/baseline convention actually fails a build |
+| `fix-line-fixture.ts` / `fix-line.evals-fixture.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's dogfood eval — proof the baseline convention fails a build |
 
 ## Invariants — bounds and budget
 
@@ -258,10 +258,10 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - **`describeAgents()` / `registeredModels()` are offered, not published** — their only legal consumer
   is `@ultimat3/cli`. The facts are a THUNK; an unnamed agent has no row.
 - **`agentJob()` composes `job()`** (never an imitation). `name`, `tenant`, `retry` are
-  REQUIRED; both reads of `target.job()` are LAZY. **Every tool an `agentJob()`'d agent may call must
-  be idempotent** — unenforceable; no result is kept, a tool writes it. **`actor`** re-resolves
-  who it acts FOR each attempt (a served worker: ANONYMOUS) via `impersonate`; off-tenant is
-  TERMINAL `X_JOB_TENANT_MISMATCH`.
+  REQUIRED; both reads of `target.job()` are LAZY. No result is kept: wrap an ACTION that runs the
+  agent and writes, target bound from its input — never a model-aimed write tool; every write
+  idempotent (unenforceable). **`actor`** re-resolves who it acts FOR each attempt (a served worker:
+  ANONYMOUS) via `impersonate`; off-tenant is TERMINAL `X_JOB_TENANT_MISMATCH`.
 
 ## Invariants — evals, retrieval, fix lines
 

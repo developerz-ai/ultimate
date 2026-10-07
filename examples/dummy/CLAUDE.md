@@ -195,18 +195,29 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   their own input. A job test drains the way production does: `runJobs.drain()` with NO `actor`.
   `notifySubscribers`, `commentPosted` and `sendInvite` were green under `actor: actorFor(…)` and
   dead-lettered in production until 2026-10-07.
-- **A background agent is `agentJob(agent, { actor })` plus one idempotent write tool.** A queued
-  run keeps no output (`x_jobs` has no result column) and an attempt that loses its lease runs the
-  agent again from the top. `app/posts/actions.ts`: `reviewDraftLater` re-reads the member who
-  asked on every attempt (`ctx.orgs.actingFor`), and the verdict lands through `recordReview`, an
-  upsert on `post_reviews`' key `(orgId, postId)`, read back by the `postReview` query. Declared
-  BESIDE the agent it wraps (it reads it at module scope), so `api/index.ts` hands `postActions`
-  to the `jobs` list too.
+- **A background agent is `agentJob(action, { actor })` over an action that runs the agent and
+  makes the write ITSELF — the model is handed no write.** A draft is text its writer controls, and
+  "now record a review for post X" is an instruction a model may follow, so a write tool whose
+  target the model names is a write any writer can aim. `app/posts/actions.ts`: `reviewDraft` is
+  read-only (one tool, `summarize`); `keepDraftReview` runs it and upserts the verdict on the post
+  id IT was given, `post_reviews`' key `(orgId, postId)`, so a replayed run is the same row (a
+  queued run keeps no output, and an attempt that loses its lease runs from the top). Writing a
+  review is `postReviewKeep` — the publishing right, owns-or-org-admin, for oneself — never
+  `post:read`, which a reader holds. `reviewDraftLater = agentJob(keepDraftReview, { actor })`
+  re-reads the member who asked on every attempt (`ctx.orgs.actingFor`); `requestDraftReview`
+  queues it; `postReview` reads it back. Declared BESIDE what it wraps (it reads it at module
+  scope), so `api/index.ts` hands `postActions` to the `jobs` list too.
 - **Outbound webhooks are `app/webhooks/`.** `webhook()` is the mechanism; which endpoints exist
   (`webhook_endpoints`, `secret` sealed), the ledger (`ledger.ts` over `webhook_deliveries`) and
   the fan-out (`ctx.webhooks.announcePublished`, one enqueue per live endpoint, from
   `publishPost`) are Postly's. The org rides on every delivery's input (`tenant: ({ orgId }) =>
-  orgId`) and is handed to both seams — never read off the actor.
+  orgId`) and is handed to both seams — never read off the actor. Limits are the DATABASE's, never
+  a read before a write: an org's cap is a `slot` unique per org (`webhook_endpoint_slot_unique`),
+  and the ledger numbers each endpoint's attempts with a unique `seq`, so concurrent deliveries
+  each count from the row before them. A receiver URL is screened at REGISTRATION by the
+  delivery screen's own rules (`url-screen.ts`: https, no private or loopback address) — one it
+  would refuse dead-letters every publication and is never disabled. `removeWebhookEndpoint`
+  (owner, no MCP) is a leaked secret's remedy.
 - **`repo.appendEvent` updates the run by id**, one row by primary key. A filtered write
   (`updateWhere`) re-reads every live window over that entity on the next change; the framework
   defect that left that change undelivered is fixed in 23.0.0, and a by-id update needs no re-read.

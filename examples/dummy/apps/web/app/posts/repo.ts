@@ -385,8 +385,8 @@ export const publishedSlugs = (): Promise<readonly PublishedSlug[]> =>
 
 /**
  * A post's review, written whole. The conflict target IS the table's key — the org and the post —
- * so a second write of the same review lands on the same row: what lets `recordReview` be a tool a
- * replayed `agentJob` attempt calls again without leaving a second review behind.
+ * so a second write of the same review lands on the same row: what lets `keepDraftReview` be work
+ * a replayed `agentJob` attempt runs again without leaving a second review behind.
  */
 export const upsertReview = async (row: {
   readonly orgId: OrgId;

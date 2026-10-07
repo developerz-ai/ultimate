@@ -1254,25 +1254,32 @@
           "position": 10
         },
         {
+          "name": "seq",
+          "dataType": "integer",
+          "nullable": false,
+          "default": null,
+          "position": 11
+        },
+        {
           "name": "status",
           "dataType": "integer",
           "nullable": true,
           "default": null,
-          "position": 11
+          "position": 12
         },
         {
           "name": "topic",
           "dataType": "text",
           "nullable": false,
           "default": null,
-          "position": 12
+          "position": 13
         },
         {
           "name": "webhook",
           "dataType": "text",
           "nullable": false,
           "default": null,
-          "position": 13
+          "position": 14
         }
       ],
       "primaryKey": ["id"],
@@ -1294,9 +1301,17 @@
           "order": null
         },
         {
-          "name": "webhook_deliveries_org_id_endpoint_id_at_idx",
-          "columns": ["org_id", "endpoint_id", "at"],
+          "name": "webhook_deliveries_org_id_endpoint_id_seq_idx",
+          "columns": ["org_id", "endpoint_id", "seq"],
           "unique": false,
+          "primary": false,
+          "where": null,
+          "order": null
+        },
+        {
+          "name": "webhook_deliveries_webhook_delivery_seq_unique_key",
+          "columns": ["endpoint_id", "seq"],
+          "unique": true,
           "primary": false,
           "where": null,
           "order": null
@@ -1334,6 +1349,10 @@
         {
           "name": "webhook_deliveries_error_check",
           "expression": "char_length(error) <= 500"
+        },
+        {
+          "name": "webhook_deliveries_webhook_delivery_seq_from_one_check",
+          "expression": "seq >= 1"
         }
       ]
     },
@@ -1377,11 +1396,18 @@
           "position": 5
         },
         {
-          "name": "url",
+          "name": "slot",
           "dataType": "text",
           "nullable": false,
           "default": null,
           "position": 6
+        },
+        {
+          "name": "url",
+          "dataType": "text",
+          "nullable": false,
+          "default": null,
+          "position": 7
         }
       ],
       "primaryKey": ["id"],
@@ -1401,6 +1427,14 @@
           "primary": false,
           "where": null,
           "order": null
+        },
+        {
+          "name": "webhook_endpoints_webhook_endpoint_slot_unique_key",
+          "columns": ["org_id", "slot"],
+          "unique": true,
+          "primary": false,
+          "where": null,
+          "order": null
         }
       ],
       "foreignKeys": [
@@ -1413,6 +1447,10 @@
         }
       ],
       "checks": [
+        {
+          "name": "webhook_endpoints_slot_check",
+          "expression": "slot in ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10')"
+        },
         {
           "name": "webhook_endpoints_url_check",
           "expression": "url ~ '^https?://'"

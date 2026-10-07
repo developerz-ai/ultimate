@@ -3,11 +3,13 @@
 create table "webhook_endpoints" (
   "id" uuid default gen_random_uuid() not null,
   "org_id" uuid not null,
+  "slot" text not null,
   "url" text not null,
   "secret" text not null,
   "disabled_reason" text,
   "created_at" timestamp with time zone default now() not null,
   constraint "webhook_endpoints_pkey" PRIMARY KEY (id),
   constraint "webhook_endpoints_disabled_reason_check" CHECK ((char_length(disabled_reason) <= 200)),
+  constraint "webhook_endpoints_slot_check" CHECK ((slot = ANY (ARRAY['1'::text, '2'::text, '3'::text, '4'::text, '5'::text, '6'::text, '7'::text, '8'::text, '9'::text, '10'::text]))),
   constraint "webhook_endpoints_url_check" CHECK ((url ~ '^https?://'::text))
 );

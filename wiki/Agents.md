@@ -367,7 +367,11 @@ export const triageJob = agentJob(supportAgent, {
 
 It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row all arrive for free. One execution path, and it is the action's: `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and `ctx` is the **worker's**, so an attempt timing out aborts the turn loop.
 
-**A queued run's return value is not stored** — `x_jobs` keeps no result column. Whatever the agent produces has to be written by one of its tools, which is what makes the next rule load-bearing rather than theoretical. Worked example: the reference app's `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`) — `agentJob(reviewDraft, { actor })`, whose `recordReview` tool upserts the post's one review on `(orgId, postId)`, read back with the `postReview` query.
+**A queued run's return value is not stored** — `x_jobs` keeps no result column. So `agentJob` wraps an ACTION that runs the agent and keeps the answer itself, and the agent stays read-only.
+
+> **Rule: never hand the model a write tool whose target it chooses.** The model reads text someone else wrote — a draft, a ticket, a scraped page — and "now record this for record X" is an instruction a model may follow. A write tool is a write that text can aim. The wrapping action binds the target from its OWN input.
+
+Worked example: the reference app's `keepDraftReview` → `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`). `reviewDraft` is an agent with one read tool; `keepDraftReview` runs it and upserts the verdict on the post id it was given — `(orgId, postId)` is the key, so a replayed run is the same row — under `postReviewKeep`, the publishing right, never `post:read`; `reviewDraftLater = agentJob(keepDraftReview, { actor })`; the `postReview` query reads it back. `review.job.test.ts` drives it on the production worker, with a model that tries to write onto another post and has nothing to write with.
 
 ### The at-least-once trap
 
@@ -377,7 +381,7 @@ It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox,
 
 Two `enqueue` calls with the same payload are one row. One row that a worker claims, half-runs and loses the lease on is claimed again — and **the agent runs a second time from the top**. Every turn re-executes. Every tool call re-executes.
 
-So **every tool an agent may call has to be idempotent**: an `upsertAll`, an `updateWhere`, a statement whose second run changes nothing. Otherwise a replayed attempt issues a second refund against the same order.
+So **every write a run makes has to be idempotent** — the wrapping action's, and any tool's: an `upsertAll`, an `updateWhere`, a statement whose second run changes nothing. Otherwise a replayed attempt issues a second refund against the same order. Idempotent is not aimed: a write the run needs belongs in the wrapping action, bound to its input, not in a tool the model points.
 
 The same holds one level up: `backfill()`'s `handle` is at-least-once by construction — it runs before its checkpoint lands — so an attempt cancelled between the two replays that page, and re-runs every agent on it.
 

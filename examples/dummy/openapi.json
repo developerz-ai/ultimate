@@ -775,6 +775,72 @@
         ],
         "type": "object"
       },
+      "KeepDraftReviewInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "memberId"
+        ],
+        "type": "object"
+      },
+      "KeepDraftReviewOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "maxLength": 600,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reviewedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "ready",
+              "revise"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "verdict",
+          "notes",
+          "reviewedBy",
+          "reviewedAt"
+        ],
+        "type": "object"
+      },
       "LikePostInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1161,78 +1227,36 @@
         ],
         "type": "object"
       },
-      "RecordReviewInput": {
+      "RemoveWebhookEndpointInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "notes": {
-            "maxLength": 600,
-            "minLength": 1,
+          "endpointId": {
+            "format": "uuid",
             "type": "string"
           },
           "orgId": {
             "format": "uuid",
             "type": "string"
-          },
-          "postId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "verdict": {
-            "enum": [
-              "ready",
-              "revise"
-            ],
-            "type": "string"
           }
         },
         "required": [
-          "postId",
           "orgId",
-          "verdict",
-          "notes"
+          "endpointId"
         ],
         "type": "object"
       },
-      "RecordReviewOutput": {
+      "RemoveWebhookEndpointOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "notes": {
-            "maxLength": 600,
-            "type": "string"
-          },
-          "orgId": {
+          "endpointId": {
             "format": "uuid",
-            "type": "string"
-          },
-          "postId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "reviewedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "reviewedBy": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "verdict": {
-            "enum": [
-              "ready",
-              "revise"
-            ],
             "type": "string"
           }
         },
         "required": [
-          "postId",
-          "orgId",
-          "verdict",
-          "notes",
-          "reviewedBy",
-          "reviewedAt"
+          "endpointId"
         ],
         "type": "object"
       },
@@ -1306,10 +1330,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
-          "memberId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "orgId": {
             "format": "uuid",
             "type": "string"
@@ -1321,8 +1341,7 @@
         },
         "required": [
           "postId",
-          "orgId",
-          "memberId"
+          "orgId"
         ],
         "type": "object"
       },
@@ -1331,6 +1350,7 @@
         "additionalProperties": false,
         "properties": {
           "notes": {
+            "maxLength": 600,
             "minLength": 1,
             "type": "string"
           },
@@ -4287,6 +4307,75 @@
         }
       }
     },
+    "/api/draft-reviews/keep": {
+      "post": {
+        "operationId": "keepDraftReview",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepDraftReviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepDraftReviewOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "keepDraftReview",
+        "tags": [
+          "draft-reviews"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/draft-reviews/request": {
       "post": {
         "operationId": "requestDraftReview",
@@ -4343,12 +4432,12 @@
             "description": "X_BODY_INVALID"
           }
         },
-        "summary": "Queue a review of a draft; read it back with postReview",
+        "summary": "Queue a review of your draft; read it back with postReview",
         "tags": [
           "draft-reviews"
         ],
         "x-ultimate": {
-          "capability": "post:read",
+          "capability": "post:publish",
           "idempotent": false,
           "invalidates": [],
           "mcpTool": "requestDraftReview",
@@ -5236,96 +5325,6 @@
         }
       }
     },
-    "/api/reviews/record": {
-      "post": {
-        "operationId": "recordReview",
-        "parameters": [
-          {
-            "description": "Replays the first response for a repeated key.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": false,
-            "schema": {
-              "maxLength": 255,
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecordReviewInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecordReviewOutput"
-                }
-              }
-            },
-            "description": "ok"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "X_INPUT_INVALID"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "policy denied"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "X_IDEMPOTENCY_CONFLICT"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "X_BODY_INVALID"
-          }
-        },
-        "summary": "Record the review of a post: a verdict and short notes",
-        "tags": [
-          "reviews"
-        ],
-        "x-ultimate": {
-          "capability": "post:read",
-          "idempotent": true,
-          "invalidates": [],
-          "mcpTool": "recordReview",
-          "rateLimit": null
-        }
-      }
-    },
     "/api/run-keys/issue": {
       "post": {
         "operationId": "issueRunKey",
@@ -6082,6 +6081,75 @@
           "rateLimit": null
         }
       }
+    },
+    "/api/webhook-endpoints/remove": {
+      "post": {
+        "operationId": "removeWebhookEndpoint",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveWebhookEndpointInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveWebhookEndpointOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "removeWebhookEndpoint",
+        "tags": [
+          "webhook-endpoints"
+        ],
+        "x-ultimate": {
+          "capability": "org:administer",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
     }
   },
   "tags": [
@@ -6126,9 +6194,6 @@
     },
     {
       "name": "prompts"
-    },
-    {
-      "name": "reviews"
     },
     {
       "name": "run-keys"

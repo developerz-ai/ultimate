@@ -86,7 +86,7 @@ export const noPraise: Scorer = {
 export const reviewDraftEval = defineEval({
   name: 'posts.review-draft',
   prompt: reviewDraftPrompt,
-  baseline: import.meta.resolve('./review-draft.v2.baseline.json'),
+  baseline: import.meta.resolve('./review-draft.v1.baseline.json'),
   tolerance: 0.05,
   scorers: [jsonSchemaValid(['verdict', 'notes']), verdictMatches, withinThreeSentences, noPraise],
   cases: reviewDraftCases,

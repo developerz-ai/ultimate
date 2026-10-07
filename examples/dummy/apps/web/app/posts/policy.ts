@@ -108,20 +108,24 @@ export const postRead = can<PostScope>(
   ({ actor, input }) => memberOf(actor)?.orgId === input.orgId,
 );
 
-/** What `reviewDraft` decides on: the org, and the member the review is made for. */
+/** What `keepDraftReview` decides on: the org, and the member the review is kept for. */
 export interface ReviewScope extends PostScope {
   readonly memberId: MemberId;
 }
 
 /**
- * Asking for a review is reading, FOR ONESELF: the member the input names is the caller. The same
- * rule on both paths — a request's caller is its own member, and a queued `reviewDraftLater` run
- * acts for the member its input names (`agentJob({ actor })`) — so the id in the payload is never
- * an identity anyone else can borrow.
+ * Keeping a review is a WRITE onto a post, so it is the publishing right on the loaded row —
+ * owns-or-org-admin, `postPublish`'s rule — never `post:read`, which every reader holds. And it is
+ * for oneself: the member the input names is the caller, on a request and on a queued
+ * `reviewDraftLater` run alike (that run acts for the member its input names, `agentJob({ actor })`),
+ * so the id in a payload is never an identity anyone else can borrow.
  */
-export const postReview = can<ReviewScope>('post:read', ({ actor, input }) => {
+export const postReviewKeep = can<ReviewScope, PostRow>('post:publish', ({ actor, input, row }) => {
   const member = memberOf(actor);
-  return member !== null && member.orgId === input.orgId && member.memberId === input.memberId;
+  if (member === null || member.orgId !== input.orgId || member.memberId !== input.memberId) {
+    return false;
+  }
+  return row !== null && ownsPost(member, row);
 });
 
 /**

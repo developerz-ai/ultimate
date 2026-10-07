@@ -36,9 +36,10 @@ export {
   WEBHOOK_TOPIC_MAX,
   webhookDeliveries,
 } from './schema/webhook-deliveries';
-export type { WebhookEndpoint } from './schema/webhook-endpoints';
+export type { WebhookEndpoint, WebhookEndpointSlot } from './schema/webhook-endpoints';
 export {
   WEBHOOK_DISABLED_REASON_MAX,
+  WEBHOOK_ENDPOINT_SLOTS,
   WEBHOOK_SECRET_MAX,
   webhookEndpoints,
 } from './schema/webhook-endpoints';

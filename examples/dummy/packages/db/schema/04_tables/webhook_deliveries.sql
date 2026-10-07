@@ -4,6 +4,7 @@ create table "webhook_deliveries" (
   "id" uuid default gen_random_uuid() not null,
   "org_id" uuid not null,
   "endpoint_id" uuid not null,
+  "seq" integer not null,
   "webhook" text not null,
   "event_id" text not null,
   "topic" text not null,
@@ -18,5 +19,6 @@ create table "webhook_deliveries" (
   constraint "webhook_deliveries_error_check" CHECK ((char_length(error) <= 500)),
   constraint "webhook_deliveries_event_id_check" CHECK ((char_length(event_id) <= 128)),
   constraint "webhook_deliveries_topic_check" CHECK ((char_length(topic) <= 80)),
-  constraint "webhook_deliveries_webhook_check" CHECK ((char_length(webhook) <= 80))
+  constraint "webhook_deliveries_webhook_check" CHECK ((char_length(webhook) <= 80)),
+  constraint "webhook_deliveries_webhook_delivery_seq_from_one_check" CHECK ((seq >= 1))
 );

@@ -1,6 +1,6 @@
 /**
  * The latest editorial review of a post — what `reviewDraft` decided, kept. One row per post:
- * `(orgId, postId)` IS the key, so the agent's `recordReview` tool is an upsert, and a background run the
+ * `(orgId, postId)` IS the key, so `keepDraftReview`'s write is an upsert, and a background run the
  * queue replays from the top writes the same row again instead of a second one. That is what makes
  * the tool safe to hand an `agentJob` (`apps/web/app/posts/actions.ts`).
  */

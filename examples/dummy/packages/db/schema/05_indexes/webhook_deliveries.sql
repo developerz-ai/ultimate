@@ -2,6 +2,8 @@
 
 CREATE INDEX webhook_deliveries_endpoint_id_idx ON public.webhook_deliveries USING btree (endpoint_id);
 
-CREATE INDEX webhook_deliveries_org_id_endpoint_id_at_idx ON public.webhook_deliveries USING btree (org_id, endpoint_id, at);
+CREATE INDEX webhook_deliveries_org_id_endpoint_id_seq_idx ON public.webhook_deliveries USING btree (org_id, endpoint_id, seq);
 
 CREATE INDEX webhook_deliveries_org_id_idx ON public.webhook_deliveries USING btree (org_id);
+
+CREATE UNIQUE INDEX webhook_deliveries_webhook_delivery_seq_unique_key ON public.webhook_deliveries USING btree (endpoint_id, seq);

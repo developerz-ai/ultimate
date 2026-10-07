@@ -3,3 +3,5 @@
 CREATE INDEX webhook_endpoints_org_id_created_at_idx ON public.webhook_endpoints USING btree (org_id, created_at);
 
 CREATE INDEX webhook_endpoints_org_id_idx ON public.webhook_endpoints USING btree (org_id);
+
+CREATE UNIQUE INDEX webhook_endpoints_webhook_endpoint_slot_unique_key ON public.webhook_endpoints USING btree (org_id, slot);

@@ -32,7 +32,7 @@ const inOrg = <T>(orgId: string, fn: () => Promise<T>): Promise<T> =>
 const anEndpoint = () => {
   const orgId = nextId();
   return inOrg(orgId, () =>
-    insertEndpoint({ orgId, url: 'https://hooks.example.test/in', secret: 'whsec' }),
+    insertEndpoint({ orgId, slot: '1', url: 'https://hooks.example.test/in', secret: 'whsec' }),
   );
 };
 
@@ -88,5 +88,34 @@ test('disable switches the endpoint off once, and keeps the reason that did it',
     expect(await postlyWebhookLedger.isDisabled(endpoint.id)).toBe(true);
     const row = await db.webhookEndpoints.where({ id: endpoint.id }).one();
     expect(row?.disabledReason).toBe('10 consecutive failed deliveries');
+  });
+});
+
+test('an attempt that loses its number to a concurrent one re-reads, and counts from that row', async () => {
+  const endpoint = await anEndpoint();
+  await inOrg(endpoint.orgId, async () => {
+    // The race, made deterministic: between this attempt's read of the history (empty) and its
+    // write, a concurrent failed delivery to the same endpoint lands as row 1.
+    const handle = db.webhookDeliveries;
+    const insert = handle.insert;
+    let raced = false;
+    handle.insert = async (row, options) => {
+      if (!raced) {
+        raced = true;
+        await insert({ ...row, eventId: 'evt-concurrent', consecutiveFailures: 1 }, options);
+      }
+      return insert(row, options);
+    };
+    try {
+      // Counted from the row that beat it — 2 — never from the stale read, which said 1.
+      expect(await postlyWebhookLedger.record(attempt(endpoint.id, false, 1_000))).toBe(2);
+    } finally {
+      handle.insert = insert;
+    }
+    const rows = await db.webhookDeliveries.where({ endpointId: endpoint.id }).all();
+    expect(rows.map((row) => [row.seq, row.consecutiveFailures]).sort()).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
   });
 });

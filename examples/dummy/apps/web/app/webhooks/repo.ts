@@ -4,7 +4,12 @@
  * delivery, the org the webhook's `tenant` declared — and seals `secret` on the way in.
  */
 
-import { db, type WebhookDelivery, type WebhookEndpoint } from '@postly/db';
+import {
+  db,
+  type WebhookDelivery,
+  type WebhookEndpoint,
+  type WebhookEndpointSlot,
+} from '@postly/db';
 import { ENDPOINTS_PER_ORG } from './entity';
 
 export function endpointById(id: string): Promise<WebhookEndpoint | null> {
@@ -25,18 +30,31 @@ export function liveEndpoints(orgId: string): Promise<readonly WebhookEndpoint[]
     .all();
 }
 
-export function endpointCount(orgId: string): Promise<number> {
-  return db.webhookEndpoints.where({ orgId }).count();
+/** The slots the org's endpoints hold. Bounded by the slot list itself. */
+export async function usedSlots(orgId: string): Promise<ReadonlySet<WebhookEndpointSlot>> {
+  const rows = await db.webhookEndpoints
+    .where({ orgId })
+    .orderBy('createdAt')
+    .limit(ENDPOINTS_PER_ORG)
+    .all();
+  return new Set(rows.map((row) => row.slot));
+}
+
+/** Revoke one endpoint of the org. Its deliveries cascade with it. Answers how many rows went. */
+export function deleteEndpoint(orgId: string, id: string): Promise<number> {
+  return db.webhookEndpoints.deleteWhere({ orgId, id });
 }
 
 export function insertEndpoint(row: {
   readonly orgId: string;
+  readonly slot: WebhookEndpointSlot;
   readonly url: string;
   readonly secret: string;
 }): Promise<WebhookEndpoint> {
   // Each column NAMED: a spread of a row drops `secret`, which is sealed and not enumerable.
   return db.webhookEndpoints.insert({
     orgId: row.orgId,
+    slot: row.slot,
     url: row.url,
     secret: row.secret,
     disabledReason: null,
@@ -53,7 +71,7 @@ export function disableEndpoint(id: string, reason: string): Promise<number> {
 
 /** The endpoint's newest attempt — what the consecutive-failure count continues from. */
 export function lastDelivery(endpointId: string): Promise<WebhookDelivery | null> {
-  return db.webhookDeliveries.where({ endpointId }).orderBy('at', 'desc').limit(1).one();
+  return db.webhookDeliveries.where({ endpointId }).orderBy('seq', 'desc').limit(1).one();
 }
 
 export function insertDelivery(row: Omit<WebhookDelivery, 'id'>): Promise<WebhookDelivery> {
@@ -65,5 +83,5 @@ export function deliveriesOf(
   endpointId: string,
   limit: number,
 ): Promise<readonly WebhookDelivery[]> {
-  return db.webhookDeliveries.where({ endpointId }).orderBy('at', 'desc').limit(limit).all();
+  return db.webhookDeliveries.where({ endpointId }).orderBy('seq', 'desc').limit(limit).all();
 }

@@ -11,7 +11,7 @@ import { reviewDraftTemplate } from './review-draft-template';
 /** Editing the template requires bumping this version — it keys the traces and the baseline. */
 export const reviewDraftPrompt = definePrompt({
   id: 'posts.review-draft',
-  version: '2',
+  version: '1',
   template: reviewDraftTemplate,
   // Imported, never spelled: the app registers every model it names (`app/models.ts`).
   model: CLAUDE_SONNET_5,

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "87dff9291d1a2c6f",
+  "buildId": "2d38131a06b8fadd",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1156,6 +1156,12 @@
           "references": "orgs.id"
         },
         {
+          "name": "seq",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
           "name": "status",
           "type": "integer",
           "nullable": true,
@@ -1174,7 +1180,10 @@
           "primaryKey": false
         }
       ],
-      "invariants": []
+      "invariants": [
+        "webhook_delivery_seq_from_one",
+        "webhook_delivery_seq_unique"
+      ]
     },
     {
       "name": "webhook_endpoints",
@@ -1215,13 +1224,21 @@
           "sealed": "opaque"
         },
         {
+          "name": "slot",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
           "name": "url",
           "type": "text",
           "nullable": false,
           "primaryKey": false
         }
       ],
-      "invariants": []
+      "invariants": [
+        "webhook_endpoint_slot_unique"
+      ]
     }
   ],
   "actions": [
@@ -2145,6 +2162,83 @@
       }
     },
     {
+      "name": "keepDraftReview",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "revise"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "reviewedBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "verdict",
+          "notes",
+          "reviewedBy",
+          "reviewedAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "likePost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2515,37 +2609,23 @@
       }
     },
     {
-      "name": "recordReview",
+      "name": "removeWebhookEndpoint",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "postId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "orgId": {
             "type": "string",
             "format": "uuid"
           },
-          "verdict": {
+          "endpointId": {
             "type": "string",
-            "enum": [
-              "ready",
-              "revise"
-            ]
-          },
-          "notes": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 600
+            "format": "uuid"
           }
         },
         "required": [
-          "postId",
           "orgId",
-          "verdict",
-          "notes"
+          "endpointId"
         ],
         "additionalProperties": false
       },
@@ -2553,52 +2633,23 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "postId": {
+          "endpointId": {
             "type": "string",
             "format": "uuid"
-          },
-          "orgId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "ready",
-              "revise"
-            ]
-          },
-          "notes": {
-            "type": "string",
-            "maxLength": 600
-          },
-          "reviewedBy": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reviewedAt": {
-            "type": "string",
-            "format": "date-time"
           }
         },
         "required": [
-          "postId",
-          "orgId",
-          "verdict",
-          "notes",
-          "reviewedBy",
-          "reviewedAt"
+          "endpointId"
         ],
         "additionalProperties": false
       },
-      "policy": "post:read",
+      "policy": "org:administer",
       "permissions": [
-        "post:read"
+        "org:administer"
       ],
       "cacheInvalidates": [],
       "mcp": {
-        "expose": true,
-        "description": "Record the review of a post: a verdict and short notes"
+        "expose": false
       }
     },
     {
@@ -2636,14 +2687,14 @@
         ],
         "additionalProperties": false
       },
-      "policy": "post:read",
+      "policy": "post:publish",
       "permissions": [
-        "post:read"
+        "post:publish"
       ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": true,
-        "description": "Queue a review of a draft; read it back with postReview"
+        "description": "Queue a review of your draft; read it back with postReview"
       }
     },
     {
@@ -2704,16 +2755,11 @@
           "orgId": {
             "type": "string",
             "format": "uuid"
-          },
-          "memberId": {
-            "type": "string",
-            "format": "uuid"
           }
         },
         "required": [
           "postId",
-          "orgId",
-          "memberId"
+          "orgId"
         ],
         "additionalProperties": false
       },
@@ -2730,7 +2776,8 @@
           },
           "notes": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 600
           }
         },
         "required": [
@@ -5918,6 +5965,7 @@
       "permission": "org:administer",
       "enforcedIn": [
         "action:addWebhookEndpoint",
+        "action:removeWebhookEndpoint",
         "action:upgradePlan"
       ]
     },
@@ -5961,16 +6009,16 @@
       "permission": "post:publish",
       "enforcedIn": [
         "action:confirmAgentPublish",
+        "action:keepDraftReview",
         "action:movePostStatus",
-        "action:publishPost"
+        "action:publishPost",
+        "action:requestDraftReview"
       ]
     },
     {
       "permission": "post:read",
       "enforcedIn": [
         "action:createComment",
-        "action:recordReview",
-        "action:requestDraftReview",
         "action:reviewDraft",
         "action:summarize",
         "action:summarizePosts",
@@ -6109,6 +6157,14 @@
     },
     {
       "code": "X_ORG_ENDPOINT_LIMIT",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_ORG_ENDPOINT_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_ORG_ENDPOINT_URL_REFUSED",
       "package": "apps/web"
     },
     {

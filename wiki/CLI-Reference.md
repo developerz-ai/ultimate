@@ -497,10 +497,12 @@ clause inside `create table`, so the order entities happen to register in cannot
 unappliable.
 
 **`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
-step hashes the loaded entity **registry** against the `.hash` sidecars — no database, so it runs
-in a CI with nothing listening, and it catches "you edited an entity and never generated". The
-entity SOURCE text was what it hashed until 8.0.0, which read every byte under `packages/db/src`
-and could not see an entity declared under `apps/` at all. `x db migrate` diffs
+step hashes the loaded entity **registry** plus the bytes of every non-test file under
+`packages/db/src` against the `.hash` sidecars — no database, so it runs in a CI with nothing
+listening, and it catches "you edited an entity and never generated". The registry half sees an
+entity declared under `apps/`; the source half sees a seed or helper edit. Bytes, not meaning: a
+formatter pass over `packages/db/src` after `x db gen` moves the hash too, and `x db gen` answers
+"no migration needed" and re-records it. `x db migrate` diffs
 the live catalog against the `x_migrations` ledger — a database, so it runs only where one is open,
 and it catches "someone changed the schema by hand". A table in the `x_` namespace is framework
 bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never counted as drift.

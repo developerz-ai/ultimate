@@ -27,15 +27,15 @@ import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/or
 import type {
   CommentView,
   CreatePostInput,
+  DraftReview,
   PostSummary,
   PostView,
-  RecordReviewInput,
   ReviewView,
 } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
 import type { ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from '../app/runs/entity';
 import type { RunOwner } from '../app/runs/policy';
-import type { AddEndpointInput, EndpointIssued } from '../app/webhooks/entity';
+import type { AddEndpointInput, EndpointIssued, RemoveEndpointInput } from '../app/webhooks/entity';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -46,10 +46,7 @@ export interface PostsService {
   unlike(postId: PostId): Promise<PostView>;
   comment(postId: PostId, body: string): Promise<CommentView>;
   /** Upsert the post's one review, made for the acting member. A second write is the same row. */
-  recordReview(
-    postId: PostId,
-    review: Pick<RecordReviewInput, 'verdict' | 'notes'>,
-  ): Promise<ReviewView>;
+  recordReview(postId: PostId, review: DraftReview): Promise<ReviewView>;
   /** A post inside a NAMED org, no acting member needed: a job's read. `null` when absent. */
   inOrg(orgId: OrgId, postId: PostId): Promise<PostView | null>;
   /** The post's latest review, `null` before any. */
@@ -124,6 +121,8 @@ export interface RunsService {
 export interface WebhooksService {
   /** Register a receiver; the answer is the only copy of its secret. */
   addEndpoint(input: AddEndpointInput): Promise<EndpointIssued>;
+  /** Revoke a receiver of the org: its row, its secret and its delivery rows go. */
+  removeEndpoint(input: RemoveEndpointInput): Promise<{ endpointId: string }>;
   /** One `post.published` delivery per live endpoint of the acting member's org. */
   announcePublished(post: PostView): Promise<number>;
 }

@@ -88,7 +88,7 @@ export const CreatePostInput = t.object({
 
 export type CreatePostInput = Infer<typeof CreatePostInput>;
 
-/** A post's latest review, as `recordReview` answers it and `postReview` reads it back. */
+/** A post's latest review, as `keepDraftReview` answers it and `postReview` reads it back. */
 export const ReviewView = postReviews.$view([
   'postId',
   'orgId',
@@ -103,12 +103,13 @@ export type ReviewView = typeof ReviewView.$row;
 /** What a review says. The verdict list is the table's, so the agent's answer cannot outgrow it. */
 export const ReviewVerdict = t.enumerated(...POST_REVIEW_VERDICTS);
 
-/** `recordReview`'s input: the post, the org the policy decides on, and the review itself. */
-export const RecordReviewInput = t.object({
-  postId: t.uuid,
-  orgId: t.uuid,
+/**
+ * What `reviewDraft` answers and `keepDraftReview` keeps. The notes are bounded by the column, so
+ * an over-long answer is the agent's repair turn, never a refused write after the model was paid.
+ */
+export const DraftReview = t.object({
   verdict: ReviewVerdict,
   notes: t.string.max(REVIEW_NOTES_MAX),
 });
 
-export type RecordReviewInput = Infer<typeof RecordReviewInput>;
+export type DraftReview = Infer<typeof DraftReview>;

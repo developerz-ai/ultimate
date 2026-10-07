@@ -1,6 +1,6 @@
 /**
  * eval — `posts.review-draft`, scored against recorded answers with the model and the prompt
- * version pinned, gated on a drop from the committed baseline (`review-draft.v2.baseline.json`).
+ * version pinned, gated on a drop from the committed baseline (`review-draft.v1.baseline.json`).
  * The shape `summarize.eval.test.ts` set: one run that holds, one regression that is caught.
  */
 
@@ -51,7 +51,7 @@ test('review-draft holds its recorded scores across the fixture set', async () =
 
   expect(run.passed).toBe(true);
   expect(run.regressions).toEqual([]);
-  expect(run.promptRef).toBe('posts.review-draft@2');
+  expect(run.promptRef).toBe('posts.review-draft@1');
   expect(run.promptHash).toBe(reviewDraftPrompt.hash);
 });
 

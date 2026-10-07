@@ -6,13 +6,7 @@
 import { type Actor as Member, memberOf, NotAMember } from '@postly/core';
 import { excerptOf, type MemberId, type OrgId, type PostId, slugify } from '@postly/domain';
 import { defineService } from '@ultimat3/core';
-import type {
-  CommentView,
-  CreatePostInput,
-  PostView,
-  RecordReviewInput,
-  ReviewView,
-} from './entity';
+import type { CommentView, CreatePostInput, DraftReview, PostView, ReviewView } from './entity';
 import { PostNotFound } from './errors';
 import type { PostRow } from './policy';
 import {
@@ -146,14 +140,12 @@ export const postsService = defineService('posts', (ctx) => {
     },
 
     /**
-     * Keep a review of a post — the write `reviewDraft`'s tool makes. Made FOR the acting member,
+     * Keep a review of a post — the write `keepDraftReview` makes, on the post id IT was given. Made
+     * FOR the acting member,
      * who is the asker on every path: a request's own member, or the member an `agentJob` run
      * re-resolved and acts for. Never a member the model names.
      */
-    async recordReview(
-      postId: PostId,
-      review: Pick<RecordReviewInput, 'verdict' | 'notes'>,
-    ): Promise<ReviewView> {
+    async recordReview(postId: PostId, review: DraftReview): Promise<ReviewView> {
       const post = await this.byId(postId); // tenancy check by construction
       return upsertReview({
         orgId: tenantId(),
