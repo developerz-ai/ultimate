@@ -97,6 +97,46 @@ describe('a raise must state its number and its reason', () => {
   });
 });
 
+describe('deleting a js budget is an unlimited raise', () => {
+  test('`budget: {}`, a budget with no js, or no budget key at all, is reported against the old value', () => {
+    expect(raises(route("{ js: '16kb' }"), route('{}'))).toEqual(['js:16kb->none']);
+    expect(raises(route("{ js: '16kb' }"), route("{ css: '4kb' }"))).toEqual(['js:16kb->none']);
+    const unbudgeted = "export const config = defineRoute({\n  render: 'csr',\n});\n";
+    const [gone] = checkBudgetRaises([
+      { path: PATH, base: route("{ js: '16kb' }"), now: unbudgeted },
+    ]);
+    expect(gone).toEqual({ file: PATH, line: 1, key: 'js', was: '16kb', now: 'none' });
+    expect(raiseFinding(gone ?? expect.unreachable('no raise'), BASE_REF).fix).toContain(
+      'restore js: 16kb',
+    );
+  });
+
+  test('a js that is no longer a literal is unread, so it is an unlimited raise too', () => {
+    expect(raises(route("{ js: '16kb' }"), route('{ js: LIMIT }'))).toEqual(['js:16kb->none']);
+  });
+
+  test('a removal stated directly above the budget line (measured + why) is accepted', () => {
+    const stated = '  // measured: 880000 B — why: the dashboard is admin-only and unbudgeted\n';
+    expect(raises(route("{ js: '16kb' }"), route('{}', stated))).toEqual([]);
+  });
+
+  test('a backtick literal is read like a quoted one — it is not an absent budget', () => {
+    expect(readBudget(route('{ js: `20kb` }'))).toEqual({
+      line: 3,
+      js: { written: '20kb', bytes: 20480 },
+    });
+    expect(raises(route("{ js: '30kb' }"), route('{ js: `900kb` }'))).toEqual(['js:30kb->900kb']);
+    expect(raises(route('{ js: `30kb` }'), route("{ js: '20kb' }"))).toEqual([]);
+    // An interpolated template is not a literal this rule can weigh.
+    expect(readBudget(route(`{ js: \`${'$'}{N}kb\` }`))).toEqual({ line: 3 });
+  });
+
+  test('a route the base did not budget is not a raise when it still has none', () => {
+    const bare = "export const config = defineRoute({ render: 'csr' });\n";
+    expect(checkBudgetRaises([{ path: PATH, base: bare, now: bare }])).toEqual([]);
+  });
+});
+
 describe('the base the rule compares against', () => {
   test('is origin/main`s tip, and a checkout that cannot get it is REFUSED, never green', () => {
     const result = budgetResult([], undefined);

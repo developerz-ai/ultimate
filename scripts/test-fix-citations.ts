@@ -17,7 +17,12 @@
 //   bun run scripts/test-fix-citations.ts [--json]
 //   bun run scripts/test-fix-citations.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { type CommandCatalog, citedCommandProblem, loadCommandCatalog } from '@ultimat3/cli';
+import {
+  type CommandCatalog,
+  citedCommandProblem,
+  fixCitations,
+  loadCommandCatalog,
+} from '@ultimat3/cli';
 import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
@@ -55,7 +60,9 @@ export interface TestFixCitation {
 export function scanTestFixes(path: string, source: string): readonly TestFixCitation[] {
   const out: TestFixCitation[] = [];
   for (const literal of sourceStrings(source)) {
-    if (!literal.value.startsWith('x ')) continue;
+    // A citation ANYWHERE in the string, exactly as `checkErrorFixes` reads shipped source: a
+    // `startsWith('x ')` filter skipped `run x …`, `edit a.ts, then x …` and `bun run x -- …`.
+    if (fixCitations(literal.value).length === 0) continue;
     if (!PROPERTY.test(literal.prefix) && !ASSERTION.test(literal.prefix)) continue;
     out.push({ path, line: literal.line, fix: literal.value });
   }

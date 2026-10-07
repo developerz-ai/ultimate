@@ -129,8 +129,10 @@ export const CLAIMS: readonly BenchClaim[] = [
  * `unstated` is the vacuous-parser guard: a claim whose sentence no longer matches is a claim this
  * check silently stopped making. `mismatch` is the hazard. `unmeasured` is the results file moving
  * out from under a path — a comparison against `undefined` that would otherwise read as agreement.
+ * `absent` is both files gone: root `CLAUDE.md` links the claims page, so a tree without it is a
+ * tree that lost its measurements, never one that makes no claims.
  */
-export type BenchGapKind = 'unstated' | 'mismatch' | 'unmeasured';
+export type BenchGapKind = 'unstated' | 'mismatch' | 'unmeasured' | 'absent';
 
 export interface BenchGap {
   readonly kind: BenchGapKind;
@@ -226,10 +228,20 @@ const unmeasuredFinding = (gap: BenchGap): Finding => ({
   at: gap.claim.file,
 });
 
+const absentFinding = (gap: BenchGap): Finding => ({
+  code: 'X_BENCH_CLAIM_STALE',
+  cause: `neither ${CLAIMS_FILE} nor ${gap.claim.file} exists, and root CLAUDE.md links ${CLAIMS_FILE} as where realtime capacity is measured — so the ${gap.claim.label} is checked against nothing`,
+  // A literal directory, not the two constants spliced in: both live under it, and a fix's command
+  // position takes no interpolated value (`fix-shell-arg`).
+  fix: 'git checkout origin/main -- scripts/bench/results/   # then bun run scripts/bench-claims.ts --json',
+  at: CLAIMS_FILE,
+});
+
 const FINDINGS: Readonly<Record<BenchGapKind, (gap: BenchGap) => Finding>> = {
   mismatch: mismatchFinding,
   unstated: unstatedFinding,
   unmeasured: unmeasuredFinding,
+  absent: absentFinding,
 };
 
 export const benchGapFindingFor = (gap: BenchGap): Finding => FINDINGS[gap.kind](gap);
@@ -242,19 +254,18 @@ const readJson = async (path: string): Promise<unknown> => {
 /**
  * Read the prose and the results, then check them. The one impure step.
  *
- * ONE guard, and it is about the tree rather than about either file: if NEITHER the prose nor a
- * single committed result exists, this is not a tree that makes these claims and there is nothing
- * to check. Every other combination is checked, because every other combination is a real and
- * dangerous state — and each half used to suppress the whole rule:
+ * No combination of files on disk is silent — each used to suppress the whole rule:
  *
  * | On disk | Was | Is |
  * |---|---|---|
  * | results deleted, prose kept | green — the figures were compared against nothing | `unmeasured` per claim |
  * | prose deleted, results kept | green — every anchored pattern matched nothing | `unstated` per claim |
+ * | both deleted | green — "not a tree that makes these claims" | `absent` per claim |
  *
  * The first is the state a re-run passes through, which is the exact moment the numbers are least
- * trustworthy. `checkBenchClaims` already had a name for both; only these two early returns stopped
- * it ever saying them.
+ * trustworthy. The third was argued as "nothing to check", but this rule runs on THIS repo's gate
+ * only (`frameworkFiles` in `scripts/verify.ts`) and root `CLAUDE.md` links the claims page — a
+ * tree without it lost its measurements, it did not stop making them.
  */
 export async function benchClaimGaps(root: string): Promise<readonly BenchGap[]> {
   const prose = Bun.file(`${root}/${CLAIMS_FILE}`);
@@ -263,7 +274,9 @@ export async function benchClaimGaps(root: string): Promise<readonly BenchGap[]>
     files.map(async (file) => [file, await readJson(`${root}/${file}`)] as const),
   );
   const proseExists = await prose.exists();
-  if (!proseExists && loaded.every(([, body]) => body === undefined)) return [];
+  if (!proseExists && loaded.every(([, body]) => body === undefined)) {
+    return CLAIMS.map((claim) => ({ kind: 'absent', claim }));
+  }
   return checkBenchClaims({
     claims: CLAIMS,
     prose: proseExists ? await prose.text() : '',

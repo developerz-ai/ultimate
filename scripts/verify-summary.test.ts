@@ -110,6 +110,26 @@ describe('unit · verify merge summary · bounded under GitHub`s cap', () => {
     expect(block).toContain('```` and ``` inside');
   });
 
+  test('the verdict is the document`s own ok — a red merge over green steps renders red', () => {
+    // An incomplete merge (a step no part ran) is red with every step it did see green.
+    const red = renderMergeSummary(
+      doc([step('lint', true), step('unit', true)], {
+        summary: 'merged 2 part(s): typecheck ran in none',
+        findings: [{ code: 'X_VERIFY_MERGE_INCOMPLETE', cause: 'top', fix: 'x verify merge' }],
+      }),
+      'verdict.json',
+      POINTER,
+    );
+    expect(red).toContain('✗ merged 2 part(s): typecheck ran in none');
+    expect(red).not.toContain('✓ merged');
+    const green = renderMergeSummary(
+      doc([step('lint', true)], { ok: true, summary: 'all 1 steps passed' }),
+      'verdict.json',
+      POINTER,
+    );
+    expect(green).toContain('✓ all 1 steps passed');
+  });
+
   test('anything but a verify document is refused by name', () => {
     expect(thrownBy(() => renderMergeSummary('{"command":"x"}', 'v.json', POINTER)).code).toBe(
       'X_VERIFY_MERGE_INPUT',

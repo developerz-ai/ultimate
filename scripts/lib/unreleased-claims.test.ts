@@ -38,13 +38,28 @@ describe('unit · "unreleased" beside a version CHANGELOG.md has dated', () => {
 
   test('over its pin is X_DOC_UNRELEASED_STALE; under it is X_DOC_UNRELEASED_PIN_STALE', () => {
     const claims = unreleasedClaims('p.md', '(21.0.0, unreleased)\n(20.2.1, unreleased)', DATED);
-    expect(claimGaps(claims, { 'p.md': 1 }).map((gap) => gap.code)).toEqual([
+    const both = { 'p.md: 21.0.0': 1, 'p.md: 20.2.1': 1 };
+    expect(claimGaps(claims, { 'p.md: 21.0.0': 1 }).map((gap) => gap.code)).toEqual([
       'X_DOC_UNRELEASED_STALE',
     ]);
-    expect(claimGaps(claims, { 'p.md': 2 })).toEqual([]);
-    expect(claimGaps([], { 'p.md': 2 }).map((gap) => gap.code)).toEqual([
+    expect(claimGaps(claims, both)).toEqual([]);
+    expect(claimGaps([], both).map((gap) => gap.code)).toEqual([
+      'X_DOC_UNRELEASED_PIN_STALE',
       'X_DOC_UNRELEASED_PIN_STALE',
     ]);
+  });
+
+  test('a pin is per page AND version: a swapped claim at an equal count is still new', () => {
+    // A per-page count let the 20.2.1 line be fixed and a 21.0.0 one written in its place.
+    const swapped = unreleasedClaims('p.md', '(21.0.0, unreleased)', DATED);
+    const gaps = claimGaps(swapped, { 'p.md: 20.2.1': 1 });
+    expect(gaps.map((gap) => gap.code).sort()).toEqual([
+      'X_DOC_UNRELEASED_PIN_STALE',
+      'X_DOC_UNRELEASED_STALE',
+    ]);
+    expect(gaps.find((gap) => gap.code === 'X_DOC_UNRELEASED_PIN_STALE')?.fix).toContain(
+      "'p.md: 20.2.1'",
+    );
   });
 });
 

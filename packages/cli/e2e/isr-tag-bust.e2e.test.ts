@@ -73,7 +73,7 @@ async function get(path: string): Promise<Response> {
   if (url === undefined || url === null) {
     throw new NotImplementedError({
       cause: 'an ISR request against a pod that serves no HTTP is not implemented in this build',
-      fix: 'ROLE=web bun run x -- serve',
+      fix: 'ROLE=web bun apps/web/server.ts',
     });
   }
   return fetch(new URL(path, url));

@@ -90,4 +90,4 @@ hand-edited; `--check` refuses drift (`X_GUARDS_DOC_DRIFT`). A guard is a runnab
 | `bun run wiki-anchors` | Enforce, as a gate rule, that every `Page#anchor` and `#anchor` link on a `wiki/` page lands on a heading of its target page. | `X_WIKI_ANCHOR_DEAD` `X_WIKI_ANCHOR_UNSCANNED` |
 | `bun run wiki-fences` | Enforce, as a gate rule, that a fenced `ts`/`tsx` example on a `wiki/` page typechecks. | `X_WIKI_EXAMPLE_PIN_STALE` `X_WIKI_EXAMPLE_UNCOMPILED` `X_WIKI_EXAMPLE_UNSCANNED` |
 | `bun run scripts/wiki-frames.ts` | Enforce, as a gate step, that `wiki/Realtime.md` and the wire protocol still name the same frames. | `X_FRAME_DOCS_STALE` |
-| `bun run scripts/wiki-tables.ts` | Enforce, as a gate step, that every markdown table in `wiki/` still renders as a table. | `X_WIKI_TABLE_MALFORMED` |
+| `bun run scripts/wiki-tables.ts` | Enforce, as a gate step, that every markdown table in `wiki/` still renders as a table. | `X_WIKI_TABLE_MALFORMED` `X_WIKI_TABLE_UNSCANNED` |

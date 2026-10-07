@@ -274,45 +274,16 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 33 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(33);
-    expect([...EVERY_CODE].sort()).toEqual(
-      [
-        'X_ROUTE_NOT_FOUND',
-        'X_METHOD_NOT_ALLOWED',
-        'X_PATH_INVALID',
-        'X_BODY_INVALID',
-        'X_UNAUTHENTICATED',
-        'X_FORBIDDEN',
-        'X_RATE_LIMITED',
-        'X_BUILD_SKEW',
-        'X_ROUTE_CONFLICT',
-        'X_SERVER_NOT_STARTED',
-        'X_PIPELINE_NO_RESPONSE',
-        'X_PIPELINE_FINALIZE_FAILED',
-        'X_NO_REQUEST',
-        'X_ERROR_STATUS_INVALID',
-        'X_PROBLEM_META_INVALID',
-        'X_CORS_CONFIG_INVALID',
-        'X_CSP_DIRECTIVE_INVALID',
-        'X_RATE_LIMIT_NOT_SHARED',
-        'X_RATE_LIMIT_BUCKET_CONFLICT',
-        'X_RATE_LIMIT_BUCKET_UNBOUND',
-        'X_RATE_LIMIT_SCOPE_UNSET',
-        'X_RATE_LIMIT_STORE_UNAVAILABLE',
-        'X_RATE_LIMIT_TENANT_BUCKET_UNKNOWN',
-        'X_RATE_LIMIT_INVALID',
-        'X_TRUST_PROXY_UNSET',
-        'X_OVERLOADED',
-        'X_CSRF_BLOCKED',
-        'X_WEBHOOK_SIGNATURE_INVALID',
-        'X_WEBHOOK_SIGNATURE_STALE',
-        'X_BEARER_MOUNT_INVALID',
-        'X_TIMEOUT',
-        'X_DRAINING',
-        'X_CONFIG_INVALID',
-      ].sort(),
-    );
+  test('is a duplicate-free set, each owned code with a row on the wiki page', async () => {
+    // Derived, not counted: `bun run new-error-code` adds a code to the owned array, its title and
+    // the wiki row in one edit, and a `toBe(33)` plus a literal copy went red after every one.
+    // The partition test below holds owned + borrowed equal to the whole list.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    expect(new Set(EVERY_CODE).size).toBe(EVERY_CODE.length);
+    for (const code of OWNED_CODES) {
+      expect(code).toMatch(/^X_[A-Z0-9_]+$/);
+      expect(page, `${code} has no wiki row`).toContain(`\`${code}\``);
+    }
   });
 });
 

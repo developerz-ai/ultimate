@@ -5,11 +5,13 @@
 //
 // Same machinery (`scripts/lib/readme-fences.ts`: one module per fence, the repo's own `tsc`, two
 // passes because a syntax error anywhere silences every semantic diagnostic), and the same RATCHET:
-// `scripts/wiki-fences-backlog.ts` pins today's failures per page, and a count may only fall.
+// `scripts/wiki-fences-backlog.ts` pins today's failures per FENCE (page plus first code line), and
+// a row may only fall — so a fixed example cannot be traded for a new broken one on the same page.
 //
 //   bun run scripts/wiki-fences.ts [--json] [--pin]
 
 import { flagBool, parseScriptArgs } from './lib/args';
+import { loweredRows, siteTally } from './lib/fence-sites';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { Fence } from './lib/readme-fences';
@@ -95,7 +97,7 @@ export function wikiFenceFinding(gap: FenceGap): Finding {
   if (gap.kind === 'stale') {
     return {
       code: 'X_WIKI_EXAMPLE_PIN_STALE',
-      cause: `${WIKI_BACKLOG_FILE} pins ${gap.pinned} failing example(s) for ${pagePath(gap.pkg)} and ${gap.failing} fail now — a ratchet that does not tighten is a ratchet nobody reads`,
+      cause: `${WIKI_BACKLOG_FILE} pins ${gap.pinned} failing example(s) at '${gap.site}' on ${pagePath(gap.pkg)} and ${gap.failing} fail now — a ratchet that does not tighten is a ratchet nobody reads`,
       fix: 'bun run scripts/wiki-fences.ts --pin',
       at: WIKI_BACKLOG_FILE,
     };
@@ -104,8 +106,8 @@ export function wikiFenceFinding(gap: FenceGap): Finding {
   const lines = gap.failures.map((one) => one.readmeLine).join(', ');
   return {
     code: 'X_WIKI_EXAMPLE_UNCOMPILED',
-    cause: `${gap.failures.length} fenced example(s) in ${pagePath(gap.pkg)} do not typecheck and ${gap.pinned} are pinned — failing at line(s) ${lines}; the first says: ${first?.reason ?? ''}`,
-    fix: `bun run scripts/wiki-fences.ts --json   # then make the fence at ${pagePath(gap.pkg)}:${first?.readmeLine ?? 0} compile, or raise ${gap.pkg} to ${gap.failures.length} in ${WIKI_BACKLOG_FILE} on purpose`,
+    cause: `${gap.failures.length} fenced example(s) in ${pagePath(gap.pkg)} opening \`${gap.site.slice(gap.pkg.length + 2)}\` do not typecheck and ${gap.pinned} are pinned — failing at line(s) ${lines}; the first says: ${first?.reason ?? ''}`,
+    fix: `bun run scripts/wiki-fences.ts --json   # then make the fence at ${pagePath(gap.pkg)}:${first?.readmeLine ?? 0} compile, or pin its row in ${WIKI_BACKLOG_FILE} at ${gap.failures.length} on purpose, with a // why:`,
     at: `${pagePath(gap.pkg)}:${first?.readmeLine ?? 0}`,
   };
 }
@@ -115,26 +117,15 @@ export async function wikiFenceFindings(root: string): Promise<readonly Finding[
   return checkWikiFences(await wikiFenceFailures(root)).map(wikiFenceFinding);
 }
 
-/** A key as Biome writes it: bare when it is an identifier, single-quoted when it is not. */
-const objectKey = (key: string): string => (/^[A-Za-z_$][\w$]*$/.test(key) ? key : `'${key}'`);
-
-/** `--pin`: lower a page's count to what is measured; never raise one — that is a reviewed edit. */
+/** `--pin`: lower each row to what is measured; never raise one — that is a reviewed edit. */
 export function pinnedWikiSource(
   measured: Readonly<Record<string, number>>,
   backlog: Readonly<Record<string, number>>,
   source: string,
 ): string {
-  const next = Object.entries(backlog)
-    .map(
-      ([page, count]) =>
-        [page, Math.min(count, Object.hasOwn(measured, page) ? (measured[page] ?? 0) : 0)] as const,
-    )
-    .filter(([, count]) => count > 0)
-    .map(([page, count]) => `  ${objectKey(page)}: ${count},`)
-    .join('\n');
   return source.replace(
     /(export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = \{\n)[\s\S]*?(\n\};)/,
-    `$1${next}$2`,
+    (_whole, open: string, close: string) => `${open}${loweredRows(measured, backlog)}${close}`,
   );
 }
 
@@ -144,14 +135,9 @@ if (import.meta.main) {
   const measured = await wikiFenceFailures(root);
   const gaps = checkWikiFences(measured);
   if (flagBool(args, 'pin')) {
-    const tally = new Map<string, number>();
-    for (const one of measured.failures) tally.set(one.pkg, (tally.get(one.pkg) ?? 0) + 1);
-    const counts = Object.fromEntries(tally);
     const path = `${root}/${WIKI_BACKLOG_FILE}`;
-    await Bun.write(
-      path,
-      pinnedWikiSource(counts, WIKI_FENCE_BACKLOG, await Bun.file(path).text()),
-    );
+    const text = await Bun.file(path).text();
+    await Bun.write(path, pinnedWikiSource(siteTally(measured.failures), WIKI_FENCE_BACKLOG, text));
   }
   const total = measured.failures.length;
   report(
@@ -161,7 +147,7 @@ if (import.meta.main) {
       summary:
         gaps.length === 0
           ? `${measured.pages.length} wiki pages, ${total} fenced example(s) failing, every one pinned`
-          : `${gaps.length} wiki page(s) whose fenced examples moved off the ratchet (${total} failing)`,
+          : `${gaps.length} wiki fence site(s) off the ratchet (${total} failing)`,
       findings: gaps.map(wikiFenceFinding),
       data: { failures: measured.failures },
     },

@@ -53,6 +53,33 @@ describe('what the scanner agrees to call a citation', () => {
     expect(found("expect(err.fix).not.toBe('x db nope');")).toEqual([]);
   });
 
+  test('a citation ANYWHERE in the fix counts, as the source rule reads it', () => {
+    // `startsWith('x ')` skipped every fix that leads with prose or a second command.
+    expect(found("const e = { fix: 'run x db nope --json' };")).toEqual(['run x db nope --json']);
+    expect(found("expect(e.fix).toContain('then x db nope');")).toEqual(['then x db nope']);
+    expect(found("const e = { fix: 'bun run x -- db nope' };")).toEqual(['bun run x -- db nope']);
+    const [gap] = checkTestFixes({
+      files: [
+        {
+          path: 'packages/db/src/a.test.ts',
+          text: "const e = { fix: 'edit a.ts, then x db nope' };",
+        },
+      ],
+      catalog: CATALOG,
+      pins: {},
+    });
+    expect(gap?.kind).toBe('over');
+    expect(
+      checkTestFixes({
+        files: [
+          { path: 'packages/db/src/a.test.ts', text: "const e = { fix: 'bun run x -- db nope' };" },
+        ],
+        catalog: CATALOG,
+        pins: {},
+      })[0]?.kind,
+    ).toBe('over');
+  });
+
   test('a string that is not a command is left alone', () => {
     expect(found("const e = { fix: 'edit packages/db/src/pool.ts' };")).toEqual([]);
   });

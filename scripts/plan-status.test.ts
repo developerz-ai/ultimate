@@ -79,6 +79,15 @@ describe('one status.yml', () => {
     expect(codes('status: [complete\n')).toEqual(['X_PLAN_STATUS_INVALID']);
   });
 
+  test('a cyclic alias in a status or slices value is refused, never a TypeError', () => {
+    // `&s [*s]` is a list that contains itself — JSON.stringify of it throws.
+    for (const text of ['status: &s [*s]\n', 'status: complete\nslices: &s {a: *s}\n']) {
+      const findings = statusFindings(PATH, text);
+      expect(findings.map((f) => f.code)).toEqual(['X_PLAN_STATUS_INVALID']);
+      expect(findings[0]?.cause).toContain(PATH);
+    }
+  });
+
   test('a document that is not a mapping is refused', () => {
     expect(codes('- complete\n')).toEqual(['X_PLAN_STATUS_INVALID']);
   });

@@ -12,10 +12,15 @@
 //   bun run scripts/trust-publishers.ts [--dry-run] [--json]
 
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
-import type { Finding } from './lib/log';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
-import { listWorkspaces, publishOrder } from './lib/workspaces';
+import {
+  listWorkspaces,
+  publishFloorFindings,
+  publishOrder,
+  type Workspace,
+} from './lib/workspaces';
 
 /** The GitHub org carries a hyphen; the npm scope does not. Both are correct — see PUBLISHING.md. */
 export const DEFAULT_REPO = 'developerz-ai/ultimate';
@@ -159,6 +164,34 @@ export function findingFor(outcome: TrustOutcome): Finding | undefined {
   };
 }
 
+/**
+ * The verdict over what was read. The floor first: `--check` over a tree with no publishable
+ * workspace answered `0/0 packages trust …`, `ok: true` — a perfect registry and a wrong directory
+ * read the same, the shape `registry-audit` and `release --check` were repaired for.
+ */
+export function trustResult(input: {
+  readonly workspaces: readonly Workspace[];
+  readonly outcomes: readonly TrustOutcome[];
+  readonly repo: string;
+  readonly workflow?: string;
+}): ScriptResult {
+  const workflow = input.workflow ?? DEFAULT_WORKFLOW;
+  const findings = [
+    ...publishFloorFindings(input.workspaces),
+    ...input.outcomes
+      .map(findingFor)
+      .filter((finding): finding is Finding => finding !== undefined),
+  ];
+  const good = input.outcomes.filter((outcome) => outcome.ok).length;
+  return {
+    ok: findings.length === 0,
+    script: 'trust-publishers',
+    summary: `${good}/${input.outcomes.length} packages trust ${input.repo}/${workflow}`,
+    findings,
+    data: { repo: input.repo, workflow, outcomes: input.outcomes },
+  };
+}
+
 async function main(): Promise<never> {
   const args = parseScriptArgs(process.argv.slice(2));
   const json = args.json;
@@ -193,7 +226,8 @@ async function main(): Promise<never> {
   const environment = environmentFlag ?? DEFAULT_ENVIRONMENT;
   const root = repoRoot();
 
-  const targets = publishOrder(await listWorkspaces(root));
+  const workspaces = await listWorkspaces(root);
+  const targets = publishOrder(workspaces);
   const outcomes: TrustOutcome[] = [];
 
   for (const target of targets) {
@@ -246,20 +280,7 @@ async function main(): Promise<never> {
     });
   }
 
-  const findings = outcomes
-    .map(findingFor)
-    .filter((finding): finding is Finding => finding !== undefined);
-  const good = outcomes.filter((outcome) => outcome.ok).length;
-  report(
-    {
-      ok: findings.length === 0,
-      script: 'trust-publishers',
-      summary: `${good}/${outcomes.length} packages trust ${repo}/${workflow}`,
-      findings,
-      data: { repo, workflow, outcomes },
-    },
-    json,
-  );
+  report(trustResult({ workspaces, outcomes, repo, workflow }), json);
 }
 
 if (import.meta.main) await main();

@@ -12,6 +12,7 @@ import {
   readWiki,
   splitRow,
   tableGapFindingFor,
+  wikiTableReport,
 } from './wiki-tables';
 
 const page = (text: string): readonly MarkdownFile[] => [{ path: 'wiki/Fixture.md', text }];
@@ -130,4 +131,22 @@ describe('unit · this wiki', () => {
     },
     REPO_SCAN_TIMEOUT_MS,
   );
+});
+
+describe('unit · a run over no table is unscanned, never green', () => {
+  test('no wiki page at all, or pages with no table in them, is X_WIKI_TABLE_UNSCANNED', () => {
+    expect(wikiTableReport([]).map((one) => one.code)).toEqual(['X_WIKI_TABLE_UNSCANNED']);
+    expect(wikiTableReport(page('# Home\n\nprose only\n')).map((one) => one.code)).toEqual([
+      'X_WIKI_TABLE_UNSCANNED',
+    ]);
+    // A table inside a fence is not a rendered table, so it does not count as one read.
+    expect(wikiTableReport(page('```\n| a |\n|---|\n```\n')).map((one) => one.code)).toEqual([
+      'X_WIKI_TABLE_UNSCANNED',
+    ]);
+    expect(wikiTableReport([])[0]?.fix).toMatch(/^bun run scripts\/wiki-tables\.ts --json/);
+  });
+
+  test('one well-formed table is a verdict: no finding', () => {
+    expect(wikiTableReport(page(table()))).toEqual([]);
+  });
 });

@@ -42,6 +42,7 @@ import { fixShellArgFindings } from './fix-shell-arg';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { CLOSERS, OPENERS, renderedOperands } from './lib/rendered-operands';
 import { repoRoot } from './lib/run';
 import { isTestPath, lineOf } from './lib/source-scan';
 
@@ -82,8 +83,6 @@ const SAFE_RENDERERS: ReadonlySet<string> = new Set([
   'renderGiven', // @ultimat3/flags
 ]);
 
-const OPENERS = new Set(['(', '[', '{']);
-const CLOSERS = new Set([')', ']', '}']);
 const QUOTES = new Set(["'", '"', '`']);
 
 /**
@@ -369,7 +368,9 @@ function unsafeUses(
       // the branches, never the operand, and `@ultimat3/http` was reported for exactly that.
       const interpolated = mask.substitutions.some(
         (one) =>
-          at >= one.start && at < one.end && mask.code.slice(one.start, one.end).trim() === binding,
+          at >= one.start &&
+          at < one.end &&
+          renderedOperands(mask.code.slice(one.start, one.end)).includes(binding),
       );
       const kind = mechanismAt(text, match.index, binding.length, interpolated, ducks);
       if (kind === undefined) continue;

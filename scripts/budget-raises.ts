@@ -15,8 +15,11 @@
 //
 // A checkout with no `origin/main` (a tag checkout in `release.yml`, a fresh clone of a fork) FETCHES
 // it — one commit — and, if the fetch fails, refuses `X_BUDGET_BASE_MISSING`. It used to pass with
-// "NO budget was compared" in the summary, which is a green step that checked nothing. A budget built from a constant, or written in a file that is
-// not `page.tsx` / `route.ts`, is not a literal this rule reads.
+// "NO budget was compared" in the summary, which is a green step that checked nothing. A budget
+// written in a file that is not `page.tsx` / `route.ts` is not one this rule reads. A js budget the
+// base had and the route no longer has as a literal (`budget: {}`, no js, no `budget:` key, a
+// constant) is an UNLIMITED raise: stated like any other (`measured:` + `why:` above the budget
+// line), and with no `budget:` key left to sit a comment above, never stated.
 //
 //   bun run scripts/budget-raises.ts [--json]
 
@@ -48,7 +51,8 @@ export function readBudget(source: string): RouteBudget | undefined {
   const open = found.index + found[0].length - 1;
   const close = balancedClose(masked.replace(/\{/g, '(').replace(/\}/g, ')'), open);
   const body = text.slice(open, close < 0 ? undefined : close + 1);
-  const js = /\bjs\s*:\s*(['"])([^'"]+)\1/.exec(body)?.[2];
+  // A backtick literal is a literal; one that interpolates (`${N}kb`) is not one this rule can weigh.
+  const js = /\bjs\s*:\s*(['"`])([^'"`$]+)\1/.exec(body)?.[2];
   const bytes = parseByteBudget(js);
   return {
     line: lineOf(masked, found.index),
@@ -96,35 +100,37 @@ export const states = (comment: string, ceiling: number): boolean => {
   return Number((measured[1] as string).replace(/[,_]/g, '')) <= ceiling;
 };
 
-export function checkBudgetRaises(routes: readonly RouteVersions[]): readonly BudgetRaise[] {
-  const raises: BudgetRaise[] = [];
-  for (const route of routes) {
-    if (route.base === undefined) continue;
-    const now = readBudget(route.now);
-    const was = readBudget(route.base);
-    if (now === undefined || was === undefined) continue;
-    const comment = statedAbove(route.now, now.line);
-    // The sentence the base already carried measured the OLD number, so it states no raise.
-    const inherited = comment !== '' && comment === statedAbove(route.base, was.line);
-    const raised = now.js !== undefined && was.js !== undefined && now.js.bytes > was.js.bytes;
-    if (raised && (inherited || !states(comment, now.js?.bytes ?? 0))) {
-      raises.push({
-        file: route.path,
-        line: now.line,
-        key: 'js',
-        was: was.js?.written ?? '',
-        now: now.js?.written ?? '',
-      });
-    }
+/** What a route with no js literal (none, `{}`, a constant) is written as in a finding. */
+export const UNBUDGETED = 'none';
+
+function raiseOf(route: RouteVersions): BudgetRaise | undefined {
+  const was = route.base === undefined ? undefined : readBudget(route.base);
+  if (route.base === undefined || was?.js === undefined) return undefined;
+  const now = readBudget(route.now);
+  // No `budget:` key left at all: nothing to sit a comment above, so the removal is never stated.
+  if (now === undefined) {
+    return { file: route.path, line: 1, key: 'js', was: was.js.written, now: UNBUDGETED };
   }
-  return raises;
+  // A js budget deleted (`{}`, no js, a non-literal) is the largest raise there is: unlimited.
+  const ceiling = now.js?.bytes ?? Number.POSITIVE_INFINITY;
+  if (ceiling <= was.js.bytes) return undefined;
+  const comment = statedAbove(route.now, now.line);
+  // The sentence the base already carried measured the OLD number, so it states no raise.
+  const inherited = comment !== '' && comment === statedAbove(route.base, was.line);
+  if (!inherited && states(comment, ceiling)) return undefined;
+  const written = now.js?.written ?? UNBUDGETED;
+  return { file: route.path, line: now.line, key: 'js', was: was.js.written, now: written };
+}
+
+export function checkBudgetRaises(routes: readonly RouteVersions[]): readonly BudgetRaise[] {
+  return routes.flatMap((route) => raiseOf(route) ?? []);
 }
 
 export function raiseFinding(raise: BudgetRaise, base: string): Finding {
   return {
     code: 'X_BUDGET_RAISE_UNSTATED',
     at: `${raise.file}:${raise.line}`,
-    cause: `${raise.file}:${raise.line} raises budget.${raise.key} from ${raise.was} to ${raise.now} since ${base} and the comment above it states no new measured number within ${raise.now} and no reason — a comment ${base} already had measured the old budget`,
+    cause: `${raise.file}:${raise.line} ${raise.now === UNBUDGETED ? `removes budget.${raise.key} (${raise.was}) — an unlimited raise —` : `raises budget.${raise.key} from ${raise.was} to ${raise.now}`} since ${base} and the comment above it states no new measured number within ${raise.now} and no reason — a comment ${base} already had measured the old budget`,
     fix: `edit ${raise.file}:${raise.line} — add // measured: <N> B (bun run x -- build --json) — why: <the function it buys> directly above the budget line, or restore ${raise.key}: ${raise.was}`,
   };
 }
@@ -143,8 +149,9 @@ export async function readRouteVersions(
     const posix = path.split('\\').join('/');
     if (NOT_SOURCE.test(posix)) continue;
     const now = await Bun.file(`${root}/${posix}`).text();
-    if (!/\bbudget\s*:/.test(now)) continue;
+    // A route whose budget was DELETED has none now, so the base is read for every route.
     const then = await run(['git', 'show', `${base}:${posix}`], { cwd: root });
+    if (!/\bbudget\s*:/.test(now) && !(then.ok && /\bbudget\s*:/.test(then.output))) continue;
     routes.push({ path: posix, now, base: then.ok ? then.output : undefined });
   }
   return routes.sort((a, b) => a.path.localeCompare(b.path));

@@ -16,39 +16,18 @@ import { migrateConcurrent } from './migration-errors';
 import { DB_SQLSTATE_CODES } from './sqlstate';
 
 describe('DB_OWNED_ERROR_CODES', () => {
-  test('is exactly the set this package declares and can throw', () => {
-    // A code is a shipped promise: `x errors explain` answers from this registry and
-    // `wiki/Error-Codes.md` carries its row, so one arriving or leaving is a deliberate edit here.
+  test('is a duplicate-free set, each code with a row on the wiki page', async () => {
+    // Derived, not listed: `bun run new-error-code` adds a code to this array, its title and the
+    // wiki row in one edit, and a literal copy of the array here went red after every one of them.
+    // A code leaving without its row, or arriving without one, is still a failing test.
     // No `X_READONLY_VIOLATION`: it was thrown only by `readOnly()`, a regex-gated client wrapper
-    // with zero callers whose keyword list was materially weaker than the guard the one real
-    // consumer uses (`@ultimat3/mcp`'s parse guard, over `readOnlyQuery`'s `BEGIN READ ONLY`).
-    expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([
-      'X_APPEND_ONLY_TRIGGER_MISSING',
-      'X_BRANCH_EXISTS',
-      'X_DB_COMMIT_UNKNOWN',
-      'X_DB_DRAIN_TIMEOUT',
-      'X_DB_DRIFT',
-      'X_DB_FOREIGN_KEY_VIOLATION',
-      'X_DB_LOCK_TIMEOUT',
-      'X_DB_POOL_EXHAUSTED',
-      'X_DB_SCHEMA_STALE',
-      'X_DB_SERIALIZATION_FAILURE',
-      'X_DB_SIBLING_SCOPE_TIMEOUT',
-      'X_DB_STATEMENT_FAILED',
-      'X_DB_STATEMENT_TIMEOUT',
-      'X_DB_TRANSACTION_ABORTED',
-      'X_DB_UNAVAILABLE',
-      'X_DB_UNIQUE_VIOLATION',
-      'X_MIGRATE_CONCURRENT',
-      'X_MIGRATION_APPEND_ONLY_BACKFILL',
-      'X_MIGRATION_CONFLICT',
-      'X_MIGRATION_DESTRUCTIVE',
-      'X_MIGRATION_IRREVERSIBLE',
-      'X_MIGRATION_SNAPSHOT_MISSING',
-      'X_MIGRATION_VIEW_DEPENDS',
-      'X_SCHEMA_DUMP_DRIFT',
-      'X_SQL_UNSAFE',
-    ]);
+    // with zero callers whose keyword list was weaker than `@ultimat3/mcp`'s parse guard.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    expect(new Set(DB_OWNED_ERROR_CODES).size).toBe(DB_OWNED_ERROR_CODES.length);
+    for (const code of DB_OWNED_ERROR_CODES) {
+      expect(code).toMatch(/^X_[A-Z0-9_]+$/);
+      expect(page, `${code} has no wiki row`).toContain(`\`${code}\``);
+    }
   });
 
   test('every owned code carries a title', () => {

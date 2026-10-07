@@ -10,6 +10,7 @@
 
 // why: host-separator paths into the checkout; Bun ships no path API.
 import { join } from 'node:path';
+import { renderCauseValue } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -33,9 +34,12 @@ const ENUM = PLAN_STATUSES.join(' | ');
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** A value as a reader would write it back: a string quoted, anything else by its JSON. */
+/**
+ * A value as a reader would write it back: a string quoted, anything else by its JSON — through
+ * the total renderer, because YAML aliases build cycles (`status: &s [*s]`) JSON.stringify throws on.
+ */
 const shown = (value: unknown): string =>
-  value === undefined ? 'nothing' : (JSON.stringify(value) ?? String(typeof value));
+  value === undefined ? 'nothing' : renderCauseValue(value);
 
 const invalid = (path: string, field: string, value: unknown): Finding => ({
   code: 'X_PLAN_STATUS_INVALID',

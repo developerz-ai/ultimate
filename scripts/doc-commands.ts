@@ -65,29 +65,65 @@ export const skipDocPath = (path: string): boolean =>
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 
 /**
- * A per-file count of citations that do not resolve, tolerated because they were already there
- * when this rule learned to read the file. It may SHRINK and never grow — the ratchet
+ * The citations that do not resolve, tolerated because they were already there when this rule
+ * learned to read the file — keyed by SITE, `<page>: <the invocation as the finding spells it>`,
+ * with how many lines of that page write it. A row may SHRINK and never grow — the ratchet
  * `scripts/test-bare-error.ts` runs, for the reason it gives: 23 sites across seven packages were
  * sitting under a green gate, and refusing to widen the rule until every one is fixed is how a
  * rule stays narrow forever.
  *
- * An entry is a COUNT, not a verdict. Most of `docs/history/cli.md`'s are deliberate — that record
- * documents this checker's own findings and has to quote the commands that do not exist — and a
- * deliberate citation belongs in `DOC_COMMAND_ALLOWANCES`, which records WHY. Moving one there
- * lowers the number here; fixing a genuinely wrong line lowers it too. Both are progress.
+ * PER SITE since plan 101 sweep 11c. A per-page count let one fixed citation be SWAPPED for a new
+ * broken one on the same page at an equal count; a new invocation is now a new row, in a review.
+ *
+ * A row is a COUNT, not a verdict. `docs/history/cli.md`'s are deliberate — that record documents
+ * this checker's own findings and has to quote the commands that do not exist — and a deliberate
+ * citation belongs in `DOC_COMMAND_ALLOWANCES`, which records WHY. Moving one there deletes its
+ * row here; fixing a genuinely wrong line does too. Both are progress.
  */
 export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
-  'packages/action/README.md': 1,
-  'packages/admin/README.md': 1,
-  // why: `packages/cli/CLAUDE.md`'s 12 moved verbatim with its history (plan 101 slice 17 f,
-  // 2026-09-23); the record quotes the commands its rules were written against.
-  'docs/history/cli.md': 12,
-  'packages/db/README.md': 1,
-  'packages/entity/CLAUDE.md': 1,
-  'packages/flags/CLAUDE.md': 1,
-  'packages/flags/README.md': 1,
-  'packages/mail/README.md': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/action/README.md: 1`.
+  'packages/action/README.md: x db up': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/admin/README.md: 1`.
+  'packages/admin/README.md: x g admin': 1,
+  // why: re-keyed per site in plan 101 sweep 11c — `docs/history/cli.md`'s 12 moved verbatim with
+  // its history (plan 101 slice 17 f, 2026-09-23); the record quotes the commands its rules were
+  // written against.
+  'docs/history/cli.md: x ai prompts': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x auth whoami': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x build --route': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x db branch <name>': 3,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x db status': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x deploy --critical': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x g migration': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x metrics': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x trace': 1,
+  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
+  'docs/history/cli.md: x verify --contract': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/db/README.md: 1`.
+  'packages/db/README.md: x db drift': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/entity/CLAUDE.md: 1`.
+  'packages/entity/CLAUDE.md: x entity': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/flags/CLAUDE.md: 1`.
+  'packages/flags/CLAUDE.md: x flags': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/flags/README.md: 1`.
+  'packages/flags/README.md: x flags': 1,
+  // why: re-keyed per site in plan 101 sweep 11c; was `packages/mail/README.md: 1`.
+  'packages/mail/README.md: x mail': 1,
 };
+
+/** A pin row's key: the page, then the invocation as `citationFault` spells its subject. */
+export const docCommandSite = (path: string, subject: string): string => `${path}: ${subject}`;
+
+/** The page half of a site key — `: ` cannot occur in a repo path. */
+export const pageOfSite = (site: string): string => site.slice(0, site.indexOf(': '));
 
 /**
  * `unresolved` is the hazard. `allowance` is the list's own hygiene — an entry matching nothing is
@@ -114,7 +150,7 @@ export interface DocCommandInput {
   readonly files: readonly MarkdownFile[];
   readonly catalog: CommandCatalog;
   readonly allow: readonly DocCommandAllowance[];
-  /** Path → how many unresolved citations that file may still hold. See `DOC_COMMAND_PINS`. */
+  /** Site → how many lines of that page may still write it. See `DOC_COMMAND_PINS`. */
   readonly pins: Readonly<Record<string, number>>;
 }
 
@@ -140,7 +176,7 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
   }
   const gaps: DocCommandGap[] = [];
   const used = new Set<DocCommandAllowance>();
-  /** How many unresolved citations each pinned file actually holds, so the pin can be compared. */
+  /** How many lines write each pinned site, so the pin can be compared. */
   const counted = new Map<string, number>();
   // One finding per line per invocation, not one per code span: a table row routinely writes
   // `x env check --fix` twice, and two identical findings read as two defects.
@@ -157,22 +193,22 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
     const at = `${one.path}:${one.line}`;
     if (reported.has(`${at} ${fault.subject}`)) continue;
     reported.add(`${at} ${fault.subject}`);
-    const pinned = input.pins[one.path];
-    if (pinned !== undefined) {
-      counted.set(one.path, (counted.get(one.path) ?? 0) + 1);
+    const site = docCommandSite(one.path, fault.subject);
+    if (Object.hasOwn(input.pins, site)) {
+      counted.set(site, (counted.get(site) ?? 0) + 1);
       continue;
     }
     gaps.push({ kind: 'unresolved', at, subject: fault.subject, detail: fault.reason });
   }
   // A pin above what the file now holds is a waiver nobody needs: the same rule the allowance list
   // runs, one file set on. It may only come down, so a stale one is a finding rather than slack.
-  for (const [path, pinned] of Object.entries(input.pins)) {
-    const found = counted.get(path) ?? 0;
+  for (const [site, pinned] of Object.entries(input.pins)) {
+    const found = counted.get(site) ?? 0;
     if (found === pinned) continue;
     gaps.push({
       kind: found > pinned ? 'pin-exceeded' : 'pin',
       at: PINS_FILE,
-      subject: path,
+      subject: site,
       detail: `${found} now, pinned at ${pinned}`,
     });
   }
@@ -217,7 +253,7 @@ const vacuousFinding = (gap: DocCommandGap): Finding => ({
  */
 const pinFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_STALE',
-  cause: `${gap.subject} holds ${gap.detail} unresolved x citations`,
+  cause: `${pageOfSite(gap.subject)}: DOC_COMMAND_PINS['${gap.subject}'] — ${gap.detail} line(s) writing that unresolved x citation`,
   fix: `set DOC_COMMAND_PINS['${gap.subject}'] in ${PINS_FILE} to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
   at: gap.at,
 });
@@ -233,9 +269,9 @@ const pinFinding = (gap: DocCommandGap): Finding => ({
  */
 const pinExceededFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_EXCEEDED',
-  cause: `${gap.subject} holds ${gap.detail} unresolved x citations — a pin may only come down`,
-  fix: `x help --json   # then correct the citations in ${gap.subject} that name no invocation it lists, or record a deliberate one as { path, cites, kind, why } in DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE}`,
-  at: gap.subject,
+  cause: `${pageOfSite(gap.subject)}: DOC_COMMAND_PINS['${gap.subject}'] — ${gap.detail} line(s) writing that unresolved x citation, and a pin may only come down`,
+  fix: `x help --json   # then correct the lines of ${pageOfSite(gap.subject)} that cite it, or record a deliberate one as { path, cites, kind, why } in DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE}`,
+  at: pageOfSite(gap.subject),
 });
 
 const FINDINGS: Readonly<Record<DocCommandGapKind, (gap: DocCommandGap) => Finding>> = {
@@ -282,7 +318,7 @@ if (import.meta.main) {
       script: 'doc-commands',
       summary:
         gaps.length === 0
-          ? `${files.length} pages, every documented x invocation resolves against the registry (${Object.values(DOC_COMMAND_PINS).reduce((sum, n) => sum + n, 0)} pinned across ${Object.keys(DOC_COMMAND_PINS).length} package pages, which may only shrink)`
+          ? `${files.length} pages, every documented x invocation resolves against the registry (${Object.values(DOC_COMMAND_PINS).reduce((sum, n) => sum + n, 0)} pinned at ${Object.keys(DOC_COMMAND_PINS).length} sites on ${new Set(Object.keys(DOC_COMMAND_PINS).map(pageOfSite)).size} pages, which may only shrink)`
           : `${gaps.length} documented x invocation(s) this build cannot run, across ${files.length} pages`,
       findings: gaps.map(docCommandFindingFor),
     },

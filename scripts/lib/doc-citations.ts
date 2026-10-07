@@ -7,6 +7,9 @@
 // one half-written module anywhere crashed this module's guards with a bare SyntaxError (DX ledger #10).
 import type { FixCitation } from '../../packages/cli/src/fix-command';
 import { fixCitations } from '../../packages/cli/src/fix-command';
+
+export { asXCitation } from '../../packages/cli/src/fix-command';
+
 import { toPosix } from './posix-path';
 
 export interface MarkdownFile {

@@ -93,6 +93,38 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
     ).toHaveLength(1);
   });
 
+  test('a table wholly RE-KEYED, total not above the base, is stated by a NEW header why:', () => {
+    // Per-package counts re-keyed per site: every row is new, and no row is a raise in substance.
+    const old = `// The ratchet under x.\n${FLAT}`;
+    const site = [
+      '// The ratchet under x.',
+      '// why: re-keyed per site in sweep 11c, the same 15 sites.',
+      'export const DEMO_PINS = {',
+      "  'cli: a.ts': 12,",
+      "  'core: b.ts': 3,",
+      '};',
+    ].join('\n');
+    const now = { 'DEMO_PINS.cli: a.ts': 12, 'DEMO_PINS.core: b.ts': 3 };
+    const base = { 'DEMO_PINS.cli': 12, 'DEMO_PINS.core': 3 };
+    expect(checkPinRaises([table(site, now, base, old)])).toEqual([]);
+    // No header why: — every new row is a raise from zero, as before.
+    expect(
+      checkPinRaises([
+        table(`// The ratchet under x.\n${site.split('\n').slice(2).join('\n')}`, now, base, old),
+      ]),
+    ).toHaveLength(2);
+    // The header why: the base already had states nothing.
+    expect(checkPinRaises([table(site, now, base, site)])).toHaveLength(2);
+    // A re-key that GROWS the total is a raise smuggled through a rename.
+    const grown = { ...now, 'DEMO_PINS.core: b.ts': 4 };
+    expect(checkPinRaises([table(site, grown, base, old)])).toHaveLength(2);
+    // One key kept is not a re-key: the rows are compared one by one.
+    const kept = { 'DEMO_PINS.cli': 12, 'DEMO_PINS.core: b.ts': 3 };
+    expect(checkPinRaises([table(site, kept, base, old)]).map((raise) => raise.row)).toEqual([
+      'DEMO_PINS.core: b.ts',
+    ]);
+  });
+
   test('a raise under the why: the base already had is UNSTATED — an old reason licenses nothing', () => {
     // The pin went 3 -> 30 and the sentence above it is the one written for the 3.
     const was = FLAT_WHY;
@@ -300,7 +332,9 @@ describe('the real tree, against origin/main', () => {
       expect(paths).toContain('scripts/readme-fences-backlog.ts');
       expect(paths).toContain('scripts/lib/gated-apps.ts');
       const docs = tables.find((one) => one.path === 'scripts/doc-commands.ts');
-      expect(docs?.now.get('DOC_COMMAND_PINS.docs/history/cli.md')).toBeGreaterThan(0);
+      expect(
+        docs?.now.get('DOC_COMMAND_PINS.docs/history/cli.md: x db branch <name>'),
+      ).toBeGreaterThan(0);
       // Non-vacuity: the tables were read at both ends and hold rows.
       expect(tables.length).toBeGreaterThan(5);
       expect(tables.filter((one) => one.base !== undefined).length).toBeGreaterThan(5);

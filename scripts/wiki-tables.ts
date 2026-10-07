@@ -11,6 +11,9 @@
 // that fails on good input is "fix" the good row. That is the whole reason this file is 100 lines
 // of scanner instead of one line of split.
 //
+// A run that read NO table (no `wiki/`, a moved glob, a wrong root) is `X_WIKI_TABLE_UNSCANNED`,
+// never green: `checkTables([])` answering nothing is a pass over nothing.
+//
 //   bun run scripts/wiki-tables.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
@@ -75,9 +78,13 @@ export interface TableGap {
   readonly expected: number;
 }
 
-/** Pure, so the negative case is a fixture rather than an edit to a page the wiki publishes. */
-export function checkTables(files: readonly MarkdownFile[]): readonly TableGap[] {
+/** Every gap, and how many tables (a header with a delimiter row under it) were read. */
+function scanTables(files: readonly MarkdownFile[]): {
+  readonly gaps: readonly TableGap[];
+  readonly tables: number;
+} {
   const gaps: TableGap[] = [];
+  let tables = 0;
   for (const file of files) {
     const lines = file.text.split('\n');
     let fenced = false;
@@ -121,11 +128,16 @@ export function checkTables(files: readonly MarkdownFile[]): readonly TableGap[]
         });
       }
       header = cells;
+      tables += 1;
       index += 1;
     }
   }
-  return gaps;
+  return { gaps, tables };
 }
+
+/** Pure, so the negative case is a fixture rather than an edit to a page the wiki publishes. */
+export const checkTables = (files: readonly MarkdownFile[]): readonly TableGap[] =>
+  scanTables(files).gaps;
 
 const where = (gap: TableGap): string => `${gap.path}:${gap.line}`;
 
@@ -167,23 +179,39 @@ export async function readWiki(root: string): Promise<readonly MarkdownFile[]> {
   return files.sort((a, b) => (a.path < b.path ? -1 : 1));
 }
 
+const unscanned = (pages: number): Finding => ({
+  code: 'X_WIKI_TABLE_UNSCANNED',
+  cause: `${pages} ${WIKI_GLOB} page(s) were read and no table in them was, so this rule reported green over tables it never checked`,
+  fix: 'bun run scripts/wiki-tables.ts --json   # from the repo root, where wiki/ is',
+  at: 'wiki/',
+});
+
+/**
+ * The verdict over a set of pages: every gap, or — when not one table was read — the floor. The
+ * wiki carries hundreds of tables, so zero means the glob or the root moved, never a clean wiki.
+ */
+export function wikiTableReport(files: readonly MarkdownFile[]): readonly Finding[] {
+  const { gaps, tables } = scanTables(files);
+  return tables === 0 ? [unscanned(files.length)] : gaps.map(tableGapFindingFor);
+}
+
 /** What this repo contributes to `x verify`'s `manifest` step. */
 export const wikiTableFindings = async (root: string): Promise<readonly Finding[]> =>
-  checkTables(await readWiki(root)).map(tableGapFindingFor);
+  wikiTableReport(await readWiki(root));
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const files = await readWiki(repoRoot());
-  const gaps = checkTables(files);
+  const findings = wikiTableReport(files);
   report(
     {
-      ok: gaps.length === 0,
+      ok: findings.length === 0,
       script: 'wiki-tables',
       summary:
-        gaps.length === 0
+        findings.length === 0
           ? `${files.length} wiki pages, every table row the cell count its header declares`
-          : `${gaps.length} malformed table row(s) across ${files.length} wiki pages`,
-      findings: gaps.map(tableGapFindingFor),
+          : `${findings.length} table finding(s) across ${files.length} wiki pages`,
+      findings,
     },
     args.json,
   );

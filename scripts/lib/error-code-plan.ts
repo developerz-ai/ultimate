@@ -200,6 +200,58 @@ export function registerIn(errorsTs: string, path: string, input: NewErrorCode):
   return registered;
 }
 
+/** `X_SEO_META_MISSING` -> `metaMissing`: the package's own prefix is the object's namespace. */
+export function codeKey(code: string, pkg: string): string {
+  const words = code.replace(/^X_/, '').split('_');
+  const own = pkg.toUpperCase().split('-');
+  const rest = own.every((word, index) => words[index] === word) ? words.slice(own.length) : words;
+  return (rest.length === 0 ? words : rest)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      return index === 0 ? lower : `${lower[0]?.toUpperCase() ?? ''}${lower.slice(1)}`;
+    })
+    .join('');
+}
+
+/**
+ * The fourth shape, beside a registration: `export const SEO_ERROR_CODES = { metaMissing: 'X_…' } as
+ * const` — a code NAME table whose values type the package's `…ErrorCode` union. A code registered
+ * and missing from it is a code the package's own constructors cannot name, and its pinned test
+ * stays green over a set that no longer matches what is registered. `undefined` when the source has
+ * no such table (a table that holds anything but code strings is not one).
+ */
+export function codeNameIn(
+  source: string,
+  path: string,
+  input: NewErrorCode,
+  /** The file was not just edited by `registerIn`, so it must not already name the code. */
+  mustBeNew: boolean,
+): string | undefined {
+  const found = /const\s+\w*ERROR_CODES\b[^=]*=\s*\{/.exec(source);
+  if (found === null) return undefined;
+  const close = source.indexOf('\n} as const;', found.index);
+  const body = close < 0 ? '' : source.slice(found.index + found[0].length, close);
+  const lines = body.split('\n').filter((line) => !/^\s*(\/\/.*)?$/.test(line));
+  if (lines.length === 0 || !lines.every((line) => /^\s+\w+: 'X_[A-Z0-9_]+',$/.test(line))) {
+    return undefined;
+  }
+  if (mustBeNew && new RegExp(`\\b${input.code}\\b`).test(source)) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_EXISTS',
+      cause: `${path} already names ${input.code}, and a code is registered once`,
+      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit the existing registration in ${path}`,
+    });
+  }
+  const key = codeKey(input.code, input.pkg);
+  if (new RegExp(`^\\s+${key}:`, 'm').test(body)) {
+    throw invalid(
+      `${path} already has a name "${key}" in its code table, so ${input.code} has no distinct key there`,
+      `bun test ${renderFixShellArg(`packages/${input.pkg}/src/errors.test.ts`, '<the errors test>')}   # after adding ${input.code} under a name of your own in ${path}`,
+    );
+  }
+  return insertBefore(source, found.index, '\n} as const;', entry(key, `'${input.code}'`));
+}
+
 /**
  * The third shape: `const …ERROR_CODES… = Object.freeze({ X_A: { title: '…' } })`, declarations as
  * DATA. `@ultimat3/schema` is tier 0 and cannot call `registerErrorCodes()`; core reads this object

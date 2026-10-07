@@ -267,7 +267,7 @@ describe('unit · affected resolves the checkout root git reports paths against'
     const { runner } = recorder({});
     await expect(gitRoot(runner, '/tmp/nowhere', 'affected')).rejects.toMatchObject({
       code: 'X_CLI_UNEXPECTED',
-      fix: 'run x affected from inside a git checkout — confirm with: git rev-parse --show-toplevel',
+      fix: 'git rev-parse --show-toplevel   # then run x affected inside the checkout it prints',
     });
   });
 });

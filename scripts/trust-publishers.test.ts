@@ -10,6 +10,7 @@ import {
   DEFAULT_WORKFLOW,
   hasPublisher,
   trustArgs,
+  trustResult,
 } from './trust-publishers';
 
 const listed = (extra: Record<string, unknown>): string =>
@@ -80,5 +81,31 @@ describe('a publisher without the environment is NOT configured', () => {
 
   test('junk is refused rather than thrown on', () => {
     expect(hasPublisher('not json', DEFAULT_REPO, DEFAULT_WORKFLOW)).toBe(false);
+  });
+});
+
+describe('the floor', () => {
+  // `--check` over a tree with no packages answered `0/0 packages trust …`, `ok: true` — a perfect
+  // registry and a wrong directory read the same, the shape `registry-audit` was repaired for.
+  test('no publishable workspace is a failure, never 0/0 ok', () => {
+    const result = trustResult({ workspaces: [], outcomes: [], repo: DEFAULT_REPO });
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.code)).toEqual(['X_CORPUS_UNSCANNED']);
+  });
+
+  test('one trusted workspace is a clean answer', () => {
+    const core = {
+      dir: 'core',
+      name: '@ultimat3/core',
+      version: '9.0.0',
+      private: false,
+      path: '/nowhere/packages/core',
+      tier: 0,
+      dependsOn: [],
+    };
+    const outcomes = [{ name: core.name, ok: true, state: 'already', detail: 'present' }] as const;
+    const result = trustResult({ workspaces: [core], outcomes, repo: DEFAULT_REPO });
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(`1/1 packages trust ${DEFAULT_REPO}/${DEFAULT_WORKFLOW}`);
   });
 });

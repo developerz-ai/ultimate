@@ -293,3 +293,13 @@ describe('the catalog is the registry, never a copy of it', () => {
     }
   });
 });
+
+// The repo's own spelling of the CLI (`bun run x -- <command>`, CLAUDE.md) read as no command at
+// all, so a shipped fix written that way was never resolved — a dead one passed.
+describe('the in-repo spelling of the CLI', () => {
+  test('`bun run x -- <command>` is the citation `x <command>`', () => {
+    expect(fixCitations('bun run x -- doctor --json').map((citation) => citation.command)).toEqual([
+      'doctor',
+    ]);
+  });
+});

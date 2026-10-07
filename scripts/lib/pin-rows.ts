@@ -2,6 +2,8 @@
 // under `scripts/lib/*-pins.ts` is pure data in one of five shapes, and this is the one reader that
 // flattens all five, so `pin-raises` can compare two versions of any table without knowing it.
 
+import { maskLiterals } from '../../packages/core/src/source-mask';
+
 /** A number is a count; a `{ count }` row is its count; any other row is a licence, worth 1. */
 const debtOf = (value: unknown): number | undefined => {
   if (typeof value === 'number') return value;
@@ -55,9 +57,13 @@ export async function importPinSource(
   scratch: string,
   from: string,
 ): Promise<Readonly<Record<string, unknown>>> {
+  // Only a `from` in CODE: a row key may quote one (a fence backlog keys on a fence's first line,
+  // `import { x } from './api';`), and rewriting it there broke the literal's quotes.
+  const code = maskLiterals(source);
   const anchored = source.replace(
     RELATIVE_SPECIFIER,
-    (_, keyword: string, _quote: string, specifier: string) => {
+    (whole: string, keyword: string, _quote: string, specifier: string, at: number) => {
+      if (code.slice(at, at + keyword.length) !== keyword) return whole;
       const absolute = Bun.fileURLToPath(new URL(specifier, Bun.pathToFileURL(from)));
       return `${keyword}${JSON.stringify(absolute.split('\\').join('/'))}`;
     },
