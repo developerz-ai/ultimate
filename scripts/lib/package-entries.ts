@@ -4,6 +4,7 @@
 
 // why: Bun exposes no path-join primitive; module keys are root-relative POSIX on every OS.
 import { posix } from 'node:path';
+import { toPosix } from './posix-path';
 import { type Reexport, reexportsIn } from './reexport-scan';
 import { repoRoot } from './run';
 
@@ -51,7 +52,10 @@ async function entriesOf(manifest: string): Promise<readonly PackageEntry[]> {
   for (const [subpath, target] of Object.entries(exports ?? {})) {
     if (typeof target !== 'string' || !isModule(target.replace('*', '.ts'))) continue;
     const base = `packages/${dir}/${target.slice(2)}`;
-    const files = target.includes('*') ? [...new Bun.Glob(base).scanSync(ROOT)].sort() : [base];
+    // POSIX on every OS: a Windows glob answers `\\`, and the stem below is sliced against `base`.
+    const files = target.includes('*')
+      ? [...new Bun.Glob(base).scanSync(ROOT)].map(toPosix).sort()
+      : [base];
     for (const file of files.filter(isModule)) {
       const [head = '', tail = ''] = base.split('*');
       const stem = file.slice(head.length, file.length - tail.length);
@@ -63,7 +67,7 @@ async function entriesOf(manifest: string): Promise<readonly PackageEntry[]> {
   return found;
 }
 
-const MANIFESTS = [...new Bun.Glob('packages/*/package.json').scanSync(ROOT)].sort();
+const MANIFESTS = [...new Bun.Glob('packages/*/package.json').scanSync(ROOT)].map(toPosix).sort();
 const ALL = (await Promise.all(MANIFESTS.map(entriesOf))).flat();
 
 /** Every `@ultimat3/*` entry — the values a re-export of another package is measured against. */
