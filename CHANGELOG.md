@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 25.2.0 - 2026-10-07
+
 **Sweep 14** â€” the backlog closed: every #648 owner decision taken and recorded (`docs/plans/2026/10/04/101-squeaky-clean-sweep/00-owner-decisions.md`), #702 fixed (#705 shipped in #711), the breaking tails batched for 26.0.0 (#709), the large decided features planned (#710).
 
 ### Added
@@ -21,6 +25,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - `@ultimat3/realtime`: the page outbox is one queue across tabs. Another tab's enqueue, ack or refusal reaches this tab's count (a `BroadcastChannel` plus a read-only `refresh()`). A write is queued or sent from a fresh read of the durable queue, so a live write in one tab no longer overtakes one another tab queued, which could leave the user's last action contradicted. A send that throws no longer puts back an entry already acked or refused, which was replayed or resent once more.
 - `@ultimat3/action`, `@ultimat3/entity`: a `transition({ row })` whose policy read a column (an `authorId`) no longer moves the row after a concurrent change to that column. The compare-and-set also pins every column the policy read (`Move.observed`), on both drivers, and refuses a changed row with `X_STATE_CONFLICT` naming the column (#702). Not pinned: timestamp, JSON, array, bytea, money and sealed columns, and anything the loader reads from other tables.
+
+### Commits
+
+- fix: sweep 14b â€” #648 decided and recorded, #702 transition pins, x routes table, useOutbox across tabs, two CI flakes root-caused (#712)
+- fix: sweep 14a â€” every test database named per run: probeDatabaseName, sweepProbeDatabases, the probe-databases guard (#705) (#711)
+- chore(docker): Bump nats from 2.11-alpine to 2.15-alpine in /docker (#654)
 
 ## 25.1.0 - 2026-10-07
 
