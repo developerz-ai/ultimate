@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "claude"
 owner: sebi
 percent: 95
-current_focus: "sweep 12c (the customer-filed issues #669–#683 and bug #689, before the 25.0.0 tag), then 12b"
+current_focus: "sweep 12b — 25.0.0 stamped; tag, publish through release.yml, registry audit, npm scaffold proof"
 slices:                    # one row per independently merged sweep; `sweep` is the PR it lands in
   - file: 00-owner-decisions.md
     tier: 0
@@ -148,14 +148,14 @@ slices:                    # one row per independently merged sweep; `sweep` is 
   - file: 12-major-25.md
     tier: 0
     sweep: "12c"
-    status: in_progress
-    percent: 95
-    evidence: []
+    status: complete
+    percent: 100
+    evidence: ["#698"]
   - file: 12-major-25.md
     tier: 0
     sweep: "12b"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
     evidence: []
 evidence: []
 notes: "Audit at d7b8c7fa (24.0.0), 2026-10-04: 13 read-only agents in two waves + a Windows audit. Supersedes the open trackers of 2026/08/12/101, 2026/09/22/102, 2026/09/28/101; 2026/10/01/101 and 2026/10/02/101 marked complete. Owner answers are recorded here and in the owner-decisions issue."
